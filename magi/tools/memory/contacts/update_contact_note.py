@@ -15,8 +15,8 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
 ≤8 KB clamp) and exposes ``update_note(...)`` plus
 ``to_dict`` on the returned DTO. ``LookupError`` raised by
@@ -84,7 +84,7 @@ class UpdateContactNoteTool(Tool):
         except LookupError as e:
             # ``contact_notes_book.update_note`` raises
             # ``LookupError`` when ``note_id`` does not
-            # resolve — same exception type the old bus
+            # resolve — same exception type the BUS
             # raised, so the LLM-facing error stays
             # caller-fixable rather than tripping the
             # worker's "tool.crashed" envelope.

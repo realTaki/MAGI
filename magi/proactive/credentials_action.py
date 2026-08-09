@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from magi.new_bus.library.local.actionItemBook import SOURCE_PROACTIVE
+from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
 
 logger = logging.getLogger("magi.proactive.credentials_action")
 

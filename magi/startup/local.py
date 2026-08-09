@@ -93,7 +93,7 @@ def create_magi(
         )
     config.workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    from magi.new_bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
+    from magi.bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
     from magi.startup.bootstrap import _magis_factory
 
     factory = _magis_factory(config.magis_database_url)
@@ -107,7 +107,7 @@ def create_magi(
     if eva_role is None:
         eva_role = roles.add(magis_id=genesis.id, name="EVA", is_reserved=True)
 
-    # A MAGI's display name is local NewBus setting state, not a global
+    # A MAGI's display name is local Bus setting state, not a global
     # ``magic`` row.  A supplied MAGI_ID is an idempotent re-use request;
     # otherwise registering creates one new membership identity.
     membership = (

@@ -3,7 +3,7 @@
 A channel receives inbound messages from a user surface (Telegram chat,
 WebUI console, future email / calendar) and sends outbound messages back.
 Both ADAM and EVA mount one or more channels. They publish messages to the
-private ``NewBus``; the MAGI-owned agent worker consumes them sequentially.
+private ``Bus``; the MAGI-owned agent worker consumes them sequentially.
 
 ``channels/base.py`` defines the abstract ``Channel`` interface
 (receive / send / identify_sender). ``channels/worker_base.py`` defines
@@ -14,7 +14,7 @@ Concrete adapters:
 - ``channels.telegram`` — EVA side, python-telegram-bot v21+ (C3).
 - ``channels.webui``    — ADAM side, FastAPI + HTMX + WS (C1 for CRUD, C7 for chat console).
 
-The :class:`Channel` enum is owned by the NewBus task domain and re-exported
+The :class:`Channel` enum is owned by the Bus task domain and re-exported
 here as the common channel vocabulary.
 """
 
@@ -24,29 +24,27 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.channels.worker_base import ChannelWorker
-from magi.new_bus.library.local.tasksBook import Channel
+from magi.bus.library.local.tasksBook import Channel
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.channels")
 
-# [plan amendment]: module-level new_bus reference for migration interim.
-# Set by _runtime_lifespan / worker_lifespan after bootstrap.
-# Old code (TaskChannel.dispatch, TaskSchedulerBridge) reads this
-# until fully migrated to constructor injection.
-_current_new_bus: NewBus | None = None
+# Adapter bridge set by the runtime after BUS bootstrap. New worker code uses
+# explicit constructor injection; this accessor is limited to channel adapters.
+_current_bus: Bus | None = None
 
 
-def set_current_new_bus(bus: NewBus) -> None:
-    """Set the process-global new_bus reference."""
-    global _current_new_bus
-    _current_new_bus = bus
+def set_current_bus(bus: Bus) -> None:
+    """Set the process-global bus reference."""
+    global _current_bus
+    _current_bus = bus
 
 
-def get_current_new_bus() -> NewBus | None:
-    """Return the process-global new_bus reference, or None."""
-    return _current_new_bus
+def get_current_bus() -> Bus | None:
+    """Return the process-global bus reference, or None."""
+    return _current_bus
 
 
 # ── Channel Worker lifecycle ─────────────────────────────────────────
@@ -65,7 +63,7 @@ _KNOWN_CHANNELS: frozenset[str] = frozenset({"tg", "webui", "a2a", "scheduled", 
 
 
 async def start_channel_workers(
-    bus: NewBus,
+    bus: Bus,
     *,
     enabled: set[str],
 ) -> dict[str, ChannelWorker]:
@@ -137,8 +135,8 @@ __all__ = [
     "worker_base",
     "Channel",
     "ChannelWorker",
-    "set_current_new_bus",
-    "get_current_new_bus",
+    "set_current_bus",
+    "get_current_bus",
     "start_channel_workers",
     "stop_channel_workers",
     "registered_channel_workers",

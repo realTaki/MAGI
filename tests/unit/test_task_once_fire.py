@@ -1,4 +1,4 @@
-"""Regression tests for ``frequency="once"`` task path — rebased to new_bus.
+"""Regression tests for ``frequency="once"`` task path — rebased to bus.
 
 validate_run_at / validate_run_at_future tests kept from original.
 Scheduler tests rewritten for TaskWorker + RunTaskJob flow.
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from magi.new_bus.library.local.tasksBook import (
+from magi.bus.library.local.tasksBook import (
     validate_run_at,
     validate_run_at_future,
 )
@@ -86,8 +86,8 @@ def test_worker_should_fire_run_at_once():
 
 def test_mark_run_at_consumed_sets_enabled_zero():
     """TaskBook.mark_run_at_consumed sets enabled=0 after fire."""
-    from magi.new_bus.db import EngineFactory
-    from magi.new_bus.library.local.tasksBook import TaskBook, ChannelEnum, SOURCE_USER
+    from magi.bus.db import EngineFactory
+    from magi.bus.library.local.tasksBook import TaskBook, ChannelEnum, SOURCE_USER
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()

@@ -17,7 +17,7 @@ parent env". Same contract the WebUI ``PATCH`` endpoint enforces.
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It builds the full :class:`McpServer` DTO, publishes a
-:class:`~magi.new_bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
 with ``kind="updated"`` (or ``kind="toggled"`` if the body only
 changed the ``enabled`` flag), and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the write + reconnect.
@@ -28,8 +28,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.new_bus.guild import McpServerChangedJob
-from magi.new_bus.library.local.mcpServerBook import (
+from magi.bus.guild import McpServerChangedJob
+from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )

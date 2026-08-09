@@ -38,7 +38,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
-from magi.new_bus.library.local.tasksBook import (
+from magi.bus.library.local.tasksBook import (
     preset_to_cron,
     validate_run_at,
 )

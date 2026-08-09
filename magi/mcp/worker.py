@@ -4,10 +4,10 @@
 :class:`~magi.providers.worker.ProvidersWorker` and
 :class:`~magi.tools.worker.ToolsWorker`:
 
-- **Only depends on new_bus**. The composition root (see
-  :mod:`magi.startup.runtime`) wires a :class:`~magi.new_bus.NewBus`
+- **Only depends on bus**. The composition root (see
+  :mod:`magi.startup.runtime`) wires a :class:`~magi.bus.Bus`
   with a ready-to-use :class:`mcpServerChangedJobBoard` and
-  :class:`~magi.new_bus.library.local.mcpServerBook.McpServerBook`.
+  :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`.
 - **No environment reads**. Timeouts and per-server config come
   from ``bus.settings_book`` / the row, never from ``os.environ``.
 - **No env-knob concurrency** — the worker is the only one, so
@@ -18,7 +18,7 @@ Write authority
 
 The Worker is the **only writer** to ``McpServerBook``. The LLM
 manage tools (under :mod:`magi.tools.mcp`) only publish a
-:class:`~magi.new_bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
 — they never call ``book.upsert`` / ``book.delete`` /
 ``book.update`` themselves. The Worker claims the job, applies the
 write, and reconnects the live connection in the same handler.
@@ -67,7 +67,7 @@ import logging
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
-from magi.new_bus.guild import (
+from magi.bus.guild import (
     McpServerChangedJob,
     McpServerChangedResult,
 )
@@ -75,8 +75,8 @@ from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
     from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
-    from magi.new_bus import NewBus
-    from magi.new_bus.library.local.mcpServerBook import McpServer
+    from magi.bus import Bus
+    from magi.bus.library.local.mcpServerBook import McpServer
 
 logger = logging.getLogger("magi.mcp.worker")
 
@@ -101,19 +101,19 @@ _worker: McpWorker | None = None
 class McpWorker:
     """Consumer that owns every MCP server connection in a MAGI process.
 
-    Receives a fully-wired :class:`~magi.new_bus.NewBus` via
+    Receives a fully-wired :class:`~magi.bus.Bus` via
     constructor injection. The :class:`mcpServerChangedJobBoard` is
     drained in the background; :meth:`_bootstrap_connections`
     reads the current enabled set on startup. Every change job the
     worker claims carries enough payload to write
-    :class:`~magi.new_bus.library.local.mcpServerBook.McpServerBook`
+    :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`
     *and* refresh the live connection — the worker is the only
     code that touches either side after startup.
     """
 
     def __init__(
         self,
-        bus: NewBus,
+        bus: Bus,
         *,
         poll_seconds: float = 0.25,
     ) -> None:
@@ -475,11 +475,11 @@ class McpWorker:
 # -- module-level singletons -----------------------------------------------
 
 
-async def start_mcp_worker(bus: NewBus) -> McpWorker:
+async def start_mcp_worker(bus: Bus) -> McpWorker:
     """Start the process-local MCP worker.
 
     The composition root passes the fully-wired
-    :class:`~magi.new_bus.NewBus`. Subsequent calls return the
+    :class:`~magi.bus.Bus`. Subsequent calls return the
     already-started worker (mirrors the pattern in
     :mod:`magi.tools.worker`).
     """

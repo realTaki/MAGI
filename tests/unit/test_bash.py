@@ -622,7 +622,7 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
 
     The registry owns only the *dispatch* half (name →
     ``Tool`` instance); the agent-visible menu lives in the
-    new_bus tools Book and is read via
+    bus tools Book and is read via
     ``tool_catalog.list_schemas``. So this asserts through
     :func:`get_tool`, not a schema listing.
 

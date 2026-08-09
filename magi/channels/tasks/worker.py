@@ -11,8 +11,8 @@ from croniter import croniter as _croniter
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.runTaskJob import RunTaskJob
+    from magi.bus import Bus
+    from magi.bus.guild.runTaskJob import RunTaskJob
 
 logger = logging.getLogger("magi.channels.task.worker")
 
@@ -20,7 +20,7 @@ logger = logging.getLogger("magi.channels.task.worker")
 class TaskWorker(ChannelWorker):
     channel_name = "task"
 
-    def __init__(self, bus: NewBus, *, poll_seconds: float = 15.0) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 15.0) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self._next_fire: dict[str, datetime] = {}
         self._rehydrated = False
@@ -64,7 +64,7 @@ class TaskWorker(ChannelWorker):
         return last is None or (prev_fire and prev_fire > last)
 
     async def _fire_task(self, task, *, fired_by: str = "cron_tick", session_id: str | None = None, uid: int | None = None) -> None:
-        from magi.new_bus.guild.chatJob import ChatJob
+        from magi.bus.guild.chatJob import ChatJob
         task_id = task.id; effective_uid = uid or task.uid; effective_session = session_id or task.session_id
         schedule_desc = task.cron if task.cron else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
         contextual_prompt = (
@@ -88,7 +88,7 @@ class TaskWorker(ChannelWorker):
         self._next_fire[task_id] = datetime.now(timezone.utc)
 
     async def _handle_run_task_job(self, rj: RunTaskJob) -> None:
-        from magi.new_bus.guild.runTaskJob import RunTaskResult
+        from magi.bus.guild.runTaskJob import RunTaskResult
         try:
             task = self.bus.tasks_book.get(task_id=rj.task_id)
             if task is None:

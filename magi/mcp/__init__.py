@@ -17,8 +17,8 @@ worker composes.
 ::
 
     McpWorker (sole writer)
-      ├─ reads from bus.mcp_servers_book   (new_bus McpServerBook)
-      ├─ writes McpServerChangedJob        (new_bus Job Board, payload
+      ├─ reads from bus.mcp_servers_book   (bus McpServerBook)
+      ├─ writes McpServerChangedJob        (bus Job Board, payload
       │                                     carries the full DTO)
       └─ injects discovered tools into
          magi.tools.registry.register_tools("mcp", ...)
@@ -54,10 +54,10 @@ Module layout
   API / LLM tools land in a follow-up PR.
 
 The data path that the WebUI / LLM manage tools write to is
-the new_bus ``McpServerBook`` (via ``McpServerChangedJob``);
+the bus ``McpServerBook`` (via ``McpServerChangedJob``);
 the Worker is the sole writer. The WebUI / ``McpService``-backed
 read paths still resolve through the same physical SQLite
-table (see ``magi/new_bus/library/local/mcpServerBook.py``).
+table (see ``magi/bus/library/local/mcpServerBook.py``).
 """
 
 from __future__ import annotations

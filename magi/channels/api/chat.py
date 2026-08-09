@@ -38,7 +38,7 @@ from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
-from magi.channels import Channel, get_current_new_bus
+from magi.channels import Channel, get_current_bus
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -300,18 +300,18 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    # Bus selection: prefer new_bus when wired. Both paths target the
+    # Bus selection: prefer bus when wired. Both paths target the
     # same ``agent_inbox`` table (AgentWorker reads from there), so the
     # migration is a pure surface swap — the legacy AgentMessage shape
-    # becomes the new_bus ChatJob envelope (kind="chat", payload=...).
-    new_bus = get_current_new_bus()
-    if new_bus is not None:
-        from magi.new_bus.guild.chatJob import ChatJob
+    # becomes the bus ChatJob envelope (kind="chat", payload=...).
+    bus = get_current_bus()
+    if bus is not None:
+        from magi.bus.guild.chatJob import ChatJob
 
         # Stable producer-side idempotency: the inbound session-message
         # id is what makes a network retry collapse to the same inbox row.
         chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
-        run_id = new_bus.agent_job_board.publish(
+        run_id = bus.agent_job_board.publish(
             ChatJob(
                 event_id=chat_job_event_id,
                 run_id=chat_job_event_id,

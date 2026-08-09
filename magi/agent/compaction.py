@@ -1,4 +1,4 @@
-"""Auto-compaction for long chat sessions — new_bus only."""
+"""Auto-compaction for long chat sessions — bus only."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from magi.agent.tokens import estimate_messages_tokens
 
 if TYPE_CHECKING:
     from magi.providers import ChatMessage
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.compaction")
 
@@ -23,7 +23,7 @@ async def maybe_compact(
     session_id: str | None,
     messages: list["ChatMessage"],
     *,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> None:
     """Estimate token cost. If over threshold, run one compaction pass."""
     if not session_id:
@@ -71,7 +71,7 @@ async def call_llm_for_summary(
     *,
     to_compress: list["ChatMessage"],
     wait_seconds: float = 30.0,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> str | None:
     """One LLM call to compress *to_compress* into a summary."""
     from magi.prompts import load_compaction_prompt
@@ -85,7 +85,7 @@ async def call_llm_for_summary(
     if len(user_content) > 6000:
         return None
 
-    from magi.new_bus.guild.callLLMJob import CallLLMJob
+    from magi.bus.guild.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
         messages=(

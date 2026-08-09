@@ -18,14 +18,14 @@ write tool. Reads (no read tool yet — the system-prompt
 block is the read path for v0) would carry the same
 gate when added.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants (kind membership
 in :data:`ALL_KINDS`, subject non-empty + ≤200
 chars, body non-empty + ≤8 KB, priority 1..5) and
 surfaces any violation as ``ValueError`` that we
-translate to ``ToolResult.err`` here. The old bus
-service at :mod:`magi.bus.jobs.services.memory.MemoryService`
+translate to ``ToolResult.err`` here. The BUS
+service at BUS Book API
 is no longer imported here.
 """
 
@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.new_bus.library.local.memoryBook import (
+from magi.bus.library.local.memoryBook import (
     ALL_KINDS,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult

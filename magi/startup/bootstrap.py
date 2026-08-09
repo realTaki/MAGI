@@ -38,11 +38,11 @@ logger = logging.getLogger("magi.startup.bootstrap")
 
 
 def _magis_factory(database_url: str):
-    """Build and initialise the NewBus-owned MAGIS schema."""
-    from magi.new_bus.db.engine import build_magis_factory
+    """Build and initialise the Bus-owned MAGIS schema."""
+    from magi.bus.db.engine import build_magis_factory
     # Import the Books before ``create_all`` so their inline ORM models are
-    # registered on NewBus's independent metadata.
-    from magi.new_bus.library.magis import (  # noqa: F401
+    # registered on Bus's independent metadata.
+    from magi.bus.library.magis import (  # noqa: F401
         AuthCredentialBook,
         ControlRuntimeBook,
         EvaRuntimeBook,
@@ -170,11 +170,11 @@ def bootstrap_first_magi(
 def _ensure_first_magi_identity(factory: Any) -> int:
     """Create Genesis, its ADAM role and first membership if missing.
 
-    NewBus models a MAGI identity as ``magis_memberships.id``.  Display
+    Bus models a MAGI identity as ``magis_memberships.id``.  Display
     name and personal instruction belong to the node's local settings, not
     to a second, global ``magic`` table.
     """
-    from magi.new_bus.library.magis import (
+    from magi.bus.library.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
         MagisBook,
         MagisMembershipBook,
@@ -261,7 +261,7 @@ def bootstrap_existing_magi(
 
 
 def _load_membership(factory: Any, magi_id: str) -> Any | None:
-    from magi.new_bus.library.magis import MagisMembershipBook
+    from magi.bus.library.magis import MagisMembershipBook
 
     try:
         magic_id_int = int(magi_id)
@@ -312,9 +312,9 @@ def ensure_private_database(workspace_dir: Path) -> str:
     """
     db_path = resolve_private_database_path(workspace_dir)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    from magi.new_bus.db.engine import EngineFactory
-    # NewBus owns local table registration and creation.  The factory is
-    # built from the exact private DSN rather than the retired Bus helper.
+    from magi.bus.db.engine import EngineFactory
+    # Bus owns local table registration and creation.  The factory is
+    # built from the exact private DSN rather than the BUS helper.
     EngineFactory(f"sqlite:///{db_path}").create_all()
     from magi.startup.paths import resolve_private_database_url
 

@@ -1,4 +1,4 @@
-"""Runtime rendering for personal, MAGIS, and role instructions — new_bus only."""
+"""Runtime rendering for personal, MAGIS, and role instructions — bus only."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.instructions")
 
@@ -34,7 +34,7 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
     )
 
 
-def runtime_instruction_block(bus: "NewBus") -> str:
+def runtime_instruction_block(bus: "Bus") -> str:
     """Load this MAGI's instruction from MAGIS Books."""
     try:
         if bus.memberships_book is None:

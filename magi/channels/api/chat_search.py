@@ -1,8 +1,7 @@
 """HTTP wrapper around the chat-history FTS5 search.
 
-This module is the FastAPI surface; the actual query lives in
-:class:`magi.bus.jobs.services.session.SessionService`. Keeping the HTTP wrapper
-thin (admin gate, Pydantic response, error mapping) means the
+This module is the FastAPI surface; BUS owns the actual query. Keeping the HTTP
+wrapper thin (admin gate, Pydantic response, error mapping) means the
 agent tool can call the same query without going through
 ``channels.webui.api.*`` — closing the package-boundary violation
 that design §18 forbids.

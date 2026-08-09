@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus.db import EngineFactory
-from magi.new_bus.library.local.tasksBook import (
+from magi.bus.db import EngineFactory
+from magi.bus.library.local.tasksBook import (
     ChannelEnum,
     TaskBook,
     TaskRunBook,
@@ -171,7 +171,7 @@ class TestReapStale:
         stale_time = (
             datetime.now(timezone.utc) - timedelta(seconds=600)
         ).isoformat()
-        from magi.new_bus.library.local.tasksBook import _TaskRunRow
+        from magi.bus.library.local.tasksBook import _TaskRunRow
         from sqlalchemy import select
 
         with task_run_book._session() as s:

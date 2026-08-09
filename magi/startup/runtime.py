@@ -4,7 +4,7 @@ The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
 1. Bootstraps identity via :func:`magi.startup.bootstrap.bootstrap_magi`.
-2. Builds one :class:`~magi.new_bus.NewBus` facade.
+2. Builds one :class:`~magi.bus.Bus` facade.
 3. Brings up durable workers (provider / agent / tool / delivery).
 4. Brings up channels (currently: telegram).
 5. Serves the private runtime HTTP API on a fixed internal port.
@@ -70,15 +70,15 @@ async def run_magi(config: StartupConfig) -> None:
     """
     startup = bootstrap_magi(config)
 
-    new_bus = _build_bus(startup)
+    bus = _build_bus(startup)
     workers = _build_workers()
-    channels = _build_channels(startup, new_bus)
+    channels = _build_channels(startup, bus)
 
     async with _runtime_lifespan(
-        workers, channels, new_bus,
+        workers, channels, bus,
         magi_id=_to_magi_id(startup.magi_id),
     ):
-        _serve_runtime_api(startup, new_bus)
+        _serve_runtime_api(startup, bus)
 
 
 # ----------------------------------------------------------------------
@@ -86,17 +86,17 @@ async def run_magi(config: StartupConfig) -> None:
 # ----------------------------------------------------------------------
 
 
-def _build_bus(startup: StartupContext) -> "NewBus":
-    """Construct the single NewBus facade for this process.
+def _build_bus(startup: StartupContext) -> "Bus":
+    """Construct the single Bus facade for this process.
 
     Paths are resolved by :class:`StartupContext` and passed through
     explicitly.  The runtime never bootstraps the retired ``magi.bus``
     facade or shares its process-global state.
     """
-    from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
+    from magi.bus.bootstrap import Bus, bootstrap_bus
 
     state_dir = str(startup.workspace_dir / "memories")
-    return bootstrap_new_bus(
+    return bootstrap_bus(
         state_dir=state_dir,
         magis_url=startup.magis_database_url,
     )
@@ -124,7 +124,7 @@ def _build_workers() -> "WorkerHandles":
 async def _runtime_lifespan(
     workers: "WorkerHandles",
     channels: list[str],
-    new_bus: "NewBus",
+    bus: "Bus",
     *,
     magi_id: int | None = None,
 ):
@@ -133,9 +133,9 @@ async def _runtime_lifespan(
     Provider worker goes first (so it can drain orphans from a previous
     crash); proactive worker goes last (so everything else is ready).
 
-    ``new_bus`` is required for :func:`start_provider_worker` — the
-    provider worker has been migrated to new_bus; the rest of the
-    workers still use the old bus global singleton internally.
+    ``bus`` is required for :func:`start_provider_worker` — the
+    provider worker has been migrated to bus; the rest of the
+    workers still use the BUS global singleton internally.
 
     ``magi_id`` is passed through to the proactive worker for
     Adam-dependent bootstrap checks.
@@ -148,17 +148,17 @@ async def _runtime_lifespan(
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
     import magi.channels
-    magi.channels.set_current_new_bus(new_bus)
+    magi.channels.set_current_bus(bus)
 
     # Startup order: providers → tools → mcp → agent → channels → proactive
-    await start_provider_worker(bus=new_bus)
-    await start_tool_worker(bus=new_bus)
-    await start_mcp_worker(bus=new_bus)
-    await start_agent_worker(bus=new_bus)
+    await start_provider_worker(bus=bus)
+    await start_tool_worker(bus=bus)
+    await start_mcp_worker(bus=bus)
+    await start_agent_worker(bus=bus)
 
-    channel_workers = await start_channel_workers(new_bus, enabled=set(channels))
+    channel_workers = await start_channel_workers(bus, enabled=set(channels))
 
-    await start_proactive_worker(bus=new_bus, magi_id=magi_id)
+    await start_proactive_worker(bus=bus, magi_id=magi_id)
     try:
         yield
     finally:
@@ -182,8 +182,8 @@ async def worker_lifespan():
     The :func:`channels.api.app` FastAPI lifespan pulls in the same set
     of workers without dragging the Runtime's uvicorn into the picture.
 
-    Builds its own :class:`NewBus` from the active workspace so the
-    provider worker (now on new_bus) has a bus to claim from.
+    Builds its own :class:`Bus` from the active workspace so the
+    provider worker (now on bus) has a bus to claim from.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
     from magi.channels import start_channel_workers, stop_channel_workers
@@ -191,23 +191,23 @@ async def worker_lifespan():
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
-    from magi.new_bus.bootstrap import bootstrap_new_bus
+    from magi.bus.bootstrap import bootstrap_bus
     from magi.startup.paths import resolve_workspace_dir
 
     state_dir = str(resolve_workspace_dir() / "memories")
-    new_bus = bootstrap_new_bus(state_dir=state_dir)
+    bus = bootstrap_bus(state_dir=state_dir)
 
     import magi.channels
-    magi.channels.set_current_new_bus(new_bus)
+    magi.channels.set_current_bus(bus)
 
-    await start_provider_worker(bus=new_bus)
-    await start_tool_worker(bus=new_bus)
-    await start_mcp_worker(bus=new_bus)
-    await start_agent_worker(bus=new_bus)
+    await start_provider_worker(bus=bus)
+    await start_tool_worker(bus=bus)
+    await start_mcp_worker(bus=bus)
+    await start_agent_worker(bus=bus)
 
-    channel_workers = await start_channel_workers(new_bus, enabled={"webui"})
+    channel_workers = await start_channel_workers(bus, enabled={"webui"})
 
-    await start_proactive_worker(bus=new_bus, magi_id=None)
+    await start_proactive_worker(bus=bus, magi_id=None)
     try:
         yield
     finally:
@@ -279,25 +279,25 @@ def is_channel_running(name: str) -> bool:
 
 def _build_channels(
     _startup: StartupContext,
-    new_bus: "NewBus | None" = None,
+    bus: "Bus | None" = None,
 ) -> list[str]:
     """Resolve enabled message channels from BUS settings_book.
 
     Channels state lives in ``settings_book.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
-    Reads the explicitly injected NewBus only.
+    Reads the explicitly injected Bus only.
     """
     import json
 
     try:
-        raw = new_bus.settings_book.get("channels.enabled")
+        raw = bus.settings_book.get("channels.enabled")
         if raw:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
                 return [c for c in parsed if isinstance(c, str)]
     except Exception:  # noqa: BLE001
-        logger.warning("could not read channels.enabled from NewBus", exc_info=True)
+        logger.warning("could not read channels.enabled from Bus", exc_info=True)
     return []
 
 
@@ -308,7 +308,7 @@ def _build_channels(
 
 def _serve_runtime_api(
     _startup: StartupContext,
-    new_bus: "NewBus | None" = None,
+    bus: "Bus | None" = None,
 ) -> None:
     """Run uvicorn with the private Runtime FastAPI app.
 
@@ -318,7 +318,7 @@ def _serve_runtime_api(
     host = _RUNTIME_HOST  # internal host only; not externally exposed
     port = _RUNTIME_PORT
     reload = _reload_enabled()
-    log_level = _log_level(new_bus)
+    log_level = _log_level(bus)
     reload_dirs = _reload_dirs() if reload else None
 
     uvicorn.run(
@@ -342,17 +342,17 @@ def _reload_enabled() -> bool:
     return os.environ.get("MAGI_DEV_RELOAD") == "1"
 
 
-def _log_level(new_bus: "NewBus") -> str:
+def _log_level(bus: "Bus") -> str:
     """Read DB-driven log level if present, fall back to default.
 
-    Reads the explicitly injected NewBus only.
+    Reads the explicitly injected Bus only.
     """
     try:
-        raw = new_bus.settings_book.get("system.log_level")
+        raw = bus.settings_book.get("system.log_level")
         if raw and raw in {"debug", "info", "warning", "error"}:
             return raw
     except Exception:  # noqa: BLE001
-        logger.warning("could not read system.log_level from NewBus", exc_info=True)
+        logger.warning("could not read system.log_level from Bus", exc_info=True)
     return _DEFAULT_LOG_LEVEL
 
 

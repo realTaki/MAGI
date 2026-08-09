@@ -173,7 +173,7 @@ PVC 挂到容器根，`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导；每个 MAG
 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。启动契约只有四个变量
 （`HOST_WORKSPACE_DIR`、`MAGI_NAME`、`MAGIS_DATABASE_URL`、`MAGI_ID`），
 workspace 路径由它们推导，调用方不传入。精确边界见[存储设计](docs/magi-magis-storage.md)
-与[统一启动 Part IV](docs/ARCHITECTURE.md#part-iv--unified-startup)。
+与[BUS 运行时架构](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md)。
 
 ### 一个 WebUI、一个镜像
 

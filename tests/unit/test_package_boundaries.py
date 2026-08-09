@@ -2,11 +2,9 @@
 
 Locks the design §18 rule: agent/tools must not import from
 ``magi.channels.api.*`` (the channels-specific HTTP surface).
-The P1.1 refactor moved read helpers to ``magi.db.runtime_settings``
-and search to ``magi.agent.memory.session.search`` precisely to
-break this cycle. A future change that re-introduces the reverse
-import would crash here so the regression is caught at CI time,
-not in production.
+BUS owns persistence behind ``magi.bus.db``. A future change that
+re-introduces a reverse domain import must fail here before it reaches
+production.
 """
 
 from __future__ import annotations
@@ -30,10 +28,8 @@ SCAN_PREFIXES: tuple[str, ...] = (
     "magi/proactive/",
 )
 
-# These are the production Actor/Tool/Delivery entry paths already migrated
-# to the public NewBus facade.  The rest of the historical API/memory surface is
-# intentionally covered by later migration phases; this guard prevents the
-# newly clean execution path from regressing while those adapters are moved.
+# These are the production Actor/Tool/Delivery entry paths that must retain
+# their BUS-only boundary.
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "magi/agent/worker.py",
     "magi/agent/agent_context.py",
@@ -43,9 +39,9 @@ BUS_ONLY_PATHS: tuple[str, ...] = (
 )
 
 _FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {
-    "magi/agent/": ("magi.db", "magi.tools", "magi.channels"),
-    "magi/tools/": ("magi.db", "magi.agent", "magi.channels"),
-    "magi/channels/": ("magi.db", "magi.agent", "magi.tools"),
+    "magi/agent/": ("magi.bus.db", "magi.tools", "magi.channels"),
+    "magi/tools/": ("magi.bus.db", "magi.agent", "magi.channels"),
+    "magi/channels/": ("magi.bus.db", "magi.agent", "magi.tools"),
 }
 
 
@@ -102,7 +98,7 @@ def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
         )
         for module, lineno in _collect_forbidden_imports(path, forbidden):
             offenders.append(f"{relative}:{lineno} imports {module!r}")
-    assert not offenders, "Migrated runtime paths must cross domains through NewBus:\n  " + "\n  ".join(offenders)
+    assert not offenders, "Runtime paths must cross domains through BUS:\n  " + "\n  ".join(offenders)
 
 
 def test_agent_module_does_not_import_api() -> None:
@@ -117,7 +113,7 @@ def test_agent_module_does_not_import_api() -> None:
     assert not offenders, (
         "magi/agent/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(magi.db.runtime_settings or magi.agent.memory.session.search):\n  "
+        "(a neutral BUS contract or magi.agent helper):\n  "
         + "\n  ".join(offenders)
     )
 
@@ -134,7 +130,7 @@ def test_tools_module_does_not_import_api() -> None:
     assert not offenders, (
         "magi/tools/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(magi.db.runtime_settings or magi.agent.memory.session.search):\n  "
+        "(a neutral BUS contract or magi.agent helper):\n  "
         + "\n  ".join(offenders)
     )
 

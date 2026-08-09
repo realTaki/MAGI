@@ -72,7 +72,7 @@ def _default_configs() -> list[ConnectorConfig]:
 def _build_configs() -> list[ConnectorConfig]:
     """Build the currently supported connector configuration.
 
-    NewBus has no connector-configuration Book yet.  The old Bus-backed
+    Bus has no connector-configuration Book yet.  The BUS-backed
     table was never exposed by the promised CRUD surface, so a clean
     cutover intentionally keeps only the documented environment/default
     configuration rather than retaining a hidden legacy read path.

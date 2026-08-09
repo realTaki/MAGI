@@ -1,4 +1,4 @@
-"""System prompt assembly — new_bus only."""
+"""System prompt assembly — bus only."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.system_prompt")
 
@@ -63,7 +63,7 @@ def build_system_prompt(
     *,
     uid: int,
     soul: str,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> str:
     """Assemble the full system prompt for one LLM turn.
 

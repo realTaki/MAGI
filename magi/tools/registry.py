@@ -3,8 +3,8 @@
 instances the tools worker dispatches to.
 
 This is **not** the agent-visible catalog. The catalog (what
-the LLM sees as its menu) lives in the new_bus
-:mod:`magi.new_bus.library.local.toolsBook` and is fed by
+the LLM sees as its menu) lives in the bus
+:mod:`magi.bus.library.local.toolsBook` and is fed by
 the worker via :meth:`ToolsWorker._publish_full_catalog`.
 This module owns only the dispatch half: a cache of
 :class:`~magi.tools.base.Tool` instances.

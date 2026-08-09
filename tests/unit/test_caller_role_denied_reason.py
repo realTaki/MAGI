@@ -9,7 +9,7 @@ Surfaces pinned:
   - ``uid == 0`` → refuse with
     "got 0; caller did not authenticate".
   - ``ctx.bus is None`` → refuse with "no bus" (MCP-side
-    callers until MCP migrates to new_bus).
+    callers until MCP migrates to bus).
   - Contact row missing in DB → refuse with
     ``"contact <id> not found"``.
   - Caller's effective role-tag set is disjoint from
@@ -38,7 +38,7 @@ some MAGIS (matches both), ``assigned`` only (matches
 ``{"admin"}``).
 
 Uses an in-memory stub bus rather than booting the
-real new_bus — the gate just needs ``contacts_book.get``
+real bus — the gate just needs ``contacts_book.get``
 + ``magis_admins_book.is_admin_for``; the rest of the
 facade is irrelevant to the test.
 """
@@ -250,7 +250,7 @@ def test_rejects_zero_uid():
 
 
 def test_rejects_no_bus():
-    """``ctx.bus is None`` — old-bus callers (MCP until
+    """``ctx.bus is None`` — BUS callers (MCP until
     migrated) — get a friendly "no bus" message."""
     msg = _DemoTool().gate(_ctx(1, bus=None))
     assert msg is not None

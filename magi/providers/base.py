@@ -5,11 +5,11 @@
 
 :class:`LLMProvider` 是 providers 包的**唯一**对外契约，运行时
 (:class:`~magi.providers.worker.ProvidersWorker`) 只通过它调用
-模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（new_bus
-的 :class:`~magi.new_bus.guild.callLLMJob.CallLLMJob` 上的
+模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（bus
+的 :class:`~magi.bus.guild.callLLMJob.CallLLMJob` 上的
 ``messages`` 字段），不再使用中间 dataclass；每个 provider 子类
 内部自行翻成 SDK 期望的形状。返回值是 plain dict，与
-:class:`~magi.new_bus.guild.callLLMJob.CallLLMResult.response` 直
+:class:`~magi.bus.guild.callLLMJob.CallLLMResult.response` 直
 接对齐。
 
 设计要点
@@ -19,7 +19,7 @@
   （``text / thinking / tool_uses / raw_blocks / model / usage /
   stop_reason``），worker 拿来直接 pack 成 :class:`CallLLMResult`。
   返回 dict 而非 dataclass 是为了避免在 provider 包内再定义一个
-  "wire result" 类型——这层契约由 new_bus 的 ``CallLLMResult``
+  "wire result" 类型——这层契约由 bus 的 ``CallLLMResult``
   表达。
 
 - :meth:`LLMProvider.stream` 返回 :class:`AsyncIterator` yield

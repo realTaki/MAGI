@@ -1,8 +1,8 @@
-"""Durable tool-effect consumer — new_bus 上唯一的工具执行点。
+"""Durable tool-effect consumer — bus 上唯一的工具执行点。
 
 孪生结构对齐 :class:`~magi.providers.worker.ProvidersWorker`：
 
-- **只依赖 new_bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
+- **只依赖 bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
 - **构造靠注入**。Composition root 显式构造并传进来，
   ``concurrency`` 由调用方注入（无环境变量回退）。
 - **启动时 publish full tool catalog** — builtin + 所有已注入的外部工具
@@ -51,14 +51,14 @@ import logging
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
-from magi.new_bus.library.local import ToolDefinition
-from magi.new_bus.guild.runToolJob import RunToolResult
+from magi.bus.library.local import ToolDefinition
+from magi.bus.guild.runToolJob import RunToolResult
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.runToolJob import RunToolJob
+    from magi.bus import Bus
+    from magi.bus.guild.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.tools.worker")
 
@@ -136,7 +136,7 @@ def _build_definitions_from_tools(
 class ToolsWorker:
     """Consumer that owns every tool execution in a MAGI process.
 
-    Receives a fully-wired :class:`NewBus` via constructor injection.
+    Receives a fully-wired :class:`Bus` via constructor injection.
     Publishes the builtin tool catalog at ``start()``, then drains
     :class:`RunToolJob` claims forever.
 
@@ -151,7 +151,7 @@ class ToolsWorker:
 
     def __init__(
         self,
-        bus: "NewBus",
+        bus: "Bus",
         *,
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
@@ -456,7 +456,7 @@ class ToolsWorker:
 
         # 5. Submit the result. BaseJobBoard handles attempts ≥
         #    MAX_ATTEMPTS automatically; we don't call retry()
-        #    ourselves (unlike the old bus worker).
+        #    ourselves (unlike the BUS worker).
         self.bus.tool_job_board.submit_result(
             key=job.job_id,
             result=_to_result(job, result),
@@ -500,7 +500,7 @@ _worker: ToolsWorker | None = None
 
 
 async def start_tool_worker(
-    bus: "NewBus",
+    bus: "Bus",
     *,
     concurrency: int | None = None,
 ) -> ToolsWorker:
@@ -533,7 +533,7 @@ def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
 
     ``content`` is truncated to 8 KB to fit the column.
     """
-    from magi.new_bus.guild.runToolJob import RunToolResult
+    from magi.bus.guild.runToolJob import RunToolResult
 
     return RunToolResult(
         job_id=job.job_id,

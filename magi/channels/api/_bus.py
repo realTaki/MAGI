@@ -1,4 +1,4 @@
-"""Unified pure-new_bus access for channels/api/.  No old bus fallback.
+"""Unified pure-bus access for channels/api/.  No BUS fallback.
 
 Usage::
 
@@ -11,9 +11,9 @@ Usage::
     bus.memory.list_for_owner(uid=uid)                 # → memory_book
     bus.tool_catalog.list_definitions()                # → tool_catalog_book
 
-All calls go to ``new_bus`` Books.  ``__getattr__`` for unknown names
+All calls go to ``bus`` Books.  ``__getattr__`` for unknown names
 tries ``<name>_book`` first (e.g. ``bus.magis`` → ``magis_book``),
-then the bare name on ``NewBus``.
+then the bare name on ``Bus``.
 """
 
 from __future__ import annotations
@@ -21,14 +21,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 
-def _new() -> NewBus:
-    from magi.channels import get_current_new_bus
-    b = get_current_new_bus()
+def _new() -> Bus:
+    from magi.channels import get_current_bus
+    b = get_current_bus()
     if b is None:
-        raise RuntimeError("new_bus unavailable — ensure channels are initialized")
+        raise RuntimeError("bus unavailable — ensure channels are initialized")
     return b
 
 
@@ -89,7 +89,7 @@ class _TaskScheduler:
     def request_manual_fire(self, task_id, run_id):
         nb = _new()
         if hasattr(nb, "run_task_job_board"):
-            from magi.new_bus.guild.runTaskJob import RunTaskJob
+            from magi.bus.guild.runTaskJob import RunTaskJob
             nb.run_task_job_board.publish(RunTaskJob(task_id=task_id, manual=True, fired_by="api_manual_run"))
     def fire_now_sync_threadsafe(self, task_id, run_id):
         self.request_manual_fire(task_id, run_id)
@@ -110,9 +110,9 @@ class _AgentRuns:
 
 
 class _StreamHub:
-    """Thin wrapper over new_bus StreamHub for runs.py compatibility."""
+    """Thin wrapper over bus StreamHub for runs.py compatibility."""
     def subscribe(self, run_id: str):
-        # new_bus StreamHub.create returns asyncio.Queue
+        # bus StreamHub.create returns asyncio.Queue
         return _new().stream_hub.create(run_id)
 
     def unsubscribe(self, run_id: str, queue):
@@ -120,7 +120,7 @@ class _StreamHub:
 
 
 class _Auth:
-    """Password credential ops via settings_book (was old bus.auth)."""
+    """Password credential ops via settings_book (was BUS.auth)."""
     _PREFIX = "auth.password."
 
     def has_password_for(self, uid: int) -> bool:
@@ -144,7 +144,7 @@ class _Auth:
 
 
 class _Magic:
-    """Magic/MAGIS registry ops via new_bus books."""
+    """Magic/MAGIS registry ops via bus books."""
     def list_available_magic(self):
         nb = _new()
         if hasattr(nb, "magis_book"):
@@ -197,8 +197,8 @@ class _Bus:
         object.__setattr__(self, "magic", _Magic())
 
     def __getattr__(self, name: str):
-        """Resolve unknown names from new_bus: try ``{name}_book`` first,
-        then bare ``name`` on NewBus, then ``{name}_job_board``."""
+        """Resolve unknown names from bus: try ``{name}_book`` first,
+        then bare ``name`` on Bus, then ``{name}_job_board``."""
         nb = _new()
         # e.g. bus.magis → nb.magis_book, bus.memory → nb.memory_book
         book_attr = f"{name}_book"
@@ -213,7 +213,7 @@ class _Bus:
             return getattr(nb, job_attr)
         raise AttributeError(
             f"_Bus has no attribute {name!r} and no matching "
-            f"new_bus book/board ({book_attr!r}, {name!r}, {job_attr!r})"
+            f"bus book/board ({book_attr!r}, {name!r}, {job_attr!r})"
         )
 
     def __setattr__(self, name, value):

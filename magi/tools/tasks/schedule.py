@@ -49,10 +49,10 @@ from typing import Any
 
 from sqlalchemy import select
 
-from magi.new_bus.library.local.tasksBook import (
+from magi.bus.library.local.tasksBook import (
     preset_to_cron,
 )
-from magi.new_bus.library.local.tasksBook import ChannelEnum
+from magi.bus.library.local.tasksBook import ChannelEnum
 from magi.tools.base import Tool, ToolContext, ToolResult
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 

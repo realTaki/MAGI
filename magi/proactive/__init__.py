@@ -12,9 +12,9 @@ The two currently implemented policies:
   The spec + idempotent-insert helper live in
   :mod:`magi.proactive.credentials_action`.
 - **Preset task seeding** — :class:`magi.proactive.worker.ProactiveWorker`
-  drains :class:`magi.new_bus.guild.seedPresetTasksJob.SeedPresetTasksJob`
+  drains :class:`magi.bus.guild.seedPresetTasksJob.SeedPresetTasksJob`
   rows via :mod:`magi.proactive.preset_tasks`, which reads bundled YAML
-  presets from :meth:`~magi.new_bus.library.file.promptBook.PromptBook.task_presets`,
+  presets from :meth:`~magi.bus.library.file.promptBook.PromptBook.task_presets`,
   runs the pure planner, and inserts per-user Task rows.
 """
 

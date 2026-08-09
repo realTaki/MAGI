@@ -89,8 +89,8 @@ producers.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# DISABLED — ``magi.connectors`` is commented out. The new BUS
-# (``magi.new_bus``) has not yet integrated the connector lifecycle /
+# DISABLED — ``magi.connectors`` is commented out. The BUS
+# (``magi.bus``) has not yet integrated the connector lifecycle /
 # event-bus primitives this package depends on, and the package is
 # blocked on a few upstream decisions (where connector configs live,
 # how events cross MAGI boundaries, tool-wrapper auto-derivation).

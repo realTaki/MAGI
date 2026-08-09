@@ -14,6 +14,6 @@ relative paths to absolute ones (Progressive Disclosure Level 3),
 and prepends the "Skill Root Directory" hint so the LLM can follow
 ``scripts/foo.py``-style references via :func:`magi.tools.filesystem.read_file`.
 
-The actual registry lives on the new_bus as ``bus.skills_book``;
-see :mod:`magi.new_bus.library.file.skillsBook`.
+The actual registry lives on the bus as ``bus.skills_book``;
+see :mod:`magi.bus.library.file.skillsBook`.
 """

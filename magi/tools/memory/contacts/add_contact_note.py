@@ -15,12 +15,12 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
 ≤8 KB clamp) and exposes ``add(...)`` plus
-``to_dict`` on the returned DTO. The old bus service at
-:mod:`magi.bus.jobs.services.contact.add_note` is no
+``to_dict`` on the returned DTO. The BUS service at
+BUS Book API is no
 longer imported here.
 """
 

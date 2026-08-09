@@ -1,10 +1,10 @@
-"""AgentWorker — new_bus 上唯一的 agent turn consumer.
+"""AgentWorker — bus 上唯一的 agent turn consumer.
 
 设计原则（与 :class:`~magi.tools.worker.ToolsWorker` 、
 :class:`~magi.providers.worker.ProvidersWorker` 对齐）：
 
-- **只依赖 new_bus**。老的 ``magi.bus`` store / facade 一概不碰。
-- **构造靠注入**。``AgentWorker(bus: NewBus)`` 由 composition root 显式注入。
+- **只依赖 bus**。老的 ``magi.bus`` store / facade 一概不碰。
+- **构造靠注入**。``AgentWorker(bus: Bus)`` 由 composition root 显式注入。
 - **board claim steering**：steering 不通过进程内队列，而是在
   ``_gather_all`` 中主动 ``claim_for_conversation`` 认领同 session 的新
   ChatJob。board 本身是唯一持久化协调点。
@@ -28,8 +28,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.callLLMJob import CallLLMResult
+    from magi.bus import Bus
+    from magi.bus.guild.callLLMJob import CallLLMResult
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -104,7 +104,7 @@ class _GatherResult:
 class AgentWorker:
     """Sequential consumer of one MAGI's ``agent_inbox`` stream."""
 
-    def __init__(self, bus: "NewBus", *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
         self.bus = bus
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self.poll_seconds = poll_seconds
@@ -132,7 +132,7 @@ class AgentWorker:
     # -- main loop -----------------------------------------------------------
 
     async def _run(self) -> None:
-        from magi.new_bus.guild.chatJob import ChatJobResult
+        from magi.bus.guild.chatJob import ChatJobResult
 
         while not self._stopping:
             job = await asyncio.to_thread(self.bus.agent_job_board.claim)
@@ -279,7 +279,7 @@ class AgentWorker:
 
     def _build_llm_job(self, ctx: RunContext) -> Any:
         """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""
-        from magi.new_bus.guild.callLLMJob import CallLLMJob
+        from magi.bus.guild.callLLMJob import CallLLMJob
 
         system = self._system_prompt(ctx)
         messages = [{"role": "system", "content": system}] + list(ctx.messages)
@@ -336,8 +336,8 @@ class AgentWorker:
     # -- split tools ---------------------------------------------------------
 
     def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
-        from magi.new_bus.guild.runToolJob import RunToolJob
-        from magi.new_bus.guild.sendA2AJob import SendA2AJob
+        from magi.bus.guild.runToolJob import RunToolJob
+        from magi.bus.guild.sendA2AJob import SendA2AJob
 
         tool_jobs: list[RunToolJob] = []
         a2a_jobs: list[SendA2AJob] = []
@@ -426,7 +426,7 @@ class AgentWorker:
                     text = (getattr(steer, "payload", None) or {}).get("text") or ""
                     if text:
                         steering_parts.append(text)
-                    from magi.new_bus.guild.chatJob import ChatJobResult
+                    from magi.bus.guild.chatJob import ChatJobResult
                     self.bus.agent_job_board.submit_result(
                         key=steer.event_id,
                         result=ChatJobResult(
@@ -456,7 +456,7 @@ class AgentWorker:
                 break
             await asyncio.sleep(0.1)
 
-        from magi.new_bus.guild.runToolJob import RunToolResult
+        from magi.bus.guild.runToolJob import RunToolResult
         for tc_id, job_id in tool_timeout.items():
             tool_results[tc_id] = RunToolResult(
                 job_id=job_id, success=False, content="tool execution timed out",
@@ -494,7 +494,7 @@ class AgentWorker:
         })
 
     def _publish_delivery(self, ctx: RunContext) -> None:
-        from magi.new_bus.guild.deliveryJob import DeliveryJob
+        from magi.bus.guild.deliveryJob import DeliveryJob
         self.bus.delivery_job_board.publish(DeliveryJob(
             channel=ctx.channel,
             payload={
@@ -571,7 +571,7 @@ class AgentWorker:
 _worker: AgentWorker | None = None
 
 
-async def start_agent_worker(bus: "NewBus") -> AgentWorker:
+async def start_agent_worker(bus: "Bus") -> AgentWorker:
     global _worker
     if _worker is None:
         _worker = AgentWorker(bus=bus)
@@ -586,8 +586,8 @@ async def stop_agent_worker() -> None:
         _worker = None
 
 
-async def submit_agent_message(bus: "NewBus", message: Any) -> str:
-    from magi.new_bus.guild.chatJob import ChatJob
+async def submit_agent_message(bus: "Bus", message: Any) -> str:
+    from magi.bus.guild.chatJob import ChatJob
     job = ChatJob(
         event_id=getattr(message, "event_id", "") or uuid.uuid4().hex,
         run_id=getattr(message, "target_run_id", None) or f"turn-{uuid.uuid4().hex}",
@@ -604,7 +604,7 @@ async def submit_agent_message(bus: "NewBus", message: Any) -> str:
     return await asyncio.to_thread(bus.agent_job_board.publish, job)
 
 
-async def wait_for_agent_run(bus: "NewBus", event_id: str, *, timeout_seconds: float = 180.0) -> dict:
+async def wait_for_agent_run(bus: "Bus", event_id: str, *, timeout_seconds: float = 180.0) -> dict:
     result = await bus.agent_job_board.wait_for_result(key=event_id, timeout=timeout_seconds)
     if result is None:
         raise AgentRunTimedOut(f"agent run {event_id} timed out")

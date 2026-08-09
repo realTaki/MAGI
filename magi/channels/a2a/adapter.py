@@ -59,19 +59,19 @@ class A2AAdapter:
     async def send(self, uid: int, text: str) -> None:
         """Push ``text`` to peer ``uid`` (a ``magic.id``).
 
-        Queue a durable A2A delivery through new_bus delivery_job_board.
+        Queue a durable A2A delivery through bus delivery_job_board.
         """
-        from magi.channels import get_current_new_bus
+        from magi.channels import get_current_bus
 
         if not text:
             raise ValueError("A2A messages cannot be empty")
         if not os.environ.get("MAGI_RUNTIME_ID", "").isdigit():
             raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
 
-        nb = get_current_new_bus()
+        nb = get_current_bus()
         if nb is None:
-            raise RuntimeError("new_bus unavailable for A2A delivery")
-        from magi.new_bus.guild.deliveryJob import DeliveryJob
+            raise RuntimeError("bus unavailable for A2A delivery")
+        from magi.bus.guild.deliveryJob import DeliveryJob
         nb.delivery_job_board.publish(DeliveryJob(
             channel=Channel.A2A,
             destination=str(uid),

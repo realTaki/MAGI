@@ -7,7 +7,7 @@ import logging
 import os
 import threading
 
-from magi.channels import Channel, get_current_new_bus
+from magi.channels import Channel, get_current_bus
 from magi.channels.dispatcher import (
     ChannelAdapter,
     register_adapter,
@@ -35,7 +35,7 @@ class TelegramAdapter:
         await tg_bot_module.send_text_auto(chat_id_int, text)
 
     def lookup_im_id(self, uid: int) -> str | None:
-        nb = get_current_new_bus()
+        nb = get_current_bus()
         if nb is None:
             return None
         contact = nb.contacts_book.get(contact_id=uid)
@@ -49,13 +49,13 @@ class TelegramAdapter:
                 telegram_id = int(im_id)
             except (TypeError, ValueError):
                 telegram_id = None
-            nb = get_current_new_bus()
+            nb = get_current_bus()
             if nb is not None:
                 nb.contacts_book.set_telegram_id(uid, telegram_id)
 
     def unbind_im_id(self, uid: int) -> None:
         with _BIND_LOCK:
-            nb = get_current_new_bus()
+            nb = get_current_bus()
             if nb is not None:
                 nb.contacts_book.set_telegram_id(uid, None)
 

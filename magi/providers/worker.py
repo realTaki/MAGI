@@ -1,10 +1,10 @@
-"""ProvidersWorker — new_bus 上唯一的 LLM 调用执行点。
+"""ProvidersWorker — bus 上唯一的 LLM 调用执行点。
 
 设计原则
 ========
 
-- **只依赖 new_bus**。老的 bus store / StreamHub / agent_inbox 一概
-  不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 new_bus 再说）。
+- **只依赖 bus**。老的 bus store / StreamHub / agent_inbox 一概
+  不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 bus 再说）。
 
 - **配置变更单一触发**：worker 只在 claim 到
   ``bus.change_provider_config_job_board`` 上的 job 时才重建
@@ -44,7 +44,7 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
-from magi.new_bus.guild import (
+from magi.bus.guild import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
@@ -54,7 +54,7 @@ from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.base import LLMProvider, LLMStreamEvent
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.providers.worker")
 
@@ -87,12 +87,12 @@ _PROVIDER_OPTIONS: list[dict[str, str]] = [
 class ProvidersWorker:
     """Consumer that owns every LLM API call in a MAGI process.
 
-    Receives a fully-wired :class:`NewBus` via constructor injection.
+    Receives a fully-wired :class:`Bus` via constructor injection.
     """
 
     def __init__(
         self,
-        bus: "NewBus",
+        bus: "Bus",
         *,
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
@@ -548,13 +548,13 @@ _worker: ProvidersWorker | None = None
 
 
 async def start_provider_worker(
-    bus: "NewBus | None" = None,
+    bus: "Bus | None" = None,
     *,
     concurrency: int | None = None,
 ) -> ProvidersWorker:
     """Start the process-local provider worker.
 
-    ``bus`` is the wired :class:`NewBus` from the composition root.
+    ``bus`` is the wired :class:`Bus` from the composition root.
     It's optional only for backwards-compat with callers that don't
     pass it (legacy tests); the production runtime always supplies it.
 
@@ -567,7 +567,7 @@ async def start_provider_worker(
     if _worker is None:
         if bus is None:
             raise RuntimeError(
-                "start_provider_worker requires a NewBus"
+                "start_provider_worker requires a Bus"
             )
         _worker = ProvidersWorker(bus, concurrency=concurrency)
         await _worker.start()

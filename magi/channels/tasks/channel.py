@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
-from magi.channels import Channel, get_current_new_bus
+from magi.channels import Channel, get_current_bus
 
 logger = logging.getLogger("magi.channels.tasks.channel")
 
@@ -18,7 +18,7 @@ logger = logging.getLogger("magi.channels.tasks.channel")
 class TaskChannel:
     """Dispatch scheduled-task invocations into the agent runtime.
 
-    Deprecated wrapper — publishes a ``RunTaskJob`` to the new_bus.
+    Deprecated wrapper — publishes a ``RunTaskJob`` to the bus.
     TaskWorker claims and executes.
     """
 
@@ -32,20 +32,20 @@ class TaskChannel:
         manual: bool = False,
         pre_created_run_id: str | None = None,
     ) -> None:
-        """Publish a RunTaskJob to new_bus.
+        """Publish a RunTaskJob to bus.
 
         The TaskWorker claims it and calls ``_fire_task``.
-        Falls back to no-op if new_bus isn't available.
+        Falls back to no-op if bus isn't available.
         """
-        bus = get_current_new_bus()
+        bus = get_current_bus()
         if bus is None:
             logger.warning(
-                "TaskChannel.dispatch(%s): new_bus not available; task not fired",
+                "TaskChannel.dispatch(%s): bus not available; task not fired",
                 task_id,
             )
             return
 
-        from magi.new_bus.guild.runTaskJob import RunTaskJob
+        from magi.bus.guild.runTaskJob import RunTaskJob
 
         fired_by = "manual_run" if manual else "api_manual_run"
         bus.run_task_job_board.publish(RunTaskJob(

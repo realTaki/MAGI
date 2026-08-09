@@ -1,6 +1,6 @@
 """End-to-end tests for :class:`magi.providers.worker.ProvidersWorker`.
 
-These tests exercise the durable new_bus queue around the LLM
+These tests exercise the durable bus queue around the LLM
 lifecycle: publish a :class:`CallLLMJob`, watch the worker claim it,
 run the (stub) provider, write back a :class:`CallLLMResult`. The
 provider is injected via monkey-patching ``get_provider`` on the
@@ -8,7 +8,7 @@ factory module (which the worker reaches through at runtime), so the
 tests don't depend on real network calls or a real ``settings_book``
 configuration.
 
-The integration test stands up a real SQLite-backed :class:`NewBus`
+The integration test stands up a real SQLite-backed :class:`Bus`
 in a temp dir so the full round-trip — publish → claim → submit_result
 → get_result — exercises the actual ``BaseJobBoard`` machinery.
 """
@@ -21,13 +21,13 @@ from typing import Any
 
 import pytest
 
-from magi.new_bus import NewBus, bootstrap_new_bus
-from magi.new_bus.guild import (
+from magi.bus import Bus, bootstrap_bus
+from magi.bus.guild import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
 )
-from magi.new_bus.guild.changeProviderConfigJob import (
+from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
@@ -131,19 +131,19 @@ class FakeProvider(LLMProvider):
 
 
 @pytest.fixture
-def bus(tmp_path) -> NewBus:
-    """Stand up a per-test SQLite-backed :class:`NewBus`."""
-    new_bus = bootstrap_new_bus(state_dir=str(tmp_path))
-    # ``bootstrap_new_bus`` wires the books / job boards but does not
+def bus(tmp_path) -> Bus:
+    """Stand up a per-test SQLite-backed :class:`Bus`."""
+    bus = bootstrap_bus(state_dir=str(tmp_path))
+    # ``bootstrap_bus`` wires the books / job boards but does not
     # create the SQLite schema — that's the composition root's job in
     # production. Tests have to do it explicitly so writes find a real
     # table to land in.
-    new_bus._local_factory.create_all()
-    return new_bus
+    bus._local_factory.create_all()
+    return bus
 
 
 def _seed_provider_config(
-    bus: NewBus,
+    bus: Bus,
     *,
     provider: str = "openai",
     api_key: str = "sk-test",
@@ -155,7 +155,7 @@ def _seed_provider_config(
     bus.settings_book.set(key=PROVIDER_MODEL_KEY, value=model)
 
 
-def _install_fake(bus: NewBus, fake: FakeProvider) -> None:
+def _install_fake(bus: Bus, fake: FakeProvider) -> None:
     """Patch the ``get_provider`` symbol the worker resolves at runtime.
 
     The worker does ``from magi.providers import get_provider`` (which
@@ -168,21 +168,21 @@ def _install_fake(bus: NewBus, fake: FakeProvider) -> None:
     import magi.providers
     import magi.providers.factory as _factory
 
-    def _fake_get(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: "Bus", model: str | None = None) -> LLMProvider:
         return fake
 
     _factory.get_provider = _fake_get
     magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
 
 
-def _install_counter(bus: NewBus, fake: FakeProvider) -> dict[str, int]:
+def _install_counter(bus: Bus, fake: FakeProvider) -> dict[str, int]:
     """Same as ``_install_fake`` but tracks how many times the factory was hit."""
     import magi.providers
     import magi.providers.factory as _factory
 
     state: dict[str, int] = {"calls": 0}
 
-    def _fake_get(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: "Bus", model: str | None = None) -> LLMProvider:
         state["calls"] += 1
         return fake
 
@@ -192,7 +192,7 @@ def _install_counter(bus: NewBus, fake: FakeProvider) -> dict[str, int]:
 
 
 async def _wait_for_result(
-    bus: NewBus,
+    bus: Bus,
     job_id: str,
     *,
     timeout: float = 5.0,
@@ -208,7 +208,7 @@ async def _wait_for_result(
     return None
 
 
-def _enqueue_simple(bus: NewBus, *, content: str = "hello") -> str:
+def _enqueue_simple(bus: Bus, *, content: str = "hello") -> str:
     """Publish a minimal chat job (no tools, no streaming)."""
     return bus.llm_job_board.publish(
         CallLLMJob(
@@ -224,7 +224,7 @@ def _enqueue_simple(bus: NewBus, *, content: str = "hello") -> str:
 
 
 @pytest.mark.asyncio
-async def test_publish_then_complete_round_trip(bus: NewBus):
+async def test_publish_then_complete_round_trip(bus: Bus):
     """A successful call settles the row with success=True and the response dict."""
     fake = FakeProvider(reply="hi from provider")
     _install_fake(bus, fake)
@@ -244,7 +244,7 @@ async def test_publish_then_complete_round_trip(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_provider_not_configured_envelopes_failure(bus: NewBus):
+async def test_provider_not_configured_envelopes_failure(bus: Bus):
     """A ``LLMNotConfiguredError`` settles with the credentials error_code."""
     fake = FakeProvider(fail_message="no api key in magi row")
     _install_fake(bus, fake)
@@ -266,7 +266,7 @@ async def test_provider_not_configured_envelopes_failure(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_provider_crashed_envelopes_generic_failure(bus: NewBus):
+async def test_provider_crashed_envelopes_generic_failure(bus: Bus):
     """An ``LLMError`` settles with the typed exception name as error_code."""
     fake = FakeProvider(fail_message="upstream auth failed")
     _install_fake(bus, fake)
@@ -283,7 +283,7 @@ async def test_provider_crashed_envelopes_generic_failure(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_concurrency_limit_serialises_two_jobs(bus: NewBus):
+async def test_concurrency_limit_serialises_two_jobs(bus: Bus):
     """Two queued jobs each get a turn; the semaphore caps parallel calls."""
     fake = FakeProvider(reply="ok")
     _install_fake(bus, fake)
@@ -300,7 +300,7 @@ async def test_concurrency_limit_serialises_two_jobs(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_load_llm_job_result_returns_none_on_timeout(bus: NewBus):
+async def test_load_llm_job_result_returns_none_on_timeout(bus: Bus):
     """A row that's never settled returns ``None`` after the deadline.
 
     We don't start the worker here — the queued job stays pending and
@@ -319,7 +319,7 @@ async def test_load_llm_job_result_returns_none_on_timeout(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_worker_caches_provider_across_jobs(bus: NewBus):
+async def test_worker_caches_provider_across_jobs(bus: Bus):
     """One ``get_provider`` call covers every job until a rebuild signal."""
     state = _install_counter(bus, FakeProvider(reply="ok"))
     _seed_provider_config(bus)
@@ -337,7 +337,7 @@ async def test_worker_caches_provider_across_jobs(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
+async def test_worker_starts_without_config_and_fails_jobs(bus: Bus):
     """Missing config does NOT block boot; jobs settle with the credentials code."""
     import magi.providers
     import magi.providers.factory as _factory
@@ -363,7 +363,7 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus):
+async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
     """A drained ``ChangeProviderConfigJob`` triggers a rebuild."""
     import magi.providers
     import magi.providers.factory as _factory
@@ -371,7 +371,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
     state: dict[str, Any] = {"provider": None}
     calls = {"n": 0}
 
-    def _switch(*, bus: NewBus, model: str | None = None) -> LLMProvider | None:
+    def _switch(*, bus: Bus, model: str | None = None) -> LLMProvider | None:
         calls["n"] += 1
         return state["provider"]  # may be None on the first claim
 
@@ -407,7 +407,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
         )
         # The config-change job was drained (status advanced past pending).
         from sqlalchemy import select
-        from magi.new_bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
+        from magi.bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
         with bus._local_factory.session() as s:
             leftovers = s.scalar(
                 select(_ChangeProviderConfigRow.status).where(
@@ -420,14 +420,14 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: NewBus)
 
 
 @pytest.mark.asyncio
-async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
+async def test_worker_rebuilds_only_when_control_signal_present(bus: Bus):
     """A second job with no signal between still uses the cached provider."""
     import magi.providers
     import magi.providers.factory as _factory
 
     calls = {"n": 0}
 
-    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         calls["n"] += 1
         return FakeProvider(reply=f"call#{calls['n']}")
 
@@ -449,7 +449,7 @@ async def test_worker_rebuilds_only_when_control_signal_present(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_worker_updates_model_in_place_when_only_model_changes(bus: NewBus):
+async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
     """Provider / api_key trigger a rebuild; a model-only change does not.
 
     The SDK clients (Anthropic / OpenAI) only read ``model`` per call,
@@ -491,7 +491,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: NewBus
 
     calls = {"n": 0}
 
-    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         calls["n"] += 1
         return ModelReportingProvider()
 
@@ -543,7 +543,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: NewBus
 
 
 @pytest.mark.asyncio
-async def test_worker_rebuilds_when_provider_field_changes(bus: NewBus):
+async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
     """Switching provider must rebuild the SDK client (different base_url / SDK).
 
     Counterpart to the model-only fast path: any non-None
@@ -555,7 +555,7 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: NewBus):
 
     calls = {"n": 0}
 
-    def _fake_get(*, bus: NewBus, model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         calls["n"] += 1
         return FakeProvider(reply=f"call#{calls['n']}")
 
@@ -604,7 +604,7 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_worker_publishes_provider_options_to_settings_book(bus: NewBus):
+async def test_worker_publishes_provider_options_to_settings_book(bus: Bus):
     """On boot the worker writes the supported-provider list to ``settings_book``."""
     await start_provider_worker(bus)
     try:
@@ -624,7 +624,7 @@ async def test_worker_publishes_provider_options_to_settings_book(bus: NewBus):
 
 
 @pytest.mark.asyncio
-async def test_streaming_job_publishes_deltas_and_terminal(bus: NewBus):
+async def test_streaming_job_publishes_deltas_and_terminal(bus: Bus):
     """A streaming job publishes text deltas to StreamHub and yields a final result."""
     fake = FakeProvider(reply="hello there")
     _install_fake(bus, fake)

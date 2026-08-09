@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus.db import EngineFactory
-from magi.new_bus.guild.runTaskJob import (
+from magi.bus.db import EngineFactory
+from magi.bus.guild.runTaskJob import (
     RunTaskJob,
     RunTaskResult,
     runTaskJobBoard,
@@ -91,8 +91,8 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
 
     # Simulate lease expiry by manipulating leased_until
     from datetime import datetime, timedelta
-    from magi.new_bus.db.base import utcnow_naive
-    from magi.new_bus.guild.runTaskJob import _RunTaskJobRow
+    from magi.bus.db.base import utcnow_naive
+    from magi.bus.guild.runTaskJob import _RunTaskJobRow
     from sqlalchemy import select
 
     with board._session() as s:
@@ -109,14 +109,14 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
 
 def test_max_attempts_exhausted(board):
     """After MAX_ATTEMPTS (3), claim marks job as failed and skips it."""
-    from magi.new_bus.guild.base import MAX_ATTEMPTS
+    from magi.bus.guild.base import MAX_ATTEMPTS
 
     jid = board.publish(RunTaskJob(task_id="task_ex"))
     board._lease_seconds = 1
 
     from datetime import timedelta
-    from magi.new_bus.db.base import utcnow_naive
-    from magi.new_bus.guild.runTaskJob import _RunTaskJobRow
+    from magi.bus.db.base import utcnow_naive
+    from magi.bus.guild.runTaskJob import _RunTaskJobRow
     from sqlalchemy import select
 
     for _ in range(MAX_ATTEMPTS + 1):

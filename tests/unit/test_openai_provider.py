@@ -16,7 +16,7 @@ tests focus on:
   - the typed error mapping (auth, rate-limit, network,
     context-length, generic)
   - the factory wiring (``openai`` accepted as a
-    provider id, runtime instantiation via ``NewBus``)
+    provider id, runtime instantiation via ``Bus``)
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from magi.new_bus.guild.changeProviderConfigJob import (
+from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
@@ -803,12 +803,12 @@ async def test_stream_wraps_openai_error(mock_openai):
 
 
 # ---------------------------------------------------------------------------
-# Factory wiring (via NewBus + settings_book)
+# Factory wiring (via Bus + settings_book)
 # ---------------------------------------------------------------------------
 
 
 def _make_bus(*, name: str | None, api_key: str | None, model: str | None) -> MagicMock:
-    """Build a minimal ``NewBus``-shaped mock with only settings_book wired."""
+    """Build a minimal ``Bus``-shaped mock with only settings_book wired."""
     bus = MagicMock()
     settings: dict[str, str] = {}
     if name is not None:

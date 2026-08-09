@@ -20,7 +20,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.proactive.worker")
 
@@ -28,13 +28,13 @@ logger = logging.getLogger("magi.proactive.worker")
 class ProactiveWorker:
     """系统级主动策略的消费者。
 
-    Receives a fully-wired :class:`NewBus` and the current
+    Receives a fully-wired :class:`Bus` and the current
     ``magi_id`` via constructor injection.
     """
 
     def __init__(
         self,
-        bus: "NewBus",
+        bus: "Bus",
         *,
         magi_id: int | None = None,
         poll_seconds: float = 0.25,
@@ -162,7 +162,7 @@ _worker: ProactiveWorker | None = None
 
 
 async def start_proactive_worker(
-    bus: "NewBus",
+    bus: "Bus",
     *,
     magi_id: int | None = None,
 ) -> ProactiveWorker:

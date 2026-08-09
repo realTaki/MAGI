@@ -1,4 +1,4 @@
-"""Actor-owned prompt and context construction — new_bus only."""
+"""Actor-owned prompt and context construction — bus only."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.agent_context")
 
@@ -37,7 +37,7 @@ def build_messages_from_session(
     session_id: str | None,
     new_user_text: str,
     *,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> list[dict]:
     """Load session history from sessions_book/messages_book."""
     if not session_id or uid is None:
@@ -68,7 +68,7 @@ def build_context(
     uid: int | None,
     session_id: str | None,
     caller_role: str | None,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> AgentContext | None:
     try:
         schemas = bus.tool_definitions_book.list_enabled(caller_role=caller_role)

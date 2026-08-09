@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.deliveryJob import DeliveryJob
+    from magi.bus import Bus
+    from magi.bus.guild.deliveryJob import DeliveryJob
 
 logger = logging.getLogger("magi.channels.webui.worker")
 

@@ -23,10 +23,10 @@ worker hands the tool) and :class:`ToolResult` (what the
 tool returns) — live in this module because they're part
 of the ``Tool`` abstraction itself, not a bus concept.
 LLM-contract DTOs (``ToolDefinition`` / ``ToolCatalogSnapshot``)
-live in :mod:`magi.new_bus.library.local.toolsBook` next to
+live in :mod:`magi.bus.library.local.toolsBook` next to
 the Books that publish them. Job-side DTOs (``RunToolJob`` /
 ``RunToolResult``) live in
-:mod:`magi.new_bus.guild.runToolJob`.
+:mod:`magi.bus.guild.runToolJob`.
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 
 # -- execution I/O DTOs ---------------------------------------------------
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 class ToolContext:
     """JSON-safe execution context supplied to a tool worker.
 
-    The runtime's ``state_dir`` is owned by new_bus and **not**
+    The runtime's ``state_dir`` is owned by bus and **not**
     exposed here — tools that need persistent state call the
     bus books rather than handling paths themselves. Only the
     user-facing ``workspace`` (resolved from
@@ -67,7 +67,7 @@ class ToolContext:
     the tool context, because it's the boundary tools operate
     against (``safe_resolve`` etc.).
 
-    ``bus`` is the new_bus facade the worker is attached to.
+    ``bus`` is the bus facade the worker is attached to.
     Tools that need to read/write persistent state reach for
     ``ctx.bus.<book>.X(...)`` instead of holding their own
     reference. Role gating is handled centrally by
@@ -85,7 +85,7 @@ class ToolContext:
     uid: int
     channel: str
     session_id: str = ""
-    bus: "NewBus | None" = None
+    bus: "Bus | None" = None
 
 
 #: Truncation budget for :meth:`ToolResult.ok`. Mirrors the worker's
@@ -195,7 +195,7 @@ class Tool(ABC):
     #: :attr:`Contact.role` (the role enum is just
     #: ``assigned`` / ``guest``), but :meth:`gate` treats it
     #: as a synonym for "the caller is an admin of at least
-    #: one MAGIS per :class:`~magi.new_bus.library.magis.magisBook.MagisAdminBook`".
+    #: one MAGIS per :class:`~magi.bus.library.magis.magisBook.MagisAdminBook`".
     #: That lets tools declare ``ALLOWED_ROLES = {"admin",
     #: "assigned"}`` without carrying a parallel ``admin``
     #: boolean on the contact row. A user can be both
@@ -241,7 +241,7 @@ class Tool(ABC):
                 return ToolResult(
                     content=(
                         "tool context has no bus; the caller "
-                        "side has not migrated to new_bus"
+                        "side has not migrated to bus"
                     ),
                     is_error=True,
                 )
@@ -333,11 +333,11 @@ class Tool(ABC):
                 "cookie / TG binding."
             )
         if ctx.bus is None:
-            # Old-bus ToolContext (MCP-side callers until
+            # BUS ToolContext (MCP-side callers until
             # MCP migrates) — no role resolution is possible.
             return (
                 "role check unavailable: tool context has no bus; "
-                "the caller side has not migrated to new_bus"
+                "the caller side has not migrated to bus"
             )
 
         # Build effective role-tag set: local Contact.role

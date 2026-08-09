@@ -220,7 +220,7 @@ def ensure_workspace(workspace_dir: Path) -> Path:
     .. note::
 
         ``SOUL.md`` seeding has moved to
-        :func:`magi.new_bus.bootstrap.bootstrap_new_bus` — the
+        :func:`magi.bus.bootstrap.bootstrap_bus` — the
         composition root that owns prompt-file lifecycle.
 
     Returns the guaranteed-to-exist workspace directory.  Idempotent.
@@ -348,7 +348,7 @@ def bootstrap_workspace(workspace: Path) -> dict[str, str]:
     for compatibility with any deployment script that still references
     it by name.  New code should call :func:`ensure_workspace` directly.
 
-    SOUL.md seeding has moved to :func:`magi.new_bus.bootstrap.bootstrap_new_bus`.
+    SOUL.md seeding has moved to :func:`magi.bus.bootstrap.bootstrap_bus`.
     """
     workspace.mkdir(parents=True, exist_ok=True)
     created: dict[str, str] = {"workspace_root": "kept"}

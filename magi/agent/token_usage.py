@@ -1,11 +1,11 @@
-"""``token_usage`` row writer — new_bus only."""
+"""``token_usage`` row writer — bus only."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 
 def record_token_usage(
@@ -15,7 +15,7 @@ def record_token_usage(
     provider: str,
     model: str | None,
     usage: dict,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> None:
     """Insert one ``token_usage`` row for a successful LLM call."""
     if not hasattr(bus, "token_usage_book"):

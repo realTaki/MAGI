@@ -12,8 +12,8 @@ Scope (per-contact, role-gated): only ``admin`` (per
 ``Contact.role``) operators may operate on their own action
 items. ``guest`` callers don't see the tool in their menu.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.action_items_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.action_items_book``
 — the Book is pure CRUD and exposes ``add(...)`` plus
 ``to_dict`` on the returned DTO. ``source`` is decided by
 the caller (default ``'user'``): chat-driven operator
@@ -21,8 +21,8 @@ tool calls leave it unset; scheduled tasks or agent
 loops that reach this tool *without* an operator in the
 loop pass ``source='proactive'`` so the provenance tag
 reflects actual causation rather than the path the write
-happened to take. The old bus service at
-:mod:`magi.bus.jobs.services.action_item` is no longer
+happened to take. The BUS service at
+BUS Book API is no longer
 imported here.
 """
 
@@ -32,7 +32,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.new_bus.library.local.actionItemBook import SOURCE_USER
+from magi.bus.library.local.actionItemBook import SOURCE_USER
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.add_action_item")

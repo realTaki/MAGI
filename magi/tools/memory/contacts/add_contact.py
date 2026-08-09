@@ -18,13 +18,13 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contacts_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
 and ``ctx.bus.contact_notes_book`` — the Books own
 write invariants (name uniqueness, length caps,
 empty-content rejection) and expose ``add(...)`` plus
-``to_dict`` on the returned DTO. The old bus service at
-:mod:`magi.bus.jobs.services.contact` is no longer
+``to_dict`` on the returned DTO. The BUS service at
+BUS Book API is no longer
 imported here.
 """
 

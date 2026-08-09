@@ -83,8 +83,8 @@ class NodeConfig:
         log_level = DEFAULT_LOG_LEVEL
         try:
             from magi.startup.paths import resolve_state_dir as _state_dir
-            from magi.new_bus.db.engine import build_local_factory
-            from magi.new_bus.library.local.settingBook import SettingBook
+            from magi.bus.db.engine import build_local_factory
+            from magi.bus.library.local.settingBook import SettingBook
 
             db_level = SettingBook(build_local_factory(str(_state_dir()))).get(
                 key="system.log_level"

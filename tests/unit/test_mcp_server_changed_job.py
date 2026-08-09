@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus.db import EngineFactory
-from magi.new_bus.guild import (
+from magi.bus.db import EngineFactory
+from magi.bus.guild import (
     McpServerChangedJob,
     McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
-from magi.new_bus.library.local.mcpServerBook import McpServer
+from magi.bus.library.local.mcpServerBook import McpServer
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     # The row landed in the table.
     from sqlalchemy import select
 
-    from magi.new_bus.guild.mcpServerChangedJob import _McpServerChangedRow
+    from magi.bus.guild.mcpServerChangedJob import _McpServerChangedRow
 
     with factory.session() as s:
         row = s.scalar(
@@ -175,6 +175,6 @@ def test_submit_result_records_error(board):
 
 
 def test_valid_kinds_constant_matches_documented_set():
-    from magi.new_bus.guild.mcpServerChangedJob import VALID_KINDS
+    from magi.bus.guild.mcpServerChangedJob import VALID_KINDS
 
     assert VALID_KINDS == frozenset({"added", "updated", "deleted", "toggled"})

@@ -340,18 +340,18 @@ def create_contact(
     # contact row is more valuable than the preset rows.
     #
     # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob
-    # 到 new_bus.seed_preset_tasks_job_board，由 ProactiveWorker
+    # 到 bus.seed_preset_tasks_job_board，由 ProactiveWorker
     # 异步消费。当前同步调用 seed_presets_for_contact 的方式
     # 将在 Worker 就绪并验证稳定后移除。
     #
-    # 改后（需要解决 new_bus 实例的获取 — Request 注入或
+    # 改后（需要解决 bus 实例的获取 — Request 注入或
     # composition-root 已构造好的 singleton）：
-    #   from magi.new_bus.bootstrap import get_new_bus
-    #   from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+    #   from magi.bus.bootstrap import get_bus
+    #   from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
     #
     #   if view.role == "assigned":
     #       try:
-    #           get_current_new_bus().seed_preset_tasks_job_board.publish(
+    #           get_current_bus().seed_preset_tasks_job_board.publish(
     #               SeedPresetTasksJob(
     #                   contact_id=view.id,
     #                   trigger="contact_created",
@@ -523,7 +523,7 @@ def update_contact(
     # double-seed is a no-op rather than a duplicate.
     #
     # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob 到
-    # new_bus.seed_preset_tasks_job_board，由 ProactiveWorker
+    # bus.seed_preset_tasks_job_board，由 ProactiveWorker
     # 异步消费。trigger 标记 "contact_promoted"。当前同步
     # 调用将在 Worker 就绪 + 验证稳定后移除。
     if newly_assigned:

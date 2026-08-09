@@ -12,12 +12,12 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the data write and returns ``True`` if a
 row was removed, ``False`` if no row matched (the same
-``existed`` flag the old bus's ``ContactsService.delete_note``
-exposed). The old bus service is no longer imported here.
+``existed`` flag the BUS's ``ContactsService.delete_note``
+exposed). The BUS service is no longer imported here.
 """
 
 from __future__ import annotations

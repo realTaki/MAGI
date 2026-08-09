@@ -57,7 +57,7 @@ next LLM call.
 Bus plumbing
 ------------
 
-All business logic lives on the new_bus; this tool is
+All business logic lives on the bus; this tool is
 just the LLM-facing text formatter:
 
 - :meth:`MessageBook.search` — the FTS5 query (uid-scoped).
@@ -79,7 +79,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.new_bus.library.local.sessionBook import (
+from magi.bus.library.local.sessionBook import (
     SearchHit,
     SearchUnavailable,
 )

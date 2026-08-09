@@ -1,4 +1,4 @@
-"""Telegram delivery tests — rebased to new_bus deliveryJobBoard + TelegramWorker.
+"""Telegram delivery tests — rebased to bus deliveryJobBoard + TelegramWorker.
 
 Tests that TelegramWorker._deliver_tg calls send_text_raw and marks
 the delivery job as completed via submit_result.
@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.new_bus.db import EngineFactory
-from magi.new_bus.guild.deliveryJob import DeliveryJob, deliveryJobBoard
+from magi.bus.db import EngineFactory
+from magi.bus.guild.deliveryJob import DeliveryJob, deliveryJobBoard
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     # Verify result
     board.submit_result(
         key=jid,
-        result=__import__("magi.new_bus.guild.deliveryJob", fromlist=["DeliveryResult"]).DeliveryResult(
+        result=__import__("magi.bus.guild.deliveryJob", fromlist=["DeliveryResult"]).DeliveryResult(
             job_id=jid, success=True,
         ),
     )

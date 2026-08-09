@@ -1,10 +1,10 @@
-"""Per-MAGI Telegram channel configuration — pure new_bus."""
+"""Per-MAGI Telegram channel configuration — pure bus."""
 
 from __future__ import annotations
 
 import logging
 
-from magi.channels import get_current_new_bus
+from magi.channels import get_current_bus
 
 logger = logging.getLogger("magi.channels.telegram.config")
 
@@ -31,9 +31,9 @@ _VALID_EMOJI: frozenset[str] = frozenset(v for v, _ in REACTION_CHOICES)
 
 
 def _settings():
-    nb = get_current_new_bus()
+    nb = get_current_bus()
     if nb is None:
-        raise RuntimeError("new_bus unavailable")
+        raise RuntimeError("bus unavailable")
     return nb.settings_book
 
 

@@ -1,4 +1,4 @@
-"""Agent-owned background job: generate a 3-5-word chat title — new_bus only."""
+"""Agent-owned background job: generate a 3-5-word chat title — bus only."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.auto_title")
 
@@ -17,7 +17,7 @@ async def request_session_title(
     uid: int,
     session_id: str,
     *,
-    bus: "NewBus",
+    bus: "Bus",
 ) -> str | None:
     """Generate + persist a short chat title; return it."""
     from magi.prompts import load_chat_title_prompt
@@ -37,7 +37,7 @@ async def request_session_title(
     if first_user is None:
         return None
 
-    from magi.new_bus.guild.callLLMJob import CallLLMJob
+    from magi.bus.guild.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
         messages=(

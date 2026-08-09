@@ -37,17 +37,17 @@ another with ``target_channel="webui"`` delivers to the
 WebUI chat scroll. The LLM calls ``send_message`` the
 same way regardless.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via
 ``ctx.bus.sessions_book`` (cross-contact-safe session
 lookup via :meth:`SessionBook.get_for_owner`) and
 ``ctx.bus.delivery_job_board`` (publish a
-:class:`magi.new_bus.guild.deliveryJob.DeliveryJob` to
+:class:`magi.bus.guild.deliveryJob.DeliveryJob` to
 the durable ``delivery_outbox`` queue — the channel-owned
 DeliveryWorker performs the actual protocol I/O after the
-agent transition has committed). The old bus services at
-:mod:`magi.bus.jobs.services.session` and
-:mod:`magi.bus.jobs.services.delivery` are no longer
+agent transition has committed). The BUS services at
+BUS Book API and
+BUS Book API are no longer
 imported here.
 """
 
@@ -56,7 +56,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.new_bus.guild.deliveryJob import DeliveryJob
+from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.comms.send_message")

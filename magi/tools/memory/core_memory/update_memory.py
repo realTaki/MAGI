@@ -11,8 +11,8 @@ never sees operator B's rows, even if the LLM asks for
 an id it doesn't own — the row is missing rather than
 shared.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants for ``subject``,
 ``body`` and ``priority`` (non-empty + length caps,
 ``priority`` 1..5) and surfaces any violation as

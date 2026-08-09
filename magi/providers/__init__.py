@@ -25,7 +25,7 @@ Public surface
 This package is a **pure implementation** — it is consumed only by
 :class:`~magi.providers.worker.ProvidersWorker` and the internal
 submodules themselves. External modules interact with providers
-exclusively through the new_bus job boards.
+exclusively through the bus job boards.
 
 Re-exported here:
 

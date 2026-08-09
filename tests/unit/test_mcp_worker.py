@@ -39,18 +39,18 @@ from magi.mcp.worker import (
     start_mcp_worker,
     stop_mcp_worker,
 )
-from magi.new_bus.bootstrap import NewBus
-from magi.new_bus.db import EngineFactory
-from magi.new_bus.guild import (
+from magi.bus.bootstrap import Bus
+from magi.bus.db import EngineFactory
+from magi.bus.guild import (
     McpServerChangedJob,
     mcpServerChangedJobBoard,
 )
-from magi.new_bus.library.local import (
+from magi.bus.library.local import (
     McpServerBook,
     SettingBook,
 )
-from magi.new_bus.library.local.mcpServerBook import McpServer
-from magi.new_bus.library.local.toolsBook import ToolDefinitionBook
+from magi.bus.library.local.mcpServerBook import McpServer
+from magi.bus.library.local.toolsBook import ToolDefinitionBook
 from magi.tools import registry as tool_registry
 from magi.tools.mcp.add_mcp_server import AddMcpServerTool
 from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
@@ -88,8 +88,8 @@ class _StubTool:
         self.name = f"{server_name}__{tool_name}"
 
 
-def _build_new_bus(tmp_path) -> NewBus:
-    """Stand up a real NewBus with just the Books / Boards the
+def _build_bus(tmp_path) -> Bus:
+    """Stand up a real Bus with just the Books / Boards the
     worker needs (the test never exercises the rest of the
     composition root)."""
     factory = EngineFactory(f"sqlite:///{tmp_path}/mcp-worker.db")
@@ -99,10 +99,10 @@ def _build_new_bus(tmp_path) -> NewBus:
     tool_book = ToolDefinitionBook(factory)
     board = mcpServerChangedJobBoard(factory)
     # The worker only touches these three attributes; the rest
-    # of the NewBus slots are unused and stay ``None`` (the
-    # ``NewBus`` dataclass uses ``object`` for everything but
+    # of the Bus slots are unused and stay ``None`` (the
+    # ``Bus`` dataclass uses ``object`` for everything but
     # ``_local_factory`` and ``_magis_factory``).
-    return NewBus(
+    return Bus(
         sessions_book=None,  # type: ignore[arg-type]
         messages_book=None,  # type: ignore[arg-type]
         memory_book=None,  # type: ignore[arg-type]
@@ -126,14 +126,15 @@ def _build_new_bus(tmp_path) -> NewBus:
         hook_signoffs_book=None,  # type: ignore[arg-type]
         stream_hub=None,  # type: ignore[arg-type]
         seed_preset_tasks_job_board=None,  # type: ignore[arg-type]
+        run_task_job_board=None,  # type: ignore[arg-type]
         _local_factory=factory,
     )
 
 
 @pytest.fixture
 def bus(tmp_path):
-    """Fresh per-test NewBus on a per-test SQLite file."""
-    return _build_new_bus(tmp_path)
+    """Fresh per-test Bus on a per-test SQLite file."""
+    return _build_bus(tmp_path)
 
 
 @pytest.fixture(autouse=True)
@@ -503,7 +504,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
     we drive the path by patching ``_handle_change``'s input
     DTO directly: the worker's branch logic is the only
     thing under test."""
-    from magi.new_bus.guild.mcpServerChangedJob import _McpServerChangedRow
+    from magi.bus.guild.mcpServerChangedJob import _McpServerChangedRow
 
     # Pre-seed a pending row carrying an unknown kind,
     # bypassing the DTO's ``__post_init__`` validation. This

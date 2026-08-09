@@ -16,19 +16,19 @@ def test_task_channel_has_the_internal_scheduled_identifier() -> None:
 
 @pytest.mark.asyncio
 async def test_task_channel_dispatches_publishes_run_task_job(monkeypatch):
-    """TaskChannel.dispatch publishes a RunTaskJob through new_bus."""
-    from magi.channels import set_current_new_bus
+    """TaskChannel.dispatch publishes a RunTaskJob through bus."""
+    from magi.channels import set_current_bus
 
     mock_bus = MagicMock()
     mock_bus.run_task_job_board.publish = MagicMock(return_value="jid_42")
-    set_current_new_bus(mock_bus)
+    set_current_bus(mock_bus)
 
     try:
         await TaskChannel.dispatch(
             "task_abc", manual=True,
         )
     finally:
-        set_current_new_bus(None)
+        set_current_bus(None)
 
     mock_bus.run_task_job_board.publish.assert_called_once()
     call_args = mock_bus.run_task_job_board.publish.call_args
@@ -38,12 +38,12 @@ async def test_task_channel_dispatches_publishes_run_task_job(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_task_channel_dispatch_noops_without_new_bus():
-    """When new_bus is not set, dispatch should log and return without error."""
-    from magi.channels import set_current_new_bus
+async def test_task_channel_dispatch_noops_without_bus():
+    """When bus is not set, dispatch should log and return without error."""
+    from magi.channels import set_current_bus
 
     # Ensure no bus is set
-    set_current_new_bus(None)
+    set_current_bus(None)
 
     # Should not raise — just logs warning
     await TaskChannel.dispatch("task_missing", manual=False)

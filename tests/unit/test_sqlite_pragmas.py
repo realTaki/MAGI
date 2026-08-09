@@ -1,12 +1,12 @@
-"""NewBus SQLite engine settings."""
+"""Bus SQLite engine settings."""
 
 from __future__ import annotations
 
 from sqlalchemy import text
 
 
-def test_new_bus_engine_sets_required_sqlite_pragmas(tmp_path) -> None:
-    from magi.new_bus.db.engine import build_local_factory
+def test_bus_engine_sets_required_sqlite_pragmas(tmp_path) -> None:
+    from magi.bus.db.engine import build_local_factory
 
     factory = build_local_factory(str(tmp_path))
     with factory.session() as session:

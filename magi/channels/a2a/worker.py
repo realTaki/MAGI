@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.sendA2AJob import SendA2AJob
+    from magi.bus import Bus
+    from magi.bus.guild.sendA2AJob import SendA2AJob
 
 logger = logging.getLogger("magi.channels.a2a.worker")
 
@@ -29,13 +29,13 @@ class A2AWorker(ChannelWorker):
             self._last_poll_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
             try:
                 await self._deliver_a2a(job)
-                result = __import__("magi.new_bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
+                result = __import__("magi.bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
                     invocation_id=job.invocation_id, success=True, status="delivered")
                 self.bus.a2a_job_board.submit_result(key=job.invocation_id, result=result)
             except Exception as exc:
                 self._last_error = str(exc)
                 logger.exception("A2AWorker: delivery %s failed", job.invocation_id)
-                result = __import__("magi.new_bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
+                result = __import__("magi.bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
                     invocation_id=job.invocation_id, success=False, status="failed", error=str(exc)[:1024])
                 self.bus.a2a_job_board.submit_result(key=job.invocation_id, result=result)
 

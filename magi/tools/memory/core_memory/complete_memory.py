@@ -10,8 +10,8 @@ never sees operator B's rows, even if the LLM asks for
 an id it doesn't own — the row is missing rather than
 shared.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.memory_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
 — the Book is a pure data write and surfaces a
 :class:`LookupError` for missing rows. Authorization
 ("does the caller own this row?") lives here at the

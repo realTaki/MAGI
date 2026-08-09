@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- **BUS-centric Hook subsystem** (`magi.bus.hooks` + `magi.plugins.hooks`).
+- **BUS-centric Hook subsystem** (planned plugin/hook surface).
   11 first-version hook points: `agent.input.pending`,
   `llm.request.prepared`, `llm.response.received`, `tool.call.pending`,
   `tool.result.received`, `a2a.invocation.pending`, `a2a.result.received`,

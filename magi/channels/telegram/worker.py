@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.deliveryJob import DeliveryJob
+    from magi.bus import Bus
+    from magi.bus.guild.deliveryJob import DeliveryJob
 
 logger = logging.getLogger("magi.channels.telegram.worker")
 
@@ -18,7 +18,7 @@ logger = logging.getLogger("magi.channels.telegram.worker")
 class TelegramWorker(ChannelWorker):
     channel_name = "tg"
 
-    def __init__(self, bus: NewBus, *, poll_seconds: float = 0.25, delivery_poll_seconds: float = 0.1) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25, delivery_poll_seconds: float = 0.1) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self._delivery_poll_seconds = delivery_poll_seconds
         self._bot_app: object | None = None
@@ -71,7 +71,7 @@ class TelegramWorker(ChannelWorker):
         session_id = _resolve_tg_session(self.bus, uid=uid, tgid=tgid)
         _append_user_message(self.bus, session_id, text)
         asyncio.create_task(_send_read_receipt(update))
-        from magi.new_bus.guild.chatJob import ChatJob
+        from magi.bus.guild.chatJob import ChatJob
         try:
             self.bus.agent_job_board.publish(ChatJob(
                 event_id=f"telegram:{tgid}:{update.effective_message.message_id}", kind="chat",
@@ -98,7 +98,7 @@ class TelegramWorker(ChannelWorker):
         await super().stop()
 
 
-def _resolve_contact(bus: NewBus, tgid: str) -> tuple[int, str, bool] | None:
+def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
     try: cid_int = int(tgid)
     except (TypeError, ValueError): return None
     contact = bus.contacts_book.get_by_telegram(telegram_id=cid_int)
@@ -106,7 +106,7 @@ def _resolve_contact(bus: NewBus, tgid: str) -> tuple[int, str, bool] | None:
     return (contact.id, contact.role, contact.admin)
 
 
-def _resolve_tg_session(bus: NewBus, *, uid: int, tgid: str) -> str:
+def _resolve_tg_session(bus: Bus, *, uid: int, tgid: str) -> str:
     import uuid; from datetime import datetime, timezone
     sessions = bus.sessions_book.list_for_owner(uid=uid)
     tg_sessions = [s for s in sessions if getattr(s, "channel", "") == "tg"]
@@ -116,13 +116,13 @@ def _resolve_tg_session(bus: NewBus, *, uid: int, tgid: str) -> str:
     return sid
 
 
-def _append_user_message(bus: NewBus, session_id: str, text: str) -> None:
+def _append_user_message(bus: Bus, session_id: str, text: str) -> None:
     import uuid; from datetime import datetime, timezone
     try: bus.messages_book.add(session_id=session_id, message_id=uuid.uuid4().hex, role="user", text=text, ts=datetime.now(timezone.utc).isoformat())
     except Exception: pass
 
 
-async def _send_stranger_reply(update, tgid: str, bus: NewBus) -> None:
+async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
     display_name = update.effective_chat.first_name or update.effective_chat.username or update.effective_chat.title
     name = (display_name or "").strip() or f"stranger-{tgid[-5:]}"
     try: cid_int = int(tgid)

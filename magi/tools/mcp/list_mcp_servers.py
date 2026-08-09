@@ -4,11 +4,11 @@ Read-only. Metadata only (name, type, enabled, timeouts) — the
 ``env`` / ``headers`` columns carry API keys and tokens and are
 intentionally never serialised.
 
-Reads through the new_bus
-:class:`~magi.new_bus.library.local.mcpServerBook.McpServerBook.list_all`
+Reads through the bus
+:class:`~magi.bus.library.local.mcpServerBook.McpServerBook.list_all`
 so the result reflects every row the
 :class:`~magi.mcp.worker.McpWorker` would see on its next
-bootstrap. The old bus ``McpService.list()`` continues to back
+bootstrap. The BUS ``McpService.list()`` continues to back
 the WebUI in the meantime; both sides share the same physical
 SQLite table.
 """
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.new_bus.library.local.mcpServerBook import serialize_mcp_server
+from magi.bus.library.local.mcpServerBook import serialize_mcp_server
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 

@@ -14,12 +14,12 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contacts_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
 for the contact-side join (name + note match,
 ``last_seen_at`` ordering) and ``ctx.bus.contact_notes_book``
-for the per-contact note sample. The old bus service at
-:mod:`magi.bus.jobs.services.contact.search` is no longer
+for the per-contact note sample. The BUS service at
+BUS Book API is no longer
 imported here.
 """
 
@@ -99,7 +99,7 @@ class SearchContactsTool(Tool):
                 # Slice in-place to bound the response —
                 # ``list_for_contact`` returns the full
                 # corpus sorted newest-first, so a prefix
-                # is the same "sample" the old bus's
+                # is the same "sample" the BUS's
                 # ``ContactView`` returned.
                 notes = ctx.bus.contact_notes_book.list_for_contact(
                     contact_id=contact.id,

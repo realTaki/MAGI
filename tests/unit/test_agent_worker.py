@@ -192,7 +192,7 @@ async def test_single_turn_no_tools_delivers():
 @pytest.mark.asyncio
 async def test_tool_loop_completes():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.new_bus.guild.runToolJob import RunToolResult
+    from magi.bus.guild.runToolJob import RunToolResult
 
     bus = _make_bus()
 
@@ -228,8 +228,8 @@ async def test_tool_loop_completes():
 @pytest.mark.asyncio
 async def test_steering_injected():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.new_bus.guild.chatJob import ChatJob
-    from magi.new_bus.guild.runToolJob import RunToolResult
+    from magi.bus.guild.chatJob import ChatJob
+    from magi.bus.guild.runToolJob import RunToolResult
 
     bus = _make_bus()
 
@@ -266,7 +266,7 @@ async def test_steering_injected():
     )
     assert steering_found
     # steering ChatJob was consumed (submitted as ChatJobResult)
-    from magi.new_bus.guild.chatJob import ChatJobResult
+    from magi.bus.guild.chatJob import ChatJobResult
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
         result=ChatJobResult(event_id="steer-1", success=True, status="completed"),
@@ -353,7 +353,7 @@ def test_token_usage_recorded():
 @pytest.mark.asyncio
 async def test_max_iterations_exceeded():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.new_bus.guild.runToolJob import RunToolResult
+    from magi.bus.guild.runToolJob import RunToolResult
 
     bus = _make_bus()
 

@@ -4,7 +4,7 @@ Idempotent — silently succeeds if the server doesn't exist.
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It publishes a
-:class:`~magi.new_bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
 with ``kind="deleted"`` and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the delete + tear
 down the live connection. The Worker is the single writer — see
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.new_bus.guild import McpServerChangedJob
+from magi.bus.guild import McpServerChangedJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 

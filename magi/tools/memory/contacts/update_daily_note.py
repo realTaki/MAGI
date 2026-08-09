@@ -29,13 +29,13 @@ admits callers whose effective role-tag set intersects
 it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
-Bus plumbing: this tool talks to new_bus
-(:class:`magi.new_bus.NewBus`) via ``ctx.bus.contact_notes_book``
+Bus plumbing: this tool talks to bus
+(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the upsert + daily-append logic,
 length cap, and ``note_date`` defaulting. Returns the
-DTO so the LLM sees the post-write row. The old bus
+DTO so the LLM sees the post-write row. The BUS
 service at
-:mod:`magi.bus.jobs.services.contact.upsert_daily_note`
+BUS Book API
 is no longer imported here.
 """
 

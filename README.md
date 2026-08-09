@@ -208,7 +208,7 @@ The four startup inputs
 (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_DATABASE_URL`, `MAGI_ID`) are
 the only contract Runtime sees; workspace paths are derived, never
 configured. See [the storage boundary](docs/magi-magis-storage.md) and
-[Unified Startup](docs/ARCHITECTURE.md#part-iv--unified-startup) for the
+[BUS runtime architecture](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md) for the
 exact split and contract.
 
 ### One WebUI, one image

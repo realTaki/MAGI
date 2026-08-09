@@ -1,7 +1,7 @@
 """Preset task seeding — handle SeedPresetTasksJob.
 
 Reads bundled YAML presets from
-:meth:`~magi.new_bus.library.file.promptBook.PromptBook.task_presets`,
+:meth:`~magi.bus.library.file.promptBook.PromptBook.task_presets`,
 converts each into a Task row with ``source=SOURCE_PROACTIVE``, and
 inserts idempotently (skip when a task with the same name + uid
 already exists).
@@ -12,21 +12,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksResult
-from magi.new_bus.library.local.tasksBook import (
+from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksResult
+from magi.bus.library.local.tasksBook import (
     SOURCE_PROACTIVE,
     preset_to_cron,
     validate_run_at,
 )
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+    from magi.bus import Bus
+    from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
 
 logger = logging.getLogger("magi.proactive.preset_tasks")
 
 
-async def handle_seed_job(bus: "NewBus", job: "SeedPresetTasksJob") -> None:
+async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
     """Claim + execute a SeedPresetTasksJob.
 
     从 prompt_book.task_presets() 读 YAML 预设，逐个转为
@@ -125,7 +125,7 @@ async def handle_seed_job(bus: "NewBus", job: "SeedPresetTasksJob") -> None:
 # --- helpers -----------------------------------------------------------------
 
 
-def _load_presets(bus: "NewBus") -> dict:
+def _load_presets(bus: "Bus") -> dict:
     """Read bundled preset templates from prompt_book."""
     prompt_book = getattr(bus, "prompt_book", None)
     if prompt_book is None:
@@ -137,7 +137,7 @@ def _load_presets(bus: "NewBus") -> dict:
         return {}
 
 
-def _read_system_timezone(bus: "NewBus") -> str:
+def _read_system_timezone(bus: "Bus") -> str:
     try:
         raw = bus.settings_book.get("system.timezone")
         if raw and isinstance(raw, str) and raw.strip():
@@ -148,7 +148,7 @@ def _read_system_timezone(bus: "NewBus") -> str:
 
 
 def _submit_success(
-    bus: "NewBus", job: "SeedPresetTasksJob",
+    bus: "Bus", job: "SeedPresetTasksJob",
     *, inserted: int, skipped: int,
 ) -> None:
     try:
@@ -168,7 +168,7 @@ def _submit_success(
 
 
 def _submit_failure(
-    bus: "NewBus", job: "SeedPresetTasksJob", error: str,
+    bus: "Bus", job: "SeedPresetTasksJob", error: str,
 ) -> None:
     try:
         result = SeedPresetTasksResult(

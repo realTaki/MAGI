@@ -1,4 +1,4 @@
-"""ChannelWorker 基类 — 构造注入 NewBus，提供 start/stop/health/delivery 模板。"""
+"""ChannelWorker 基类 — 构造注入 Bus，提供 start/stop/health/delivery 模板。"""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
-    from magi.new_bus.guild.deliveryJob import DeliveryJob, DeliveryResult
+    from magi.bus import Bus
+    from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult
 
 logger = logging.getLogger("magi.channels.worker")
 _backpressure_last_warn: dict[str, float] = {}
@@ -22,7 +22,7 @@ class ChannelWorker(ABC):
     @abstractmethod
     def channel_name(self) -> str: ...
 
-    def __init__(self, bus: NewBus, *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
         self.worker_id = f"{self.channel_name}-worker"
@@ -60,7 +60,7 @@ class ChannelWorker(ABC):
     async def _claim_delivery_loop(
         self, deliver_fn: Callable[[DeliveryJob], Awaitable[None]], channel_label: str,
     ) -> None:
-        from magi.new_bus.guild.deliveryJob import DeliveryResult
+        from magi.bus.guild.deliveryJob import DeliveryResult
         max_depth = self._read_max_queue_depth()
         while not self._stopping:
             depth = self._bus_depth(channel_label)

@@ -1,8 +1,8 @@
 """Unit tests for the core-memory tools.
 
-Mirrors the ``test_new_bus_books.py`` style: a per-test
+Mirrors the ``test_bus_books.py`` style: a per-test
 in-memory SQLite via :class:`EngineFactory`, plus a
-small :class:`NewBus` stub carrying the books the
+small :class:`Bus` stub carrying the books the
 tool worker actually touches (``memory_book`` /
 ``contacts_book``). Tools are exercised through their
 public ``run()`` method with a real :class:`ToolContext`
@@ -20,9 +20,9 @@ from typing import Any
 
 import pytest
 
-from magi.new_bus.db.engine import EngineFactory
-from magi.new_bus.library.local.contactBook import ContactBook
-from magi.new_bus.library.local.memoryBook import MemoryBook
+from magi.bus.db.engine import EngineFactory
+from magi.bus.library.local.contactBook import ContactBook
+from magi.bus.library.local.memoryBook import MemoryBook
 from magi.tools.base import ToolContext, ToolResult
 from magi.tools.memory.core_memory.add_memory import AddMemoryTool
 from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
@@ -30,15 +30,15 @@ from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
 from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
 
 
-# -- minimal NewBus surface -----------------------------------------------
+# -- minimal Bus surface -----------------------------------------------
 
 
 @dataclass
 class _BusStub:
-    """Stand-in for :class:`magi.new_bus.NewBus` carrying
+    """Stand-in for :class:`magi.bus.Bus` carrying
     only the Books the core-memory tools use.
 
-    Constructing a real NewBus in tests pulls in every
+    Constructing a real Bus in tests pulls in every
     Book + Job board (and their ORM tables). Tests want
     the smallest surface that exercises ``ctx.bus`` —
     this stub keeps the migration targeted.
@@ -65,7 +65,7 @@ def factory() -> EngineFactory:
 
 @pytest.fixture
 def bus(factory: EngineFactory) -> _BusStub:
-    """A NewBus-shaped stub bound to the in-memory SQLite."""
+    """A Bus-shaped stub bound to the in-memory SQLite."""
     return _BusStub(
         memory_book=MemoryBook(factory),
         contacts_book=ContactBook(factory),

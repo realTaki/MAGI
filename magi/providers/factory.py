@@ -5,7 +5,7 @@
 负责"凭据 → SDK client"这一步，**唯一**知道这件事的地方。
 
 凭据来源是 ``bus.settings_book``（key 见
-:mod:`magi.new_bus.guild.changeProviderConfigJob`）。WebUI / API
+:mod:`magi.bus.guild.changeProviderConfigJob`）。WebUI / API
 channel 通过 ``changeProviderConfigJobBoard.publish()``（self-contained
 write，会自动落 settings_book）或直接 ``settings_book.set()`` 写入。
 
@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.new_bus.guild.changeProviderConfigJob import (
+from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
@@ -45,7 +45,7 @@ from magi.providers.minimax import MinimaxProvider
 from magi.providers.openai import OpenAIProvider
 
 if TYPE_CHECKING:
-    from magi.new_bus import NewBus
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.providers.factory")
 
@@ -62,13 +62,13 @@ _KNOWN_PROVIDERS: list[str] = [
 # ── factory: 从 settings_book 读凭据并实例化 provider ──────────────────────
 
 
-def get_provider(*, bus: "NewBus", model: str | None = None) -> LLMProvider:
+def get_provider(*, bus: "Bus", model: str | None = None) -> LLMProvider:
     """从 ``bus.settings_book`` 读凭据并实例化 provider。
 
     Parameters
     ----------
     bus
-        组合根注入的 :class:`NewBus`。凭据来源唯一是
+        组合根注入的 :class:`Bus`。凭据来源唯一是
         ``settings_book``（key 形如 ``provider.name`` /
         ``provider.api_key`` / ``provider.model``）。
     model

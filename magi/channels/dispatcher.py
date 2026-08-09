@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
-from magi.channels import Channel, get_current_new_bus
+from magi.channels import Channel, get_current_bus
 
 logger = logging.getLogger("magi.channels.dispatcher")
 
@@ -127,9 +127,9 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     """
     _ADAPTERS[adapter.name] = adapter
     try:
-        nb = get_current_new_bus()
-        # Old bus dispatcher removed; adapter registry is self-contained
-        # in this module's _ADAPTERS dict.
+        nb = get_current_bus()
+        # The adapter registry is self-contained in this module's _ADAPTERS
+        # dictionary.
     except Exception:
         logger.debug("adapter registration deferred", exc_info=True)
 
@@ -212,11 +212,11 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
             f"user {uid} has no {channel!r} binding"
         )
 
-    nb = get_current_new_bus()
+    nb = get_current_bus()
     if nb is None:
-        raise RuntimeError("new_bus unavailable for delivery")
+        raise RuntimeError("bus unavailable for delivery")
 
-    from magi.new_bus.guild.deliveryJob import DeliveryJob
+    from magi.bus.guild.deliveryJob import DeliveryJob
 
     nb.delivery_job_board.publish(DeliveryJob(
         channel=str(channel),
@@ -264,7 +264,7 @@ def list_bindings(uid: int) -> list[tuple[str, str]]:
     is set. Future channels (WeChat, Slack) will add their own
     columns to ``Contact`` and read from there.
     """
-    nb = get_current_new_bus()
+    nb = get_current_bus()
     if nb is None:
         return []
     contact = nb.contacts_book.get(contact_id=uid)

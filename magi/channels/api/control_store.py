@@ -1,10 +1,8 @@
 """PostgreSQL-backed state used exclusively by the singleton WebUI.
 
 This module is the channel-side façade for the singleton WebUI's
-PG-backed control-plane KV.  Reads and writes are forwarded to
-:class:`magi.bus.jobs.services.magis.MagisService` so the channels → db
-boundary stays one-way (channels must not import ``magi.db.*``
-directly — see ``tests/architecture/test_import_boundaries.py``).
+PG-backed control-plane KV. Reads and writes are forwarded through the BUS
+facade so the channel layer does not open persistence directly.
 
 The ``enabled()`` flag is intentionally local: it's a pure env-var
 check that doesn't touch the database, so wrapping it through the

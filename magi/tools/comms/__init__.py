@@ -3,7 +3,7 @@
   - :mod:`magi.tools.comms.send_message` — push a
     message back to the operator (used by the agent
     loop when the LLM decides to speak proactively).
-    Bus plumbing lives on new_bus
+    Bus plumbing lives on bus
     (``bus.sessions_book`` + ``bus.delivery_job_board``).
   - :mod:`magi.tools.comms.message_magi` — A2A
     schema-only effect: declares an outbound

@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from magi.new_bus.library.file.skillsBook import SkillsBook
-from magi.new_bus.db.file import FileShelf
+from magi.bus.library.file.skillsBook import SkillsBook
+from magi.bus.db.file import FileShelf
 from magi.tools.base import ToolContext
 from magi.tools.skills.load_skill import LoadSkillTool
 
@@ -57,7 +57,7 @@ def build_ctx(two_roots: tuple[Path, Path]):
         bundle_root, operator_root = two_roots
         book = SkillsBook(FileShelf(bundle_root), FileShelf(operator_root))
         # Stub ``bus`` with just the one attribute the tool reads.
-        # A real ``NewBus`` requires 29+ ORM-backed fields; the tool
+        # A real ``Bus`` requires 29+ ORM-backed fields; the tool
         # only ever touches ``bus.skills_book`` so we don't need any
         # of them.
         fake_bus = SimpleNamespace(skills_book=book)
