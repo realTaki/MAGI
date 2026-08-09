@@ -159,16 +159,17 @@ class Bus:
     action_items_book: ActionItemBook  # ActionItemBook
     hook_signoffs_book: HookSignoffBook  # HookSignoffBook
 
+    # -- local: prompts (File-backed Book) ----------------------------------
+    # Always populated — see bootstrap._resolve_prompts_dir.
+
+    prompt_book: PromptBook
+
     # -- internal factories (advanced / test use) ---------------------------
     # Positioned *before* defaulted fields so dataclass __init__ ordering
     # is satisfied (required fields must precede optional ones).
 
     _local_factory: EngineFactory = field(repr=False)
     _magis_factory: EngineFactory | None = field(repr=False, default=None)
-
-    # -- local: prompts (File-backed Book) ----------------------------------
-
-    prompt_book: PromptBook | None = None  # PromptBook | None
 
     # -- local: skills (File-backed Book; two roots: bundle + operator) ----
 
@@ -353,12 +354,8 @@ def _open_with_dirs(
     # ---- prompt book (file-backed, not ORM) --------------------------------
     _workspace_dir = Path(state_dir).parent
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
-    if _prompts_dir is not None:
-        prompt_shelf = FileShelf(_prompts_dir, create_root=False)
-        prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
-
-    else:
-        prompt_book = None
+    prompt_shelf = FileShelf(_prompts_dir, create_root=False)
+    prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
 
     # ---- skills book (file-backed, two roots: bundle + operator) ---------
     skills_book = build_default_skills_book(_workspace_dir)
@@ -459,13 +456,15 @@ def _open_with_dirs(
 # ---------------------------------------------------------------------------
 
 
-def _resolve_prompts_dir(prompts_dir: str | None) -> Path | None:
+def _resolve_prompts_dir(prompts_dir: str | None) -> Path:
     """Resolve the bundled prompts directory.
 
     If *prompts_dir* is explicitly provided, use it as-is.
     Otherwise auto-detect from the ``magi`` package location.
-    Returns ``None`` if auto-detection fails (e.g. in a test
-    environment where ``magi`` isn't a regular package).
+    Raises :class:`RuntimeError` if auto-detection fails — the
+    ``Bus.prompt_book`` invariant is "always populated", so a
+    missing prompts bundle is a startup failure the operator must
+    see, not a silently-degraded runtime state.
     """
     if prompts_dir is not None:
         return Path(prompts_dir)
@@ -486,13 +485,17 @@ def _resolve_prompts_dir(prompts_dir: str | None) -> Path | None:
     # ``magi/bus/bootstrap.py`` → ``magi/`` → ``magi/prompts/``
     try:
         candidate = Path(__file__).resolve().parent.parent / "prompts"
-        if candidate.is_dir():
+        if candidate.is_dir() and (candidate / "soul.md").exists():
             return candidate
     except Exception:
         pass
 
-    logger.debug("Could not auto-detect prompts directory; prompt_book will be None")
-    return None
+    raise RuntimeError(
+        "Could not locate the MAGI prompts bundle. Pass `prompts_dir=` "
+        "explicitly to bootstrap_bus(), or ensure the package is installed "
+        "with its bundled `magi/prompts/` directory intact "
+        "(expected to contain at least `soul.md`)."
+    )
 
 
 def _ensure_workspace_soul(workspace_dir: Path, prompts_dir: Path) -> None:

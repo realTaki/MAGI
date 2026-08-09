@@ -86,7 +86,6 @@ def read_soul(_admin: AdminOrAssignedGate, bus: BusDep) -> SoulReadResponse:
     behaviour here so the UI shows *what the agent is actually
     using*, not a phantom "the file is empty" state.
     """
-    assert bus.prompt_book is not None
     ws = bus.prompt_book.read_workspace_soul()
     return SoulReadResponse(
         content=ws.content,

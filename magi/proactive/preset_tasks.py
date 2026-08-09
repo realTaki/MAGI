@@ -74,7 +74,7 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
                     continue
                 cron_val = ""
                 run_at_val = run_at_iso
-            else:
+            elif frequency in ("hourly", "daily", "weekly", "monthly"):
                 try:
                     cron_val = preset_to_cron(
                         frequency,
@@ -87,6 +87,11 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
                     skipped += 1
                     continue
                 run_at_val = None
+            else:
+                # YAML 里写了非法的 frequency (e.g. "yearly"、拼错的 "weakly") —
+                # ``preset_to_cron`` 不识别会悄悄返回 None，预先跳过。
+                skipped += 1
+                continue
 
             task_name = f"{preset.get('name', '')} ({contact_label})"
 
@@ -127,11 +132,8 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
 
 def _load_presets(bus: "Bus") -> dict:
     """Read bundled preset templates from prompt_book."""
-    prompt_book = getattr(bus, "prompt_book", None)
-    if prompt_book is None:
-        return {}
     try:
-        return prompt_book.task_presets()
+        return bus.prompt_book.task_presets()
     except Exception:
         logger.warning("preset_tasks: failed to read presets from prompt_book")
         return {}
@@ -139,7 +141,7 @@ def _load_presets(bus: "Bus") -> dict:
 
 def _read_system_timezone(bus: "Bus") -> str:
     try:
-        raw = bus.settings_book.get("system.timezone")
+        raw = bus.settings_book.get(key="system.timezone")
         if raw and isinstance(raw, str) and raw.strip():
             return raw.strip()
     except Exception:

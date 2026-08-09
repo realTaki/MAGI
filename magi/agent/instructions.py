@@ -49,13 +49,21 @@ def runtime_instruction_block(bus: "Bus") -> str:
 
         memberships: list[dict[str, Any]] = []
         try:
-            rows = bus.memberships_book.list_all()
-            for row in rows or []:
+            # ``MagisMembershipBook.list_instruction_contexts`` joins
+            # ``magis_memberships × magis_roles × magis`` in one query,
+            # so each entry already carries the rendered
+            # ``magis_name / team_instruction / role_name /
+            # role_instruction`` dict (the per-MAGI fields aren't
+            # attributes of the raw membership row — they're resolved
+            # through the JOIN).
+            list_contexts = getattr(bus.memberships_book, "list_instruction_contexts", None)
+            contexts = list_contexts() if list_contexts else None
+            for entry in contexts or []:
                 memberships.append({
-                    "magis_name": getattr(row, "magis_name", None),
-                    "team_instruction": getattr(row, "team_instruction", None),
-                    "role_name": getattr(row, "role_name", None),
-                    "role_instruction": getattr(row, "role_instruction", None),
+                    "magis_name": entry.get("magis_name"),
+                    "team_instruction": entry.get("team_instruction"),
+                    "role_name": entry.get("role_name"),
+                    "role_instruction": entry.get("role_instruction"),
                 })
         except Exception:
             pass
