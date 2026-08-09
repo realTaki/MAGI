@@ -91,4 +91,48 @@ async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
     await asyncio.to_thread(_send)
 
 
-__all__ = ["verify_token", "send_text_raw"]
+async def get_chat_name_raw(bot_token: str, chat_id: int) -> str | None:
+    """Resolve a TG chat's display name via ``getChat``.
+
+    Best-effort: returns ``None`` on any failure (network, non-2xx,
+    unknown shape) so callers can fall back to the raw chat_id
+    without aborting the onboarding flow. Picks the right field by
+    chat type — ``title`` for groups/channels, ``first_name +
+    last_name`` for private chats, ``@username`` as the last resort.
+    """
+    import asyncio
+
+    def _probe() -> str | None:
+        url = _TELEGRAM_API_BASE.format(token=bot_token, method="getChat")
+        payload = json.dumps({"chat_id": chat_id}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+            return None
+        if not isinstance(body, dict) or not body.get("ok"):
+            return None
+        result = body.get("result")
+        if not isinstance(result, dict):
+            return None
+        title = str(result.get("title") or "").strip()
+        if title:
+            return title
+        first = str(result.get("first_name") or "").strip()
+        last = str(result.get("last_name") or "").strip()
+        full = " ".join(part for part in (first, last) if part)
+        if full:
+            return full
+        username = str(result.get("username") or "").strip()
+        return f"@{username}" if username else None
+
+    return await asyncio.to_thread(_probe)
+
+
+__all__ = ["verify_token", "send_text_raw", "get_chat_name_raw"]

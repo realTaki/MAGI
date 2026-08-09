@@ -535,7 +535,7 @@ async def save_bot(
     try:
         bus.settings_book.set(key="telegram.bot_token", value=payload.token)
         bus.settings_book.set(key="telegram.bot_username", value=payload.username)
-    except Exception:  # pragma: no cover — disk / permission errors
+    except Exception as exc:  # pragma: no cover — disk / permission errors
         logger.exception("failed to write settings")
         return SaveBotResponse(ok=False, error=str(exc))
 
@@ -657,6 +657,11 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
     # already expired).
     previous = bus.settings_book.get(key=f"telegram.verify_code.{delivery_address}")
     if previous:
+        # Safe default for the JSON-parse-failed branch — the cooldown
+        # gate (next ``if prev_sent_at``) will short-circuit anyway,
+        # but Pylance needs ``prev_data`` defined for the later
+        # ``prev_data.get("expires_at", 0)`` access to type-check.
+        prev_data: dict[str, object] = {}
         try:
             prev_data = json.loads(previous)
             prev_sent_at = float(prev_data.get("last_sent_at", 0))

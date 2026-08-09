@@ -88,13 +88,13 @@ class ActionItem:
 
     id: int
     uid: int
+    title: str
     # Stable kind code — ``"llm_credentials_missing"`` for the
     # onboarding credentials nudge today; ``"eva_followup_*"`` lands
     # later when C4 ships. Defaults to ``""`` so :meth:`to_dict` and
     # any ``BaseBook._row_to_dto`` mapping that hasn't been updated
     # to write the column yet still produce a wire-compatible DTO.
     kind: str = ""
-    title: str
     description: str | None = None
     target_url: str | None = None
     priority: str = PRIORITY_NORMAL

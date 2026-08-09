@@ -43,7 +43,7 @@ import logging
 import os
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Cookie, Request, Response
@@ -144,7 +144,7 @@ def _sign_selected_session(bus: Bus, *, magic_id: int, telegram_id: int, display
     return "v2." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
 
 
-def selected_session(bus: Bus, token: str | None) -> dict[str, object] | None:
+def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     """Return the selected-MAGI browser session, if valid and unexpired."""
     if not token or not token.startswith("v2."):
         return None
