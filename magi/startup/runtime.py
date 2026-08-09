@@ -3,11 +3,11 @@
 The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
-1. Bootstraps identity via :func:`magi.startup.bootstrap.bootstrap_magi`.
-2. Builds one :class:`~magi.bus.Bus` facade.
-3. Brings up durable workers (provider / agent / tool / delivery).
-4. Brings up channels (currently: telegram).
-5. Serves the private runtime HTTP API on a fixed internal port.
+1. Reads and validates the provisioned :class:`RuntimeSpec`.
+2. Opens one :class:`~magi.bus.Bus` facade.
+3. Brings up durable workers in dependency order.
+4. Brings up channels.
+5. Serves the private runtime HTTP API on the spec's sticky port.
 
 It does **not**:
 
@@ -70,6 +70,7 @@ class RuntimeContext:
         from magi.startup.workers import WorkerRegistry
 
         bus = _build_bus(startup)
+        _validate_runtime_identity(startup, bus)
         return cls(
             startup=startup,
             bus=bus,
@@ -148,6 +149,30 @@ def _to_magi_id(raw: str) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _validate_runtime_identity(startup: StartupContext, bus: "Bus") -> None:
+    """Reject a mismatched spec or sticky-port conflict before workers listen."""
+    magi_id = _to_magi_id(startup.magi_id)
+    if magi_id is None or bus.memberships_book is None:
+        raise RuntimeError("runtime identity is missing from the provisioned MAGIS store")
+    if bus.memberships_book.get(magi_id=magi_id) is None:
+        raise RuntimeError(f"runtime identity {startup.magi_id!r} is not registered in MAGIS")
+
+    runtimes = bus.control_runtimes_book
+    ports = bus.port_allocations_book
+    runtime = runtimes.get(runtime_id=magi_id) if runtimes is not None else None
+    allocation = ports.get(runtime_id=magi_id) if ports is not None else None
+    if runtime is None or allocation is None:
+        raise RuntimeError(f"runtime {magi_id} has no provisioned control-plane record")
+    if runtime.backend_ref != startup.magi_name:
+        raise RuntimeError(
+            f"runtime spec name {startup.magi_name!r} does not match registered node {runtime.backend_ref!r}"
+        )
+    if runtime.port != startup.runtime_port or allocation.port != startup.runtime_port:
+        raise RuntimeError(
+            f"runtime spec port {startup.runtime_port} conflicts with its sticky control-plane allocation"
+        )
 
 
 # ----------------------------------------------------------------------

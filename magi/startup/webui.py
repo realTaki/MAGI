@@ -194,16 +194,17 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     """Run the control service without creating node storage or workers."""
     import uvicorn
 
-    from magi.bus import open_bus
+    from magi.bus import open_control_bus
     from magi.channels.api.app import create_control_app
     from magi.startup.spec import load_runtime_spec
 
     root_workspace = config.host_workspace_dir / "MAGI_Citizens" / "eva-000"
     spec = load_runtime_spec(root_workspace)
-    # This is a read/open-only control context.  It never creates storage or
-    # starts a node worker; target-specific operations are proxied to runtimes.
-    bus = open_bus(
-        state_dir=str(root_workspace / "memories"),
+    # This opens only the provisioned control/MAGIS store.  It never opens a
+    # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
+    # node worker; target-specific operations are proxied to runtimes.
+    bus = open_control_bus(
+        control_dir=str(config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"),
         magis_url=spec.magis_database_url,
     )
     app = create_control_app(context=ControlContext(bus=bus))

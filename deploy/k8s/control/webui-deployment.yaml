@@ -42,9 +42,6 @@ spec:
                   key: MAGI_CONTROL_SECRET
             - name: MAGI_ROOT_RUNTIME_URL
               value: http://magi:42070
-          volumeMounts:
-            - name: workspace
-              mountPath: /
           ports:
             - name: http
               containerPort: 42069
@@ -64,7 +61,3 @@ spec:
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "1", memory: 1Gi}
-      volumes:
-        - name: workspace
-          persistentVolumeClaim:
-            claimName: magi-workspace

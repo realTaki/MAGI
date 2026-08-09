@@ -27,9 +27,10 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
 from __future__ import annotations
 
-from magi.bus.bootstrap import Bus, open_bus
+from magi.bus.bootstrap import Bus, open_bus, open_control_bus
 
 __all__ = [
     "Bus",
     "open_bus",
+    "open_control_bus",
 ]

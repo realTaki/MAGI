@@ -71,7 +71,8 @@ MAGIS/MAGI 管理 API 也在目标 runtime 中执行：Admin 只能管理该 run
 ## Kubernetes
 
 - `deploy/k8s/control/webui-deployment.yaml`：生产 `magi-webui` Deployment；命令为
-  `magi webui`，只使用运行时注册元数据和内部服务，不挂载 PVC 或 workspace。
+  `magi webui run --foreground`，只打开 MAGIS control store 并通过已签名
+  Runtime proxy 访问节点；不挂载 PVC、workspace 或 node-private store。
 - `deploy/k8s/base/deployment.yaml`：初始 MAGI runtime；不再承载浏览器 SPA。
   **不传** `HOST_WORKSPACE_DIR`（由 `magi.startup.paths` 通过
   `KUBERNETES_SERVICE_HOST` 自动检测 K8s 模式，默认到容器根 `/`，PVC

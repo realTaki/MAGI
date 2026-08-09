@@ -727,16 +727,15 @@ def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
       - **bundle** — ``<magi>/skills/`` (image-shipped defaults,
         resolved via :func:`magi.startup.paths.resolve_bundle_skills_dir`).
       - **operator** — ``<workspace_dir>/skills/`` (the deployer's
-        customised catalog). Created lazily by
-        :func:`magi.startup.paths.ensure_workspace` at boot, so we
-        pass ``create_root=False`` to avoid a duplicate ``mkdir``.
+        customised catalog). Provisioning creates this root; opening a BUS
+        passes ``create_root=False`` so runtime startup cannot create it.
 
     The factory is the public constructor used by
     :func:`magi.bus.open_bus`. Tests that need
     a custom layout should construct :class:`SkillsBook` directly
     with explicit :class:`~magi.bus.db.file.FileShelf` instances.
     """
-    bundle_shelf = FileShelf(resolve_bundle_skills_dir())
+    bundle_shelf = FileShelf(resolve_bundle_skills_dir(), create_root=False)
     operator_shelf = FileShelf(workspace_dir / "skills", create_root=False)
     return SkillsBook(bundle_shelf, operator_shelf)
 

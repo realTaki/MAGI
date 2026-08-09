@@ -231,12 +231,32 @@ def open_bus(
     )
 
 
+def open_control_bus(*, control_dir: str, magis_url: str) -> Bus:
+    """Open the singleton control-plane BUS without a node-private store.
+
+    The control plane persists its small operator-facing state in the already
+    provisioned MAGIS store.  ``control_dir`` is only the read-only file-book
+    root; it is never created here.  In particular, this function must not be
+    given a ``MAGI_Citizens/<name>/memories`` path.
+    """
+    if not magis_url:
+        raise ValueError("control plane requires a MAGIS database URL")
+    return _open_with_dirs(
+        state_dir=control_dir,
+        magis_url=magis_url,
+        local_database_url=magis_url,
+        local_provision_scope="magis",
+    )
+
+
 def _open_with_dirs(
     *,
     state_dir: str,
     magis_url: str | None = None,
     prompts_dir: str | None = None,
     allow_unprovisioned: bool = False,
+    local_database_url: str | None = None,
+    local_provision_scope: str = "node",
 ) -> Bus:
     """Wire the bus with explicit paths (for tests).
 
@@ -288,7 +308,20 @@ def _open_with_dirs(
     from magi.bus.library.file.skillsBook import build_default_skills_book
 
     # ---- wire factories ----------------------------------------------------
-    local_factory = build_local_factory(state_dir)
+    state_path = Path(state_dir)
+    if not allow_unprovisioned and local_database_url is None:
+        database_path = state_path / "magi.db"
+        if not database_path.is_file():
+            from magi.bus.provision import StorageNotProvisioned
+
+            raise StorageNotProvisioned(
+                f"node database is missing at {database_path}; run the explicit provisioning command"
+            )
+    local_factory = (
+        EngineFactory(local_database_url)
+        if local_database_url is not None
+        else build_local_factory(state_dir)
+    )
 
     # Pure pass-through: caller is the composition root and owns path
     # resolution.  No env reads — ``magis_url=None`` simply means
@@ -297,7 +330,7 @@ def _open_with_dirs(
     if not allow_unprovisioned:
         from magi.bus.provision import require_provisioned
 
-        require_provisioned(local_factory, scope="node")
+        require_provisioned(local_factory, scope=local_provision_scope)
         if magis_factory is not None:
             require_provisioned(magis_factory, scope="magis")
 

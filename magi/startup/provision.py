@@ -111,12 +111,19 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     """Register and provision one EVA under an already initialised Genesis."""
     if config.magi_name == DEFAULT_MAGI_NAME:
         raise ConfigurationError("eva-000 is created only by `magi init`")
+    if config.workspace_dir.exists():
+        raise ConfigurationError(
+            f"node workspace already exists at {config.workspace_dir}; clean the state before creating it again"
+        )
     magis_url = config.magis_database_url or resolve_magis_database_url(config.host_workspace_dir)
-    root_state = config.host_workspace_dir / "MAGI_Citizens" / DEFAULT_MAGI_NAME / "memories"
-    from magi.bus import open_bus
+    from magi.bus import open_control_bus
     from magi.bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
 
-    control_bus = open_bus(state_dir=str(root_state), magis_url=magis_url)
+    node_config = replace(config, magis_database_url=magis_url)
+    control_bus = open_control_bus(
+        control_dir=str(config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"),
+        magis_url=magis_url,
+    )
     if control_bus._magis_factory is None:
         raise ConfigurationError("Genesis MAGIS is not provisioned; run `magi init` first")
     factory = control_bus._magis_factory
@@ -129,7 +136,6 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     eva_role = roles.find(magis_id=genesis.id, name="EVA")
     if eva_role is None:
         eva_role = roles.add(magis_id=genesis.id, name="EVA", is_reserved=True)
-    membership = memberships.add(magis_id=genesis.id, role_id=eva_role.id)
 
     ports = control_bus.port_allocations_book
     if ports is None:
@@ -138,15 +144,20 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     port = next((candidate for candidate in range(RUNTIME_PORT + 1, RUNTIME_PORT + 100) if candidate not in used), None)
     if port is None:
         raise ConfigurationError("no local runtime port is available")
+
+    # Materialise the new node only after all existing control-plane state is
+    # known valid, and before allocating a membership/port.  A rejected legacy
+    # node path therefore cannot leave an orphaned registry record.
+    provision_node_storage(
+        state_dir=str(node_config.workspace_dir / "memories"), magis_url=magis_url,
+    )
+    membership = memberships.add(magis_id=genesis.id, role_id=eva_role.id)
     _register_local_runtime(
         bus=control_bus, runtime_id=membership.id, config=config, port=port,
     )
     ports.allocate(runtime_id=membership.id, port=port)
 
-    node_config = replace(config, magis_database_url=magis_url, magi_id=str(membership.id))
-    provision_node_storage(
-        state_dir=str(node_config.workspace_dir / "memories"), magis_url=magis_url,
-    )
+    node_config = replace(node_config, magi_id=str(membership.id))
     spec = RuntimeSpec(
         magi_name=node_config.magi_name,
         magi_id=str(membership.id),

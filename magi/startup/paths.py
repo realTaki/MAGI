@@ -12,7 +12,7 @@ Layout (per refactor plan §7, §9):
     <HOST_WORKSPACE_DIR>/
     ├── MAGI_Citizens/
     │   ├── eva-000/
-    │   │   ├── magi.db           # private SQLite
+    │   │   ├── memories/magi.db  # private SQLite
     │   │   ├── runtime.json      # runtime state (identity record)
     │   │   ├── skills/           # SKILL.md files
     │   │   ├── memories/         # memory subsystem data
@@ -89,14 +89,6 @@ def resolve_host_workspace() -> Path:
     if xdg:
         return Path(xdg).expanduser().resolve() / "magi"
     return Path.home() / ".magi"
-
-
-# Legacy launcher compatibility — plan §20.1 migrates the launcher
-# `state_dir()` / `workspace_dir()` zero-arg resolvers into the unified
-# :func:`resolve_state_dir` / :func:`resolve_workspace_dir` defined below.
-# These names read only ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME``; the
-# legacy ``MAGI_WORKSPACE_DIR`` override is gone (workspace is always
-# derived from HOST_WORKSPACE_DIR + MAGI_NAME per plan §5 / §6).
 
 
 # ------------------------------------------------------------------
@@ -195,47 +187,6 @@ def resolve_webui_log_paths(host_workspace_dir: Path) -> tuple[Path, Path]:
 
 
 # ------------------------------------------------------------------
-# directory bootstrapping (idempotent)
-# ------------------------------------------------------------------
-
-def ensure_host_workspace(host_workspace_dir: Path) -> Path:
-    """Create the host workspace root directory if missing.
-
-    Returns the resolved, guaranteed-to-exist directory.
-    """
-    host_workspace_dir.mkdir(parents=True, exist_ok=True)
-    return host_workspace_dir
-
-
-def ensure_workspace(workspace_dir: Path) -> Path:
-    """Create the per-MAGI workspace and its canonical subdirectories.
-
-    Creates (if missing):
-    - ``<workspace>/`` (root)
-    - ``<workspace>/skills/``
-    - ``<workspace>/memories/``
-    - ``<workspace>/logs/``
-    - ``<workspace>/run/``
-
-    .. note::
-
-        Provisioning owns creation of this layout and the initial ``SOUL.md``.
-        Runtime path resolvers are deliberately side-effect free.
-
-    Returns the guaranteed-to-exist workspace directory.  Idempotent.
-    """
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    # Canonical subdirectories
-    for sub in ("skills", "memories", "logs", "run"):
-        (workspace_dir / sub).mkdir(parents=True, exist_ok=True)
-
-    return workspace_dir
-
-
-
-
-# ------------------------------------------------------------------
 # skills / memories / SOUL (workspace subdirectories)
 # ------------------------------------------------------------------
 
@@ -279,7 +230,7 @@ def resolve_state_dir(
     """Return the canonical state directory for bus SQLite + migrations.
 
     Per plan §9 — the bus SQLite file lives at
-    ``<workspace>/magi.db``; the state dir is the ``memories`` sibling:
+    ``<workspace>/memories/magi.db``; this resolver returns its parent:
 
         ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>/memories``
 
@@ -340,24 +291,6 @@ def _resolve_workspace_root(
     return host_workspace_dir / "MAGI_Citizens" / magi_name
 
 
-def bootstrap_workspace(workspace: Path) -> dict[str, str]:
-    """Idempotent workspace bootstrap (alias for :func:`ensure_workspace`).
-
-    Deprecated internal helper retained only for test fixtures. Production
-    provisioning is owned by :mod:`magi.startup.provision`.
-    """
-    workspace.mkdir(parents=True, exist_ok=True)
-    created: dict[str, str] = {"workspace_root": "kept"}
-    for sub, label in (
-        ("skills", "skills/"),
-        ("memories", "memories/"),
-    ):
-        target = workspace / sub
-        target.mkdir(parents=True, exist_ok=True)
-        created[label] = "kept"
-    return created
-
-
 def resolve_soul_path(workspace_dir: Path) -> Path:
     return workspace_dir / "SOUL.md"
 
@@ -373,10 +306,6 @@ __all__ = [
     "resolve_host_workspace",
     "resolve_state_dir",
     "resolve_workspace_dir",
-    # directory bootstrapping
-    "ensure_host_workspace",
-    "ensure_workspace",
-    "bootstrap_workspace",
     # MAGI workspace
     "resolve_magi_workspace",
     # databases
