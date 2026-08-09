@@ -101,7 +101,17 @@ class TaskWorker(RuntimeWorker):
     async def _rehydrate(self) -> None:
         try: tasks = await self.call(self.bus.tasks_book.list_all_enabled_for_workers)
         except Exception: tasks = []
-        self._next_fire = {t.id: datetime.fromisoformat(t.last_run_at) if t.last_run_at else None for t in tasks}
+        # ``_next_fire`` is typed ``dict[str, datetime]`` (invariant value
+        # type — see :class:`RuntimeWorker`). Tasks that have never fired
+        # (``last_run_at IS NULL``) carry no useful entry: a missing key
+        # and a ``None`` value both read as ``None`` via ``.get(task.id)``,
+        # so dropping them keeps the runtime invariant without losing
+        # information.
+        self._next_fire = {
+            t.id: datetime.fromisoformat(t.last_run_at)
+            for t in tasks
+            if t.last_run_at
+        }
 
     async def _reap_stale_runs(self) -> None:
         try:

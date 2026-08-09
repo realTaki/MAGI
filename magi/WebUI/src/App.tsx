@@ -7,7 +7,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import type { OnboardingData } from "./pages/onboardingTypes";
 import { I18nProvider } from "./i18n/index";
 import { useQueryClient } from "@tanstack/react-query";
-import { setSelectedMagicId } from "./lib/queryClient";
+import { setSelectedMagiId } from "./lib/queryClient";
 
 import {
   useCompleteOnboarding,
@@ -145,7 +145,7 @@ export default function App() {
         isFirstTime={isFirstTime}
         onSelectMagic={(magiId) => {
           setLoginMagiId(magiId);
-          setSelectedMagicId(magiId);
+          setSelectedMagiId(magiId);
           if (isFirstTime) {
             setViewOverride("onboarding");
           } else {

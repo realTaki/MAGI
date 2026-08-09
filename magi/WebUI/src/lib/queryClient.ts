@@ -23,24 +23,14 @@ export const queryClient = new QueryClient({
   },
 });
 
-// Per-MAGI selection in the WebUI: which MAGI's runtime proxy should
-// ``runtimeUrl`` route to. The localStorage key was renamed from
-// ``magi.selected-magic-id`` to ``magi.selected-magi-id`` when the
-// per-MAGI terminology settled; the old key is still read on first
-// load and then migrated forward so existing operators don't lose
-// their pinned MAGI.
-const TARGET_STORAGE_KEY_NEW = "magi.selected-magi-id";
-const TARGET_STORAGE_KEY_OLD = "magi.selected-magic-id";
+// Per-MAGI selection in the WebUI: which MAGI's runtime proxy
+// ``runtimeUrl`` routes to. Persisted under a stable localStorage key
+// so the operator's pinned MAGI survives a reload.
+const TARGET_STORAGE_KEY = "magi.selected-magi-id";
 
 function _readSelectedMagiId(): number {
   if (typeof window === "undefined") return 1;
-  const newer = window.localStorage.getItem(TARGET_STORAGE_KEY_NEW);
-  const fallback = window.localStorage.getItem(TARGET_STORAGE_KEY_OLD);
-  const raw = newer ?? fallback;
-  if (newer === null && fallback !== null) {
-    // One-shot migration: lift the legacy value into the new key.
-    window.localStorage.setItem(TARGET_STORAGE_KEY_NEW, fallback);
-  }
+  const raw = window.localStorage.getItem(TARGET_STORAGE_KEY);
   const parsed = Number(raw ?? "1");
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 }
@@ -54,13 +44,9 @@ export function getSelectedMagiId(): number {
 export function setSelectedMagiId(magiId: number): void {
   selectedMagiId = magiId;
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(TARGET_STORAGE_KEY_NEW, String(magiId));
+    window.localStorage.setItem(TARGET_STORAGE_KEY, String(magiId));
   }
 }
-
-// Compatibility shims — old call sites still import these names.
-export const getSelectedMagicId = getSelectedMagiId;
-export const setSelectedMagicId = setSelectedMagiId;
 
 function isControlPath(url: string): boolean {
   if (url === "/api/magi" || /^\/api\/magi\/\d+(?:\/|$)/.test(url)) {

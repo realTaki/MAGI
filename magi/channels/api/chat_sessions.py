@@ -30,7 +30,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import get_bus
+from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.bus.library.local.sessionBook import (
     Message,
@@ -380,6 +380,7 @@ def get_session(
     request: Request,
     _admin: AdminGate,
     service: SessionServiceDep,
+    bus: BusDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
     uid = _admin_uid(request)
@@ -410,7 +411,8 @@ def get_session(
             code="not_found.session",
             detail=f"session {session_id} not found",
         )
-    return _session_to_out(sess)
+    messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+    return _session_to_out(sess, messages=messages)
 
 
 @router.delete("/chat/sessions/{session_id}", status_code=204)
@@ -454,6 +456,7 @@ def update_session(
     request: Request,
     _admin: AdminGate,
     service: SessionServiceDep,
+    bus: BusDep,
 ) -> SessionOut:
     """Rename a session (D.7).
 
@@ -512,7 +515,8 @@ def update_session(
                 code="not_found.session",
                 detail=f"session {session_id} not found",
             )
-        return _session_to_out(sess)
+        messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+        return _session_to_out(sess, messages=messages)
 
     # No-op path — return current state. Going through
     # ``store.get`` (rather than synthesizing) surfaces a
@@ -542,7 +546,8 @@ def update_session(
             code="not_found.session",
             detail=f"session {session_id} not found",
         )
-    return _session_to_out(sess)
+    messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+    return _session_to_out(sess, messages=messages)
 
 
 # ────────────────────────────────────────────────────────────────── #

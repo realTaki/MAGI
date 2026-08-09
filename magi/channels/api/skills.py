@@ -27,7 +27,8 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.bus.library.file.skillsBook import SkillBookError, SkillNotFound
+from magi.bus import Bus
+from magi.bus.library.file.skillsBook import SkillBookError, SkillNotFound, SkillsBook
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -40,7 +41,24 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _DISABLED_KEY = "skills.disabled"
 
 
-def _load_disabled(bus) -> set[str]:
+def _skills_book(bus: Bus) -> SkillsBook:
+    """Return the skills Book, or 503 when no skills root is configured.
+
+    ``Bus.skills_book`` is ``SkillsBook | None`` — it is only populated
+    when a skills directory was resolved at bootstrap. Every route here
+    is meaningless without it, so a missing Book is a deployment-state
+    error rather than an ``AttributeError`` on ``None``.
+    """
+    if bus.skills_book is None:
+        raise MagiHTTPException(
+            status_code=503,
+            code="unavailable.skills_store",
+            detail="Skills are not available on this node",
+        )
+    return bus.skills_book
+
+
+def _load_disabled(bus: Bus) -> set[str]:
     raw = bus.settings_book.get(key=_DISABLED_KEY)
     if not raw:
         return set()
@@ -50,7 +68,7 @@ def _load_disabled(bus) -> set[str]:
         return set()
 
 
-def _save_disabled(bus, disabled: set[str]) -> None:
+def _save_disabled(bus: Bus, disabled: set[str]) -> None:
     bus.settings_book.set(key=_DISABLED_KEY, value=json.dumps(sorted(disabled)))
 
 
@@ -88,7 +106,7 @@ def list_skills(
             version=s.version,
             enabled=s.name not in disabled,
         )
-        for s in bus.skills_book.list()
+        for s in _skills_book(bus).list()
     ]
 
 
@@ -102,7 +120,7 @@ def toggle_skill(
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    meta = bus.skills_book.get(name)
+    meta = _skills_book(bus).get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
     disabled = _load_disabled(bus)
@@ -130,7 +148,7 @@ def get_skill_body(
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
     try:
-        body = bus.skills_book.read_body(name)
+        body = _skills_book(bus).read_body(name)
     except SkillNotFound:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered") from None
     except SkillBookError as exc:

@@ -44,13 +44,29 @@ class TelegramWorker(ChannelWorker):
         self._bot_app = app; self._shutdown_event = asyncio.Event()
         try:
             await app.initialize(); await app.start()
-            await app.updater.start_polling(poll_interval=1.0, timeout=10)
+            # ``Application.updater`` is typed ``Updater | None``; the
+            # lib populates it during ``start()``. Hoist it once and
+            # guard so the rest of the function deals with a concrete
+            # ``Updater`` (Pylance narrows it from the assertion).
+            updater = app.updater
+            if updater is None:
+                raise RuntimeError(
+                    "TelegramWorker inbound: Application.updater is None after start(); "
+                    "python-telegram-bot version mismatch?"
+                )
+            await updater.start_polling(poll_interval=1.0, timeout=10)
             await self._shutdown_event.wait()
         except RuntimeError as exc:
             logger.warning("TelegramWorker inbound: %s", exc)
         finally:
-            try: await app.updater.stop()
-            except Exception: pass
+            # ``app.updater`` may be None if ``start()`` failed before
+            # populating it; the lib's own ``app.stop()`` / ``app.shutdown()``
+            # already guard on this, so we mirror the same check before
+            # calling ``updater.stop()`` to avoid a runtime crash.
+            updater = app.updater
+            if updater is not None:
+                try: await updater.stop()
+                except Exception: pass
             try: await app.stop()
             except Exception: pass
             try: await app.shutdown()
