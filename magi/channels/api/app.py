@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from magi.bus import Bus
+    from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.channels.api")
 
@@ -94,6 +95,7 @@ class HealthResponse(BaseModel):
 def create_app(
     *,
     bus: "Bus",
+    workers: "WorkerRegistry | None" = None,
     include_spa: bool = True,
     include_control_routes: bool = True,
     include_private_routes: bool = True,
@@ -126,6 +128,7 @@ def create_app(
         lifespan=_lifespan,
     )
     app.state.bus = bus
+    app.state.workers = workers
 
     # Install the i18n-ready error envelope BEFORE the
     # routers mount so :class:`MagiHTTPException` raised
@@ -321,9 +324,12 @@ def create_app(
     return app
 
 
-def create_runtime_app(*, bus: "Bus") -> FastAPI:
+def create_runtime_app(*, bus: "Bus", workers: "WorkerRegistry") -> FastAPI:
     """Factory for the internal API served by every MAGI runtime."""
-    return create_app(bus=bus, include_spa=False, include_control_routes=False)
+    return create_app(
+        bus=bus, workers=workers,
+        include_spa=False, include_control_routes=False,
+    )
 
 
 def create_control_app(*, bus: "Bus") -> FastAPI:

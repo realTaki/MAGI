@@ -34,11 +34,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from magi.mcp.worker import (
-    McpWorker,
-    start_mcp_worker,
-    stop_mcp_worker,
-)
+from magi.mcp.worker import McpWorker
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.guild import (
@@ -550,11 +546,12 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
 # -- module-level singletons -------------------------------------------
 
 
-def test_start_stop_singleton_round_trip(bus):
+def test_start_stop_lifecycle_round_trip(bus):
     bus.mcp_servers_book.upsert(
         name="gmail", connection_type="stdio", command="mcp-gmail"
     )
-    worker = asyncio.run(start_mcp_worker(bus))
+    worker = McpWorker(bus)
+    asyncio.run(worker.start())
     try:
         assert worker.connections_view() == {}
         # No stub patching here — the real ``MCPServerConnection``
@@ -564,10 +561,7 @@ def test_start_stop_singleton_round_trip(bus):
         # connection map stays empty. We're proving the
         # singleton + lifecycle, not the connect path.
     finally:
-        asyncio.run(stop_mcp_worker())
-        # A second ``start`` after ``stop`` must spin up a fresh
-        # worker (the global is reset).
-        assert start_mcp_worker.__globals__["_worker"] is None
+        asyncio.run(worker.stop())
 
 
 # -- timeout reading ----------------------------------------------------

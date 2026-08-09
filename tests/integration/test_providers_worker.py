@@ -35,11 +35,25 @@ from magi.bus.guild.changeProviderConfigJob import (
 from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.factory import get_provider
-from magi.providers.worker import (
-    ProvidersWorker,
-    start_provider_worker,
-    stop_provider_worker,
-)
+from magi.providers.worker import ProvidersWorker
+
+
+_worker: ProvidersWorker | None = None
+
+
+async def start_provider_worker(bus: Bus) -> ProvidersWorker:
+    """Test-local lifecycle helper; production ownership is startup-only."""
+    global _worker
+    _worker = ProvidersWorker(bus)
+    await _worker.start()
+    return _worker
+
+
+async def stop_provider_worker() -> None:
+    global _worker
+    if _worker is not None:
+        await _worker.stop()
+        _worker = None
 
 
 # ---------------------------------------------------------------------------

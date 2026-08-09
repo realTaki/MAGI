@@ -24,19 +24,18 @@ class TelegramWorker(ChannelWorker):
         self._bot_app: object | None = None
         self._shutdown_event: asyncio.Event | None = None
 
-    async def start(self) -> None:
-        bot_token = self.bus.settings_book.get(key="telegram.bot_token")
+    async def on_start(self) -> None:
+        bot_token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
         if not bot_token:
             logger.info("TelegramWorker: no bot_token; skipping")
-            return
-        await super().start()
+            self._stopping = True
 
     async def _run(self) -> None:
         await asyncio.gather(self._run_inbound(), self._run_outbound())
 
     async def _run_inbound(self) -> None:
         from telegram.ext import Application, MessageHandler, filters
-        token = self.bus.settings_book.get(key="telegram.bot_token")
+        token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
         if not token: return
         app = (Application.builder().token(str(token)).concurrent_updates(True)
                .connect_timeout(15).read_timeout(15).write_timeout(15).pool_timeout(5).build())
@@ -85,7 +84,7 @@ class TelegramWorker(ChannelWorker):
         await self._claim_delivery_loop(self._deliver_tg, "tg")
 
     async def _deliver_tg(self, job: DeliveryJob) -> None:
-        bot_token = self.bus.settings_book.get(key="telegram.bot_token")
+        bot_token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
         if not bot_token: raise RuntimeError("Telegram delivery: no bot_token")
         chat_id = int(job.destination) if job.destination else 0
         text = str(job.payload.get("text") or "")
@@ -93,9 +92,8 @@ class TelegramWorker(ChannelWorker):
         from magi.channels.telegram.bot import send_text_raw
         await send_text_raw(str(bot_token), chat_id, text)
 
-    async def stop(self) -> None:
+    async def on_stop_requested(self) -> None:
         if self._shutdown_event is not None: self._shutdown_event.set()
-        await super().stop()
 
 
 def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:

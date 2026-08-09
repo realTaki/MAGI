@@ -22,7 +22,8 @@ def test_init_populates_required_attributes():
     mock_bus.messages_book = MagicMock()
 
     w = TaskWorker(mock_bus)
-    assert w.channel_name == "task"
+    assert w.worker_name == "task"
+    assert w.worker_kind == "scheduler"
     assert w._stopping is False
     assert w._task is None
     assert isinstance(w._next_fire, dict)

@@ -302,13 +302,18 @@ async def test_cancel_interrupts():
 # Test 5: system_prompt delegation (integration-style)
 # ---------------------------------------------------------------------------
 
-def test_system_prompt_delegates():
+@pytest.mark.asyncio
+async def test_system_prompt_delegates():
     from magi.agent.worker import AgentWorker, RunContext
 
     bus = _make_bus()
     bus.memory_book.list_by_owner.return_value = [_FakeMemory()]
     bus.contacts_book.get.return_value = _FakeContact(name="TestUser")
-    bus.prompt_book.get.return_value = "You are MAGI."
+    bus.prompt_book.soul.return_value = "You are MAGI."
+    bus.prompt_book.fallback_persona.return_value = "fallback"
+    bus.contact_notes_book.list_for_contact.return_value = []
+    bus.contact_notes_book.read_daily_note.return_value = None
+    bus.skills_book.list.return_value = []
 
     ctx = RunContext(
         uid=42, session_id="sess-1", channel="tg",
@@ -316,7 +321,7 @@ def test_system_prompt_delegates():
     )
 
     worker = AgentWorker(bus=bus)
-    prompt = worker._system_prompt(ctx)
+    prompt = await worker._system_prompt(ctx)
 
     assert "MAGI" in prompt
     assert "fact" in prompt.lower() or "Python" in prompt
@@ -326,7 +331,8 @@ def test_system_prompt_delegates():
 # Test 6: token usage recorded
 # ---------------------------------------------------------------------------
 
-def test_token_usage_recorded():
+@pytest.mark.asyncio
+async def test_token_usage_recorded():
     from magi.agent.worker import AgentWorker, RunContext
 
     bus = _make_bus()
@@ -341,9 +347,48 @@ def test_token_usage_recorded():
         token_usage={"input_tokens": 100, "output_tokens": 50},
         model="claude:sonnet",
     )
-    worker._record_token_usage(ctx, result)
+    await worker._record_token_usage(ctx, result)
 
     bus.token_usage_book.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_marks_claimed_agent_job_cancelled():
+    """A shutdown-cancelled turn must not settle its claimed event as success."""
+    from types import SimpleNamespace
+
+    from magi.agent.worker import AgentWorker
+
+    bus = _make_bus()
+    job = SimpleNamespace(
+        event_id="shutdown-job", run_id="run-1", conversation_id="conv-1",
+        kind="channel.message.received", payload={},
+    )
+    claimed = False
+
+    def claim():
+        nonlocal claimed
+        if claimed:
+            return None
+        claimed = True
+        return job
+
+    bus.agent_job_board.claim.side_effect = claim
+    worker = AgentWorker(bus)
+    started = asyncio.Event()
+
+    async def blocked_process(_ctx):
+        started.set()
+        await asyncio.Event().wait()
+
+    worker._process = blocked_process  # type: ignore[method-assign]
+    await worker.start()
+    await started.wait()
+    await worker.stop()
+
+    result = bus.agent_job_board.submit_result.call_args.kwargs["result"]
+    assert result.success is False
+    assert result.error_code == "magi.run_cancelled"
 
 
 # ---------------------------------------------------------------------------

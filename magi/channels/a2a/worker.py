@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.channels.worker_base import ChannelWorker
+from magi.bus.guild.sendA2AJob import SendA2AResult
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -20,24 +21,25 @@ class A2AWorker(ChannelWorker):
 
     async def _run(self) -> None:
         while not self._stopping:
-            try: job = await asyncio.to_thread(self.bus.a2a_job_board.claim)
+            try: job = await self.call(self.bus.a2a_job_board.claim)
             except Exception:
                 logger.exception("A2AWorker: claim failed")
                 await asyncio.sleep(self.poll_seconds); continue
             if job is None:
                 await asyncio.sleep(self.poll_seconds); continue
-            self._last_poll_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            self.polled()
             try:
                 await self._deliver_a2a(job)
-                result = __import__("magi.bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
+                result = SendA2AResult(
                     invocation_id=job.invocation_id, success=True, status="delivered")
-                self.bus.a2a_job_board.submit_result(key=job.invocation_id, result=result)
+                await self.call(self.bus.a2a_job_board.submit_result, key=job.invocation_id, result=result)
+                self.succeeded()
             except Exception as exc:
-                self._last_error = str(exc)
+                self.failed(exc)
                 logger.exception("A2AWorker: delivery %s failed", job.invocation_id)
-                result = __import__("magi.bus.guild.sendA2AJob", fromlist=["SendA2AResult"]).SendA2AResult(
+                result = SendA2AResult(
                     invocation_id=job.invocation_id, success=False, status="failed", error=str(exc)[:1024])
-                self.bus.a2a_job_board.submit_result(key=job.invocation_id, result=result)
+                await self.call(self.bus.a2a_job_board.submit_result, key=job.invocation_id, result=result)
 
     async def _deliver_a2a(self, job: SendA2AJob) -> None:
         from magi.channels.a2a.transport import send_a2a_delivery

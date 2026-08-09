@@ -40,7 +40,7 @@ class WebUIWorker(ChannelWorker):
         if not session_id or not isinstance(uid, int):
             raise ValueError("webui delivery missing session_id or uid")
 
-        self.bus.messages_book.add(
+        await self.call(self.bus.messages_book.add,
             session_id=session_id,
             role="assistant",
             text=text,

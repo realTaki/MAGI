@@ -47,8 +47,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.action_items")
@@ -125,10 +125,6 @@ class ActionItemCompleteRequest(BaseModel):
 _COMPLETED_VISIBLE_DAYS = 7
 
 
-def _bus():
-    return bus
-
-
 def _current_admin_id(request: Request) -> int:
     """Resolve the cookie's admin Contact id.
 
@@ -157,7 +153,7 @@ def _current_admin_id(request: Request) -> int:
             code="chat.unknown_sender",
             detail="no admin contact row bound to this session",
         )
-    contact = _bus().contacts.get(uid)
+    contact = get_bus(request).contacts_book.get(contact_id=uid)
     if contact is None or not contact.admin:
         raise MagiHTTPException(
             status_code=401,
@@ -171,6 +167,7 @@ def _current_admin_id(request: Request) -> int:
 def list_action_items(
     request: Request,
     _admin: AdminGate,
+    bus: BusDep,
     include_completed: bool = True,
     kind: str | None = None,
 ) -> ActionItemListOut:
@@ -197,12 +194,13 @@ def list_action_items(
     # open before completed (cast completed_at IS NOT NULL as
     # 0), priority DESC ("high" > "normal" via alpha compare
     # which is enough for v0), then most-recent first.
-    rows = _bus().action_item.list_for_owner(
+    rows = bus.action_items_book.list_actions(
         owner_uid=admin_id,
         include_completed=include_completed,
-        kind=kind,
         completed_visible_days=_COMPLETED_VISIBLE_DAYS,
     )
+    if kind is not None:
+        rows = [row for row in rows if row.kind == kind]
     return ActionItemListOut(
         items=[_serialize(r) for r in rows],
         server_time=datetime.now(timezone.utc)
@@ -219,6 +217,7 @@ def complete_action_item(
     payload: ActionItemCompleteRequest,
     request: Request,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ActionItemOut:
     """Mark an item complete. Idempotent.
 
@@ -238,8 +237,8 @@ def complete_action_item(
     could complete someone else's item via URL guessing.
     """
     admin_id = _current_admin_id(request)
-    service = _bus().action_item
-    row = service.get(item_id)
+    service = bus.action_items_book
+    row = service.get(item_id=item_id)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -257,10 +256,10 @@ def complete_action_item(
             detail="this action item is owned by another operator",
         )
 
-    row = service.complete_for_owner(
+    row = service.complete(
         action_item_id=item_id,
-        owner_uid=admin_id,
         note=(payload.completion_note if "completion_note" in payload.model_fields_set else None),
+        completed_by_uid=admin_id,
     )
     if row is None:  # Ownership was rechecked inside the bus transaction.
         raise MagiHTTPException(

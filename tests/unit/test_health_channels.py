@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,8 +29,10 @@ def test_health_returns_expected_keys():
     w._last_poll_at = datetime(2026, 8, 8, 12, 0, 0, tzinfo=timezone.utc)
     w._last_success_at = datetime(2026, 8, 8, 12, 5, 0, tzinfo=timezone.utc)
     w._last_error = None
+    w._children = set()
+    w._queue_depth = 3
+    w.worker_name = "test_ch"
     w.bus = MagicMock()
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=3)
 
     h = w.health()
     assert h["name"] == "test_ch"
@@ -48,8 +51,10 @@ def test_health_returns_none_when_not_polled():
     w._last_poll_at = None
     w._last_success_at = None
     w._last_error = None
+    w._children = set()
+    w._queue_depth = 0
+    w.worker_name = "fresh"
     w.bus = MagicMock()
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
 
     h = w.health()
     assert h["last_poll_at"] is None
@@ -59,17 +64,7 @@ def test_health_returns_none_when_not_polled():
 
 @pytest.mark.asyncio
 async def test_health_endpoint_returns_empty_when_no_workers():
-    """/health/channels returns empty channels list when no workers registered."""
-    from magi.channels import _registry as workers_registry
-    from magi.channels import registered_channel_workers
-
-    # Save and clear
-    saved = dict(workers_registry)
-    workers_registry.clear()
-
-    try:
-        result = await health_channels()
-        assert "channels" in result
-        assert isinstance(result["channels"], list)
-    finally:
-        workers_registry.update(saved)
+    """/health/channels is empty when this ASGI app has no registry."""
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(workers=None)))
+    result = await health_channels(request)
+    assert result == {"channels": []}

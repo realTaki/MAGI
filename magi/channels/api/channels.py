@@ -11,18 +11,13 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
-from magi.startup.runtime import (
-    is_channel_running,
-    start_channel,
-    stop_channel,
-)
 
 logger = logging.getLogger("magi.api.channels")
 
@@ -91,8 +86,11 @@ class ChannelsUpdateRequest(BaseModel):
 # -- endpoints ------------------------------------------------------------
 
 @router.get("/channels", response_model=ChannelsResponse)
-def list_channels(_admin: AdminGate, bus: BusDep) -> ChannelsResponse:
+async def list_channels(
+    request: Request, _admin: AdminGate, bus: BusDep,
+) -> ChannelsResponse:
     enabled = _read_enabled(bus)
+    registry = getattr(request.app.state, "workers", None)
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
         name = meta["name"]
@@ -102,14 +100,15 @@ def list_channels(_admin: AdminGate, bus: BusDep) -> ChannelsResponse:
             implemented=meta["implemented"],
             has_credentials=_has_credentials(bus, name),
             enabled=name in enabled,
-            running=is_channel_running(name),
+            running=bool(registry and registry.workers[name].health()["running"]),
         ))
     return ChannelsResponse(enabled=enabled, available=available)
 
 
 @router.post("/channels", response_model=ChannelsResponse)
-def update_channels(
+async def update_channels(
     payload: ChannelsUpdateRequest,
+    request: Request,
     _admin: AdminGate,
     bus: BusDep,
 ) -> ChannelsResponse:
@@ -128,19 +127,20 @@ def update_channels(
 
     _write_enabled(bus, effective_enabled)
     enabled_list = _read_enabled(bus)
+    registry = getattr(request.app.state, "workers", None)
 
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
         name = meta["name"]
         should_run = name in enabled_list and meta["implemented"]
-        currently_running = is_channel_running(name)
+        currently_running = bool(registry and registry.workers[name].health()["running"])
 
-        if should_run and not currently_running:
+        if registry is not None and should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
-            start_channel(name)
-        elif not should_run and currently_running:
+            await registry.start_worker(name)
+        elif registry is not None and not should_run and currently_running:
             logger.info("channels: stopping %r (toggled off)", name)
-            stop_channel(name)
+            await registry.stop_worker(name)
 
         available.append(ChannelInfo(
             name=name,
@@ -148,7 +148,7 @@ def update_channels(
             implemented=meta["implemented"],
             has_credentials=_has_credentials(bus, name),
             enabled=name in enabled_list,
-            running=is_channel_running(name),
+            running=bool(registry and registry.workers[name].health()["running"]),
         ))
 
     return ChannelsResponse(enabled=enabled_list, available=available)
