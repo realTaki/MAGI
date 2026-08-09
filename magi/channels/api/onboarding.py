@@ -141,17 +141,9 @@ class OnboardingStatus(BaseModel):
     mode: str | None = None
 
 
-class CompleteRequest(BaseModel):
-    pass
-
-
 class CompleteResponse(BaseModel):
     ok: bool
     error: str | None = None
-
-
-class RestartRequest(BaseModel):
-    pass
 
 
 class RestartResponse(BaseModel):
@@ -355,7 +347,7 @@ async def set_admin_password_onboarding(
 
 
 @router.post("/complete", response_model=CompleteResponse)
-async def complete_onboarding(_payload: CompleteRequest, bus: BusDep) -> CompleteResponse:
+async def complete_onboarding(bus: BusDep) -> CompleteResponse:
     """Mark the wizard as fully complete.
 
     Called by the dashboard "OK, got it — sign in →" button — i.e.
@@ -471,7 +463,7 @@ async def complete_onboarding(_payload: CompleteRequest, bus: BusDep) -> Complet
 
 
 @router.post("/restart", response_model=RestartResponse)
-async def restart_onboarding(_payload: RestartRequest, bus: BusDep) -> RestartResponse:
+async def restart_onboarding(bus: BusDep) -> RestartResponse:
     """Clear the ``onboarding_complete`` flag.
 
     Called by the dashboard "Restart onboarding" button. The saved

@@ -23,17 +23,26 @@ logger = logging.getLogger("magi.api.auth_gates")
 
 
 def _is_admin_uid(bus, uid: int) -> bool:
-    from magi.channels.api import control_store
-    if control_store.enabled():
-        return bool(bus.magis_book and bus.magis_book.is_control_admin(uid))
+    """True iff the local Contact row at ``uid`` is a WebUI admin.
+
+    ``proxied_uid`` returned by :func:`ensure_runtime_operator` is
+    always a local Contact id (the proxy materialises the
+    control-plane operator into this runtime's own contacts table
+    before forwarding the request), so the same lookup works on
+    both code paths. We no longer branch on
+    ``control_store.enabled()`` here: a control-plane deployment
+    without a local contact row will simply deny the request,
+    which is the safer failure mode than asking the runtime to
+    consult the unreachable MAGIS store.
+    """
     try:
         c = bus.contacts_book.get(contact_id=uid)
-            # ``admin`` is the WebUI sign-in bit. Independent
-            # of ``role`` — an assigned user with admin=True
-            # is their own operator; a contact with admin=True
-            # is the classic operator role. The split
-            # replaces the pre-2024 ``role == 'admin'``
-            # check.
+        # ``admin`` is the WebUI sign-in bit. Independent
+        # of ``role`` — an assigned user with admin=True
+        # is their own operator; a contact with admin=True
+        # is the classic operator role. The split
+        # replaces the pre-2024 ``role == 'admin'``
+        # check.
         return c is not None and c.admin
     except Exception:
         logger.exception("admin_gate: ORM read failed; denying access")

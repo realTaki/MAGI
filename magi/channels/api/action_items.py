@@ -44,11 +44,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep, get_bus
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.action_items")
@@ -125,47 +125,33 @@ class ActionItemCompleteRequest(BaseModel):
 _COMPLETED_VISIBLE_DAYS = 7
 
 
-def _current_admin_id(request: Request) -> int:
-    """Resolve the cookie's admin Contact id.
+def _current_admin_id(_admin: str) -> int:
+    """Reuse the AdminGate-resolved admin uid.
 
-    ``AdminGate`` already validated cookie + admin row
-    membership, so under normal flow this always returns an
-    int. The defensive re-check mirrors
-    :func:`magi.channels.api.chat._resolve_caller_credentials`:
-    if a future caller bypasses the gate, this still fails
-    closed with a ``chat.unknown_sender`` 401 — the same
-    code as chat.py, so the frontend's friendly
-    "登录失效了" message handles both endpoints.
-
-    D.24: cookie carries ``contact.id`` (an int). Lookup
-    is by primary key, not by ``telegram_id`` — that
-    matched the pre-D.24 cookie (which carried a TG
-    chat id), but with the contact-id cookie the
-    ``Contact.telegram_id == cid_int`` query only
-    matches by sheer coincidence.
+    ``AdminGate`` already validated the cookie (or the
+    control-plane proxy signature) and confirmed the
+    resolved local Contact row is ``admin=True``. We
+    re-parse the int here so the rest of the file keeps
+    a single ``admin_id: int`` shape. Re-deriving the
+    caller from the raw ``magi_session`` cookie used to
+    live here, but that broke the proxied/control-plane
+    session shape (the v2 ``v2.<payload>.<sig>`` cookie
+    can't be parsed by the legacy single-uid helper)
+    and silently failed every admin action even after a
+    successful sign-in.
     """
-    from magi.channels.api.auth import _verify_signed_uid
-    raw = request.cookies.get("magi_session") or ""
-    uid = _verify_signed_uid(get_bus(request), raw)
-    if uid is None:
+    try:
+        return int(_admin)
+    except (TypeError, ValueError) as exc:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no admin contact row bound to this session",
-        )
-    contact = get_bus(request).contacts_book.get(contact_id=uid)
-    if contact is None or not contact.admin:
-        raise MagiHTTPException(
-            status_code=401,
-            code="chat.unknown_sender",
-            detail="no admin contact row bound to this session",
-        )
-    return contact.id
+        ) from exc
 
 
 @router.get("/action_items", response_model=ActionItemListOut)
 def list_action_items(
-    request: Request,
     _admin: AdminGate,
     bus: BusDep,
     include_completed: bool = True,
@@ -186,7 +172,7 @@ def list_action_items(
     so the URL has no "look at someone else's items"
     affordance.
     """
-    admin_id = _current_admin_id(request)
+    admin_id = _current_admin_id(_admin)
 
     # Open rows: always returned. A row with completed_at set
     # within the window OR dismissed within the window are
@@ -215,7 +201,6 @@ def list_action_items(
 def complete_action_item(
     item_id: int,
     payload: ActionItemCompleteRequest,
-    request: Request,
     _admin: AdminGate,
     bus: BusDep,
 ) -> ActionItemOut:
@@ -236,7 +221,7 @@ def complete_action_item(
     row tied to a different uid and the operator
     could complete someone else's item via URL guessing.
     """
-    admin_id = _current_admin_id(request)
+    admin_id = _current_admin_id(_admin)
     service = bus.action_items_book
     row = service.get(item_id=item_id)
     if row is None:

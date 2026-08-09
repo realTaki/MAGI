@@ -770,8 +770,8 @@ class LoginMethodsResponse(BaseModel):
     The frontend uses this to decide whether to show a
     "password" tab, a "TG code" tab, or both. Steered by
     the :class:`AuthCredential` table on the single-MAGI
-    path and the ``ControlOperator`` / IM binding on the
-    control-plane path.
+    path and the ``magis_admins`` row (bound Telegram
+    chat id) on the control-plane path.
     """
 
     uid: int
@@ -848,14 +848,30 @@ def _login_methods_for(bus: Bus, uid: int) -> tuple[list[str], bool]:
     Used by both the new ``GET /auth/login-methods`` route
     and the onboarding wizard's "is setup complete?"
     check. The two paths (single-MAGI vs control-plane)
-    disagree on the data source — control-plane uses
-    ControlOperator + the runtime's IM binding table; the
-    single-MAGI path uses Contact + auth_credentials.
+    disagree on the data source — control-plane looks the
+    admin up in ``magis_admins`` by the Telegram chat id
+    (the value the WebUI uses as the login ``uid`` on
+    that deployment mode); the single-MAGI path uses
+    Contact + auth_credentials.
     """
     methods: list[str] = []
     is_webui_only = True
 
     if control_store.enabled():
+        # Control-plane mode: ``uid`` is the operator's
+        # Telegram chat id. The MAGIS admin roster
+        # (``magis_admins``) is the single source of
+        # truth — there's no Contact row in the runtime
+        # store. A bound admin always has ``tg_code``
+        # available; a missing row means "this Telegram
+        # account isn't an admin here" and the login
+        # page should fall back to the empty-state
+        # affordance.
+        if (
+            bus.magis_admins_book is not None
+            and bus.magis_admins_book.is_admin_for(uid=uid)
+        ):
+            return (["tg_code"], False)
         return ([], True)
 
     contact = bus.contacts_book.get(contact_id=uid)
