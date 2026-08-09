@@ -13,11 +13,11 @@ Credentials are resolved inside :func:`magi.providers.factory
 .get_provider` — the chat handler doesn't take them as
 parameters. The seeded adam ``Magi`` row owns the
 provider + API key; the chat handler only reads the
-operator's ``role`` (for the tool-menu filter) and ``uid``
+operator's ``role`` (for the tool-menu filter) and ``contact_id``
 (for the session). Token usage is still recorded per-
-operator via ``token_usage.uid``.
+operator via ``token_usage.contact_id``.
 
-The cookie / uid / row-exists checks are NOT done here
+The cookie / contact_id / row-exists checks are NOT done here
 because the auth gate (``AdminGate``) has already done them
 and returned 401. If the gate let the request through, the
 admin row exists.
@@ -39,7 +39,7 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
-from magi.bus.library.local.sessionBook import (
+from magi.bus.library.local.conversationBook import (
     SessionPathError,
     SessionMessage,
     ChannelMismatchError,
@@ -81,10 +81,10 @@ def new_session_id() -> str:
     return "".join(reversed(chars))
 
 
-def _resolve_caller_credentials(bus: Bus, uid: int) -> tuple[int, str]:
+def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
     """Look up the operator's Contact row by their
-    ``uid`` (the cookie value post-D.24) and return
-    ``(uid, role)``.
+    ``contact_id`` (the cookie value post-D.24) and return
+    ``(contact_id, role)``.
 
     LLM credentials live on ``magic`` (the ADAM MAGIC
     owns the provider + key), not on ``contacts`` — and
@@ -92,7 +92,7 @@ def _resolve_caller_credentials(bus: Bus, uid: int) -> tuple[int, str]:
     the agent worker reads them
     internally through :func:`magi.providers.factory
     .get_provider`. Token-usage recording is still per-
-    Contact (``token_usage.uid``).
+    Contact (``token_usage.contact_id``).
 
     The ``role`` field is included so the chat handler
     can put it on the durable agent message
@@ -106,7 +106,7 @@ def _resolve_caller_credentials(bus: Bus, uid: int) -> tuple[int, str]:
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
     """
-    contact = bus.contacts_book.get(contact_id=uid)
+    contact = bus.contacts_book.get(contact_id=contact_id)
 
     if contact is None:
         raise MagiHTTPException(
@@ -123,7 +123,7 @@ class ChatSendRequest(BaseModel):
 
     ``text`` is the only required field. ``session_id``
     (optional) ties the message to a persisted session;
-    the cookie's uid pins the session to that operator.
+    the cookie's contact_id pins the session to that operator.
     If absent, the backend auto-creates a new session
     and returns its id in the response — so the frontend
     doesn't have to know about session lifecycle.
@@ -164,7 +164,7 @@ async def send_chat(
     are empty the request is rejected with
     ``403 chat.llm_credentials_required`` — no silent
     fall-back to the system default. The audit row records
-    the operator's ``uid`` regardless.
+    the operator's ``contact_id`` regardless.
 
     Session lifecycle (D.6):
       - The user message is appended to the resolved
@@ -187,7 +187,7 @@ async def send_chat(
             detail="text must not be empty",
         )
 
-    # D.24: the cookie's value IS the uid. The
+    # D.24: the cookie's value IS the contact_id. The
     # auth gate already proved it's a live admin session;
     # ``_resolve_caller_credentials`` re-checks the row
     # exists and surfaces the operator's role for the
@@ -199,16 +199,16 @@ async def send_chat(
     # (D.28) below — WebUI doesn't need it for send / read
     # but we stamp it on the session row for cross-channel
     # tooling.
-    from magi.channels.api.auth import _verify_signed_uid
+    from magi.channels.api.auth import _verify_signed_contact_id
     cookie_raw = request.cookies.get("magi_session", "")
-    cookie_uid = _verify_signed_uid(bus, cookie_raw)
-    if cookie_uid is None:
+    cookie_contact_id = _verify_signed_contact_id(bus, cookie_raw)
+    if cookie_contact_id is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    uid, contact_role = _resolve_caller_credentials(bus, cookie_uid)
+    contact_id, contact_role = _resolve_caller_credentials(bus, cookie_contact_id)
     # D.24: per-channel delivery address stamped on the
     # session row's ``delivery_address`` column (renamed
     # from the legacy per-channel chat-id column in D.28).
@@ -218,9 +218,9 @@ async def send_chat(
     # column. ``""`` if the operator never bound TG.
 
     # -- session lifecycle ------------------------------------------
-    # ``uid`` (cross-channel identity) is the session key
+    # ``contact_id`` (cross-channel identity) is the session key
     # — NOT the per-channel delivery address. The store
-    # resolves rows by uid; the channel adapter interprets
+    # resolves rows by contact_id; the channel adapter interprets
     # the delivery address when it has to push a reply.
     store = bus.sessions_book
     session_id = payload.session_id
@@ -233,14 +233,14 @@ async def send_chat(
     delivery_address = ""
     if session_id:
         try:
-            # D.23: session key is now ``uid`` (the
+            # D.23: session key is now ``contact_id`` (the
             # cross-channel identity of the operator),
             # not the cookie's chat id. The chat id is
             # still carried on the row's
             # ``delivery_address`` column for
             # legacy / outbound-delivery reasons, but it
             # is NOT a session key.
-            existing = store.get_for_owner(uid=uid, session_id=session_id)
+            existing = store.get_for_owner(contact_id=contact_id, conversation_id=session_id)
         except SessionPathError as e:
             raise MagiHTTPException(
                 status_code=400,
@@ -264,19 +264,19 @@ async def send_chat(
         # ``delivery_address=`` here is the per-channel
         # delivery address stamped on the session row.
         # The value comes from the channel dispatcher
-        # (D.28 centralised the uid → IM-id mapping in
+        # (D.28 centralised the contact_id → IM-id mapping in
         # the adapter registry, so this file no longer
         # reads ``Contact.telegram_id`` directly). An
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
-        contact = bus.contacts_book.get(contact_id=uid)
+        contact = bus.contacts_book.get(contact_id=contact_id)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.add(
-            session_id=new_session_id(), uid=uid, channel=Channel.WEBUI,
+            conversation_id=new_session_id(), contact_id=contact_id, channel=Channel.WEBUI,
             delivery_address=tg_im_id,
         )
-        session_id = sess.session_id
+        session_id = sess.conversation_id
 
     # Inbound audit + SQLite append happen atomically inside
     # ``store.append_messages`` (single INSERT). Pre-D.18 this
@@ -292,7 +292,7 @@ async def send_chat(
     inbound_message_id = new_session_id()
     try:
         post = store.append_messages(
-            uid, session_id,
+            contact_id, session_id,
             [SessionMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=inbound_message_id,
@@ -337,10 +337,10 @@ async def send_chat(
     chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
     run_id = publish_chat(
         bus,
-        text=text, channel=Channel.WEBUI, uid=uid, session_id=session_id,
+        text=text, channel=Channel.WEBUI, contact_id=contact_id, session_id=session_id,
         caller_role=contact_role,
         event_id=chat_job_event_id, run_id=chat_job_event_id,
-        conversation_id=f"webui:{uid}:{session_id}",
+        conversation_id=f"webui:{contact_id}:{session_id}",
         correlation_id=inbound_message_id,
     )
     return ChatSendResponse(run_id=run_id, session_id=session_id)

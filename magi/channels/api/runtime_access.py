@@ -104,9 +104,9 @@ def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
     """Enumerate sign-in candidates for the local MAGI's direct MAGIS."""
     result: dict[int, LoginAccount] = {}
     for admin in (bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []):
-        result[admin.uid] = LoginAccount(
-            telegram_id=admin.uid,
-            name=f"Admin {admin.uid}",
+        result[admin.contact_id] = LoginAccount(
+            telegram_id=admin.contact_id,
+            name=f"Admin {admin.contact_id}",
             admin=True,
             assigned=False,
         )

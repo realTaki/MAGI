@@ -5,7 +5,7 @@ metadata:
 data:
   # The runtime derives its archetype (ADAM vs EVA) from MAGIS at boot;
   # no MAGI_NODE_ROLE env var is needed. The orchestrator pre-creates
-  # the MAGIC + MAGIS rows and injects MAGI_RUNTIME_ID into the pod.
+  # the MAGI + MAGIS rows and injects MAGI_RUNTIME_ID into the pod.
   # MAGI_CHANNELS intentionally unset — Eva's role default is
   # ("telegram",); the daemon is brought up by the wizard (Eva
   # re-binds per-user during onboarding).

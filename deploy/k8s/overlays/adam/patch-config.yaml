@@ -5,7 +5,7 @@ metadata:
 data:
   # The runtime derives its archetype (ADAM vs EVA) from MAGIS at boot;
   # no MAGI_NODE_ROLE env var is needed. The orchestrator pre-creates
-  # the MAGIC + MAGIS rows, sets MAGIS.adam_id, and injects
+  # the MAGI + MAGIS rows, sets MAGIS.adam_id, and injects
   # MAGI_RUNTIME_ID into the pod.
   # MAGI_CHANNELS intentionally unset — ADAM defaults to webui, and the
   # telegram channel is brought up by the onboarding wizard's save-bot

@@ -22,18 +22,18 @@ class AgentContext:
 
 
 def build_messages_from_session(
-    uid: int | None,
+    contact_id: int | None,
     session_id: str | None,
     new_user_text: str,
     *,
     bus: "Bus",
 ) -> list[dict]:
     """Load session history from sessions_book/messages_book."""
-    if not session_id or uid is None:
+    if not session_id or contact_id is None:
         return [{"role": "user", "content": new_user_text}]
 
     try:
-        session = bus.sessions_book.get_for_owner(uid=uid, session_id=session_id)
+        session = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=session_id)
         if session is None:
             return [{"role": "user", "content": new_user_text}]
         msgs = bus.messages_book.list_for_session(session_id=session_id)
@@ -54,7 +54,7 @@ def build_context(
     *,
     text: str,
     channel: str,
-    uid: int | None,
+    contact_id: int | None,
     session_id: str | None,
     caller_role: str | None,
     bus: "Bus",
@@ -72,7 +72,7 @@ def build_context(
     return AgentContext(
         soul="",  # caller provides via build_system_prompt
         tool_schemas=tool_schemas,
-        messages=build_messages_from_session(uid, session_id, text, bus=bus),
+        messages=build_messages_from_session(contact_id, session_id, text, bus=bus),
     )
 
 

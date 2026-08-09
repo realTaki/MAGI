@@ -6,7 +6,7 @@
 # Each MAGI is an independent process — one crashes, the others keep running.
 # ``systemctl --user status magi-*.service`` lists them all.
 [Unit]
-Description=MAGI runtime — eva-000 (magic_id=1)
+Description=MAGI runtime — eva-000 (magi_id=1)
 Documentation=https://github.com/realTaki/MAGI
 After=network-online.target
 Wants=network-online.target

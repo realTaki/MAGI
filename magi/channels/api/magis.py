@@ -207,7 +207,7 @@ def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
 
 
 def _admin_out(bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
-    contact = bus.contacts_book.get(contact_id=view.uid)
+    contact = bus.contacts_book.get(contact_id=view.contact_id)
     return MAGISAdminOut(
         id=view.id,
         magis_id=view.magis_id,
@@ -500,7 +500,7 @@ def add_magis_admin(
     if contact is None:
         raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
     try:
-        view = _admins_book(bus).add(uid=contact.id, magis_id=magis_id)
+        view = _admins_book(bus).add(contact_id=contact.id, magis_id=magis_id)
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
     return _admin_out(bus, view)

@@ -2,7 +2,7 @@
 the Knowledge → Memory pane.
 
 Scope: every ``MemoryEntry`` row owned by the calling
-admin (``MemoryEntry.uid == admin_uid``).
+admin (``MemoryEntry.contact_id == admin_contact_id``).
 The pane renders the operator's view of "what the LLM
 knows" — both kinds, in-flight + completed, ordered by
 priority DESC then updated_at DESC (the same ordering
@@ -48,7 +48,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_sessions import _admin_uid
+from magi.channels.api.chat_sessions import _admin_contact_id
 from magi.channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.memory")
@@ -119,7 +119,7 @@ def list_memory(
 
     Auth is doubled: ``AdminGate`` proves the cookie is a
     live admin session, and ``_current_admin_id`` re-reads
-    the cookie to get the int ``uid`` that scopes
+    the cookie to get the int ``contact_id`` that scopes
     the query. Defends against a future bug where some
     code path mints a row tied to a different contact and
     the operator could read someone else's memory via URL
@@ -133,12 +133,12 @@ def list_memory(
     regardless of completion state — the operator view is the audit
     trail.
     """
-    admin_id = _admin_uid(request)
-    # ``MemoryBook.list_by_owner`` is keyword-only and takes ``uid``
+    admin_id = _admin_contact_id(request)
+    # ``MemoryBook.list_by_owner`` is keyword-only and takes ``contact_id``
     # alone — it already returns every row for the owner (both kinds,
     # completed included), so the cap is applied here rather than
     # pushed into the query.
-    rows = bus.memory_book.list_by_owner(uid=admin_id)[:_MAX_ROWS]
+    rows = bus.memory_book.list_by_owner(contact_id=admin_id)[:_MAX_ROWS]
     return MemoryListOut(
         items=[_serialize(r) for r in rows],
         total=len(rows),

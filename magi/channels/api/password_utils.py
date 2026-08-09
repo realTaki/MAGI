@@ -141,9 +141,9 @@ def verify_password(stored: str, password: str) -> bool:
 # -- 60s cooldown -----------------------------------------------------------
 #
 # Mirrors the TG-code flow in :mod:`magi.webui.api.auth`:
-# one attempt per uid per 60s, success or failure both
-# reset the timer. The store is keyed by uid in the
-# ``auth.login_attempt.<uid>`` settings KV slot — the
+# one attempt per contact_id per 60s, success or failure both
+# reset the timer. The store is keyed by contact_id in the
+# ``auth.login_attempt.<contact_id>`` settings KV slot — the
 # same key shape the login code uses, just a distinct
 # sub-prefix.
 #
@@ -161,8 +161,8 @@ class Attempt:
     """Unix timestamp of the last login attempt (any outcome)."""
 
 
-def _store_get(bus: Bus, uid: int) -> dict | None:
-    raw = bus.settings_book.get(key=f"{_PASSWORD_KEY_PREFIX}.{uid}")
+def _store_get(bus: Bus, contact_id: int) -> dict | None:
+    raw = bus.settings_book.get(key=f"{_PASSWORD_KEY_PREFIX}.{contact_id}")
     if not raw:
         return None
     try:
@@ -171,26 +171,26 @@ def _store_get(bus: Bus, uid: int) -> dict | None:
         return None
 
 
-def _store_set(bus: Bus, uid: int, value: dict) -> None:
-    bus.settings_book.set(key=f"{_PASSWORD_KEY_PREFIX}.{uid}", value=json.dumps(value))
+def _store_set(bus: Bus, contact_id: int, value: dict) -> None:
+    bus.settings_book.set(key=f"{_PASSWORD_KEY_PREFIX}.{contact_id}", value=json.dumps(value))
 
 
-def _store_clear(bus: Bus, uid: int) -> None:
-    bus.settings_book.delete(key=f"{_PASSWORD_KEY_PREFIX}.{uid}")
+def _store_clear(bus: Bus, contact_id: int) -> None:
+    bus.settings_book.delete(key=f"{_PASSWORD_KEY_PREFIX}.{contact_id}")
 
 
 def _now_ts() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
-def check_cooldown(bus: Bus, uid: int, *, cooldown_seconds: int) -> bool:
+def check_cooldown(bus: Bus, contact_id: int, *, cooldown_seconds: int) -> bool:
     """Return ``True`` if a new login attempt is allowed.
 
     On a successful verify the caller should call
     :func:`record_attempt` (or :func:`clear_attempt`) to
     reset the timer.
     """
-    record = _store_get(bus, uid)
+    record = _store_get(bus, contact_id)
     if not record:
         return True
     try:
@@ -200,18 +200,18 @@ def check_cooldown(bus: Bus, uid: int, *, cooldown_seconds: int) -> bool:
     return (_now_ts() - last) >= cooldown_seconds
 
 
-def record_attempt(bus: Bus, uid: int) -> None:
+def record_attempt(bus: Bus, contact_id: int) -> None:
     """Stamp the current time as the last attempt.
 
     Called whether the password was correct or not — the
     60s lock applies to both outcomes.
     """
-    _store_set(bus, uid, {"last_attempt_at": _now_ts()})
+    _store_set(bus, contact_id, {"last_attempt_at": _now_ts()})
 
 
-def clear_attempt(bus: Bus, uid: int) -> None:
+def clear_attempt(bus: Bus, contact_id: int) -> None:
     """Drop the cooldown row (called on a successful login)."""
-    _store_clear(bus, uid)
+    _store_clear(bus, contact_id)
 
 
 __all__ = [

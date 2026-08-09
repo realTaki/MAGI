@@ -24,18 +24,18 @@ router = APIRouter(tags=["telegram"])
 class TGBindRequest(BaseModel):
     """Body for ``POST /api/telegram/bind``.
 
-    ``uid`` is the row in ``contacts`` to bind to.
+    ``contact_id`` is the row in ``contacts`` to bind to.
     ``telegram_id`` is the TG chat id (numeric). Both
     required.
     """
 
     telegram_id: str = Field(min_length=1, max_length=32)
-    uid: int = Field(ge=1)
+    contact_id: int = Field(ge=1)
 
 
 class TGBindResponse(BaseModel):
     telegram_id: str
-    uid: int
+    contact_id: int
 
 
 @router.post("/telegram/bind", response_model=TGBindResponse)
@@ -44,7 +44,7 @@ def bind_telegram(
     _admin: AdminGate,
     bus: BusDep,
 ) -> TGBindResponse:
-    """Bind ``telegram_id`` to ``uid``.
+    """Bind ``telegram_id`` to ``contact_id``.
 
     The API writes the Contact-owned address and enforces the
     "contact is active" + "unbind previous holder" rules
@@ -65,14 +65,14 @@ def bind_telegram(
             detail="telegram_id must fit in an integer",
         )
 
-    contact = bus.contacts_book.get(contact_id=payload.uid)
+    contact = bus.contacts_book.get(contact_id=payload.contact_id)
     if contact is None:
-        raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.uid} not found")
-    bus.contacts_book.set_telegram_id(contact_id=payload.uid, telegram_id=telegram_id_int)
+        raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.contact_id} not found")
+    bus.contacts_book.set_telegram_id(contact_id=payload.contact_id, telegram_id=telegram_id_int)
 
     return TGBindResponse(
         telegram_id=payload.telegram_id,
-        uid=payload.uid,
+        contact_id=payload.contact_id,
     )
 
 
@@ -117,7 +117,7 @@ def unbind_telegram(
 
 class TGBindStatus(BaseModel):
     telegram_id: str
-    bound_uid: int | None
+    bound_contact_id: int | None
     bound_contact_name: str | None = None
 
 
@@ -135,7 +135,7 @@ def get_telegram_binding(
     The operator-facing UI uses this to pre-fill the
     "unbind" confirmation with the contact name. Even
     if the bound row is gone (deleted via the WebUI), the
-    endpoint reports ``bound_uid`` so the operator
+    endpoint reports ``bound_contact_id`` so the operator
     can see the dangling reference and re-bind or clean
     it up explicitly.
     """
@@ -154,14 +154,14 @@ def get_telegram_binding(
             detail="telegram_id must fit in an integer",
         )
 
-    bound_uid = None
+    bound_contact_id = None
     bound_name = None
     contact = bus.contacts_book.get_by_telegram(telegram_id=telegram_id_int)
     if contact is not None:
-        bound_uid = contact.id
+        bound_contact_id = contact.id
         bound_name = contact.name
     return TGBindStatus(
         telegram_id=telegram_id,
-        bound_uid=bound_uid,
+        bound_contact_id=bound_contact_id,
         bound_contact_name=bound_name,
     )

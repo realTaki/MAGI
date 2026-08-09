@@ -169,7 +169,7 @@ class SetAdminPasswordRequest(BaseModel):
 class SetAdminPasswordResponse(BaseModel):
     ok: bool
     error: str | None = None
-    admin_uid: int | None = None
+    admin_contact_id: int | None = None
 
 
 # -- endpoints ---------------------------------------------------------
@@ -192,7 +192,7 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
         root = bus.magis_book.get_root() if bus.magis_book else None
         root_id = root.id if root else None
         admins = (
-            [str(a.uid) for a in bus.magis_admins_book.list_for_magis(magis_id=root_id)]
+            [str(a.contact_id) for a in bus.magis_admins_book.list_for_magis(magis_id=root_id)]
             if bus.magis_admins_book is not None and root_id is not None
             else []
         )
@@ -230,7 +230,7 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
         # source of truth.
         if admin_rows:
             first = admin_rows[0]
-            has_password = bool(bus.auth_credentials_book and bus.auth_credentials_book.find(uid=first.id, kind="password"))
+            has_password = bool(bus.auth_credentials_book and bus.auth_credentials_book.find(contact_id=first.id, kind="password"))
             if has_password:
                 login_methods.append("password")
             if first.telegram_id is not None:
@@ -334,18 +334,18 @@ async def set_admin_password_onboarding(
 
     # Upsert the first admin Contact row (create on first call, rename on
     # subsequent calls so chat history survives a re-entered wizard).
-    admin_uid = bus.contacts_book.upsert_first_admin(name=name)
+    admin_contact_id = bus.contacts_book.upsert_first_admin(name=name)
     # Upsert the password credential.
     if bus.auth_credentials_book is not None:
-        bus.auth_credentials_book.add(uid=admin_uid, kind="password", secret_hash=new_hash)
+        bus.auth_credentials_book.add(contact_id=admin_contact_id, kind="password", secret_hash=new_hash)
     else:
-        bus.settings_book.set(key=f"auth.password.{admin_uid}.hash", value=new_hash)
+        bus.settings_book.set(key=f"auth.password.{admin_contact_id}.hash", value=new_hash)
 
     logger.info(
         "onboarding: admin password set",
-        extra={"uid": admin_uid, "name": name},
+        extra={"contact_id": admin_contact_id, "name": name},
     )
-    return SetAdminPasswordResponse(ok=True, admin_uid=admin_uid)
+    return SetAdminPasswordResponse(ok=True, admin_contact_id=admin_contact_id)
 
 
 @router.post("/complete", response_model=CompleteResponse)
@@ -395,7 +395,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
         for admin in admins:
             existing_open = [
                 row for row in bus.action_items_book.list_actions(
-                    owner_uid=admin.id,
+                    owner_contact_id=admin.id,
                     include_completed=False,
                     source=SOURCE_PROACTIVE,
                 )
@@ -405,7 +405,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
                 continue
             existing_done = [
                 row for row in bus.action_items_book.list_actions(
-                    owner_uid=admin.id,
+                    owner_contact_id=admin.id,
                     include_completed=True,
                     source=SOURCE_PROACTIVE,
                 )
@@ -414,7 +414,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
             if existing_done:
                 continue
             bus.action_items_book.add(
-                uid=admin.id,
+                contact_id=admin.id,
                 title=_NUDGE_TITLE,
                 description=_NUDGE_DESC,
                 target_url=_NUDGE_URL,
@@ -433,7 +433,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
     #      relies on the existing admin-row check above.
     if admins:
         has_password = any(
-            bus.auth_credentials_book and bus.auth_credentials_book.find(uid=admin.id, kind="password")
+            bus.auth_credentials_book and bus.auth_credentials_book.find(contact_id=admin.id, kind="password")
             for admin in admins
         )
         # ``has_tg`` = any admin has a telegram_id.
@@ -609,11 +609,11 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
     """Shared body for the public endpoints and the back-compat alias.
 
     D.28: this path runs BEFORE the wizard has bound an Contact
-    row to a uid, so the channel dispatcher (which resolves
-    ``uid → im_id``) can't be used here. The TG-side send
+    row to a contact_id, so the channel dispatcher (which resolves
+    ``contact_id → im_id``) can't be used here. The TG-side send
     helper lives in :mod:`magi.channels.telegram.bot`
     (:func:`magi.channels.telegram.bot.send_text_raw`) — we call it directly. Once
-    ``/save-admin`` lands, the operator IS bound to a uid and
+    ``/save-admin`` lands, the operator IS bound to a contact_id and
     every subsequent outbound goes through the dispatcher.
     """
     from datetime import datetime, timezone
@@ -870,7 +870,7 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
     """
 
     if control_store.enabled():
-        # Control-plane mirror of the single-MAGI path below. ``magis_admins.uid``
+        # Control-plane mirror of the single-MAGI path below. ``magis_admins.contact_id``
         # is a ``ForeignKey("contacts.id")`` — the schema rejects raw telegram
         # chat ids. We therefore upsert a local :class:`Contact` per telegram
         # id (same shape the non-control path produces via
@@ -890,12 +890,12 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
 
         # 1. Demote existing admins whose bound chat is no longer in the set.
         for existing in bus.magis_admins_book.list_for_magis(magis_id=root.id):
-            if existing.uid in telegram_ids:
+            if existing.contact_id in telegram_ids:
                 continue
-            bus.magis_admins_book.remove(uid=existing.uid, magis_id=root.id)
-            contact = bus.contacts_book.get(contact_id=existing.uid)
+            bus.magis_admins_book.remove(contact_id=existing.contact_id, magis_id=root.id)
+            contact = bus.contacts_book.get(contact_id=existing.contact_id)
             if contact is not None and contact.telegram_id not in telegram_ids:
-                bus.contacts_book.update(contact_id=existing.uid, admin=False)
+                bus.contacts_book.update(contact_id=existing.contact_id, admin=False)
 
         # 2. Upsert a Contact per telegram id and link it into magis_admins.
         for tg_id in telegram_ids:
@@ -910,8 +910,8 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
                 )
             elif not contact.admin:
                 bus.contacts_book.update(contact_id=contact.id, admin=True)
-            if not bus.magis_admins_book.is_admin_for(uid=contact.id):
-                bus.magis_admins_book.add(uid=contact.id, magis_id=root.id)
+            if not bus.magis_admins_book.is_admin_for(contact_id=contact.id):
+                bus.magis_admins_book.add(contact_id=contact.id, magis_id=root.id)
         return SaveAdminResponse(ok=True, count=len(telegram_ids))
 
     cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})

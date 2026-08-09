@@ -5,7 +5,7 @@
 # Each MAGI gets its own unit (magi-adam.service, magi-eva-00.service, …).
 # ``systemctl --user status magi-*.service`` lists them all.
 [Unit]
-Description=MAGI runtime — __SLUG__ (magic_id=__MAGIC_ID__)
+Description=MAGI runtime — __SLUG__ (magi_id=__MAGI_ID__)
 Documentation=https://github.com/realTaki/MAGI
 After=network-online.target
 Wants=network-online.target
