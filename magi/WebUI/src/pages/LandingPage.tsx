@@ -29,16 +29,16 @@ function FeaturePill(props: { color: string; title: string; desc: string }) {
 
 export default function LandingPage(props: {
   isFirstTime: boolean;
-  onSelectMagic: (magicId: number) => void;
+  onSelectMagic: (magiId: number) => void;
 }) {
   const t = useT();
   const magiQuery = useAvailableMagi();
-  const [selectedMagicId, setSelectedMagicId] = useState<number | null>(null);
+  const [selectedMagiId, setSelectedMagiId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (selectedMagicId !== null || !magiQuery.data?.magi.length) return;
-    setSelectedMagicId(magiQuery.data.magi[0].id);
-  }, [magiQuery.data, selectedMagicId]);
+    if (selectedMagiId !== null || !magiQuery.data?.magi.length) return;
+    setSelectedMagiId(magiQuery.data.magi[0].id);
+  }, [magiQuery.data, selectedMagiId]);
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-10">
@@ -107,8 +107,8 @@ export default function LandingPage(props: {
         <label className="mt-7 block text-sm font-medium text-sky-deep">
           {t("landing.selectMagi")}
           <select
-            value={selectedMagicId ?? ""}
-            onChange={(event) => setSelectedMagicId(Number(event.target.value))}
+            value={selectedMagiId ?? ""}
+            onChange={(event) => setSelectedMagiId(Number(event.target.value))}
             className="form-input mt-2 w-full"
             disabled={magiQuery.isLoading || !magiQuery.data?.magi.length}
           >
@@ -125,8 +125,8 @@ export default function LandingPage(props: {
         )}
         <button
           type="button"
-          onClick={() => selectedMagicId !== null && props.onSelectMagic(selectedMagicId)}
-          disabled={selectedMagicId === null}
+          onClick={() => selectedMagiId !== null && props.onSelectMagic(selectedMagiId)}
+          disabled={selectedMagiId === null}
           className="btn btn-primary w-full mt-3 py-3 text-base"
         >
           {props.isFirstTime

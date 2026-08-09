@@ -388,27 +388,27 @@ export function useAvailableMagi() {
 export type TargetLoginAccount = {
   telegram_id: number; name: string; admin: boolean; assigned: boolean;
 };
-export function useTargetLoginAccounts(magicId: number | null) {
+export function useTargetLoginAccounts(magiId: number | null) {
   return useQuery({
-    queryKey: qk.targetAccounts(magicId ?? 0),
-    queryFn: () => apiFetch<{ accounts: TargetLoginAccount[] }>(`/api/auth/targets/${magicId}/accounts`),
-    enabled: magicId !== null,
+    queryKey: qk.targetAccounts(magiId ?? 0),
+    queryFn: () => apiFetch<{ accounts: TargetLoginAccount[] }>(`/api/auth/targets/${magiId}/accounts`),
+    enabled: magiId !== null,
   });
 }
 
-export function useSendTargetLoginCode(magicId: number) {
+export function useSendTargetLoginCode(magiId: number) {
   return useMutation({
     mutationFn: (telegram_id: number) => apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
-      `/api/auth/targets/${magicId}/send-login-code`, { method: "POST", body: { telegram_id } },
+      `/api/auth/targets/${magiId}/send-login-code`, { method: "POST", body: { telegram_id } },
     ),
   });
 }
 
-export function useVerifyTargetLoginCode(magicId: number) {
+export function useVerifyTargetLoginCode(magiId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: { telegram_id: number; code: string }) => apiFetch<{ ok: boolean; error?: string }>(
-      `/api/auth/targets/${magicId}/verify-login-code`, { method: "POST", body: payload },
+      `/api/auth/targets/${magiId}/verify-login-code`, { method: "POST", body: payload },
     ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.me }); },
   });

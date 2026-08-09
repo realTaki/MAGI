@@ -44,14 +44,14 @@ type Phase = "send" | "code" | "verifying" | "error";
 type Method = "password" | "tg_code";
 
 export default function LoginPage(props: {
-  magicId: number;
+  magiId: number;
   onLoggedIn: (telegramId: number) => void;
   onBack: () => void;
 }) {
   const t = useT();
-  const accountsQuery = useTargetLoginAccounts(props.magicId);
-  const sendMut = useSendTargetLoginCode(props.magicId);
-  const verifyMut = useVerifyTargetLoginCode(props.magicId);
+  const accountsQuery = useTargetLoginAccounts(props.magiId);
+  const sendMut = useSendTargetLoginCode(props.magiId);
+  const verifyMut = useVerifyTargetLoginCode(props.magiId);
   const loginPasswordMut = useLoginPassword();
 
   const [selectedTelegramId, setSelectedTelegramId] = useState<number | null>(null);

@@ -74,7 +74,7 @@ export default function App() {
   // dashboard actions (sign-out, restart, complete) that need
   // a known next view without waiting for the next boot.
   const [viewOverride, setViewOverride] = useState<"onboarding" | "login" | null>(null);
-  const [loginMagicId, setLoginMagicId] = useState<number | null>(null);
+  const [loginMagiId, setLoginMagiId] = useState<number | null>(null);
 
   // When the user lands on the dashboard via the cookie
   // (returning user), pre-populate the Settings tab's bot
@@ -143,9 +143,9 @@ export default function App() {
     content = (
       <LandingPage
         isFirstTime={isFirstTime}
-        onSelectMagic={(magicId) => {
-          setLoginMagicId(magicId);
-          setSelectedMagicId(magicId);
+        onSelectMagic={(magiId) => {
+          setLoginMagiId(magiId);
+          setSelectedMagicId(magiId);
           if (isFirstTime) {
             setViewOverride("onboarding");
           } else {
@@ -157,7 +157,7 @@ export default function App() {
   } else if (view === "login") {
     content = (
       <LoginPage
-        magicId={loginMagicId ?? 1}
+        magiId={loginMagiId ?? 1}
         onLoggedIn={async (uid) => {
           // The LoginPage's verify mutation
           // invalidated ``qk.me``; force a fresh read

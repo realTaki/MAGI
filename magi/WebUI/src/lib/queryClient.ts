@@ -146,7 +146,7 @@ export const qk = {
   // -- auth / onboarding / soul ---------------------------------------------
   allowedAccounts: ["auth", "allowed-accounts"] as const,
   availableMagi: ["auth", "available-magi"] as const,
-  targetAccounts: (magicId: number) => ["auth", "target-accounts", magicId] as const,
+  targetAccounts: (magiId: number) => ["auth", "target-accounts", magiId] as const,
   onboardingStatus: ["onboarding", "status"] as const,
   soul: runtimeKey("soul"),
   tgReaction: (kind: "read" | "done") =>
