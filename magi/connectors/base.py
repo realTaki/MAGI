@@ -128,11 +128,12 @@ class ConnectorConfig:
     IMAP host, webhook path, …). Free-form; the connector
     class validates at connect time."""
 
-    auth: dict[str, str] = field(default_factory=dict)
+    auth: dict[str, str] | None = None
     """Auth material (OAuth tokens, API keys, basic-auth
     user/password). Stored encrypted-at-rest by the WebUI
     settings surface; the connector sees them as a plain
-    dict at connect time."""
+    dict at connect time. ``None`` when no auth is needed
+    (e.g. local calendar connector)."""
 
     def key(self) -> tuple[str, str]:
         return (self.name, self.instance_id)

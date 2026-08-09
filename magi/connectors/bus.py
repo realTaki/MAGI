@@ -50,7 +50,7 @@ class EventBus:
         # dedup window is short on purpose: real upstream
         # redeliveries (Gmail push, webhook retry) happen
         # within seconds, not minutes.
-        self._seen: dict[str, dict[tuple[str, str], float]] = defaultdict(dict)
+        self._seen: dict[str, dict[tuple[str, str, str], float]] = defaultdict(dict)
         self._dedup_window = dedup_window_seconds
         self._lock = asyncio.Lock()
 

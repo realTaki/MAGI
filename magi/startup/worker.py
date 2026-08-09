@@ -12,7 +12,7 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -96,9 +96,9 @@ class RuntimeWorker(ABC):
         """Run a synchronous BUS/Book operation away from the event loop."""
         return await asyncio.to_thread(fn, *args, **kwargs)
 
-    def spawn(self, awaitable: Awaitable[T], *, name: str | None = None) -> asyncio.Task[T]:
+    def spawn(self, coro: Coroutine[Any, Any, T], *, name: str | None = None) -> asyncio.Task[T]:
         """Create and retain an owned child task for deterministic shutdown."""
-        task = asyncio.create_task(awaitable, name=name)
+        task = asyncio.create_task(coro, name=name)
         self._children.add(task)
         task.add_done_callback(self._children.discard)
         return task

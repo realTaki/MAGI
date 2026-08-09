@@ -69,10 +69,9 @@ def register_connector(
     Used by tests and by connectors that aren't
     factory-built (e.g. an in-memory calendar stub).
     """
-    if instance_id is None:
-        instance_id = getattr(connector, "_instance_id", "_default")
-    setattr(connector, "_instance_id", instance_id)
-    key = (connector.name, instance_id)
+    iid = instance_id if instance_id is not None else getattr(connector, "_instance_id", "_default")
+    setattr(connector, "_instance_id", iid)
+    key = (connector.name, iid)
     _INSTANCES[key] = connector
 
 

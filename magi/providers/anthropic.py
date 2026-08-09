@@ -32,7 +32,7 @@ from typing import Any
 
 import anthropic
 
-from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.providers.base import LLMProvider, LLMStreamEvent, StreamEventKind
 from magi.providers.errors import (
     LLMContextLengthError,
     LLMError,
@@ -168,7 +168,7 @@ class AnthropicProvider(LLMProvider):
         async def _yield(event: LLMStreamEvent) -> None:
             await event_queue.put(event)
 
-        def _emit(kind: str, payload: dict[str, Any]) -> None:
+        def _emit(kind: StreamEventKind, payload: dict[str, Any]) -> None:
             asyncio.run_coroutine_threadsafe(
                 _yield(LLMStreamEvent(kind, payload)), loop,
             ).result()

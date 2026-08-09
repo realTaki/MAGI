@@ -350,7 +350,14 @@ class MCPServerConnection:
         any key the operator sets. See the module docstring
         for the rationale (operator-controlled env, not
         "whatever the container happens to have").
+
+        Callers must have already set ``self.exit_stack`` to a
+        fresh :class:`~contextlib.AsyncExitStack` before calling
+        this method — see :meth:`connect`.
         """
+        assert self.exit_stack is not None, (
+            "exit_stack must be set before calling _open_streams"
+        )
         if self.connection_type == "stdio":
             from mcp import StdioServerParameters
             from mcp.client.stdio import stdio_client
@@ -408,6 +415,5 @@ __all__ = [
     "MCPTimeoutConfig",
     "MCPServerConnection",
     "MCPTool",
-    "_timeout_from_settings",
     "_defaults",
 ]

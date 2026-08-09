@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from magi.bus.library.local.actionItemBook import ActionItemBook
 
 from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
 
@@ -49,7 +53,7 @@ CREDENTIALS_NUDGE = CredentialsNudgeSpec(
 
 def ensure_for_admin(
     *,
-    book: object,  # ActionItemBook (lazy to avoid import cycle)
+    book: ActionItemBook,
     admin_id: int,
 ) -> bool:
     """Idempotently insert the credentials nudge for one admin.
