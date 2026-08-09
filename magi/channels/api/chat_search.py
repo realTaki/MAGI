@@ -16,10 +16,10 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
+from magi.channels.api.chat_sessions import SessionServiceDep, _admin_contact_id
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
-from magi.bus.library.local.sessionBook import (
+from magi.bus.library.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
@@ -33,7 +33,7 @@ class SearchResponse(BaseModel):
     """``GET /api/chat/search`` response shape."""
 
     q: str
-    uid: int
+    contact_id: int
     items: list[SearchHit]
     total: int
     limit: int
@@ -53,15 +53,15 @@ def search_chat(
     """Full-text search across the operator's sessions.
 
     Scope: cross-platform via the calling contact's row id.
-    AdminGate proves "is an admin"; ``_admin_uid`` resolves the
-    cookie's uid to the matching Contact row; the SQL clause
-    ``WHERE s.uid = :uid`` picks up every session this contact
+    AdminGate proves "is an admin"; ``_admin_contact_id`` resolves the
+    cookie's contact_id to the matching Contact row; the SQL clause
+    ``WHERE s.contact_id = :contact_id`` picks up every session this contact
     owns — webui, TG, or any future channel.
     """
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
 
     try:
-        items, total = bus.messages_book.search(uid=uid, q=q, limit=limit, offset=offset)
+        items, total = bus.messages_book.search(contact_id=contact_id, q=q, limit=limit, offset=offset)
     except SearchUnavailable as e:
         raise MagiHTTPException(
             status_code=503,
@@ -70,7 +70,7 @@ def search_chat(
         )
 
     return SearchResponse(
-        q=q, uid=uid,
+        q=q, contact_id=contact_id,
         items=items, total=total,
         limit=limit, offset=offset,
     )

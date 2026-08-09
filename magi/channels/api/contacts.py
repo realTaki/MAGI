@@ -178,23 +178,23 @@ def _bulk_login_methods(
 ) -> dict[int, list[str]]:
     """Batch-fetch the password-set flag for a list of contacts.
 
-    Returns ``{uid: methods}``. The tg_code leg is
+    Returns ``{contact_id: methods}``. The tg_code leg is
     computed from the already-loaded contact view.
     """
     if not views:
         return {}
-    uids = [v.id for v in views]
-    password_uids = {
-        uid for uid in uids
+    contact_ids = [v.id for v in views]
+    password_contact_ids = {
+        contact_id for contact_id in contact_ids
         if bus.auth_credentials_book is not None
-        and bus.auth_credentials_book.find(uid=uid, kind="password") is not None
+        and bus.auth_credentials_book.find(contact_id=contact_id, kind="password") is not None
     }
     out: dict[int, list[str]] = {}
     for v in views:
         methods: list[str] = []
         if v.telegram_id is not None:
             methods.append("tg_code")
-        if v.id in password_uids:
+        if v.id in password_contact_ids:
             methods.append("password")
         out[v.id] = methods
     return out
@@ -252,10 +252,10 @@ def list_contacts(
 
     if with_notes:
         views = bus.contacts_book.list_all()[:_MAX_ROWS]
-        uids = [v.id for v in views]
+        contact_ids = [v.id for v in views]
         counts = {
-            uid: len(bus.contact_notes_book.list_for_contact(contact_id=uid))
-            for uid in uids
+            contact_id: len(bus.contact_notes_book.list_for_contact(contact_id=contact_id))
+            for contact_id in contact_ids
         }
         views = [view for view in views if counts[view.id] > 0]
         login_methods = _bulk_login_methods(bus, views)
@@ -335,7 +335,7 @@ def create_contact(
 
     # Preset seed hook — fires only when the contact was
     # *created* as ``assigned`` from the start. The
-    # helper is idempotent (skips per-(uid, preset_id)
+    # helper is idempotent (skips per-(contact_id, preset_id)
     # pairs that already have a row), so a repeat
     # ``POST /api/contacts`` with the same name is
     # still 409 before we get here; this branch only
@@ -512,7 +512,7 @@ def update_contact(
     # also qualify (the prev_role at this commit is
     # ``admin``), which matches the intent: "this
     # contact just became assigned; seed them". The
-    # helper's per-(uid, preset_id) existence check
+    # helper's per-(contact_id, preset_id) existence check
     # short-circuits when rows already exist, so a
     # double-seed is a no-op rather than a duplicate.
     #

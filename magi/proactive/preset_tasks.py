@@ -3,7 +3,7 @@
 Reads bundled YAML presets from
 :meth:`~magi.bus.library.file.promptBook.PromptBook.task_presets`,
 converts each into a Task row with ``source=SOURCE_PROACTIVE``, and
-inserts idempotently (skip when a task with the same name + uid
+inserts idempotently (skip when a task with the same name + contact_id
 already exists).
 """
 
@@ -97,7 +97,7 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
 
             # 幂等：已存在同名的 Task 且属于同一 contact
             existing = bus.tasks_book.get_by_name(name=task_name)
-            if existing is not None and existing.uid == job.contact_id:
+            if existing is not None and existing.contact_id == job.contact_id:
                 skipped += 1
                 continue
 
@@ -106,7 +106,7 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
                     name=task_name,
                     prompt=str(preset.get("prompt") or ""),
                     target_channel=str(preset.get("channel") or "webui"),
-                    uid=job.contact_id,
+                    contact_id=job.contact_id,
                     tz=tz,
                     source=SOURCE_PROACTIVE,
                     enabled=1,

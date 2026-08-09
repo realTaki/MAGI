@@ -79,18 +79,18 @@ class TelegramWorker(ChannelWorker):
         contact = _resolve_contact(self.bus, tgid)
         if contact is None:
             await _send_stranger_reply(update, tgid, self.bus); return
-        uid, role, is_admin = contact
+        contact_id, role, is_admin = contact
         if not (is_admin or role == "assigned"):
             await update.effective_message.reply_text(f"TG ID: {tgid}. Ask your admin for access."); return
         if not text.strip():
             await update.effective_message.reply_text("MAGI currently only handles text messages."); return
-        session_id = _resolve_tg_session(self.bus, uid=uid, tgid=tgid)
+        session_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         _append_user_message(self.bus, session_id, text)
         asyncio.create_task(_send_read_receipt(update, self.bus))
         from magi.bus.guild.chatJob import publish_chat
         try:
             publish_chat(
-                self.bus, text=text, channel="tg", uid=uid, session_id=session_id,
+                self.bus, text=text, channel="tg", contact_id=contact_id, session_id=session_id,
                 caller_role=role, event_id=f"telegram:{tgid}:{update.effective_message.message_id}",
                 chat_id=tgid, tg_message_id=update.effective_message.message_id,
             )
@@ -121,9 +121,9 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
     return (contact.id, contact.role, contact.admin)
 
 
-def _resolve_tg_session(bus: Bus, *, uid: int, tgid: str) -> str:
+def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
     session = bus.sessions_book.get_or_create_for_channel(
-        uid=uid, channel="tg", delivery_address=tgid,
+        contact_id=contact_id, channel="tg", delivery_address=tgid,
     )
     return session.session_id
 

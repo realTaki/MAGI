@@ -41,7 +41,10 @@ if TYPE_CHECKING:
     from magi.bus.library.local.hookSignoffBook import HookSignoffBook
     from magi.bus.library.local.mcpServerBook import McpServerBook
     from magi.bus.library.local.memoryBook import MemoryBook
-    from magi.bus.library.local.sessionBook import MessageBook, SessionBook
+    from magi.bus.library.local.conversationBook import (
+        ConversationBook,
+        MessageBook,
+    )
     from magi.bus.library.local.settingBook import SettingBook
     from magi.bus.library.local.tasksBook import TaskBook, TaskRunBook
     from magi.bus.library.local.tokenUsageBook import TokenUsageBook
@@ -91,8 +94,9 @@ class Bus:
     """
 
     # -- local: sessions_book (Books) ---------------------------------------------
+    # sessions_book is an instance of ConversationBook (SessionBook = alias).
 
-    sessions_book: SessionBook  # SessionBook
+    sessions_book: ConversationBook  # ConversationBook
     messages_book: MessageBook  # MessageBook
 
     # -- local: memory_book & contacts_book (Books) ------------------------------------
@@ -273,7 +277,7 @@ def _open_with_dirs(
         McpServerBook,
         MemoryBook,
         MessageBook,
-        SessionBook,
+        ConversationBook,
         SettingBook,
         TaskBook,
         TaskRunBook,
@@ -336,7 +340,7 @@ def _open_with_dirs(
             require_provisioned(magis_factory, scope="magis")
 
     # ---- local books -------------------------------------------------------
-    sessions_book = SessionBook(local_factory)
+    conversations_book = ConversationBook(local_factory)
     messages_book = MessageBook(local_factory)
     memory_book = MemoryBook(local_factory)
     contacts_book = ContactBook(local_factory)
@@ -410,7 +414,7 @@ def _open_with_dirs(
 
     # ---- assemble ----------------------------------------------------------
     return Bus(
-        sessions_book=sessions_book,
+        sessions_book=conversations_book,
         messages_book=messages_book,
         memory_book=memory_book,
         contacts_book=contacts_book,

@@ -64,9 +64,9 @@ class TaskWorker(RuntimeWorker):
         last = self._next_fire.get(task.id)
         return last is None or (prev_fire and prev_fire > last)
 
-    async def _fire_task(self, task, *, fired_by: str = "cron_tick", session_id: str | None = None, uid: int | None = None) -> None:
+    async def _fire_task(self, task, *, fired_by: str = "cron_tick", session_id: str | None = None, contact_id: int | None = None) -> None:
         from magi.bus.guild.chatJob import publish_chat
-        task_id = task.id; effective_uid = uid or task.uid; effective_session = session_id or task.session_id
+        task_id = task.id; effective_contact_id = contact_id or task.contact_id; effective_session = session_id or task.session_id
         schedule_desc = task.cron if task.cron else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
         contextual_prompt = (
             f"[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
@@ -75,14 +75,14 @@ class TaskWorker(RuntimeWorker):
         )
         try: await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, trigger=fired_by)
         except Exception: pass
-        if effective_session and effective_uid:
+        if effective_session and effective_contact_id:
             try:
                 await self.call(self.bus.messages_book.add, session_id=effective_session,
                     role="user", text=contextual_prompt)
             except Exception: pass
         await self.call(
             publish_chat, self.bus, text=contextual_prompt, channel="task",
-            uid=effective_uid, session_id=effective_session,
+            contact_id=effective_contact_id, session_id=effective_session,
             kind="task.triggered", task_id=task_id, fired_by=fired_by,
         )
         self._next_fire[task_id] = datetime.now(timezone.utc)
@@ -93,7 +93,7 @@ class TaskWorker(RuntimeWorker):
             task = await self.call(self.bus.tasks_book.get, task_id=rj.task_id)
             if task is None:
                 await self.call(self.bus.run_task_job_board.submit_result, key=rj.job_id, result=RunTaskResult(rj.job_id, False, error="task not found")); return
-            await self._fire_task(task, fired_by=rj.fired_by, session_id=rj.session_id or task.session_id, uid=rj.uid or task.uid)
+            await self._fire_task(task, fired_by=rj.fired_by, session_id=rj.session_id or task.session_id, contact_id=rj.contact_id or task.contact_id)
             await self.call(self.bus.run_task_job_board.submit_result, key=rj.job_id, result=RunTaskResult(rj.job_id, True))
         except Exception as exc:
             await self.call(self.bus.run_task_job_board.submit_result, key=rj.job_id, result=RunTaskResult(rj.job_id, False, error=str(exc)[:1024]))

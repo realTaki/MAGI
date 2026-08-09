@@ -337,7 +337,7 @@ on run argv
       else
         set theEvents to (every event of c whose start date is greater than or equal to (date startISO) and start date is less than or equal to (date endISO))
         repeat with e in theEvents
-          set eid to (uid of e)
+          set eid to (contact_id of e)
           set ename to (summary of e)
           set estart to (start date of e)
           set eend to (end date of e)
@@ -460,10 +460,10 @@ def _parse_ical_file(
     events: list[dict[str, Any]] = []
     blocks = re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text, re.DOTALL)
     for block in blocks:
-        uid_m = re.search(r"UID:(.+)", block)
-        if uid_m is None:
+        contact_id_m = re.search(r"UID:(.+)", block)
+        if contact_id_m is None:
             continue
-        uid = uid_m.group(1).strip()
+        contact_id = contact_id_m.group(1).strip()
 
         # Calendar name: a X-WR-CALNAME inside the enclosing
         # calendar isn't visible here (we split by VEVENT).
@@ -504,7 +504,7 @@ def _parse_ical_file(
         all_day = "DTSTART;VALUE=DATE" in block
 
         events.append({
-            "id": uid,
+            "id": contact_id,
             "title": summary,
             "start": dtstart.isoformat(),
             "end": dtend.isoformat() if dtend else None,

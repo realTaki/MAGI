@@ -44,7 +44,7 @@ The LLM never calls a connector directly. It calls the tools that
 Connector vs channel
 --------------------
 Channels are *conversational*: every inbound message has a
-``uid`` (the human or peer who's talking), a session, a reply path.
+``contact_id`` (the human or peer who's talking), a session, a reply path.
 Connectors are *observational*: every event is a timestamped data
 record. A connector doesn't know how to reply to a message; it
 only knows how to fetch + emit.

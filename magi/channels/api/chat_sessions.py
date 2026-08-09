@@ -1,7 +1,7 @@
 """CRUD endpoints for chat sessions.
 
 A "session" is a single thread of messages between an
-operator (identified by their uid in the dashboard cookie)
+operator (identified by their contact_id in the dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
 in the bus-owned SQLite session domain.
 and are per-user — admin A's session is invisible to admin B.
@@ -15,7 +15,7 @@ Endpoints
 - ``DELETE /chat/sessions/{session_id}``  remove a session
 
 The ``{session_id}`` route uses the URL as the only
-identification: the cookie's uid already pins the caller.
+identification: the cookie's contact_id already pins the caller.
 The per-channel delivery address stamped on the new row
 is resolved server-side via the channel dispatcher (D.28),
 so the endpoint never reads ``Contact.telegram_id``
@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
-from magi.bus.library.local.sessionBook import (
+from magi.bus.library.local.conversationBook import (
     Message,
     Session,
     SessionCorruptError,
@@ -103,7 +103,7 @@ class SessionMessagesPage(BaseModel):
 class SessionOut(BaseModel):
     session_id: str
     delivery_address: str
-    uid: int
+    contact_id: int
     channel: str
     created_at: str
     updated_at: str
@@ -117,7 +117,7 @@ class SessionOut(BaseModel):
 class SessionSummaryOut(BaseModel):
     session_id: str
     created_at: str
-    created_by_uid: int
+    created_by_contact_id: int
     updated_at: str
     message_count: int
     preview: str
@@ -169,7 +169,7 @@ def _session_to_out(
     return SessionOut(
         session_id=s.session_id,
         delivery_address=s.delivery_address,
-        uid=s.uid,
+        contact_id=s.contact_id,
         channel=s.channel,
         # ``Session`` declares these Optional (defensive default in the
         # dataclass), but real DB rows always populate them — emit ""
@@ -192,10 +192,10 @@ def _session_to_out(
     )
 
 
-def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
+def _summary_to_out(s: SessionSummary, *, contact_id: int) -> SessionSummaryOut:
     """Convert a SessionSummary into the list-endpoint shape.
 
-    ``uid`` is the operator who owns this session
+    ``contact_id`` is the operator who owns this session
     today. We surface it explicitly so a future C7 view can
     label rows; v0 always sees the same value across rows
     for one admin.
@@ -203,7 +203,7 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
     return SessionSummaryOut(
         session_id=s.session_id,
         created_at=s.created_at,
-        created_by_uid=uid,
+        created_by_contact_id=contact_id,
         updated_at=s.updated_at,
         message_count=s.message_count,
         preview=s.preview,
@@ -217,12 +217,12 @@ def _summary_to_out(s: SessionSummary, *, uid: int) -> SessionSummaryOut:
 # -- routes -----------------------------------------------------------------
 
 
-def _delivery_address_for_uid(request: Request, uid: int) -> str:
+def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
     """Resolve the operator's bound per-channel delivery
     address (the TG chat id today; opaque to domain code).
 
     D.28: the channel dispatcher owns the
-    ``uid → im_id`` mapping. This endpoint never reads
+    ``contact_id → im_id`` mapping. This endpoint never reads
     ``Contact.telegram_id`` directly — the dispatcher
     opens its own session, so we also avoid touching
     the caller's ORM session here.
@@ -233,15 +233,15 @@ def _delivery_address_for_uid(request: Request, uid: int) -> str:
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
     """
-    contact = get_bus(request).contacts_book.get(contact_id=uid)
+    contact = get_bus(request).contacts_book.get(contact_id=contact_id)
     return str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
 
 
-def _resolve_uid(request: Request) -> int:
+def _resolve_contact_id(request: Request) -> int:
     """Resolve the cookie's ``magi_session`` value to the
     current contact's id.
 
-    D.24: the cookie carries the **uid** (stringified
+    D.24: the cookie carries the **contact_id** (stringified
     int) — not a per-channel delivery address. This
     helper is the single place that translates "what's
     in the cookie" into "who is the caller" for the
@@ -251,24 +251,24 @@ def _resolve_uid(request: Request) -> int:
     the frontend's friendly message covers both
     endpoints.
     """
-    from magi.channels.api.auth import _verify_signed_uid
+    from magi.channels.api.auth import _verify_signed_contact_id
     raw = request.cookies.get("magi_session") or ""
     from magi.channels.api.dependencies import get_bus
-    uid = _verify_signed_uid(get_bus(request), raw)
-    if uid is None:
+    contact_id = _verify_signed_contact_id(get_bus(request), raw)
+    if contact_id is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    return uid
+    return contact_id
 
 
-def _admin_uid(request: Request) -> int:
+def _admin_contact_id(request: Request) -> int:
     """Resolve the cookie to its admin contact id and
     gate by role.
 
-    D.24: the cookie value IS the uid (no
+    D.24: the cookie value IS the contact_id (no
     per-channel delivery address lookup needed).
     ``AdminGate`` already proved the cookie is a
     live admin session; this helper re-verifies the
@@ -284,7 +284,7 @@ def _admin_uid(request: Request) -> int:
     # AdminGate has already authenticated and authorised this request.  The
     # signed cookie carries the durable contact id, so no channel may reopen
     # the ORM merely to re-read the same authority.
-    return _resolve_uid(request)
+    return _resolve_contact_id(request)
 
 
 @router.post(
@@ -306,18 +306,18 @@ def create_session(
     C7-era tools that want to instantiate a session
     before the first message).
     """
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
     # D.23 / D.28: ``delivery_address`` is the
     # per-channel delivery address stamped on the row's
     # column (renamed from the legacy per-channel chat-id
     # column in D.28). We resolve it via the channel
     # dispatcher so this endpoint never reads
     # ``Contact.telegram_id`` directly. The store key,
-    # however, is ``uid`` — see
+    # however, is ``contact_id`` — see
     # :meth:`SessionService.create`.
-    delivery_address = _delivery_address_for_uid(request, uid)
+    delivery_address = _delivery_address_for_contact_id(request, contact_id)
     sess = service.create(
-        uid, channel=Channel.WEBUI, delivery_address=delivery_address,
+        contact_id, channel=Channel.WEBUI, delivery_address=delivery_address,
     )
     return CreateSessionResponse(session_id=sess.session_id)
 
@@ -349,20 +349,20 @@ def list_sessions(
     if offset < 0:
         offset = 0
 
-    uid = _admin_uid(request)
-    # D.23: list scope is the operator's uid, not
+    contact_id = _admin_contact_id(request)
+    # D.23: list scope is the operator's contact_id, not
     # a per-channel delivery address.
     # ``store.list_summaries`` returns every row whose
-    # ``uid`` matches — webui, TG, and (in future) any
+    # ``contact_id`` matches — webui, TG, and (in future) any
     # other channel the operator owns. The frontend
     # renders the channel alongside each row (D.22
     # added the field).
     items, total = service.list_summaries(
-        uid, limit=limit, offset=offset,
+        contact_id, limit=limit, offset=offset,
     )
     return SessionListOut(
         items=[
-            _summary_to_out(i, uid=uid)
+            _summary_to_out(i, contact_id=contact_id)
             for i in items
         ],
         total=total,
@@ -383,15 +383,15 @@ def get_session(
     bus: BusDep,
 ) -> SessionOut:
     """Load a single session — full transcript + metadata."""
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
     try:
-        sess = service.get(uid, session_id)
+        sess = service.get(contact_id, session_id)
     except SessionPathError as e:
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
             "session get rejected (bad session_id %r from contact %s): %s",
-            session_id, uid, e,
+            session_id, contact_id, e,
         )
         raise MagiHTTPException(
             status_code=400,
@@ -429,9 +429,9 @@ def delete_session(
     themselves by spamming DELETE on stale ids from a
     older session list.
     """
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
     try:
-        removed = service.delete(uid, session_id)
+        removed = service.delete(contact_id, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -477,7 +477,7 @@ def update_session(
     ``bump_updated=True`` because a freshly-titled session is
     content, not metadata.
     """
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
 
     if "title" in payload.model_fields_set:
         raw = payload.title
@@ -491,7 +491,7 @@ def update_session(
 
         try:
             sess = service.rename(
-                uid, session_id, new_title, bump_updated=False
+                contact_id, session_id, new_title, bump_updated=False
             )
         except SessionPathError as e:
             raise MagiHTTPException(
@@ -523,7 +523,7 @@ def update_session(
     # 404 if the session vanished between the GET that
     # showed the row and this PATCH.
     try:
-        sess = service.get(uid, session_id)
+        sess = service.get(contact_id, session_id)
     except SessionPathError as e:
         raise MagiHTTPException(
             status_code=400,
@@ -599,7 +599,7 @@ def get_session_messages(
     the next page of older messages, increment
     ``offset`` by the previous ``limit``.
     """
-    uid = _admin_uid(request)
+    contact_id = _admin_contact_id(request)
     # Inline clamp so the route behaves the same as the
     # ``Query(ge=…, le=…)`` form would. ``Query`` would also
     # work but needs explicit ``Annotated`` types that pydantic
@@ -614,7 +614,7 @@ def get_session_messages(
         offset = 0
     try:
         msgs, total_active, total_all = service.get_messages_page(
-            uid, session_id,
+            contact_id, session_id,
             limit=limit, offset=offset,
             include_archived=include_archived,
         )
@@ -630,7 +630,7 @@ def get_session_messages(
         # session doesn't exist (vs. an empty session).
         # Distinguishing the two cases: try ``store.get``
         # and 404 if it returns None.
-        sess = service.get(uid, session_id)
+        sess = service.get(contact_id, session_id)
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,

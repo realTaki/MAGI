@@ -65,7 +65,7 @@ def ensure_for_admin(
     existing = [
         row
         for row in book.list_actions(
-            owner_uid=admin_id,
+            owner_contact_id=admin_id,
             include_completed=False,
             source=SOURCE_PROACTIVE,
         )
@@ -81,7 +81,7 @@ def ensure_for_admin(
     completed = [
         row
         for row in book.list_actions(
-            owner_uid=admin_id,
+            owner_contact_id=admin_id,
             include_completed=True,
             source=SOURCE_PROACTIVE,
         )
@@ -90,7 +90,7 @@ def ensure_for_admin(
     if completed:
         return False
     book.add(
-        uid=admin_id,
+        contact_id=admin_id,
         title=spec.title,
         description=spec.description,
         target_url=spec.target_url,

@@ -33,10 +33,10 @@ from magi.bus.library.local.memoryBook import (
     MemoryBook,
 )
 from magi.bus.library.local.conversationBook import (
+    Conversation,
+    ConversationBook,
     Message,
     MessageBook,
-    Session,
-    SessionBook,
 )
 from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
 from magi.bus.library.local.tasksBook import (
@@ -86,8 +86,8 @@ __all__ = [
     "MessageBook",
     "ROLE_ASSIGNED",
     "ROLE_GUEST",
-    "Session",
-    "SessionBook",
+    "Conversation",
+    "ConversationBook",
     "MCPTimeout",
     "Setting",
     "SettingBook",

@@ -99,15 +99,15 @@ class ProactiveWorker(RuntimeWorker):
             return
 
         for entry in admin_rows:
-            uid = entry.uid  # contacts.id
+            contact_id = entry.contact_id  # contacts.id
             inserted = ensure_for_admin(
                 book=self.bus.action_items_book,
-                admin_id=uid,
+                admin_id=contact_id,
             )
             if inserted:
                 logger.info(
-                    "proactive worker: bootstrap nudge inserted for admin uid=%d",
-                    uid,
+                    "proactive worker: bootstrap nudge inserted for admin contact_id=%d",
+                    contact_id,
                 )
 
     # ------------------------------------------------------------------
