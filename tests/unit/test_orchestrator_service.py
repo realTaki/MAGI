@@ -25,7 +25,7 @@ def test_orchestrator_rejects_missing_hmac(monkeypatch):
 def test_orchestrator_accepts_valid_hmac(monkeypatch):
     from magi.startup.kubernetes.service import _verify_request
 
-    secret, body, timestamp = "test-control-secret", b'{"magic_id":7}', str(int(time.time()))
+    secret, body, timestamp = "test-control-secret", b'{"magi_id":7}', str(int(time.time()))
     signature = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
     monkeypatch.setenv("MAGI_CONTROL_SECRET", secret)
     _verify_request(body, timestamp, signature)
@@ -36,4 +36,4 @@ def test_control_plane_exposes_magis_provision_route():
 
     paths = {route.path for route in create_app().routes}
     assert "/v1/magis/{magis_id}/provision" in paths
-    assert "/v1/evas/{magic_id}/start" in paths
+    assert "/v1/evas/{magi_id}/start" in paths

@@ -155,7 +155,7 @@ def create_app(
         # MAGIC management is control-plane state (membership identity plus
         # runtime registry), not a node-local API.  Its self-settings routes
         # are deliberately mounted below on private runtimes only.
-        app.include_router(magic.router, prefix="/api")
+        app.include_router(magi.router, prefix="/api")
         app.include_router(magis.router, prefix="/api")
     from magi.channels.api import runtime_control
     app.include_router(runtime_control.router, prefix="/api")

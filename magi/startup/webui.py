@@ -26,7 +26,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from magi.startup.config import StartupConfig, WEBUI_HOST, WEBUI_PORT
 from magi.startup.paths import (
@@ -34,6 +34,9 @@ from magi.startup.paths import (
     resolve_webui_pid_path,
 )
 from magi.startup.process import is_alive, read_pid
+
+if TYPE_CHECKING:
+    from magi.bus import Bus
 
 logger = logging.getLogger("magi.startup.webui")
 
@@ -60,7 +63,7 @@ class WebUIStatus:
 class ControlContext:
     """Read/open-only control capability for the singleton WebUI process."""
 
-    bus: object
+    bus: "Bus"
 
 
 # ----------------------------------------------------------------------

@@ -44,7 +44,7 @@ export function useAdminContacts() {
   });
 }
 
-// -- magis / magic ---------------------------------------------------------
+// -- magis / magi ---------------------------------------------------------
 
 export type MagisRow = {
   id: number; name: string; parent_id: number | null;
@@ -59,21 +59,26 @@ export function useMagis() {
   });
 }
 
-export type MAGICRow = {
+export type MagiRow = {
   id: number; name: string | null;
   provider: string | null; api_key_set: boolean; api_key_last4: string | null;
   memberships: { magis_id: number; magis_name: string; role_id: number; role_name: string }[];
   runtime: EvaRuntimeRow | null;
   created_at: string; updated_at: string;
 };
-export type MAGICBrief = MAGICRow;
+/** Back-compat alias — pre-rename callers imported ``MAGICRow`` /
+ *  ``MAGICBrief``. Keeps those imports compiling. */
+export type MAGICRow = MagiRow;
+export type MAGICBrief = MagiRow;
 
-export function useMagic() {
+export function useMagi() {
   return useQuery({
-    queryKey: qk.magic,
-    queryFn: () => apiFetch<MAGICRow[]>("/api/magic"),
+    queryKey: qk.magi,
+    queryFn: () => apiFetch<MagiRow[]>("/api/magi"),
   });
 }
+/** Back-compat alias for ``useMagi``. */
+export const useMagic = useMagi;
 
 export type EvaRuntimeRow = {
   desired_state: "draft" | "running" | "stopped" | "deleted";

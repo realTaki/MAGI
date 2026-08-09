@@ -8,7 +8,7 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 from __future__ import annotations
 
 import os
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +16,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from magi.bus import Bus
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
+
+if TYPE_CHECKING:
+    from magi.bus.library.magis.magisBook import Magis, MagisAdmin, MagisBook, MagisAdminBook
+    from magi.bus.library.magis.membershipBook import (
+        MagisMembership,
+        MagisMembershipBook,
+        MagisRole,
+        MagisRoleBook,
+    )
 
 router = APIRouter(tags=["magis"])
 
@@ -26,6 +35,42 @@ def _admin_gate(request: Request) -> str:
 
 
 AdminGate = Annotated[str, Depends(_admin_gate)]
+
+
+_BookT = TypeVar("_BookT")
+
+
+def _require_book(book: _BookT | None, name: str) -> _BookT:
+    """Return *book*, or 503 when the MAGIS database isn't attached.
+
+    All four MAGIS-side Books on the bus are ``| None`` — they're only
+    populated when a MAGIS database is configured. Every route in this
+    module is meaningless without them, so a missing Book is a
+    deployment-state error (503), not an ``AttributeError`` on ``None``.
+    """
+    if book is None:
+        raise MagiHTTPException(
+            status_code=503,
+            code="unavailable.magis_store",
+            detail=f"MAGIS store '{name}' is not available on this node",
+        )
+    return book
+
+
+def _magis_book(bus: Bus) -> MagisBook:
+    return _require_book(bus.magis_book, "magis_book")
+
+
+def _roles_book(bus: Bus) -> MagisRoleBook:
+    return _require_book(bus.roles_book, "roles_book")
+
+
+def _memberships_book(bus: Bus) -> MagisMembershipBook:
+    return _require_book(bus.memberships_book, "memberships_book")
+
+
+def _admins_book(bus: Bus) -> MagisAdminBook:
+    return _require_book(bus.magis_admins_book, "magis_admins_book")
 
 
 # -- Pydantic response models (no ORM imports) -------------------------
@@ -75,17 +120,17 @@ class RoleUpdate(BaseModel):
 
 class MembershipOut(BaseModel):
     id: int
-    magic_id: int
-    magic_name: str | None = None
+    magi_id: int
+    magi_name: str | None = None
     role_id: int
     role_name: str
 
 
 class MembershipCreate(BaseModel):
-    """Create a new MAGIC identity in this MAGIS.
+    """Create a new MAGI identity in this MAGIS.
 
-    ``magis_memberships.id`` *is* the MAGIC id.  There is no separate
-    MAGIC record that can be attached later, so accepting ``magic_id`` here
+    ``magis_memberships.id`` *is* the MAGI id.  There is no separate
+    MAGI record that can be attached later, so accepting ``magi_id`` here
     would either be impossible or silently ignored.  Reject unknown fields to
     make that model boundary visible to API clients.
     """
@@ -113,7 +158,7 @@ class MAGISAdminCreate(BaseModel):
 # -- Conversion helpers -------------------------------------------------
 
 
-def _magis_out(bus: Bus, view) -> MAGISOut:
+def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
     return MAGISOut(
         id=view.id,
         name=view.name,
@@ -127,7 +172,7 @@ def _magis_out(bus: Bus, view) -> MAGISOut:
     )
 
 
-def _role_out(view: MagisRoleView) -> RoleOut:
+def _role_out(view: MagisRole) -> RoleOut:
     return RoleOut(
         id=view.id,
         magis_id=view.magis_id,
@@ -137,18 +182,18 @@ def _role_out(view: MagisRoleView) -> RoleOut:
     )
 
 
-def _membership_out(bus: Bus, view) -> MembershipOut:
+def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
     role = bus.roles_book.get(role_id=view.role_id) if bus.roles_book else None
     return MembershipOut(
         id=view.id,
-        magic_id=view.id,
-        magic_name=None,
+        magi_id=view.id,
+        magi_name=None,
         role_id=view.role_id,
         role_name=role.name if role else "",
     )
 
 
-def _admin_out(bus: Bus, view) -> MAGISAdminOut:
+def _admin_out(bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
     contact = bus.contacts_book.get(contact_id=view.uid)
     return MAGISAdminOut(
         id=view.id,
@@ -182,7 +227,7 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
         if "already has an adam" in text or "already assigned" in text:
             return MagiHTTPException(409, "validation.adam_already_assigned", str(exc))
         if "one direct magis" in text or "only one" in text:
-            return MagiHTTPException(409, "validation.magic_already_assigned", str(exc))
+            return MagiHTTPException(409, "validation.magi_already_assigned", str(exc))
         return MagiHTTPException(400, "validation.invalid_value", str(exc))
     raise exc
 
@@ -208,8 +253,8 @@ def _require_managed(bus: Bus, magis_id: int) -> None:
         )
 
 
-def _magis_or_404(bus: Bus, magis_id: int):
-    view = bus.magis_book.get(magis_id=magis_id) if bus.magis_book else None
+def _magis_or_404(bus: Bus, magis_id: int) -> Magis:
+    view = _magis_book(bus).get(magis_id=magis_id)
     if view is None:
         raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     return view
@@ -227,7 +272,7 @@ def list_magis(_admin: AdminGate, bus: BusDep) -> list[MAGISOut]:
     "single direct MAGIS" model.
     """
     served = _served_direct_magis_id(bus)
-    rows = bus.magis_book.list_all() if bus.magis_book else []
+    rows = _magis_book(bus).list_all()
     if served is None:
         return [_magis_out(bus, v) for v in rows]
     return [_magis_out(bus, v) for v in rows if v.id == served]
@@ -248,7 +293,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
     except ValueError as exc:
         raise _translate_bus_error(exc) from exc
-    # Every new MAGIS has the reserved role vocabulary before a MAGIC can be
+    # Every new MAGIS has the reserved role vocabulary before a MAGI can be
     # created in it.  This is an API-level composition step over public Books;
     # membership creation still owns the role/MAGIS invariant itself.
     from magi.bus.library.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS

@@ -1,4 +1,4 @@
-"""Regression coverage for explicit MAGIC/MAGIS BUS APIs.
+"""Regression coverage for explicit MAGI / MAGIS BUS APIs.
 
 These tests call route handlers directly because their contract is the
 injected BUS object, not FastAPI's dependency resolver.  They deliberately
@@ -20,7 +20,7 @@ from magi.bus.library.local.settingBook import SettingBook
 from magi.bus.library.magis.controlBook import ControlRuntimeBook
 from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
 from magi.bus.library.magis.membershipBook import MagisMembershipBook, MagisRoleBook
-from magi.channels.api import magic, magis
+from magi.channels.api import magi, magis
 from magi.channels.api.app import create_app
 
 
@@ -49,11 +49,11 @@ def _society(bus: SimpleNamespace):
     return society, eva, adam
 
 
-def test_magic_api_creates_membership_identity_and_control_label(bus: SimpleNamespace) -> None:
+def test_magi_api_creates_membership_identity_and_control_label(bus: SimpleNamespace) -> None:
     society, eva, _ = _society(bus)
 
-    result = magic.create_magic(
-        magic.MAGICCreate(name="eve-one", magis_id=society.id, role_id=eva.id),
+    result = magi.create_magi(
+        magi.MagiCreate(name="eve-one", magis_id=society.id, role_id=eva.id),
         "admin",
         bus,
     )
@@ -61,7 +61,7 @@ def test_magic_api_creates_membership_identity_and_control_label(bus: SimpleName
     assert result.id == bus.memberships_book.get(magi_id=result.id).id
     assert result.name == "eve-one"
     assert result.memberships == [
-        magic.MembershipBrief(
+        magi.MembershipBrief(
             magis_id=society.id, magis_name="Alpha", role_id=eva.id, role_name="EVA"
         )
     ]
@@ -69,13 +69,13 @@ def test_magic_api_creates_membership_identity_and_control_label(bus: SimpleName
     assert bus.control_runtimes_book.get(runtime_id=result.id).backend_ref == "eve-one"
 
 
-def test_membership_api_rejects_retired_magic_id_and_cross_magis_role(bus: SimpleNamespace) -> None:
+def test_membership_api_rejects_retired_magi_id_and_cross_magis_role(bus: SimpleNamespace) -> None:
     first, eva, _ = _society(bus)
     second = bus.magis_book.add(name="Beta")
     other_role = bus.roles_book.add(magis_id=second.id, name="EVA")
 
     with pytest.raises(ValidationError):
-        magis.MembershipCreate(role_id=eva.id, magic_id=99)
+        magis.MembershipCreate(role_id=eva.id, magi_id=99)
     with pytest.raises(ValueError, match="target MAGIS"):
         bus.memberships_book.add(magis_id=first.id, role_id=other_role.id)
 
@@ -123,15 +123,15 @@ def test_self_instruction_uses_the_runtime_bus(bus: SimpleNamespace, monkeypatch
     member = bus.memberships_book.add(magis_id=society.id, role_id=eva.id)
     monkeypatch.setenv("MAGI_RUNTIME_ID", str(member.id))
 
-    written = magic.put_self_instruction(
-        magic.InstructionPayload(instruction="Be concise."), "admin", bus
+    written = magi.put_self_instruction(
+        magi.InstructionPayload(instruction="Be concise."), "admin", bus
     )
 
-    assert written.magic_id == member.id
-    assert magic.get_self_instruction("admin", bus).instruction == "Be concise."
+    assert written.magi_id == member.id
+    assert magi.get_self_instruction("admin", bus).instruction == "Be concise."
 
 
-def test_control_and_runtime_apps_mount_the_correct_magic_surfaces() -> None:
+def test_control_and_runtime_apps_mount_the_correct_magi_surfaces() -> None:
     control = create_app(
         bus=SimpleNamespace(), include_spa=False,
         include_control_routes=True, include_private_routes=False,
@@ -152,15 +152,15 @@ def test_control_and_runtime_apps_mount_the_correct_magic_surfaces() -> None:
 
     control_paths = mounted_paths(control)
     runtime_paths = mounted_paths(runtime)
-    assert "/api/magic" in control_paths
-    assert "/api/magic/self/instruction" not in control_paths
-    assert "/api/magic/self/instruction" in runtime_paths
+    assert "/api/magi" in control_paths
+    assert "/api/magi/self/instruction" not in control_paths
+    assert "/api/magi/self/instruction" in runtime_paths
 
 
-def test_control_magic_route_uses_the_injected_bus(bus: SimpleNamespace) -> None:
+def test_control_magi_route_uses_the_injected_bus(bus: SimpleNamespace) -> None:
     society, eva, _ = _society(bus)
-    magic.create_magic(
-        magic.MAGICCreate(name="eve-one", magis_id=society.id, role_id=eva.id),
+    magi.create_magi(
+        magi.MagiCreate(name="eve-one", magis_id=society.id, role_id=eva.id),
         "admin",
         bus,
     )
@@ -168,9 +168,9 @@ def test_control_magic_route_uses_the_injected_bus(bus: SimpleNamespace) -> None
         bus=bus, include_spa=False,
         include_control_routes=True, include_private_routes=False,
     )
-    app.dependency_overrides[magic.admin_gate] = lambda: "admin"
+    app.dependency_overrides[magi.admin_gate] = lambda: "admin"
 
-    response = TestClient(app).get("/api/magic")
+    response = TestClient(app).get("/api/magi")
 
     assert response.status_code == 200
     assert response.json()[0]["name"] == "eve-one"
