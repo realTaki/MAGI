@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
 from magi.bus import Bus
-from magi.channels.api.dependencies import BusDep
+from magi.channels.api.dependencies import BusDep, WorkersDep
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.api import control_store
@@ -512,7 +512,9 @@ async def verify_bot(payload: VerifyBotRequest) -> VerifyBotResponse:
 
 
 @router.post("/save-bot", response_model=SaveBotResponse)
-async def save_bot(payload: SaveBotRequest, bus: BusDep) -> SaveBotResponse:
+async def save_bot(
+    payload: SaveBotRequest, bus: BusDep, workers: WorkersDep,
+) -> SaveBotResponse:
     """Persist the verified bot token + username into the settings table.
 
     The frontend guarantees the token passed ``verify-bot`` immediately
@@ -537,12 +539,13 @@ async def save_bot(payload: SaveBotRequest, bus: BusDep) -> SaveBotResponse:
         logger.exception("failed to write settings")
         return SaveBotResponse(ok=False, error=str(exc))
 
-    # Best-effort: bring up the TG polling bot immediately after
-    # token save so login-code delivery works without requiring a
-    # manual node restart.
+    # Best-effort: hot-restart the TG polling worker so it picks up
+    # the newly-saved token without requiring a manual node restart.
+    # ``stop_worker`` is a no-op when the worker isn't currently
+    # running, so this also covers the cold-start case.
     try:
-        if tg_bot.get_telegram_bot() is None:
-            tg_bot.start_bot()
+        await workers.stop_worker("tg")
+        await workers.start_worker("tg")
     except Exception:
         logger.exception("failed to auto-start telegram bot after save-bot")
 

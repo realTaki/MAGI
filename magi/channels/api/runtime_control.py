@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
-from magi.channels.api.dependencies import get_bus
+from magi.channels.api.dependencies import get_bus, get_workers
 
 router = APIRouter(tags=["runtime-control"])
 
@@ -37,13 +37,17 @@ class TelegramVerify(BaseModel):
 @router.post("/control/telegram/bootstrap")
 async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> dict[str, bool]:
     _require_control(request)
-    from magi.channels.telegram import bot as tg_bot
 
     bus = get_bus(request)
     bus.settings_book.set(key="telegram.bot_token", value=payload.token)
     bus.settings_book.set(key="telegram.bot_username", value=payload.username)
-    if tg_bot.get_telegram_bot() is None:
-        tg_bot.start_bot()
+    # Hot-restart the TG polling worker so it picks up the newly-saved
+    # token without a process restart. ``stop_worker`` is a no-op when
+    # the worker isn't currently running, so this also covers the
+    # cold-start case (token saved for the first time).
+    workers = get_workers(request)
+    await workers.stop_worker("tg")
+    await workers.start_worker("tg")
     return {"ok": True}
 
 

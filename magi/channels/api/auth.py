@@ -859,19 +859,20 @@ def _login_methods_for(bus: Bus, uid: int) -> tuple[list[str], bool]:
 
     if control_store.enabled():
         # Control-plane mode: ``uid`` is the operator's
-        # Telegram chat id. The MAGIS admin roster
-        # (``magis_admins``) is the single source of
-        # truth — there's no Contact row in the runtime
-        # store. A bound admin always has ``tg_code``
-        # available; a missing row means "this Telegram
-        # account isn't an admin here" and the login
-        # page should fall back to the empty-state
-        # affordance.
-        if (
-            bus.magis_admins_book is not None
-            and bus.magis_admins_book.is_admin_for(uid=uid)
-        ):
-            return (["tg_code"], False)
+        # Telegram chat id (the value the WebUI login
+        # page hands in). The MAGIS admin roster
+        # (``magis_admins``) is keyed by ``Contact.id``
+        # (FK), so the lookup chain is
+        # ``telegram_id → contacts.telegram_id → contact.id
+        #   → magis_admins.uid``. A bound admin always
+        # resolves and gets ``tg_code``; a missing row
+        # means "this Telegram account isn't a MAGIS
+        # admin here" and the login page falls back to
+        # the empty-state affordance.
+        contact = bus.contacts_book.get_by_telegram(telegram_id=uid)
+        if contact is not None and bus.magis_admins_book is not None:
+            if bus.magis_admins_book.is_admin_for(uid=contact.id):
+                return (["tg_code"], False)
         return ([], True)
 
     contact = bus.contacts_book.get(contact_id=uid)
