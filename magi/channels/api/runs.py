@@ -9,14 +9,10 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from magi.bus import get_bus, get_stream_hub
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 
 router = APIRouter(tags=["runs"])
-
-
-def _bus():
-    return get_bus()
 
 
 class RunStatusResponse(BaseModel):
@@ -29,7 +25,7 @@ class RunStatusResponse(BaseModel):
 
 @router.get("/runs/{run_id}", response_model=RunStatusResponse)
 async def get_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
-    result = _bus().agent_runs.result(run_id)
+    result = bus.agent_runs.result(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="run not found")
     return RunStatusResponse(
@@ -44,7 +40,7 @@ async def get_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
 @router.post("/runs/{run_id}/cancel", response_model=RunStatusResponse, status_code=status.HTTP_202_ACCEPTED)
 async def cancel_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
     """Explicit cancellation endpoint; ordinary chat input is always steering."""
-    agent_runs = _bus().agent_runs
+    agent_runs = bus.agent_runs
     if not agent_runs.cancel(run_id):
         result = agent_runs.result(run_id)
         if result is None:
@@ -64,14 +60,14 @@ async def cancel_run(run_id: str, _admin: AdminGate) -> RunStatusResponse:
 async def run_events(run_id: str, _admin: AdminGate) -> StreamingResponse:
     """Best-effort SSE; clients recover missed data from ``GET /runs/{id}``."""
     async def event_stream():
-        queue = get_stream_hub().subscribe(run_id)
+        queue = bus.stream_hub.subscribe(run_id)
         try:
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15)
                 except TimeoutError:
                     yield ": keepalive\n\n"
-                    result = _bus().agent_runs.result(run_id)
+                    result = bus.agent_runs.result(run_id)
                     if result is not None and result.status in {"completed", "failed", "cancelled"}:
                         return
                     continue
@@ -86,6 +82,6 @@ async def run_events(run_id: str, _admin: AdminGate) -> StreamingResponse:
                 if event.kind == "message.committed":
                     return
         finally:
-            get_stream_hub().unsubscribe(run_id, queue)
+            bus.stream_hub.unsubscribe(run_id, queue)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

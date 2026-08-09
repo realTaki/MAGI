@@ -56,7 +56,7 @@ from typing import Literal
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 
@@ -177,7 +177,7 @@ def _serialize(row) -> McpServerOut:
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _validate_payload_for_connection_type(payload: McpServerIn) -> None:

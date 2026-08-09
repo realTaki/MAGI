@@ -59,21 +59,24 @@ class A2AAdapter:
     async def send(self, uid: int, text: str) -> None:
         """Push ``text`` to peer ``uid`` (a ``magic.id``).
 
-        Queue a durable A2A delivery.  The delivery worker owns the HTTP
-        request/retry path, so callers never hold an agent stack open while a
-        peer thinks.
+        Queue a durable A2A delivery through new_bus delivery_job_board.
         """
-        from magi.bus import get_bus
+        from magi.channels import get_current_new_bus
 
         if not text:
             raise ValueError("A2A messages cannot be empty")
         if not os.environ.get("MAGI_RUNTIME_ID", "").isdigit():
             raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
-        get_bus().delivery.enqueue(
+
+        nb = get_current_new_bus()
+        if nb is None:
+            raise RuntimeError("new_bus unavailable for A2A delivery")
+        from magi.new_bus.guild.deliveryJob import DeliveryJob
+        nb.delivery_job_board.publish(DeliveryJob(
             channel=Channel.A2A,
             destination=str(uid),
             payload={"text": text, "reply_to": None},
-        )
+        ))
 
     def lookup_im_id(self, uid: int) -> str | None:
         """Return the peer's cluster DNS name, or ``None``.

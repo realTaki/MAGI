@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 
@@ -126,7 +126,7 @@ _COMPLETED_VISIBLE_DAYS = 7
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _current_admin_id(request: Request) -> int:

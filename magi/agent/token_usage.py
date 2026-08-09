@@ -1,14 +1,11 @@
-"""``token_usage`` row writer for the durable agent runtime.
-
-Each successful LLM call writes one row to the
-``token_usage`` table so the
-``/api/contacts/{uid}/token-usage`` endpoint can render
-weekly / monthly aggregates. The split from
-is deliberately a pure SQL insert with no hidden runtime state.
-"""
+"""``token_usage`` row writer — new_bus only."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
 
 
 def record_token_usage(
@@ -18,30 +15,18 @@ def record_token_usage(
     provider: str,
     model: str | None,
     usage: dict,
+    bus: "NewBus",
 ) -> None:
-    """Insert one ``token_usage`` row for a successful LLM call.
-
-    Synchronous because we're already past the async boundary
-    (the LLM returned). The SQL insert is one row in a
-    dedicated table; latency is bounded by SQLite WAL commit
-    (~ms). Pushing it onto the asyncio event loop would add
-    bookkeeping for no measurable gain.
-
-    ``usage`` keys follow the Anthropic SDK's ``Usage`` shape
-    (see :class:`magi.providers.factory.ChatResult.usage`).
-    Unknown keys are ignored; missing keys default to 0 so
-    a provider that returned no usage metadata still gets a
-    row (call count stays honest).
-
-    Raises whatever the ORM raises — caller is responsible
-    for swallowing (we don't want a transient DB hiccup to
-    break a chat that already succeeded).
-    """
-    from magi.bus import get_bus
-
-    get_bus().token_usage.record(
-        uid=uid, channel=channel, provider=provider, model=model, usage=usage
-    )
+    """Insert one ``token_usage`` row for a successful LLM call."""
+    if not hasattr(bus, "token_usage_book"):
+        return
+    try:
+        bus.token_usage_book.add(
+            uid=uid, channel=channel, provider=provider,
+            model=model or "", usage=usage,
+        )
+    except Exception:
+        pass
 
 
 __all__ = ["record_token_usage"]

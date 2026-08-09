@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.bus.jobs.protocols.session import SearchHit, SearchUnavailable
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
@@ -58,7 +58,7 @@ def search_chat(
     uid = _admin_uid(request)
 
     try:
-        items, total = get_bus().session.search(uid, q, limit=limit, offset=offset)
+        items, total = bus.session.search(uid, q, limit=limit, offset=offset)
     except SearchUnavailable as e:
         raise MagiHTTPException(
             status_code=503,

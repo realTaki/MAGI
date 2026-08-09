@@ -1,0 +1,32 @@
+"""WebUIWorker — 出站 DeliveryJob(channel=webui) → Session 追加。"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+from magi.channels.worker_base import ChannelWorker
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
+    from magi.new_bus.guild.deliveryJob import DeliveryJob
+
+logger = logging.getLogger("magi.channels.webui.worker")
+
+
+class WebUIWorker(ChannelWorker):
+    channel_name = "webui"
+
+    async def _run(self) -> None:
+        await self._claim_delivery_loop(self._deliver_webui, "webui")
+
+    async def _deliver_webui(self, job: DeliveryJob) -> None:
+        import uuid
+        from datetime import datetime, timezone
+        session_id = str(job.payload.get("session_id") or "")
+        uid = job.payload.get("uid")
+        text = str(job.payload.get("text") or "")
+        if not session_id or not isinstance(uid, int):
+            raise ValueError("webui delivery missing session_id or uid")
+        self.bus.messages_book.add(session_id=session_id, message_id=uuid.uuid4().hex,
+                                   role="assistant", text=text, ts=datetime.now(timezone.utc).isoformat())

@@ -48,8 +48,8 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 def _bus() -> ContactsService:
     """Resolve a ContactsService bound to the right state dir."""
-    from magi.bus import get_bus
-    return get_bus().contacts
+    from magi.channels.api._bus import bus
+    return bus.contacts
 
 
 def _iso(dt) -> str:

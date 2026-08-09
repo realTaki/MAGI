@@ -1,21 +1,26 @@
 """The internal channel adapter for a scheduled task fire.
 
-The scheduler owns *when* a task fires.  :class:`TaskChannel` owns the
-channel boundary: a fire is an inbound invocation that enters the same MAGI
-agent loop used by other channels.  Keeping this small adapter explicit makes
-future trigger sources (event, webhook, or system-proactive) use the same
-execution contract without making the scheduler itself an agent runtime.
+[plan amendment §11]: ``TaskChannel.dispatch`` is now a deprecated wrapper
+that forwards to ``bus.run_task_job_board.publish(RunTaskJob(...))``.
+The TaskWorker claims and executes via ``_fire_task``.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Final
 
-from magi.channels import Channel
+from magi.channels import Channel, get_current_new_bus
+
+logger = logging.getLogger("magi.channels.tasks.channel")
 
 
 class TaskChannel:
-    """Dispatch scheduled-task invocations into the agent runtime."""
+    """Dispatch scheduled-task invocations into the agent runtime.
+
+    Deprecated wrapper — publishes a ``RunTaskJob`` to the new_bus.
+    TaskWorker claims and executes.
+    """
 
     identifier: Final[Channel] = Channel.SCHEDULED
 
@@ -27,16 +32,28 @@ class TaskChannel:
         manual: bool = False,
         pre_created_run_id: str | None = None,
     ) -> None:
-        """Execute one persisted task fire.
+        """Publish a RunTaskJob to new_bus.
 
-        Import lazily so merely importing channel metadata does not pull the
-        agent loop, SQLAlchemy models, or runtime provider dependencies into
-        lightweight callers.
+        The TaskWorker claims it and calls ``_fire_task``.
+        Falls back to no-op if new_bus isn't available.
         """
-        from magi.channels.tasks.runner import execute_task
+        bus = get_current_new_bus()
+        if bus is None:
+            logger.warning(
+                "TaskChannel.dispatch(%s): new_bus not available; task not fired",
+                task_id,
+            )
+            return
 
-        await execute_task(
-            task_id,
+        from magi.new_bus.guild.runTaskJob import RunTaskJob
+
+        fired_by = "manual_run" if manual else "api_manual_run"
+        bus.run_task_job_board.publish(RunTaskJob(
+            task_id=task_id,
             manual=manual,
-            pre_created_run_id=pre_created_run_id,
+            fired_by=fired_by,
+        ))
+        logger.info(
+            "TaskChannel.dispatch: published RunTaskJob for task %s (manual=%s)",
+            task_id, manual,
         )

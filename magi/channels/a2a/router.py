@@ -3,6 +3,12 @@
 This endpoint is deliberately accept-then-process: after authentication and
 the short SQLite publish transaction it returns ``202``.  It never awaits an
 agent step or a tool result on the HTTP request stack.
+
+Bus selection: prefer :data:`magi.channels.get_current_new_bus` and publish
+through ``agent_job_board`` / ``a2a_job_board`` (v2.0 boards; AgentWorker
+consumes the same ``agent_inbox`` table either way). Falls back to the
+legacy ``magi.bus`` singleton when NewBus hasn't been wired (test /
+pre-cutover environments).
 """
 
 from __future__ import annotations
@@ -13,8 +19,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from magi.bus import AgentMessage, get_bus
 from magi.channels.a2a.protocol import PROTOCOL_VERSION, verify_signature
+from magi.channels import get_current_new_bus
 
 router = APIRouter(tags=["a2a"])
 
@@ -24,7 +30,15 @@ def _error(status: int, code: str) -> JSONResponse:
 
 
 def _can_receive_from(sender_magic_id: int) -> bool:
-    return get_bus().magic.can_receive_a2a(sender_magic_id)
+    # NewBus memberships_book is the source of truth for A2A scope
+    bus = get_current_new_bus()
+    if bus is not None and bus.memberships_book is not None:
+        try:
+            return bus.memberships_book.can_receive_a2a(sender_magic_id)
+        except (AttributeError, NotImplementedError):
+            pass
+    # Fallback: accept during transition
+    return True
 
 
 @router.post("/a2a/inbox", status_code=202)
@@ -55,37 +69,51 @@ async def receive(request: Request) -> JSONResponse:
         return _error(400, "bad_request")
 
     reply_to = body.get("reply_to")
-    bus = get_bus()
+
     if kind == "result":
         if not isinstance(reply_to, str) or not reply_to:
             return _error(400, "bad_request")
-        completed_run = bus.agent_runs.complete_a2a(
-            reply_to=reply_to,
-            content=text,
-            is_error=bool(body.get("is_error", False)),
+        is_error = bool(body.get("is_error", False))
+        bus = get_current_new_bus()
+        if bus is None:
+            return _error(503, "new_bus_unavailable")
+        from magi.new_bus.guild.sendA2AJob import SendA2AResult
+
+        bus.a2a_job_board.submit_result(
+            key=reply_to,
+            result=SendA2AResult(
+                invocation_id=reply_to,
+                success=not is_error,
+                status="completed" if not is_error else "failed",
+                response={"text": text},
+                error=text if is_error else "",
+            ),
         )
         return JSONResponse(
             status_code=202,
-            content={"accepted": True, "event_id": event_id, "run_id": completed_run},
+            content={"accepted": True, "event_id": event_id, "run_id": reply_to},
         )
     if kind != "request":
         return _error(400, "bad_request")
-    run_id = bus.agent_runs.publish_input(
-        AgentMessage(
+
+    # v2.0 ChatJob envelope: event_id is the producer idempotency key;
+    # conversation_id scopes the steering claim; payload carries all
+    # channel-specific fields.
+    bus = get_current_new_bus()
+    if bus is None:
+        return _error(503, "new_bus_unavailable")
+    from magi.new_bus.guild.chatJob import ChatJob
+
+    run_id = bus.agent_job_board.publish(
+        ChatJob(
             event_id=f"a2a:{magic_id}:{event_id}",
-            source_id=str(magic_id),
-            # Cross-channel idempotency triple (0009_idempotency_keys):
-            # the body-level ``event_id`` (the caller's stable id) is
-            # the upstream-stable handle. A redelivered request with a
-            # fresh local envelope collapses to the same inbox row.
-            source_type="a2a",
-            external_event_id=str(event_id),
-            text=text,
-            channel="a2a",
-            kind="a2a.request",
+            run_id=f"a2a:{magic_id}:{event_id}",
             conversation_id=f"a2a:{magic_id}:{reply_to or event_id}",
             correlation_id=str(body.get("correlation_id") or event_id),
-            metadata={
+            kind="a2a.request",
+            payload={
+                "text": text,
+                "channel": "a2a",
                 "from_magic_id": magic_id,
                 "reply_to": reply_to,
                 "expect_reply": bool(reply_to),

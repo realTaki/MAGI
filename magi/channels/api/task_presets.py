@@ -37,7 +37,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.bus.task_schedule import (
     preset_to_cron,
     validate_run_at,
@@ -147,7 +147,7 @@ def _preset_to_out(p) -> TaskPresetOut:
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 # ──────────────────────────────────────────────────────────────────────── #

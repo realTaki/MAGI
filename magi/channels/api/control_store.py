@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import os
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 
 
 def _control():
     """Resolve the bus MagisService that owns the control-plane KV."""
-    return get_bus().magis
+    return bus.magis
 
 
 def enabled() -> bool:

@@ -165,30 +165,22 @@ async def _runtime_lifespan(
     Adam-dependent bootstrap checks.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels import (
-        start_channel_workers,
-        stop_channel_workers,
-    )
+    from magi.channels import start_channel_workers, stop_channel_workers
     from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
     from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
 
-    # Set process-global new_bus for migration interim
-    # (TaskChannel.dispatch, TaskSchedulerBridge read this)
     import magi.channels
     magi.channels.set_current_new_bus(new_bus)
 
     # Startup order: providers → tools → mcp → agent → channels → proactive
-    # (§5 contract: task → telegram → webui → a2a)
     await start_provider_worker(bus=new_bus)
     await start_tool_worker(bus=new_bus)
     await start_mcp_worker(bus=new_bus)
     await start_agent_worker(bus=new_bus)
 
-    channel_workers = await start_channel_workers(
-        new_bus, enabled=set(channels),
-    )
+    channel_workers = await start_channel_workers(new_bus, enabled=set(channels))
 
     await start_proactive_worker(bus=new_bus, magi_id=magi_id)
     try:
@@ -218,16 +210,10 @@ async def worker_lifespan():
     provider worker (now on new_bus) has a bus to claim from.
     """
     from magi.agent.worker import start_agent_worker, stop_agent_worker
-    from magi.channels import (
-        start_channel_workers,
-        stop_channel_workers,
-    )
+    from magi.channels import start_channel_workers, stop_channel_workers
     from magi.mcp.worker import start_mcp_worker, stop_mcp_worker
     from magi.proactive.worker import start_proactive_worker, stop_proactive_worker
-    from magi.providers.worker import (
-        start_provider_worker,
-        stop_provider_worker,
-    )
+    from magi.providers.worker import start_provider_worker, stop_provider_worker
     from magi.tools.worker import start_tool_worker, stop_tool_worker
     from magi.new_bus.bootstrap import bootstrap_new_bus
     from magi.startup.paths import resolve_workspace_dir
@@ -235,19 +221,15 @@ async def worker_lifespan():
     state_dir = str(resolve_workspace_dir() / "memories")
     new_bus = bootstrap_new_bus(state_dir=state_dir)
 
-    # Set process-global new_bus for migration interim (TaskSchedulerBridge etc.)
     import magi.channels
     magi.channels.set_current_new_bus(new_bus)
 
-    # Startup order: providers → tools → mcp → agent → channels → proactive
     await start_provider_worker(bus=new_bus)
     await start_tool_worker(bus=new_bus)
     await start_mcp_worker(bus=new_bus)
     await start_agent_worker(bus=new_bus)
 
-    channel_workers = await start_channel_workers(
-        new_bus, enabled={"webui"},
-    )
+    channel_workers = await start_channel_workers(new_bus, enabled={"webui"})
 
     await start_proactive_worker(bus=new_bus, magi_id=None)
     try:

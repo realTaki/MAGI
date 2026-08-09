@@ -34,7 +34,8 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
-from magi.bus import AgentMessage, get_bus
+from magi.bus import AgentMessage
+from magi.channels.api._bus import bus
 from magi.bus.jobs.protocols.session import (
     ChannelMismatchError, SessionMessage, SessionPathError, new_session_id,
     utcnow_iso as _utcnow_iso,
@@ -42,7 +43,7 @@ from magi.bus.jobs.protocols.session import (
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
-from magi.channels import Channel
+from magi.channels import Channel, get_current_new_bus
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -82,7 +83,7 @@ def _resolve_caller_credentials(uid: int) -> tuple[int, str]:
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
     """
-    contact = get_bus().contacts.get(uid)
+    contact = bus.contacts.get(uid)
 
     if contact is None:
         raise MagiHTTPException(
@@ -197,7 +198,7 @@ async def send_chat(
     # — NOT the per-channel delivery address. The store
     # resolves rows by uid; the channel adapter interprets
     # the delivery address when it has to push a reply.
-    store = get_bus().session
+    store = bus.session
     session_id = payload.session_id
     # The per-channel delivery address stamped on the
     # session row. ``""`` if the operator never bound TG.
@@ -245,7 +246,7 @@ async def send_chat(
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
-        contact = get_bus().contacts.get(uid)
+        contact = bus.contacts.get(uid)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.create(
             uid, channel=Channel.WEBUI, delivery_address=tg_im_id,
@@ -304,8 +305,36 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    run_id = get_bus().agent_runs.publish_input(
-        AgentMessage(
+    # Bus selection: prefer new_bus when wired. Both paths target the
+    # same ``agent_inbox`` table (AgentWorker reads from there), so the
+    # migration is a pure surface swap — the legacy AgentMessage shape
+    # becomes the new_bus ChatJob envelope (kind="chat", payload=...).
+    new_bus = get_current_new_bus()
+    if new_bus is not None:
+        from magi.new_bus.guild.chatJob import ChatJob
+
+        # Stable producer-side idempotency: the inbound session-message
+        # id is what makes a network retry collapse to the same inbox row.
+        chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
+        run_id = new_bus.agent_job_board.publish(
+            ChatJob(
+                event_id=chat_job_event_id,
+                run_id=chat_job_event_id,
+                conversation_id=f"webui:{uid}:{session_id}",
+                correlation_id=inbound_message_id,
+                kind="chat",
+                payload={
+                    "text": text,
+                    "channel": Channel.WEBUI,
+                    "uid": uid,
+                    "session_id": session_id,
+                    "caller_role": contact_role,
+                },
+            )
+        )
+    else:
+        run_id = bus.agent_runs.publish_input(
+            AgentMessage(
                 # The persisted inbound session-message id is the producer's
                 # idempotency key. A network retry cannot create a second
                 # agent turn for that exact input.
@@ -322,6 +351,6 @@ async def send_chat(
                 session_id=session_id,
                 uid=uid,
                 caller_role=contact_role,
-        ),
-    )
+            ),
+        )
     return ChatSendResponse(run_id=run_id, session_id=session_id)

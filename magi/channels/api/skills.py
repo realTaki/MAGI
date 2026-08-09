@@ -29,7 +29,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.skills import get_skill_metas
@@ -43,7 +43,7 @@ _DISABLED_KEY = "skills.disabled"
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _load_disabled() -> set[str]:

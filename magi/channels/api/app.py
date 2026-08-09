@@ -86,41 +86,20 @@ class HealthResponse(BaseModel):
     version: str
 
 
-def create_app(*, include_spa: bool = True, include_control_routes: bool = True, start_telegram: bool = True, include_private_routes: bool = True) -> FastAPI:
+def create_app(*, include_spa: bool = True, include_control_routes: bool = True, include_private_routes: bool = True) -> FastAPI:
     """Build either the standalone control WebUI or an internal Runtime API.
 
     ``include_control_routes=False`` is used by every MAGI runtime: it omits
     login/onboarding and MAGIS registry routes and never mounts React assets.
     The runtime remains an internal HTTP API for the one WebUI service.
+
+    [plan amendment §14.A.6]: ``start_telegram`` parameter removed.
+    TelegramWorker now owns TG lifecycle via Channel Workers, started/stopped
+    by _runtime_lifespan / worker_lifespan.
     """
     # The MCP bootstrap is handled by the composition root in
-    # ``magi.__main__`` (``bootstrap_mcp_tools`` is called before
-    # ``uvicorn`` is started).  Under ``reload=True`` uvicorn spawns
-    # a child process; the child inherits the same on-disk SQLite
-    # catalog snapshot, so a re-bootstrap is unnecessary — the
-    # catalog is the single source of truth and the child's
-    # ``bus.tool_catalog.get_snapshot()`` returns the same rows.
-    # The legacy in-app re-bootstrap was removed because channels
-    # must not depend on tools directly (boundary test); the
-    # composition root owns the cross-package wiring.
+    # ``magi.__main__``; the composition root owns the cross-package wiring.
     _ = include_private_routes  # keep the parameter's historical gate
-
-    # Start TG bot in the uvicorn child process.
-    import logging as _log
-
-    if start_telegram:
-        _log.getLogger(__name__).info("create_app: starting TG bot")
-        from magi.channels.telegram.bot import start_bot
-
-        # Importing the ASGI module in a CLI/test process must not require
-        # the workspace to exist. Node.run() initialises the workspace
-        # before serving in production.
-        try:
-            t = start_bot()
-        except Exception as exc:  # noqa: BLE001 — optional daemon must not block ASGI import
-            t = None
-            _log.getLogger(__name__).warning("create_app: telegram bootstrap skipped: %s", exc)
-        _log.getLogger(__name__).info("create_app: TG bot result=%s", t)
 
     # D.7: lifespan hook starts the auto-title background
     # worker. Kept lazy (inside ``create_app``) so it runs
@@ -158,6 +137,10 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
     @app.get("/health", response_model=HealthResponse, tags=["meta"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", service="magi", version=__version__)
+
+    # Channel Worker health endpoint
+    from magi.channels.api import health as health_api
+    app.include_router(health_api.router)
 
     # Feature routers — registered BEFORE the SPA static mount so
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
@@ -339,12 +322,12 @@ def create_app(*, include_spa: bool = True, include_control_routes: bool = True,
 
 def create_runtime_app() -> FastAPI:
     """Factory for the internal API served by every MAGI runtime."""
-    return create_app(include_spa=False, include_control_routes=False, start_telegram=False)
+    return create_app(include_spa=False, include_control_routes=False)
 
 
 def create_control_app() -> FastAPI:
     """Factory for the singleton browser-facing service; it has no local MAGI state."""
-    return create_app(include_spa=True, include_control_routes=True, start_telegram=False, include_private_routes=False)
+    return create_app(include_spa=True, include_control_routes=True, include_private_routes=False)
 
 
 # A direct ASGI import must be safe in the singleton WebUI container: unlike a

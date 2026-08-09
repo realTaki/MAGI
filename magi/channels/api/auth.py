@@ -51,7 +51,7 @@ import httpx
 from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.bus.jobs.protocols.contact import ContactView
 from magi.bus.jobs.protocols.magis import OperatorView
 from magi.channels import Channel
@@ -178,7 +178,7 @@ def _super_admins() -> set[int]:
     the two concepts collided on the served user who is
     also an operator).
     """
-    bus = get_bus()
+    bus = bus
     if control_store.enabled():
         return {op.id for op in bus.magis.list_control_operators(admin_only=True)}
     contacts = bus.contacts.list_admins()
@@ -290,7 +290,7 @@ _LOGIN_KEY = "auth.login_code"
 
 
 def _load_login_code(uid: int) -> dict | None:
-    bus = get_bus()
+    bus = bus
     raw = (
         control_store.get(f"{_LOGIN_KEY}.{uid}")
         if control_store.enabled()
@@ -305,7 +305,7 @@ def _load_login_code(uid: int) -> dict | None:
 
 
 def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
-    bus = get_bus()
+    bus = bus
     value = json.dumps(
         {
             "code": code,
@@ -321,7 +321,7 @@ def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: floa
 
 
 def _clear_login_code(uid: int) -> None:
-    bus = get_bus()
+    bus = bus
     if control_store.enabled():
         control_store.delete(f"{_LOGIN_KEY}.{uid}")
     else:
@@ -355,7 +355,7 @@ async def _target_access(magic_id: int, method: str, path: str, payload: dict[st
     the narrow pre-login capability, and the signature remains bound to the
     selected runtime id and exact path.
     """
-    bus = get_bus()
+    bus = bus
     try:
         base = bus.magis.runtime_url_for_magic(magic_id)
     except RuntimeError as exc:
@@ -385,7 +385,7 @@ async def available_magi() -> AvailableMAGIResponse:
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    bus = get_bus()
+    bus = bus
     result = [
         AvailableMAGI(id=view.id, name=view.name)
         for view in bus.magic.list_available_magic()
@@ -465,7 +465,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     We intentionally avoid Telegram ``getChat`` network calls here:
     login must stay fast even when Telegram is slow or blocked.
     """
-    bus = get_bus()
+    bus = bus
     if control_store.enabled():
         operators = bus.magis.list_control_operators(admin_only=True)
         return AllowedLoginAccountsResponse(accounts=[
@@ -553,7 +553,7 @@ async def send_login_code(
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
     if control_store.enabled():
-        bus = get_bus()
+        bus = bus
         operator: OperatorView | None = bus.magis.get_control_operator(uid)
         if operator is None or not operator.admin:
             return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
@@ -742,7 +742,7 @@ async def me(
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
-    bus = get_bus()
+    bus = bus
     selected = selected_session(magi_session)
     if selected is not None:
         return MeResponse(
@@ -877,7 +877,7 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
     ControlOperator + the runtime's IM binding table; the
     single-MAGI path uses Contact + auth_credentials.
     """
-    bus = get_bus()
+    bus = bus
     methods: list[str] = []
     is_webui_only = True
 
@@ -960,7 +960,7 @@ async def login_password(
             ok=False, error="password does not match",
         )
 
-    bus = get_bus()
+    bus = bus
     from magi.channels.api import password_utils
 
     if not password_utils.check_cooldown(
@@ -1034,7 +1034,7 @@ async def set_password(
             error="password login is not supported by the control plane",
         )
 
-    bus = get_bus()
+    bus = bus
     from magi.channels.api import password_utils
 
     if not payload.uid or not isinstance(payload.uid, int):
@@ -1096,7 +1096,7 @@ async def change_password(
     :func:`set_password` endpoint serves the admin
     override flow.
     """
-    bus = get_bus()
+    bus = bus
     from magi.channels.api import password_utils
 
     caller_uid = _verify_signed_uid(
@@ -1138,7 +1138,7 @@ async def revoke_password(
     """
     if control_store.enabled():
         return Response(status_code=204)
-    bus = get_bus()
+    bus = bus
     if not bus.auth.delete_password_credential(uid):
         raise MagiHTTPException(
             status_code=404,

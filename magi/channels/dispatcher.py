@@ -37,8 +37,7 @@ from __future__ import annotations
 import logging
 from typing import Awaitable, Callable, Protocol, runtime_checkable
 
-from magi.bus import get_bus
-from magi.channels import Channel
+from magi.channels import Channel, get_current_new_bus
 
 logger = logging.getLogger("magi.channels.dispatcher")
 
@@ -128,14 +127,11 @@ def register_adapter(adapter: ChannelAdapter) -> None:
     """
     _ADAPTERS[adapter.name] = adapter
     try:
-        bus = get_bus()
-        bus.dispatcher.register(adapter)
+        nb = get_current_new_bus()
+        # Old bus dispatcher removed; adapter registry is self-contained
+        # in this module's _ADAPTERS dict.
     except Exception:
-        # Bootstrap may not be ready yet during early module
-        # import; the bus is registered lazily on first
-        # ``bus.dispatcher.lookup_im_id`` call too. Avoid
-        # crashing the adapter's import on a transient state.
-        logger.debug("bus dispatcher registration deferred", exc_info=True)
+        logger.debug("adapter registration deferred", exc_info=True)
 
 
 def _auto_register_builtin_adapters() -> None:
@@ -216,25 +212,20 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
             f"user {uid} has no {channel!r} binding"
         )
 
-    from magi.bus import get_bus
+    nb = get_current_new_bus()
+    if nb is None:
+        raise RuntimeError("new_bus unavailable for delivery")
 
-    # bus.store.enqueue_delivery fires the DELIVERY_PENDING signoff
-    # row automatically based on the persistent ``hook_plugin_configs``
-    # table -- the dispatcher does not construct any hook context.
-    delivered = get_bus().delivery.enqueue_and_wait(
+    from magi.new_bus.guild.deliveryJob import DeliveryJob
+
+    nb.delivery_job_board.publish(DeliveryJob(
         channel=str(channel),
         destination=im_id,
         payload={"text": text or ""},
         run_id=None,
-        timeout_seconds=8.0,
-    )
-    if not delivered:
-        # The delivery worker could not deliver the message in
-        # time.  Propagate the failure so the caller (e.g. the
-        # Telegram auth code flow) can decide whether to retry.
-        raise RuntimeError(
-            f"delivery to {channel}:{uid} did not complete in time"
-        )
+    ))
+    # Note: enqueue_and_wait semantics lost — caller now fire-and-forget.
+    # Delivery result is async via DeliveryResult on delivery_job_board.
 
 
 def lookup_im_id(uid: int, channel: Channel | str) -> str | None:
@@ -273,7 +264,10 @@ def list_bindings(uid: int) -> list[tuple[str, str]]:
     is set. Future channels (WeChat, Slack) will add their own
     columns to ``Contact`` and read from there.
     """
-    contact = get_bus().contacts.get(uid)
+    nb = get_current_new_bus()
+    if nb is None:
+        return []
+    contact = nb.contacts_book.get(contact_id=uid)
     if contact is None or contact.telegram_id is None:
         return []
     return [("telegram", str(contact.telegram_id))]

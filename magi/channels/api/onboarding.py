@@ -35,7 +35,7 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.api import control_store
@@ -50,7 +50,7 @@ router = APIRouter(tags=["onboarding"])
 
 def _bus():
     """Build the BUS facade for the runtime's state directory."""
-    return get_bus()
+    return bus
 
 
 # -- request / response schemas -----------------------------------------
@@ -388,7 +388,7 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
     if control_store.enabled():
         control_store.set("onboarding.complete", "true")
         return CompleteResponse(ok=True)
-    bus = get_bus()
+    bus = bus
 
     # 1. Stamp one nudge per current admin. Helper is
     #    idempotent — re-running (e.g. retry after failure,

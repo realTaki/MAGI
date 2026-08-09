@@ -1,6 +1,6 @@
-"""MAGI's message-driven agent runtime.
+"""MAGI's message-driven agent runtime — new_bus only.
 
-Channels publish durable inputs to :mod:`magi.bus`.  :class:`AgentWorker`
-executes one provider step at a time, persists the transition, and delegates
-tool and delivery effects to their own workers.
+Channels publish durable ``ChatJob`` inputs to ``agent_job_board``.
+:class:`AgentWorker` consumes them, drives the agent loop, and delegates
+LLM / tool / delivery effects to their respective job boards and workers.
 """

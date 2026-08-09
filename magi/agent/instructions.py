@@ -1,9 +1,12 @@
-"""Runtime rendering for personal, MAGIS, and role instructions."""
+"""Runtime rendering for personal, MAGIS, and role instructions — new_bus only."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from magi.new_bus import NewBus
 
 logger = logging.getLogger("magi.agent.instructions")
 
@@ -31,12 +34,31 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
     )
 
 
-def runtime_instruction_block() -> str:
-    """Load only this MAGI's direct MAGIS instruction from public database."""
+def runtime_instruction_block(bus: "NewBus") -> str:
+    """Load this MAGI's instruction from MAGIS Books."""
     try:
-        from magi.bus import get_bus
+        if bus.memberships_book is None:
+            return ""
 
-        personal, memberships = get_bus().magic.instruction_context()
+        personal = ""
+        settings = getattr(bus, "settings_book", None)
+        if settings is not None:
+            raw = settings.get(key="instruction")
+            if raw:
+                personal = raw
+
+        memberships: list[dict[str, Any]] = []
+        try:
+            rows = bus.memberships_book.list_all()
+            for row in rows or []:
+                memberships.append({
+                    "magis_name": getattr(row, "magis_name", None),
+                    "team_instruction": getattr(row, "team_instruction", None),
+                    "role_name": getattr(row, "role_name", None),
+                    "role_instruction": getattr(row, "role_instruction", None),
+                })
+        except Exception:
+            pass
         return _render(personal, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")

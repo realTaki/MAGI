@@ -38,7 +38,7 @@ from typing import Annotated
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 
 logger = logging.getLogger("magi.api.token_metrics")
@@ -120,7 +120,7 @@ def _aggregate_period(
     start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
-    in_sum, out_sum, calls = get_bus().token_usage.aggregate(
+    in_sum, out_sum, calls = bus.token_usage.aggregate(
         uid=uid, start=start_utc_naive, end=end_utc_naive,
     )
 
@@ -175,7 +175,7 @@ def get_contact_token_usage(
     contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
-    tz_name = get_bus().settings.system_timezone()
+    tz_name = bus.settings.system_timezone()
     tz = zoneinfo.ZoneInfo(tz_name)
 
     week = _aggregate_period(uid, "week", tz)

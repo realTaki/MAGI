@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.bus.jobs.protocols.magis import (
     MagisAdminView,
     MagisMembershipView,
@@ -110,7 +110,7 @@ class MAGISAdminCreate(BaseModel):
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _magis_out(view: MagisView) -> MAGISOut:
@@ -250,7 +250,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate) -> MAGISOut:
     try:
         from magi.bus.jobs.services.runtime import OrchestratorUnavailable
 
-        bus = get_bus()
+        bus = bus
         bus.runtime.provision_magis(magis_id=view.id, magis_name=view.name)
     except OrchestratorUnavailable as exc:
         raise MagiHTTPException(

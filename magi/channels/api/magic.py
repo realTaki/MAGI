@@ -17,7 +17,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 from magi.bus.jobs.protocols.magis import (
     EvaRuntimeView,
     MagicView,
@@ -107,7 +107,7 @@ class InstructionOut(BaseModel):
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _runtime_out(view: EvaRuntimeView | None) -> EvaRuntimeOut | None:

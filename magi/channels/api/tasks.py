@@ -67,22 +67,22 @@ router = APIRouter(tags=["tasks"])
 
 
 def _task_service() -> TaskService:
-    from magi.bus import get_bus
-    return get_bus().task
+    from magi.channels.api._bus import bus
+    return bus.task
 
 
 def _settings() -> SettingsService:
-    from magi.bus import get_bus
-    return get_bus().settings
+    from magi.channels.api._bus import bus
+    return bus.settings
 
 
 def _contacts() -> ContactsService:
-    from magi.bus import get_bus
-    return get_bus().contacts
+    from magi.channels.api._bus import bus
+    return bus.contacts
 
 
 def _sessions() -> SessionService:
-    return get_bus().session
+    return bus.session
 
 
 # ──────────────────────────────────────────────────────────────────────── #
@@ -660,7 +660,7 @@ def run_task_now(
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §5.6 +
     # §6 — ``channels.api ⊥ channels.tasks``). The bridge owns both
     # the in-process scheduler path and the dev-mode sync fallback.
-    bridge = get_bus().task_scheduler
+    bridge = bus.task_scheduler
     try:
         bridge.request_manual_fire(task_id, run_id=run_id)
     except RuntimeError:
@@ -785,7 +785,7 @@ def _register_with_scheduler_view(view: TaskFullView) -> None:
     running" case for us; the DB row is still authoritative and the
     scheduler rehydrates from DB on its next start.
     """
-    get_bus().task_scheduler.notify_scheduled(view)
+    bus.task_scheduler.notify_scheduled(view)
 
 
 def _unregister_from_scheduler(task_id: str) -> None:
@@ -795,7 +795,7 @@ def _unregister_from_scheduler(task_id: str) -> None:
     scheduler interaction behind ``magi.bus`` so the boundary test
     keeps enforcing the doc.
     """
-    get_bus().task_scheduler.notify_unscheduled(task_id)
+    bus.task_scheduler.notify_unscheduled(task_id)
 
 
 # The creator-role gate moved from a constant to a helper

@@ -24,11 +24,11 @@ logger = logging.getLogger("magi.api.auth_gates")
 def _is_admin_uid(uid: int) -> bool:
     from magi.channels.api import control_store
     if control_store.enabled():
-        from magi.bus import get_bus
-        return get_bus().magis.is_control_admin(uid)
+        from magi.channels.api._bus import bus
+        return bus.magis.is_control_admin(uid)
     try:
-        from magi.bus import get_bus
-        c = get_bus().contacts.get(uid)
+        from magi.channels.api._bus import bus
+        c = bus.contacts.get(uid)
             # ``admin`` is the WebUI sign-in bit. Independent
             # of ``role`` — an assigned user with admin=True
             # is their own operator; a contact with admin=True
@@ -93,8 +93,8 @@ def admin_or_assigned_gate(request: Request) -> str:
 
     proxied_uid = ensure_runtime_operator(request)
     if proxied_uid is not None:
-        from magi.bus import get_bus
-        contact = get_bus().contacts.get(proxied_uid)
+        from magi.channels.api._bus import bus
+        contact = bus.contacts.get(proxied_uid)
         if contact is not None and (contact.admin or contact.role == "assigned"):
             return str(proxied_uid)
         raise MagiHTTPException(status_code=403, code="auth.soul_edit_forbidden", detail="This action requires node access")
@@ -108,8 +108,8 @@ def admin_or_assigned_gate(request: Request) -> str:
             detail="SOUL.md editing requires admin or assigned role",
         )
     try:
-        from magi.bus import get_bus
-        c = get_bus().contacts.get(uid)
+        from magi.channels.api._bus import bus
+        c = bus.contacts.get(uid)
     except Exception:
         logger.exception("admin_or_assigned_gate: ORM read failed")
         raise MagiHTTPException(

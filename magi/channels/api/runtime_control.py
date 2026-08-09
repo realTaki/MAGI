@@ -11,13 +11,13 @@ from pydantic import BaseModel, Field
 
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
-from magi.bus import get_bus
+from magi.channels.api._bus import bus
 
 router = APIRouter(tags=["runtime-control"])
 
 
 def _bus():
-    return get_bus()
+    return bus
 
 
 def _require_control(request: Request) -> None:
