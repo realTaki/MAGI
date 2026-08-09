@@ -4,6 +4,13 @@ Tests the base class template method with a fake deliver_fn, verifying:
 - claim → deliver → submit_result(success=True) flow
 - deliver_fn failure → submit_result(success=False) flow
 - backpressure branch when pending_count exceeds max_depth
+
+The mock ``claim`` uses an *infinite* ``side_effect`` (via a generator)
+rather than a fixed list: ``MagicMock(side_effect=[...])`` raises
+``StopIteration`` once the list is exhausted, which ``asyncio.to_thread``
+cannot propagate cleanly into the awaiting Future — the task then
+hangs instead of exiting cleanly. ``_stopping = True`` then has no
+effect because the loop never reaches the next ``while`` check.
 """
 
 from __future__ import annotations
@@ -28,6 +35,21 @@ class _FakeChannelWorker(ChannelWorker):
         pass  # overridden in tests
 
 
+def _claim_sequence(*values: object) -> MagicMock:
+    """A ``claim`` mock that yields ``values[0], values[1], ..., None``
+    forever — never raises StopIteration, so the loop exits cleanly when
+    ``_stopping`` flips True. Uses ``itertools.chain(once(values), repeat(None))``
+    so the trailing ``None`` repeat is genuinely infinite without
+    consuming a finite iterable.
+    """
+    from itertools import chain, repeat
+    seq = chain(iter(values), repeat(None))
+
+    def _next():
+        return next(seq)
+    return MagicMock(side_effect=_next)
+
+
 @pytest.mark.asyncio
 async def test_successful_delivery_calls_submit_result_with_success():
     """A successful deliver_fn should submit_result(success=True)."""
@@ -41,12 +63,9 @@ async def test_successful_delivery_calls_submit_result_with_success():
     w._last_success_at = None
     w._last_error = None
 
-    # Mock bus
     fake_job = DeliveryJob(channel="fake", payload={"text": "hi"}, job_id="j1")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim = MagicMock(
-        side_effect=[fake_job, None]
-    )
+    w.bus.delivery_job_board.claim = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get = MagicMock(return_value=None)  # default depth
@@ -82,9 +101,7 @@ async def test_failed_delivery_calls_submit_result_with_failure():
 
     fake_job = DeliveryJob(channel="fake", payload={}, job_id="j2")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim = MagicMock(
-        side_effect=[fake_job, None]
-    )
+    w.bus.delivery_job_board.claim = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get = MagicMock(return_value=None)
@@ -119,9 +136,7 @@ async def test_skips_job_with_wrong_channel():
 
     wrong_job = DeliveryJob(channel="tg", payload={}, job_id="j3")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim = MagicMock(
-        side_effect=[wrong_job, None]
-    )
+    w.bus.delivery_job_board.claim = _claim_sequence(wrong_job)
     w.bus.delivery_job_board.release = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get = MagicMock(return_value=None)
@@ -150,7 +165,11 @@ async def test_backpressure_throttle_skips_claim():
     w._last_error = None
 
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim = MagicMock()
+    # claim would raise StopIteration if reached — backpressure branch
+    # must short-circuit BEFORE this mock is called.
+    w.bus.delivery_job_board.claim = MagicMock(
+        side_effect=AssertionError("claim should not be called under backpressure"),
+    )
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=5000)
     w.bus.settings_book.get = MagicMock(return_value="10")  # max_depth=10
 

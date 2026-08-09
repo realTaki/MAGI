@@ -29,6 +29,11 @@ class RunTaskJob:
     session_id: str | None = None
     uid: int | None = None
     job_id: str = ""
+    # Populated by ``BaseJobBoard._map_row`` on claim — not stored on
+    # the row (the column exists as a counter only). Exposed here so
+    # callers can observe lease-recovery behaviour (see
+    # ``test_lease_expiry_reclaims_abandoned_job``).
+    attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +60,7 @@ class _RunTaskJobRow(Base):
         type_=__import__("sqlalchemy").JSON, nullable=True,
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
