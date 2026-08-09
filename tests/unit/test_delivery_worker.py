@@ -97,3 +97,28 @@ async def test_telegram_worker_fails_without_token():
 
     with pytest.raises(RuntimeError, match="no bot_token"):
         await worker._deliver_tg(job)
+
+
+@pytest.mark.asyncio
+async def test_telegram_can_start_after_token_is_added():
+    """Skipping an unconfigured start must not reserve the worker slot."""
+    mock_bus = MagicMock()
+    mock_bus.settings_book.get = MagicMock(return_value=None)
+
+    from magi.channels.telegram.worker import TelegramWorker
+
+    worker = TelegramWorker(mock_bus)
+    assert await worker.start() is False
+    assert worker._task is None
+
+    mock_bus.settings_book.get.return_value = "new-token"
+    entered = asyncio.Event()
+
+    async def fake_run() -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    worker._run = fake_run  # type: ignore[method-assign]
+    assert await worker.start() is True
+    await entered.wait()
+    await worker.stop()

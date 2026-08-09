@@ -23,6 +23,11 @@ class _ProbeWorker(RuntimeWorker):
             await asyncio.sleep(0.01)
 
 
+class _SkippedWorker(_ProbeWorker):
+    async def on_start(self) -> bool:
+        return False
+
+
 @pytest.mark.asyncio
 async def test_runtime_worker_lifecycle_children_and_health() -> None:
     worker = _ProbeWorker()
@@ -66,3 +71,11 @@ async def test_call_keeps_event_loop_responsive() -> None:
     assert await worker.call(blocking) == "done"
     await tick_task
     assert ticked.is_set()
+
+
+@pytest.mark.asyncio
+async def test_worker_can_intentionally_skip_startup() -> None:
+    worker = _SkippedWorker()
+    assert await worker.start() is False
+    assert worker._task is None
+    assert worker.health()["running"] is False

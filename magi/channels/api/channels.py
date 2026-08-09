@@ -100,7 +100,7 @@ async def list_channels(
             implemented=meta["implemented"],
             has_credentials=_has_credentials(bus, name),
             enabled=name in enabled,
-            running=bool(registry and registry.workers[name].health()["running"]),
+            running=bool(meta["implemented"] and registry and registry.is_running(name)),
         ))
     return ChannelsResponse(enabled=enabled, available=available)
 
@@ -133,7 +133,9 @@ async def update_channels(
     for meta in _CHANNEL_META:
         name = meta["name"]
         should_run = name in enabled_list and meta["implemented"]
-        currently_running = bool(registry and registry.workers[name].health()["running"])
+        currently_running = bool(
+            meta["implemented"] and registry and registry.is_running(name)
+        )
 
         if registry is not None and should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
@@ -148,7 +150,7 @@ async def update_channels(
             implemented=meta["implemented"],
             has_credentials=_has_credentials(bus, name),
             enabled=name in enabled_list,
-            running=bool(registry and registry.workers[name].health()["running"]),
+            running=bool(meta["implemented"] and registry and registry.is_running(name)),
         ))
 
     return ChannelsResponse(enabled=enabled_list, available=available)

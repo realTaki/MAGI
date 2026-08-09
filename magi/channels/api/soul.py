@@ -33,8 +33,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminOrAssignedGate
+from magi.channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -78,7 +78,7 @@ class SoulUpdateResponse(BaseModel):
 
 
 @router.get("/soul", response_model=SoulReadResponse)
-def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
+def read_soul(_admin: AdminOrAssignedGate, bus: BusDep) -> SoulReadResponse:
     """Return the current persona text the agent reads.
 
     When the workspace ``SOUL.md`` is missing the agent falls
@@ -86,6 +86,7 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
     behaviour here so the UI shows *what the agent is actually
     using*, not a phantom "the file is empty" state.
     """
+    assert bus.prompt_book is not None
     ws = bus.prompt_book.read_workspace_soul()
     return SoulReadResponse(
         content=ws.content,
@@ -98,6 +99,7 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
 def update_soul(
     payload: SoulUpdateRequest,
     _admin: AdminOrAssignedGate,
+    bus: BusDep,
 ) -> SoulUpdateResponse:
     """Persist the new persona text to ``SOUL.md``.
 
@@ -118,6 +120,7 @@ def update_soul(
             detail="persona text must contain at least one non-whitespace character",
         )
 
+    assert bus.prompt_book is not None
     modified_at = bus.prompt_book.write_workspace_soul(content)
     return SoulUpdateResponse(modified_at=modified_at)
 
@@ -125,6 +128,7 @@ def update_soul(
 @router.post("/soul/reset", response_model=SoulUpdateResponse)
 def reset_soul(
     _admin: AdminOrAssignedGate,
+    bus: BusDep,
 ) -> SoulUpdateResponse:
     """Reset the workspace ``SOUL.md`` to the bundled default.
 
@@ -132,6 +136,7 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
+    assert bus.prompt_book is not None
     default = bus.prompt_book.soul()
     modified_at = bus.prompt_book.write_workspace_soul(default)
     return SoulUpdateResponse(modified_at=modified_at)

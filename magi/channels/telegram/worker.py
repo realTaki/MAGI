@@ -24,11 +24,12 @@ class TelegramWorker(ChannelWorker):
         self._bot_app: object | None = None
         self._shutdown_event: asyncio.Event | None = None
 
-    async def on_start(self) -> None:
+    async def on_start(self) -> bool:
         bot_token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
         if not bot_token:
             logger.info("TelegramWorker: no bot_token; skipping")
-            self._stopping = True
+            return False
+        return True
 
     async def _run(self) -> None:
         await asyncio.gather(self._run_inbound(), self._run_outbound())

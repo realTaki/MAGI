@@ -37,14 +37,22 @@ class RuntimeWorker(ABC):
         self._last_success_at: datetime | None = None
         self._last_error: str | None = None
 
-    async def start(self) -> None:
+    async def start(self) -> bool:
+        """Start the loop and return whether this worker actually started.
+
+        ``on_start`` may return ``False`` for an intentionally unavailable
+        worker (for example Telegram before a token is configured).  That is
+        not a failed startup and must not reserve a registry slot.
+        """
         if self._task is not None:
-            return
+            return True
         self._stopping = False
-        await self.on_start()
+        if await self.on_start() is False:
+            return False
         self._task = asyncio.create_task(
             self._run_guarded(), name=f"magi-{self.worker_name}-worker"
         )
+        return True
 
     async def stop(self) -> None:
         self._stopping = True
@@ -62,8 +70,8 @@ class RuntimeWorker(ABC):
             self._children.clear()
         await self.on_stopped()
 
-    async def on_start(self) -> None:
-        """Optional worker-specific startup work before the main loop."""
+    async def on_start(self) -> bool | None:
+        """Optional startup hook; return ``False`` to intentionally skip."""
 
     async def on_stop_requested(self) -> None:
         """Optional signal step before the main loop is cancelled."""

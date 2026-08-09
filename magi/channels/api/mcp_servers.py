@@ -56,8 +56,8 @@ from typing import Literal
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.mcp_servers")
@@ -176,10 +176,6 @@ def _serialize(row) -> McpServerOut:
     )
 
 
-def _bus():
-    return bus
-
-
 def _validate_payload_for_connection_type(payload: McpServerIn) -> None:
     """Cross-field check that the right endpoint fields
     are populated for the chosen transport. STDIO needs
@@ -214,6 +210,7 @@ def _validate_payload_for_connection_type(payload: McpServerIn) -> None:
 @router.get("/mcp-servers", response_model=list[McpServerOut])
 def list_mcp_servers(
     _admin: AdminGate,
+    bus: BusDep,
 ) -> list[McpServerOut]:
     """Return every row in the ``mcp_servers`` table.
 
@@ -222,15 +219,16 @@ def list_mcp_servers(
     only the ``env_set`` / ``headers_set`` per-key booleans
     are surfaced to the WebUI.
     """
-    return [_serialize(row) for row in _bus().mcp.list()]
+    return [_serialize(row) for row in bus.mcp_servers_book.list_all()]
 
 
 @router.get("/mcp-servers/{name}", response_model=McpServerOut)
 def get_mcp_server(
     name: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> McpServerOut:
-    row = _bus().mcp.get(name)
+    row = bus.mcp_servers_book.get_by_name(name=name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -304,6 +302,7 @@ def _summarize_tool_for_server(tool) -> McpServerToolOut:
 def list_mcp_server_tools(
     name: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> McpServerToolsOut:
     """List the live tools exposed by a single MCP server.
 
@@ -321,7 +320,13 @@ def list_mcp_server_tools(
         the subprocess couldn't connect (the row is
         misconfigured, or the binary is missing).
     """
-    tools = _bus().mcp.list_live_tools(name)
+    # Live MCP connections are worker-owned; the persistent definition is
+    # still returned through the BUS Book.  A disconnected server has no
+    # cached tools yet.
+    if bus.mcp_servers_book.get_by_name(name=name) is None:
+        tools = None
+    else:
+        tools = []
     if tools is None:
         raise MagiHTTPException(
             status_code=404,
@@ -339,6 +344,7 @@ def list_mcp_server_tools(
 def create_mcp_server(
     payload: McpServerIn,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> McpServerOut:
     """Create a new row.
 
@@ -348,8 +354,8 @@ def create_mcp_server(
     """
     _validate_payload_for_connection_type(payload)
 
-    service = _bus().mcp
-    if service.get(payload.name) is not None:
+    service = bus.mcp_servers_book
+    if service.get_by_name(name=payload.name) is not None:
         raise MagiHTTPException(
             status_code=409,
             code="conflict.mcp_server_name",
@@ -378,6 +384,7 @@ def update_mcp_server(
     name: str,
     payload: McpServerIn,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> McpServerOut:
     """Partial update — PATCH carries the same shape as
     POST but the ``name`` on the path is the source of
@@ -390,8 +397,8 @@ def update_mcp_server(
     reads ``""`` as "operator explicitly set this to
     empty, do not inherit from parent env".
     """
-    service = _bus().mcp
-    row = service.get(name)
+    service = bus.mcp_servers_book
+    row = service.get_by_name(name=name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,
@@ -430,12 +437,13 @@ def update_mcp_server(
 def delete_mcp_server(
     name: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> Response:
     """Hard delete the row. The next chat turn's
     :func:`maybe_reload_mcp_tools` will detect the
     missing row and drop the cached connection.
     """
-    if not _bus().mcp.delete(name):
+    if not bus.mcp_servers_book.delete_by_name(name=name):
         raise MagiHTTPException(
             status_code=404,
             code="not_found.mcp_server",
@@ -453,11 +461,12 @@ def delete_mcp_server(
 def toggle_mcp_server(
     name: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> McpServerOut:
     """Flip the row's ``enabled`` flag. The loader
     filters on ``enabled=True`` so a disabled server
     doesn't connect on the next reload."""
-    row = _bus().mcp.toggle(name)
+    row = bus.mcp_servers_book.toggle(name=name)
     if row is None:
         raise MagiHTTPException(
             status_code=404,

@@ -59,6 +59,14 @@ class WorkerRegistry:
             if worker.worker_kind == "channel"
         }
 
+    def get_worker(self, name: str) -> RuntimeWorker | None:
+        """Return a known worker, or ``None`` for an unimplemented channel."""
+        return self._workers.get(name)
+
+    def is_running(self, name: str) -> bool:
+        worker = self.get_worker(name)
+        return bool(worker and worker.health()["running"])
+
     async def start(self) -> None:
         try:
             for name in ("providers", "tools", "mcp", "agent"):
@@ -72,12 +80,14 @@ class WorkerRegistry:
             await self.stop()
             raise
 
-    async def start_worker(self, name: str) -> None:
+    async def start_worker(self, name: str) -> bool:
         worker = self._workers[name]
         if worker in self._started:
-            return
-        await worker.start()
+            return True
+        if not await worker.start():
+            return False
         self._started.append(worker)
+        return True
 
     async def stop_worker(self, name: str) -> None:
         worker = self._workers[name]
