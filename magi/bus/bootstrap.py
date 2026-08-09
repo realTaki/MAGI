@@ -321,28 +321,26 @@ def _bootstrap_with_dirs(
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
 
+    # ---- signing key (idempotent — only generated on first boot) ------------
+    import secrets
+    if not settings_book.get(key="auth.signing_key"):
+        settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
+        logger.info("generated new auth.signing_key")
+
     # ---- prompt book (file-backed, not ORM) --------------------------------
+    _workspace_dir = Path(state_dir).parent
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
     if _prompts_dir is not None:
         prompt_shelf = FileShelf(_prompts_dir)
-        prompt_book = PromptBook(prompt_shelf)
+        prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
 
-        # Seed SOUL.md into the workspace if missing.  The convention is
-        # ``state_dir = <workspace>/memories``, so workspace is one level up.
-        _ensure_workspace_soul(Path(state_dir).parent, _prompts_dir)
+        # Seed SOUL.md into the workspace if missing.
+        _ensure_workspace_soul(_workspace_dir, _prompts_dir)
     else:
         prompt_book = None
 
     # ---- skills book (file-backed, two roots: bundle + operator) ---------
-    # Convention: workspace is ``state_dir.parent`` (``<workspace>/memories``
-    # is the state dir). Operator skills live at ``<workspace>/skills/``;
-    # the bundle ships inside the ``magi`` package at ``<magi>/skills/``.
-    # ``ensure_workspace`` (run by the composition root) creates the
-    # operator ``skills/`` subdir before we get here, so we pass
-    # ``create_root=False`` (set inside ``build_default_skills_book``) to
-    # avoid a duplicate ``mkdir``.
-    workspace_dir = Path(state_dir).parent
-    skills_book = build_default_skills_book(workspace_dir)
+    skills_book = build_default_skills_book(_workspace_dir)
 
     # ---- stream hub (in-process pipe registry) ------------------------------
     from magi.bus.stream import StreamHub

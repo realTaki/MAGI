@@ -33,10 +33,31 @@ Standalone (early bootstrap / testing)::
 
 from __future__ import annotations
 
+import logging
+import os
+import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from magi.bus.db.file import FileShelf
 from magi.bus.library.file.base import BaseFileBook
+
+logger = logging.getLogger("magi.bus.promptBook")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceSoul:
+    """Result of reading the workspace ``SOUL.md``.
+
+    ``is_fallback`` is True when the workspace file is missing
+    and the bundled fallback was returned instead.
+    """
+
+    content: str
+    mtime: str | None  # ISO 8601 UTC with Z suffix, or None for fallback
+    is_fallback: bool
 
 
 class PromptBook(BaseFileBook):
@@ -46,12 +67,80 @@ class PromptBook(BaseFileBook):
     hot-reload semantics.  These are methods (not properties) so
     callers are reminded that every invocation may trigger a
     ``stat()`` + potential re-read.
+
+    Workspace SOUL.md operations (``read_workspace_soul`` /
+    ``write_workspace_soul``) use atomic file I/O directly on the
+    workspace directory, not through the bundled FileShelf.
     """
 
-    def __init__(self, shelf: FileShelf) -> None:
-        super().__init__(shelf)
+    _SOUL_FILENAME = "SOUL.md"
 
-    # -- persona ------------------------------------------------------------
+    def __init__(self, shelf: FileShelf, *, workspace_dir: Path | None = None) -> None:
+        super().__init__(shelf)
+        self._workspace_dir = workspace_dir
+
+    # -- workspace SOUL (file I/O, not bundled FileShelf) --------------------
+
+    def _soul_path(self) -> Path:
+        if self._workspace_dir is None:
+            raise RuntimeError(
+                "PromptBook has no workspace_dir; "
+                "workspace SOUL operations are unavailable"
+            )
+        return self._workspace_dir / self._SOUL_FILENAME
+
+    def read_workspace_soul(self) -> WorkspaceSoul:
+        """Read the workspace ``SOUL.md``, falling back to bundled persona.
+
+        Returns a :class:`WorkspaceSoul` with ``is_fallback=True`` and
+        the bundled ``fallback_persona.md`` content when the workspace
+        file is missing.
+        """
+        path = self._soul_path()
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+            mtime = (
+                datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+            return WorkspaceSoul(content=content, mtime=mtime, is_fallback=False)
+        except FileNotFoundError:
+            return WorkspaceSoul(
+                content=self.fallback_persona(),
+                mtime=None,
+                is_fallback=True,
+            )
+
+    def write_workspace_soul(self, content: str) -> str:
+        """Atomically write *content* to workspace ``SOUL.md``.
+
+        Returns the new file's mtime as an ISO 8601 UTC string
+        (``Z`` suffix).
+        """
+        path = self._soul_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
+            raise
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        return mtime.isoformat().replace("+00:00", "Z")
+
+    # -- persona (bundled, from FileShelf) ---------------------------------
 
     def soul(self) -> str:
         """Return the bundled ``soul.md`` (the deployer's persona)."""

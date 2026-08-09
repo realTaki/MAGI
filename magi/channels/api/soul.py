@@ -20,38 +20,14 @@ Who can edit it:
     roles (C6+) and have no business editing this node's
     persona.
 
-Why a dedicated API surface (vs. reusing ``prompts/``):
-
-- The *bundled* ``prompts/soul.md`` is the immutable template
-  we ship with the wheel. The *workspace* ``SOUL.md`` is the
-  deployer-edited copy that ``agent.py`` actually reads. They
-  are physically different files in different locations.
-- The Settings UI needs to know whether it's editing the
-  bundled default (still "fresh") or an already-customised
-  copy, so the API exposes both ``content`` and a
-  ``is_bundled_fallback`` flag (true means the workspace file
-  is missing and the agent is reading the generic fallback).
-
-Atomic write: the file is rewritten via ``tempfile.mkstemp``
-in the same directory + ``os.fsync`` + ``os.replace``, mirroring
-the bus session persistence path so a crash mid-write can never
-leave a half-edited persona on disk (which the agent would
-then read on the next chat turn).
-
-The atomic write is the only durability mechanism here — v0
-doesn't carry an audit log, so a successful ``update_soul``
-/ ``reset_soul`` returns as soon as the file is replaced. The
-file's mtime (returned as ``modified_at``) is the only
-"when did the operator last change the persona" signal.
+Reads and writes go through :meth:`PromptBook.read_workspace_soul`
+and :meth:`PromptBook.write_workspace_soul` — no direct filesystem
+I/O in the API layer.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Body
@@ -59,7 +35,6 @@ from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminOrAssignedGate
-from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -72,12 +47,6 @@ router = APIRouter(tags=["soul"])
 # gets a 422, not a 400-error chat downstream when the LLM
 # provider refuses to ingest it as a system prompt.
 _MAX_SOUL_CHARS = 8000
-
-_SOUL_FILENAME = "SOUL.md"
-
-
-def _soul_path() -> Path:
-    return workspace_dir() / _SOUL_FILENAME
 
 
 class SoulReadResponse(BaseModel):
@@ -93,11 +62,6 @@ class SoulReadResponse(BaseModel):
     """
 
     content: str
-    # ``modified_at`` is the file's mtime, not a stored
-    # timestamp field. We don't carry a separate metadata file
-    # for v0; if the operator hand-edits the file outside the
-    # UI the mtime will reflect that and the UI's "last edited"
-    # line will still be accurate.
     modified_at: str | None
     is_bundled_fallback: bool
 
@@ -110,35 +74,7 @@ class SoulUpdateResponse(BaseModel):
     modified_at: str
 
 
-def _write_atomic(path: Path, content: str) -> str:
-    """Atomic write to ``path``; returns ISO UTC mtime after.
-
-    Mirrors the bus session durability semantics so the two file
-    surfaces (sessions, soul) follow the same crash-safety
-    pattern. Caller is responsible for the audit row.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent),
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_name, path)
-    except Exception:
-        # Clean up the tempfile on any failure so the dir
-        # doesn't accumulate ``.SOUL.md.XXXX.tmp`` debris.
-        try:
-            os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass
-        raise
-    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-    return mtime.isoformat().replace("+00:00", "Z")
+# -- endpoints ---------------------------------------------------------
 
 
 @router.get("/soul", response_model=SoulReadResponse)
@@ -150,25 +86,12 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
     behaviour here so the UI shows *what the agent is actually
     using*, not a phantom "the file is empty" state.
     """
-    path = _soul_path()
-    try:
-        content = path.read_text(encoding="utf-8").strip()
-        mtime = (
-            datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
-        return SoulReadResponse(
-            content=content,
-            modified_at=mtime,
-            is_bundled_fallback=False,
-        )
-    except FileNotFoundError:
-        return SoulReadResponse(
-            content=bus.prompt.fallback_persona(),
-            modified_at=None,
-            is_bundled_fallback=True,
-        )
+    ws = bus.prompt_book.read_workspace_soul()
+    return SoulReadResponse(
+        content=ws.content,
+        modified_at=ws.mtime,
+        is_bundled_fallback=ws.is_fallback,
+    )
 
 
 @router.put("/soul", response_model=SoulUpdateResponse)
@@ -178,11 +101,10 @@ def update_soul(
 ) -> SoulUpdateResponse:
     """Persist the new persona text to ``SOUL.md``.
 
-    The file is rewritten atomically; the agent picks up the
-    new content on the next chat turn (``read_soul`` is called
-    per turn, no cache). Audit row records the SHA-256 of the
-    new content so the audit trail reflects *what* changed
-    without storing the whole persona twice.
+    The file is rewritten atomically (via
+    :meth:`PromptBook.write_workspace_soul`); the agent picks up
+    the new content on the next chat turn (``read_soul`` is called
+    per turn, no cache).
     """
     content = payload.content.strip()
     if not content:
@@ -196,10 +118,7 @@ def update_soul(
             detail="persona text must contain at least one non-whitespace character",
         )
 
-    path = _soul_path()
-    modified_at = _write_atomic(path, content)
-
-    # persona write succeeded; no audit row to maintain.
+    modified_at = bus.prompt_book.write_workspace_soul(content)
     return SoulUpdateResponse(modified_at=modified_at)
 
 
@@ -213,8 +132,6 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
-    default = bus.prompt.soul()
-    path = _soul_path()
-    modified_at = _write_atomic(path, default)
-
+    default = bus.prompt_book.soul()
+    modified_at = bus.prompt_book.write_workspace_soul(default)
     return SoulUpdateResponse(modified_at=modified_at)

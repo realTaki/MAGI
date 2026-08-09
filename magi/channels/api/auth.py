@@ -73,18 +73,25 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
 def _signing_key() -> bytes:
-    """Derive a signing key from the state directory path.
-    Not cryptographically random, but prevents casual cookie
-    tampering — an attacker with filesystem access to the
-    state dir already owns the DB anyway."""
+    """Derive a signing key from the bootstrap-generated secret.
+
+    The secret is stored in ``settings_book`` at key
+    ``auth.signing_key`` and is generated once at first boot.
+    Falls back to ``os.urandom`` if settings_book hasn't been
+    seeded yet (e.g. very early in the control-plane path).
+    """
     if control_store.enabled():
         secret = os.environ.get("MAGI_CONTROL_SECRET")
         if secret:
             return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
-    from magi.startup.paths import resolve_workspace_dir
-    return hashlib.sha256(
-        str(resolve_workspace_dir()).encode() + b"magi-session-signing"
-    ).digest()
+    raw = bus.settings.get("auth.signing_key")
+    if raw:
+        return hashlib.sha256(raw.encode() + b"magi-session-signing").digest()
+    # Safety net: generate a one-off key if settings_book isn't
+    # seeded yet.  The bootstrap path always sets this, but the
+    # control-plane path short-circuits before bus init.
+    import secrets
+    return secrets.token_bytes(32)
 
 
 def _sign_uid(uid: int) -> str:

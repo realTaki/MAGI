@@ -16,6 +16,6 @@ Public surface:
 """
 
 from magi.bus.library.file.base import BaseFileBook
-from magi.bus.library.file.promptBook import PromptBook
+from magi.bus.library.file.promptBook import PromptBook, WorkspaceSoul
 
-__all__ = ["BaseFileBook", "PromptBook"]
+__all__ = ["BaseFileBook", "PromptBook", "WorkspaceSoul"]
