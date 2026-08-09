@@ -1,6 +1,6 @@
 """chatJobBoard — durable agent turn queue.
 
-Backed by the ``agent_inbox`` table.  A publish inserts a new row;
+Backed by the ``chat_jobs`` table.  A publish inserts a new row;
 a claim picks up the oldest pending row, updates its ``status`` and
 lease fields, and returns the job snapshot.  Submitting the result
 moves the row's ``status`` to ``completed``/``failed``.
@@ -51,8 +51,8 @@ class ChatJobResult:
     error_detail: str | None = None
 
 
-class _AgentInboxRow(Base):
-    __tablename__ = "agent_inbox"
+class _ChatJobRow(Base):
+    __tablename__ = "chat_jobs"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -82,17 +82,17 @@ class _AgentInboxRow(Base):
     )
 
 
-class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
+class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
     """Queue (write + claim + submit_result) for agent turns."""
 
-    job_model = _AgentInboxRow
+    job_model = _ChatJobRow
     job_cls = ChatJob
     result_cls = ChatJobResult
     natural_key_attr = "event_id"
 
-    def _insert_pending(self, session, job: ChatJob, **kwargs) -> _AgentInboxRow:
+    def _insert_pending(self, session, job: ChatJob, **kwargs) -> _ChatJobRow:
         event_id = job.event_id or new_job_id()
-        row = _AgentInboxRow(
+        row = _ChatJobRow(
             event_id=event_id,
             run_id=job.run_id,
             conversation_id=job.conversation_id,
@@ -151,18 +151,18 @@ class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
             for _ in range(MAX_ATTEMPTS_CANDIDATES):
                 # 1. find candidate (no lock)
                 row = s.scalar(
-                    select(_AgentInboxRow)
+                    select(_ChatJobRow)
                     .where(
-                        _AgentInboxRow.conversation_id == conversation_id,
+                        _ChatJobRow.conversation_id == conversation_id,
                         or_(
-                            _AgentInboxRow.status == "pending",
+                            _ChatJobRow.status == "pending",
                             and_(
-                                _AgentInboxRow.status == "processing",
-                                _AgentInboxRow.leased_until < now,
+                                _ChatJobRow.status == "processing",
+                                _ChatJobRow.leased_until < now,
                             ),
                         ),
                     )
-                    .order_by(_AgentInboxRow.created_at, _AgentInboxRow.id)
+                    .order_by(_ChatJobRow.created_at, _ChatJobRow.id)
                     .limit(1)
                 )
                 if row is None:
@@ -171,15 +171,15 @@ class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
                 from sqlalchemy import update
 
                 result = s.execute(
-                    update(_AgentInboxRow)
+                    update(_ChatJobRow)
                     .where(
-                        _AgentInboxRow.id == row.id,
-                        _AgentInboxRow.conversation_id == conversation_id,
+                        _ChatJobRow.id == row.id,
+                        _ChatJobRow.conversation_id == conversation_id,
                         or_(
-                            _AgentInboxRow.status == "pending",
+                            _ChatJobRow.status == "pending",
                             and_(
-                                _AgentInboxRow.status == "processing",
-                                _AgentInboxRow.leased_until < now,
+                                _ChatJobRow.status == "processing",
+                                _ChatJobRow.leased_until < now,
                             ),
                         ),
                     )
@@ -187,14 +187,14 @@ class chatJobBoard(BaseJobBoard[_AgentInboxRow, ChatJob, ChatJobResult]):
                         status="processing",
                         leased_by=owner,
                         leased_until=lease_until,
-                        attempts=_AgentInboxRow.attempts + 1,
+                        attempts=_ChatJobRow.attempts + 1,
                         started_at=now,
                     )
                 )
                 if result.rowcount == 1:
                     s.commit()
                     # reload fresh row to return
-                    fresh = s.get(_AgentInboxRow, row.id)
+                    fresh = s.get(_ChatJobRow, row.id)
                     return _row_to_job(fresh, ChatJob)  # type: ignore[arg-type]
                 # 3. lost the race — try next candidate
                 s.rollback()
@@ -207,5 +207,5 @@ __all__ = [
     "ChatJob",
     "ChatJobResult",
     "chatJobBoard",
-    "_AgentInboxRow",
+    "_ChatJobRow",
 ]

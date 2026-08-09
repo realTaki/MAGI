@@ -6,7 +6,7 @@ agent step or a tool result on the HTTP request stack.
 
 Bus selection: prefer :data:`magi.channels.get_current_bus` and publish
 through ``agent_job_board`` / ``a2a_job_board`` (v2.0 boards; AgentWorker
-consumes the same ``agent_inbox`` table either way). Falls back to the
+consumes the same ``chat_jobs`` table either way). Falls back to the
 legacy ``magi.bus`` singleton when Bus hasn't been wired (test /
 pre-cutover environments).
 """

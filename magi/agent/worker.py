@@ -102,7 +102,7 @@ class _GatherResult:
 # ---------------------------------------------------------------------------
 
 class AgentWorker:
-    """Sequential consumer of one MAGI's ``agent_inbox`` stream."""
+    """Sequential consumer of one MAGI's ``chat_jobs`` stream."""
 
     def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
         self.bus = bus

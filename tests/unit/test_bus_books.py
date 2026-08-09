@@ -442,7 +442,7 @@ def test_mcp_server_book_toggle(factory):
 
 
 def test_mcp_server_book_validation(factory):
-    """``upsert`` mirrors the BUS ``McpService.upsert``
+    """``upsert`` mirrors the ``McpService.upsert``
     contract: ``connection_type`` must be one of three literals;
     stdio requires a non-empty ``command``; the URL-based
     transports require a non-empty ``url``.

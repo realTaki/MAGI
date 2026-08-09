@@ -301,7 +301,7 @@ async def send_chat(
         )
 
     # Bus selection: prefer bus when wired. Both paths target the
-    # same ``agent_inbox`` table (AgentWorker reads from there), so the
+    # same ``chat_jobs`` table (AgentWorker reads from there), so the
     # migration is a pure surface swap — the legacy AgentMessage shape
     # becomes the bus ChatJob envelope (kind="chat", payload=...).
     bus = get_current_bus()

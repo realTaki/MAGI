@@ -3,7 +3,7 @@
 设计原则
 ========
 
-- **只依赖 bus**。老的 bus store / StreamHub / agent_inbox 一概
+- **只依赖 bus**。老的 bus store / StreamHub / chat_jobs 一概
   不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 bus 再说）。
 
 - **配置变更单一触发**：worker 只在 claim 到
