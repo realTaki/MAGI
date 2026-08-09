@@ -32,7 +32,7 @@ resolve_data_root() {
   esac
 }
 HOST_WORKSPACE_DIR="$(resolve_data_root)"
-mkdir -p "$HOST_WORKSPACE_DIR"/{control,MAGIC,MAGIS}
+mkdir -p "$HOST_WORKSPACE_DIR"/{control,MAGI,MAGIS}
 
 mkdir -p "$TOOLS_DIR"
 command -v docker >/dev/null || { echo "Docker is required for local bootstrap" >&2; exit 1; }

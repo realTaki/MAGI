@@ -33,12 +33,12 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.bus.library.local.conversationBook import (
+    Conversation,
+    ConversationCorruptError,
+    ConversationNotFoundError,
+    ConversationPathError,
+    ConversationSummary,
     Message,
-    Session,
-    SessionCorruptError,
-    SessionNotFoundError,
-    SessionPathError,
-    SessionSummary,
 )
 from magi.channels import Channel
 
@@ -74,7 +74,7 @@ class SessionMessageOut(BaseModel):
     text: str
 
 
-class SessionMessagesPage(BaseModel):
+class ConversationMessagesPage(BaseModel):
     """A single page of session messages (D.18+2 pagination).
 
     Returned by ``GET /api/chat/sessions/{id}/messages``.
@@ -154,12 +154,12 @@ class UpdateSessionRequest(BaseModel):
 
 
 def _session_to_out(
-    s: Session,
+    s: Conversation,
     *,
     messages: list[Message],
     schema_version: int = 1,
 ) -> SessionOut:
-    """Project a Session row + its messages into the API shape.
+    """Project a Conversation row + its messages into the API shape.
 
     ``schema_version`` defaults to ``1`` — there is no on-disk
     schema versioning yet, so we surface a constant to keep the
@@ -167,11 +167,11 @@ def _session_to_out(
     future schema changes without parsing the row shape.
     """
     return SessionOut(
-        session_id=s.session_id,
+        session_id=s.conversation_id,
         delivery_address=s.delivery_address,
         contact_id=s.contact_id,
         channel=s.channel,
-        # ``Session`` declares these Optional (defensive default in the
+        # ``Conversation`` declares these Optional (defensive default in the
         # dataclass), but real DB rows always populate them — emit ""
         # only as a last-resort fallback so the API consumer can
         # distinguish "missing" from "epoch zero".
@@ -192,8 +192,8 @@ def _session_to_out(
     )
 
 
-def _summary_to_out(s: SessionSummary, *, contact_id: int) -> SessionSummaryOut:
-    """Convert a SessionSummary into the list-endpoint shape.
+def _summary_to_out(s: ConversationSummary, *, contact_id: int) -> SessionSummaryOut:
+    """Convert a ConversationSummary into the list-endpoint shape.
 
     ``contact_id`` is the operator who owns this session
     today. We surface it explicitly so a future C7 view can
@@ -201,7 +201,7 @@ def _summary_to_out(s: SessionSummary, *, contact_id: int) -> SessionSummaryOut:
     for one admin.
     """
     return SessionSummaryOut(
-        session_id=s.session_id,
+        session_id=s.conversation_id,
         created_at=s.created_at,
         created_by_contact_id=contact_id,
         updated_at=s.updated_at,
@@ -319,7 +319,7 @@ def create_session(
     sess = service.create(
         contact_id, channel=Channel.WEBUI, delivery_address=delivery_address,
     )
-    return CreateSessionResponse(session_id=sess.session_id)
+    return CreateSessionResponse(session_id=sess.conversation_id)
 
 
 @router.get(
@@ -386,7 +386,7 @@ def get_session(
     contact_id = _admin_contact_id(request)
     try:
         sess = service.get(contact_id, session_id)
-    except SessionPathError as e:
+    except ConversationPathError as e:
         # Malformed session_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
@@ -395,10 +395,10 @@ def get_session(
         )
         raise MagiHTTPException(
             status_code=400,
-            code="validation.session_id_invalid",
+            code="validation.conversation_id_invalid",
             detail=str(e),
         )
-    except SessionCorruptError as e:
+    except ConversationCorruptError as e:
         logger.error("session file corrupt: %s", e)
         raise MagiHTTPException(
             status_code=500,
@@ -411,7 +411,7 @@ def get_session(
             code="not_found.session",
             detail=f"session {session_id} not found",
         )
-    messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+    messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
     return _session_to_out(sess, messages=messages)
 
 
@@ -432,10 +432,10 @@ def delete_session(
     contact_id = _admin_contact_id(request)
     try:
         removed = service.delete(contact_id, session_id)
-    except SessionPathError as e:
+    except ConversationPathError as e:
         raise MagiHTTPException(
             status_code=400,
-            code="validation.session_id_invalid",
+            code="validation.conversation_id_invalid",
             detail=str(e),
         )
     if not removed:
@@ -493,13 +493,13 @@ def update_session(
             sess = service.rename(
                 contact_id, session_id, new_title, bump_updated=False
             )
-        except SessionPathError as e:
+        except ConversationPathError as e:
             raise MagiHTTPException(
                 status_code=400,
-                code="validation.session_id_invalid",
+                code="validation.conversation_id_invalid",
                 detail=str(e),
             )
-        except SessionCorruptError as e:
+        except ConversationCorruptError as e:
             logger.error(
                 "rename failed: session file corrupt: %s", e,
                 extra={"session_id": session_id},
@@ -509,13 +509,13 @@ def update_session(
                 code="validation.session_corrupt",
                 detail="session file is malformed",
             )
-        except SessionNotFoundError:
+        except ConversationNotFoundError:
             raise MagiHTTPException(
                 status_code=404,
                 code="not_found.session",
                 detail=f"session {session_id} not found",
             )
-        messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+        messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
         return _session_to_out(sess, messages=messages)
 
     # No-op path — return current state. Going through
@@ -524,13 +524,13 @@ def update_session(
     # showed the row and this PATCH.
     try:
         sess = service.get(contact_id, session_id)
-    except SessionPathError as e:
+    except ConversationPathError as e:
         raise MagiHTTPException(
             status_code=400,
-            code="validation.session_id_invalid",
+            code="validation.conversation_id_invalid",
             detail=str(e),
         )
-    except SessionCorruptError as e:
+    except ConversationCorruptError as e:
         logger.error(
             "get failed: session file corrupt: %s", e,
             extra={"session_id": session_id},
@@ -546,7 +546,7 @@ def update_session(
             code="not_found.session",
             detail=f"session {session_id} not found",
         )
-    messages = bus.messages_book.list_for_session(session_id=sess.session_id)
+    messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
     return _session_to_out(sess, messages=messages)
 
 
@@ -580,7 +580,7 @@ def update_session(
 
 @router.get(
     "/chat/sessions/{session_id}/messages",
-    response_model=SessionMessagesPage,
+    response_model=ConversationMessagesPage,
 )
 def get_session_messages(
     session_id: str,
@@ -590,7 +590,7 @@ def get_session_messages(
     limit: int = 50,
     offset: int = 0,
     include_archived: bool = False,
-) -> SessionMessagesPage:
+) -> ConversationMessagesPage:
     """Tail-slice page of the session's active messages.
 
     The route always orders by ``chat_messages.id ASC``
@@ -618,10 +618,10 @@ def get_session_messages(
             limit=limit, offset=offset,
             include_archived=include_archived,
         )
-    except SessionPathError as e:
+    except ConversationPathError as e:
         raise MagiHTTPException(
             status_code=400,
-            code="validation.session_id_invalid",
+            code="validation.conversation_id_invalid",
             detail=str(e),
         )
 
@@ -638,7 +638,7 @@ def get_session_messages(
                 detail=f"session {session_id} not found",
             )
 
-    return SessionMessagesPage(
+    return ConversationMessagesPage(
         session_id=session_id,
         messages=[
             SessionMessageOut(

@@ -152,7 +152,7 @@ def create_app(
     if include_control_routes:
         app.include_router(auth.router, prefix="/api/auth")
         app.include_router(onboarding.router, prefix="/api/onboarding")
-        # MAGIC management is control-plane state (membership identity plus
+        # MAGI management is control-plane state (membership identity plus
         # runtime registry), not a node-local API.  Its self-settings routes
         # are deliberately mounted below on private runtimes only.
         app.include_router(magi.router, prefix="/api")

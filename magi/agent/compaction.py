@@ -19,13 +19,13 @@ _DEFAULT_THRESHOLD_PCT = 80
 
 async def maybe_compact(
     contact_id: int,
-    session_id: str | None,
+    conversation_id: str | None,
     messages: list[dict],
     *,
     bus: "Bus",
 ) -> None:
     """Estimate token cost. If over threshold, run one compaction pass."""
-    if not session_id:
+    if not conversation_id:
         return
 
     try:
@@ -56,14 +56,14 @@ async def maybe_compact(
         return
 
     try:
-        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=session_id)
+        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
         if sess is None:
             return
         messages[:] = [
             type(messages[0])(role="user", content=f"[Prior conversation summary]\n{summary_text}")
         ] + messages[-keep:]
     except Exception:
-        logger.exception("compact persist failed (session=%s)", session_id)
+        logger.exception("compact persist failed (conversation=%s)", conversation_id)
 
 
 async def call_llm_for_summary(

@@ -6,7 +6,7 @@ Serves two audiences:
   2. Admin CRUD — ``POST`` / ``GET/{id}`` / ``PATCH/{id}`` manage
      the contact directory (name, role, admin, TG binding).
 
-LLM credentials are managed separately via ``/api/magic``
+LLM credentials are managed separately via ``/api/magi``
 (the Magi row owns the provider + API key, not the Contact).
 
 The ``admin_gate`` is re-exported from :mod:`.auth_gates` so

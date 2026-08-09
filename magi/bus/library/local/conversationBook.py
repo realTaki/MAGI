@@ -66,6 +66,7 @@ class Message:
     llm_attempt_id: str | None = None
 
 
+
 @dataclass(frozen=True, slots=True)
 class SearchHit:
     """One row of chat-history FTS5 search output.
@@ -86,6 +87,7 @@ class SearchHit:
     channel: str
     title: str | None = None
     delivery_address: str | None = None
+
 
 
 class SearchUnavailable(RuntimeError):
@@ -188,6 +190,7 @@ class ConversationSummary:
     message_count: int
     preview: str
     title: str | None = None
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,11 +501,13 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             rows = s.scalars(stmt).all()
             return [self._row_to_dto(r) for r in rows]
 
+
     def add(self, *, conversation_id: str, role: str, text: str,
             message_id: str | None = None, ts: str | None = None,
             content_blocks: list[dict[str, Any]] | None = None,
             run_id: str | None = None,
             llm_attempt_id: str | None = None) -> Message:
+        """Add one message row."""
         import uuid
         from datetime import datetime, timezone
         if message_id is None:
@@ -793,17 +798,6 @@ def install_conversation_fts_schema(engine) -> None:
             conn.exec_driver_sql(stmt)
 
 
-# -- backward-compat aliases (Phase 3 migration — remove once callers updated) --
-
-Session = Conversation
-SessionBook = ConversationBook
-SessionMessage = ConversationMessage
-SessionSummary = ConversationSummary
-SessionPathError = ConversationPathError
-SessionCorruptError = ConversationCorruptError
-SessionNotFoundError = ConversationNotFoundError
-_SessionRow = _ConversationRow
-install_session_fts_schema = install_conversation_fts_schema
 
 
 __all__ = [
@@ -822,14 +816,4 @@ __all__ = [
     "install_conversation_fts_schema",
     "_ConversationRow",
     "_MessageRow",
-    # backward-compat
-    "Session",
-    "SessionBook",
-    "SessionMessage",
-    "SessionSummary",
-    "SessionPathError",
-    "SessionCorruptError",
-    "SessionNotFoundError",
-    "_SessionRow",
-    "install_session_fts_schema",
 ]

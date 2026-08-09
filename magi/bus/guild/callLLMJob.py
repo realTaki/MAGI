@@ -22,7 +22,7 @@ class CallLLMJob:
     """一次 LLM 推理请求。
 
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
-    ``parameters`` 为调用方透传的 opaque 数据（如 contact_id/session_id 等上下文）。
+    ``parameters`` 为调用方透传的 opaque 数据（如 contact_id/conversation_id 等上下文）。
     """
 
     messages: list[dict]

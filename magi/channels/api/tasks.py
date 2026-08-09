@@ -51,7 +51,7 @@ class TaskOut(BaseModel):
     target_channel: str
     contact_id: int | None
     enabled: bool
-    session_id: str | None
+    conversation_id: str | None
     created_at: str
     updated_at: str
 
@@ -83,7 +83,7 @@ def _out(task) -> TaskOut:
         id=task.id, name=task.name, prompt=task.prompt, cron=task.cron,
         run_at=task.run_at, delivery_to=task.delivery_to, tz=task.tz,
         target_channel=task.target_channel, contact_id=task.contact_id,
-        enabled=bool(task.enabled), session_id=task.session_id,
+        enabled=bool(task.enabled), conversation_id=task.conversation_id,
         created_at=task.created_at, updated_at=task.updated_at,
     )
 
@@ -128,15 +128,15 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
     delivery_to = payload.delivery_to
     if delivery_to is None and payload.target_channel == Channel.TG:
         delivery_to = str(contact.telegram_id)
-    session_id = f"task_{uuid.uuid4().hex}"
+    conversation_id = f"task_{uuid.uuid4().hex}"
     bus.sessions_book.add(
-        conversation_id=session_id, contact_id=contact_id, channel="task", delivery_address=delivery_to or "",
+        conversation_id=conversation_id, contact_id=contact_id, channel="task", delivery_address=delivery_to or "",
     )
     try:
         task = bus.tasks_book.add(
             name=payload.name, prompt=payload.prompt, cron=cron, run_at=run_at,
             delivery_to=delivery_to or "new", target_channel=payload.target_channel,
-            contact_id=contact_id, conversation_id=session_id, tz=bus.settings_book.get(key="system.timezone") or "UTC",
+            contact_id=contact_id, conversation_id=conversation_id, tz=bus.settings_book.get(key="system.timezone") or "UTC",
         )
     except ValueError as exc:
         raise MagiHTTPException(400, "validation.task", str(exc)) from exc
@@ -172,7 +172,7 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
         raise MagiHTTPException(409, "task.disabled", "task is disabled")
     run_id = bus.run_task_job_board.publish(RunTaskJob(
         task_id=task.id, manual=True, fired_by="api_manual_run",
-        session_id=task.session_id, contact_id=task.contact_id,
+        conversation_id=task.conversation_id, contact_id=task.contact_id,
     ))
     return RunResponse(run_id=run_id)
 

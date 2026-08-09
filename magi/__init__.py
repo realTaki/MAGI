@@ -12,8 +12,8 @@ agents — every one of them is a **MAGI**. Two **archetypes** ship today:
 
 Worker MAGIs do not call each other by default; coordination goes through
 the manager MAGI. The runtime is the same; the archetype is configured
-per-process via the ``magis`` table — ADAM = Genesis MAGIC creator,
-EVA = assigned to a parent MAGIC. New archetypes can be added without
+per-process via the ``magis`` table — ADAM = Genesis MAGI creator,
+EVA = assigned to a parent MAGI. New archetypes can be added without
 forking the runtime.
 
 Naming: ``operator`` (lowercase) is the user role running ADAM's web UI —

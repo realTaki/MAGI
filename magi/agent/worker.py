@@ -70,10 +70,9 @@ class AgentRunTimedOut(TimeoutError):
 @dataclass
 class RunContext:
     contact_id: int | None
-    session_id: str | None
+    conversation_id: str
     channel: str
     caller_role: str | None
-    conversation_id: str
     messages: list[dict] = field(default_factory=list)
     max_iterations: int = _DEFAULT_MAX_ITERATIONS
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -159,10 +158,9 @@ class AgentWorker(RuntimeWorker):
             run_id = getattr(job, "run_id", "") or ""
             ctx = RunContext(
                 contact_id=payload.get("contact_id"),
-                session_id=payload.get("session_id"),
+                conversation_id=conv_id,
                 channel=payload.get("channel", ""),
                 caller_role=payload.get("caller_role"),
-                conversation_id=conv_id,
                 max_iterations=await self._read_max_iterations(),
             )
             try:
@@ -262,14 +260,14 @@ class AgentWorker(RuntimeWorker):
     async def _load_history(self, ctx: RunContext) -> None:
         if ctx.messages:
             return
-        if not ctx.session_id or ctx.contact_id is None:
+        if not ctx.conversation_id or ctx.contact_id is None:
             return
         from magi.agent.agent_context import build_messages_from_session
 
         try:
             msgs = await self.call(
                 build_messages_from_session,
-                contact_id=ctx.contact_id, session_id=ctx.session_id,
+                contact_id=ctx.contact_id, conversation_id=ctx.conversation_id,
                 new_user_text="", bus=self.bus,
             )
             ctx.messages = list(msgs)  # already list[dict]
@@ -288,7 +286,7 @@ class AgentWorker(RuntimeWorker):
             messages=messages, max_tokens=await self._read_max_tokens(),
             tools=tools or None, streaming=False,
             parameters={
-                "contact_id": ctx.contact_id, "session_id": ctx.session_id,
+                "contact_id": ctx.contact_id, "conversation_id": ctx.conversation_id,
                 "channel": ctx.channel, "caller_role": ctx.caller_role,
             },
         )
@@ -369,7 +367,7 @@ class AgentWorker(RuntimeWorker):
             tc_id = str(tu.get("id") or uuid.uuid4().hex)
             context = {
                 "workspace": "", "contact_id": ctx.contact_id or 0,
-                "channel": ctx.channel, "session_id": ctx.session_id or "",
+                "channel": ctx.channel, "conversation_id": ctx.conversation_id or "",
             }
             if name == "message_magi":
                 if not _A2A_ENABLED:
@@ -394,7 +392,7 @@ class AgentWorker(RuntimeWorker):
                 a2a_jobs.append(SendA2AJob(
                     tool_call_id=tc_id, target=str(target_magi_id),
                     expect_reply=bool(args.get("expect_reply", False)),
-                    request={"text": text, "contact_id": ctx.contact_id, "session_id": ctx.session_id},
+                    request={"text": text, "contact_id": ctx.contact_id, "conversation_id": ctx.conversation_id},
                 ))
             else:
                 tool_jobs.append(self._make_tool_job(
@@ -516,18 +514,18 @@ class AgentWorker(RuntimeWorker):
             channel=ctx.channel,
             payload={
                 "text": ctx.final_reply or "处理完毕。",
-                "session_id": ctx.session_id, "contact_id": ctx.contact_id,
+                "conversation_id": ctx.conversation_id, "contact_id": ctx.contact_id,
             },
             destination=None,
         ))
 
     def _maybe_title(self, ctx: RunContext) -> None:
-        if not ctx.session_id or ctx.contact_id is None:
+        if not ctx.conversation_id or ctx.contact_id is None:
             return
         from magi.agent.auto_title import request_session_title
         self.spawn(
-            request_session_title(ctx.contact_id, ctx.session_id, bus=self.bus),
-            name=f"magi-title-{ctx.session_id}",
+            request_session_title(ctx.contact_id, ctx.conversation_id, bus=self.bus),
+            name=f"magi-title-{ctx.conversation_id}",
         )
 
     # -- helpers -------------------------------------------------------------
@@ -597,7 +595,7 @@ async def submit_agent_message(bus: "Bus", message: Any) -> str:
             "text": getattr(message, "text", ""),
             "channel": getattr(message, "channel", ""),
             "contact_id": getattr(message, "contact_id", None),
-            "session_id": getattr(message, "session_id", None),
+            "conversation_id": getattr(message, "conversation_id", None),
             "caller_role": getattr(message, "caller_role", None),
         },
     )

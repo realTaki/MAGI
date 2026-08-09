@@ -104,7 +104,7 @@ class PeriodUsage:
 
 def _aggregate_period(
     bus,
-    uid: int,
+    contact_id: int,
     period: str,
     tz: zoneinfo.ZoneInfo,
 ) -> PeriodUsage:
@@ -122,7 +122,7 @@ def _aggregate_period(
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
     in_sum, out_sum, calls = bus.token_usage_book.aggregate(
-        uid=uid, start=start_utc_naive, end=end_utc_naive,
+        contact_id=contact_id, start=start_utc_naive, end=end_utc_naive,
     )
 
     return PeriodUsage(
@@ -146,13 +146,13 @@ class PeriodUsageOut(BaseModel):
 
 
 class TokenUsageOut(BaseModel):
-    """``GET /api/contacts/{uid}/token-usage`` response.
+    """``GET /api/contacts/{contact_id}/token-usage`` response.
 
     All three periods in one response — the dashboard's
     detail panel renders three rows; one round-trip.
     """
 
-    uid: int
+    contact_id: int
     week: PeriodUsageOut
     month: PeriodUsageOut
     total: PeriodUsageOut
@@ -160,11 +160,11 @@ class TokenUsageOut(BaseModel):
 
 
 @router.get(
-    "/contacts/{uid}/token-usage",
+    "/contacts/{contact_id}/token-usage",
     response_model=TokenUsageOut,
 )
 def get_contact_token_usage(
-    uid: int,
+    contact_id: int,
     _admin: AdminGate,
     bus: BusDep,
 ) -> TokenUsageOut:
@@ -173,19 +173,19 @@ def get_contact_token_usage(
 
     All three queries run against the same connection in
     sequence — each one is bounded by the
-    ``(uid, ts)`` composite index, so a busy
+    ``(contact_id, ts)`` composite index, so a busy
     contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
     tz_name = bus.settings_book.get(key="system.timezone") or "UTC"
     tz = zoneinfo.ZoneInfo(tz_name)
 
-    week = _aggregate_period(bus, uid, "week", tz)
-    month = _aggregate_period(bus, uid, "month", tz)
-    total = _aggregate_period(bus, uid, "total", tz)
+    week = _aggregate_period(bus, contact_id, "week", tz)
+    month = _aggregate_period(bus, contact_id, "month", tz)
+    total = _aggregate_period(bus, contact_id, "total", tz)
 
     return TokenUsageOut(
-        uid=uid,
+        contact_id=contact_id,
         week=PeriodUsageOut(**week.__dict__),
         month=PeriodUsageOut(**month.__dict__),
         total=PeriodUsageOut(**total.__dict__),

@@ -26,7 +26,7 @@ class RunTaskJob:
     task_id: str
     manual: bool = True
     fired_by: str = "manual"
-    session_id: str | None = None
+    conversation_id: str | None = None
     contact_id: int | None = None
     job_id: str = ""
     # Populated by ``BaseJobBoard._map_row`` on claim — not stored on
@@ -54,7 +54,7 @@ class _RunTaskJobRow(Base):
     task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     manual: Mapped[int] = mapped_column(Integer, default=1)
     fired_by: Mapped[str] = mapped_column(String(32), default="manual")
-    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result: Mapped[dict | None] = mapped_column(
         type_=__import__("sqlalchemy").JSON, nullable=True,
@@ -86,7 +86,7 @@ class runTaskJobBoard(BaseJobBoard[_RunTaskJobRow, RunTaskJob, RunTaskResult]):
                 task_id=job.task_id,
                 manual=int(job.manual),
                 fired_by=job.fired_by,
-                session_id=job.session_id,
+                conversation_id=job.conversation_id,
                 contact_id=job.contact_id,
             )
             s.add(row)

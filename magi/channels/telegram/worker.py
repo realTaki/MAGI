@@ -84,13 +84,13 @@ class TelegramWorker(ChannelWorker):
             await update.effective_message.reply_text(f"TG ID: {tgid}. Ask your admin for access."); return
         if not text.strip():
             await update.effective_message.reply_text("MAGI currently only handles text messages."); return
-        session_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
-        _append_user_message(self.bus, session_id, text)
+        conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
+        _append_user_message(self.bus, conversation_id, text)
         asyncio.create_task(_send_read_receipt(update, self.bus))
         from magi.bus.guild.chatJob import publish_chat
         try:
             publish_chat(
-                self.bus, text=text, channel="tg", contact_id=contact_id, session_id=session_id,
+                self.bus, text=text, channel="tg", contact_id=contact_id, conversation_id=conversation_id,
                 caller_role=role, event_id=f"telegram:{tgid}:{update.effective_message.message_id}",
                 chat_id=tgid, tg_message_id=update.effective_message.message_id,
             )
@@ -125,11 +125,11 @@ def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
     session = bus.sessions_book.get_or_create_for_channel(
         contact_id=contact_id, channel="tg", delivery_address=tgid,
     )
-    return session.session_id
+    return session.conversation_id
 
 
-def _append_user_message(bus: Bus, session_id: str, text: str) -> None:
-    try: bus.messages_book.add(session_id=session_id, role="user", text=text)
+def _append_user_message(bus: Bus, conversation_id: str, text: str) -> None:
+    try: bus.messages_book.add(conversation_id=conversation_id, role="user", text=text)
     except Exception: pass
 
 

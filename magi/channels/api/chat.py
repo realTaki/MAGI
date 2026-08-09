@@ -40,8 +40,8 @@ from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
 from magi.bus.library.local.conversationBook import (
-    SessionPathError,
-    SessionMessage,
+    ConversationMessage,
+    ConversationPathError,
     ChannelMismatchError,
 )
 from magi.channels import Channel
@@ -86,8 +86,8 @@ def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
     ``contact_id`` (the cookie value post-D.24) and return
     ``(contact_id, role)``.
 
-    LLM credentials live on ``magic`` (the ADAM MAGIC
-    owns the provider + key), not on ``contacts`` — and
+    LLM credentials live on the MAGI's local ``settings_book``
+    (provider + key), not on ``contacts`` — and
     the chat handler doesn't carry them anymore.
     the agent worker reads them
     internally through :func:`magi.providers.factory
@@ -241,7 +241,7 @@ async def send_chat(
             # legacy / outbound-delivery reasons, but it
             # is NOT a session key.
             existing = store.get_for_owner(contact_id=contact_id, conversation_id=session_id)
-        except SessionPathError as e:
+        except ConversationPathError as e:
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.session_id_invalid",
@@ -293,7 +293,7 @@ async def send_chat(
     try:
         post = store.append_messages(
             contact_id, session_id,
-            [SessionMessage(
+            [ConversationMessage(
                 role="user", text=text, ts=ts_in,
                 message_id=inbound_message_id,
             )],
@@ -337,10 +337,10 @@ async def send_chat(
     chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
     run_id = publish_chat(
         bus,
-        text=text, channel=Channel.WEBUI, contact_id=contact_id, session_id=session_id,
+        text=text, channel=Channel.WEBUI, contact_id=contact_id,
+        conversation_id=session_id,
         caller_role=contact_role,
         event_id=chat_job_event_id, run_id=chat_job_event_id,
-        conversation_id=f"webui:{contact_id}:{session_id}",
         correlation_id=inbound_message_id,
     )
     return ChatSendResponse(run_id=run_id, session_id=session_id)

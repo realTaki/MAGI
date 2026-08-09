@@ -460,10 +460,10 @@ def _parse_ical_file(
     events: list[dict[str, Any]] = []
     blocks = re.findall(r"BEGIN:VEVENT(.*?)END:VEVENT", text, re.DOTALL)
     for block in blocks:
-        contact_id_m = re.search(r"UID:(.+)", block)
-        if contact_id_m is None:
+        m = re.search(r"UID:(.+)", block)
+        if m is None:
             continue
-        contact_id = contact_id_m.group(1).strip()
+        contact_id = m.group(1).strip()
 
         # Calendar name: a X-WR-CALNAME inside the enclosing
         # calendar isn't visible here (we split by VEVENT).

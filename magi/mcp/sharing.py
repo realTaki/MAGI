@@ -10,29 +10,29 @@ Today every MCP server row lives in the *private*
 ``mcp_servers`` table of a single MAGI. The operator of
 ``ADAM`` configures one server; ``EVA``-00 sees no
 servers. There's no way to say "this server is an
-infra-level resource — every MAGIC under the same MAGIS
+infra-level resource — every MAGI under the same MAGIS
 should see it".
 
 The user asked for "MAGIS 共享 MCP" — i.e. one operator
-configures a server once, and the other MAGICs
+configures a server once, and the other MAGIs
 (``EVA``-01, ``EVA``-02, ...) operating under the same
 MAGIS root can also call its tools. Three design shapes
 were considered:
 
   1. **Inherited rows** — keep the ``mcp_servers`` table
-     in the *public* MAGIS PostgreSQL; every MAGIC inherits
+     in the *public* MAGIS PostgreSQL; every MAGI inherits
      all rows from its parent MAGIS. Simple; loses the
      "operator-only" gate (a per-MAGI admin would leak
      siblings' state).
 
-  2. **Pull-on-heartbeat** — a worker on each MAGIC
+  2. **Pull-on-heartbeat** — a worker on each MAGI
      periodically fetches the upstream MAGIS's
      ``mcp_servers`` and copies rows into its own
      private SQLite. Eventually consistent; bounds
      cross-MAGI blast radius (a leaked table never
      reveals secrets held by a sibling).
 
-  3. **Federated clients** — each MAGIC keeps its own
+  3. **Federated clients** — each MAGI keeps its own
      connection but uses the *upstream's* secrets. Adds
      a network hop per call; arguably the right answer
      for cross-cloud, but outside MAGI's single-process
@@ -40,7 +40,7 @@ were considered:
 
 This module scaffolds option (2). It's the shape that
 fits the existing deployment model (one process per
-MAGIC, private SQLite, public PostgreSQL via the direct
+MAGI, private SQLite, public PostgreSQL via the direct
 MAGIS binding) and avoids the per-call network hop.
 
 Schema (planned)
@@ -52,14 +52,14 @@ A new table on the **public** MAGIS PostgreSQL:
     MAGIS, marked as "shared by this MAGIS". Columns
     mirror the private ``mcp_servers`` table minus the
     secret-bearing fields; the actual secrets stay on
-    the originating MAGIC (the sharing MAGIC can
+    the originating MAGI (the sharing MAGI can
     reference them by name + intent, but the row itself
     never carries the env / headers).
 
-  - ``magis_shared_mcp_assignments`` — which MAGICS
+  - ``magis_shared_mcp_assignments`` — which MAGIs
     adopted which shared servers. A row per
     ``(magi_id, shared_server_id)`` lets an operator
-    opt-in individual MAGICs instead of blanket-broadcast.
+    opt-in individual MAGIs instead of blanket-broadcast.
 
 Loader integration (planned)
 ----------------------------

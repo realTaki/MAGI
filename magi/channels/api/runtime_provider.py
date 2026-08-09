@@ -1,8 +1,7 @@
 """Per-MAGI runtime self-provider endpoint.
 
 The 2026-08 creation-flow refactor moved provider / API key / model
-out of the shared ``magic`` row and into each MAGI's local
-``settings_book``.  This module exposes the edit surface:
+into each MAGI's local ``settings_book``.  This module exposes
 
     GET    /api/magi/self/provider   — read current settings
     PATCH  /api/magi/self/provider   — partial update

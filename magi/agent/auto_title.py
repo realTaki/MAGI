@@ -15,19 +15,19 @@ logger = logging.getLogger("magi.agent.auto_title")
 
 async def request_session_title(
     contact_id: int,
-    session_id: str,
+    conversation_id: str,
     *,
     bus: "Bus",
 ) -> str | None:
     """Generate + persist a short chat title; return it."""
     try:
-        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=session_id)
+        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
     except Exception:
         return None
     if sess is None or getattr(sess, "title", None) is not None:
         return None
 
-    msgs = bus.messages_book.list_for_session(session_id=session_id)
+    msgs = bus.messages_book.list_for_conversation(conversation_id=conversation_id)
     first_user = next(
         (m for m in msgs if getattr(m, "role", "") == "user" and getattr(m, "text", "")),
         None,
@@ -43,7 +43,7 @@ async def request_session_title(
             {"role": "user", "content": getattr(first_user, "text", "")},
         ],
         max_tokens=20,
-        parameters={"contact_id": contact_id, "session_id": session_id, "phase": "auto_title"},
+        parameters={"contact_id": contact_id, "conversation_id": conversation_id, "phase": "auto_title"},
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=30.0)
@@ -56,13 +56,13 @@ async def request_session_title(
 
     try:
         fresh = bus.sessions_book.set_title_if_null(
-            contact_id=contact_id, conversation_id=session_id, title=cleaned,
+            contact_id=contact_id, conversation_id=conversation_id, title=cleaned,
         )
     except Exception:
         return None
     if fresh is None:
         return None
-    logger.info("title set session=%s title=%r", session_id, cleaned)
+    logger.info("title set conversation=%s title=%r", conversation_id, cleaned)
     return cleaned
 
 

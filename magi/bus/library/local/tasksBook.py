@@ -153,13 +153,6 @@ class Task:
     delivery_to: str | None = None
     conversation_id: str | None = None
 
-    def __getattr__(self, name: str):
-        if name == "session_id":
-            return object.__getattribute__(self, "conversation_id")
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
-
     # --- proactive-only: stable preset key -------------------------------
     key: str | None = None
 
@@ -189,13 +182,6 @@ class TaskRun:
     input_tokens: int = 0
     output_tokens: int = 0
     conversation_id: str | None = None
-
-    def __getattr__(self, name: str):
-        if name == "session_id":
-            return object.__getattribute__(self, "conversation_id")
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
 
 
 # -- internal ORM --------------------------------------------------------

@@ -1,7 +1,7 @@
 """Shared auth gate dependencies for admin-gated routes.
 
 Extracted from the old ``contacts.py`` so that routers
-(``magic``, ``magis``, ``contacts``, ``soul``, ``tasks``,
+(``magi``, ``magis``, ``contacts``, ``soul``, ``tasks``,
 ...) can import the same ``admin_gate`` and
 ``admin_or_assigned_gate`` without circular imports.
 

@@ -70,11 +70,12 @@ class ListActionItemsTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        ct_id = int(ctx.uid)
+        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
+        ct_id = int(ctx.contact_id)
         include_completed = bool(kwargs.get("include_completed"))
 
         rows = ctx.bus.action_items_book.list_actions(
-            owner_uid=ct_id,
+            owner_contact_id=ct_id,
             include_completed=include_completed,
             source=SOURCE_USER,
         )

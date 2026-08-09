@@ -41,7 +41,7 @@ import functools
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -84,7 +84,7 @@ class ToolContext:
     workspace: str
     contact_id: int
     channel: str
-    session_id: str = ""
+    conversation_id: str = ""
     bus: "Bus | None" = None
 
 
@@ -204,9 +204,7 @@ class Tool(ABC):
     ALLOWED_ROLES: frozenset[str] = frozenset()
 
     @staticmethod
-    def require_bus(
-        method: Callable[..., Awaitable[ToolResult]],
-    ) -> Callable[..., Awaitable[ToolResult]]:
+    def require_bus(method):
         """Decorate :meth:`run` to fail closed when
         ``ctx.bus`` is missing.
 
