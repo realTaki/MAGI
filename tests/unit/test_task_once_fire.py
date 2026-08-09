@@ -11,7 +11,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from magi.bus.task_schedule import validate_run_at, validate_run_at_future
+from magi.new_bus.library.local.tasksBook import (
+    validate_run_at,
+    validate_run_at_future,
+)
 
 
 # -- validate_run_at --------------------------------------------------------

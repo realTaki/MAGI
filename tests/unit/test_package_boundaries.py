@@ -31,7 +31,7 @@ SCAN_PREFIXES: tuple[str, ...] = (
 )
 
 # These are the production Actor/Tool/Delivery entry paths already migrated
-# to the public BUS facade.  The rest of the historical API/memory surface is
+# to the public NewBus facade.  The rest of the historical API/memory surface is
 # intentionally covered by later migration phases; this guard prevents the
 # newly clean execution path from regressing while those adapters are moved.
 BUS_ONLY_PATHS: tuple[str, ...] = (
@@ -102,7 +102,7 @@ def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
         )
         for module, lineno in _collect_forbidden_imports(path, forbidden):
             offenders.append(f"{relative}:{lineno} imports {module!r}")
-    assert not offenders, "Migrated runtime paths must cross domains through magi.bus:\n  " + "\n  ".join(offenders)
+    assert not offenders, "Migrated runtime paths must cross domains through NewBus:\n  " + "\n  ".join(offenders)
 
 
 def test_agent_module_does_not_import_api() -> None:
