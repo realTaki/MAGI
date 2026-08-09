@@ -21,8 +21,7 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.jobs.protocols.contact import ContactView, NoteView
-from magi.bus.jobs.services.contact import ContactsService
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import admin_gate, AdminGate
 from magi.channels.api.errors import MagiHTTPException
 
@@ -46,9 +45,10 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 # -- helpers ----------------------------------------------------------------
 
-def _bus() -> ContactsService:
-    """Resolve a ContactsService bound to the right state dir."""
+def _get_bus():
+    """Return the unified bus facade."""
     from magi.channels.api._bus import bus
+    return bus
     return bus.contacts
 
 
@@ -130,11 +130,11 @@ class ContactUpdate(BaseModel):
 
 
 def _serialize(
-    view: ContactView,
+    view: Any,
     notes_count: int = 0,
     login_methods: list[str] | None = None,
 ) -> ContactOut:
-    """Render a :class:`ContactView` to the wire shape.
+    """Render a :class:`Any` to the wire shape.
 
     ``login_methods`` is computed by the caller (via
     :func:`_login_methods_for`) to avoid an N+1 query. A
@@ -161,7 +161,7 @@ def _serialize(
     )
 
 
-def _login_methods_for(view: ContactView) -> list[str]:
+def _login_methods_for(view: Any) -> list[str]:
     """Compute the login methods for a single contact.
 
     Mirrors the same logic the auth endpoints use, kept
@@ -178,8 +178,8 @@ def _login_methods_for(view: ContactView) -> list[str]:
 
 
 def _bulk_login_methods(
-    bus: ContactsService,
-    views: list[ContactView],
+    bus: Any,
+    views: list[Any],
 ) -> dict[int, list[str]]:
     """Batch-fetch the password-set flag for a list of contacts.
 
@@ -202,8 +202,8 @@ def _bulk_login_methods(
 
 
 def _single_login_methods(
-    bus: ContactsService,
-    view: ContactView,
+    bus: Any,
+    view: Any,
 ) -> list[str]:
     """Single-row helper for the by-id endpoints."""
     return _bulk_login_methods(bus, [view]).get(view.id, [])
@@ -235,7 +235,7 @@ def list_contacts(
     if page_size > _PAGE_SIZE_MAX:
         page_size = _PAGE_SIZE_MAX
 
-    bus = _bus()
+    bus = _get_bus()
 
     if role is not None and not with_notes:
         if role not in _CONTACT_ROLES:
@@ -291,7 +291,7 @@ def create_contact(
     payload: ContactCreate,
     _admin: AdminGate,
 ) -> ContactOut:
-    bus = _bus()
+    bus = _get_bus()
     name = payload.name.strip()
     if not name:
         raise MagiHTTPException(
@@ -351,7 +351,7 @@ def create_contact(
     #
     #   if view.role == "assigned":
     #       try:
-    #           get_new_bus().seed_preset_tasks_job_board.publish(
+    #           get_current_new_bus().seed_preset_tasks_job_board.publish(
     #               SeedPresetTasksJob(
     #                   contact_id=view.id,
     #                   trigger="contact_created",
@@ -386,7 +386,7 @@ class NoteListOut(BaseModel):
     total: int
 
 
-def _note_view_out(view: NoteView) -> NoteOut:
+def _note_view_out(view: Any) -> NoteOut:
     return NoteOut(
         id=view.id,
         contact_id=view.contact_id,
@@ -401,7 +401,7 @@ def list_contact_notes(
     contact_id: int,
     _admin: AdminGate,
 ) -> NoteListOut:
-    bus = _bus()
+    bus = _get_bus()
     contact = bus.get(contact_id)
     if contact is None:
         raise MagiHTTPException(
@@ -418,7 +418,7 @@ def get_contact(
     contact_id: int,
     _admin: AdminGate,
 ) -> ContactOut:
-    bus = _bus()
+    bus = _get_bus()
     view = bus.get(contact_id)
     if view is None:
         raise MagiHTTPException(
@@ -434,7 +434,7 @@ def update_contact(
     payload: ContactUpdate,
     _admin: AdminGate,
 ) -> ContactOut:
-    bus = _bus()
+    bus = _get_bus()
     existing = bus.get(contact_id)
     if existing is None:
         raise MagiHTTPException(

@@ -26,10 +26,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.jobs.services.runtime_provider import (
-    RuntimeProviderService,
-    RuntimeSettings,
-)
+from magi.channels.api._bus import bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.auth_gates import admin_gate
 from magi.providers.factory import is_known_provider, known_providers

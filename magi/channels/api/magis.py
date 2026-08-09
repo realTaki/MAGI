@@ -13,12 +13,6 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
-from magi.bus.jobs.protocols.magis import (
-    MagisAdminView,
-    MagisMembershipView,
-    MagisRoleView,
-    MagisView,
-)
 from magi.channels.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["magis"])
@@ -248,7 +242,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate) -> MAGISOut:
     # Phase 2 — routed through the BUS dispatcher (plan §4.5: API
     # publishes BUS commands, never calls orchestrator directly).
     try:
-        from magi.bus.jobs.services.runtime import OrchestratorUnavailable
+        from magi.startup.kubernetes.client import OrchestratorUnavailable
 
         bus = bus
         bus.runtime.provision_magis(magis_id=view.id, magis_name=view.name)

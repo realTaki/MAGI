@@ -18,11 +18,6 @@ from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
-from magi.bus.jobs.protocols.magis import (
-    EvaRuntimeView,
-    MagicView,
-    MembershipBrief as MembershipBriefDTO,
-)
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.magic")
@@ -164,7 +159,7 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
     Anything we can't classify falls back to a 400 with the bus's
     detail so a future error type stays visible to the operator.
     """
-    from magi.bus.jobs.services.runtime import OrchestratorUnavailable
+    from magi.startup.kubernetes.client import OrchestratorUnavailable
 
     if isinstance(exc, OrchestratorUnavailable):
         return MagiHTTPException(

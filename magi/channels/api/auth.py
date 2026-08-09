@@ -52,8 +52,6 @@ from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
 from magi.channels.api._bus import bus
-from magi.bus.jobs.protocols.contact import ContactView
-from magi.bus.jobs.protocols.magis import OperatorView
 from magi.channels import Channel
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.api import control_store
@@ -483,7 +481,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     candidates: dict[int, tuple[int | None, str | None]] = {}
     if admin_uids:
         for uid in admin_uids:
-            contact: ContactView | None = bus.contacts.get(uid)
+            contact = bus.contacts.get(uid)
             if contact is None or contact.telegram_id is None:
                 continue
             candidates[contact.id] = (
@@ -554,7 +552,7 @@ async def send_login_code(
 
     if control_store.enabled():
         bus = bus
-        operator: OperatorView | None = bus.magis.get_control_operator(uid)
+        operator = bus.magis.get_control_operator(uid)
         if operator is None or not operator.admin:
             return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
         previous = _load_login_code(uid)

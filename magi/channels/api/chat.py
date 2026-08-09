@@ -34,12 +34,7 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
-from magi.bus import AgentMessage
 from magi.channels.api._bus import bus
-from magi.bus.jobs.protocols.session import (
-    ChannelMismatchError, SessionMessage, SessionPathError, new_session_id,
-    utcnow_iso as _utcnow_iso,
-)
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut

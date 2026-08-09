@@ -21,13 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-
-from magi.bus.db.magis import init_magis_public_db
-from magi.bus.db.magis.engine import (
-    get_magis_engine,
-    set_injected_magis_engine,
-)
 from magi.startup.config import (
     DEFAULT_MAGI_NAME,
     ConfigurationError,
@@ -42,6 +35,26 @@ from magi.startup.paths import (
 )
 
 logger = logging.getLogger("magi.startup.bootstrap")
+
+
+def _magis_factory(database_url: str):
+    """Build and initialise the NewBus-owned MAGIS schema."""
+    from magi.new_bus.db.engine import build_magis_factory
+    # Import the Books before ``create_all`` so their inline ORM models are
+    # registered on NewBus's independent metadata.
+    from magi.new_bus.library.magis import (  # noqa: F401
+        AuthCredentialBook,
+        ControlRuntimeBook,
+        EvaRuntimeBook,
+        MagisAdminBook,
+        MagisBook,
+        MagisMembershipBook,
+        MagisRoleBook,
+    )
+
+    factory = build_magis_factory(database_url)
+    factory.create_all()
+    return factory
 
 
 # ----------------------------------------------------------------------
@@ -131,14 +144,7 @@ def bootstrap_first_magi(
     magis_db_path = resolve_magis_database_path(config.host_workspace_dir)
     magis_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build a per-MAGIS SQLite engine and inject it into the bus so all
-    # callers (init_magis_public_db, repositories, services) see the
-    # same DSN.
-    from magi.bus.db.magis.local_engine import build as build_local_engine
-
-    engine = build_local_engine(magis_db_path.parent)
-    set_injected_magis_engine(engine)
-    init_magis_public_db(seed_root=True)
+    factory = _magis_factory(magis_url)
 
     # Plan §22.2 — validate workspace identity before seeding.
     _validate_workspace_identity(
@@ -148,7 +154,7 @@ def bootstrap_first_magi(
     )
 
     # Seed Genesis + the first MAGI (eva-000) + ADAM membership if absent.
-    magic_id = _ensure_first_magi_identity(engine, name=config.magi_name)
+    magic_id = _ensure_first_magi_identity(factory)
 
     logger.info(
         "first MAGI bootstrapped",
@@ -161,34 +167,43 @@ def bootstrap_first_magi(
     )
 
 
-def _ensure_first_magi_identity(engine: Any, *, name: str) -> int:
-    """Create ``eva-000`` row + ADAM membership if missing.
+def _ensure_first_magi_identity(factory: Any) -> int:
+    """Create Genesis, its ADAM role and first membership if missing.
 
-    Idempotent — restarting the bootstrap is a no-op once seeded.
+    NewBus models a MAGI identity as ``magis_memberships.id``.  Display
+    name and personal instruction belong to the node's local settings, not
+    to a second, global ``magic`` table.
     """
-    from magi.bus.db.engine import _seed_default_root
+    from magi.new_bus.library.magis import (
+        DEFAULT_ROLE_INSTRUCTIONS,
+        MagisBook,
+        MagisMembershipBook,
+        MagisRoleBook,
+    )
 
-    # _seed_default_root already covers the legacy ``MAGIC`` /
-    # ``MAGIS`` / Genesis / Adam sequence used by the runtime.
-    _seed_default_root(engine)
-
-    # Locate the seeded MAGIC row by display name; the legacy seed
-    # creates Adam as ``id=1`` with display name ``"EVA-000"``.
-    from magi.bus.db.models.magis.magic import MAGIC
-    from sqlalchemy.orm import Session
-
-    with Session(engine) as session:
-        row = session.scalar(select(MAGIC).where(MAGIC.name == name).limit(1))
-        if row is None:
-            # Fallback — pick the first MAGIC row (legacy seed is ``id=1``).
-            row = session.scalar(select(MAGIC).order_by(MAGIC.id).limit(1))
-        if row is None:
-            raise ConfigurationError(
-                "MAGIS seed did not create a MAGIC row — bootstrap incomplete"
-            )
-        magic_id = int(row.id)
-
-    return magic_id
+    magis = MagisBook(factory)
+    roles = MagisRoleBook(factory)
+    memberships = MagisMembershipBook(factory)
+    genesis = magis.get_root()
+    if genesis is None:
+        genesis = magis.add(name="Genesis")
+    adam_role = roles.find(magis_id=genesis.id, name="ADAM")
+    if adam_role is None:
+        adam_role = roles.add(
+            magis_id=genesis.id,
+            name="ADAM",
+            instruction=DEFAULT_ROLE_INSTRUCTIONS["ADAM"],
+            is_reserved=True,
+        )
+    member = next(
+        (item for item in memberships.list_for_magis(magis_id=genesis.id)
+         if item.role_id == adam_role.id),
+        None,
+    )
+    if member is None:
+        member = memberships.add(magis_id=genesis.id, role_id=adam_role.id)
+    magis.set_adam(magis_id=genesis.id, adam_id=member.id)
+    return member.id
 
 
 # ----------------------------------------------------------------------
@@ -224,21 +239,12 @@ def bootstrap_existing_magi(
             "MAGI_ID is required when joining an existing MAGIS"
         )
 
-    engine = _resolve_existing_magis_engine(config.magis_database_url)
-    init_magis_public_db(seed_root=False)
-
-    magic_row = _load_magic_row(engine, config.magi_id)
-    if magic_row is None:
+    factory = _magis_factory(config.magis_database_url)
+    membership = _load_membership(factory, config.magi_id)
+    if membership is None:
         raise ConfigurationError(
             f"MAGI_ID {config.magi_id!r} not found in MAGIS "
             f"({config.magis_database_url})"
-        )
-
-    actual_name = getattr(magic_row, "name", None) or DEFAULT_MAGI_NAME
-    if actual_name != config.magi_name:
-        raise ConfigurationError(
-            f"MAGI_NAME mismatch: env says {config.magi_name!r}, "
-            f"MAGIS has {actual_name!r} for MAGI_ID {config.magi_id}"
         )
 
     _validate_workspace_identity(
@@ -248,42 +254,21 @@ def bootstrap_existing_magi(
     )
 
     return BootstrapIdentity(
-        magi_id=str(magic_row.id),
+        magi_id=str(membership.id),
         magis_database_url=config.magis_database_url,
         is_first_magi=False,
     )
 
 
-def _resolve_existing_magis_engine(url: str) -> Any:
-    """Materialise a MAGIS engine from ``MAGIS_DATABASE_URL``.
-
-    For SQLite the engine is built locally (mirrors
-    :func:`bootstrap_first_magi`); for PostgreSQL the URL is forwarded
-    to ``get_magis_engine`` which honours the env-var path.
-    """
-    if url.startswith("sqlite:///"):
-        from magi.bus.db.magis.local_engine import build as build_local_engine
-
-        db_path = Path(url[len("sqlite:///"):])
-        engine = build_local_engine(db_path.parent)
-        set_injected_magis_engine(engine)
-        return engine
-    # PostgreSQL path — let the standard engine resolver construct it.
-    # We don't inject it so the URL drives the connection.
-    return get_magis_engine()
-
-
-def _load_magic_row(engine: Any, magi_id: str) -> Any | None:
-    from magi.bus.db.models.magis.magic import MAGIC
-    from sqlalchemy.orm import Session
+def _load_membership(factory: Any, magi_id: str) -> Any | None:
+    from magi.new_bus.library.magis import MagisMembershipBook
 
     try:
         magic_id_int = int(magi_id)
     except (TypeError, ValueError) as exc:
         raise ConfigurationError(f"MAGI_ID must be an integer: {magi_id!r}") from exc
 
-    with Session(engine) as session:
-        return session.get(MAGIC, magic_id_int)
+    return MagisMembershipBook(factory).get(magi_id=magic_id_int)
 
 
 def _validate_workspace_identity(
@@ -327,10 +312,10 @@ def ensure_private_database(workspace_dir: Path) -> str:
     """
     db_path = resolve_private_database_path(workspace_dir)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    # ``init_sqlite`` is idempotent — creates the file only if absent.
-    from magi.bus.db import init_sqlite
-
-    init_sqlite(str(db_path.parent))
+    from magi.new_bus.db.engine import EngineFactory
+    # NewBus owns local table registration and creation.  The factory is
+    # built from the exact private DSN rather than the retired Bus helper.
+    EngineFactory(f"sqlite:///{db_path}").create_all()
     from magi.startup.paths import resolve_private_database_url
 
     return resolve_private_database_url(workspace_dir)

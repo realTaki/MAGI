@@ -119,6 +119,63 @@ class _StreamHub:
         _new().stream_hub.close(run_id)
 
 
+class _Auth:
+    """Password credential ops via settings_book (was old bus.auth)."""
+    _PREFIX = "auth.password."
+
+    def has_password_for(self, uid: int) -> bool:
+        return bool(_new().settings_book.get(key=f"{self._PREFIX}{uid}.hash"))
+
+    def get_password_credential(self, uid: int) -> dict | None:
+        raw = _new().settings_book.get(key=f"{self._PREFIX}{uid}.hash")
+        if not raw: return None
+        import json
+        try: return json.loads(raw)
+        except (json.JSONDecodeError, TypeError): return None
+
+    def ensure_password_credential(self, *, uid: int, secret_hash: str) -> None:
+        import json
+        _new().settings_book.set(key=f"{self._PREFIX}{uid}.hash", value=secret_hash)
+        _new().settings_book.set(key=f"{self._PREFIX}{uid}.updated_at",
+                                 value=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat())
+
+    def delete_password_credential(self, uid: int) -> bool:
+        return _new().settings_book.delete(key=f"{self._PREFIX}{uid}.hash")
+
+
+class _Magic:
+    """Magic/MAGIS registry ops via new_bus books."""
+    def list_available_magic(self):
+        nb = _new()
+        if hasattr(nb, "magis_book"):
+            return nb.magis_book.list_available()
+        return []
+
+    def list_magic(self, **kw):
+        nb = _new()
+        if hasattr(nb, "magis_book"):
+            return nb.magis_book.list_all(**kw)
+        return []
+
+    def set_runtime(self, magic_id, **kw):
+        nb = _new()
+        if hasattr(nb, "magis_book"):
+            return nb.magis_book.set_runtime(magic_id, **kw)
+        raise NotImplementedError("magis_book.set_runtime")
+
+    def ensure_runtime(self, magic_id):
+        nb = _new()
+        if hasattr(nb, "magis_book"):
+            return nb.magis_book.ensure_runtime(magic_id)
+        raise NotImplementedError("magis_book.ensure_runtime")
+
+    def __getattr__(self, name: str):
+        nb = _new()
+        if hasattr(nb, "magis_book"):
+            return getattr(nb.magis_book, name)
+        raise AttributeError(f"magis_book has no {name}")
+
+
 class _Bus:
     settings: _Settings
     contacts: _Contacts
@@ -126,6 +183,8 @@ class _Bus:
     task_scheduler: _TaskScheduler
     agent_runs: _AgentRuns
     stream_hub: _StreamHub
+    auth: _Auth
+    magic: _Magic
 
     def __init__(self):
         object.__setattr__(self, "settings", _Settings())
@@ -134,6 +193,8 @@ class _Bus:
         object.__setattr__(self, "task_scheduler", _TaskScheduler())
         object.__setattr__(self, "agent_runs", _AgentRuns())
         object.__setattr__(self, "stream_hub", _StreamHub())
+        object.__setattr__(self, "auth", _Auth())
+        object.__setattr__(self, "magic", _Magic())
 
     def __getattr__(self, name: str):
         """Resolve unknown names from new_bus: try ``{name}_book`` first,

@@ -20,13 +20,14 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from magi.bus.jobs.protocols.lifecycle import (
+from magi.startup.kubernetes.contracts import (
+    EvaSpec,
+    MagisBinding,
     MagisProvisionResult,
+    RuntimeEndpoint,
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.bus.jobs.protocols.runtime import RuntimeEndpoint
-from magi.startup.kubernetes.contracts import EvaSpec, MagisBinding
 from magi.startup.kubernetes.resources import KubernetesEvaBackend
 
 

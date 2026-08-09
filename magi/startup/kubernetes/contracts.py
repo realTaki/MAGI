@@ -47,8 +47,39 @@ class EvaOperationResult(BaseModel):
 
 
 class MagisProvisionResult(BaseModel):
+    magis_id: int | None = Field(default=None, ge=1)
+    backend_kind: str = "kubernetes"
     database_service_name: str
     workspace_claim_name: str
+    message: str | None = None
+
+
+class RuntimeEndpoint(BaseModel):
+    """Platform-neutral runtime location exposed by the control plane."""
+
+    runtime_id: int = Field(ge=1)
+    backend_kind: str
+    base_url: str
+    backend_ref: str
+    observed_state: str
+
+
+class RuntimeSpec(BaseModel):
+    """Identity needed for one runtime lifecycle operation."""
+
+    magic_id: int = Field(ge=1)
+    name: str | None = Field(default=None, max_length=100)
+    magis_id: int | None = Field(default=None, ge=1)
+    magis_name: str | None = Field(default=None, max_length=120)
+
+
+class RuntimeOperationResult(BaseModel):
+    runtime_id: int = Field(ge=1)
+    backend_kind: str
+    backend_ref: str
+    observed_state: str
+    endpoint: RuntimeEndpoint | None = None
+    kubernetes_detail: dict | None = None
     message: str | None = None
 
 
@@ -58,4 +89,7 @@ __all__ = [
     "EvaSpec",
     "EvaOperationResult",
     "MagisProvisionResult",
+    "RuntimeEndpoint",
+    "RuntimeOperationResult",
+    "RuntimeSpec",
 ]

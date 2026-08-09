@@ -44,19 +44,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
-from magi.bus.jobs.protocols.session import new_session_id
-from magi.bus.jobs.protocols.task import TaskFullView, TaskRunView
-from magi.bus.jobs.services.contact import ContactsService
-from magi.bus.jobs.services.session import SessionService
-from magi.bus.jobs.services.setting import SettingsService
-from magi.bus.jobs.services.task import TaskService
-from magi.bus.jobs.services.task_scheduler_bridge import TaskSchedulerBridge
-from magi.bus.task_schedule import (
-    preset_to_cron,
-    validate_cron,
-    validate_run_at,
-    validate_run_at_future,
-)
+from magi.channels.api._bus import bus
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException

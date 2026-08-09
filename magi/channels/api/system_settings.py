@@ -20,27 +20,6 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
-from magi.bus.jobs.services.setting import (
-    COMPACT_CONTEXT_WINDOW_KEY,
-    COMPACT_KEEP_RECENT_KEY,
-    COMPACT_THRESHOLD_PCT_KEY,
-    DEFAULT_COMPACT_CONTEXT_WINDOW,
-    DEFAULT_COMPACT_KEEP_RECENT,
-    DEFAULT_COMPACT_THRESHOLD_PCT,
-    DEFAULT_TOOL_MAX_ITERATIONS,
-    MAX_COMPACT_CONTEXT_WINDOW,
-    MAX_COMPACT_KEEP_RECENT,
-    MAX_COMPACT_THRESHOLD_PCT,
-    MAX_TOOL_MAX_ITERATIONS,
-    MIN_COMPACT_CONTEXT_WINDOW,
-    MIN_COMPACT_KEEP_RECENT,
-    MIN_COMPACT_THRESHOLD_PCT,
-    MIN_TOOL_MAX_ITERATIONS,
-    SHOW_DAILY_NOTE_KEY,
-    SHOW_DAILY_NOTE_PROMPT_KEY,
-    SYSTEM_TZ_KEY,
-    TOOL_MAX_ITERATIONS_KEY,
-)
 from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 
@@ -146,7 +125,6 @@ def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
     svc = _settings()
     return ToolMaxIterationsOut(
         current=svc.tool_max_iterations(),
-        default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
     )
@@ -162,11 +140,9 @@ def put_tool_max_iterations(
 ) -> ToolMaxIterationsOut:
     """Persist a new max tool iterations value."""
     svc = _settings()
-    svc.set(TOOL_MAX_ITERATIONS_KEY, str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(
         current=payload.value,
-        default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
     )
@@ -205,9 +181,6 @@ def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
         context_window=svc.compact_context_window(),
         threshold_pct=svc.compact_threshold_pct(),
         keep_recent=svc.compact_keep_recent(),
-        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
-        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
-        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
 
 
@@ -229,9 +202,6 @@ def put_compact_config(
         context_window=payload.context_window,
         threshold_pct=payload.threshold_pct,
         keep_recent=payload.keep_recent,
-        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
-        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
-        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
 
 

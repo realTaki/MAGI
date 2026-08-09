@@ -4,8 +4,7 @@ The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
 1. Bootstraps identity via :func:`magi.startup.bootstrap.bootstrap_magi`.
-2. Builds both :class:`~magi.bus.Bus` (old) and
-   :class:`~magi.new_bus.NewBus` (new) facades side-by-side.
+2. Builds one :class:`~magi.new_bus.NewBus` facade.
 3. Brings up durable workers (provider / agent / tool / delivery).
 4. Brings up channels (currently: telegram).
 5. Serves the private runtime HTTP API on a fixed internal port.
@@ -71,7 +70,7 @@ async def run_magi(config: StartupConfig) -> None:
     """
     startup = bootstrap_magi(config)
 
-    old_bus, new_bus = _build_buses(startup)
+    new_bus = _build_bus(startup)
     workers = _build_workers()
     channels = _build_channels(startup, new_bus)
 
@@ -87,43 +86,20 @@ async def run_magi(config: StartupConfig) -> None:
 # ----------------------------------------------------------------------
 
 
-def _build_buses(startup: StartupContext) -> tuple[object, "NewBus"]:
-    """Construct both old and new BUS facades for this process.
+def _build_bus(startup: StartupContext) -> "NewBus":
+    """Construct the single NewBus facade for this process.
 
-    The path + DSN come from :class:`StartupContext` and are passed
-    through explicitly (plan §10 — no env mutation at runtime).
-
-    Old bus: unchanged, still the active bus for existing workers.
-    New bus: wired from the same paths, available for gradual migration.
+    Paths are resolved by :class:`StartupContext` and passed through
+    explicitly.  The runtime never bootstraps the retired ``magi.bus``
+    facade or shares its process-global state.
     """
-    from magi.bus import bootstrap as bus_bootstrap
-    from magi.bus.db.magis_book.engine import set_injected_magis_engine
-    from magi.bus.db.magis_book.local_engine import build as build_local_engine
-
     from magi.new_bus.bootstrap import NewBus, bootstrap_new_bus
 
-    # --- shared paths (both buses point at the same databases) ---
     state_dir = str(startup.workspace_dir / "memories")
-
-    # --- old bus (existing, unchanged) ---
-    magis_engine = build_local_engine(
-        startup.workspace_dir.parent.parent / "MAGI_Societies" / "genesis"
-    )
-    set_injected_magis_engine(magis_engine)
-    old_bus = bus_bootstrap(
-        initialise_local=True,
-        state_dir=state_dir,
-        magis_engine=magis_engine,
-    )
-
-    # --- new bus (explicit, no global injection, no env reads) ---
-    # prompts_dir=None → auto-detect from the magi package location.
-    new_bus = bootstrap_new_bus(
+    return bootstrap_new_bus(
         state_dir=state_dir,
         magis_url=startup.magis_database_url,
     )
-
-    return old_bus, new_bus
 
 
 def _to_magi_id(raw: str) -> int | None:
@@ -148,7 +124,7 @@ def _build_workers() -> "WorkerHandles":
 async def _runtime_lifespan(
     workers: "WorkerHandles",
     channels: list[str],
-    new_bus: "NewBus | None" = None,
+    new_bus: "NewBus",
     *,
     magi_id: int | None = None,
 ):
@@ -310,34 +286,18 @@ def _build_channels(
     Channels state lives in ``settings_book.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
-    Prefers ``new_bus`` when available; falls back to the old bus
-    global singleton for backward compatibility.
+    Reads the explicitly injected NewBus only.
     """
     import json
 
-    # Try new_bus first (explicitly wired, no global lookup).
-    if new_bus is not None:
-        try:
-            raw = new_bus.settings_book.get("channels.enabled")
-            if raw:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    return [c for c in parsed if isinstance(c, str)]
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Fall back to old bus singleton (e.g. worker_lifespan path).
     try:
-        from magi.bus import get_bus
-
-        raw = get_bus().settings.get("channels.enabled")
-        if not raw:
-            return []
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return [c for c in parsed if isinstance(c, str)]
+        raw = new_bus.settings_book.get("channels.enabled")
+        if raw:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [c for c in parsed if isinstance(c, str)]
     except Exception:  # noqa: BLE001
-        return []
+        logger.warning("could not read channels.enabled from NewBus", exc_info=True)
     return []
 
 
@@ -382,30 +342,17 @@ def _reload_enabled() -> bool:
     return os.environ.get("MAGI_DEV_RELOAD") == "1"
 
 
-def _log_level(new_bus: "NewBus | None" = None) -> str:
+def _log_level(new_bus: "NewBus") -> str:
     """Read DB-driven log level if present, fall back to default.
 
-    Prefers ``new_bus`` when available; falls back to the old bus
-    global singleton for backward compatibility.
+    Reads the explicitly injected NewBus only.
     """
-    # Try new_bus first (explicitly wired, no global lookup).
-    if new_bus is not None:
-        try:
-            raw = new_bus.settings_book.get("system.log_level")
-            if raw and raw in {"debug", "info", "warning", "error"}:
-                return raw
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Fall back to old bus singleton.
     try:
-        from magi.bus import get_bus
-
-        raw = get_bus().settings.get("system.log_level")
+        raw = new_bus.settings_book.get("system.log_level")
         if raw and raw in {"debug", "info", "warning", "error"}:
             return raw
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("could not read system.log_level from NewBus", exc_info=True)
     return _DEFAULT_LOG_LEVEL
 
 

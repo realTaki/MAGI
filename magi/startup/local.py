@@ -22,7 +22,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -93,72 +93,39 @@ def create_magi(
         )
     config.workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    # The legacy launcher re-uses the seeded Genesis identity if
-    # --name=eva-000 is supplied. For new names we delegate to the
-    # magis engine directly to create the row + membership.
-    from sqlalchemy import select
-    from sqlalchemy.orm import Session
+    from magi.new_bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
+    from magi.startup.bootstrap import _magis_factory
 
-    from magi.bus.db.magis.engine import get_magis_engine
-    from magi.bus.db.magis.local_engine import build as build_local_engine
-    from magi.bus.db.models.magis.magic import MAGIC
-    from magi.bus.db.models.magis.magis import MAGIS
-    from magi.bus.db.models.magis.magis_membership import MAGISMembership
+    factory = _magis_factory(config.magis_database_url)
+    magis = MagisBook(factory)
+    roles = MagisRoleBook(factory)
+    memberships = MagisMembershipBook(factory)
+    genesis = magis.get_root()
+    if genesis is None:
+        raise ConfigurationError("No MAGIS found — bootstrap the first MAGI first")
+    eva_role = roles.find(magis_id=genesis.id, name="EVA")
+    if eva_role is None:
+        eva_role = roles.add(magis_id=genesis.id, name="EVA", is_reserved=True)
 
-    # Resolve magis engine (SQLite or PG) and check/create the MAGIC row.
-    engine = get_magis_engine()
-    if engine is None and config.magis_database_url:
-        # Fallback: build a local SQLite engine for the MAGIS DB path.
-        db_path = Path(config.magis_database_url[len("sqlite:///"):])
-        engine = build_local_engine(db_path.parent)
-    if engine is None:
-        raise ConfigurationError("Cannot resolve MAGIS database engine")
-
-    with Session(engine) as session:
-        existing = session.scalar(
-            select(MAGIC).where(MAGIC.name == config.magi_name).limit(1)
+    # A MAGI's display name is local NewBus setting state, not a global
+    # ``magic`` row.  A supplied MAGI_ID is an idempotent re-use request;
+    # otherwise registering creates one new membership identity.
+    membership = (
+        memberships.get(magi_id=int(config.magi_id))
+        if config.magi_id and config.magi_id.isdigit()
+        else None
+    )
+    if membership is None:
+        membership = memberships.add(magis_id=genesis.id, role_id=eva_role.id)
+        logger.info(
+            "create_magi: registered %s as membership %s in MAGIS %s",
+            config.magi_name, membership.id, genesis.name,
         )
-        magic_id: int
-        if existing is None:
-            logger.info(
-                "create_magi: registering %s in MAGIS",
-                config.magi_name,
-            )
-            row = MAGIC(name=config.magi_name)
-            session.add(row)
-            session.flush()
-            magic_id = int(row.id)
-        else:
-            magic_id = int(existing.id)
-
-        # Plan §16 step 4 — create Membership to the Genesis MAGIS.
-        genesis = session.scalar(select(MAGIS).order_by(MAGIS.id).limit(1))
-        if genesis is None:
-            raise ConfigurationError(
-                "No MAGIS found — bootstrap the first MAGI first"
-            )
-        membership = session.scalar(
-            select(MAGISMembership).where(
-                MAGISMembership.magis_id == genesis.id,
-                MAGISMembership.magic_id == magic_id,
-            ).limit(1)
-        )
-        if membership is None:
-            logger.info(
-                "create_magi: adding %s to MAGIS %s",
-                config.magi_name,
-                genesis.name,
-            )
-            session.add(
-                MAGISMembership(magis_id=int(genesis.id), magic_id=magic_id)
-            )
-
-        session.commit()
 
     if not start:
         return 0
 
-    return start_magi(config=config)
+    return start_magi(config=replace(config, magi_id=str(membership.id)))
 
 
 # ----------------------------------------------------------------------

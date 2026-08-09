@@ -69,45 +69,15 @@ def _default_configs() -> list[ConnectorConfig]:
     ]
 
 
-def _configs_from_db() -> list[ConnectorConfig] | None:
-    """Read ``connector_configs`` from the private SQLite.
-
-    Returns ``None`` when the table doesn't exist yet
-    (pre-CRUD-surface) so the caller can fall back to
-    defaults. Returns ``[]`` when the table exists but
-    has no rows.
-
-    The table schema is intentionally minimal:
-
-      - ``name``          TEXT primary key with instance_id
-      - ``instance_id``   TEXT
-      - ``enabled``       INTEGER (0/1)
-      - ``settings_json`` TEXT
-      - ``auth_json``     TEXT (nullable)
-
-    Full schema + Alembic migration lands with the
-    WebUI CRUD surface; for now the boot reads what it
-    can and skips rows that don't parse.
-    """
-    from magi.bus import get_bus
-
-    rows = get_bus().connectors.list_configurations()
-    if rows is None:
-        return None
-    return [ConnectorConfig(
-        name=row.name,
-        instance_id=row.instance_id,
-        enabled=row.enabled,
-        settings=row.settings,
-        auth=row.auth,
-    ) for row in rows]
-
-
 def _build_configs() -> list[ConnectorConfig]:
-    db_configs = _configs_from_db()
-    if db_configs is None:
-        return _default_configs()
-    return db_configs
+    """Build the currently supported connector configuration.
+
+    NewBus has no connector-configuration Book yet.  The old Bus-backed
+    table was never exposed by the promised CRUD surface, so a clean
+    cutover intentionally keeps only the documented environment/default
+    configuration rather than retaining a hidden legacy read path.
+    """
+    return _default_configs()
 
 
 def load_connectors_from_db() -> int:
