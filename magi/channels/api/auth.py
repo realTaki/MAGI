@@ -127,27 +127,32 @@ def _verify_signed_uid(bus: Bus, token: str) -> int | None:
         return None
 
 
-def _sign_selected_session(bus: Bus, *, magic_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
+def _sign_selected_session(bus: Bus, *, magi_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
     """Sign a browser session bound to exactly one selected MAGI.
 
     ``_sign_uid`` remains for compatibility with private-runtime tests and
     old single-node sessions. New control-plane sessions are versioned and
     include their selected target, so a browser cannot reuse a B session to
     proxy requests to C.
+
+    Note: the payload key used to be ``"magic_id"`` (the legacy per-MAGI
+    column name pre-rename). It is now ``"magi_id"``; the cookie version
+    was bumped 2 → 3 to invalidate every existing signed v2 cookie at
+    deploy time rather than risk a soft-mismatch.
     """
     payload = {
-        "v": 2, "magic_id": magic_id, "telegram_id": telegram_id,
+        "v": 3, "magi_id": magi_id, "telegram_id": telegram_id,
         "display_name": display_name, "admin": admin, "assigned": assigned,
         "ts": int(datetime.now(timezone.utc).timestamp()),
     }
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     signature = hmac.new(_signing_key(bus), raw, hashlib.sha256).hexdigest()[:24]
-    return "v2." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
+    return "v3." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
 
 
 def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     """Return the selected-MAGI browser session, if valid and unexpired."""
-    if not token or not token.startswith("v2."):
+    if not token or not token.startswith("v3."):
         return None
     try:
         _version, body, signature = token.split(".", 2)
@@ -156,7 +161,7 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
         if not hmac.compare_digest(signature, expected):
             return None
         payload = json.loads(raw)
-        if payload.get("v") != 2 or not isinstance(payload.get("magic_id"), int) or not isinstance(payload.get("telegram_id"), int):
+        if payload.get("v") != 3 or not isinstance(payload.get("magi_id"), int) or not isinstance(payload.get("telegram_id"), int):
             return None
         if datetime.now(timezone.utc).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
             return None
@@ -251,7 +256,7 @@ class MeResponse(BaseModel):
     display_name: str | None = None
     admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
     assigned: bool = False
-    selected_magic_id: int | None = None
+    selected_magi_id: int | None = None
     # ``login_methods`` + ``password_set`` mirror the
     # :class:`AuthCredential` table + the bound IM. The
     # Settings → Security card renders the form from
@@ -418,7 +423,7 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=_sign_selected_session(bus,
-            magic_id=magic_id, telegram_id=telegram_id,
+            magi_id=magic_id, telegram_id=telegram_id,
             display_name=display_name,
             admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
         ),
@@ -704,14 +709,14 @@ async def me(
     selected = selected_session(bus, magi_session)
     if selected is not None:
         telegram_id_value = int(selected["telegram_id"])
-        magic_id_value = int(selected["magic_id"])
+        magi_id_value = int(selected["magi_id"])
         raw_display_name = selected.get("display_name")
         display_name = raw_display_name if isinstance(raw_display_name, str) else None
         return MeResponse(
             uid=telegram_id_value, telegram_id=telegram_id_value,
             display_name=display_name,
             admin=bool(selected.get("admin")), assigned=bool(selected.get("assigned")),
-            selected_magic_id=magic_id_value,
+            selected_magi_id=magi_id_value,
         )
     uid = _verify_signed_uid(bus, magi_session or "")
     if uid is None or uid not in _super_admins(bus):

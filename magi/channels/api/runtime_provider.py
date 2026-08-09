@@ -4,13 +4,13 @@ The 2026-08 creation-flow refactor moved provider / API key / model
 out of the shared ``magic`` row and into each MAGI's local
 ``settings_book``.  This module exposes the edit surface:
 
-    GET    /api/magic/self/provider   — read current settings
-    PATCH  /api/magic/self/provider   — partial update
-    DELETE /api/magic/self/provider   — clear (sets all three to None)
+    GET    /api/magi/self/provider   — read current settings
+    PATCH  /api/magi/self/provider   — partial update
+    DELETE /api/magi/self/provider   — clear (sets all three to None)
 
 The endpoint always operates on the runtime that received the
 request -- admin edits to another MAGI's settings flow through the
-WebUI proxy (``/api/runtime/{magic_id}/magic/self/provider``) and
+WebUI proxy (``/api/runtime/{magi_id}/magi/self/provider``) and
 land on the target MAGI's runtime, which writes its own local file.
 
 Authorization is admin-only.  ``admin_gate`` accepts both the
@@ -52,7 +52,7 @@ _FALLBACK_KNOWN_PROVIDERS = {"claude", "minimax-global", "minimax-cn", "openai"}
 
 
 class ProviderOut(BaseModel):
-    """Read shape returned by ``GET /api/magic/self/provider``."""
+    """Read shape returned by ``GET /api/magi/self/provider``."""
 
     provider: str | None = None
     api_key_set: bool = False
@@ -61,7 +61,7 @@ class ProviderOut(BaseModel):
 
 
 class ProviderPatch(BaseModel):
-    """Body for ``PATCH /api/magic/self/provider``.
+    """Body for ``PATCH /api/magi/self/provider``.
 
     All fields optional -- a partial update only touches the
     fields the caller set.  ``api_key=""`` clears the stored
@@ -145,13 +145,13 @@ AdminGate = Annotated[str, Depends(_admin_gate)]
 # -- endpoints ----------------------------------------------------------
 
 
-@router.get("/magic/self/provider", response_model=ProviderOut)
+@router.get("/magi/self/provider", response_model=ProviderOut)
 def get_self_provider(_admin: AdminGate, bus: BusDep) -> ProviderOut:
     provider, api_key, model = _read_current(bus)
     return _to_out(provider, api_key, model)
 
 
-@router.patch("/magic/self/provider", response_model=ProviderOut)
+@router.patch("/magi/self/provider", response_model=ProviderOut)
 def patch_self_provider(payload: ProviderPatch, _admin: AdminGate, bus: BusDep) -> ProviderOut:
     current_provider, current_api_key, current_model = _read_current(bus)
     new_provider = _validate_provider(bus, payload.provider)
@@ -176,7 +176,7 @@ def patch_self_provider(payload: ProviderPatch, _admin: AdminGate, bus: BusDep) 
     return _to_out(merged_provider, merged_api_key, merged_model)
 
 
-@router.delete("/magic/self/provider", response_model=ProviderOut)
+@router.delete("/magi/self/provider", response_model=ProviderOut)
 def delete_self_provider(_admin: AdminGate, bus: BusDep) -> ProviderOut:
     """Clear all three fields.  Useful for re-provisioning."""
     bus.change_provider_config_job_board.publish(

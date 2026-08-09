@@ -8,6 +8,7 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -158,6 +159,18 @@ class MAGISAdminCreate(BaseModel):
 # -- Conversion helpers -------------------------------------------------
 
 
+def _iso(value: datetime | str | None) -> str:
+    """Normalise a Book timestamp to an ISO-8601 string.
+
+    ``Magis`` declares ``datetime | None``, but some Book backends
+    (and test doubles) already hand back pre-formatted strings, so
+    accept either rather than assuming ``.isoformat()`` exists.
+    """
+    if value is None:
+        return ""
+    return value.isoformat() if isinstance(value, datetime) else str(value)
+
+
 def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
     return MAGISOut(
         id=view.id,
@@ -167,8 +180,8 @@ def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
         instruction=view.instruction,
         child_count=sum(1 for row in (bus.magis_book.list_all() if bus.magis_book else []) if row.parent_id == view.id),
         member_count=len(bus.memberships_book.list_for_magis(magis_id=view.id)) if bus.memberships_book else 0,
-        created_at=view.created_at or "",
-        updated_at=view.updated_at or "",
+        created_at=_iso(view.created_at),
+        updated_at=_iso(view.updated_at),
     )
 
 
@@ -284,7 +297,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
         _magis_or_404(bus, payload.parent_id)
         _require_managed(bus, payload.parent_id)
     try:
-        view = bus.magis_book.add(
+        view = _magis_book(bus).add(
             name=payload.name,
             instruction=payload.instruction,
             parent_id=payload.parent_id,
@@ -299,7 +312,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
     from magi.bus.library.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS
 
     for role_name in ("ADAM", "EVA"):
-        bus.roles_book.add(
+        _roles_book(bus).add(
             magis_id=view.id,
             name=role_name,
             instruction=DEFAULT_ROLE_INSTRUCTIONS[role_name],
@@ -318,7 +331,7 @@ def get_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> MAGISOut:
 def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: BusDep) -> MAGISOut:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
     fields_set = payload.model_fields_set
-    kwargs: dict[str, object] = {}
+    kwargs: dict[str, Any] = {}
     if "name" in fields_set:
         kwargs["name"] = payload.name
     if "instruction" in fields_set:
@@ -326,16 +339,18 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
     if "parent_id" in fields_set:
         kwargs["parent_id"] = payload.parent_id
     try:
-        view = bus.magis_book.update(magis_id=magis_id, set_parent_id="parent_id" in fields_set, **kwargs)
+        view = _magis_book(bus).update(magis_id=magis_id, set_parent_id="parent_id" in fields_set, **kwargs)
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
+    if view is None:
+        raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     return _magis_out(bus, view)
 
 
 @router.delete("/magis/{magis_id}", status_code=204)
 def delete_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> Response:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    bus.magis_book.delete(magis_id=magis_id)
+    _magis_book(bus).delete(magis_id=magis_id)
     return Response(status_code=204)
 
 
@@ -345,14 +360,14 @@ def delete_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> Response:
 @router.get("/magis/{magis_id}/roles", response_model=list[RoleOut])
 def list_roles(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[RoleOut]:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    return [_role_out(v) for v in bus.roles_book.list_for_magis(magis_id=magis_id)]
+    return [_role_out(v) for v in _roles_book(bus).list_for_magis(magis_id=magis_id)]
 
 
 @router.post("/magis/{magis_id}/roles", response_model=RoleOut, status_code=201)
 def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, bus: BusDep) -> RoleOut:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
     try:
-        view = bus.roles_book.add(
+        view = _roles_book(bus).add(
             magis_id=magis_id,
             name=payload.name,
             instruction=payload.instruction,
@@ -371,15 +386,21 @@ def update_role(
 ) -> RoleOut:
     _require_managed(bus, magis_id)
     fields_set = payload.model_fields_set
-    kwargs: dict[str, object] = {}
+    kwargs: dict[str, Any] = {}
     if "name" in fields_set:
         kwargs["name"] = payload.name
     if "instruction" in fields_set:
         kwargs["instruction"] = payload.instruction
     try:
-        view = bus.roles_book.update(role_id=role_id, magis_id=magis_id, **kwargs)
+        view = _roles_book(bus).update(role_id=role_id, magis_id=magis_id, **kwargs)
     except (LookupError, PermissionError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
+    if view is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="validation.magis_role_not_found",
+            detail="role does not belong to this MAGIS",
+        )
     return _role_out(view)
 
 
@@ -387,7 +408,7 @@ def update_role(
 def delete_role(magis_id: int, role_id: int, _admin: AdminGate, bus: BusDep) -> Response:
     _require_managed(bus, magis_id)
     try:
-        deleted = bus.roles_book.delete(role_id=role_id, magis_id=magis_id)
+        deleted = _roles_book(bus).delete(role_id=role_id, magis_id=magis_id)
     except (PermissionError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     if not deleted:
@@ -405,7 +426,7 @@ def delete_role(magis_id: int, role_id: int, _admin: AdminGate, bus: BusDep) -> 
 @router.get("/magis/{magis_id}/memberships", response_model=list[MembershipOut])
 def list_memberships(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MembershipOut]:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    return [_membership_out(bus, v) for v in bus.memberships_book.list_for_magis(magis_id=magis_id)]
+    return [_membership_out(bus, v) for v in _memberships_book(bus).list_for_magis(magis_id=magis_id)]
 
 
 @router.post("/magis/{magis_id}/memberships", response_model=MembershipOut, status_code=201)
@@ -416,7 +437,7 @@ def create_membership(
 ) -> MembershipOut:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
     try:
-        view = bus.memberships_book.add(
+        view = _memberships_book(bus).add(
             magis_id=magis_id,
             role_id=payload.role_id,
         )
@@ -434,9 +455,11 @@ def update_membership(
 ) -> MembershipOut:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
     try:
-        view = bus.memberships_book.update_role(magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id)
+        view = _memberships_book(bus).update_role(magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id)
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
+    if view is None:
+        raise MagiHTTPException(404, "not_found.membership", "membership not found")
     return _membership_out(bus, view)
 
 
@@ -448,8 +471,8 @@ def delete_membership(
 ) -> Response:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
     try:
-        member = bus.memberships_book.get(magi_id=membership_id)
-        deleted = bool(member and member.magis_id == magis_id and bus.memberships_book.remove(magi_id=membership_id))
+        member = _memberships_book(bus).get(magi_id=membership_id)
+        deleted = bool(member and member.magis_id == magis_id and _memberships_book(bus).remove(magi_id=membership_id))
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.membership", str(exc)) from exc
     if not deleted:
@@ -463,7 +486,7 @@ def delete_membership(
 @router.get("/magis/{magis_id}/admins", response_model=list[MAGISAdminOut])
 def list_magis_admins(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MAGISAdminOut]:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    return [_admin_out(bus, v) for v in bus.magis_admins_book.list_for_magis(magis_id=magis_id)]
+    return [_admin_out(bus, v) for v in _admins_book(bus).list_for_magis(magis_id=magis_id)]
 
 
 @router.post("/magis/{magis_id}/admins", response_model=MAGISAdminOut, status_code=201)
@@ -477,7 +500,7 @@ def add_magis_admin(
     if contact is None:
         raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
     try:
-        view = bus.magis_admins_book.add(uid=contact.id, magis_id=magis_id)
+        view = _admins_book(bus).add(uid=contact.id, magis_id=magis_id)
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
     return _admin_out(bus, view)
@@ -490,7 +513,7 @@ def delete_magis_admin(
     _admin: AdminGate, bus: BusDep,
 ) -> Response:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    deleted = bus.magis_admins_book.remove_by_id(admin_id=admin_id, magis_id=magis_id)
+    deleted = _admins_book(bus).remove_by_id(admin_id=admin_id, magis_id=magis_id)
     if not deleted:
         raise MagiHTTPException(404, "not_found.magis_admin", "MAGIS admin not found")
     return Response(status_code=204)

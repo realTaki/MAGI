@@ -75,7 +75,7 @@ export function MagicPane() {
     setBusy(-1);
     setMessage(null);
     try {
-      await request("/api/magic", "POST", {
+      await request("/api/magi", "POST", {
         name: form.name.trim() || null,
         magis_id: Number(form.magis_id),
         role_id: form.role_id ? Number(form.role_id) : null,
@@ -93,7 +93,7 @@ export function MagicPane() {
   const saveName = async (m: MAGICRow) => {
     setBusy(m.id);
     try {
-      await request(`/api/magic/${m.id}`, "PATCH", { name: form.name.trim() || null });
+      await request(`/api/magi/${m.id}`, "PATCH", { name: form.name.trim() || null });
       setEditing(null);
       refresh();
     } catch (e) {
@@ -106,7 +106,7 @@ export function MagicPane() {
   const lifecycle = async (m: MAGICRow, action: "start" | "stop") => {
     setBusy(m.id);
     try {
-      await request(`/api/magic/${m.id}/runtime/${action}`, "POST");
+      await request(`/api/magi/${m.id}/runtime/${action}`, "POST");
       refresh();
     } catch (e) {
       setMessage((e as Error).message);
@@ -119,7 +119,7 @@ export function MagicPane() {
     setBusy(m.id);
     try {
       await request(
-        `/api/runtime/${m.id}/magic/self/provider`,
+        `/api/runtime/${m.id}/magi/self/provider`,
         "PATCH",
         {
           provider: providerDraft.provider || null,

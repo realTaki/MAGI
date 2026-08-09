@@ -12,7 +12,7 @@ from magi.channels.api.proxy_auth import build_proxy_headers
 router = APIRouter(tags=["runtime-proxy"])
 
 
-def _runtime_url(bus, magic_id: int) -> str:
+def _runtime_url(bus, magi_id: int) -> str:
     """Resolve the upstream URL for the chosen MAGI's runtime.
 
     Phase 2 — delegates to :class:`RuntimeRegistryService` for the
@@ -21,10 +21,10 @@ def _runtime_url(bus, magic_id: int) -> str:
     Falls back to the legacy ``bus.magis.root_runtime_url`` for the
     root-runtime case so K8s behaviour stays bit-identical.
     """
-    endpoint = bus.registry_book.resolve_endpoint(magic_id)
+    endpoint = bus.registry_book.resolve_endpoint(magi_id)
     if endpoint is not None:
         return endpoint.base_url
-    root_url = bus.magis_book.root_runtime_url(magic_id)
+    root_url = bus.magis_book.root_runtime_url(magi_id)
     if root_url is not None:
         return root_url
     raise MagiHTTPException(
@@ -34,9 +34,9 @@ def _runtime_url(bus, magic_id: int) -> str:
     )
 
 
-@router.api_route("/runtime/{magic_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@router.api_route("/runtime/{magi_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy_runtime(
-    magic_id: int,
+    magi_id: int,
     path: str,
     request: Request,
 ) -> Response:
@@ -48,7 +48,7 @@ async def proxy_runtime(
 
     Cross-MAGI access: a non-admin session may only target its own
     selected MAGI; an admin session may target any MAGI.  The admin
-    path is what powers the ``PATCH /api/runtime/{magic_id}/magic/self/provider``
+    path is what powers the ``PATCH /api/runtime/{magi_id}/magi/self/provider``
     edit flow — WebUI operators configure provider / API key on a
     MAGI other than the one they're signed in to, without first
     switching sessions.
@@ -60,9 +60,9 @@ async def proxy_runtime(
     browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    session_magic_id = int(browser_session["magic_id"])
+    session_magi_id = int(browser_session["magi_id"])
     session_is_admin = bool(browser_session.get("admin"))
-    if session_magic_id != magic_id and not session_is_admin:
+    if session_magi_id != magi_id and not session_is_admin:
         raise MagiHTTPException(status_code=403, code="auth.target_mismatch", detail="The session is bound to another MAGI")
     runtime_path = f"/api/{path}"
     if request.url.query:
@@ -73,7 +73,7 @@ async def proxy_runtime(
         signed_headers = build_proxy_headers(
             method=request.method,
             path_and_query=runtime_path,
-            target_id=magic_id,
+            target_id=magi_id,
             operator_id=int(browser_session["telegram_id"]),
             operator_name=named_display_name or f"User {browser_session['telegram_id']}",
             telegram_id=int(browser_session["telegram_id"]),
@@ -87,7 +87,7 @@ async def proxy_runtime(
         async with httpx.AsyncClient(timeout=60.0) as client:
             upstream = await client.request(
                 request.method,
-                _runtime_url(get_bus(request), magic_id) + runtime_path,
+                _runtime_url(get_bus(request), magi_id) + runtime_path,
                 content=body or None,
                 headers={"content-type": request.headers.get("content-type", "application/json"), **signed_headers},
             )
@@ -117,4 +117,4 @@ async def proxy_selected_runtime(
     browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    return await proxy_runtime(int(browser_session["magic_id"]), path, request)
+    return await proxy_runtime(int(browser_session["magi_id"]), path, request)
