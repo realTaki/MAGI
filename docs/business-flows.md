@@ -1,60 +1,86 @@
 # MAGI 关键业务流程
 
-> 本文档记录核心业务逻辑的精确执行顺序和关键守卫条件。
+> 本文档记录核心业务逻辑的**行为不变式**和关键守卫条件。
 > 改动这些模块时必须保持以下行为不变，否则会导致生产问题。
+>
+> **v3 cutover 注**：实现路径已切到 `magi.bus` Job Board 模型（`agent_job_board` /
+> `delivery_job_board` / `tool_job_board` / `llm_job_board` / `a2a_job_board`）。
+> 旧 `magi.bus.BusStore` / `magi.bus.agent_runs` / `magi.agent.step.run_agent_step`
+> 等已删除；本文中的旧函数名作为**行为锚点**（保留对应不变式），不是
+> 当前可调用的代码路径。实际入口：
+>
+> - Agent Loop → `magi/agent/worker.py::AgentWorker._run` → `_process`
+> - Channel egress → `magi/channels/worker_base.py::_claim_delivery_loop`（每 channel worker 的 `_run` 拉起自己的循环）
+> - Channel ingress → `magi/channels/telegram/worker.py::_on_tg_message` 等
+> - Credential 解析 → `magi/providers/factory.py::get_provider(model=None)`
+> - Task 调度 → `magi/channels/tasks/worker.py::TaskWorker._run`
+> - 手动 / tool 触发任务 → `bus.run_task_job_board.publish(RunTaskJob(...))`（走 `magi/bus/guild/runTaskJob.py`）
 
 ---
 
 ## 1. Agent Loop — 消息处理主循环
 
-**入口**: `magi.agent.worker.AgentWorker` → `magi.agent.step.run_agent_step()`
+**入口**: `magi.agent.worker.AgentWorker` → `AgentWorker._run` → `_process`
 
 ```
 1. MCP 工具已由 McpWorker 在启动时引导注入到 registry，运行时通过
-   mcpServerChangedJobBoard 异步处理变更。Agent Loop 不再主动轮询
-   mcp_servers 表 — 工具目录始终与 Worker 状态同步。
-   └─ McpWorker 启动时: 并行连接所有 enabled server → register_tools("mcp", ...)
-   └─ 运行时变更: manage tools publish Job → McpWorker claim → 重连 → re-inject
-   └─ ToolsWorker.on_tools_changed 自动检测 → re-publish catalog
+   `mcpServerChangedJobBoard` 异步处理变更。Agent Loop 不再主动轮询
+   `mcp_servers` 表 — 工具目录始终与 Worker 状态同步。
+   └─ `McpWorker.start`: 并行连接所有 enabled server → `register_tools("mcp", ...)`
+   └─ 运行时变更: manage tools publish Job → `McpWorker._run` claim → 重连 → re-inject
+   └─ `ToolsWorker.on_tools_changed` 自动检测 → re-publish catalog
 
-2. 凭证校验 (get_provider, _validate_credentials 已被删除)
-   └─ get_provider() 在 magi/providers/factory.py 内自己读当前 MAGI 行
-     （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVA 不再通过 provider/API key 环境变量绕过数据库）
-   └─ 凭证来自 magic 表（每行对应一个 MAGI 的 LLM 配置），不是 Contact 表 — Contact 表根本没有 provider/api_key 列
-   └─ MAGI 未配置 → LLMNotConfiguredError → chat 路由 503 magi.llm_credentials_required
+2. 凭证校验 (`get_provider`，旧的 `_validate_credentials` 已删除)
+   └─ `get_provider()` 在 `magi/providers/factory.py` 内自己读当前 MAGI 行
+     （所有 runtime 都从直属 MAGIS 公共数据库读取配置；EVA 不再通过
+      provider/API key 环境变量绕过数据库）
+   └─ 凭证来自 `magic` 表（每行对应一个 MAGI 的 LLM 配置），不是 `Contact` 表 —
+     `Contact` 表根本没有 provider/api_key 列
+   └─ MAGI 未配置 → `LLMNotConfiguredError` → chat 路由 503
+     `magi.llm_credentials_required`
    └─ 严格模式，绝不回退系统默认凭证
 
-3. 构建上下文 (_build_context)
-   ├─ get_provider() — 未知 provider 抛 LLMError；MAGI 未配置抛 LLMNotConfiguredError
-   ├─ ToolContext(state_dir, workspace, uid, channel, session_id)
-   ├─ _build_messages_from_session() — 从 SessionStore 加载历史 → (messages, seen_message_ids)
-   ├─ read_soul(state_dir) — 读 SOUL.md
-   └─ get_tool_schemas(caller_role, caller_admin) — 按角色过滤工具列表
+3. 构建上下文 (`AgentWorker._build_llm_job`)
+   ├─ `provider = get_provider(bus=...)` — 未知 provider 抛 `LLMError`；
+     MAGI 未配置抛 `LLMNotConfiguredError`
+   ├─ `tools = bus.tool_definitions_book.list_schemas(caller_role, caller_admin)`
+   ├─ `messages = build_messages_from_session(uid, session_id, text, bus=)`
+     — 从 `sessions_book.get_for_owner` + `messages_book.list_for_session`
+     加载历史
+   ├─ `soul = read_soul(bus=...)` — 读 `prompt_book.get("soul")` 或
+     workspace `SOUL.md` fallback
+   └─ `system = build_system_prompt(uid=uid, soul=soul, bus=...)` — 六块顺序
+     拼接: SOUL → Instructions → Memory → Contact → Daily note → Skills
 
-4. 工具循环 (_run_tool_loop)
-   while iterations_run < max_iter:
-   ├─ [每轮] _drain_pending_user_messages() → 有新用户消息则重置 iterations_run=0
-   ├─ [每轮] maybe_compact() → 超阈值则压缩
-   ├─ [每轮] provider.chat(system=build_system_prompt(...), messages=..., tools=...)
-   │   └─ system prompt 拼装: SOUL → memory_block → contact_block → skills_block
-   ├─ [每轮] _run_tool_calls() → 逐个执行 tool.run()
-   │   └─ 未知工具 → is_error=True
-   │   └─ 崩溃 → 捕获，包装 is_error=True
-   │   └─ 结果截断至 8000 字符
-   └─ 终止: 无 tool_uses 或 stop_reason=="end_turn"
+4. 工具循环 (`AgentWorker._process` 的 `while iteration < max_iterations`)
+   while iteration < max_iterations:
+   ├─ [每轮] cancel check (`agent_turn_store.is_cancel_requested`)
+   ├─ [每轮] `agent_turn_store.renew_turn_lease()` — 心跳保活
+   ├─ [每轮] `llm_job_board.publish(CallLLMJob)` → `wait_for_result(timeout)`
+   ├─ [每轮] `agent_turn_store.append_message(role="assistant")` — 落 transcript
+   ├─ [每轮] `_split_tools()` → tool_job_board / a2a_job_board publish
+   ├─ [每轮] `agent_turn_store.commit_waiting_effects(...)` — 状态机切到
+     `waiting_effects`，附 pending steering
+   ├─ [每轮] `_gather_all()` — 并发 poll tool / a2a + claim_for_conversation
+   ├─ [每轮] `_append_tool_result_user_message()` — 把 tool_result blocks +
+     steering 拼成下一轮 user 消息
+   └─ 终止: 无 tool_uses / max_iterations exceeded / cancel / LLM failure
 
-5. 审计与返回 (_audit_and_return)
-   ├─ record_token_usage() → 写入 token_usage 表
-   └─ 返回 final_text 或 fallback_reply
+5. 终态 (`AgentWorker._process` 的 commit 收尾)
+   ├─ 无错误 / 有 reply → `agent_turn_store.commit_terminal()` 原子写：
+       assistant transcript + token_usage + delivery_job_board publish +
+     ChatJobResult(success=True)
+   ├─ 异常 → `commit_terminal_failure(error_code, error_detail)`
+   └─ cancel → `commit_terminal_cancelled()`（**不**制造伪造 assistant reply）
 ```
 
 **不可改的守卫**:
 
-- `get_provider()` 必须是 strict mode — MAGI 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_context` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从直属 MAGIS 公共数据库的 `magic` 表读取。
-- `_drain_pending_user_messages` 的 store 读取失败必须吞掉（不崩溃主循环）
-- `_truncate_at_safe_boundary` 在拼接新消息前必须调用（否则 Anthropic API 拒绝交错 tool 块）
-- `_run_tool_calls` 的结果必须截断到 8000 字符
-- system prompt 四个 block 的顺序不可变：SOUL → memory → contact → skills
+- `get_provider()` 必须是 strict mode — MAGI 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 (`_build_llm_job` / `compact_session` / auto-title worker) **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从直属 MAGIS 公共数据库的 `magic` 表读取。
+- session message store 读取失败必须吞掉（不崩溃主循环）
+- tool result 必须在拼接新消息前安全截断（否则 Anthropic API 拒绝交错 tool 块）— 阈值 8000 字符
+- system prompt 六块顺序不可变：SOUL → Instructions → Memory → Contact → Daily note → Skills
+- cancel 不发送伪造 assistant reply（避免污染 transcript）
 
 ---
 
@@ -86,29 +112,29 @@
 
 ## 3. Session 生命周期与 D.22 通道守卫
 
-**入口**: `magi/agent/memory/session/store.py::SessionStore`
+**入口**: `magi/bus/library/local/sessionBook.py::SessionBook`
 
-### 创建会话 (create)
+### 创建会话
 ```
-1. _validate_uid(uid) — uid 有效性检查
-2. new_session_id() — 生成唯一 session_id
-3. delivery_address 默认 "12345" (legacy compat)
-   ├─ TG 调用者: str(effective_chat.id)
-   ├─ WebUI: "" (空字符串)
-   └─ scheduled: "<scheduled>"
-4. INSERT ChatSession(uid, channel, delivery_address, ...)
+1. validate uid — uid 有效性检查
+2. 生成新 session_id（`sess_<uuid>`）
+3. delivery_address 默认值:
+   ├─ TG: str(telegram_chat_id)
+   ├─ WebUI: ""（空字符串）
+   └─ task: "<scheduled>"
+4. sessions_book.add(session_id, uid, channel, delivery_address, ...)
 ```
 
-### 追加消息 (append_messages) — D.22 通道守卫
+### 追加消息（`messages_book.add`）— D.22 通道守卫
 ```
-1. _validate_session_id + _validate_uid
-2. message role 校验 — 仅允许 _ALLOWED_MESSAGE_ROLES
+1. validate session_id + uid
+2. message role 校验 — 仅允许 user / assistant / system / tool
 3. 加载 session 行 → 不存在或 uid 不匹配 → SessionNotFoundError
-4. D.22 通道检查:
-   if channel is not None AND sess_row.channel AND sess_row.channel != channel:
+4. D.22 通道检查（写入者负责；读取不检查，同一用户可从 WebUI 浏览 TG 历史）:
+   if requested_channel is not None AND sess_row.channel AND sess_row.channel != requested_channel:
        → ChannelMismatchError (HTTP 403)
    └─ 空 channel (legacy 行) 不触发 — 写入者胜
-   └─ channel=None 跳过检查 (用于回填工具)
+   └─ channel=None 跳过检查（用于回填工具）
 5. 事务内: INSERT messages + UPDATE session.updated_at
 ```
 
@@ -116,13 +142,17 @@
 
 - **D.22**: 写入必须检查 channel 匹配，读取不检查（同一用户可从 WebUI 浏览 TG 历史）
 - 空/旧 session 的 channel 不拒绝写入（兼容 pre-D.22 数据）
-- `delivery_address` 列对 domain 代码不透明 — 只有 dispatcher/adapter 解释其值
+- `delivery_address` 列对 domain 代码不透明 — 只有 channel worker 在 `_deliver_*`
+  里解释其值（TG = telegram chat id；WebUI = ""；task = "<scheduled>"）
 
 ---
 
 ## 4. Telegram 入站消息
 
-**入口**: `magi/channels/telegram/bot.py::_on_message()`
+**入口**: `magi/channels/telegram/worker.py::_on_tg_message`
+（TelegramWorker 在 `start()` 里 `asyncio.gather(_run_inbound, _run_outbound)`，
+`_run_inbound` 起 `python-telegram-bot` `Application.start_polling`，并注册
+`MessageHandler(filters.ALL, _on_tg_message)`；旧 `bot.py::_on_message` 路径已删）
 
 ```
 1. 提取 tgid = str(update.effective_chat.id)
@@ -140,8 +170,15 @@
 
 4. 通过后:
    ├─ resolve_or_create_tg_session → 一个 TG 对话一个持久 session
-   ├─ SessionStore.append_messages(用户消息) → D.22 守卫
-   └─ publish AgentMessage(uid, session_id, channel="tg", caller_role=contact_role)
+   │   (`sessions_book.get_or_create_for_channel(uid, channel="tg",
+   │    delivery_address=tgid)`)
+   ├─ `bus.messages_book.add(session_id, role="user", text=text)` — 落 user
+     transcript（D.22 守卫在写入时执行）
+   └─ `bus.agent_job_board.publish(ChatJob(
+        kind="channel.message.received",
+        conversation_id=f"tg:{tgid}",
+        payload={"text": text, "channel": "tg", "uid": uid,
+                 "session_id": session_id, "caller_role": role})`
 ```
 
 **Contact.role 枚举 (2024 collapse)**:
@@ -154,44 +191,52 @@
 - `guest` 角色必须被拒绝 (不属于此 MAGI 服务范围,等待管理员提升)
 - `guest` 软自动创建时 admin 必须为 False
 - admin 必须能和 assigned 一样聊天 (不能退化为 v0 的 no-op)
-- 会话持久化必须在发布 `AgentMessage` 之前完成
+- 会话持久化（`messages_book.add`）必须在发布 `ChatJob` 到 `agent_job_board` 之前完成
 
 ---
 
-## 5. Channel Dispatcher — 出站消息路由
+## 5. Channel 出站消息路由
 
-**入口**: `magi/channels/dispatcher.py`
+**入口**: `magi/channels/worker_base.py::_claim_delivery_loop`
+（dispatcher.py 已删除；每个 channel worker 各自的 `_run` 拉起自己的 claim loop）
 
-### send_to_session(session_id, text)
+### 出站消息流（每个 channel worker 都遵循）
 ```
-1. 加载 ChatSession 行
-2. 如果是 WebUI → 直接追加消息到 session store (inline，无需 adapter)
-3. 其他通道 → 查找注册的 adapter → adapter.send(uid, text)
+ChannelWorker._claim_delivery_loop(deliver_fn, channel_label):
+  1. backpressure check（depth > settings["channels.delivery.max_queue_depth"]
+     默认 1000；超过 → 每 channel 每分钟 1 次 warning + 5× poll_seconds 休眠）
+  2. delivery_job_board.claim() — 跨 channel FIFO（无 channel filter）
+  3. 检查 job.channel == 本 channel_label；不是则 release 给其他 worker
+  4. deliver_fn(job) — 实际投递（TG 走原始 HTTP send_text_raw；
+     WebUI 写 messages_book；A2A 走 send_a2a_delivery；Task 走 …）
+  5. delivery_job_board.submit_result(DeliveryResult(success, error))
+  6. 异常 → submit_result(success=False, error=str(exc)[:1024])
+     （**不**自己重试；BaseJobBoard._claim 负责 lease 过期后 re-lease，
+     上限 MAX_ATTEMPTS=3）
 ```
 
-### send_to_uid(uid, channel, text)
-```
-1. 查找注册的 adapter
-2. adapter.lookup_im_id(uid) → 无绑定则 RuntimeError
-3. adapter.send(uid, text)
-```
+（旧 ``send_to_session`` / ``send_to_uid`` dispatcher 路径已删除。
+v3 下没有 dispatcher.py；每个 channel worker 直接从
+``delivery_job_board`` 拉本 channel 的 job 自己投递。）
 
-### TG Adapter 发送 (magi/channels/telegram/adapter.py)
+### TG 出站实际投递 (magi/channels/telegram/worker.py::_deliver_tg)
 ```
-TelegramAdapter.send(uid, text):
-  ├─ lookup_im_id(uid) → Contact.telegram_id
-  └─ send_text_auto(chat_id_int, text)
+TelegramWorker._deliver_tg(job: DeliveryJob):
+  ├─ bus.settings_book.get("telegram.bot_token")
+  ├─ chat_id = int(job.destination)
+  ├─ text = job.payload["text"]
+  └─ channels.telegram.bot.send_text_raw(token, chat_id, text)
       └─ 走原始 HTTP (非 bot.send_message)
       └─ 原因: bot 实例绑定 daemon 线程的 event loop，
-         从 WebUI 的 loop 调用会静默丢弃
+         从非-daemon loop 调用会静默丢弃
 ```
 
 **不可改的守卫**:
 
-- WebUI 路径**不走 adapter**（直接写 session store，用户 inline 看到）
-- TG adapter 的 `send()` **必须走原始 HTTP**（`send_text_auto`），不能用 `bot.send_message`
-- Adapter 在 import 时自注册，在 dispatcher 首次调用时懒加载
-- Domain 代码（tools/runner/webui api）绝不直接读 `delivery_address` 或调用 adapter
+- WebUI 路径**不走 adapter**（`webui` worker 直接写 `messages_book`，用户 inline 看到）
+- TG `TelegramWorker._deliver_tg` **必须走原始 HTTP**（`send_text_raw`），不能用 `bot.send_message`
+- Channel worker 在 composition root 启动时一次性 `start()`（不再是 dispatcher 自注册 + 懒加载）
+- Domain 代码（tools/runner/webui api）绝不直接读 `delivery_address` 或调 channel worker
 
 ---
 
@@ -202,27 +247,63 @@ TelegramAdapter.send(uid, text):
 1. 角色门: admin 或 assigned → 可创建
 2. 创建 ChatSession(channel="task", delivery_address="<scheduled>")
 3. INSERT task 行，关联 session_id
-4. 注册到 apscheduler (cron/interval)
+4. cron 字段由 croniter 校验（不再是 apscheduler）；run_at 由
+   ``validate_run_at`` 规范化到 UTC trailing-Z ISO
 ```
 
-### 执行 (magi/channels/tasks/runner.py::execute_task)
+### 执行 (magi/channels/tasks/worker.py::TaskWorker._run)
 ```
-1. 加载 Task 行 + Contact 凭证
-   └─ 无 session_id 的旧行 → 首次触发时分配
-2. 追加 prompt 为新的用户消息到 task 的 session
-3. publish AgentMessage(uid, session_id, channel="task")
-4. Agent 的 send_message 工具通过 dispatcher 推送到指定通道
-   └─ 跑者不绑定回调 — 路由完全由工具内部处理
-5. 拉取最新 token_usage → 写入 TaskRun
-6. 失败处理: consecutive_failures++ → 超阈值 → 禁用任务 + 创建 ActionItem
+1. _rehydrate() — 启动时从 tasks_book 读所有 enabled task 状态
+2. _reap_stale_runs() — 调 task_runs.reap_stale(older_than_seconds=300)
+   把超时未收尾的 running 行翻成 failed（"abandoned by previous worker"）
+3. 轮询:
+   ├─ run_task_job_board.claim() — 手动 / API / tool 触发
+   │  └─ _handle_run_task_job(rj) → _fire_task(task, fired_by=rj.fired_by, ...)
+   │     └─ rj.fired_by ∈ {cron_tick, run_at_consume, api_manual_run,
+   │                       schedule_task_tool}（closed set）
+   └─ tasks_book.list_all_enabled_for_workers() — cron / run_at tick
+      ├─ _should_fire(task, now) — cron 用 get_prev(now) 比 _next_fire 缓存；
+      │  run_at 用 _next_fire[task.id] 一次性 fire 后置位
+      └─ _fire_task(task, fired_by="cron_tick" / "run_at_consume")
+         └─ run_at 成功后 → tasks_book.mark_run_at_consumed(task_id=task.id)
+            （enabled=0；一次性任务绝不二次触发）
+4. _fire_task:
+   ├─ tasks_book.record_run_start(task_id, trigger=fired_by) — 写 task_runs
+   │  + tasks.last_run_at
+   ├─ 追加 contextual prompt 为 user 消息到 task 的 session
+   ├─ publish ChatJob(kind="task.triggered", payload={...}) → agent_job_board
+   └─ AgentWorker._process → 完成后通过 delivery_job_board 投递回复
+5. 失败处理: tasks_book.record_run_end("failed") 持久化 consecutive_failures
+   + last_error（上限 9999）；超阈值 → 禁用任务 + 创建 ActionItem
+```
+
+### 手动 / tool 触发 — `runTaskJob` 板（v3 唯一入口）
+```
+入口: bus.run_task_job_board.publish(RunTaskJob(task_id, manual=True,
+                                                 fired_by, session_id, uid))
+      ├─ WebUI "立即运行" 按钮: fired_by="api_manual_run"
+      └─ schedule_task LLM tool 创建 one-shot 后回灌: fired_by="schedule_task_tool"
+
+TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_run_start
+→ ChatJob 投递 → AgentWorker 跑 → 完成后 _fire_task 写 run_id + tasks_book.record_run_end
+
+历史路径（已删除，不可用）:
+  - TaskChannel.dispatch — 已被 publish RunTaskJob 取代
+  - scheduler.submit_now — apscheduler 已删
 ```
 
 **不可改的守卫**:
 
 - task session 的 channel 必须是 `"task"`（不是 tg/webui）
-- 跑者不绑定 TG 回调 — 发送由 agent 的 send_message 工具通过 dispatcher 完成
+- TaskWorker 通过 chat_job_board 发布任务消息，AgentWorker 消费；
+  TaskWorker 不直接调用 Agent.run / 不绑定回调
 - 连续失败超阈值必须禁用任务（防止 API key 被无效任务烧光）
-- 跑者运行在独立 event loop（`TaskScheduler`），不与 FastAPI 共享
+- TaskWorker 的 cron 循环跑在主 event loop（与 FastAPI 共享），
+  apscheduler 依赖已删除（tasksBook.py 行 809 明确 "no apscheduler dependency"）
+- 一次性 `run_at` 任务 fire 后必须 `mark_run_at_consumed`，否则下一次轮询会再次触发
+- runTaskJob 板的 `fired_by` 是 closed set — 任何新值都必须先在 TaskWorker
+  注册分支再加 publish，否则会被静默吞掉
+- 任何手动 / tool 触发**只能**走 runTaskJob 板 — 禁止直接调 `_fire_task`
 
 ---
 
@@ -268,7 +349,9 @@ POST /save-admin { tgids: list[str] }
 
 **不可改的守卫**:
 
-- verify-admin **不能走 dispatcher**（此时尚无 Contact 行，uid→im_id 映射不存在）
+- verify-admin 走原始 HTTP（`send_text_raw`），**不能**经任何 channel worker claim loop
+  —— 此时尚无 Contact 行，uid→im_id 映射不存在，dispatcher / worker
+  路径都会失败
 - 验证码必须先存后发，发送失败回滚删除
 - 验证码一次性使用：任何校验路径（成功/不匹配/过期）都必须 state_delete
 - save_admin 是唯一写入 admin Contact 的地方，必须幂等
@@ -280,8 +363,9 @@ POST /save-admin { tgids: list[str] }
 ### 两步骤登录
 ```
 1. POST /auth/send-login-code { uid }
-   └─ 通过 dispatcher 向 uid 绑定的通道发送 6 位码
-   └─ 5 分钟 TTL / 60s 冷却
+   └─ 通过 delivery_job_board.publish(DeliveryJob(channel, destination, ...)) →
+     对应 channel worker claim loop → 原始 HTTP 发送 6 位码
+   └─ 5 分钟 TTL / 60s 冷却（settings_book 持久化）
 
 2. POST /auth/verify-login-code { uid, code }
    └─ 匹配 → 设置 magi_session cookie = sign_uid(uid)
@@ -393,21 +477,23 @@ manage tools 路径 (magi.tools.mcp.*):
 
 ## 12. 压缩 (Compaction)
 
-**入口**: `magi/agent/compaction.py::maybe_compact()`
+**入口**: `magi/agent/compaction.py::maybe_compact(uid, session_id, messages, bus=None)`
 
 ```
 触发条件: estimate_messages_tokens(messages) > context_window * threshold_pct%
-  └─ 配置项: Settings → Agent 设置 → 压缩阈值
+  └─ 配置项（new_bus 路径）: settings_book.get("compaction.{context_window,
+     threshold_pct, keep_tail}")；Phase 1 默认 200_000 / 80% / 8
 
 压缩流程:
-  1. 调用 LLM 生成旧消息摘要 (compaction prompt)
-  2. 归档旧消息: UPDATE chat_messages SET archived=1
-  3. 在 messages[0] 插入 "[Prior conversation summary] 摘要"
-  4. 保留最近 K 条消息为活跃 (active_tail_count)
-  5. 失败 → 吞掉，本轮不压缩（不阻塞对话）
+  1. 调 LLM 生成旧消息摘要（compact prompt；call_llm_for_summary 通过
+     llm_job_board.publish / get_result）
+  2. 归档旧消息: messages_book.add(role="user", ...) 一行 summary 替代；
+     保留最近 K 条活跃
+  3. messages[:] = [summary_msg] + messages[-keep:]
+  4. 失败 → 吞掉，本轮不压缩（不阻塞对话）
 
 FTS5 搜索:
-  └─ 搜索活跃消息 (默认) + 可选 include_archived=true
+  └─ 搜索活跃消息 (默认 include_archived=False) + 可选 include_archived=true
   └─ 归档行仅供取证
 ```
 

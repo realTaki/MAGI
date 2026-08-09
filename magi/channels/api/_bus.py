@@ -42,6 +42,26 @@ class _Settings:
     def delete(self, key: str) -> bool:
         return _new().settings_book.delete(key=key)
 
+    # --- legacy aliases (magi.bus.Bus.settings used method names not present
+    # on the new SettingsBook; map them so existing callers keep working).
+
+    def compaction_policy(self):
+        sb = _new().settings_book
+        if hasattr(sb, "compaction_policy"):
+            return sb.compaction_policy()
+        window = int(sb.get("compaction.context_window") or 200000)
+        pct = int(sb.get("compaction.threshold_pct") or 80)
+        keep = int(sb.get("compaction.keep_tail") or 8)
+        return (window, pct, keep)
+
+    def show_daily_note(self) -> bool:
+        raw = _new().settings_book.get("system.show_daily_note")
+        return raw is not None and raw.lower() in ("true", "1", "yes", "on")
+
+    def show_daily_note_prompt(self) -> bool:
+        raw = _new().settings_book.get("system.show_daily_note_prompt")
+        return raw is not None and raw.lower() in ("true", "1", "yes", "on")
+
 
 class _Contacts:
     def get(self, uid: int):
@@ -77,6 +97,23 @@ class _Session:
 
     def __getattr__(self, name: str):
         return getattr(_new().sessions_book, name)
+
+
+class _Memory:
+    """[claude, 2026-08-08] memory facade.
+
+    Old bus used ``memory.list_for_owner(uid)``; new bus renamed to
+    ``memory_book.list_by_owner(uid=...)``. Map both directions.
+    """
+
+    def list_for_owner(self, *, uid: int, **kw):
+        return _new().memory_book.list_by_owner(uid=uid, **kw)
+
+    def list_by_owner(self, *, uid: int, **kw):
+        return _new().memory_book.list_by_owner(uid=uid, **kw)
+
+    def __getattr__(self, name: str):
+        return getattr(_new().memory_book, name)
 
 
 class _TaskScheduler:
@@ -141,42 +178,100 @@ class _Auth:
 
 
 class _Magic:
-    """Magic/MAGIS registry ops via bus books."""
-    def list_available_magic(self):
-        nb = _new()
-        if hasattr(nb, "magis_book"):
-            return nb.magis_book.list_available()
-        return []
+    """Magic/MAGIS registry ops via bus books.
 
-    def list_magic(self, **kw):
-        nb = _new()
-        if hasattr(nb, "magis_book"):
-            return nb.magis_book.list_all(**kw)
-        return []
+    The facade aggregates three Books (magis / membership / magis_admin).
+    ``__getattr__`` routes unknown names by prefix:
 
-    def set_runtime(self, magic_id, **kw):
-        nb = _new()
-        if hasattr(nb, "magis_book"):
-            return nb.magis_book.set_runtime(magic_id, **kw)
-        raise NotImplementedError("magis_book.set_runtime")
+    - ``instruction_*`` / ``*membership`` / ``*role``      → membership_book
+    - ``*admin*`` (when name has "admin" token)          → magis_admin_book
+    - everything else                                    → magis_book
 
-    def ensure_runtime(self, magic_id):
+    Missing methods raise :class:`AttributeError`; the API caller
+    then surfaces a 5xx with the underlying method name — better
+    than silently forwarding to the wrong book.
+    """
+
+    # --- explicit membership routes ---------------------------------------
+
+    def instruction_context(self, *, magic_id: int):
         nb = _new()
-        if hasattr(nb, "magis_book"):
-            return nb.magis_book.ensure_runtime(magic_id)
-        raise NotImplementedError("magis_book.ensure_runtime")
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.instruction_context(magic_id=magic_id)
+        raise AttributeError("membership_book unavailable")
+
+    def list_memberships(self, magic_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.list_for_magis(magis_id=magic_id, **kw)
+        raise AttributeError("membership_book unavailable")
+
+    def create_membership_in_magis(self, *, magis_id: int, role_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.add(magis_id=magis_id, role_id=role_id, **kw)
+        raise AttributeError("membership_book unavailable")
+
+    def delete_membership_in_magis(self, *, magis_id: int, magi_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.remove(magi_id=magi_id, **kw)
+        raise AttributeError("membership_book unavailable")
+
+    def list_roles_in_magis(self, *, magis_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.list_for_magis(magis_id=magis_id, **kw)
+        raise AttributeError("membership_book unavailable")
+
+    def create_role_in_magis(self, *, magis_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "membership_book"):
+            return nb.membership_book.add(magis_id=magis_id, **kw)
+        raise AttributeError("membership_book unavailable")
+
+    # --- admin routes ------------------------------------------------------
+
+    def list_admins(self, *, magis_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "magis_admin_book"):
+            return nb.magis_admin_book.list_for_magis(magis_id=magis_id, **kw)
+        raise AttributeError("magis_admin_book unavailable")
+
+    def delete_admin_in_magis(self, *, uid: int, magis_id: int, **kw):
+        nb = _new()
+        if hasattr(nb, "magis_admin_book"):
+            return nb.magis_admin_book.remove(uid=uid, magis_id=magis_id, **kw)
+        raise AttributeError("magis_admin_book unavailable")
+
+    def is_control_admin(self, *, uid: int):
+        nb = _new()
+        if hasattr(nb, "magis_admin_book"):
+            return nb.magis_admin_book.is_admin_for(uid=uid)
+        raise AttributeError("magis_admin_book unavailable")
+
+    # --- generic __getattr__ ----------------------------------------------
 
     def __getattr__(self, name: str):
         nb = _new()
-        if hasattr(nb, "magis_book"):
-            return getattr(nb.magis_book, name)
-        raise AttributeError(f"magis_book has no {name}")
+        # Token-based routing: pick the right Book by the name's tokens.
+        if any(tok in name for tok in ("membership", "role", "instruction")):
+            book_name = "membership_book"
+        elif "admin" in name:
+            book_name = "magis_admin_book"
+        else:
+            book_name = "magis_book"
+        book = getattr(nb, book_name, None)
+        if book is None:
+            raise AttributeError(f"{book_name} unavailable")
+        return getattr(book, name)
 
 
 class _Bus:
     settings: _Settings
     contacts: _Contacts
     session: _Session
+    memory: _Memory
     task_scheduler: _TaskScheduler
     agent_runs: _AgentRuns
     stream_hub: _StreamHub
@@ -187,6 +282,7 @@ class _Bus:
         object.__setattr__(self, "settings", _Settings())
         object.__setattr__(self, "contacts", _Contacts())
         object.__setattr__(self, "session", _Session())
+        object.__setattr__(self, "memory", _Memory())
         object.__setattr__(self, "task_scheduler", _TaskScheduler())
         object.__setattr__(self, "agent_runs", _AgentRuns())
         object.__setattr__(self, "stream_hub", _StreamHub())
