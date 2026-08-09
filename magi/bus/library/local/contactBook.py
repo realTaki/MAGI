@@ -22,6 +22,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     String,
@@ -70,6 +71,7 @@ class Contact:
     display_name: str | None = None
     role: str = ROLE_GUEST
     telegram_id: int | None = None
+    admin: bool = False
     last_seen_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -121,6 +123,7 @@ class _ContactRow(Base):
     display_name: Mapped[str | None] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, nullable=False
     )
@@ -277,6 +280,96 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 reverse=True,
             )
             return [self._row_to_dto(r) for r in name_rows[:limit]]
+
+    def list_admins(self) -> list[Contact]:
+        """Return all contacts with ``admin=True``."""
+        with self._session() as s:
+            rows = s.scalars(
+                select(_ContactRow)
+                .where(_ContactRow.admin == True)
+                .order_by(_ContactRow.id)
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
+
+    def upsert_first_admin(self, *, name: str) -> int:
+        """Create or rename the first admin contact row.
+
+        Returns the contact ``id``. On first call, creates a new
+        row with ``admin=True, role='assigned'``. On subsequent
+        calls, renames the existing first admin row so chat
+        history survives a re-entered wizard.
+        """
+        normalized = (name or "").strip()
+        if not normalized:
+            raise ValueError("name is required")
+        with self._session() as s:
+            existing = s.scalars(
+                select(_ContactRow)
+                .where(_ContactRow.admin == True)
+                .order_by(_ContactRow.id)
+            ).first()
+            if existing is not None:
+                existing.name = normalized
+                existing.display_name = normalized
+                s.commit()
+                s.refresh(existing)
+                return existing.id
+            row = _ContactRow(
+                name=normalized,
+                display_name=normalized,
+                role=ROLE_ASSIGNED,
+                admin=True,
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+            return row.id
+
+    def replace_admin_set(
+        self, pairs: list[tuple[int, str | None]]
+    ) -> list[int]:
+        """Replace the admin contact set with *pairs*.
+
+        Each element of *pairs* is ``(telegram_id, display_name)``.
+        Contacts whose bound TG chat is in *pairs* are upserted
+        with ``admin=True``; existing admins not in *pairs* have
+        ``admin`` cleared. Returns the list of resulting admin
+        contact ids in input order.
+        """
+        tg_ids = {tg_id for tg_id, _ in pairs}
+        result_ids: list[int] = []
+        with self._session() as s:
+            # Demote existing admins not in the new set
+            old_admins = s.scalars(
+                select(_ContactRow).where(_ContactRow.admin == True)
+            ).all()
+            for row in old_admins:
+                if row.telegram_id not in tg_ids:
+                    row.admin = False
+            # Upsert each new admin
+            for tg_id, display_name in pairs:
+                row = s.scalar(
+                    select(_ContactRow).where(
+                        _ContactRow.telegram_id == tg_id
+                    )
+                )
+                if row is not None:
+                    row.admin = True
+                    if display_name:
+                        row.display_name = display_name
+                else:
+                    row = _ContactRow(
+                        name=display_name or f"Admin {tg_id}",
+                        display_name=display_name,
+                        role=ROLE_ASSIGNED,
+                        telegram_id=tg_id,
+                        admin=True,
+                    )
+                    s.add(row)
+                s.flush()
+                result_ids.append(row.id)
+            s.commit()
+        return result_ids
 
 
 class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):

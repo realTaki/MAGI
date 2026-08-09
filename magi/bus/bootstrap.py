@@ -331,7 +331,7 @@ def _bootstrap_with_dirs(
     _workspace_dir = Path(state_dir).parent
     _prompts_dir = _resolve_prompts_dir(prompts_dir)
     if _prompts_dir is not None:
-        prompt_shelf = FileShelf(_prompts_dir)
+        prompt_shelf = FileShelf(_prompts_dir, create_root=False)
         prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
 
         # Seed SOUL.md into the workspace if missing.
@@ -450,10 +450,13 @@ def _resolve_prompts_dir(prompts_dir: str | None) -> Path | None:
         return Path(prompts_dir)
 
     # Auto-detect: ``magi/prompts/`` relative to the magi package root.
+    # We check for ``soul.md`` (the one file every valid prompts bundle
+    # must contain) instead of just ``is_dir()`` to avoid picking up
+    # empty or bogus directories on ``sys.path``.
     try:
         import magi
         candidate = Path(magi.__file__).resolve().parent / "prompts"
-        if candidate.is_dir():
+        if candidate.is_dir() and (candidate / "soul.md").exists():
             return candidate
     except Exception:
         pass
