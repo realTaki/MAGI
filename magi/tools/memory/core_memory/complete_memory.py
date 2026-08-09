@@ -66,21 +66,22 @@ class CompleteMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return ToolResult.err(
                 f"memory_id must be int, got {type(memory_id).__name__}"
             )
-        ct_id = int(ctx.uid)
+        ct_id = int(ctx.contact_id)
         # Strict per-contact privacy — auth lives at the
         # tool layer, not in the Book. ``MemoryBook.complete``
         # is a pure data write; we ``get`` + check
-        # ``row.uid == caller`` before any write fires.
+        # ``row.contact_id == caller`` before any write fires.
         # The TOCTOU window is acceptable for the
         # single-writer chat tool (same comment as
         # ``complete_action_item``).
         existing = ctx.bus.memory_book.get(memory_id=memory_id)
-        if existing is None or existing.uid != ct_id:
+        if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or "
                 f"not owned by the calling operator"

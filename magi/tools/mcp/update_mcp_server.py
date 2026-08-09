@@ -150,6 +150,7 @@ class UpdateMcpServerTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult.err("missing required field: name")

@@ -22,7 +22,7 @@ Scope
 Same per-contact scope as the WebUI's ``/api/chat/search``:
 the calling operator's ``Contact.id`` (resolved by the
 agent loop from the ``magi_session`` cookie on every call).
-The SQL filter scopes by ``chat_sessions.uid``;
+The SQL filter scopes by ``chat_sessions.contact_id``;
 channel and per-channel delivery address are not part of the search predicate.
 
 Output format
@@ -60,7 +60,7 @@ Bus plumbing
 All business logic lives on the bus; this tool is
 just the LLM-facing text formatter:
 
-- :meth:`MessageBook.search` — the FTS5 query (uid-scoped).
+- :meth:`MessageBook.search` — the FTS5 query (contact_id-scoped).
 - :meth:`SessionBook.get_for_owner` — single cross-contact
   safety gate (returns ``None`` for sessions that don't
   belong to the caller).
@@ -79,7 +79,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.library.local.sessionBook import (
+from magi.bus.library.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
@@ -164,6 +164,7 @@ class SearchSessionsTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         q = kwargs.get("q")
         if not isinstance(q, str) or not q.strip():
             return ToolResult(
@@ -196,17 +197,17 @@ class SearchSessionsTool(Tool):
             )
         limit = max(1, min(limit, _MAX_HITS))
 
-        # Scope: the calling operator's uid. Cross-
-        # platform: every session row whose ``uid``
+        # Scope: the calling operator's contact_id. Cross-
+        # platform: every session row whose ``contact_id``
         # matches — webui conversations AND any TG / future
         # IM conversations handled by that operator all
         # match. Channel and per-channel delivery address
         # are not part of the search predicate.
-        uid = ctx.uid
+        contact_id = ctx.contact_id
 
         try:
             hits, total = ctx.bus.messages_book.search(
-                uid=uid, q=q, limit=limit,
+                contact_id=contact_id, q=q, limit=limit,
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_sessions: {e}", is_error=True)
@@ -246,7 +247,7 @@ class SearchSessionsTool(Tool):
             block = _format_hit_block(
                 hit, context_n,
                 ctx.bus,
-                uid,
+                contact_id,
             )
             block_bytes = len(block.encode("utf-8"))
             if bytes_used + block_bytes > _MAX_OUTPUT_BYTES:
@@ -261,7 +262,7 @@ class SearchSessionsTool(Tool):
 
         header = (
             f"search_sessions: q={q!r}, {total} match(es) "
-            f"scoped to uid={uid}; "
+            f"scoped to contact_id={contact_id}; "
             f"returning {len(blocks)} of {len(hits)} hit(s) "
             f"with ±{context_n} message context each\n"
         )
@@ -276,7 +277,7 @@ class SearchSessionsTool(Tool):
         return ToolResult(content=header + body + footer)
 
 
-def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
+def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> str:
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
@@ -289,7 +290,7 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
     formatter over the same ``ResolvedHit`` envelope.
     """
     resolved = bus.messages_book.resolve_hit(
-        uid=uid, hit=hit, context_n=context_n,
+        contact_id=contact_id, hit=hit, context_n=context_n,
         sessions_book=bus.sessions_book,
     )
     if resolved is None:
@@ -297,15 +298,15 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, uid: int) -> str:
         # the row was deleted between FTS and read). Emit
         # a generic placeholder rather than leak metadata.
         return (
-            f"[hit] session={hit.session_id}, ts={hit.ts}, "
+            f"[hit] session={hit.conversation_id}, ts={hit.ts}, "
             f"role={hit.role}, channel={hit.channel}, "
             f"delivery_address={hit.delivery_address} — "
             f"session no longer accessible to caller"
         )
 
     header = (
-        f"[hit] session={resolved.session.session_id}, "
-        f"title={resolved.session.title!r}, ts={hit.ts}, "
+        f"[hit] session={resolved.conversation.conversation_id}, "
+        f"title={resolved.conversation.title!r}, ts={hit.ts}, "
         f"role={hit.role}, channel={hit.channel}, "
         f"delivery_address={hit.delivery_address}"
         + (" (archived)" if resolved.is_archived else "")

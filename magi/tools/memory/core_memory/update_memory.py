@@ -3,7 +3,7 @@ by id.
 
 The LLM finds the id via the system-prompt block
 ("memory id 17 says …"). Mutable fields only — ``kind``
-and ``uid`` are intentionally not editable to keep the
+and ``contact_id`` are intentionally not editable to keep the
 row's identity stable across edits.
 
 Strict per-contact privacy: a tool call from operator A
@@ -49,7 +49,7 @@ class UpdateMemoryTool(Tool):
         "Patch an existing memory row by id. Use when the operator "
         "says '更新 X' / '改成 ...' / 'the deadline is now 10/15'. "
         "Mutable: subject, body, priority. Immutable: kind, "
-        "uid (delete + re-add if you really need to change "
+        "contact_id (delete + re-add if you really need to change "
         "those)."
     )
     input_schema = {
@@ -72,20 +72,21 @@ class UpdateMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return ToolResult.err(
                 f"memory_id must be int, got {type(memory_id).__name__}"
             )
-        ct_id = int(ctx.uid)
+        ct_id = int(ctx.contact_id)
         # Strict per-contact privacy — auth lives at the
         # tool layer, not in the Book. ``MemoryBook.update``
         # is a pure data write; we ``get`` + check
-        # ``row.uid == caller`` before any write fires.
+        # ``row.contact_id == caller`` before any write fires.
         # Same TOCTOU comment as the action-item /
         # complete-memory tools.
         existing = ctx.bus.memory_book.get(memory_id=memory_id)
-        if existing is None or existing.uid != ct_id:
+        if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or "
                 f"not owned by the calling operator"

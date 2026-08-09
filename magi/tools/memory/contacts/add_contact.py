@@ -96,6 +96,7 @@ class AddContactTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
             return ToolResult.err("name is required (non-empty string)")

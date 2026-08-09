@@ -66,6 +66,7 @@ class AddContactNoteTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         contact_id = kwargs.get("contact_id")
         note = kwargs.get("note")
         if not isinstance(contact_id, int):

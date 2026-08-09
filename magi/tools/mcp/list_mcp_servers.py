@@ -35,6 +35,7 @@ class ListMcpServersTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **_kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         rows = ctx.bus.mcp_servers_book.list_all()
 
         if not rows:

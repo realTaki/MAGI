@@ -111,6 +111,7 @@ class AddMemoryTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         # Shape translation — kwargs → typed
         # :meth:`MemoryBook.add` arguments. The Book
         # owns the write invariants (subject non-empty

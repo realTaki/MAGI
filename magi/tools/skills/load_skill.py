@@ -85,6 +85,7 @@ class LoadSkillTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult(content="name is required", is_error=True)
@@ -94,6 +95,11 @@ class LoadSkillTool(Tool):
                 is_error=True,
             )
         book = ctx.bus.skills_book
+        if book is None:
+            return ToolResult(
+                content="skills are not available (skills_book not loaded)",
+                is_error=True,
+            )
         meta = book.get(name)
         if meta is None:
             # The LLM might guess. ``is_error=False`` so the model

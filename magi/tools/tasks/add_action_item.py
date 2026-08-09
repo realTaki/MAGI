@@ -2,7 +2,7 @@
 the calling operator.
 
 Umbrella term: "todo", "task", "记一下", "待办" — all map
-here. Creates one row per call (``uid=ctx.uid``). Re-calling
+here. Creates one row per call (``contact_id=ctx.contact_id``). Re-calling
 with the same title creates a *new* row — the operator
 may want two parallel action items with similar titles;
 we don't guess duplicates from a free-text title.
@@ -140,6 +140,7 @@ class AddActionItemTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         # Shape translation — turn kwargs into the typed
         # arguments :meth:`ActionItemBook.add` wants. The
         # Book owns the write invariants (non-empty title,
@@ -175,7 +176,7 @@ class AddActionItemTool(Tool):
 
         try:
             item = ctx.bus.action_items_book.add(
-                uid=int(ctx.uid),
+                contact_id=int(ctx.contact_id),
                 title=title,
                 description=description,
                 target_url=target_url,
@@ -197,6 +198,6 @@ class AddActionItemTool(Tool):
         logger.info(
             "add_action_item: item %s created for contact=%s "
             "title=%r source=%r",
-            item.id, ctx.uid, title, source,
+            item.id, ctx.contact_id, title, source,
         )
         return ToolResult.ok({"created": item.to_dict()})

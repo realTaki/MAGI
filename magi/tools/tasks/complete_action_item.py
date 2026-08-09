@@ -74,7 +74,10 @@ class CompleteActionItemTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         raw_id = kwargs.get("item_id")
+        if raw_id is None:
+            return ToolResult.err("item_id is required")
         try:
             item_id = int(raw_id)
         except (TypeError, ValueError):
@@ -84,17 +87,17 @@ class CompleteActionItemTool(Tool):
         # :meth:`ActionItemBook.complete` — we don't
         # re-check here.
 
-        ct_id = int(ctx.uid)
+        ct_id = int(ctx.contact_id)
         # Auth lives at the tool layer, not in the Book:
         # ``ActionItemBook.complete`` is a pure data write.
         # Strict per-contact privacy is enforced here by a
-        # ``get`` followed by a ``row.uid == caller`` check
+        # ``get`` followed by a ``row.contact_id == caller`` check
         # before any write fires. The TOCTOU window between
         # ``get`` and ``complete`` is fine for the
         # single-writer chat tool; a future tx-scoped guard
         # would tighten it for multi-writer surfaces.
         existing = ctx.bus.action_items_book.get(item_id=item_id)
-        if existing is None or existing.uid != ct_id:
+        if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"action item {item_id} not found or "
                 f"not owned by the calling operator"
@@ -103,7 +106,7 @@ class CompleteActionItemTool(Tool):
             row = ctx.bus.action_items_book.complete(
                 action_item_id=item_id,
                 note=note,
-                completed_by_uid=ct_id,
+                completed_by_contact_id=ct_id,
             )
         except ValueError as e:
             # ``note`` length invariant lives on the Book.

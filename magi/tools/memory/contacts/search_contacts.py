@@ -80,6 +80,7 @@ class SearchContactsTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None, "require_bus should have caught this"
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
             return ToolResult.err(
