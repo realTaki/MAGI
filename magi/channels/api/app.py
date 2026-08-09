@@ -108,9 +108,8 @@ def create_app(
     login/onboarding and MAGIS registry routes and never mounts React assets.
     The runtime remains an internal HTTP API for the one WebUI service.
 
-    [plan amendment §14.A.6]: ``start_telegram`` parameter removed.
-    TelegramWorker now owns TG lifecycle via Channel Workers, started/stopped
-    by _runtime_lifespan / worker_lifespan.
+    TelegramWorker lifecycle is owned by the injected RuntimeContext; this
+    application only serves HTTP with that already-created context.
     """
     # The MCP bootstrap is handled by the composition root in
     # ``magi.__main__``; the composition root owns the cross-package wiring.

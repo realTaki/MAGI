@@ -1,33 +1,20 @@
-"""EVA runtime identity must not create a second Genesis ADAM."""
+"""Runtime identity is read from a provisioned RuntimeSpec, never env aliases."""
 
 from __future__ import annotations
 
+import pytest
 
-def test_node_config_rejects_non_integer_runtime_id(monkeypatch):
-    from magi.__main__ import NodeConfig
-
-    monkeypatch.setenv("MAGI_RUNTIME_ID", "not-a-number")
-    try:
-        NodeConfig.from_env()
-    except ValueError as exc:
-        assert "MAGI_RUNTIME_ID" in str(exc)
-    else:
-        raise AssertionError("a non-integer MAGI_RUNTIME_ID must be rejected")
+from magi.startup.config import ConfigurationError
+from magi.startup.spec import load_runtime_spec
 
 
-def test_node_config_without_runtime_id_is_genesis(monkeypatch):
-    from magi.__main__ import NodeConfig
-
-    monkeypatch.delenv("MAGI_RUNTIME_ID", raising=False)
-    cfg = NodeConfig.from_env()
-    assert cfg.is_genesis is True
-    assert cfg.runtime_id is None
+def test_runtime_requires_a_persisted_spec(tmp_path):
+    with pytest.raises(ConfigurationError, match="not provisioned"):
+        load_runtime_spec(tmp_path / "eva-001")
 
 
-def test_node_config_with_runtime_id_is_not_genesis(monkeypatch):
-    from magi.__main__ import NodeConfig
-
-    monkeypatch.setenv("MAGI_RUNTIME_ID", "42")
-    cfg = NodeConfig.from_env()
-    assert cfg.is_genesis is False
-    assert cfg.runtime_id == "42"
+def test_runtime_rejects_invalid_persisted_spec(tmp_path):
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "runtime.json").write_text("not-json", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="invalid runtime specification"):
+        load_runtime_spec(tmp_path)

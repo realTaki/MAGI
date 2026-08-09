@@ -4,11 +4,9 @@ This endpoint is deliberately accept-then-process: after authentication and
 the short SQLite publish transaction it returns ``202``.  It never awaits an
 agent step or a tool result on the HTTP request stack.
 
-Bus selection: prefer :data:`magi.channels.get_current_bus` and publish
+Bus selection comes from the concrete request application's explicit BUS and publishes
 through ``agent_job_board`` / ``a2a_job_board`` (v2.0 boards; AgentWorker
-consumes the same ``chat_jobs`` table either way). Falls back to the
-legacy ``magi.bus`` singleton when Bus hasn't been wired (test /
-pre-cutover environments).
+consumes the same ``chat_jobs`` table either way).
 """
 
 from __future__ import annotations

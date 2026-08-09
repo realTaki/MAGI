@@ -288,8 +288,8 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         :class:`Contact` or ``None`` if no row matches.
 
         Required by ``magi/channels/telegram/adapter.py`` and
-        ``magi/channels/api/tg_bindings.py`` (both reach this through
-        the :mod:`magi.channels.api._bus` wrapper).
+        ``magi/channels/api/tg_bindings.py`` through their explicit BUS
+        dependency.
         """
         with self._session() as s:
             row = s.scalar(

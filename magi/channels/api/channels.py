@@ -3,7 +3,7 @@
 Channel enable/disable state lives in the ``settings`` table
 under key ``channels.enabled`` (a JSON array of
 :class:`Channel` values). Settings read/write now prefers
-bus via :mod:`magi.channels.api._bus`.
+bus via the concrete request application's explicit dependency.
 """
 
 from __future__ import annotations
