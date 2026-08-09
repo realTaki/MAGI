@@ -5,7 +5,7 @@
 #
 #  1. Verify the `magi` console script is on PATH (or invoke uv to
 #     install the package into a user venv).
-#  2. Materialise the data root under the OS-specific openclaw path:
+#  2. Print the data root under the OS-specific MAGI path:
 #       - Linux:   ~/.magi
 #       - macOS:   ~/Documents/.magi
 #       - Windows: ~/Documents/.magi  (resolved via $USERPROFILE)
@@ -49,20 +49,15 @@ else
   log "magi already installed: $(command -v magi)"
 fi
 
-# 2. Materialise the data root.
-
-mkdir -p "$DATA_ROOT/MAGIC" "$DATA_ROOT/MAGIS"
-log "data root ready at: $DATA_ROOT"
-
-# 3. Print the cheat sheet.
+# 2. Print the cheat sheet. `magi init` owns state materialisation.
 
 cat <<EOF
 
 [$(basename "$0")] Done. Three things you can do next:
 
-    magi cli start                # foreground-friendly one-shot; opens browser
-    magi cli install-service      # register systemd user unit (Linux only)
-    magi cli status               # show registered runtimes + port allocation
+    magi init                     # provision Genesis and eva-000
+    magi node run                 # launch eva-000 as a managed local process
+    magi webui run                # launch the singleton control service
 
 Optional environment overrides:
 

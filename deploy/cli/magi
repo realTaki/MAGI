@@ -1,23 +1,5 @@
 #!/usr/bin/env bash
-# Openclaw-style MAGI CLI wrapper for the single-machine CLI deployment.
-#
-# This is a thin shell front-end over the `magi` Python console script
-# that ships with the package. It only does two things:
-#
-#   1. Resolve the data root into the OS-specific openclaw path so
-#      `magi cli start` always finds the right on-disk layout.
-#   2. Forward all arguments to the underlying `magi` binary so the
-#      Python implementation remains the single source of truth.
-#
-# Each MAGI is an independent OS process. ``magi cli start`` bootstraps
-# once (first run) then becomes the MAGI runtime in the current process.
-# ``magi cli install-service`` registers one systemd unit per MAGI.
-#
-# Usage:
-#   deploy/cli/magi cli start          # run first MAGI (eva-000)
-#   deploy/cli/magi cli start --name eva-001  # run a specific MAGI
-#   deploy/cli/magi cli install-service       # systemd units for all
-#   deploy/cli/magi --help
+# Thin local launcher for the explicit MAGI CLI.
 set -euo pipefail
 
 resolve_data_root() {
@@ -26,25 +8,21 @@ resolve_data_root() {
     return
   fi
   case "$(uname -s)" in
-    Darwin)               printf '%s\n' "$HOME/Documents/.magi" ;;
+    Darwin) printf '%s\n' "$HOME/Documents/.magi" ;;
     MINGW*|MSYS*|CYGWIN*) printf '%s\n' "$USERPROFILE/Documents/.magi" ;;
-    *)                    printf '%s\n' "$HOME/.magi" ;;
+    *) printf '%s\n' "$HOME/.magi" ;;
   esac
 }
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-
 if command -v magi >/dev/null 2>&1; then
   MAGI_BIN="$(command -v magi)"
 elif [ -x "$SCRIPT_DIR/../../.venv/bin/magi" ]; then
   MAGI_BIN="$SCRIPT_DIR/../../.venv/bin/magi"
 else
-  echo "[magi] 'magi' is not on PATH. Run deploy/cli/install.sh first." >&2
+  echo "[magi] magi is not installed; run deploy/cli/install.sh first." >&2
   exit 127
 fi
 
 export HOST_WORKSPACE_DIR="$(resolve_data_root)"
-# The CLI Profile's first MAGIS is always Genesis (magis_id=1, slug="genesis"),
-# matching the K8s convention ``MAGIS/<magis_id>-<slug>/magis.db``.
-export MAGIS_DATABASE_URL="${MAGIS_DATABASE_URL:-sqlite:///$HOST_WORKSPACE_DIR/MAGIS/genesis-01/magis.db}"
 exec "$MAGI_BIN" "$@"

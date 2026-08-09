@@ -12,7 +12,7 @@ channel/API -> BUS Job Board -> worker -> external effect
                     +-- Books <----+-- durable result
 ```
 
-The composition root creates one `Bus` instance with `bootstrap_bus(...)` and
+The runtime composition root creates one `Bus` instance with `open_bus(...)` and
 injects it into workers. BUS owns local SQLite, optional MAGIS database access,
 file-backed prompt/skill Books, durable Job Boards, and the DTO boundary.
 

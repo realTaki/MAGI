@@ -8,7 +8,7 @@
 | **ADAM** | A manager-archetype MAGIC that owns the control-plane experience. |
 | **EVA** | A worker-archetype MAGIC that serves an assigned employee or workload. |
 | **BUS** | The sole durable application boundary, implemented by `magi.bus`. |
-| **Bus** | The process-local BUS facade created by `bootstrap_bus(...)`. |
+| **Bus** | The process-local BUS facade opened by `open_bus(...)`. |
 | **Book** | A BUS API for durable CRUD/query operations that returns DTOs or JSON-safe values. |
 | **Job Board** | A BUS API for durable `publish -> claim -> submit_result` workflows. |
 | **ChatJob** | Durable agent input from a channel, task, or A2A ingress. |

@@ -480,6 +480,56 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.commit()
             return True
 
+    def update(self, *, task_id: str, uid: int, **changes) -> Task | None:
+        """Update an owned user task and return its DTO.
+
+        The public Book owns ownership checks and the same write invariants as
+        ``add``; HTTP routes only translate request shapes to canonical task
+        fields.
+        """
+        allowed = {
+            "name", "prompt", "cron", "run_at", "delivery_to",
+            "target_channel", "enabled", "tz",
+        }
+        unknown = set(changes) - allowed
+        if unknown:
+            raise ValueError(f"unsupported task fields: {sorted(unknown)!r}")
+        with self._session() as s:
+            row = s.scalar(select(_TaskRow).where(
+                _TaskRow.id == task_id,
+                _TaskRow.uid == uid,
+                _TaskRow.source == SOURCE_USER,
+            ))
+            if row is None:
+                return None
+            values = {
+                "name": changes.get("name", row.name),
+                "prompt": changes.get("prompt", row.prompt),
+                "target_channel": changes.get("target_channel", row.target_channel),
+            }
+            self._validate_write_invariants(source=SOURCE_USER, **values)
+            for key, value in changes.items():
+                setattr(row, key, value)
+            if (row.cron is None) == (row.run_at is None):
+                raise ValueError("exactly one of cron or run_at must be set")
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def delete(self, *, task_id: str, uid: int) -> bool:
+        """Delete an owned user task without exposing a persistence session."""
+        with self._session() as s:
+            row = s.scalar(select(_TaskRow).where(
+                _TaskRow.id == task_id,
+                _TaskRow.uid == uid,
+                _TaskRow.source == SOURCE_USER,
+            ))
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+            return True
+
     def get_by_name(self, *, name: str) -> Task | None:
         """Lookup-by-name helper.
 

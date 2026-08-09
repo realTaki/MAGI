@@ -14,10 +14,11 @@ Use these names consistently:
 | Architecture boundary | BUS |
 | Public Python package | `magi.bus` |
 | Process-local facade | `Bus` |
-| Composition function | `bootstrap_bus(...)` |
+| Runtime composition function | `open_bus(...)` |
+| Storage provisioning function | `provision_node_storage(...)` |
 | Durable read/write APIs | Books and Job Boards |
 
-The package, facade, and bootstrap names in the table are the only supported
+The package and facade names in the table are the only supported
 names in code, tests, operational material, and user-facing documentation.
 
 ## Dependency direction
@@ -91,11 +92,12 @@ runtime fallback code.
 
 ## Runtime composition
 
-`magi.startup.runtime` resolves workspace and identity, calls
-`bootstrap_bus(...)`, initializes the process, injects the resulting `Bus` into
+`magi.startup.provision` explicitly creates topology and node storage.
+`magi.startup.runtime` then loads `RuntimeSpec`, calls `open_bus(...)`, and
+injects the resulting `Bus` into
 the provider, tool, MCP, agent, and channel workers, then manages their
-lifecycle. `magi.channels.get_current_bus()` is limited to channel adapter
-integration; new worker code receives `Bus` explicitly.
+lifecycle. API routes receive BUS through app-scoped FastAPI dependencies;
+there is no process-global BUS selection.
 
 ## Verification
 
