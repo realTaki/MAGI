@@ -13,29 +13,33 @@ from __future__ import annotations
 
 import os
 
-from magi.channels.api._bus import bus
+from magi.bus import Bus
 
 
-def _control():
-    """Resolve the bus MagisService that owns the control-plane KV."""
-    return bus.magis
+def _control(bus: Bus):
+    """Return the explicit settings Book for this control application."""
+    return bus.settings_book
 
 
 def enabled() -> bool:
     return bool(os.environ.get("MAGIS_DATABASE_URL"))
 
 
-def get(key: str) -> str | None:
-    return _control().control_setting_get(key)
+def get(bus: Bus, key: str) -> str | None:
+    return _control(bus).get(key=key)
 
 
-def set(key: str, value: str) -> None:
-    _control().control_setting_set(key, value)
+def set(bus: Bus, key: str, value: str) -> None:
+    _control(bus).set(key=key, value=value)
 
 
-def delete(key: str) -> None:
-    _control().control_setting_delete(key)
+def delete(bus: Bus, key: str) -> None:
+    _control(bus).delete(key=key)
 
 
-def list_prefix(prefix: str) -> dict[str, str]:
-    return _control().control_setting_list_prefix(prefix)
+def list_prefix(bus: Bus, prefix: str) -> dict[str, str]:
+    return {
+        setting.key: setting.value
+        for setting in _control(bus).list_all()
+        if setting.key.startswith(prefix)
+    }

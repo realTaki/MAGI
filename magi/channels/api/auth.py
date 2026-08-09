@@ -49,9 +49,10 @@ import httpx
 from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
+from magi.bus import Bus
 from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.channels.api import control_store
+from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
 
@@ -69,7 +70,7 @@ SESSION_COOKIE_NAME = "magi_session"
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
-def _signing_key() -> bytes:
+def _signing_key(bus: Bus) -> bytes:
     """Derive a signing key from the bootstrap-generated secret.
 
     The secret is stored in ``settings_book`` at key
@@ -81,7 +82,7 @@ def _signing_key() -> bytes:
         secret = os.environ.get("MAGI_CONTROL_SECRET")
         if secret:
             return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
-    raw = bus.settings.get("auth.signing_key")
+    raw = bus.settings_book.get(key="auth.signing_key")
     if raw:
         return hashlib.sha256(raw.encode() + b"magi-session-signing").digest()
     # Safety net: generate a one-off key if settings_book isn't
@@ -91,16 +92,16 @@ def _signing_key() -> bytes:
     return secrets.token_bytes(32)
 
 
-def _sign_uid(uid: int) -> str:
+def _sign_uid(bus: Bus, uid: int) -> str:
     """Return ``uid:timestamp:hmac`` signed token."""
     ts = str(int(datetime.now(timezone.utc).timestamp()))
     payload = f"{uid}:{ts}".encode()
-    sig = hmac.new(_signing_key(), payload, hashlib.sha256).hexdigest()[:16]
+    sig = hmac.new(_signing_key(bus), payload, hashlib.sha256).hexdigest()[:16]
     token = f"{uid}:{ts}:{sig}".encode()
     return urlsafe_b64encode(token).decode().rstrip("=")
 
 
-def _verify_signed_uid(token: str) -> int | None:
+def _verify_signed_uid(bus: Bus, token: str) -> int | None:
     """Return ``uid`` if the token is valid and not expired, else ``None``."""
     try:
         # Add padding back for base64 decode
@@ -117,7 +118,7 @@ def _verify_signed_uid(token: str) -> int | None:
             return None
         # Verify signature
         payload = f"{uid}:{ts}".encode()
-        expected = hmac.new(_signing_key(), payload, hashlib.sha256).hexdigest()[:16]
+        expected = hmac.new(_signing_key(bus), payload, hashlib.sha256).hexdigest()[:16]
         if not hmac.compare_digest(sig, expected):
             return None
         return uid
@@ -125,7 +126,7 @@ def _verify_signed_uid(token: str) -> int | None:
         return None
 
 
-def _sign_selected_session(*, magic_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
+def _sign_selected_session(bus: Bus, *, magic_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
     """Sign a browser session bound to exactly one selected MAGI.
 
     ``_sign_uid`` remains for compatibility with private-runtime tests and
@@ -139,18 +140,18 @@ def _sign_selected_session(*, magic_id: int, telegram_id: int, display_name: str
         "ts": int(datetime.now(timezone.utc).timestamp()),
     }
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
-    signature = hmac.new(_signing_key(), raw, hashlib.sha256).hexdigest()[:24]
+    signature = hmac.new(_signing_key(bus), raw, hashlib.sha256).hexdigest()[:24]
     return "v2." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
 
 
-def selected_session(token: str | None) -> dict[str, object] | None:
+def selected_session(bus: Bus, token: str | None) -> dict[str, object] | None:
     """Return the selected-MAGI browser session, if valid and unexpired."""
     if not token or not token.startswith("v2."):
         return None
     try:
         _version, body, signature = token.split(".", 2)
         raw = urlsafe_b64decode(body + "=" * (-len(body) % 4))
-        expected = hmac.new(_signing_key(), raw, hashlib.sha256).hexdigest()[:24]
+        expected = hmac.new(_signing_key(bus), raw, hashlib.sha256).hexdigest()[:24]
         if not hmac.compare_digest(signature, expected):
             return None
         payload = json.loads(raw)
@@ -163,7 +164,7 @@ def selected_session(token: str | None) -> dict[str, object] | None:
         return None
 
 
-def _super_admins() -> set[int]:
+def _super_admins(bus: Bus) -> set[int]:
     """Read the WebUI-admin allowlist as a set of contact ids.
 
     The identity is the **contact (uid), not the per-channel
@@ -180,10 +181,10 @@ def _super_admins() -> set[int]:
     the two concepts collided on the served user who is
     also an operator).
     """
-    bus = bus
     if control_store.enabled():
-        return {op.id for op in bus.magis.list_control_operators(admin_only=True)}
-    contacts = bus.contacts.list_admins()
+        admins = bus.magis_admins_book
+        return {admin.uid for admin in admins.list_for_magis(magis_id=1)} if admins else set()
+    contacts = bus.contacts_book.list_admins()
     return {contact.id for contact in contacts}
 
 
@@ -291,12 +292,11 @@ def _generate_code() -> str:
 _LOGIN_KEY = "auth.login_code"
 
 
-def _load_login_code(uid: int) -> dict | None:
-    bus = bus
+def _load_login_code(bus: Bus, uid: int) -> dict | None:
     raw = (
-        control_store.get(f"{_LOGIN_KEY}.{uid}")
+        control_store.get(bus, f"{_LOGIN_KEY}.{uid}")
         if control_store.enabled()
-        else bus.settings.get(f"{_LOGIN_KEY}.{uid}")
+        else bus.settings_book.get(key=f"{_LOGIN_KEY}.{uid}")
     )
     if not raw:
         return None
@@ -306,8 +306,7 @@ def _load_login_code(uid: int) -> dict | None:
         return None
 
 
-def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
-    bus = bus
+def _store_login_code(bus: Bus, uid: int, code: str, issued_at: datetime, expires_at: float) -> None:
     value = json.dumps(
         {
             "code": code,
@@ -317,17 +316,16 @@ def _store_login_code(uid: int, code: str, issued_at: datetime, expires_at: floa
         }
     )
     if control_store.enabled():
-        control_store.set(f"{_LOGIN_KEY}.{uid}", value)
+        control_store.set(bus, f"{_LOGIN_KEY}.{uid}", value)
     else:
-        bus.settings.set(f"{_LOGIN_KEY}.{uid}", value)
+        bus.settings_book.set(key=f"{_LOGIN_KEY}.{uid}", value=value)
 
 
-def _clear_login_code(uid: int) -> None:
-    bus = bus
+def _clear_login_code(bus: Bus, uid: int) -> None:
     if control_store.enabled():
-        control_store.delete(f"{_LOGIN_KEY}.{uid}")
+        control_store.delete(bus, f"{_LOGIN_KEY}.{uid}")
     else:
-        bus.settings.delete(f"{_LOGIN_KEY}.{uid}")
+        bus.settings_book.delete(key=f"{_LOGIN_KEY}.{uid}")
 
 
 # -- endpoints ---------------------------------------------------------
@@ -350,16 +348,18 @@ class TargetVerifyRequest(TargetLoginRequest):
     code: str = Field(min_length=6, max_length=6)
 
 
-async def _target_access(magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     """Call a target runtime before a browser identity exists.
 
     This is still authenticated service-to-service: ``operator_id=0`` marks
     the narrow pre-login capability, and the signature remains bound to the
     selected runtime id and exact path.
     """
-    bus = bus
     try:
-        base = bus.magis.runtime_url_for_magic(magic_id)
+        runtime = bus.eva_runtimes_book.get(runtime_id=magic_id) if bus.eva_runtimes_book else None
+        base = runtime.base_url if runtime else None
+        if not base:
+            raise RuntimeError("runtime unavailable")
     except RuntimeError as exc:
         raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
     headers = build_proxy_headers(

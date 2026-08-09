@@ -180,6 +180,42 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
+    def upsert(
+        self,
+        *,
+        runtime_id: int,
+        backend_kind: str,
+        backend_ref: str,
+        workspace_dir: str,
+        log_dir: str,
+        audit_log_path: str,
+        port: int | None,
+        base_url: str | None,
+    ) -> ControlRuntime:
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(select(_ControlRuntimeRow).where(_ControlRuntimeRow.runtime_id == runtime_id))
+            if row is None:
+                row = _ControlRuntimeRow(
+                    runtime_id=runtime_id, backend_kind=backend_kind,
+                    backend_ref=backend_ref, workspace_dir=workspace_dir,
+                    log_dir=log_dir, audit_log_path=audit_log_path, port=port,
+                    base_url=base_url, updated_at=now,
+                )
+                s.add(row)
+            else:
+                row.backend_kind = backend_kind
+                row.backend_ref = backend_ref
+                row.workspace_dir = workspace_dir
+                row.log_dir = log_dir
+                row.audit_log_path = audit_log_path
+                row.port = port
+                row.base_url = base_url
+                row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
 class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
     model_cls = _ControlPortAllocationRow
     dto_cls = PortAllocation

@@ -17,13 +17,16 @@ It does **not**:
 - Read or mutate environment variables at runtime.
 - Allow runtime-side port / host configuration (plan §21).
 
-Per plan §21, ``reload`` is decided by a single explicit env knob:
+Per plan §21, ``reload`` is mode-aware:
 
-- Unset (production default) — reload off
-- ``MAGI_DEV_RELOAD=1`` (set only by the development entry point) — reload on
+- Explicit ``MAGI_DEV_RELOAD=1`` → always on
+- Explicit ``MAGI_DEV_RELOAD=0`` → always off
+- Default (unset):
+  - CLI / local mode (no ``KUBERNETES_SERVICE_HOST``) → **on**
+  - K8s production (``KUBERNETES_SERVICE_HOST`` + ``MAGI_ENV=production``) → **off**
+  - K8s dev (``KUBERNETES_SERVICE_HOST`` without ``MAGI_ENV=production``) → **on**
 
-Operators cannot flip reload via the standard CLI. See
-:func:`_reload_enabled` for the implementation.
+See :func:`_reload_enabled` for the implementation.
 """
 
 from __future__ import annotations
@@ -137,10 +140,8 @@ async def _runtime_lifespan(
     magi_id: int | None = None,
 ):
     """Start one centrally-owned worker registry and stop it in reverse."""
-    from magi.channels import set_current_bus
     from magi.startup.workers import WorkerRegistry
 
-    set_current_bus(bus)
     registry = WorkerRegistry(bus, enabled_channels=channels, magi_id=magi_id)
     await registry.start()
     try:
@@ -191,8 +192,8 @@ async def _serve_runtime_api(
 ) -> None:
     """Serve the private Runtime FastAPI app in the active event loop.
 
-    Per plan §21 — host + port are hardcoded; reload is decided by the
-    deployment role, not by an operator-controlled env var.
+    Per plan §21 — host + port are hardcoded; reload is mode-aware
+    (CLI + K8s-dev default on, K8s production default off).
     """
     host = _RUNTIME_HOST  # internal host only; not externally exposed
     port = _startup.runtime_port
@@ -215,13 +216,34 @@ async def _serve_runtime_api(
 
 
 def _reload_enabled() -> bool:
-    """Reload toggle — opt-in via the development entry point.
+    """Mode-aware reload toggle.
 
-    Returns ``True`` only when :envvar:`MAGI_DEV_RELOAD` is explicitly
-    set to ``"1"`` by the development entry point. Production / operator
-    shells cannot flip reload via this knob.
+    Explicit ``MAGI_DEV_RELOAD=1`` / ``0`` always wins.
+    When unset, the default depends on the deployment mode:
+
+    * CLI / local (not in Kubernetes) → **on**
+    * K8s production (``MAGI_ENV=production``) → **off**
+    * K8s dev (no ``MAGI_ENV=production``) → **on**
     """
-    return os.environ.get("MAGI_DEV_RELOAD") == "1"
+    explicit = os.environ.get("MAGI_DEV_RELOAD")
+    if explicit == "1":
+        return True
+    if explicit == "0":
+        return False
+
+    # Default behaviour — mode-aware
+    from magi.startup.paths import is_kubernetes_mode
+
+    if not is_kubernetes_mode():
+        # CLI / local development → reload is helpful
+        return True
+
+    # In Kubernetes: production deploys set MAGI_ENV=production
+    if os.environ.get("MAGI_ENV") == "production":
+        return False
+
+    # K8s dev → reload on
+    return True
 
 
 def _log_level(bus: "Bus") -> str:

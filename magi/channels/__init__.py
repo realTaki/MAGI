@@ -28,25 +28,9 @@ from magi.bus.library.local.tasksBook import Channel
 if TYPE_CHECKING:
     from magi.bus import Bus
 
-# Adapter bridge: worker ownership is centralized in ``magi.startup``;
-# adapters may still need the process BUS selected by the composition root.
-_current_bus: "Bus | None" = None
-
-
-def set_current_bus(bus: "Bus") -> None:
-    global _current_bus
-    _current_bus = bus
-
-
-def get_current_bus() -> "Bus | None":
-    return _current_bus
-
-
 __all__ = [
     "base",
     "worker_base",
     "Channel",
     "ChannelWorker",
-    "set_current_bus",
-    "get_current_bus",
 ]

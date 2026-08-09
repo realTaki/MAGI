@@ -11,17 +11,43 @@ from magi.startup.paths import resolve_magis_database_path, resolve_magis_databa
 from magi.startup.spec import RuntimeSpec, write_runtime_spec
 
 
+def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port: int) -> None:
+    runtimes = bus.control_runtimes_book
+    if runtimes is None:
+        raise RuntimeError("MAGIS runtime registry unavailable")
+    workspace = config.workspace_dir
+    runtimes.upsert(
+        runtime_id=runtime_id,
+        backend_kind="local",
+        backend_ref=config.magi_name,
+        workspace_dir=str(workspace),
+        log_dir=str(workspace / "logs"),
+        audit_log_path=str(workspace / "logs" / "audit.log"),
+        port=port,
+        base_url=f"http://127.0.0.1:{port}",
+    )
+
+
 def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     """Provision the only allowed first node and its Genesis topology."""
     if config.magi_name != DEFAULT_MAGI_NAME or config.magis_database_url is not None:
         raise ConfigurationError("`magi init` only provisions the first eva-000 MAGI")
+    config.host_workspace_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("logs", "run"):
+        (config.host_workspace_dir / name).mkdir(parents=True, exist_ok=True)
     magis_url = resolve_magis_database_url(config.host_workspace_dir)
+    resolve_magis_database_path(config.host_workspace_dir).parent.mkdir(parents=True, exist_ok=True)
     bus = provision_node_storage(
         state_dir=str(config.workspace_dir / "memories"), magis_url=magis_url,
     )
     if bus._magis_factory is None:
         raise RuntimeError("MAGIS store was not provisioned")
     magi_id = _ensure_first_magi_identity(bus._magis_factory)
+    _register_local_runtime(bus=bus, runtime_id=magi_id, config=config, port=RUNTIME_PORT)
+    if bus.port_allocations_book is None:
+        raise RuntimeError("MAGIS port allocation service unavailable")
+    if bus.port_allocations_book.get(runtime_id=magi_id) is None:
+        bus.port_allocations_book.allocate(runtime_id=magi_id, port=RUNTIME_PORT)
     ensure_control_secret(resolve_magis_database_path(config.host_workspace_dir).parent / "control-secret")
     spec = RuntimeSpec(
         magi_name=DEFAULT_MAGI_NAME,
@@ -65,6 +91,9 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     port = next((candidate for candidate in range(RUNTIME_PORT + 1, RUNTIME_PORT + 100) if candidate not in used), None)
     if port is None:
         raise ConfigurationError("no local runtime port is available")
+    _register_local_runtime(
+        bus=control_bus, runtime_id=membership.id, config=config, port=port,
+    )
     ports.allocate(runtime_id=membership.id, port=port)
 
     node_config = replace(config, magis_database_url=magis_url, magi_id=str(membership.id))

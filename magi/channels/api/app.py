@@ -130,6 +130,16 @@ def create_app(
     app.state.bus = bus
     app.state.workers = workers
 
+    @app.middleware("http")
+    async def _bind_request_bus(request, call_next):
+        from magi.channels.api.context import bind_bus, reset_bus
+
+        token = bind_bus(request.app.state.bus)
+        try:
+            return await call_next(request)
+        finally:
+            reset_bus(token)
+
     # Install the i18n-ready error envelope BEFORE the
     # routers mount so :class:`MagiHTTPException` raised
     # anywhere in the app gets serialised as

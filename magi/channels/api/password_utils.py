@@ -41,6 +41,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Final
 
+from magi.bus import Bus
+
 # -- Hash parameters -------------------------------------------------------
 #
 # ``n=2**14`` is the cost factor. ``r=8`` and ``p=1`` are
@@ -159,9 +161,8 @@ class Attempt:
     """Unix timestamp of the last login attempt (any outcome)."""
 
 
-def _store_get(uid: int) -> dict | None:
-    from magi.channels.api._bus import bus
-    raw = bus.settings.get(f"{_PASSWORD_KEY_PREFIX}.{uid}")
+def _store_get(bus: Bus, uid: int) -> dict | None:
+    raw = bus.settings_book.get(key=f"{_PASSWORD_KEY_PREFIX}.{uid}")
     if not raw:
         return None
     try:
@@ -170,28 +171,26 @@ def _store_get(uid: int) -> dict | None:
         return None
 
 
-def _store_set(uid: int, value: dict) -> None:
-    from magi.channels.api._bus import bus
-    bus.settings.set(f"{_PASSWORD_KEY_PREFIX}.{uid}", json.dumps(value))
+def _store_set(bus: Bus, uid: int, value: dict) -> None:
+    bus.settings_book.set(key=f"{_PASSWORD_KEY_PREFIX}.{uid}", value=json.dumps(value))
 
 
-def _store_clear(uid: int) -> None:
-    from magi.channels.api._bus import bus
-    bus.settings.delete(f"{_PASSWORD_KEY_PREFIX}.{uid}")
+def _store_clear(bus: Bus, uid: int) -> None:
+    bus.settings_book.delete(key=f"{_PASSWORD_KEY_PREFIX}.{uid}")
 
 
 def _now_ts() -> float:
     return datetime.now(timezone.utc).timestamp()
 
 
-def check_cooldown(uid: int, *, cooldown_seconds: int) -> bool:
+def check_cooldown(bus: Bus, uid: int, *, cooldown_seconds: int) -> bool:
     """Return ``True`` if a new login attempt is allowed.
 
     On a successful verify the caller should call
     :func:`record_attempt` (or :func:`clear_attempt`) to
     reset the timer.
     """
-    record = _store_get(uid)
+    record = _store_get(bus, uid)
     if not record:
         return True
     try:
@@ -201,18 +200,18 @@ def check_cooldown(uid: int, *, cooldown_seconds: int) -> bool:
     return (_now_ts() - last) >= cooldown_seconds
 
 
-def record_attempt(uid: int) -> None:
+def record_attempt(bus: Bus, uid: int) -> None:
     """Stamp the current time as the last attempt.
 
     Called whether the password was correct or not — the
     60s lock applies to both outcomes.
     """
-    _store_set(uid, {"last_attempt_at": _now_ts()})
+    _store_set(bus, uid, {"last_attempt_at": _now_ts()})
 
 
-def clear_attempt(uid: int) -> None:
+def clear_attempt(bus: Bus, uid: int) -> None:
     """Drop the cooldown row (called on a successful login)."""
-    _store_clear(uid)
+    _store_clear(bus, uid)
 
 
 __all__ = [

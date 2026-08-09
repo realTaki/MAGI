@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import Depends, Request
 
 from magi.channels.api.errors import MagiHTTPException
+from magi.bus import Bus
 
 
-def get_bus(request: Request):
+def get_bus(request: Request) -> Bus:
     """Return the BUS instance owned by this concrete ASGI application.
 
     The composition root creates the BUS and attaches it to ``app.state``.
@@ -25,4 +26,4 @@ def get_bus(request: Request):
     return bus
 
 
-BusDep = Annotated[object, Depends(get_bus)]
+BusDep = Annotated[Bus, Depends(get_bus)]

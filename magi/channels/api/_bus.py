@@ -25,11 +25,9 @@ if TYPE_CHECKING:
 
 
 def _new() -> Bus:
-    from magi.channels import get_current_bus
-    b = get_current_bus()
-    if b is None:
-        raise RuntimeError("bus unavailable — ensure channels are initialized")
-    return b
+    from magi.channels.api.context import get_bus
+
+    return get_bus()
 
 
 class _Settings:

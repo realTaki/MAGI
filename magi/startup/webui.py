@@ -86,11 +86,11 @@ def start_webui(
             return f"http://127.0.0.1:{port}"
 
     env = _build_webui_env(config, port)
-    argv = [sys.executable, "-m", "magi", "webui"]
+    argv = [sys.executable, "-m", "magi", "webui", "run", "--foreground"]
 
     log_stdout, log_stderr = resolve_webui_log_paths(config.host_workspace_dir)
-    log_stdout.parent.mkdir(parents=True, exist_ok=True)
-    log_stderr.parent.mkdir(parents=True, exist_ok=True)
+    if not log_stdout.parent.is_dir() or not log_stderr.parent.is_dir():
+        raise RuntimeError("WebUI logs are not provisioned; run `magi init` first")
     stdout_fh = open(log_stdout, "ab")
     stderr_fh = open(log_stderr, "ab")
 
@@ -109,7 +109,6 @@ def start_webui(
         )
 
     proc = subprocess.Popen(argv, **popen_kwargs)
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(proc.pid), encoding="utf-8")
     logger.info(
         "WebUI subprocess spawned",
@@ -182,6 +181,26 @@ def get_webui_status(*, config: StartupConfig) -> WebUIStatus:
         log_stdout=str(log_stdout),
         log_stderr=str(log_stderr),
     )
+
+
+def run_webui_foreground(*, config: StartupConfig) -> None:
+    """Run the control service without creating node storage or workers."""
+    import uvicorn
+
+    from magi.bus import open_bus
+    from magi.channels.api.app import create_control_app
+    from magi.startup.spec import load_runtime_spec
+
+    root_workspace = config.host_workspace_dir / "MAGI_Citizens" / "eva-000"
+    spec = load_runtime_spec(root_workspace)
+    # This is a read/open-only control context.  It never creates storage or
+    # starts a node worker; target-specific operations are proxied to runtimes.
+    bus = open_bus(
+        state_dir=str(root_workspace / "memories"),
+        magis_url=spec.magis_database_url,
+    )
+    app = create_control_app(bus=bus)
+    uvicorn.run(app, host=WEBUI_HOST, port=WEBUI_PORT, log_level="info")
 
 
 # ----------------------------------------------------------------------
@@ -263,6 +282,7 @@ __all__ = [
     "stop_webui",
     "ensure_webui_running",
     "get_webui_status",
+    "run_webui_foreground",
     "ensure_webui_deployment",
     "ensure_webui_service",
     "delete_webui_resources",
