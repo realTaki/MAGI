@@ -298,6 +298,11 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             )
             return self._row_to_dto(row) if row else None
 
+    def resolve_delivery_address(self, *, conversation_id: str) -> str | None:
+        """Return the ``delivery_address`` for a conversation, or ``None``."""
+        conv = self.get(conversation_id=conversation_id)
+        return conv.delivery_address if conv is not None else None
+
     def get_for_owner(self, *, contact_id: int, conversation_id: str) -> Conversation | None:
         """``get`` with cross-contact defence-in-depth.
 
@@ -379,6 +384,23 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             conversation_id=cid, delivery_address=delivery_address,
             contact_id=contact_id, channel=channel,
         )
+
+    def create_task_session(
+        self, *, contact_id: int, title: str,
+        delivery_address: str = "", channel: str = "webui",
+    ) -> str:
+        """Create a new conversation for a scheduled task.
+
+        Returns the new ``conversation_id`` so the caller can stamp it
+        onto the Task row.
+        """
+        import uuid
+        cid = f"task_{uuid.uuid4().hex[:16]}"
+        self.add(
+            conversation_id=cid, delivery_address=delivery_address,
+            contact_id=contact_id, channel=channel, title=title,
+        )
+        return cid
 
     def append_messages(
         self,

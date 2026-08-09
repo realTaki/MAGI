@@ -40,7 +40,7 @@ class AddContactNoteTool(Tool):
     name = "add_contact_note"
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Add a new note about an existing contact (by uid). "
+        "Add a new note about an existing contact (by contact_id). "
         "Each call creates one row in contact_notes — "
         "keep each note to one fact (≤8 KB). To update or "
         "delete an existing note, use update_contact_note / "
@@ -49,9 +49,9 @@ class AddContactNoteTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
-            "uid": {
+            "contact_id": {
                 "type": "integer",
-                "description": "Contact uid (required).",
+                "description": "Contact contact_id (required).",
             },
             "note": {
                 "type": "string",
@@ -61,35 +61,37 @@ class AddContactNoteTool(Tool):
                 ),
             },
         },
-        "required": ["uid", "note"],
+        "required": ["contact_id", "note"],
     }
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        uid = kwargs.get("uid")
+        contact_id = kwargs.get("contact_id")
         note = kwargs.get("note")
-        if not isinstance(uid, int):
+        if not isinstance(contact_id, int):
             return ToolResult.err(
-                f"uid must be int, got {type(uid).__name__}"
+                f"contact_id must be int, got {type(contact_id).__name__}"
             )
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err(
                 "note is required (non-empty string)"
             )
+        if ctx.bus is None:
+            return ToolResult.err("bus not available")
 
         # Pre-check the parent contact resolves — the FK
         # violation would otherwise surface as a SQLAlchemy
         # error caught at the outer worker layer (which
         # reads as "tool.crashed"). We translate to a clean
         # ``is_error=True`` here so the LLM sees a
-        # caller-fixable "uid N not found" message.
-        contact = ctx.bus.contacts_book.get(contact_id=uid)
+        # caller-fixable "contact_id N not found" message.
+        contact = ctx.bus.contacts_book.get(contact_id=contact_id)
         if contact is None:
-            return ToolResult.err(f"contact {uid!r} not found")
+            return ToolResult.err(f"contact {contact_id!r} not found")
 
         try:
             row = ctx.bus.contact_notes_book.add(
-                contact_id=uid, note=note,
+                contact_id=contact_id, note=note,
             )
         except ValueError as e:
             # ``contact_notes_book.add`` owns the
@@ -99,6 +101,6 @@ class AddContactNoteTool(Tool):
 
         logger.info(
             "add_contact_note: note=%s appended to contact=%s",
-            row.id, uid,
+            row.id, contact_id,
         )
         return ToolResult.ok({"created": row.to_dict()})

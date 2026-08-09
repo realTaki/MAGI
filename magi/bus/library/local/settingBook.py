@@ -177,6 +177,10 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             self.get(key="system.show_daily_note_prompt"), default=False
         )
 
+    def system_timezone(self) -> str:
+        """Return the configured system timezone, defaulting to ``"UTC"``."""
+        return self.get(key="system.timezone") or "UTC"
+
 
 @dataclass(frozen=True, slots=True)
 class MCPTimeout:

@@ -30,7 +30,7 @@ fires, it runs as me".
 
 Admin gate: callers whose effective role-tag set
 (``Contact.role`` ∪ ``{admin}`` if
-``ctx.bus.magis_admins_book.is_admin_for(uid=...)`` is
+``ctx.bus.magis_admins_book.is_admin_for(contact_id=...)`` is
 truthy) doesn't intersect ``{"admin", "assigned"}``
 get ``is_error=True`` at the gate step. ``guest``
 callers have no MAGI-node session and aren't expected
@@ -191,7 +191,7 @@ class ScheduleTaskTool(Tool):
                     "additionally lets the agent's send_message "
                     "tool push a reply to the operator's bound "
                     "TG chat (the runner looks up the existing "
-                    "TG session by delivery address + uid and "
+                    "TG session by delivery address + contact_id and "
                     "reuses it; or uses the operator's bound "
                     "chat id when called from a non-TG chat)."
                 ),
@@ -213,7 +213,7 @@ class ScheduleTaskTool(Tool):
         self,
         ctx: ToolContext,
         **kwargs: Any,
-    ) -> ToolResult:
+    ) -> ToolResult:  # type: ignore[override]
         # Shape translation — kwargs → typed args.
         # ``name`` / ``prompt`` length & non-empty, plus
         # ``target_channel`` enum membership, are owned by
@@ -222,6 +222,7 @@ class ScheduleTaskTool(Tool):
         # get the same validation). Each violation surfaces
         # as ``ValueError``; we translate to LLM-facing
         # ``ToolResult.err`` after the Book call below.
+        assert ctx.bus is not None, "require_bus should have caught this"
         name = (kwargs.get("name") or "").strip()
         prompt = (kwargs.get("prompt") or "").strip()
         frequency = (kwargs.get("frequency") or "").strip()
@@ -232,7 +233,7 @@ class ScheduleTaskTool(Tool):
 
         # ``delivery_to`` is server-derived per the unified
         # rule: only ``channel`` + ``ctx`` drive the value.
-        #   channel='webui' + LLM-in-chat → ctx.session_id
+        #   channel='webui' + LLM-in-chat → ctx.conversation_id
         #     (append to the chat the LLM just wrote from)
         #   channel='webui' + cold call   → None (runner
         #     falls back; legacy / WebUI-default path stays
@@ -258,8 +259,8 @@ class ScheduleTaskTool(Tool):
         if target_channel == ChannelEnum.WEBUI:
             delivery_to = None
         elif target_channel == ChannelEnum.TG:
-            delivery_to = ctx.bus.session_book.resolve_delivery_address_for_session(
-                ctx.session_id
+            delivery_to = ctx.bus.sessions_book.resolve_delivery_address(
+                conversation_id=ctx.conversation_id
             )
         else:
             delivery_to = None
@@ -273,7 +274,6 @@ class ScheduleTaskTool(Tool):
         # expression check) — we just hand it the right
         # field and let any ValueError bubble up to the
         # outer ``ToolResult.err`` block below.
-        bus = ctx.bus
         cron: str | None
         run_at_iso: str | None
         if frequency == "once":
@@ -287,7 +287,7 @@ class ScheduleTaskTool(Tool):
         else:
             run_at_iso = None
             cron = preset_to_cron(
-                frequency,
+                frequency,  # type: ignore[arg-type]  # runtime-validated via kwargs.get
                 hour=int(kwargs.get("hour") or 0),
                 minute=int(kwargs.get("minute") or 0),
                 day_of_week=kwargs.get("day_of_week"),
@@ -308,9 +308,8 @@ class ScheduleTaskTool(Tool):
         # breadcrumb. Resolve it outside the task write transaction because
         # ContactBook uses its own short SQLite transaction.
         # Empty string when the operator has no TG binding.
-        operator_id = int(ctx.uid)
-        bus = ctx.bus
-        contact = bus.contacts_book.get(contact_id=operator_id)
+        operator_id = int(ctx.contact_id)
+        contact = ctx.bus.contacts_book.get(contact_id=operator_id)
         task_session_delivery_address = (
             str(contact.telegram_id)
             if contact is not None and contact.telegram_id is not None
@@ -318,30 +317,29 @@ class ScheduleTaskTool(Tool):
         )
 
         # ── Idempotent upsert by name ──────────────────────────────────
-        bus = ctx.bus
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
-        resolved_tz = bus.settings.system_timezone()
+        resolved_tz = ctx.bus.settings_book.system_timezone()
         # Allocate the task's home session up-front so cron fires
         # accumulate into one conversation per task. The
         # ``upsert_by_name`` body preserves the existing
         # ``session_id`` for update-paths (continuity across
         # prompt edits).
-        new_session_id_str = bus.session_book.create_task_session(
-            uid=operator_id,
+        new_session_id_str = ctx.bus.sessions_book.create_task_session(
+            contact_id=operator_id,
             title=f"[定时] {name}",
             delivery_address=task_session_delivery_address,
         )
         try:
-            task_id, is_update = bus.tasks_book.upsert_by_name(
+            task_id, is_update = ctx.bus.tasks_book.upsert_by_name(
                 name=name,
                 prompt=prompt,
                 cron=cron,
                 run_at=run_at_iso,
                 delivery_to=delivery_to,
                 target_channel=target_channel,
-                uid=operator_id,
-                session_id=new_session_id_str,
+                contact_id=operator_id,
+                conversation_id=new_session_id_str,
                 tz=resolved_tz,
             )
         except ValueError as e:

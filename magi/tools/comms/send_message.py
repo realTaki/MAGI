@@ -107,6 +107,7 @@ class SendMessageTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
         text = kwargs.get("text")
         if not isinstance(text, str) or not text:
             return ToolResult(
@@ -125,7 +126,7 @@ class SendMessageTool(Tool):
         # Empty session_id means the tool is being called
         # outside a session context (rare — agent-loop test
         # harnesses, edge cases). Surface as a clear error.
-        if not ctx.session_id:
+        if not ctx.conversation_id:
             return ToolResult(
                 content=(
                     "send_message: no session context; "
@@ -140,28 +141,28 @@ class SendMessageTool(Tool):
         # actual protocol I/O after the agent transition has committed.
         logger.info(
             "send_message: enqueueing %d chars for session=%s channel=%s",
-            len(text), ctx.session_id, ctx.channel,
+            len(text), ctx.conversation_id, ctx.channel,
         )
         try:
             bus = ctx.bus
             # ``get_for_owner`` is the cross-contact-safe lookup:
             # returns ``None`` when the session doesn't belong to
-            # ``ctx.uid`` even if a future caller ever forgets the
+            # ``ctx.contact_id`` even if a future caller ever forgets the
             # gate layer, defence-in-depth over the bare ``get``.
             session = bus.sessions_book.get_for_owner(
-                uid=int(ctx.uid),
-                session_id=ctx.session_id,
+                contact_id=int(ctx.contact_id),
+                conversation_id=ctx.conversation_id,
             )
             if session is None:
-                raise KeyError(f"unknown session {ctx.session_id!r}")
+                raise KeyError(f"unknown session {ctx.conversation_id!r}")
             bus.delivery_job_board.publish(
                 DeliveryJob(
                     channel=session.channel,
                     destination=session.delivery_address or None,
-                    payload={"text": text, "session_id": session.session_id, "uid": session.uid},
+                    payload={"text": text, "conversation_id": session.conversation_id, "contact_id": session.contact_id},
                 )
             )
-            logger.info("send_message: queued for session=%s", ctx.session_id)
+            logger.info("send_message: queued for session=%s", ctx.conversation_id)
         except KeyError as e:
             # Unknown channel / missing session — surface
             # the dispatcher's diagnostic verbatim.
@@ -187,6 +188,6 @@ class SendMessageTool(Tool):
         return ToolResult(
             content=(
                 f"send_message: queued {len(text)} chars "
-                f"to session {ctx.session_id}"
+                f"to session {ctx.conversation_id}"
             )
         )

@@ -125,9 +125,11 @@ class AddMemoryTool(Tool):
             return ToolResult.err(
                 f"add_memory requires fields: {', '.join(missing)}"
             )
+        if ctx.bus is None:
+            return ToolResult.err("bus not available")
         try:
             view = ctx.bus.memory_book.add(
-                uid=int(ctx.uid),
+                contact_id=int(ctx.contact_id),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
@@ -137,6 +139,6 @@ class AddMemoryTool(Tool):
             return ToolResult.err(f"add_memory failed: {e}")
         logger.info(
             "add_memory: row %s created for contact=%s kind=%r subject=%r",
-            view.id, ctx.uid, view.kind, view.subject,
+            view.id, ctx.contact_id, view.kind, view.subject,
         )
         return ToolResult.ok({"created": view.to_dict()})

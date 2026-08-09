@@ -57,8 +57,8 @@ class UpdateDailyNoteTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Append a delta to today's daily note for the "
-        "current operator (or the uid you pass). One row "
-        "per (uid, day). Use when something meaningful "
+        "current operator (or the contact_id you pass). One row "
+        "per (contact_id, day). Use when something meaningful "
         "happened — task finished, email sent, user "
         "shared a preference, project context changed. "
         "Don't write trivial external facts. The morning "
@@ -89,20 +89,21 @@ class UpdateDailyNoteTool(Tool):
 
     @Tool.require_bus
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
             return ToolResult.err(
                 "body_delta is required (non-empty string)"
             )
-        # Default to the operator's own uid — the LLM
-        # never specifies a different uid here (no
+        # Default to the operator's own contact_id — the LLM
+        # never specifies a different contact_id here (no
         # override on input_schema). Future cross-contact
         # notes should go through a separate
         # ``update_daily_note_for`` shape.
-        contact_id = ctx.uid
+        contact_id = ctx.contact_id
         if contact_id is None or contact_id == 0:
             return ToolResult.err(
-                "no uid on the calling context"
+                "no contact_id on the calling context"
             )
 
         note_date: datetime | None = None
