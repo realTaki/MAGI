@@ -57,7 +57,7 @@ async def proxy_runtime(
         raise MagiHTTPException(status_code=400, code="runtime.path_invalid", detail="Invalid runtime path")
     from magi.channels.api.auth import selected_session
 
-    browser_session = selected_session(request.cookies.get("magi_session"))
+    browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     session_magic_id = int(browser_session["magic_id"])
@@ -112,7 +112,7 @@ async def proxy_selected_runtime(
     """
     from magi.channels.api.auth import selected_session
 
-    browser_session = selected_session(request.cookies.get("magi_session"))
+    browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     return await proxy_runtime(int(browser_session["magic_id"]), path, request)

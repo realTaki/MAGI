@@ -686,8 +686,8 @@ async def logout(response: Response) -> Response:
 
 @router.get("/me", response_model=MeResponse)
 async def me(
+    bus: BusDep,
     magi_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
-    bus: BusDep = None,
 ) -> MeResponse:
     """Return the current user, or 401 if no valid session.
 

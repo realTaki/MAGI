@@ -40,10 +40,10 @@ def _is_admin_uid(bus, uid: int) -> bool:
         return False
 
 
-def _resolve_uid(raw: str | None) -> int | None:
+def _resolve_uid(bus, raw: str | None) -> int | None:
     """Verify the signed session cookie, return uid or None."""
     from magi.channels.api.auth import _verify_signed_uid
-    return _verify_signed_uid(raw or "")
+    return _verify_signed_uid(bus, raw or "")
 
 
 def admin_gate(request: Request) -> str:
@@ -61,7 +61,7 @@ def admin_gate(request: Request) -> str:
             status_code=403, code="auth.magis_admin_required", detail="This action requires a MAGIS administrator"
         )
     raw = request.cookies.get("magi_session")
-    uid = _resolve_uid(raw)
+    uid = _resolve_uid(get_bus(request), raw)
     if uid is None or not _is_admin_uid(get_bus(request), uid):
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
@@ -98,7 +98,7 @@ def admin_or_assigned_gate(request: Request) -> str:
         raise MagiHTTPException(status_code=403, code="auth.soul_edit_forbidden", detail="This action requires node access")
 
     raw = request.cookies.get("magi_session") or ""
-    uid = _resolve_uid(raw)
+    uid = _resolve_uid(get_bus(request), raw)
     if uid is None:
         raise MagiHTTPException(
             status_code=403,

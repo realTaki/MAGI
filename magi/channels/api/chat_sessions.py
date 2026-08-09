@@ -229,7 +229,8 @@ def _resolve_uid(request: Request) -> int:
     """
     from magi.channels.api.auth import _verify_signed_uid
     raw = request.cookies.get("magi_session") or ""
-    uid = _verify_signed_uid(raw)
+    from magi.channels.api.dependencies import get_bus
+    uid = _verify_signed_uid(get_bus(request), raw)
     if uid is None:
         raise MagiHTTPException(
             status_code=401,
