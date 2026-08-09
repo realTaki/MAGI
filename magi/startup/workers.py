@@ -39,7 +39,10 @@ class WorkerRegistry:
             "providers": ProvidersWorker(bus),
             "tools": ToolsWorker(bus),
             "mcp": McpWorker(bus),
-            "agent": AgentWorker(bus),
+            # AgentWorker now receives ``magi_id`` so :meth:`_system_prompt`
+            # can render the per-MAGI ``## MAGIS: ... Team instructions``
+            # block via :meth:`MagisMembershipBook.instruction_context`.
+            "agent": AgentWorker(bus, magi_id=magi_id),
             "task": TaskWorker(bus),
             "tg": TelegramWorker(bus),
             "webui": WebUIWorker(bus),

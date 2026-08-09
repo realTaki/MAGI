@@ -34,8 +34,25 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
     )
 
 
-def runtime_instruction_block(bus: "Bus") -> str:
-    """Load this MAGI's instruction from MAGIS Books."""
+def runtime_instruction_block(bus: "Bus", *, magi_id: int | None = None) -> str:
+    """Load this MAGI's instruction from MAGIS Books.
+
+    ``magi_id`` is the runtime's own ``magis_memberships.id`` —
+    propagated in from the provisioned ``RuntimeSpec`` at boot
+    (:mod:`magi.startup.runtime` → :class:`WorkerRegistry` →
+    :class:`AgentWorker`). When provided, the per-MAGI
+    memberships and joined MAGIS/role instructions are
+    materialised through
+    :meth:`magi.bus.library.magis.membershipBook.MagisMembershipBook.instruction_context`
+    (which performs the ``magis_memberships × magis_roles × magis``
+    JOIN in one query).
+
+    When ``magi_id`` is ``None`` — tests, pre-bootstrap, or
+    out-of-band callers — only the personal instruction from
+    ``settings_book["instruction"]`` is rendered. The MAGIS/role
+    sections are skipped, so this function can never raise on a
+    startup that hasn't been MAGIS-registered yet.
+    """
     try:
         if bus.memberships_book is None:
             return ""
@@ -43,30 +60,30 @@ def runtime_instruction_block(bus: "Bus") -> str:
         personal = ""
         settings = getattr(bus, "settings_book", None)
         if settings is not None:
-            raw = settings.get(key="instruction")
-            if raw:
-                personal = raw
+            try:
+                raw = settings.get(key="instruction")
+                if raw:
+                    personal = raw
+            except Exception:
+                personal = ""
 
         memberships: list[dict[str, Any]] = []
-        try:
-            # ``MagisMembershipBook.list_instruction_contexts`` joins
-            # ``magis_memberships × magis_roles × magis`` in one query,
-            # so each entry already carries the rendered
-            # ``magis_name / team_instruction / role_name /
-            # role_instruction`` dict (the per-MAGI fields aren't
-            # attributes of the raw membership row — they're resolved
-            # through the JOIN).
-            list_contexts = getattr(bus.memberships_book, "list_instruction_contexts", None)
-            contexts = list_contexts() if list_contexts else None
-            for entry in contexts or []:
+        if magi_id is not None and bus.memberships_book is not None:
+            try:
+                _, joined = bus.memberships_book.instruction_context(magi_id=magi_id)
+            except Exception:
+                logger.exception("instruction_context lookup failed for magi_id=%s", magi_id)
+                joined = None
+            for entry in joined or []:
+                if not isinstance(entry, dict):
+                    continue
                 memberships.append({
                     "magis_name": entry.get("magis_name"),
                     "team_instruction": entry.get("team_instruction"),
                     "role_name": entry.get("role_name"),
                     "role_instruction": entry.get("role_instruction"),
                 })
-        except Exception:
-            pass
+
         return _render(personal, memberships)
     except Exception:
         logger.exception("could not load runtime instructions")

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from abc import abstractmethod
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Awaitable, Callable
+from typing import TYPE_CHECKING, Awaitable, Callable, ClassVar
 
 from magi.startup.worker import RuntimeWorker
 
@@ -22,9 +22,14 @@ class ChannelWorker(RuntimeWorker):
     """RuntimeWorker extension for channel-specific delivery handling."""
 
     worker_kind = "channel"
-    @property
-    @abstractmethod
-    def channel_name(self) -> str: ...
+    # Subclasses MUST override with a string literal (e.g.
+    # ``channel_name = "tg"``). Declared as ``ClassVar[str]`` so
+    # Pylance accepts the literal override without forcing every
+    # subclass to write a property stub. The init-time use of
+    # ``self.channel_name`` below catches a forgotten override
+    # immediately (worker_name/worker_id come out as empty
+    # strings, not a delayed NotImplementedError).
+    channel_name: ClassVar[str]
 
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)

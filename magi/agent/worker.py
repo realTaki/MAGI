@@ -108,11 +108,21 @@ class AgentWorker(RuntimeWorker):
 
     worker_name = "agent"
 
-    def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25,
+                 magi_id: int | None = None) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self._active_sessions: set[str] = set()
         self._in_flight: dict[str, asyncio.Event] = {}  # conv_id → cancel_event
+        # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
+        # propagated in from :class:`WorkerRegistry`, which reads it
+        # from the provisioned RuntimeSpec at boot
+        # (:mod:`magi.startup.runtime`). Used by
+        # :meth:`_system_prompt` to render the per-MAGI instruction
+        # block (team + role layers from MAGIS Books); ``None``
+        # short-circuits that lookup and renders only the personal
+        # instruction.
+        self._magi_id = magi_id
 
     # -- main loop -----------------------------------------------------------
 
@@ -290,6 +300,7 @@ class AgentWorker(RuntimeWorker):
             return await self.call(
                 lambda: build_system_prompt(
                     uid=ctx.uid or 0, soul=read_soul(bus=self.bus), bus=self.bus,
+                    magi_id=self._magi_id,
                 )
             )
         except Exception:
@@ -369,10 +380,10 @@ class AgentWorker(RuntimeWorker):
                     ))
                     continue
                 try:
-                    target_magic_id = int(args["magic_id"])
+                    target_magi_id = int(args["magi_id"])
                     text = str(args["text"])
-                    if target_magic_id <= 0 or not text.strip():
-                        raise ValueError("magic_id and text required")
+                    if target_magi_id <= 0 or not text.strip():
+                        raise ValueError("magi_id and text required")
                 except (KeyError, TypeError, ValueError) as exc:
                     tool_jobs.append(self._make_tool_job(
                         tc_id, "message_magi",
@@ -381,7 +392,7 @@ class AgentWorker(RuntimeWorker):
                     ))
                     continue
                 a2a_jobs.append(SendA2AJob(
-                    tool_call_id=tc_id, target=str(target_magic_id),
+                    tool_call_id=tc_id, target=str(target_magi_id),
                     expect_reply=bool(args.get("expect_reply", False)),
                     request={"text": text, "uid": ctx.uid, "session_id": ctx.session_id},
                 ))

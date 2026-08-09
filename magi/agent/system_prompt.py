@@ -59,6 +59,7 @@ def build_system_prompt(
     uid: int,
     soul: str,
     bus: "Bus",
+    magi_id: int | None = None,
 ) -> str:
     """Assemble the full system prompt for one LLM turn.
 
@@ -69,7 +70,7 @@ def build_system_prompt(
     # 2. Instructions
     from magi.agent.instructions import runtime_instruction_block
 
-    instruction_block = runtime_instruction_block(bus)
+    instruction_block = runtime_instruction_block(bus, magi_id=magi_id)
     if instruction_block:
         parts.append(instruction_block)
 
