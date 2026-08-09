@@ -83,9 +83,12 @@ class NodeConfig:
         log_level = DEFAULT_LOG_LEVEL
         try:
             from magi.startup.paths import resolve_state_dir as _state_dir
-            from magi.bus.db.settings import state_get
+            from magi.new_bus.db.engine import build_local_factory
+            from magi.new_bus.library.local.settingBook import SettingBook
 
-            db_level = state_get(str(_state_dir()), "system.log_level")
+            db_level = SettingBook(build_local_factory(str(_state_dir()))).get(
+                key="system.log_level"
+            )
             if db_level and db_level in ("debug", "info", "warning", "error"):
                 log_level = db_level
         except Exception:
@@ -143,9 +146,6 @@ def run_webui() -> None:
         level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    from magi.bus.db.magis import init_magis_public_db
-
-    init_magis_public_db(seed_root=True)
     uvicorn.run(
         "magi.channels.api.app:create_control_app",
         factory=True,
