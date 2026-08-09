@@ -31,7 +31,6 @@ import { apiFetch, qk } from "../../lib/queryClient";
 
 type ActionItem = {
   id: number;
-  kind: string;
   title: string;
   description: string | null;
   target_url: string | null;

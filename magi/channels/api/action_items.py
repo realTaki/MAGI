@@ -1,18 +1,17 @@
 """Action Items — the operator-facing "things to do" inbox.
 
 A small surface that surfaces a list of to-dos in the
-dashboard's Action Items sidebar pane. Each row is keyed on a
-stable ``kind`` string ("llm_credentials_missing" today;
-``eva_followup_*`` kinds land later when C4 ships) and carries
-human-readable ``title`` / ``description`` / ``target_url``
-columns. The dashboard renders the columns straight to the
-screen — no payload blob, no kind-specific column.
+dashboard's Action Items sidebar pane. Each row carries a
+human-readable ``title`` / ``description`` / ``target_url`` /
+``priority`` / ``due_date`` set plus a ``source`` tag (``system``
+or ``user``) recording the provenance of the write. The
+dashboard renders those columns straight to the screen — no
+payload blob, no kind-specific column.
 
 Created by system paths (currently ``onboarding/complete``
-inserts one ``llm_credentials_missing`` row per admin). From
-C4, EVA-driven rows land via a future ``POST /api/action_items``
-endpoint — schema already accommodates them (``source='eva'``,
-``priority='high'``).
+inserts one credentials-reminder row per admin; the future
+``POST /api/action_items`` endpoint will let EVA create rows
+through the same Book with ``source='user'``).
 
 Dismissed / completed by the operator via the
 ``POST /api/action_items/{id}/complete`` endpoint below.
@@ -35,8 +34,10 @@ Indexes used
 - ``ix_action_items_uid``  : every GET filters here.
 - ``ix_action_items_contact_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
-- ``ux_action_items_open_per_kind``: bus-side idempotency guard for the
-  onboarding credentials reminder.
+- A unique partial index over the open reminder rows keyed
+  on ``(uid, title)``, used by the bus as the idempotency
+  guard so the same admin doesn't get two reminders
+  before the first one is closed.
 """
 
 from __future__ import annotations
@@ -67,7 +68,6 @@ def _serialize(a) -> "ActionItemOut":
     return ActionItemOut(
         id=a.id,
         uid=a.uid,
-        kind=a.kind,
         title=a.title,
         description=a.description,
         target_url=a.target_url,
@@ -85,7 +85,6 @@ def _serialize(a) -> "ActionItemOut":
 class ActionItemOut(BaseModel):
     id: int
     uid: int | None
-    kind: str
     title: str
     description: str | None = None
     target_url: str | None = None
@@ -159,16 +158,13 @@ def list_action_items(
     _admin: AdminGate,
     bus: BusDep,
     include_completed: bool = True,
-    kind: str | None = None,
 ) -> ActionItemListOut:
     """List the caller's action items.
 
-    - ``include_completed`` (default true) controls whether
-      rows completed within the last 7 days appear alongside
-      open rows. The dashboard mixes them in the same
-      scroll, so the default fits the typical panel.
-    - ``kind`` narrows by the stable kind code
-      (``llm_credentials_missing``, future ``eva_*``).
+    ``include_completed`` (default true) controls whether
+    rows completed within the last 7 days appear alongside
+    open rows. The dashboard mixes them in the same
+    scroll, so the default fits the typical panel.
 
     Only items whose ``uid`` matches the current
     admin are returned. The endpoint resolves the admin id
@@ -189,8 +185,6 @@ def list_action_items(
         include_completed=include_completed,
         completed_visible_days=_COMPLETED_VISIBLE_DAYS,
     )
-    if kind is not None:
-        rows = [row for row in rows if row.kind == kind]
     return ActionItemListOut(
         items=[_serialize(r) for r in rows],
         server_time=datetime.now(timezone.utc)
@@ -257,7 +251,7 @@ def complete_action_item(
             detail="this action item is owned by another operator",
         )
     logger.info(
-        "action item completed (id=%s, kind=%s, admin=%s)",
-        row.id, row.kind, admin_id,
+        "action item completed (id=%s, source=%s, admin=%s)",
+        row.id, row.source, admin_id,
     )
     return _serialize(row)

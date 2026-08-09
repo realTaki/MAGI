@@ -35,13 +35,17 @@ async def request_session_title(
     if first_user is None:
         return None
 
+    prompt_book = bus.prompt_book
+    if prompt_book is None:
+        return None
+
     from magi.bus.guild.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
-        messages=(
-            {"role": "system", "content": bus.prompt_book.chat_title_prompt()},
+        messages=[
+            {"role": "system", "content": prompt_book.chat_title_prompt()},
             {"role": "user", "content": getattr(first_user, "text", "")},
-        ),
+        ],
         max_tokens=20,
         parameters={"uid": uid, "session_id": session_id, "phase": "auto_title"},
     )

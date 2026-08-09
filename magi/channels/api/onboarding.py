@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -661,7 +662,10 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
         # gate (next ``if prev_sent_at``) will short-circuit anyway,
         # but Pylance needs ``prev_data`` defined for the later
         # ``prev_data.get("expires_at", 0)`` access to type-check.
-        prev_data: dict[str, object] = {}
+        # ``Any`` reflects the JSON-decoded dict honestly: its values
+        # may be anything, and the downstream ``float(...)`` casts do
+        # the real validation.
+        prev_data: dict[str, Any] = {}
         try:
             prev_data = json.loads(previous)
             prev_sent_at = float(prev_data.get("last_sent_at", 0))

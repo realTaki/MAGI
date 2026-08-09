@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field
 from magi.bus import Bus
 from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.channels.api import control_store
+from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
@@ -348,7 +349,7 @@ class TargetVerifyRequest(TargetLoginRequest):
     code: str = Field(min_length=6, max_length=6)
 
 
-async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
     """Call a target runtime before a browser identity exists.
 
     This is still authenticated service-to-service: ``operator_id=0`` marks
@@ -357,7 +358,7 @@ async def _target_access(bus: Bus, magic_id: int, method: str, path: str, payloa
     """
     try:
         runtime = bus.eva_runtimes_book.get(runtime_id=magic_id) if bus.eva_runtimes_book else None
-        base = runtime.base_url if runtime else None
+        base = getattr(runtime, "base_url", None) if runtime else None
         if not base:
             raise RuntimeError("runtime unavailable")
     except RuntimeError as exc:
@@ -412,11 +413,13 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
     telegram_id = result.get("telegram_id")
     if not isinstance(telegram_id, int):
         raise MagiHTTPException(502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity")
+    raw_display_name = result.get("display_name")
+    display_name = raw_display_name if isinstance(raw_display_name, str) else None
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=_sign_selected_session(bus,
             magic_id=magic_id, telegram_id=telegram_id,
-            display_name=result.get("display_name") if isinstance(result.get("display_name"), str) else None,
+            display_name=display_name,
             admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
         ),
         max_age=SESSION_TTL_SECONDS, httponly=True, samesite="lax", path="/",
@@ -700,11 +703,15 @@ async def me(
     """
     selected = selected_session(bus, magi_session)
     if selected is not None:
+        telegram_id_value = int(selected["telegram_id"])
+        magic_id_value = int(selected["magic_id"])
+        raw_display_name = selected.get("display_name")
+        display_name = raw_display_name if isinstance(raw_display_name, str) else None
         return MeResponse(
-            uid=int(selected["telegram_id"]), telegram_id=int(selected["telegram_id"]),
-            display_name=selected.get("display_name") if isinstance(selected.get("display_name"), str) else None,
+            uid=telegram_id_value, telegram_id=telegram_id_value,
+            display_name=display_name,
             admin=bool(selected.get("admin")), assigned=bool(selected.get("assigned")),
-            selected_magic_id=int(selected["magic_id"]),
+            selected_magic_id=magic_id_value,
         )
     uid = _verify_signed_uid(bus, magi_session or "")
     if uid is None or uid not in _super_admins(bus):
@@ -992,7 +999,7 @@ def _now_ts() -> float:
 async def set_password(
     payload: SetPasswordRequest,
     request: Request,
-    _admin: "AdminGate",
+    _admin: AdminGate,
 ) -> SetPasswordResponse:
     """Set or replace a user's password.
 
@@ -1109,7 +1116,7 @@ async def change_password(
 @router.delete("/credentials/password/{uid}", status_code=204)
 async def revoke_password(
     uid: int,
-    _admin: "AdminGate",
+    _admin: AdminGate,
     bus: BusDep,
 ) -> Response:
     """Revoke a user's password login.
