@@ -57,6 +57,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
+from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminOrAssignedGate
 from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
@@ -163,9 +164,8 @@ def read_soul(_admin: AdminOrAssignedGate) -> SoulReadResponse:
             is_bundled_fallback=False,
         )
     except FileNotFoundError:
-        from magi.prompts import load_fallback_persona
         return SoulReadResponse(
-            content=load_fallback_persona(),
+            content=bus.prompt.fallback_persona(),
             modified_at=None,
             is_bundled_fallback=True,
         )
@@ -213,8 +213,7 @@ def reset_soul(
     the workspace path. Same atomic-write as
     :func:`update_soul`.
     """
-    from magi.prompts import load_soul
-    default = load_soul()
+    default = bus.prompt.soul()
     path = _soul_path()
     modified_at = _write_atomic(path, default)
 

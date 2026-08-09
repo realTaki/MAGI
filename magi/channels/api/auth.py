@@ -81,9 +81,9 @@ def _signing_key() -> bytes:
         secret = os.environ.get("MAGI_CONTROL_SECRET")
         if secret:
             return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
-    from magi.constants import WORKSPACE_DIR
+    from magi.startup.paths import resolve_workspace_dir
     return hashlib.sha256(
-        WORKSPACE_DIR.encode() + b"magi-session-signing"
+        str(resolve_workspace_dir()).encode() + b"magi-session-signing"
     ).digest()
 
 

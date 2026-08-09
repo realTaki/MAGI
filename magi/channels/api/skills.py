@@ -22,17 +22,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from magi.bus.library.file.skillsBook import SkillBookError, SkillNotFound
 from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.errors import MagiHTTPException
-from magi.skills import get_skill_metas
 
 logger = logging.getLogger("magi.channels.api.skills")
 
@@ -60,9 +58,6 @@ def _save_disabled(disabled: set[str]) -> None:
     _bus().settings.set(_DISABLED_KEY, json.dumps(sorted(disabled)))
 
 
-_MAX_BODY_BYTES = 32 * 1024
-
-
 class SkillOut(BaseModel):
     name: str
     description: str
@@ -87,7 +82,6 @@ def list_skills(
     _admin: AdminGate,
 ) -> list[SkillOut]:
     """Enumerate every registered skill."""
-    loader = get_skill_metas()
     disabled = _load_disabled()
     return [
         SkillOut(
@@ -97,7 +91,7 @@ def list_skills(
             version=s.version,
             enabled=s.name not in disabled,
         )
-        for s in loader.list()
+        for s in bus.skills.list()
     ]
 
 
@@ -110,8 +104,7 @@ def toggle_skill(
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_metas()
-    meta = loader.get(name)
+    meta = bus.skills.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
     disabled = _load_disabled()
@@ -137,22 +130,12 @@ def get_skill_body(
     """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    loader = get_skill_metas()
-    meta = loader.get(name)
-    if meta is None:
-        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
     try:
-        raw_bytes = meta.path.read_bytes()
-    except OSError as exc:
+        body = bus.skills.read_body(name)
+    except SkillNotFound:
+        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered") from None
+    except SkillBookError as exc:
         logger.warning("get_skill_body: read failed: %s", exc)
         raise MagiHTTPException(status_code=500, code="skill.read_failed", detail="read failed") from exc
-    truncated = len(raw_bytes) > _MAX_BODY_BYTES
-    if truncated:
-        body_bytes = raw_bytes[:_MAX_BODY_BYTES]
-        while body_bytes and (body_bytes[-1] & 0xC0) == 0x80:
-            body_bytes = body_bytes[:-1]
-        content = body_bytes.decode("utf-8", errors="replace") + "\n\n…[truncated]"
-    else:
-        content = raw_bytes.decode("utf-8", errors="replace")
-    mtime = datetime.fromtimestamp(meta.path.stat().st_mtime, tz=timezone.utc).isoformat()
-    return SkillBodyOut(name=name, content=content, modified_at=mtime, truncated=truncated)
+    mtime = body.mtime.isoformat().replace("+00:00", "Z")
+    return SkillBodyOut(name=name, content=body.content, modified_at=mtime, truncated=body.truncated)

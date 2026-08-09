@@ -35,11 +35,11 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
 from magi.channels.api._bus import bus
 from magi.channels.telegram import bot as tg_bot
 from magi.channels import Channel
 from magi.channels.api import control_store
-from magi.proactive import ensure_for_admin as ensure_credentials_nudge
 
 logger = logging.getLogger("magi.api.onboarding")
 
@@ -390,35 +390,47 @@ async def complete_onboarding(_payload: CompleteRequest) -> CompleteResponse:
         return CompleteResponse(ok=True)
     bus = bus
 
-    # 1. Stamp one nudge per current admin. Helper is
-    #    idempotent — re-running (e.g. retry after failure,
-    #    second wizard pass after /restart) is a no-op for any
-    #    admin that already has an open row. Policy lives in
-    #    :mod:`magi.proactive.worker`; the Book is
-    #    pure CRUD and only sees the resulting ``add()``.
-    #
-    # TODO(proactive-refactor): credentials nudge 的 idempotent
-    # 插入现在同时由 :class:`magi.proactive.worker.ProactiveWorker`
-    # 在启动时对 Adam MAGI 的 admin 执行（同源函数
-    # ``ensure_for_admin``），所以本路径的同步调用理论上是
-    # 冗余的。当前仍保留同步插入作为"当下 session 立刻看到
-    # 提醒"的兜底，避免依赖 Worker 在 wizard 完成后下次轮询
-    # 才写到表。下一步评估两种简化方案：
-    #   A) 改为发布一个 CredentialsNudgeJob 让 Worker 处理
-    #      （统一异步路径，引入新 Job 类型）；
-    #   B) 完全依赖 Worker 的 _bootstrap 钩子（要求 wizard
-    #      完成时 Worker 已就绪，依赖当前启动顺序：proactive
-    #      最后拉起，应当已经就绪）。
-    # 选定后删除这里的同步调用。
+    # 1. Stamp one credentials nudge per current admin via
+    #    bus.action_items_book.  Idempotent — re-running is a
+    #    no-op for any admin that already has an open row.
+    _NUDGE_TITLE = "设置你的 LLM provider 和 API key"
+    _NUDGE_DESC = (
+        "切到「Contacts」,找到自己的档案,"
+        "把 Provider 和 API Key 填上。"
+    )
+    _NUDGE_URL = "/dashboard?tab=organization"
     try:
         admins = bus.contacts.list_admins()
-        inserted = sum(
-            ensure_credentials_nudge(
-                book=bus.action_items_book,
-                admin_id=admin.id,
+        inserted = 0
+        for admin in admins:
+            existing_open = [
+                row for row in bus.action_items_book.list_actions(
+                    owner_uid=admin.id,
+                    include_completed=False,
+                    source=SOURCE_PROACTIVE,
+                )
+                if row.title == _NUDGE_TITLE
+            ]
+            if existing_open:
+                continue
+            existing_done = [
+                row for row in bus.action_items_book.list_actions(
+                    owner_uid=admin.id,
+                    include_completed=True,
+                    source=SOURCE_PROACTIVE,
+                )
+                if row.title == _NUDGE_TITLE and row.completed_at is not None
+            ]
+            if existing_done:
+                continue
+            bus.action_items_book.add(
+                uid=admin.id,
+                title=_NUDGE_TITLE,
+                description=_NUDGE_DESC,
+                target_url=_NUDGE_URL,
+                source=SOURCE_PROACTIVE,
             )
-            for admin in admins
-        )
+            inserted += 1
     except Exception:  # pragma: no cover — DB failure
         logger.exception("complete: action-item insert failed")
         return CompleteResponse(ok=False)
