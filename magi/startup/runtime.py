@@ -78,7 +78,7 @@ async def run_magi(config: StartupConfig) -> None:
         workers, channels, bus,
         magi_id=_to_magi_id(startup.magi_id),
     ):
-        _serve_runtime_api(startup, bus)
+        await _serve_runtime_api(startup, bus)
 
 
 # ----------------------------------------------------------------------
@@ -291,7 +291,7 @@ def _build_channels(
     import json
 
     try:
-        raw = bus.settings_book.get("channels.enabled")
+        raw = bus.settings_book.get(key="channels.enabled")
         if raw:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
@@ -306,11 +306,11 @@ def _build_channels(
 # ----------------------------------------------------------------------
 
 
-def _serve_runtime_api(
+async def _serve_runtime_api(
     _startup: StartupContext,
     bus: "Bus | None" = None,
 ) -> None:
-    """Run uvicorn with the private Runtime FastAPI app.
+    """Serve the private Runtime FastAPI app in the active event loop.
 
     Per plan §21 — host + port are hardcoded; reload is decided by the
     deployment role, not by an operator-controlled env var.
@@ -321,7 +321,7 @@ def _serve_runtime_api(
     log_level = _log_level(bus)
     reload_dirs = _reload_dirs() if reload else None
 
-    uvicorn.run(
+    config = uvicorn.Config(
         "magi.channels.api.app:create_runtime_app",
         factory=True,
         host=host,
@@ -330,6 +330,7 @@ def _serve_runtime_api(
         reload=reload,
         reload_dirs=reload_dirs,
     )
+    await uvicorn.Server(config).serve()
 
 
 def _reload_enabled() -> bool:
@@ -348,7 +349,7 @@ def _log_level(bus: "Bus") -> str:
     Reads the explicitly injected Bus only.
     """
     try:
-        raw = bus.settings_book.get("system.log_level")
+        raw = bus.settings_book.get(key="system.log_level")
         if raw and raw in {"debug", "info", "warning", "error"}:
             return raw
     except Exception:  # noqa: BLE001

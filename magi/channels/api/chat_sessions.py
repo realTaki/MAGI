@@ -25,7 +25,7 @@ directly.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -39,7 +39,10 @@ logger = logging.getLogger("magi.api.chat_sessions")
 router = APIRouter(tags=["chat_sessions"])
 
 
-def get_session_store() -> SessionService:
+SessionStore = Any
+
+
+def get_session_store() -> SessionStore:
     """FastAPI dependency — one bus session facade per request.
 
     We deliberately construct it lazily (per-request) rather
@@ -50,7 +53,7 @@ def get_session_store() -> SessionService:
     return bus.session
 
 
-SessionServiceDep = Annotated[SessionService, Depends(get_session_store)]
+SessionServiceDep = Annotated[SessionStore, Depends(get_session_store)]
 
 
 # -- Pydantic response shapes ------------------------------------------------

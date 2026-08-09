@@ -41,7 +41,9 @@ def _magis_factory(database_url: str):
     """Build and initialise the Bus-owned MAGIS schema."""
     from magi.bus.db.engine import build_magis_factory
     # Import the Books before ``create_all`` so their inline ORM models are
-    # registered on Bus's independent metadata.
+    # registered on Bus's shared metadata.  MAGIS auth/admin rows reference
+    # ``contacts.id``, so the local contact model must be registered too.
+    from magi.bus.library.local.contactBook import ContactBook  # noqa: F401
     from magi.bus.library.magis import (  # noqa: F401
         AuthCredentialBook,
         ControlRuntimeBook,

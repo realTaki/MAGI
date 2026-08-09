@@ -27,10 +27,45 @@ logger = logging.getLogger("magi.api.system_settings")
 
 router = APIRouter(tags=["system-settings"])
 
+SYSTEM_TZ_KEY = "system.timezone"
+TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
+COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
+COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
+COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
+
+DEFAULT_TOOL_MAX_ITERATIONS = 10
+MIN_TOOL_MAX_ITERATIONS = 1
+MAX_TOOL_MAX_ITERATIONS = 50
+DEFAULT_COMPACT_CONTEXT_WINDOW = 100_000
+DEFAULT_COMPACT_THRESHOLD_PCT = 80
+DEFAULT_COMPACT_KEEP_RECENT = 20
+MIN_COMPACT_CONTEXT_WINDOW = 16_000
+MAX_COMPACT_CONTEXT_WINDOW = 200_000
+MIN_COMPACT_THRESHOLD_PCT = 50
+MAX_COMPACT_THRESHOLD_PCT = 95
+MIN_COMPACT_KEEP_RECENT = 5
+MAX_COMPACT_KEEP_RECENT = 100
+
 
 def _settings():
     """Return the bus settings service for the active state dir."""
     return bus.settings
+
+
+def _default_timezone() -> str:
+    try:
+        return str(zoneinfo.ZoneInfo("localtime").key)
+    except Exception:
+        return "Etc/UTC"
+
+
+def _read_int_setting(*, key: str, default: int, minimum: int, maximum: int) -> int:
+    raw = _settings().get(key)
+    try:
+        value = int(raw) if raw is not None else default
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, value))
 
 
 # ────────────────────────────────────────────────────────────────── #
@@ -55,9 +90,15 @@ class TimezoneUpdateRequest(BaseModel):
 @router.get("/system-settings/timezone", response_model=TimezoneOut)
 def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
     svc = _settings()
+    default = _default_timezone()
+    current = svc.get(SYSTEM_TZ_KEY) or default
+    try:
+        zoneinfo.ZoneInfo(current)
+    except zoneinfo.ZoneInfoNotFoundError:
+        current = default
     return TimezoneOut(
-        current=svc.system_timezone(),
-        default=svc.system_default_timezone(),
+        current=current,
+        default=default,
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -78,7 +119,7 @@ def put_system_timezone(
     tz = payload.timezone
     svc = _settings()
     try:
-        svc.set_system_timezone(tz)
+        zoneinfo.ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         raise MagiHTTPException(
             status_code=400,
@@ -90,9 +131,10 @@ def put_system_timezone(
     from magi.channels.api.tasks import _invalidate_system_tz_cache
     _invalidate_system_tz_cache()
     logger.info("system.timezone set to %r", tz)
+    svc.set(SYSTEM_TZ_KEY, tz)
     return TimezoneOut(
         current=tz,
-        default=svc.system_default_timezone(),
+        default=_default_timezone(),
         choices=sorted(zoneinfo.available_timezones()),
     )
 
@@ -124,7 +166,13 @@ class ToolMaxIterationsUpdateRequest(BaseModel):
 def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
     svc = _settings()
     return ToolMaxIterationsOut(
-        current=svc.tool_max_iterations(),
+        current=_read_int_setting(
+            key=TOOL_MAX_ITERATIONS_KEY,
+            default=DEFAULT_TOOL_MAX_ITERATIONS,
+            minimum=MIN_TOOL_MAX_ITERATIONS,
+            maximum=MAX_TOOL_MAX_ITERATIONS,
+        ),
+        default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
     )
@@ -140,9 +188,11 @@ def put_tool_max_iterations(
 ) -> ToolMaxIterationsOut:
     """Persist a new max tool iterations value."""
     svc = _settings()
+    svc.set(TOOL_MAX_ITERATIONS_KEY, str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(
         current=payload.value,
+        default=DEFAULT_TOOL_MAX_ITERATIONS,
         min=MIN_TOOL_MAX_ITERATIONS,
         max=MAX_TOOL_MAX_ITERATIONS,
     )
@@ -178,9 +228,27 @@ class CompactConfigUpdateRequest(BaseModel):
 def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
     svc = _settings()
     return CompactConfigOut(
-        context_window=svc.compact_context_window(),
-        threshold_pct=svc.compact_threshold_pct(),
-        keep_recent=svc.compact_keep_recent(),
+        context_window=_read_int_setting(
+            key=COMPACT_CONTEXT_WINDOW_KEY,
+            default=DEFAULT_COMPACT_CONTEXT_WINDOW,
+            minimum=MIN_COMPACT_CONTEXT_WINDOW,
+            maximum=MAX_COMPACT_CONTEXT_WINDOW,
+        ),
+        threshold_pct=_read_int_setting(
+            key=COMPACT_THRESHOLD_PCT_KEY,
+            default=DEFAULT_COMPACT_THRESHOLD_PCT,
+            minimum=MIN_COMPACT_THRESHOLD_PCT,
+            maximum=MAX_COMPACT_THRESHOLD_PCT,
+        ),
+        keep_recent=_read_int_setting(
+            key=COMPACT_KEEP_RECENT_KEY,
+            default=DEFAULT_COMPACT_KEEP_RECENT,
+            minimum=MIN_COMPACT_KEEP_RECENT,
+            maximum=MAX_COMPACT_KEEP_RECENT,
+        ),
+        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
+        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
+        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
 
 
@@ -202,6 +270,9 @@ def put_compact_config(
         context_window=payload.context_window,
         threshold_pct=payload.threshold_pct,
         keep_recent=payload.keep_recent,
+        default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
+        default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
+        default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
 
 
@@ -214,10 +285,10 @@ def put_compact_config(
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
 def get_show_daily_note() -> bool:
-    from magi.channels.api._bus import bus
-    return _bus().settings.show_daily_note()
+    raw = _settings().get("system.show_daily_note")
+    return raw is None or raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_show_daily_note_prompt() -> bool:
-    from magi.channels.api._bus import bus
-    return _bus().settings.show_daily_note_prompt()
+    raw = _settings().get("system.show_daily_note_prompt")
+    return raw is not None and raw.strip().lower() in {"1", "true", "yes", "on"}

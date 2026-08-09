@@ -141,11 +141,23 @@ def run_webui() -> None:
     override them through the legacy ``magi webui`` form.
     """
     import os
+    from pathlib import Path
 
     logging.basicConfig(
         level=DEFAULT_LOG_LEVEL.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    # The singleton WebUI serves the first-run onboarding and auth routes,
+    # which access the public BUS facade.  It intentionally does not start
+    # workers; the selected MAGI runtime owns those.  Both processes point at
+    # the same durable local state directory.
+    from magi.bus import bootstrap_bus
+    from magi.channels import set_current_bus
+    from magi.startup.paths import resolve_workspace_dir
+
+    state_dir = Path(resolve_workspace_dir()) / "memories"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    set_current_bus(bootstrap_bus(state_dir=str(state_dir)))
     uvicorn.run(
         "magi.channels.api.app:create_control_app",
         factory=True,
