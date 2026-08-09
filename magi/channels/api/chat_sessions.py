@@ -32,6 +32,14 @@ from pydantic import BaseModel, Field
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
+from magi.bus.library.local.sessionBook import (
+    Message,
+    Session,
+    SessionCorruptError,
+    SessionNotFoundError,
+    SessionPathError,
+    SessionSummary,
+)
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.api.chat_sessions")
@@ -145,15 +153,31 @@ class UpdateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=80)
 
 
-def _session_to_out(s: Session) -> SessionOut:
+def _session_to_out(
+    s: Session,
+    *,
+    messages: list[Message],
+    schema_version: int = 1,
+) -> SessionOut:
+    """Project a Session row + its messages into the API shape.
+
+    ``schema_version`` defaults to ``1`` — there is no on-disk
+    schema versioning yet, so we surface a constant to keep the
+    API contract stable for clients that want to feature-detect
+    future schema changes without parsing the row shape.
+    """
     return SessionOut(
         session_id=s.session_id,
         delivery_address=s.delivery_address,
         uid=s.uid,
         channel=s.channel,
-        created_at=s.created_at,
-        updated_at=s.updated_at,
-        schema_version=s.schema_version,
+        # ``Session`` declares these Optional (defensive default in the
+        # dataclass), but real DB rows always populate them — emit ""
+        # only as a last-resort fallback so the API consumer can
+        # distinguish "missing" from "epoch zero".
+        created_at=s.created_at or "",
+        updated_at=s.updated_at or "",
+        schema_version=schema_version,
         # D.7: thread the (optional) title through.
         title=s.title,
         messages=[
@@ -163,7 +187,7 @@ def _session_to_out(s: Session) -> SessionOut:
                 ts=m.ts,
                 text=m.text,
             )
-            for m in s.messages
+            for m in messages
         ],
     )
 

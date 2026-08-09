@@ -39,6 +39,7 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
+from magi.bus.library.local.sessionBook import SessionPathError
 from magi.channels import Channel
 
 logger = logging.getLogger("magi.api.chat")

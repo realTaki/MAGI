@@ -423,7 +423,7 @@ async def target_verify_login_code(magi_id: int, payload: TargetVerifyRequest, r
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=_sign_selected_session(bus,
-            magi_id=magic_id, telegram_id=telegram_id,
+            magi_id=magi_id, telegram_id=telegram_id,
             display_name=display_name,
             admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
         ),
