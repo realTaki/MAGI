@@ -76,13 +76,14 @@ def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port
 
 def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     """Provision the only allowed first node and its Genesis topology."""
-    if config.magi_name != DEFAULT_MAGI_NAME or config.magis_database_url is not None:
+    if config.magi_name != DEFAULT_MAGI_NAME:
         raise ConfigurationError("`magi init` only provisions the first eva-000 MAGI")
     config.host_workspace_dir.mkdir(parents=True, exist_ok=True)
     for name in ("logs", "run"):
         (config.host_workspace_dir / name).mkdir(parents=True, exist_ok=True)
-    magis_url = resolve_magis_database_url(config.host_workspace_dir)
-    resolve_magis_database_path(config.host_workspace_dir).parent.mkdir(parents=True, exist_ok=True)
+    magis_url = config.magis_database_url or resolve_magis_database_url(config.host_workspace_dir)
+    if config.magis_database_url is None:
+        resolve_magis_database_path(config.host_workspace_dir).parent.mkdir(parents=True, exist_ok=True)
     bus = provision_node_storage(
         state_dir=str(config.workspace_dir / "memories"), magis_url=magis_url,
     )

@@ -32,10 +32,25 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: provision-genesis
+          image: magi:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["magi", "init"]
+          env:
+            - name: MAGIS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: magi-magis-1-genesis-db
+                  key: MAGIS_DATABASE_URL
+          volumeMounts:
+            - name: workspace
+              mountPath: /
       containers:
         - name: magi
           image: magi:0.1.0
           imagePullPolicy: IfNotPresent
+          command: ["magi", "node", "run", "--foreground"]
           envFrom:
             - configMapRef:
                 name: magi-config
@@ -56,6 +71,11 @@ spec:
             # for another MAGI.
             - name: MAGI_RUNTIME_ID
               value: "1"
+            - name: MAGIS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: magi-magis-1-genesis-db
+                  key: MAGIS_DATABASE_URL
             # The ADAM image cannot call the Kubernetes API. It holds only an
             # HMAC secret for the narrow internal orchestrator API.
             - name: MAGI_ORCHESTRATOR_URL
@@ -80,7 +100,7 @@ spec:
                   optional: true
           ports:
             - name: http
-              containerPort: 42069
+              containerPort: 42070
               protocol: TCP
           volumeMounts:
             # The PVC is mounted at the container root, so the workspace
@@ -89,29 +109,18 @@ spec:
             # inside the Pod.
             - name: workspace
               mountPath: /
-          # `magi --check` works for both ADAM and EVA, including EVA nodes
-          # that do not mount the WebUI channel.
           startupProbe:
-            exec:
-              command:
-                - magi
-                - --check
+            httpGet: {path: /health, port: http}
             failureThreshold: 30
             periodSeconds: 10
             timeoutSeconds: 5
           livenessProbe:
-            exec:
-              command:
-                - magi
-                - --check
+            httpGet: {path: /health, port: http}
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            exec:
-              command:
-                - magi
-                - --check
+            httpGet: {path: /health, port: http}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

@@ -12,6 +12,6 @@ spec:
     app.kubernetes.io/component: node
   ports:
     - name: http
-      port: 42069
+      port: 42070
       targetPort: http
       protocol: TCP

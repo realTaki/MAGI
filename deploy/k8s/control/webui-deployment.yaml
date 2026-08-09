@@ -28,7 +28,7 @@ spec:
         - name: magi
           image: magi:0.1.0
           imagePullPolicy: IfNotPresent
-          command: ["magi", "webui"]
+          command: ["magi", "webui", "run", "--foreground"]
           env:
             - name: MAGIS_DATABASE_URL
               valueFrom:
@@ -41,7 +41,10 @@ spec:
                   name: magi-control
                   key: MAGI_CONTROL_SECRET
             - name: MAGI_ROOT_RUNTIME_URL
-              value: http://magi:42069
+              value: http://magi:42070
+          volumeMounts:
+            - name: workspace
+              mountPath: /
           ports:
             - name: http
               containerPort: 42069
@@ -61,3 +64,7 @@ spec:
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "1", memory: 1Gi}
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: magi-workspace
