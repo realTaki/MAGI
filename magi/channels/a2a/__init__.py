@@ -127,7 +127,7 @@ from __future__ import annotations
 # DISABLED — ``magi.channels.a2a`` is commented out. The package is
 # skeleton-only at this point (every adapter method raises
 # ``NotImplementedError`` — see the module docstring above), and the
-# BUS has not yet integrated the peer-routing primitives
+# bus has not yet integrated the peer-routing primitives
 # (per-target HTTP client cache, MAGIS-tree peer-list builder, HMAC
 # verification against ``MAGI_CONTROL_SECRET``) that real a2a
 # delivery needs. Until the runtime lands, the side-effect below

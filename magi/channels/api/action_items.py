@@ -25,7 +25,7 @@ distinction.
 Helpers
 =======
 
-The BUS service owns creation and completion transactions.  Onboarding asks
+The bus service owns creation and completion transactions.  Onboarding asks
 it to ensure the per-admin credentials reminder, so the WebUI router never
 opens a persistence session.
 
@@ -35,7 +35,7 @@ Indexes used
 - ``ix_action_items_uid``  : every GET filters here.
 - ``ix_action_items_contact_recent``: the (uid,
   created_at DESC) ordering in the open + last-7-days list.
-- ``ux_action_items_open_per_kind``: BUS-side idempotency guard for the
+- ``ux_action_items_open_per_kind``: bus-side idempotency guard for the
   onboarding credentials reminder.
 """
 
@@ -262,7 +262,7 @@ def complete_action_item(
         owner_uid=admin_id,
         note=(payload.completion_note if "completion_note" in payload.model_fields_set else None),
     )
-    if row is None:  # Ownership was rechecked inside the BUS transaction.
+    if row is None:  # Ownership was rechecked inside the bus transaction.
         raise MagiHTTPException(
             status_code=403,
             code="forbidden.not_your_action_item",

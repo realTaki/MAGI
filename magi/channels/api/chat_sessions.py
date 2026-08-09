@@ -3,7 +3,7 @@
 A "session" is a single thread of messages between an
 operator (identified by their uid in the dashboard cookie)
 and the system LLM. Sessions are persisted as JSON files
-in the BUS-owned SQLite session domain.
+in the bus-owned SQLite session domain.
 and are per-user — admin A's session is invisible to admin B.
 
 Endpoints
@@ -40,7 +40,7 @@ router = APIRouter(tags=["chat_sessions"])
 
 
 def get_session_store() -> SessionService:
-    """FastAPI dependency — one BUS session facade per request.
+    """FastAPI dependency — one bus session facade per request.
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override

@@ -314,7 +314,7 @@ def ensure_private_database(workspace_dir: Path) -> str:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     from magi.bus.db.engine import EngineFactory
     # Bus owns local table registration and creation.  The factory is
-    # built from the exact private DSN rather than the BUS helper.
+    # built from the exact private DSN rather than the bus helper.
     EngineFactory(f"sqlite:///{db_path}").create_all()
     from magi.startup.paths import resolve_private_database_url
 

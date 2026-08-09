@@ -28,7 +28,7 @@ logger = logging.getLogger("magi.bus.bootstrap")
 
 @dataclass(frozen=True, slots=True)
 class Bus:
-    """Public, domain-partitioned BUS facade.
+    """Public, domain-partitioned bus facade.
 
     Holds both local SQLite and MAGIS database access internally.
     Constructed by :func:`bootstrap_bus` in the composition root;

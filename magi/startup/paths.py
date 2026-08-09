@@ -277,9 +277,9 @@ def resolve_state_dir(
     host_workspace_dir: Path | None = None,
     magi_name: str | None = None,
 ) -> Path:
-    """Return the canonical state directory for BUS SQLite + migrations.
+    """Return the canonical state directory for bus SQLite + migrations.
 
-    Per plan §9 — the BUS SQLite file lives at
+    Per plan §9 — the bus SQLite file lives at
     ``<workspace>/magi.db``; the state dir is the ``memories`` sibling:
 
         ``<HOST_WORKSPACE_DIR>/MAGI_Citizens/<MAGI_NAME>/memories``

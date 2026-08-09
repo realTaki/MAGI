@@ -16,8 +16,8 @@ Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the data write and returns ``True`` if a
 row was removed, ``False`` if no row matched (the same
-``existed`` flag the BUS's ``ContactsService.delete_note``
-exposed). The BUS service is no longer imported here.
+``existed`` flag the bus's ``ContactsService.delete_note``
+exposed). The old service is no longer imported here.
 """
 
 from __future__ import annotations

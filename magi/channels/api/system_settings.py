@@ -7,7 +7,7 @@ existing ``state_get`` / ``state_set`` / WAL concurrency story.
 
 This module owns only the **HTTP surface** — the FastAPI router,
 Pydantic request/response models, and the constants for the KV
-keys.  Reads and writes go through BUS Book API
+keys.  Reads and writes go through bus Book API
 so the API layer never crosses the channels → db boundary.
 """
 

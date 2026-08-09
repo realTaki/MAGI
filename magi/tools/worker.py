@@ -456,7 +456,7 @@ class ToolsWorker:
 
         # 5. Submit the result. BaseJobBoard handles attempts ≥
         #    MAX_ATTEMPTS automatically; we don't call retry()
-        #    ourselves (unlike the BUS worker).
+        #    ourselves.
         self.bus.tool_job_board.submit_result(
             key=job.job_id,
             result=_to_result(job, result),

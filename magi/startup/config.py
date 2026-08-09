@@ -45,7 +45,7 @@ RUNTIME_PORT: int = 42070
 WEBUI_HOST: str = "0.0.0.0"
 WEBUI_PORT: int = 42069
 
-# Default log level used until the BUS setting ``system.log_level``
+# Default log level used until the bus setting ``system.log_level``
 # is read.
 DEFAULT_LOG_LEVEL: str = "info"
 

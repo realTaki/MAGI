@@ -135,7 +135,7 @@ async def _runtime_lifespan(
 
     ``bus`` is required for :func:`start_provider_worker` — the
     provider worker has been migrated to bus; the rest of the
-    workers still use the BUS global singleton internally.
+    workers use the bus via constructor injection.
 
     ``magi_id`` is passed through to the proactive worker for
     Adam-dependent bootstrap checks.
@@ -281,7 +281,7 @@ def _build_channels(
     _startup: StartupContext,
     bus: "Bus | None" = None,
 ) -> list[str]:
-    """Resolve enabled message channels from BUS settings_book.
+    """Resolve enabled message channels from bus settings_book.
 
     Channels state lives in ``settings_book.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.

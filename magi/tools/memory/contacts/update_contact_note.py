@@ -84,7 +84,7 @@ class UpdateContactNoteTool(Tool):
         except LookupError as e:
             # ``contact_notes_book.update_note`` raises
             # ``LookupError`` when ``note_id`` does not
-            # resolve — same exception type the BUS
+            # resolve — same exception type
             # raised, so the LLM-facing error stays
             # caller-fixable rather than tripping the
             # worker's "tool.crashed" envelope.

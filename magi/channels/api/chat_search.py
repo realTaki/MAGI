@@ -1,6 +1,6 @@
 """HTTP wrapper around the chat-history FTS5 search.
 
-This module is the FastAPI surface; BUS owns the actual query. Keeping the HTTP
+This module is the FastAPI surface; bus owns the actual query. Keeping the HTTP
 wrapper thin (admin gate, Pydantic response, error mapping) means the
 agent tool can call the same query without going through
 ``channels.webui.api.*`` — closing the package-boundary violation

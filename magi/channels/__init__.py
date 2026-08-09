@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.channels")
 
-# Adapter bridge set by the runtime after BUS bootstrap. New worker code uses
+# Adapter bridge set by the runtime after bus bootstrap. New worker code uses
 # explicit constructor injection; this accessor is limited to channel adapters.
 _current_bus: Bus | None = None
 

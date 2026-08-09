@@ -45,9 +45,9 @@ lookup via :meth:`SessionBook.get_for_owner`) and
 :class:`magi.bus.guild.deliveryJob.DeliveryJob` to
 the durable ``delivery_outbox`` queue — the channel-owned
 DeliveryWorker performs the actual protocol I/O after the
-agent transition has committed). The BUS services at
-BUS Book API and
-BUS Book API are no longer
+agent transition has committed). The legacy services at
+bus Book API and
+bus Book API are no longer
 imported here.
 """
 

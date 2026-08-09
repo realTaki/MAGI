@@ -8,7 +8,7 @@ Reads through the bus
 :class:`~magi.bus.library.local.mcpServerBook.McpServerBook.list_all`
 so the result reflects every row the
 :class:`~magi.mcp.worker.McpWorker` would see on its next
-bootstrap. The BUS ``McpService.list()`` continues to back
+bootstrap. The bus ``McpService.list()`` continues to back
 the WebUI in the meantime; both sides share the same physical
 SQLite table.
 """

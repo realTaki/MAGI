@@ -2,7 +2,7 @@
 
 The package is intentionally empty until a Bus-native plugin
 contract is introduced. The former ``audit_log`` sample depended on
-the BUS hook store and was removed with that runtime.
+the old hook store and was removed with that runtime.
 
 Adding a new plugin:
 

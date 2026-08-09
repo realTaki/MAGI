@@ -1,7 +1,7 @@
 """PostgreSQL-backed state used exclusively by the singleton WebUI.
 
 This module is the channel-side façade for the singleton WebUI's
-PG-backed control-plane KV. Reads and writes are forwarded through the BUS
+PG-backed control-plane KV. Reads and writes are forwarded through the bus
 facade so the channel layer does not open persistence directly.
 
 The ``enabled()`` flag is intentionally local: it's a pure env-var

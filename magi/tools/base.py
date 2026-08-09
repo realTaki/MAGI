@@ -333,7 +333,7 @@ class Tool(ABC):
                 "cookie / TG binding."
             )
         if ctx.bus is None:
-            # BUS ToolContext (MCP-side callers until
+            # bus ToolContext (MCP-side callers until
             # MCP migrates) — no role resolution is possible.
             return (
                 "role check unavailable: tool context has no bus; "

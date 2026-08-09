@@ -24,8 +24,6 @@ logger = logging.getLogger("magi.channels.webui.worker")
 
 class WebUIWorker(ChannelWorker):
     """WebUI 通道 Worker：认领 deliveryJob(channel=webui) → Session 追加。
-
-    替代旧 ``DeliveryWorker`` 中 ``claim.channel == "webui"`` 分支。
     """
 
     channel_name = "webui"

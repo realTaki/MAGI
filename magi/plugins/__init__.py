@@ -1,7 +1,7 @@
 """Plugin namespace.
 
 Plugins are not part of the current runtime contract. The package intentionally
-exports no plugin or hook API until a BUS-backed design and implementation are
+exports no plugin or hook API until a bus-backed design and implementation are
 introduced together.
 """
 

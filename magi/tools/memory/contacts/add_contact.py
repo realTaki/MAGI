@@ -23,8 +23,8 @@ Bus plumbing: this tool talks to bus
 and ``ctx.bus.contact_notes_book`` — the Books own
 write invariants (name uniqueness, length caps,
 empty-content rejection) and expose ``add(...)`` plus
-``to_dict`` on the returned DTO. The BUS service at
-BUS Book API is no longer
+``to_dict`` on the returned DTO. The legacy service at
+bus Book API is no longer
 imported here.
 """
 

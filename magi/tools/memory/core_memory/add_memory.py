@@ -24,8 +24,8 @@ Bus plumbing: this tool talks to bus
 in :data:`ALL_KINDS`, subject non-empty + ≤200
 chars, body non-empty + ≤8 KB, priority 1..5) and
 surfaces any violation as ``ValueError`` that we
-translate to ``ToolResult.err`` here. The BUS
-service at BUS Book API
+translate to ``ToolResult.err`` here. The bus
+service at bus Book API
 is no longer imported here.
 """
 

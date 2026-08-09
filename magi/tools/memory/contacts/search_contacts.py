@@ -18,8 +18,8 @@ Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
 for the contact-side join (name + note match,
 ``last_seen_at`` ordering) and ``ctx.bus.contact_notes_book``
-for the per-contact note sample. The BUS service at
-BUS Book API is no longer
+for the per-contact note sample. The legacy service at
+bus Book API is no longer
 imported here.
 """
 
@@ -99,7 +99,7 @@ class SearchContactsTool(Tool):
                 # Slice in-place to bound the response —
                 # ``list_for_contact`` returns the full
                 # corpus sorted newest-first, so a prefix
-                # is the same "sample" the BUS's
+                # is the same "sample" the legacy
                 # ``ContactView`` returned.
                 notes = ctx.bus.contact_notes_book.list_for_contact(
                     contact_id=contact.id,

@@ -11,9 +11,9 @@ The composition root (see :mod:`magi.startup.runtime`) calls
 :func:`start_tool_worker` with a fully-wired :class:`Bus`.
 The worker publishes the builtin tool catalog at startup and
 then drains :class:`RunToolJob` claims forever; :func:`stop_tool_worker`
-cancels the run loop. The BUS tool worker has been
+cancels the run loop. The bus tool worker has been
 deprecated — it was deleted from this package's start path;
-agent still enqueues on the BUS for now, which means
+agent enqueues on the bus, which means
 agent tool calls won't fire until the agent migrates too.
 """
 

@@ -2,7 +2,7 @@
 
 A :class:`Plugin` is a thin marker so the runtime knows the
 object is something a plugin author wrote.  Hooks themselves
-are now delivered through BUS hook contract (BUS side)
+are now delivered through bus hook contract (bus side)
 and :mod:`magi.plugins.hooks` (plugin side) — there is no
 longer a fire-and-forget ``HookBus`` here.
 
@@ -14,8 +14,8 @@ Why this file still exists:
     external code uses to talk about plugins.
 
 The legacy ``Hook`` enum and ``PluginContext`` dataclass are
-gone — replaced by BUS hook contract and
-BUS hook contract respectively.  See
+gone — replaced by bus hook contract and
+bus hook contract respectively.  See
 the migration note in ``docs/MAGI_HOOK_SYSTEM.md``.
 """
 

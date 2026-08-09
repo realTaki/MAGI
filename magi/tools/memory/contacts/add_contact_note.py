@@ -19,8 +19,8 @@ Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
 ≤8 KB clamp) and exposes ``add(...)`` plus
-``to_dict`` on the returned DTO. The BUS service at
-BUS Book API is no
+``to_dict`` on the returned DTO. The legacy service at
+bus Book API is no
 longer imported here.
 """
 

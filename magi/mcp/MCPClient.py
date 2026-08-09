@@ -77,7 +77,7 @@ class MCPTimeoutConfig:
 #
 # These live in the loader because the worker (and the rest of the
 # subsystem) reaches for them through ``magi.mcp.MCPClient``. They
-# no longer reach into the BUS ``get_bus().settings`` — the
+# no longer reach into the old ``get_bus().settings`` — the
 # worker passes a :class:`~magi.bus.Bus` and reads through
 # ``bus.settings_book`` directly.
 

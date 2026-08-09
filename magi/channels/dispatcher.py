@@ -189,7 +189,7 @@ async def send_to_uid(uid: int, channel: Channel | str, text: str) -> None:
     The dispatcher resolves the bound IM id (via the channel
     adapter's ``lookup_im_id``) and routes through the delivery
     outbox.  All sends go through ``bus.delivery.enqueue_and_wait``
-    so the BUS-side ``DELIVERY_PENDING`` GATE fire site is the
+    so the bus-side ``DELIVERY_PENDING`` GATE fire site is the
     single place hooks see outbound messages.  Domain code
     never sees the IM id.
 

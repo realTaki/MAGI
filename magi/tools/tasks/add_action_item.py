@@ -21,8 +21,8 @@ tool calls leave it unset; scheduled tasks or agent
 loops that reach this tool *without* an operator in the
 loop pass ``source='proactive'`` so the provenance tag
 reflects actual causation rather than the path the write
-happened to take. The BUS service at
-BUS Book API is no longer
+happened to take. The legacy service at
+bus Book API is no longer
 imported here.
 """
 

@@ -83,7 +83,7 @@ class ActionItem:
     row to one of these via :meth:`BaseBook._row_to_dto`.
     ``to_dict`` returns the public-facing wire shape — ISO
     timestamps, ``None`` for unset optionals — matching the
-    BUS's ``ActionItemView`` contract that the API layer
+    bus's ``ActionItemView`` contract that the API layer
     and LLM tool both consume.
     """
 

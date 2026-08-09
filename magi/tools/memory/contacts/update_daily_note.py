@@ -33,9 +33,9 @@ Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the upsert + daily-append logic,
 length cap, and ``note_date`` defaulting. Returns the
-DTO so the LLM sees the post-write row. The BUS
+DTO so the LLM sees the post-write row. The bus
 service at
-BUS Book API
+bus Book API
 is no longer imported here.
 """
 

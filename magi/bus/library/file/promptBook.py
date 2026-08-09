@@ -149,7 +149,7 @@ class PromptBook(BaseFileBook):
         (sorted by stem).
 
         Each preset dict carries the YAML schema used by
-        BUS Book API / the bundled
+        bus Book API / the bundled
         ``defaults.yaml``: ``id``, ``key``, ``name``, ``description``,
         ``prompt``, ``frequency``, ``hour``, ``minute``,
         ``day_of_week``, ``day_of_month``, ``run_at``, ``channel``,

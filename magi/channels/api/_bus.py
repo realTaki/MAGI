@@ -1,4 +1,4 @@
-"""Unified pure-bus access for channels/api/.  No BUS fallback.
+"""Unified pure-bus access for channels/api/.  No bus fallback.
 
 Usage::
 
@@ -120,7 +120,7 @@ class _StreamHub:
 
 
 class _Auth:
-    """Password credential ops via settings_book (was BUS.auth)."""
+    """Password credential ops via settings_book (was bus.auth)."""
     _PREFIX = "auth.password."
 
     def has_password_for(self, uid: int) -> bool:

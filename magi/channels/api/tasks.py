@@ -642,7 +642,7 @@ def run_task_now(
         task_id=task_id, run_id=run_id, trigger="manual",
         started_at=_now_iso(), session_id=view.session_id,
     )
-    # Route through the BUS-side scheduler bridge so this module
+    # Route through the bus-side scheduler bridge so this module
     # never holds a direct Python reference to
     # ``magi.channels.tasks.scheduler`` / ``TaskChannel`` (per
     # ``docs/MAGI_MODULE_RESPONSIBILITIES_AND_DEPENDENCIES.md`` §5.6 +
@@ -764,7 +764,7 @@ def _enforce_creator_can_create(*, admin: bool, role: str) -> None:
 
 
 def _register_with_scheduler_view(view: TaskFullView) -> None:
-    """Best-effort nudge via the BUS-side scheduler bridge.
+    """Best-effort nudge via the bus-side scheduler bridge.
 
     Routes through :class:`TaskSchedulerBridge` so this API module
     never holds a direct Python reference to
@@ -777,7 +777,7 @@ def _register_with_scheduler_view(view: TaskFullView) -> None:
 
 
 def _unregister_from_scheduler(task_id: str) -> None:
-    """Best-effort remove via the BUS-side scheduler bridge.
+    """Best-effort remove via the bus-side scheduler bridge.
 
     Same rationale as :func:`_register_with_scheduler_view`: keep the
     scheduler interaction behind ``magi.bus`` so the boundary test

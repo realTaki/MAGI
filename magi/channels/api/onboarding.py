@@ -49,7 +49,7 @@ router = APIRouter(tags=["onboarding"])
 
 
 def _bus():
-    """Build the BUS facade for the runtime's state directory."""
+    """Build the bus facade for the runtime's state directory."""
     return bus
 
 
