@@ -37,10 +37,12 @@ import pytest
 from magi.mcp.worker import McpWorker
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
+from magi.bus.db.file import FileShelf
 from magi.bus.guild import (
     McpServerChangedJob,
     mcpServerChangedJobBoard,
 )
+from magi.bus.library.file.promptBook import PromptBook
 from magi.bus.library.local import (
     McpServerBook,
     SettingBook,
@@ -94,6 +96,12 @@ def _build_bus(tmp_path) -> Bus:
     mcp_book = McpServerBook(factory)
     tool_book = ToolDefinitionBook(factory)
     board = mcpServerChangedJobBoard(factory)
+    # ``Bus.prompt_book`` is now non-Optional (B1: bootstrap fails
+    # loudly on a missing prompts bundle), so the fixture must hand a
+    # real PromptBook to the constructor even when the test never
+    # touches prompt text. Empty tmp_path shelf — fine, the worker
+    # under test doesn't read prompts.
+    prompt_book = PromptBook(FileShelf(tmp_path / "prompts"), workspace_dir=tmp_path)
     # The worker only touches these three attributes; the rest
     # of the Bus slots are unused and stay ``None`` (the
     # ``Bus`` dataclass uses ``object`` for everything but
@@ -111,6 +119,7 @@ def _build_bus(tmp_path) -> Bus:
         tool_catalog_book=None,  # type: ignore[arg-type]
         mcp_servers_book=mcp_book,
         mcp_server_changed_job_board=board,
+        prompt_book=prompt_book,
         tool_job_board=None,  # type: ignore[arg-type]
         agent_job_board=None,  # type: ignore[arg-type]
         llm_job_board=None,  # type: ignore[arg-type]

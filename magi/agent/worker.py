@@ -31,6 +31,7 @@ from magi.startup.worker import RuntimeWorker
 if TYPE_CHECKING:
     from magi.bus import Bus
     from magi.bus.guild.callLLMJob import CallLLMResult
+    from magi.bus.guild.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.agent.worker")
 

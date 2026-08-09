@@ -1,10 +1,16 @@
 """EvaRuntimeBook — desired/observed state for EVA Kubernetes Deployments.
 
-Schema for the ``eva_runtimes`` table. ``magic_id`` here
+Schema for the ``eva_runtimes`` table. ``magi_id`` here
 is the per-MAGI identity and is a FK to ``magis_memberships.id``.
 Display ``name`` / ``instruction`` / ``provider`` / ``api_key``
 live in the LOCAL :class:`SettingBook` (see
 :attr:`SettingBook.KNOWN_KEYS`) and are no longer columns here.
+
+Note: this table's old ``magic_id`` column was renamed to
+``magi_id`` (the old term survived from the pre-rename ``magic``
+table — see :mod:`magi.bus.library.magis.membershipBook`).
+A schema migration is required; see ``scripts/dev_rebaseline.py``
+for the SQLite ALTER path.
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ from magi.bus.db.base import Base, utcnow_naive
 @dataclass(frozen=True, slots=True)
 class EvaRuntime:
     id: int
-    magic_id: int
+    magi_id: int
     deployment_name: str
     desired_state: str
     observed_state: str = "unknown"
@@ -44,7 +50,7 @@ class _EvaRuntimeRow(Base):
     __tablename__ = "eva_runtimes"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    magic_id: Mapped[int] = mapped_column(
+    magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"),
         nullable=False, index=True,
     )

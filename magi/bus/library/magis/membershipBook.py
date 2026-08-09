@@ -45,6 +45,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.library.local.settingBook import SettingBook
 
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
@@ -194,7 +195,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
     dto_cls = MagisMembership
 
-    def __init__(self, factory, *, settings_book: "object | None" = None) -> None:
+    def __init__(self, factory, *, settings_book: SettingBook | None = None) -> None:
         super().__init__(factory)
         # Optional reference to the local SettingBook so
         # :meth:`instruction_context` can read the per-MAGI personal
@@ -202,6 +203,23 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         # the composition root; ``None`` means "personal instruction
         # unavailable" (test / pre-bootstrap).
         self._settings_book = settings_book
+
+    def list_all(self) -> list[MagisMembership]:
+        """Every membership row in the DB, ordered by PK.
+
+        Mirrors the ``list_all()`` convention used by
+        :meth:`MagisBook.list_all`, :meth:`EvaRuntimeBook.list_all`,
+        and :meth:`ControlBook.list_all` so the four MAGIS-side
+        Books share one surface. No per-MAGI scoping, no
+        join with ``magis_roles`` / ``magis``; callers needing
+        the rendered (magis_name, role_name, instruction) shape
+        go through :meth:`instruction_context` per ``magic_id``.
+        """
+        with self._session() as s:
+            rows = s.scalars(
+                select(_MagisMembershipRow).order_by(_MagisMembershipRow.id)
+            ).all()
+            return [self._row_to_dto(r) for r in rows]
 
     def get(self, *, magi_id: int) -> MagisMembership | None:
         """Look up a single MAGI under any MAGIS by its per-MAGI identity.
@@ -225,6 +243,47 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                 .where(_MagisMembershipRow.magis_id == magis_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
+
+    def list_instruction_contexts(self) -> list[dict]:
+        """Bulk version of :meth:`instruction_context` — joined ``membership × role × magis`` rows for every entry.
+
+        Each returned dict has the same shape as the ``memberships`` list
+        :meth:`instruction_context` produces (``magis_name``,
+        ``team_instruction``, ``role_name``, ``role_instruction``), one
+        per row. Callers that only need one MAGI's context should keep
+        using :meth:`instruction_context`; this method is the bulk
+        counterpart for paths (e.g.
+        :func:`magi.agent.instructions.runtime_instruction_block`) that
+        want to render every membership at once.
+        """
+        from magi.bus.library.magis.magisBook import _MagisRow
+
+        contexts: list[dict] = []
+        with self._session() as s:
+            rows = s.execute(
+                select(_MagisMembershipRow, _MagisRoleRow, _MagisRow)
+                .join(
+                    _MagisRoleRow,
+                    _MagisRoleRow.id == _MagisMembershipRow.role_id,
+                )
+                .join(
+                    _MagisRow,
+                    _MagisRow.id == _MagisMembershipRow.magis_id,
+                )
+                .order_by(_MagisMembershipRow.id)
+            ).all()
+            for _membership_row, role_row, magis_row in rows:
+                contexts.append({
+                    "magis_name": str(getattr(magis_row, "name", "") or ""),
+                    "team_instruction": str(
+                        getattr(magis_row, "instruction", "") or ""
+                    ),
+                    "role_name": str(getattr(role_row, "name", "") or ""),
+                    "role_instruction": str(
+                        getattr(role_row, "instruction", "") or ""
+                    ),
+                })
+        return contexts
 
     def add(self, *, magis_id: int, role_id: int) -> MagisMembership:
         """Register a new MAGI under ``magis_id`` with ``role_id``.
@@ -282,7 +341,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 
     # -- agent-worker-bus.md §6 helper --------------------------------
 
-    def instruction_context(self, *, magic_id: int) -> tuple[str, list[dict]]:
+    def instruction_context(self, *, magi_id: int) -> tuple[str, list[dict]]:
         """Return ``(personal_instruction, memberships)`` for one MAGI.
 
         ``personal_instruction`` is read from the local

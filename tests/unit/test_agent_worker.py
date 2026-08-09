@@ -350,6 +350,20 @@ async def test_token_usage_recorded():
     await worker._record_token_usage(ctx, result)
 
     bus.token_usage_book.add.assert_called_once()
+    # Assert the argument shape — the previous regression where
+    # ``Book.add`` was silently getting a ``TypeError`` because the
+    # adapter passed ``usage=``/``channel=`` keys the new signature
+    # doesn't recognise would have slipped past ``assert_called_once``
+    # alone (the call still happens, just inside the swallowed
+    # ``except``). These assertions catch the next refactor of this
+    # boundary.
+    call_kwargs = bus.token_usage_book.add.call_args.kwargs
+    assert call_kwargs["uid"] == 42
+    assert call_kwargs["provider"] == "claude"
+    assert call_kwargs["model"] == "claude:sonnet"
+    assert call_kwargs["input_tokens"] == 100
+    assert call_kwargs["output_tokens"] == 50
+    assert call_kwargs["extra"] == {"channel": "tg"}
 
 
 @pytest.mark.asyncio
