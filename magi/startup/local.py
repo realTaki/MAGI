@@ -22,7 +22,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -58,66 +58,6 @@ class LocalSlotStatus:
     pid_file: str
     log_stdout: str
     log_stderr: str
-
-
-# ----------------------------------------------------------------------
-# create — register a new MAGI under an existing MAGIS
-# ----------------------------------------------------------------------
-
-
-def create_magi(
-    *,
-    config: StartupConfig,
-    start: bool = True,
-) -> int:
-    """Create a new MAGI under an existing MAGIS.
-
-    Per plan §16 — refuses if ``MAGIS_DATABASE_URL`` is unset (the
-    caller is expected to bootstrap MAGIS first via :command:`magi run`
-    which produces the Genesis ``eva-000``). Persists identity in the
-    MAGIS database, creates Membership, ensures the per-MAGI workspace
-    directory, then optionally spawns the subprocess.
-    """
-    if config.magis_database_url is None:
-        raise ConfigurationError(
-            "create_magi requires an existing MAGIS — "
-            "set MAGIS_DATABASE_URL or run `magi run` first"
-        )
-    config.workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    from magi.bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
-    from magi.startup.bootstrap import _magis_factory
-
-    factory = _magis_factory(config.magis_database_url)
-    magis = MagisBook(factory)
-    roles = MagisRoleBook(factory)
-    memberships = MagisMembershipBook(factory)
-    genesis = magis.get_root()
-    if genesis is None:
-        raise ConfigurationError("No MAGIS found — bootstrap the first MAGI first")
-    eva_role = roles.find(magis_id=genesis.id, name="EVA")
-    if eva_role is None:
-        eva_role = roles.add(magis_id=genesis.id, name="EVA", is_reserved=True)
-
-    # A MAGI's display name is local Bus setting state, not a global
-    # ``magic`` row.  A supplied MAGI_ID is an idempotent re-use request;
-    # otherwise registering creates one new membership identity.
-    membership = (
-        memberships.get(magi_id=int(config.magi_id))
-        if config.magi_id and config.magi_id.isdigit()
-        else None
-    )
-    if membership is None:
-        membership = memberships.add(magis_id=genesis.id, role_id=eva_role.id)
-        logger.info(
-            "create_magi: registered %s as membership %s in MAGIS %s",
-            config.magi_name, membership.id, genesis.name,
-        )
-
-    if not start:
-        return 0
-
-    return start_magi(config=replace(config, magi_id=str(membership.id)))
 
 
 # ----------------------------------------------------------------------
@@ -330,7 +270,6 @@ def _wait_healthy(port: int) -> bool:
 
 __all__ = [
     "LocalSlotStatus",
-    "create_magi",
     "start_magi",
     "stop_magi",
     "restart_magi",

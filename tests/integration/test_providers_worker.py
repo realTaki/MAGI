@@ -21,7 +21,8 @@ from typing import Any
 
 import pytest
 
-from magi.bus import Bus, bootstrap_bus
+from magi.bus import Bus, open_bus
+from magi.bus.provision import provision_node_storage
 from magi.bus.guild import (
     CallLLMJob,
     CallLLMResult,
@@ -147,13 +148,9 @@ class FakeProvider(LLMProvider):
 @pytest.fixture
 def bus(tmp_path) -> Bus:
     """Stand up a per-test SQLite-backed :class:`Bus`."""
-    bus = bootstrap_bus(state_dir=str(tmp_path))
-    # ``bootstrap_bus`` wires the books / job boards but does not
-    # create the SQLite schema — that's the composition root's job in
-    # production. Tests have to do it explicitly so writes find a real
-    # table to land in.
-    bus._local_factory.create_all()
-    return bus
+    state_dir = tmp_path / "memories"
+    provision_node_storage(state_dir=str(state_dir), magis_url=None)
+    return open_bus(state_dir=str(state_dir))
 
 
 def _seed_provider_config(

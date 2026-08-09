@@ -1,29 +1,17 @@
-"""Explicit runtime dependencies for the channel HTTP API."""
+"""Explicit FastAPI dependencies for app-scoped runtime objects."""
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import Depends, Request
-
-from magi.channels.api.errors import MagiHTTPException
-from magi.bus import Bus
+from fastapi import Request
 
 
-def get_bus(request: Request) -> Bus:
-    """Return the BUS instance owned by this concrete ASGI application.
-
-    The composition root creates the BUS and attaches it to ``app.state``.
-    This intentionally has no fallback to package or process global state.
-    """
-    bus = getattr(request.app.state, "bus", None)
-    if bus is None:
-        raise MagiHTTPException(
-            status_code=503,
-            code="runtime.bus_unavailable",
-            detail="BUS was not supplied while creating this application",
-        )
-    return bus
+def get_bus(request: Request):
+    """Return the BUS explicitly attached to this ASGI application."""
+    return request.app.state.bus
 
 
-BusDep = Annotated[Bus, Depends(get_bus)]
+def get_workers(request: Request):
+    return request.app.state.workers
+
+
+__all__ = ["get_bus", "get_workers"]

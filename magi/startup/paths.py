@@ -219,9 +219,8 @@ def ensure_workspace(workspace_dir: Path) -> Path:
 
     .. note::
 
-        ``SOUL.md`` seeding has moved to
-        :func:`magi.bus.bootstrap.bootstrap_bus` — the
-        composition root that owns prompt-file lifecycle.
+        Provisioning owns creation of this layout and the initial ``SOUL.md``.
+        Runtime path resolvers are deliberately side-effect free.
 
     Returns the guaranteed-to-exist workspace directory.  Idempotent.
     """
@@ -344,11 +343,8 @@ def _resolve_workspace_root(
 def bootstrap_workspace(workspace: Path) -> dict[str, str]:
     """Idempotent workspace bootstrap (alias for :func:`ensure_workspace`).
 
-    Plan §20.1 retired ``magi.launcher.cli``; this helper now lives here
-    for compatibility with any deployment script that still references
-    it by name.  New code should call :func:`ensure_workspace` directly.
-
-    SOUL.md seeding has moved to :func:`magi.bus.bootstrap.bootstrap_bus`.
+    Deprecated internal helper retained only for test fixtures. Production
+    provisioning is owned by :mod:`magi.startup.provision`.
     """
     workspace.mkdir(parents=True, exist_ok=True)
     created: dict[str, str] = {"workspace_root": "kept"}

@@ -17,16 +17,11 @@ It does **not**:
 - Read or mutate environment variables at runtime.
 - Allow runtime-side port / host configuration (plan §21).
 
-Per plan §21, ``reload`` is mode-aware:
+Per plan §21, ``reload`` is mode-aware (see :func:`_reload_enabled`):
 
-- Explicit ``MAGI_DEV_RELOAD=1`` → always on
-- Explicit ``MAGI_DEV_RELOAD=0`` → always off
-- Default (unset):
-  - CLI / local mode (no ``KUBERNETES_SERVICE_HOST``) → **on**
-  - K8s production (``KUBERNETES_SERVICE_HOST`` + ``MAGI_ENV=production``) → **off**
-  - K8s dev (``KUBERNETES_SERVICE_HOST`` without ``MAGI_ENV=production``) → **on**
-
-See :func:`_reload_enabled` for the implementation.
+- ``MAGI_DEV_RELOAD=1/0`` — per-invocation override (highest priority)
+- ``MAGI_RELOAD=1/0`` — deploy-configured (k8s ConfigMaps, Dockerfiles)
+- Default (neither set) — **on** everywhere
 """
 
 from __future__ import annotations
@@ -199,8 +194,8 @@ async def _serve_runtime_api(
 ) -> None:
     """Serve the private Runtime FastAPI app in the active event loop.
 
-    Per plan §21 — host + port are hardcoded; reload is mode-aware
-    (CLI + K8s-dev default on, K8s production default off).
+    Per plan §21 — host + port are hardcoded; reload is decided by
+    :func:`_reload_enabled` (mode-aware: deploy configs or defaults).
     """
     host = _RUNTIME_HOST  # internal host only; not externally exposed
     port = context.startup.runtime_port
@@ -225,31 +220,31 @@ async def _serve_runtime_api(
 def _reload_enabled() -> bool:
     """Mode-aware reload toggle.
 
-    Explicit ``MAGI_DEV_RELOAD=1`` / ``0`` always wins.
-    When unset, the default depends on the deployment mode:
+    Resolution order:
 
-    * CLI / local (not in Kubernetes) → **on**
-    * K8s production (``MAGI_ENV=production``) → **off**
-    * K8s dev (no ``MAGI_ENV=production``) → **on**
+    1. ``MAGI_DEV_RELOAD=1`` or ``0`` — per-invocation override for dev
+       workflows (highest priority).
+    2. ``MAGI_RELOAD=1`` or ``0`` — deploy-configured signal (k8s
+       ConfigMaps, Dockerfiles).  Production base sets ``"0"``; dev
+       overlays override to ``"1"``.
+    3. Default (neither set) — **on** everywhere.  CLI / local and
+       unconfigured K8s deployments both get hot reload.
     """
-    explicit = os.environ.get("MAGI_DEV_RELOAD")
-    if explicit == "1":
+    # 1. Per-invocation dev override
+    dev = os.environ.get("MAGI_DEV_RELOAD")
+    if dev == "1":
         return True
-    if explicit == "0":
+    if dev == "0":
         return False
 
-    # Default behaviour — mode-aware
-    from magi.startup.paths import is_kubernetes_mode
-
-    if not is_kubernetes_mode():
-        # CLI / local development → reload is helpful
+    # 2. Deploy-configured signal (k8s ConfigMaps, Dockerfiles)
+    cfg = os.environ.get("MAGI_RELOAD")
+    if cfg == "1":
         return True
-
-    # In Kubernetes: production deploys set MAGI_ENV=production
-    if os.environ.get("MAGI_ENV") == "production":
+    if cfg == "0":
         return False
 
-    # K8s dev → reload on
+    # 3. Default — on
     return True
 
 

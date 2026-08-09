@@ -34,8 +34,9 @@ import logging
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
-from magi.channels.api._bus import bus
+from magi.bus import Bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.chat_sessions import SessionMessageOut
 from magi.channels import Channel
@@ -53,7 +54,7 @@ _MAX_INPUT_CHARS = 8000
 _MAX_OUTPUT_CHARS = 4000
 
 
-def _resolve_caller_credentials(uid: int) -> tuple[int, str]:
+def _resolve_caller_credentials(bus: Bus, uid: int) -> tuple[int, str]:
     """Look up the operator's Contact row by their
     ``uid`` (the cookie value post-D.24) and return
     ``(uid, role)``.
@@ -78,7 +79,7 @@ def _resolve_caller_credentials(uid: int) -> tuple[int, str]:
       - ``401 chat.unknown_sender`` if the contact id
         doesn't resolve to a row.
     """
-    contact = bus.contacts.get(uid)
+    contact = bus.contacts_book.get(contact_id=uid)
 
     if contact is None:
         raise MagiHTTPException(
@@ -126,6 +127,7 @@ async def send_chat(
     payload: ChatSendRequest,
     request: Request,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ChatSendResponse:
     """Persist input and return a run handle without waiting for inference.
 
@@ -172,14 +174,14 @@ async def send_chat(
     # tooling.
     from magi.channels.api.auth import _verify_signed_uid
     cookie_raw = request.cookies.get("magi_session", "")
-    cookie_uid = _verify_signed_uid(cookie_raw)
+    cookie_uid = _verify_signed_uid(bus, cookie_raw)
     if cookie_uid is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    uid, contact_role = _resolve_caller_credentials(cookie_uid)
+    uid, contact_role = _resolve_caller_credentials(bus, cookie_uid)
     # D.24: per-channel delivery address stamped on the
     # session row's ``delivery_address`` column (renamed
     # from the legacy per-channel chat-id column in D.28).
@@ -193,7 +195,7 @@ async def send_chat(
     # — NOT the per-channel delivery address. The store
     # resolves rows by uid; the channel adapter interprets
     # the delivery address when it has to push a reply.
-    store = bus.session
+    store = bus.sessions_book
     session_id = payload.session_id
     # The per-channel delivery address stamped on the
     # session row. ``""`` if the operator never bound TG.
@@ -211,7 +213,7 @@ async def send_chat(
             # ``delivery_address`` column for
             # legacy / outbound-delivery reasons, but it
             # is NOT a session key.
-            existing = store.get(uid, session_id)
+            existing = store.get_for_owner(uid=uid, session_id=session_id)
         except SessionPathError as e:
             raise MagiHTTPException(
                 status_code=400,
@@ -241,10 +243,11 @@ async def send_chat(
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
-        contact = bus.contacts.get(uid)
+        contact = bus.contacts_book.get(contact_id=uid)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
-        sess = store.create(
-            uid, channel=Channel.WEBUI, delivery_address=tg_im_id,
+        sess = store.add(
+            session_id=new_session_id(), uid=uid, channel=Channel.WEBUI,
+            delivery_address=tg_im_id,
         )
         session_id = sess.session_id
 
@@ -300,10 +303,6 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    # Bus selection: per design §1, BUS has no compatibility paths — the
-    # runtime always wires a single Bus. ``bus`` is provided by the
-    # module-level wrapper (see magi.channels.api._bus), which is itself
-    # the channel-runtime's injected Bus.
     from magi.bus.guild.chatJob import publish_chat
 
     # Stable producer-side idempotency: the inbound session-message

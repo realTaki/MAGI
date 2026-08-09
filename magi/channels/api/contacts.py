@@ -16,13 +16,15 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
+from magi.bus import Bus
+from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
 from magi.channels.api.auth_gates import admin_gate, AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.contacts")
@@ -44,13 +46,6 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 
 # -- helpers ----------------------------------------------------------------
-
-def _get_bus():
-    """Return the unified bus facade."""
-    from magi.channels.api._bus import bus
-    return bus
-    return bus.contacts
-
 
 def _iso(dt) -> str:
     if dt is None:
@@ -151,7 +146,7 @@ def _serialize(
         role=view.role,
         admin=view.admin,
         telegram_id=view.telegram_id,
-        notes=view.notes,
+        notes="",
         notes_count=notes_count,
         last_seen_at=view.last_seen_at,
         created_at=view.created_at,
@@ -178,7 +173,7 @@ def _login_methods_for(view: Any) -> list[str]:
 
 
 def _bulk_login_methods(
-    bus: Any,
+    bus: Bus,
     views: list[Any],
 ) -> dict[int, list[str]]:
     """Batch-fetch the password-set flag for a list of contacts.
@@ -189,7 +184,11 @@ def _bulk_login_methods(
     if not views:
         return {}
     uids = [v.id for v in views]
-    password_uids = bus.password_uids(uids)
+    password_uids = {
+        uid for uid in uids
+        if bus.auth_credentials_book is not None
+        and bus.auth_credentials_book.find(uid=uid, kind="password") is not None
+    }
     out: dict[int, list[str]] = {}
     for v in views:
         methods: list[str] = []
@@ -202,7 +201,7 @@ def _bulk_login_methods(
 
 
 def _single_login_methods(
-    bus: Any,
+    bus: Bus,
     view: Any,
 ) -> list[str]:
     """Single-row helper for the by-id endpoints."""
@@ -214,6 +213,7 @@ def _single_login_methods(
 @router.get("/contacts", response_model=ContactListOut)
 def list_contacts(
     _admin: AdminGate,
+    bus: BusDep,
     with_notes: bool = False,
     role: str | None = None,
     admin: Optional[bool] = None,
@@ -235,8 +235,6 @@ def list_contacts(
     if page_size > _PAGE_SIZE_MAX:
         page_size = _PAGE_SIZE_MAX
 
-    bus = _get_bus()
-
     if role is not None and not with_notes:
         if role not in _CONTACT_ROLES:
             raise MagiHTTPException(
@@ -253,9 +251,13 @@ def list_contacts(
         pass
 
     if with_notes:
-        views = bus.list_with_notes(limit=_MAX_ROWS)
+        views = bus.contacts_book.list_all()[:_MAX_ROWS]
         uids = [v.id for v in views]
-        counts = bus.count_notes_per_contact(uids)
+        counts = {
+            uid: len(bus.contact_notes_book.list_for_contact(contact_id=uid))
+            for uid in uids
+        }
+        views = [view for view in views if counts[view.id] > 0]
         login_methods = _bulk_login_methods(bus, views)
         return ContactListOut(
             items=[
@@ -272,9 +274,13 @@ def list_contacts(
             total_pages=1,
         )
 
-    rows, total = bus.list_paginated(
-        role=role, admin=admin, page=page, page_size=page_size,
-    )
+    rows = [
+        view for view in bus.contacts_book.list_all()
+        if (role is None or view.role == role)
+        and (admin is None or view.admin == admin)
+    ]
+    total = len(rows)
+    rows = rows[(page - 1) * page_size: page * page_size]
     login_methods = _bulk_login_methods(bus, rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
     return ContactListOut(
@@ -290,15 +296,15 @@ def list_contacts(
 def create_contact(
     payload: ContactCreate,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ContactOut:
-    bus = _get_bus()
     name = payload.name.strip()
     if not name:
         raise MagiHTTPException(
             status_code=400, code="validation.name_required",
             detail="name must not be empty",
         )
-    if bus.name_exists(name):
+    if any(view.name == name for view in bus.contacts_book.list_all()):
         raise MagiHTTPException(
             status_code=409, code="conflict.contact_name_exists",
             detail=f"contact {name!r} already exists",
@@ -308,18 +314,18 @@ def create_contact(
             status_code=400, code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
         )
-    if payload.role == "assigned" and bus.assigned_active():
+    if payload.role == "assigned" and any(view.role == "assigned" for view in bus.contacts_book.list_all()):
         raise MagiHTTPException(
             status_code=409,
             code="conflict.assigned_user_exists",
             detail="This MAGI already has an assigned user",
         )
-    if payload.telegram_id is not None and bus.telegram_id_bound(payload.telegram_id):
+    if payload.telegram_id is not None and bus.contacts_book.get_by_telegram(telegram_id=payload.telegram_id):
         raise MagiHTTPException(
             status_code=409, code="conflict.telegram_id_already_bound",
             detail=f"telegram_id {payload.telegram_id} is already bound",
         )
-    view = bus.create_contact(
+    view = bus.contacts_book.add(
         name=name,
         display_name=payload.display_name,
         role=payload.role,
@@ -339,29 +345,11 @@ def create_contact(
     # doesn't roll back the contact creation — the
     # contact row is more valuable than the preset rows.
     #
-    # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob
-    # 到 bus.seed_preset_tasks_job_board，由 ProactiveWorker
-    # 异步消费。当前同步调用 seed_presets_for_contact 的方式
-    # 将在 Worker 就绪并验证稳定后移除。
-    #
-    # 改后（需要解决 bus 实例的获取 — Request 注入或
-    # composition-root 已构造好的 singleton）：
-    #   from magi.bus.bootstrap import get_bus
-    #   from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
-    #
-    #   if view.role == "assigned":
-    #       try:
-    #           get_current_bus().seed_preset_tasks_job_board.publish(
-    #               SeedPresetTasksJob(
-    #                   contact_id=view.id,
-    #                   trigger="contact_created",
-    #               ),
-    #           )
-    #       except Exception as exc:
-    #           logger.warning(...)
     if view.role == "assigned":
         try:
-            bus.seed_presets_for_contact(view.id)
+            bus.seed_preset_tasks_job_board.publish(
+                SeedPresetTasksJob(contact_id=view.id, trigger="contact_created"),
+            )
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for newly-created contact %d: %s",
@@ -400,15 +388,15 @@ def _note_view_out(view: Any) -> NoteOut:
 def list_contact_notes(
     contact_id: int,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> NoteListOut:
-    bus = _get_bus()
-    contact = bus.get(contact_id)
+    contact = bus.contacts_book.get(contact_id=contact_id)
     if contact is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
             detail="contact not found",
         )
-    notes = bus.list_notes(contact_id)
+    notes = bus.contact_notes_book.list_for_contact(contact_id=contact_id)
     items = [_note_view_out(n) for n in notes]
     return NoteListOut(items=items, total=len(items))
 
@@ -417,9 +405,9 @@ def list_contact_notes(
 def get_contact(
     contact_id: int,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ContactOut:
-    bus = _get_bus()
-    view = bus.get(contact_id)
+    view = bus.contacts_book.get(contact_id=contact_id)
     if view is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
@@ -433,9 +421,9 @@ def update_contact(
     contact_id: int,
     payload: ContactUpdate,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ContactOut:
-    bus = _get_bus()
-    existing = bus.get(contact_id)
+    existing = bus.contacts_book.get(contact_id=contact_id)
     if existing is None:
         raise MagiHTTPException(
             status_code=404, code="not_found.contact",
@@ -468,7 +456,10 @@ def update_contact(
         # an idempotent assigned→assigned PATCH that
         # shouldn't trigger a fresh seed round).
         prev_role = existing.role
-        if payload.role == "assigned" and prev_role != "assigned" and bus.assigned_active():
+        if payload.role == "assigned" and prev_role != "assigned" and any(
+            view.role == "assigned" and view.id != contact_id
+            for view in bus.contacts_book.list_all()
+        ):
             raise MagiHTTPException(
                 status_code=409,
                 code="conflict.assigned_user_exists",
@@ -492,20 +483,23 @@ def update_contact(
     new_telegram_id: Optional[int] = None
     if "telegram_id" in payload.model_fields_set:
         new_tg = payload.telegram_id
-        if new_tg is not None and bus.telegram_id_bound(new_tg, exclude_uid=contact_id):
+        bound = bus.contacts_book.get_by_telegram(telegram_id=new_tg) if new_tg is not None else None
+        if bound is not None and bound.id != contact_id:
             raise MagiHTTPException(
                 status_code=409, code="conflict.telegram_id_already_bound",
                 detail=f"telegram_id {new_tg} is already bound",
             )
         new_telegram_id = new_tg
 
-    view = bus.update_contact(
-        contact_id,
+    view = bus.contacts_book.update(
+        contact_id=contact_id,
         name=new_name,
         display_name=new_display_name,
         role=new_role,
         admin=new_admin,
         telegram_id=new_telegram_id,
+        set_display_name="display_name" in payload.model_fields_set,
+        set_telegram_id="telegram_id" in payload.model_fields_set,
     )
     if view is None:
         raise MagiHTTPException(
@@ -528,7 +522,9 @@ def update_contact(
     # 调用将在 Worker 就绪 + 验证稳定后移除。
     if newly_assigned:
         try:
-            bus.seed_presets_for_contact(view.id)
+            bus.seed_preset_tasks_job_board.publish(
+                SeedPresetTasksJob(contact_id=view.id, trigger="contact_promoted"),
+            )
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for contact %d (role → assigned): %s",

@@ -5,10 +5,56 @@ from __future__ import annotations
 from dataclasses import replace
 
 from magi.bus.provision import provision_node_storage
-from magi.startup.bootstrap import _ensure_first_magi_identity, ensure_control_secret
 from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, RUNTIME_PORT, StartupConfig
 from magi.startup.paths import resolve_magis_database_path, resolve_magis_database_url
 from magi.startup.spec import RuntimeSpec, write_runtime_spec
+
+
+def _ensure_first_magi_identity(factory) -> int:
+    """Create Genesis and its sole ADAM membership if absent."""
+    from magi.bus.library.magis import (
+        DEFAULT_ROLE_INSTRUCTIONS,
+        MagisBook,
+        MagisMembershipBook,
+        MagisRoleBook,
+    )
+
+    magis = MagisBook(factory)
+    roles = MagisRoleBook(factory)
+    memberships = MagisMembershipBook(factory)
+    genesis = magis.get_root() or magis.add(name="Genesis")
+    adam_role = roles.find(magis_id=genesis.id, name="ADAM")
+    if adam_role is None:
+        adam_role = roles.add(
+            magis_id=genesis.id,
+            name="ADAM",
+            instruction=DEFAULT_ROLE_INSTRUCTIONS["ADAM"],
+            is_reserved=True,
+        )
+    member = next(
+        (item for item in memberships.list_for_magis(magis_id=genesis.id) if item.role_id == adam_role.id),
+        None,
+    )
+    if member is None:
+        member = memberships.add(magis_id=genesis.id, role_id=adam_role.id)
+    magis.set_adam(magis_id=genesis.id, adam_id=member.id)
+    return member.id
+
+
+def _ensure_control_secret(path) -> str:
+    import os
+    import secrets
+
+    if path.exists():
+        value = path.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    value = secrets.token_urlsafe(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(value, encoding="utf-8")
+    if os.name == "posix":
+        os.chmod(path, 0o600)
+    return value
 
 
 def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port: int) -> None:
@@ -48,7 +94,7 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
         raise RuntimeError("MAGIS port allocation service unavailable")
     if bus.port_allocations_book.get(runtime_id=magi_id) is None:
         bus.port_allocations_book.allocate(runtime_id=magi_id, port=RUNTIME_PORT)
-    ensure_control_secret(resolve_magis_database_path(config.host_workspace_dir).parent / "control-secret")
+    _ensure_control_secret(resolve_magis_database_path(config.host_workspace_dir).parent / "control-secret")
     spec = RuntimeSpec(
         magi_name=DEFAULT_MAGI_NAME,
         magi_id=str(magi_id),

@@ -173,7 +173,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
 
     def add(self, *, name: str, role: str = ROLE_GUEST,
             display_name: str | None = None,
-            telegram_id: int | None = None) -> Contact:
+            telegram_id: int | None = None, admin: bool = False) -> Contact:
         """Insert one contact row.
 
         Owns the write invariants: ``name`` non-empty,
@@ -203,12 +203,71 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = _ContactRow(
                 name=normalized, role=role,
                 display_name=normalized_display,
-                telegram_id=telegram_id,
+                telegram_id=telegram_id, admin=admin,
             )
             s.add(row)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
+
+    def update(
+        self,
+        *,
+        contact_id: int,
+        name: str | None = None,
+        display_name: str | None = None,
+        role: str | None = None,
+        admin: bool | None = None,
+        telegram_id: int | None = None,
+        set_display_name: bool = False,
+        set_telegram_id: bool = False,
+    ) -> Contact | None:
+        """Update one contact and return its DTO.
+
+        Optional values are accompanied by explicit ``set_*`` flags where
+        ``None`` is a meaningful clear operation.  This keeps HTTP patch
+        semantics out of persistence while still exposing a complete public
+        Book operation.
+        """
+        with self._session() as s:
+            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
+            if row is None:
+                return None
+            if name is not None:
+                normalized = name.strip()
+                if not normalized:
+                    raise ValueError("name is required")
+                duplicate = s.scalar(
+                    select(_ContactRow).where(
+                        _ContactRow.name == normalized,
+                        _ContactRow.id != contact_id,
+                    )
+                )
+                if duplicate is not None:
+                    raise ValueError(f"contact name {normalized!r} already exists")
+                row.name = normalized
+            if set_display_name:
+                row.display_name = (display_name or "").strip() or None
+            if role is not None:
+                if role not in ALL_ROLES:
+                    raise ValueError(f"role must be one of {sorted(ALL_ROLES)!r}")
+                row.role = role
+            if admin is not None:
+                row.admin = admin
+            if set_telegram_id:
+                if telegram_id is not None:
+                    duplicate = s.scalar(
+                        select(_ContactRow).where(
+                            _ContactRow.telegram_id == telegram_id,
+                            _ContactRow.id != contact_id,
+                        )
+                    )
+                    if duplicate is not None:
+                        raise ValueError("telegram_id already bound")
+                row.telegram_id = telegram_id
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
 
     def list_all(self) -> list[Contact]:
         with self._session() as s:
