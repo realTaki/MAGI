@@ -7,11 +7,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 # __MAGI_BIN__ is replaced with the resolved magi executable at
-# install time. The service runs `magi cli start` exactly as the
-# operator would on the command line, so failures surface the same
-# logs and exit codes a human would see.
-ExecStart=__MAGI_BIN__ cli start --no-open
-ExecStop=__MAGI_BIN__ cli stop
+# install time. Provision first with `magi init`; the service keeps the
+# Runtime in the foreground, so systemd owns restart and shutdown.
+ExecStart=__MAGI_BIN__ node run --foreground --name eva-000
+ExecStop=__MAGI_BIN__ node stop --name eva-000
 Restart=on-failure
 RestartSec=5
 # The launcher writes to /home/<user>/.magi (Linux) — limit blast

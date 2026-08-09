@@ -181,7 +181,7 @@ def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
 
 
 def restart_magi(*, config: StartupConfig) -> int:
-    """Stop (force) then start. Used by ``magi restart``."""
+    """Stop (force) then start. Used by ``magi node restart``."""
     stop_magi(config=config, force=True)
     return start_magi(config=config)
 
@@ -287,7 +287,7 @@ __all__ = [
 # OS detection helpers (was :mod:`magi.startup.platform`)
 # ----------------------------------------------------------------------
 
-# Tiny, dependency-free. Phase 6's ``magi cli start`` uses these to
+# Tiny, dependency-free. The managed node launcher uses these to
 # decide whether the launcher can ``open`` a browser tab, where to
 # write the PID file, and how to interpret the supervisor's exit codes.
 

@@ -1,6 +1,6 @@
-# Template for ``magi cli install-service``.  The CLI replaces placeholders
-# at install time — this file is *not* used as-is by systemd.  It lives here
-# so operators who prefer hand-written units can see the expected shape.
+# Template for a hand-written systemd Runtime unit.  Provision with
+# ``magi init`` and ``magi node create`` first; systemd only runs the
+# already-provisioned Runtime in the foreground.
 #
 # Each MAGI gets its own unit (magi-adam.service, magi-eva-00.service, …).
 # ``systemctl --user status magi-*.service`` lists them all.
@@ -13,11 +13,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=HOST_WORKSPACE_DIR=__DATA_ROOT__
-Environment=MAGI_RUNTIME_ID=__MAGIC_ID__
 Environment=MAGI_NAME=__SLUG__
-Environment=MAGI_PORT=__PORT__
-Environment=MAGIS_DATABASE_URL=sqlite:///__MAGIS_DB__
-ExecStart=__MAGI_BIN__ runtime --host 127.0.0.1 --port __PORT__
+ExecStart=__MAGI_BIN__ node run --foreground --name __SLUG__
 Restart=on-failure
 RestartSec=5
 # Allow writing only into the MAGI data root.

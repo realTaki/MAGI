@@ -4,7 +4,7 @@
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 单机本地（非容器 / CLI） | [deploy/cli/](cli/) | `./deploy/cli/install.sh` + `magi cli start` |
+| 单机本地（非容器 / CLI） | [deploy/cli/](cli/) | `./deploy/cli/install.sh` + `magi init` + `magi node run` |
 | k8s 单机（dev 模式） | [deploy/k8s-dev/](k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | k8s 生产（已有集群） | [deploy/k8s/](k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
@@ -28,12 +28,12 @@
 |  | CLI（非容器） | k8s-dev（kind） | k8s 生产 |
 | --- | --- | --- | --- |
 | 容器 | 否 | 是（kind） | 是 |
-| 运行时 | `magi cli start`（exec 替换为 `magi runtime`） | Pod（`magi:dev` + 源码挂载） | Pod（`magi:0.1.0`） |
+| 运行时 | `magi node run`（服务管理器使用 `--foreground`） | Pod（`magi:dev` + 源码挂载） | Pod（`magi:0.1.0`） |
 | 进程模型 | 每个 MAGI 独立 OS 进程 | 每个 MAGI 独立 Pod | 每个 MAGI 独立 Pod |
 | 后端热重载 | 否 | 是（Uvicorn + Vite HMR） | 否 |
 | 源码映射 | 否 | 是（`/mnt/magi/magi`） | 否 |
 | WebUI 端口 | 42069（Adam）/ 42070+（EVA） | 42069（kind NodePort 30069） | 42069（需 port-forward） |
-| 持久化 | `~/.magi/MAGI_Citizens/<slug>/workspace/` | `~/.magi/MAGI_Citizens/eva-000/workspace/`（hostPath） | PVC `/workspace` |
+| 持久化 | `~/.magi/MAGI_Citizens/<name>/memories/magi.db` | `~/.magi/MAGI_Citizens/eva-000/memories/magi.db`（hostPath） | PVC `/MAGI_Citizens/<name>/memories/magi.db` |
 | 注册成服务 | 是（每 MAGI 独立 systemd unit） | 否 | 否 |
 | 唯一前置 | Python 3.12+ | Docker + kind | 现有 k8s 集群 |
 
@@ -54,7 +54,7 @@ deploy/
 
 三种方式提供同一个**应用抽象**：
 
-- 每个 MAGI 的私有 SQLite（`workspace/memories/magi.db`）+ 工作区；
+- 每个 MAGI 的私有 SQLite（`MAGI_Citizens/<name>/memories/magi.db`）+ 工作区；
 - 每个 MAGIS 的独立数据库（K8s: PostgreSQL，CLI / k8s-dev: SQLite）+ 公共工作区；
 - 一个 `magi-webui` 入口作为唯一浏览器界面。
 

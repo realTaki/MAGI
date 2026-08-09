@@ -11,10 +11,9 @@
 #       - Windows: ~/Documents/.magi  (resolved via $USERPROFILE)
 #  3. Print a one-page cheat sheet of the post-install commands.
 #
-# It does NOT start the runtime; that is `magi cli start`. It does
-# NOT register a service; that is `magi cli install-service`. The
-# intent is to leave the operator in control of when the daemon
-# actually comes up.
+# It does not start a Runtime or register a service.  Provision explicitly
+# with `magi init`, then choose either managed `magi node run` or a service
+# manager invoking `magi node run --foreground`.
 set -euo pipefail
 
 HOST_WORKSPACE_DIR_DEFAULT() {
@@ -61,7 +60,7 @@ cat <<EOF
 
 Optional environment overrides:
 
-    HOST_WORKSPACE_DIR=/some/path     # relocate the data root before 'start'
+    HOST_WORKSPACE_DIR=/some/path     # relocate the data root before 'init'
     MAGI_KUBECONFIG=...           # only relevant for the k8s deploy paths
 
 EOF

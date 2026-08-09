@@ -22,9 +22,10 @@ import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
+from magi.bus import Bus
 from magi.channels.telegram import bot as tg_bot
 from magi.channels.api.errors import MagiHTTPException
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator
 
 router = APIRouter(tags=["runtime-access"])
@@ -71,11 +72,6 @@ class VerifyLoginCodeResponse(BaseModel):
     error: str | None = None
 
 
-def _bus():
-    """Resolve the bus facade for this runtime's state dir."""
-    return bus
-
-
 def _require_webui(request: Request) -> None:
     # Operator id 0 is the deliberately unauthenticated-before-login WebUI
     # caller.  It is still HMAC authenticated and target-bound.
@@ -90,7 +86,7 @@ def _runtime_magic_id() -> int:
     return int(value)
 
 
-def _direct_magis() -> tuple[int, int]:
+def _direct_magis(bus: Bus) -> tuple[int, int]:
     """Return this runtime's ``(magic_id, direct_magis_id)``.
 
     Surfaces the public-PG-backed MAGIS membership row through the
@@ -98,25 +94,23 @@ def _direct_magis() -> tuple[int, int]:
     directly.
     """
     magic_id = _runtime_magic_id()
-    bus = _bus()
-    members = bus.magis.list_memberships_for_magic(magic_id)
-    if not members:
+    membership = bus.memberships_book.get(magi_id=magic_id) if bus.memberships_book else None
+    if membership is None:
         raise MagiHTTPException(409, "access.magic_unassigned", "MAGI is not assigned to a MAGIS")
-    return magic_id, members[0].group_id
+    return magic_id, membership.magis_id
 
 
-def _accounts(magis_id: int) -> dict[int, LoginAccount]:
+def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
     """Enumerate sign-in candidates for the local MAGI's direct MAGIS."""
-    bus = _bus()
     result: dict[int, LoginAccount] = {}
-    for admin in bus.magis.list_admin_accounts(magis_id):
-        result[admin.magic_id] = LoginAccount(
-            telegram_id=admin.magic_id,
-            name=f"Admin {admin.magic_id}",
+    for admin in (bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []):
+        result[admin.uid] = LoginAccount(
+            telegram_id=admin.uid,
+            name=f"Admin {admin.uid}",
             admin=True,
             assigned=False,
         )
-    for contact in bus.contacts.list_assigned():
+    for contact in (row for row in bus.contacts_book.list_all() if row.role == "assigned"):
         tg = contact.telegram_id
         if tg is None:
             continue
@@ -141,54 +135,35 @@ def _new_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def _send_code(magic_id: int, magis_id: int, telegram_id: int, text: str) -> str:
-    bus = _bus()
-    bot_token = bus.settings.get("telegram.bot_token")
+async def _send_code(bus: Bus, magic_id: int, magis_id: int, telegram_id: int, text: str) -> str:
+    bot_token = bus.settings_book.get(key="telegram.bot_token")
     if bot_token:
         await tg_bot.send_text_raw(bot_token, telegram_id, text)
         return "self"
 
-    fallback = bus.magis.adam_url(magis_id, magic_id)
-    if fallback is None:
-        raise MagiHTTPException(
-            409,
-            "access.no_delivery_bot",
-            "This MAGI has no Bot and its direct MAGIS ADAM Bot is unavailable",
-        )
-    adam_id, base = fallback
-    path = "/api/control/telegram/send"
-    headers = build_proxy_headers(
-        method="POST", path_and_query=path, target_id=adam_id,
-        operator_id=0, operator_name="MAGI login fallback", telegram_id=None,
-    )
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(base + path, json={"telegram_id": telegram_id, "text": text}, headers=headers)
-    if response.is_error:
-        raise MagiHTTPException(503, "access.fallback_delivery_failed", "ADAM Bot could not deliver the login code")
-    return "adam_fallback"
+    raise MagiHTTPException(409, "access.no_delivery_bot", "This MAGI has no Bot configured")
 
 
 @router.get("/access/login-accounts", response_model=LoginAccountsResponse)
-async def login_accounts(request: Request) -> LoginAccountsResponse:
+async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse:
     _require_webui(request)
-    magic_id, magis_id = _direct_magis()
+    magic_id, magis_id = _direct_magis(bus)
     return LoginAccountsResponse(
         magic_id=magic_id,
         magis_id=magis_id,
-        accounts=sorted(_accounts(magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)),
+        accounts=sorted(_accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)),
     )
 
 
 @router.post("/access/send-login-code", response_model=LoginCodeResponse)
-async def send_login_code(payload: LoginCodeRequest, request: Request) -> LoginCodeResponse:
+async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusDep) -> LoginCodeResponse:
     _require_webui(request)
-    magic_id, magis_id = _direct_magis()
-    bus = _bus()
-    account = _accounts(magis_id).get(payload.telegram_id)
+    magic_id, magis_id = _direct_magis(bus)
+    account = _accounts(bus, magis_id).get(payload.telegram_id)
     if account is None:
         # Do not turn this into a principal-enumeration endpoint.
         return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS)
-    previous_raw = bus.settings.get(_code_key(payload.telegram_id))
+    previous_raw = bus.settings_book.get(key=_code_key(payload.telegram_id))
     if previous_raw:
         try:
             previous = json.loads(previous_raw)
@@ -199,16 +174,16 @@ async def send_login_code(payload: LoginCodeRequest, request: Request) -> LoginC
             pass
     code = _new_code()
     now = datetime.now(timezone.utc)
-    bus.settings.set(_code_key(payload.telegram_id), json.dumps({
+    bus.settings_book.set(key=_code_key(payload.telegram_id), value=json.dumps({
         "code": code, "expires_at": now.timestamp() + _TTL_SECONDS, "last_sent_at": now.timestamp(),
     }))
     try:
         delivery = await _send_code(
-            magic_id, magis_id, payload.telegram_id,
+            bus, magic_id, magis_id, payload.telegram_id,
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
-        bus.settings.delete(_code_key(payload.telegram_id))
+        bus.settings_book.delete(key=_code_key(payload.telegram_id))
         if isinstance(exc, MagiHTTPException):
             raise
         raise MagiHTTPException(503, "access.delivery_failed", "Could not deliver the login code") from exc
@@ -216,17 +191,16 @@ async def send_login_code(payload: LoginCodeRequest, request: Request) -> LoginC
 
 
 @router.post("/access/verify-login-code", response_model=VerifyLoginCodeResponse)
-async def verify_login_code(payload: VerifyLoginCodeRequest, request: Request) -> VerifyLoginCodeResponse:
+async def verify_login_code(payload: VerifyLoginCodeRequest, request: Request, bus: BusDep) -> VerifyLoginCodeResponse:
     _require_webui(request)
-    _magic_id, magis_id = _direct_magis()
-    bus = _bus()
-    account = _accounts(magis_id).get(payload.telegram_id)
+    _magic_id, magis_id = _direct_magis(bus)
+    account = _accounts(bus, magis_id).get(payload.telegram_id)
     if account is None:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
-    raw = bus.settings.get(_code_key(payload.telegram_id))
+    raw = bus.settings_book.get(key=_code_key(payload.telegram_id))
     if not raw:
         return VerifyLoginCodeResponse(ok=False, error="No code was sent — request a new one.")
-    bus.settings.delete(_code_key(payload.telegram_id))
+    bus.settings_book.delete(key=_code_key(payload.telegram_id))
     try:
         stored = json.loads(raw)
         valid = datetime.now(timezone.utc).timestamp() < float(stored.get("expires_at", 0))
