@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 def record_token_usage(
     *,
-    uid: int,
+    contact_id: int,
     channel: str,
     provider: str,
     model: str | None,
@@ -33,7 +33,7 @@ def record_token_usage(
         extra[key] = value
     try:
         bus.token_usage_book.add(
-            uid=uid,
+            contact_id=contact_id,
             provider=provider,
             model=model or "",
             input_tokens=input_tokens,

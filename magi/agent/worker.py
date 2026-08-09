@@ -69,7 +69,7 @@ class AgentRunTimedOut(TimeoutError):
 
 @dataclass
 class RunContext:
-    uid: int | None
+    contact_id: int | None
     session_id: str | None
     channel: str
     caller_role: str | None
@@ -158,7 +158,7 @@ class AgentWorker(RuntimeWorker):
             payload = getattr(job, "payload", None) or {}
             run_id = getattr(job, "run_id", "") or ""
             ctx = RunContext(
-                uid=payload.get("uid"),
+                contact_id=payload.get("contact_id"),
                 session_id=payload.get("session_id"),
                 channel=payload.get("channel", ""),
                 caller_role=payload.get("caller_role"),
@@ -262,14 +262,14 @@ class AgentWorker(RuntimeWorker):
     async def _load_history(self, ctx: RunContext) -> None:
         if ctx.messages:
             return
-        if not ctx.session_id or ctx.uid is None:
+        if not ctx.session_id or ctx.contact_id is None:
             return
         from magi.agent.agent_context import build_messages_from_session
 
         try:
             msgs = await self.call(
                 build_messages_from_session,
-                uid=ctx.uid, session_id=ctx.session_id,
+                contact_id=ctx.contact_id, session_id=ctx.session_id,
                 new_user_text="", bus=self.bus,
             )
             ctx.messages = list(msgs)  # already list[dict]
@@ -288,7 +288,7 @@ class AgentWorker(RuntimeWorker):
             messages=messages, max_tokens=await self._read_max_tokens(),
             tools=tools or None, streaming=False,
             parameters={
-                "uid": ctx.uid, "session_id": ctx.session_id,
+                "contact_id": ctx.contact_id, "session_id": ctx.session_id,
                 "channel": ctx.channel, "caller_role": ctx.caller_role,
             },
         )
@@ -299,7 +299,7 @@ class AgentWorker(RuntimeWorker):
         try:
             return await self.call(
                 lambda: build_system_prompt(
-                    uid=ctx.uid or 0, soul=read_soul(bus=self.bus), bus=self.bus,
+                    contact_id=ctx.contact_id or 0, soul=read_soul(bus=self.bus), bus=self.bus,
                     magi_id=self._magi_id,
                 )
             )
@@ -368,7 +368,7 @@ class AgentWorker(RuntimeWorker):
             args = dict(tu.get("input") or {})
             tc_id = str(tu.get("id") or uuid.uuid4().hex)
             context = {
-                "workspace": "", "uid": ctx.uid or 0,
+                "workspace": "", "contact_id": ctx.contact_id or 0,
                 "channel": ctx.channel, "session_id": ctx.session_id or "",
             }
             if name == "message_magi":
@@ -394,7 +394,7 @@ class AgentWorker(RuntimeWorker):
                 a2a_jobs.append(SendA2AJob(
                     tool_call_id=tc_id, target=str(target_magi_id),
                     expect_reply=bool(args.get("expect_reply", False)),
-                    request={"text": text, "uid": ctx.uid, "session_id": ctx.session_id},
+                    request={"text": text, "contact_id": ctx.contact_id, "session_id": ctx.session_id},
                 ))
             else:
                 tool_jobs.append(self._make_tool_job(
@@ -516,17 +516,17 @@ class AgentWorker(RuntimeWorker):
             channel=ctx.channel,
             payload={
                 "text": ctx.final_reply or "处理完毕。",
-                "session_id": ctx.session_id, "uid": ctx.uid,
+                "session_id": ctx.session_id, "contact_id": ctx.contact_id,
             },
             destination=None,
         ))
 
     def _maybe_title(self, ctx: RunContext) -> None:
-        if not ctx.session_id or ctx.uid is None:
+        if not ctx.session_id or ctx.contact_id is None:
             return
         from magi.agent.auto_title import request_session_title
         self.spawn(
-            request_session_title(ctx.uid, ctx.session_id, bus=self.bus),
+            request_session_title(ctx.contact_id, ctx.session_id, bus=self.bus),
             name=f"magi-title-{ctx.session_id}",
         )
 
@@ -554,7 +554,7 @@ class AgentWorker(RuntimeWorker):
         model = getattr(result, "model", "") or ""
         await self.call(
             record_token_usage,
-            uid=ctx.uid or 0, channel=ctx.channel,
+            contact_id=ctx.contact_id or 0, channel=ctx.channel,
             provider=model.split(":")[0] if model else "unknown",
             model=model, usage=getattr(result, "token_usage", {}) or {},
             bus=self.bus,
@@ -596,7 +596,7 @@ async def submit_agent_message(bus: "Bus", message: Any) -> str:
         payload={
             "text": getattr(message, "text", ""),
             "channel": getattr(message, "channel", ""),
-            "uid": getattr(message, "uid", None),
+            "contact_id": getattr(message, "contact_id", None),
             "session_id": getattr(message, "session_id", None),
             "caller_role": getattr(message, "caller_role", None),
         },

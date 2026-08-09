@@ -35,7 +35,7 @@ _BODY_MAX = 8 * 1024
 @dataclass(frozen=True, slots=True)
 class Memory:
     id: int
-    uid: int
+    contact_id: int
     kind: str
     subject: str
     body: str
@@ -65,12 +65,12 @@ class _MemoryRow(Base):
     # the other must opt-in to sharing the existing Table object.
     # SQLAlchemy convention: dict kwargs must come last in the tuple.
     __table_args__ = (
-        Index("ix_memory_entries_owner_priority", "uid", "completed_at", "priority"),
+        Index("ix_memory_entries_owner_priority", "contact_id", "completed_at", "priority"),
         {"extend_existing": True},
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    uid: Mapped[int] = mapped_column(
+    contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -123,11 +123,11 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
             row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
             return self._row_to_dto(row) if row else None
 
-    def list_by_owner(self, *, uid: int) -> list[Memory]:
+    def list_by_owner(self, *, contact_id: int) -> list[Memory]:
         with self._session() as s:
             rows = s.scalars(
                 select(_MemoryRow)
-                .where(_MemoryRow.uid == uid)
+                .where(_MemoryRow.contact_id == contact_id)
                 .order_by(_MemoryRow.created_at.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
@@ -135,7 +135,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
     def add(
         self,
         *,
-        uid: int,
+        contact_id: int,
         kind: str,
         subject: str,
         body: str,
@@ -159,7 +159,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
         with self._session() as s:
             row = _MemoryRow(
-                uid=uid,
+                contact_id=contact_id,
                 kind=kind,
                 subject=subject,
                 body=body,
@@ -199,7 +199,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         """Patch mutable fields after enforcing their invariants.
 
         Only ``subject``, ``body`` and ``priority`` are
-        mutable — ``kind`` and ``uid`` are intentionally
+        mutable — ``kind`` and ``contact_id`` are intentionally
         frozen (delete + re-add if you need to change
         those). Raises :class:`LookupError` if the row
         is missing, :class:`ValueError` on any supplied

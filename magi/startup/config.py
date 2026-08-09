@@ -204,7 +204,7 @@ class StartupContext:
     - ``host_workspace_dir`` — operator's host root
     - ``workspace_dir``      — per-MAGI workspace (derived)
     - ``magi_name``          — display name
-    - ``magi_id``            — MAGIS identity (MAGIC.id)
+    - ``magi_id``            — MAGIS identity (``magis_memberships.id``)
     - ``magis_database_url`` — DSN of the MAGIS public database
     - ``private_database_url`` — DSN of this MAGI's private SQLite
     - ``is_first_magi``      — True for the ``eva-000`` Genesis bootstrap

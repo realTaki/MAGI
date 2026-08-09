@@ -32,7 +32,7 @@ from magi.bus.library.local.memoryBook import (
     Memory,
     MemoryBook,
 )
-from magi.bus.library.local.sessionBook import (
+from magi.bus.library.local.conversationBook import (
     Message,
     MessageBook,
     Session,

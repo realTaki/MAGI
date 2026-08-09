@@ -24,7 +24,7 @@ class MagisRuntimeConfiguration(BaseModel):
     magis_instruction: str = Field(default="", max_length=12000)
     role_name: str = Field(min_length=1, max_length=80)
     role_instruction: str = Field(default="", max_length=12000)
-    magic_name: str | None = Field(default=None, max_length=100)
+    magi_name: str | None = Field(default=None, max_length=100)
     personal_instruction: str = Field(default="", max_length=12000)
     provider: str | None = Field(default=None, max_length=64)
     api_key: str | None = Field(default=None, max_length=256)

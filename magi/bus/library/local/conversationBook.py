@@ -1,7 +1,7 @@
-"""SessionBook + MessageBook — chat session and message transcript.
+"""ConversationBook + MessageBook — chat conversation and message transcript.
 
 Two tables:
-- ``chat_sessions``  — one row per chat session (Crockford ULID primary key)
+- ``chat_conversations``  — one row per chat conversation (Crockford ULID primary key)
 - ``chat_messages``  — one row per persisted transcript message
 
 Plus a SQLite-only ``chat_messages_fts`` virtual table (FTS5,
@@ -10,7 +10,7 @@ with ``chat_messages.id`` / ``chat_messages.text``.
 ``ensure_fts`` is idempotent — ``CREATE ... IF NOT EXISTS`` makes it
 safe to run repeatedly.
 
-Schema for ``chat_sessions`` + ``chat_messages`` tables.
+Schema for ``chat_conversations`` + ``chat_messages`` tables.
 """
 
 from __future__ import annotations
@@ -40,10 +40,10 @@ from magi.bus.db.base import Base
 
 
 @dataclass(frozen=True, slots=True)
-class Session:
-    session_id: str
+class Conversation:
+    conversation_id: str
     delivery_address: str
-    uid: int
+    contact_id: int
     channel: str
     title: str | None = None
     active_tail_count: int = 20
@@ -55,7 +55,7 @@ class Session:
 @dataclass(frozen=True, slots=True)
 class Message:
     id: int
-    session_id: str
+    conversation_id: str
     message_id: str
     role: str
     text: str
@@ -72,12 +72,12 @@ class SearchHit:
 
     Carries the snippet (with literal ``<mark>...</mark>`` tags
     already inserted by ``snippet(chat_messages_fts, ...)``) and
-    the bm25 score (lower = better). ``session_id`` / ``message_id``
+    the bm25 score (lower = better). ``conversation_id`` / ``message_id``
     let the caller resolve the hit back to its
-    :class:`Message` / :class:`Session` row.
+    :class:`Message` / :class:`Conversation` row.
     """
 
-    session_id: str
+    conversation_id: str
     message_id: str
     role: str
     ts: str
@@ -92,7 +92,7 @@ class SearchUnavailable(RuntimeError):
     """SQLite in this deployment was built without the FTS table.
 
     The FTS5 virtual table is built by
-    :func:`install_session_fts_schema`. When it has not been
+    :func:`install_conversation_fts_schema`. When it has not been
     run — typically because the
     SQLite build lacks FTS5, or because the bootstrap ran before the
     FTS installer — ``MessageBook.search`` raises this instead of
@@ -101,33 +101,33 @@ class SearchUnavailable(RuntimeError):
     """
 
 
-class SessionPathError(ValueError):
-    """The ``session_id`` string is structurally invalid.
+class ConversationPathError(ValueError):
+    """The ``conversation_id`` string is structurally invalid.
 
-    Raised by the session service when the caller passes an
+    Raised when the caller passes an
     id that doesn't decode as a Crockford ULID (the schema's
-    primary key format). Distinct from "session not found":
+    primary key format). Distinct from "conversation not found":
     a malformed id is a 400, not a 404, and the caller
     shouldn't retry with the same value.
     """
 
 
-class SessionCorruptError(RuntimeError):
-    """The session row on disk is malformed.
+class ConversationCorruptError(RuntimeError):
+    """The conversation row on disk is malformed.
 
     Raised when JSON decoding fails, a required column is
     missing, or the persisted shape doesn't match the
-    current ``Session`` schema. Surface as 500 — the data
+    current ``Conversation`` schema. Surface as 500 — the data
     is unrecoverable without operator intervention.
     """
 
 
-class SessionNotFoundError(LookupError):
-    """The session id is well-formed but doesn't belong to
+class ConversationNotFoundError(LookupError):
+    """The conversation id is well-formed but doesn't belong to
     this operator (or was deleted between the list call
     and the lookup).
 
-    Distinct from :class:`SessionPathError` (which is "the
+    Distinct from :class:`ConversationPathError` (which is "the
     id is malformed"): here the id is valid, the operator
     is just not allowed to see it / it doesn't exist.
     Surface as 404.
@@ -135,27 +135,27 @@ class SessionNotFoundError(LookupError):
 
 
 class ChannelMismatchError(ValueError):
-    """The session was created on a different channel than
+    """The conversation was created on a different channel than
     the one the caller is writing from (D.22 cross-channel
     guard). Carries ``session_channel`` so the caller can
-    surface which channel owns the session.
+    surface which channel owns the conversation.
 
     Example: a WebUI ``POST /chat/send`` targeting a
-    session originally created on TG → 403 with a hint
+    conversation originally created on TG → 403 with a hint
     to continue the conversation on the original channel.
     """
 
     def __init__(self, session_channel: str) -> None:
         super().__init__(
-            f"Session owned by channel {session_channel!r}; "
+            f"Conversation owned by channel {session_channel!r}; "
             "cross-channel writes are not allowed."
         )
         self.session_channel = session_channel
 
 
 @dataclass(frozen=True, slots=True)
-class SessionMessage:
-    """Input shape for :meth:`SessionBook.append_messages`.
+class ConversationMessage:
+    """Input shape for :meth:`ConversationBook.append_messages`.
 
     Carries the bare minimum needed to persist one inbound
     message row — role, text, timestamp, and a stable
@@ -169,19 +169,19 @@ class SessionMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class SessionSummary:
-    """Lightweight projection of :class:`Session` for the
-    list-endpoint (``GET /api/chat/sessions``).
+class ConversationSummary:
+    """Lightweight projection of :class:`Conversation` for the
+    list-endpoint (``GET /api/chat/conversations``).
 
     Carries enough to render the sidebar row (id, title /
     preview, timestamps, channel, message count) without
     pulling the full transcript. The list endpoint fans
-    these out in bulk; the full :class:`Session` (with
+    these out in bulk; the full :class:`Conversation` (with
     ``messages``) is fetched only when the operator opens
     a row.
     """
 
-    session_id: str
+    conversation_id: str
     channel: str
     created_at: str
     updated_at: str
@@ -199,8 +199,8 @@ class ResolvedHit:
     ``message_id``, a snippet, and a bm25 score) and the full picture
     the renderer / API consumer needs.
 
-    ``session`` is the owning session header. Always already
-    uid-checked — if the hit pointed at another operator's session,
+    ``conversation`` is the owning conversation header. Always already
+    contact_id-checked — if the hit pointed at another operator's conversation,
     ``resolve_hit`` returns ``None`` instead of a partial envelope.
 
     ``is_archived`` is True when the hit landed on a row that
@@ -211,10 +211,10 @@ class ResolvedHit:
     ...``; the future ``/api/chat/search`` HTTP endpoint will mirror
     the same shape).
 
-    ``messages_with_hit`` is the **active** subset of the session
+    ``messages_with_hit`` is the **active** subset of the conversation
     messages, sliced ±``context_n`` around the hit. Length is
-    ``2 * context_n + 1`` in the middle of a long session, shorter
-    near session boundaries, and zero when ``is_archived`` or
+    ``2 * context_n + 1`` in the middle of a long conversation, shorter
+    near conversation boundaries, and zero when ``is_archived`` or
     ``context_n == 0``.
 
     ``hit_position`` is the index of the hit inside
@@ -224,7 +224,7 @@ class ResolvedHit:
     text).
     """
 
-    session: Session
+    conversation: Conversation
     hit: SearchHit
     is_archived: bool
     messages_with_hit: list[Message]
@@ -234,14 +234,14 @@ class ResolvedHit:
 # -- internal ORM --------------------------------------------------------
 
 
-class _SessionRow(Base):
-    __tablename__ = "chat_sessions"
+class _ConversationRow(Base):
+    __tablename__ = "chat_conversations"
 
-    session_id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(26), primary_key=True)
     delivery_address: Mapped[str] = mapped_column(
         String(64), nullable=False, index=True
     )
-    uid: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     title: Mapped[str | None] = mapped_column(String(80), nullable=True)
     active_tail_count: Mapped[int] = mapped_column(
@@ -256,9 +256,9 @@ class _MessageRow(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(
+    conversation_id: Mapped[str] = mapped_column(
         String(26),
-        ForeignKey("chat_sessions.session_id", ondelete="CASCADE"),
+        ForeignKey("chat_conversations.conversation_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -274,9 +274,9 @@ class _MessageRow(Base):
     llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
-        Index("ix_chat_messages_session_archived", "session_id", "archived", "id"),
+        Index("ix_chat_messages_conversation_archived", "conversation_id", "archived", "id"),
         UniqueConstraint(
-            "session_id", "message_id", name="uq_chat_messages_session_msg"
+            "conversation_id", "message_id", name="uq_chat_messages_conv_msg"
         ),
     )
 
@@ -284,58 +284,58 @@ class _MessageRow(Base):
 # -- Books ---------------------------------------------------------------
 
 
-class SessionBook(BaseBook[_SessionRow, Session]):
-    model_cls = _SessionRow
-    dto_cls = Session
+class ConversationBook(BaseBook[_ConversationRow, Conversation]):
+    model_cls = _ConversationRow
+    dto_cls = Conversation
 
-    def get(self, *, session_id: str) -> Session | None:
+    def get(self, *, conversation_id: str) -> Conversation | None:
         with self._session() as s:
             row = s.scalar(
-                select(_SessionRow).where(_SessionRow.session_id == session_id)
+                select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
             )
             return self._row_to_dto(row) if row else None
 
-    def get_for_owner(self, *, uid: int, session_id: str) -> Session | None:
+    def get_for_owner(self, *, contact_id: int, conversation_id: str) -> Conversation | None:
         """``get`` with cross-contact defence-in-depth.
 
-        The previous ``SessionService.get`` accepted ``(uid,
-        session_id)`` and silently dropped rows that didn't match
-        the caller's uid; :meth:`get` accepts
-        ``session_id`` only, which would let a caller guess another
-        operator's ``session_id`` and pull its header back. The
-        FTS5 search path is already scoped by ``WHERE s.uid = :uid``
+        The previous ``SessionService.get`` accepted ``(contact_id,
+        conversation_id)`` and silently dropped rows that didn't match
+        the caller's contact_id; :meth:`get` accepts
+        ``conversation_id`` only, which would let a caller guess another
+        operator's ``conversation_id`` and pull its header back. The
+        FTS5 search path is already scoped by ``WHERE s.contact_id = :contact_id``
         inside the JOIN, so a tool that only goes through
         :meth:`MessageBook.search` is safe — but the moment any
-        caller resolves a hit back through ``sessions_book.get``
+        caller resolves a hit back through ``conversations_book.get``
         (e.g. to render a context slice, or for the future
-        ``/api/chat/search`` HTTP endpoint), they need the uid
+        ``/api/chat/search`` HTTP endpoint), they need the contact_id
         check to live somewhere.
 
         This method is the single home for that check: returns the
-        session **only** if ``uid`` owns it, otherwise ``None``.
+        conversation **only** if ``contact_id`` owns it, otherwise ``None``.
         Both the LLM tool and the HTTP API route through here, so
         the cross-contact defence lives in one place rather than
         being re-implemented (and forgotten) at every call site.
         """
-        session = self.get(session_id=session_id)
-        if session is None:
+        conversation = self.get(conversation_id=conversation_id)
+        if conversation is None:
             return None
-        if session.uid != uid:
+        if conversation.contact_id != contact_id:
             return None
-        return session
+        return conversation
 
-    def list_for_owner(self, *, uid: int) -> list[Session]:
+    def list_for_owner(self, *, contact_id: int) -> list[Conversation]:
         with self._session() as s:
             rows = s.scalars(
-                select(_SessionRow)
-                .where(_SessionRow.uid == uid)
-                .order_by(_SessionRow.updated_at.desc())
+                select(_ConversationRow)
+                .where(_ConversationRow.contact_id == contact_id)
+                .order_by(_ConversationRow.updated_at.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, session_id: str, delivery_address: str, uid: int,
+    def add(self, *, conversation_id: str, delivery_address: str, contact_id: int,
             channel: str, title: str | None = None,
-            created_at: str | None = None, updated_at: str | None = None) -> Session:
+            created_at: str | None = None, updated_at: str | None = None) -> Conversation:
         import uuid
         from datetime import datetime, timezone
         if created_at is None:
@@ -343,10 +343,10 @@ class SessionBook(BaseBook[_SessionRow, Session]):
         if updated_at is None:
             updated_at = created_at
         with self._session() as s:
-            row = _SessionRow(
-                session_id=session_id,
+            row = _ConversationRow(
+                conversation_id=conversation_id,
                 delivery_address=delivery_address,
-                uid=uid,
+                contact_id=contact_id,
                 channel=channel,
                 title=title,
                 created_at=created_at,
@@ -358,66 +358,65 @@ class SessionBook(BaseBook[_SessionRow, Session]):
         return self._row_to_dto(row)
 
     def get_or_create_for_channel(
-        self, *, uid: int, channel: str, delivery_address: str = "",
-    ) -> Session:
-        """Get the first session owned by *uid* on *channel*, or create one.
+        self, *, contact_id: int, channel: str, delivery_address: str = "",
+    ) -> Conversation:
+        """Get the first conversation owned by *contact_id* on *channel*, or create one.
 
-        Idempotent — if a session already exists for this (uid, channel)
-        pair it is returned as-is; otherwise a new session is created.
-        The session_id is auto-generated.
+        Idempotent — if a conversation already exists for this (contact_id, channel)
+        pair it is returned as-is; otherwise a new conversation is created.
+        The conversation_id is auto-generated.
         """
         import uuid
-        sessions = self.list_for_owner(uid=uid)
-        for s in sessions:
-            if getattr(s, "channel", "") == channel:
-                return s
-        sid = f"{channel}_{uuid.uuid4().hex[:16]}"
+        conversations = self.list_for_owner(contact_id=contact_id)
+        for c in conversations:
+            if getattr(c, "channel", "") == channel:
+                return c
+        cid = f"{channel}_{uuid.uuid4().hex[:16]}"
         return self.add(
-            session_id=sid, delivery_address=delivery_address,
-            uid=uid, channel=channel,
+            conversation_id=cid, delivery_address=delivery_address,
+            contact_id=contact_id, channel=channel,
         )
 
     def append_messages(
         self,
-        uid: int,
-        session_id: str,
-        messages: list[SessionMessage],
+        contact_id: int,
+        conversation_id: str,
+        messages: list[ConversationMessage],
         *,
         channel: str,
     ) -> list[Message]:
-        """Atomically append one or more messages to a session.
+        """Atomically append one or more messages to a conversation.
 
-        D.22 cross-channel guard: if the session row's ``channel``
+        D.22 cross-channel guard: if the conversation row's ``channel``
         column doesn't match *channel*, raises
         :class:`ChannelMismatchError`. The caller should surface a
         403 — two LLM loops from different channels MUST NOT write
         into the same history.
 
-        Each :class:`SessionMessage` is written to ``chat_messages``
+        Each :class:`ConversationMessage` is written to ``chat_messages``
         via :class:`MessageBook` in a single transaction so the
         append group is all-or-nothing. Returns the list of
         persisted :class:`Message` rows in insertion order.
         """
         from datetime import datetime, timezone
 
-        # D.22: verify session ownership and channel match.
-        session = self.get_for_owner(uid=uid, session_id=session_id)
-        if session is None:
-            raise SessionNotFoundError(
-                f"Session {session_id} not found for uid {uid}"
+        # D.22: verify conversation ownership and channel match.
+        conversation = self.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
+        if conversation is None:
+            raise ConversationNotFoundError(
+                f"Conversation {conversation_id} not found for contact_id {contact_id}"
             )
-        if session.channel != channel:
-            raise ChannelMismatchError(session.channel)
+        if conversation.channel != channel:
+            raise ChannelMismatchError(conversation.channel)
 
         now = datetime.now(timezone.utc).isoformat()
-        self.touch(session_id=session_id, updated_at=now)
+        self.touch(conversation_id=conversation_id, updated_at=now)
 
-        from magi.bus.library.local.sessionBook import MessageBook
         message_book = MessageBook(self._factory)
         persisted: list[Message] = []
         for sm in messages:
             msg = message_book.add(
-                session_id=session_id,
+                conversation_id=conversation_id,
                 role=sm.role,
                 text=sm.text,
                 message_id=sm.message_id,
@@ -426,10 +425,10 @@ class SessionBook(BaseBook[_SessionRow, Session]):
             persisted.append(msg)
         return persisted
 
-    def touch(self, *, session_id: str, updated_at: str) -> None:
+    def touch(self, *, conversation_id: str, updated_at: str) -> None:
         with self._session() as s:
             row = s.scalar(
-                select(_SessionRow).where(_SessionRow.session_id == session_id)
+                select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
             )
             if row is None:
                 return
@@ -439,18 +438,18 @@ class SessionBook(BaseBook[_SessionRow, Session]):
     def set_title_if_null(
         self,
         *,
-        uid: int,
-        session_id: str,
+        contact_id: int,
+        conversation_id: str,
         title: str,
         bump_updated: bool = True,
-    ) -> "Session | None":
+    ) -> "Conversation | None":
         """[claude, 2026-08-08] CAS-style title set — only writes if currently NULL.
 
-        Required by :func:`magi.agent.auto_title.request_session_title`.
-        Scope by ``(uid, session_id)`` (cross-contact defence), only set
+        Required by :func:`magi.agent.auto_title.request_conversation_title`.
+        Scope by ``(contact_id, conversation_id)`` (cross-contact defence), only set
         when existing ``title`` is NULL, optionally bump ``updated_at``.
 
-        Returns the updated :class:`Session` on success (lost the race
+        Returns the updated :class:`Conversation` on success (lost the race
         to another writer that already set a title), or ``None`` when
         no matching row was found.
         """
@@ -459,11 +458,11 @@ class SessionBook(BaseBook[_SessionRow, Session]):
         now = utcnow_naive().isoformat() + "Z"
         with self._session() as s:
             stmt = (
-                update(_SessionRow)
+                update(_ConversationRow)
                 .where(
-                    _SessionRow.session_id == session_id,
-                    _SessionRow.uid == uid,
-                    _SessionRow.title.is_(None),
+                    _ConversationRow.conversation_id == conversation_id,
+                    _ConversationRow.contact_id == contact_id,
+                    _ConversationRow.title.is_(None),
                 )
                 .values(title=title)
             )
@@ -475,7 +474,7 @@ class SessionBook(BaseBook[_SessionRow, Session]):
                 return None
             s.commit()
             row = s.scalar(
-                select(_SessionRow).where(_SessionRow.session_id == session_id)
+                select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
             )
             return self._row_to_dto(row) if row else None
 
@@ -489,17 +488,17 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
             return self._row_to_dto(row) if row else None
 
-    def list_for_session(self, *, session_id: str,
-                         include_archived: bool = False) -> list[Message]:
+    def list_for_conversation(self, *, conversation_id: str,
+                              include_archived: bool = False) -> list[Message]:
         with self._session() as s:
-            stmt = select(_MessageRow).where(_MessageRow.session_id == session_id)
+            stmt = select(_MessageRow).where(_MessageRow.conversation_id == conversation_id)
             if not include_archived:
                 stmt = stmt.where(_MessageRow.archived == 0)
             stmt = stmt.order_by(_MessageRow.id)
             rows = s.scalars(stmt).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, session_id: str, role: str, text: str,
+    def add(self, *, conversation_id: str, role: str, text: str,
             message_id: str | None = None, ts: str | None = None,
             content_blocks: list[dict[str, Any]] | None = None,
             run_id: str | None = None,
@@ -512,7 +511,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             ts = datetime.now(timezone.utc).isoformat()
         with self._session() as s:
             row = _MessageRow(
-                session_id=session_id,
+                conversation_id=conversation_id,
                 message_id=message_id,
                 role=role,
                 text=text,
@@ -548,19 +547,19 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         a no-op (PG would need a different index strategy; out of
         scope for this migration).
         """
-        install_session_fts_schema(self._factory.engine)
+        install_conversation_fts_schema(self._factory.engine)
 
     def search(
         self,
         *,
-        uid: int,
+        contact_id: int,
         q: str,
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
-        """Full-text search across ``chat_messages`` rows owned by ``uid``.
+        """Full-text search across ``chat_messages`` rows owned by ``contact_id``.
 
-        Scoping: ``WHERE s.uid = :uid`` is part of the join, not a
+        Scoping: ``WHERE s.contact_id = :contact_id`` is part of the join, not a
         post-filter — so the bm25 ranking is computed on the
         contact's own corpus, never on someone else's. ``q`` is
         whitespace-tokenised into quoted ``"<token>"`` substrings,
@@ -590,8 +589,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         base = (
             "FROM chat_messages_fts "
             "JOIN chat_messages m ON m.id = chat_messages_fts.rowid "
-            "JOIN chat_sessions s ON s.session_id = m.session_id "
-            "WHERE chat_messages_fts MATCH :match AND s.uid = :uid"
+            "JOIN chat_conversations c ON c.conversation_id = m.conversation_id "
+            "WHERE chat_messages_fts MATCH :match AND c.contact_id = :contact_id"
         )
         with self._session() as s:
             available = s.execute(
@@ -606,24 +605,24 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 )
             total = s.execute(
                 text("SELECT COUNT(*) " + base),
-                {"match": match, "uid": uid},
+                {"match": match, "contact_id": contact_id},
             ).scalar_one()
             rows = s.execute(
                 text(
-                    "SELECT m.session_id, m.message_id, m.role, m.ts, "
-                    "s.title, s.channel, s.delivery_address, "
+                    "SELECT m.conversation_id, m.message_id, m.role, m.ts, "
+                    "c.title, c.channel, c.delivery_address, "
                     "snippet(chat_messages_fts, 0, '<mark>', '</mark>', "
                     "'…', 16) AS snippet, "
                     "bm25(chat_messages_fts) AS score "
                     + base
                     + " ORDER BY score LIMIT :limit OFFSET :offset"
                 ),
-                {"match": match, "uid": uid, "limit": limit, "offset": offset},
+                {"match": match, "contact_id": contact_id, "limit": limit, "offset": offset},
             ).fetchall()
 
         return [
             SearchHit(
-                session_id=row.session_id,
+                conversation_id=row.conversation_id,
                 message_id=row.message_id,
                 role=row.role,
                 ts=row.ts,
@@ -641,10 +640,10 @@ class MessageBook(BaseBook[_MessageRow, Message]):
     def resolve_hit(
         self,
         *,
-        uid: int,
+        contact_id: int,
         hit: SearchHit,
         context_n: int,
-        sessions_book: "SessionBook",
+        conversations_book: "ConversationBook",
     ) -> ResolvedHit | None:
         """Resolve a search hit to its full context.
 
@@ -652,8 +651,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         search needs in common — the LLM tool and the future
         ``/api/chat/search`` HTTP endpoint both need to:
 
-          1. Validate the hit's session belongs to ``uid`` (the
-             FTS query is already scoped by ``s.uid = :uid`` in
+          1. Validate the hit's conversation belongs to ``contact_id`` (the
+             FTS query is already scoped by ``c.contact_id = :contact_id`` in
              the JOIN, but a render-time defence-in-depth check
              keeps the gap closed if a future caller ever
              short-circuits the FTS layer).
@@ -667,21 +666,21 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         rather than being re-implemented (and possibly
         forgotten) at every call site.
 
-        ``sessions_book`` is passed explicitly rather than held
+        ``conversations_book`` is passed explicitly rather than held
         on ``self`` because ``MessageBook`` doesn't otherwise
         need a reference to its sibling — keeping the Book's
         dependency surface minimal. Bootstrap wires both Books
         off the same factory and the caller always has both
-        handy (via ``bus.messages_book`` / ``bus.sessions_book``).
+        handy (via ``bus.messages_book`` / ``bus.conversations_book``).
 
         Returns ``None`` when:
-          - the hit's session doesn't belong to ``uid`` (cross-
+          - the hit's conversation doesn't belong to ``contact_id`` (cross-
             contact leak attempt; ``get_for_owner`` returned None)
           - the hit row was deleted between FTS read and now
             (race)
 
         In both cases the caller emits a generic
-        "session no longer accessible" hint instead of leaking
+        "conversation no longer accessible" hint instead of leaking
         the row's metadata.
 
         For archived hits or ``context_n == 0``, returns a
@@ -691,18 +690,18 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         if context_n < 0:
             context_n = 0
 
-        session = sessions_book.get_for_owner(
-            uid=uid, session_id=hit.session_id,
+        conversation = conversations_book.get_for_owner(
+            contact_id=contact_id, conversation_id=hit.conversation_id,
         )
-        if session is None:
+        if conversation is None:
             return None
 
         # One fetch covers both branches: active hits (the common
         # case) and archived hits (rare — auto-compaction only
         # flips the flag, never reorders rows). The combined list
-        # is sorted by row id which is monotonic per session.
-        messages = self.list_for_session(
-            session_id=hit.session_id, include_archived=True,
+        # is sorted by row id which is monotonic per conversation.
+        messages = self.list_for_conversation(
+            conversation_id=hit.conversation_id, include_archived=True,
         )
 
         # Find the hit's combined-list index.
@@ -721,7 +720,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             # render the same way (tool: ``(archived) snippet``;
             # API: ``{ archived: true, snippet: ... }``).
             return ResolvedHit(
-                session=session, hit=hit, is_archived=True,
+                conversation=conversation, hit=hit, is_archived=True,
                 messages_with_hit=[], hit_position=-1,
             )
 
@@ -739,14 +738,14 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             # combined read and now (race with compaction).
             # Treat as archived for safety.
             return ResolvedHit(
-                session=session, hit=hit, is_archived=True,
+                conversation=conversation, hit=hit, is_archived=True,
                 messages_with_hit=[], hit_position=-1,
             )
 
         lo = max(0, active_idx - context_n)
         hi = min(len(active_msgs), active_idx + context_n + 1)
         return ResolvedHit(
-            session=session, hit=hit, is_archived=False,
+            conversation=conversation, hit=hit, is_archived=False,
             messages_with_hit=active_msgs[lo:hi],
             hit_position=active_idx - lo,
         )
@@ -778,7 +777,7 @@ _FTS5_DDL = (
 )
 
 
-def install_session_fts_schema(engine) -> None:
+def install_conversation_fts_schema(engine) -> None:
     """Install the FTS5 schema on a SQLite engine.
 
     No-op on non-SQLite engines (PG would need a different index
@@ -794,20 +793,43 @@ def install_session_fts_schema(engine) -> None:
             conn.exec_driver_sql(stmt)
 
 
+# -- backward-compat aliases (Phase 3 migration — remove once callers updated) --
+
+Session = Conversation
+SessionBook = ConversationBook
+SessionMessage = ConversationMessage
+SessionSummary = ConversationSummary
+SessionPathError = ConversationPathError
+SessionCorruptError = ConversationCorruptError
+SessionNotFoundError = ConversationNotFoundError
+_SessionRow = _ConversationRow
+install_session_fts_schema = install_conversation_fts_schema
+
+
 __all__ = [
-    "Session",
+    "Conversation",
     "Message",
-    "SessionMessage",
+    "ConversationMessage",
     "SearchHit",
     "SearchUnavailable",
     "ResolvedHit",
-    "SessionBook",
+    "ConversationBook",
     "MessageBook",
     "ChannelMismatchError",
+    "ConversationPathError",
+    "ConversationCorruptError",
+    "ConversationNotFoundError",
+    "install_conversation_fts_schema",
+    "_ConversationRow",
+    "_MessageRow",
+    # backward-compat
+    "Session",
+    "SessionBook",
+    "SessionMessage",
+    "SessionSummary",
     "SessionPathError",
     "SessionCorruptError",
     "SessionNotFoundError",
-    "install_session_fts_schema",
     "_SessionRow",
-    "_MessageRow",
+    "install_session_fts_schema",
 ]

@@ -208,7 +208,7 @@ def publish_chat(
     *,
     text: str,
     channel: str,
-    uid: int,
+    contact_id: int,
     session_id: str,
     kind: str = "chat",
     caller_role: str | None = None,
@@ -221,8 +221,8 @@ def publish_chat(
     """Publish a ChatJob with the common channel→agent payload pattern.
 
     All channel workers share the same core payload keys (text,
-    channel, uid, session_id, caller_role).  Channel-specific extras
-    (tg_chat_id, task_id, fired_by, etc.) are forwarded as additional
+    channel, contact_id, session_id, caller_role).  Channel-specific extras
+    (chat_id, task_id, fired_by, etc.) are forwarded as additional
     payload keys via **extras.
 
     *event_id*, *run_id*, *conversation_id*, and *correlation_id*
@@ -236,7 +236,7 @@ def publish_chat(
     payload: dict[str, Any] = {
         "text": text,
         "channel": channel,
-        "uid": uid,
+        "contact_id": contact_id,
         "session_id": session_id,
     }
     if caller_role is not None:

@@ -117,12 +117,12 @@ class Task:
     The ``source`` field discriminates:
 
     - ``SOURCE_USER`` — rows created by the ``schedule_task`` tool
-      (or seeded via dashboard). Have an owning ``uid`` and
+      (or seeded via dashboard). Have an owning ``contact_id`` and
       runtime bookkeeping (``last_run_at`` / ``last_status`` /
       ``consecutive_failures``).
     - ``SOURCE_PROACTIVE`` — preset templates bundled from
       ``prompts/task_presets/``. Have a stable ``key``; no
-      owning ``uid``.
+      owning ``contact_id``.
 
     The schedule is stored in ONE of two shapes — never both,
     never neither (enforced by :meth:`TaskBook.add`):
@@ -151,13 +151,13 @@ class Task:
     run_at: str | None = None
     tz: str = "UTC"
     delivery_to: str | None = None
-    session_id: str | None = None
+    conversation_id: str | None = None
 
     # --- proactive-only: stable preset key -------------------------------
     key: str | None = None
 
     # --- user-task ownership ----------------------------------------------
-    uid: int | None = None
+    contact_id: int | None = None
 
     # --- user-task runtime bookkeeping ------------------------------------
     consecutive_failures: int = 0
@@ -181,7 +181,7 @@ class TaskRun:
     reply_excerpt: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
-    session_id: str | None = None
+    conversation_id: str | None = None
 
 
 # -- internal ORM --------------------------------------------------------
@@ -216,8 +216,8 @@ class _TaskRow(Base):
     delivery_to: Mapped[str | None] = mapped_column(
         String(128), nullable=True,
     )
-    session_id: Mapped[str | None] = mapped_column(
-        ForeignKey("chat_sessions.session_id", ondelete="SET NULL"),
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -227,7 +227,7 @@ class _TaskRow(Base):
     )
 
     # --- user-task ownership -----------------------------------------------
-    uid: Mapped[int | None] = mapped_column(
+    contact_id: Mapped[int | None] = mapped_column(
         ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=True,
     )
 
@@ -244,7 +244,7 @@ class _TaskRow(Base):
     __table_args__ = (
         UniqueConstraint("name", name="uq_tasks_name"),
         Index("ix_tasks_enabled_last_run", "enabled", "last_run_at"),
-        Index("ix_tasks_contact", "uid"),
+        Index("ix_tasks_contact", "contact_id"),
         Index("ix_tasks_source", "source"),
         # ``scheduleTaskNotify`` registers the same Table for
         # its fire-and-forget path; combined in one tuple so
@@ -261,8 +261,8 @@ class _TaskRunRow(Base):
     task_id: Mapped[str] = mapped_column(
         ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False
     )
-    session_id: Mapped[str | None] = mapped_column(
-        ForeignKey("chat_sessions.session_id", ondelete="SET NULL"), nullable=True
+    conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
     )
     trigger: Mapped[str] = mapped_column(String(16), nullable=False)
     started_at: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -301,32 +301,32 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             row = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
             return self._row_to_dto(row) if row else None
 
-    def list_by_user(self, *, uid: int) -> list[Task]:
-        """User-defined tasks owned by ``uid``.
+    def list_by_user(self, *, contact_id: int) -> list[Task]:
+        """User-defined tasks owned by ``contact_id``.
 
         Preset rows (source=SOURCE_PROACTIVE) are excluded —
-        they have no owning uid and live on
+        they have no owning contact_id and live on
         :meth:`list_proactive_tasks`.
         """
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRow).where(
-                    _TaskRow.uid == uid,
+                    _TaskRow.contact_id == contact_id,
                     _TaskRow.source == SOURCE_USER,
                 )
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def list_proactive_tasks(self, *, uid: int) -> list[Task]:
+    def list_proactive_tasks(self, *, contact_id: int) -> list[Task]:
         """Per-user enabled proactive templates.
 
-        ``uid`` is REQUIRED for strict per-user privacy — a
+        ``contact_id`` is REQUIRED for strict per-user privacy — a
         no-filter scan would leak templates another operator
-        shouldn't see. ``uid IS NULL`` rows
+        shouldn't see. ``contact_id IS NULL`` rows
         (system-bundled presets from ``prompts/task_presets/``)
-        are visible to every uid; ``uid IS NOT NULL`` rows
+        are visible to every contact_id; ``contact_id IS NOT NULL`` rows
         (user-private presets) are visible only to the
-        matching uid.
+        matching contact_id.
         """
         with self._session() as s:
             rows = s.scalars(
@@ -334,23 +334,23 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     _TaskRow.source == SOURCE_PROACTIVE,
                     _TaskRow.enabled == 1,
                     or_(
-                        _TaskRow.uid.is_(None),
-                        _TaskRow.uid == uid,
+                        _TaskRow.contact_id.is_(None),
+                        _TaskRow.contact_id == contact_id,
                     ),
                 )
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def list_enabled(self, *, uid: int) -> list[Task]:
-        """Per-user enabled tasks (``uid`` + ``enabled=1``).
+    def list_enabled(self, *, contact_id: int) -> list[Task]:
+        """Per-user enabled tasks (``contact_id`` + ``enabled=1``).
 
-        ``uid`` is REQUIRED for strict per-user privacy — a
+        ``contact_id`` is REQUIRED for strict per-user privacy — a
         no-filter scan would leak another operator's rows.
         """
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRow).where(
-                    _TaskRow.uid == uid,
+                    _TaskRow.contact_id == contact_id,
                     _TaskRow.source == SOURCE_USER,
                     _TaskRow.enabled == 1,
                 )
@@ -454,20 +454,20 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def disable(self, *, task_id: str, uid: int) -> bool:
+    def disable(self, *, task_id: str, contact_id: int) -> bool:
         """Disable a task — owner-only.
 
-        Requires ``uid`` for strict per-user privacy: a row
-        whose ``uid`` doesn't match is silently skipped
+        Requires ``contact_id`` for strict per-user privacy: a row
+        whose ``contact_id`` doesn't match is silently skipped
         (returns ``False``) so callers can't probe for
         other operators' ``task_id`` values via
         success/failure timing. ``True`` on a successful
         disable (whether the row was already disabled or
         just flipped); ``False`` when the row is missing
-        OR the row is owned by a different uid.
+        OR the row is owned by a different contact_id.
 
         Proactive templates (``source=SOURCE_PROACTIVE``)
-        have no owning uid and aren't covered by this
+        have no owning contact_id and aren't covered by this
         primitive — disable them via direct DB update or a
         system-internal helper. The dispatcher / admin
         tools can reach for those; LLM-driven tools
@@ -477,7 +477,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             row = s.scalar(
                 select(_TaskRow).where(
                     _TaskRow.id == task_id,
-                    _TaskRow.uid == uid,
+                    _TaskRow.contact_id == contact_id,
                 )
             )
             if row is None:
@@ -486,7 +486,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.commit()
             return True
 
-    def update(self, *, task_id: str, uid: int, **changes) -> Task | None:
+    def update(self, *, task_id: str, contact_id: int, **changes) -> Task | None:
         """Update an owned user task and return its DTO.
 
         The public Book owns ownership checks and the same write invariants as
@@ -503,7 +503,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(select(_TaskRow).where(
                 _TaskRow.id == task_id,
-                _TaskRow.uid == uid,
+                _TaskRow.contact_id == contact_id,
                 _TaskRow.source == SOURCE_USER,
             ))
             if row is None:
@@ -522,12 +522,12 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.refresh(row)
             return self._row_to_dto(row)
 
-    def delete(self, *, task_id: str, uid: int) -> bool:
+    def delete(self, *, task_id: str, contact_id: int) -> bool:
         """Delete an owned user task without exposing a persistence session."""
         with self._session() as s:
             row = s.scalar(select(_TaskRow).where(
                 _TaskRow.id == task_id,
-                _TaskRow.uid == uid,
+                _TaskRow.contact_id == contact_id,
                 _TaskRow.source == SOURCE_USER,
             ))
             if row is None:
@@ -559,8 +559,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         run_at: str | None,
         delivery_to: str | None,
         target_channel: str,
-        uid: int,
-        session_id: str,
+        contact_id: int,
+        conversation_id: str,
         tz: str,
         enabled: int = 1,
     ) -> tuple[str, bool]:
@@ -576,7 +576,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         Returns ``(task_id, is_update)`` — the existing
         ``task_id`` and ``is_update=True`` when the name
         matched a row; a freshly minted ``task_id`` and
-        ``is_update=False`` on insert. ``session_id`` is
+        ``is_update=False`` on insert. ``conversation_id`` is
         sticky on update (preserves conversation continuity
         across prompt edits); the caller-supplied one
         sticks only on the insert path.
@@ -592,7 +592,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         of whether the path is update or insert.
 
         Authorisation is the caller's responsibility (the
-        LLM tool passes ``ctx.uid``; the API passes the
+        LLM tool passes ``ctx.contact_id``; the API passes the
         admin's id) — the Book is pure data.
         """
         # Validate the schedule at the Book boundary so any
@@ -650,13 +650,13 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 existing.delivery_to = delivery_to
                 existing.target_channel = target_channel
                 existing.enabled = enabled
-                existing.uid = uid
-                # Preserve the existing ``session_id`` for
+                existing.contact_id = contact_id
+                # Preserve the existing ``conversation_id`` for
                 # continuity across prompt edits. Update-
                 # path only — insert path uses the caller-
                 # supplied value.
-                if existing.session_id is None:
-                    existing.session_id = session_id
+                if existing.conversation_id is None:
+                    existing.conversation_id = conversation_id
                 s.commit()
                 s.refresh(existing)
                 return existing.id, True
@@ -673,10 +673,10 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 cron=cron,
                 run_at=canonical_run_at,
                 delivery_to=delivery_to,
-                session_id=session_id,
+                conversation_id=conversation_id,
                 tz=tz,
                 target_channel=target_channel,
-                uid=uid,
+                contact_id=contact_id,
                 enabled=enabled,
                 source=SOURCE_USER,
                 created_at=now,
@@ -769,9 +769,9 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.commit()
 
     def list_all_enabled_for_workers(self) -> list[Task]:
-        """Per-user scan across all uids — workers only path.
+        """Per-user scan across all contact_ids — workers only path.
 
-        The uid-scoped list_enabled(uid) is preserved for user-facing UI;
+        The contact_id-scoped list_enabled(contact_id) is preserved for user-facing UI;
         this primitive scans every user's enabled USER tasks for the cron
         poll loop.
         """

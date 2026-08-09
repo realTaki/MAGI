@@ -7,11 +7,11 @@ registered in the human-channel delivery path.
 Route resolver contract:
 
   - ``name`` is ``"a2a"`` (matches :attr:`magi.channels.Channel.A2A`).
-  - ``send(uid=magi_id, text)``
+  - ``send(contact_id=magi_id, text)``
       Resolves the peer's cluster DNS via
-      ``lookup_im_id(uid)`` and POSTs to ``{peer}/a2a/inbox``.
+      ``lookup_im_id(contact_id)`` and POSTs to ``{peer}/a2a/inbox``.
       Future work; raises ``NotImplementedError`` for now.
-  - ``lookup_im_id(uid=magi_id)``
+  - ``lookup_im_id(contact_id=magi_id)``
       Returns the cluster DNS name of the peer's runtime pod,
       resolved from the public MAGIS PostgreSQL
       ``magis_memberships.id`` row + k8s convention
@@ -19,11 +19,11 @@ Route resolver contract:
       **Implemented as a stub** — returns a synthetic
       placeholder so domain code can already serialise the
       result without crashing.
-  - ``bind_im_id(uid, im_id)``
+  - ``bind_im_id(contact_id, im_id)``
       Not applicable — peer routing is identity-based via the
       ``magis_memberships`` table, no per-peer im_id binding
       needed. Raises ``NotImplementedError``.
-  - ``unbind_im_id(uid)``
+  - ``unbind_im_id(contact_id)``
       Not applicable — same as ``bind_im_id``. Raises
       ``NotImplementedError``.
 
@@ -60,8 +60,8 @@ class A2AAdapter:
     def __init__(self, bus: "Bus") -> None:
         self.bus = bus
 
-    async def send(self, uid: int, text: str) -> None:
-        """Push ``text`` to peer ``uid`` (a MAGI's
+    async def send(self, contact_id: int, text: str) -> None:
+        """Push ``text`` to peer ``contact_id`` (a MAGI's
         ``magis_memberships.id``).
 
         Queue a durable A2A delivery through bus delivery_job_board.
@@ -74,17 +74,17 @@ class A2AAdapter:
         from magi.bus.guild.deliveryJob import DeliveryJob
         self.bus.delivery_job_board.publish(DeliveryJob(
             channel=Channel.A2A,
-            destination=str(uid),
+            destination=str(contact_id),
             payload={"text": text, "reply_to": None},
         ))
 
-    def lookup_im_id(self, uid: int) -> str | None:
+    def lookup_im_id(self, contact_id: int) -> str | None:
         """Return the peer's cluster DNS name, or ``None``.
 
         Implemented as a stub so the route-resolver contract
         resolves without raising: callers can already read
         the placeholder. The placeholder uses the
-        ``magi-magi-node-<uid>`` prefix matching the k8s
+        ``magi-magi-node-<contact_id>`` prefix matching the k8s
         convention established in
         ``deploy/k8s/base/deployment.yaml`` + the
         orchestrator's runtime-resource naming. The
@@ -98,9 +98,9 @@ class A2AAdapter:
         FQDN from the orchestrator-managed ``Service`` /
         ``Deployment`` name.
         """
-        return f"magi-magi-node-{uid}.magi.svc.cluster.local:42069"
+        return f"magi-magi-node-{contact_id}.magi.svc.cluster.local:42069"
 
-    def bind_im_id(self, uid: int, im_id: str) -> None:
+    def bind_im_id(self, contact_id: int, im_id: str) -> None:
         """Not applicable for a2a — peer routing uses the
         public ``magis_memberships`` table, no per-peer im_id
         binding.
@@ -115,7 +115,7 @@ class A2AAdapter:
             "MAGIS PostgreSQL magis_memberships table"
         )
 
-    def unbind_im_id(self, uid: int) -> None:
+    def unbind_im_id(self, contact_id: int) -> None:
         """Not applicable for a2a — see ``bind_im_id``."""
         raise NotImplementedError(
             "A2AAdapter.unbind_im_id is not applicable: peer "

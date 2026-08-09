@@ -7,7 +7,7 @@ Two tables — together they track the MAGIS registry as a forest:
   ``parent_id IS NULL``.  Each MAGIS carries a unique ``name`` and
   a default ``instruction``.  ``magis.adam_id`` is a FK pointing at
   one specific MAGI under this MAGIS — see "ADAM pointer" below.
-- ``magis_admins``— which external contacts (``uid`` → ``contacts.id``)
+- ``magis_admins``— which external contacts (``contact_id`` → ``contacts.id``)
   may administer a given MAGIS.  Used by
   :meth:`magi.tools.base.Tool.gate` to fold the MAGIS-level admin
   tag into per-tool role checks.
@@ -30,7 +30,7 @@ Query keys
 ----------
 
 - ``magis_id``  — identifies a MAGIS node in the tree.
-- ``uid``       — identifies a contact (admin lookups).
+- ``contact_id``       — identifies a contact (admin lookups).
 - The per-MAGI id (formally the ``magis_memberships.id`` of the
   ADAM, when used as the ``adam_id`` pointer) is called ``magi_id``
   at API boundaries — see :class:`MagisMembershipBook`.
@@ -65,7 +65,7 @@ class Magis:
 @dataclass(frozen=True, slots=True)
 class MagisAdmin:
     id: int
-    uid: int
+    contact_id: int
     magis_id: int
     created_at: datetime | None = None
 
@@ -97,7 +97,7 @@ class _MagisAdminRow(Base):
     __tablename__ = "magis_admins"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    uid: Mapped[int] = mapped_column(
+    contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False
     )
     magis_id: Mapped[int] = mapped_column(
@@ -199,16 +199,16 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def list_for_contact(self, *, uid: int) -> list[MagisAdmin]:
+    def list_for_contact(self, *, contact_id: int) -> list[MagisAdmin]:
         with self._session() as s:
             rows = s.scalars(
                 select(_MagisAdminRow)
-                .where(_MagisAdminRow.uid == uid)
+                .where(_MagisAdminRow.contact_id == contact_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def is_admin_for(self, *, uid: int) -> bool:
-        """True iff ``uid`` is an admin of any MAGIS node.
+    def is_admin_for(self, *, contact_id: int) -> bool:
+        """True iff ``contact_id`` is an admin of any MAGIS node.
 
         Used by :meth:`magi.tools.base.Tool.gate` to fold the
         MAGIS-level admin tag into the per-MAGI role gate —
@@ -223,23 +223,23 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         with self._session() as s:
             return s.scalar(
                 select(_MagisAdminRow.id)
-                .where(_MagisAdminRow.uid == uid)
+                .where(_MagisAdminRow.contact_id == contact_id)
                 .limit(1)
             ) is not None
 
-    def add(self, *, uid: int, magis_id: int) -> MagisAdmin:
+    def add(self, *, contact_id: int, magis_id: int) -> MagisAdmin:
         with self._session() as s:
-            row = _MagisAdminRow(uid=uid, magis_id=magis_id)
+            row = _MagisAdminRow(contact_id=contact_id, magis_id=magis_id)
             s.add(row)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def remove(self, *, uid: int, magis_id: int) -> bool:
+    def remove(self, *, contact_id: int, magis_id: int) -> bool:
         with self._session() as s:
             row = s.scalar(
                 select(_MagisAdminRow).where(
-                    _MagisAdminRow.uid == uid,
+                    _MagisAdminRow.contact_id == contact_id,
                     _MagisAdminRow.magis_id == magis_id,
                 )
             )

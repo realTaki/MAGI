@@ -17,7 +17,7 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
 需要具体的 Book / Job 类型时，直接从子模块导入::
 
-    from magi.bus.library.local import SessionBook
+    from magi.bus.library.local import SessionBook  # SessionBook is a backward-compat alias for ConversationBook
     from magi.bus.library.file import PromptBook
     from magi.bus.guild import RunToolJob, runToolJobBoard
 

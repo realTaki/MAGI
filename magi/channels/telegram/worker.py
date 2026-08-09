@@ -92,7 +92,7 @@ class TelegramWorker(ChannelWorker):
             publish_chat(
                 self.bus, text=text, channel="tg", uid=uid, session_id=session_id,
                 caller_role=role, event_id=f"telegram:{tgid}:{update.effective_message.message_id}",
-                tg_chat_id=tgid, tg_message_id=update.effective_message.message_id,
+                chat_id=tgid, tg_message_id=update.effective_message.message_id,
             )
         except Exception:
             logger.exception("TelegramWorker: publish ChatJob failed for tgid=%s", tgid)

@@ -43,7 +43,7 @@ class LoginAccount(BaseModel):
 
 
 class LoginAccountsResponse(BaseModel):
-    magic_id: int
+    magi_id: int
     magis_id: int
     accounts: list[LoginAccount]
 
@@ -79,7 +79,7 @@ def _require_webui(request: Request) -> None:
         raise MagiHTTPException(401, "access.unauthorized", "Invalid WebUI control request")
 
 
-def _runtime_magic_id() -> int:
+def _runtime_magi_id() -> int:
     value = os.environ.get("MAGI_RUNTIME_ID")
     if not value or not value.isdigit():
         raise MagiHTTPException(503, "access.runtime_identity_missing", "MAGI runtime identity is missing")
@@ -87,17 +87,17 @@ def _runtime_magic_id() -> int:
 
 
 def _direct_magis(bus: Bus) -> tuple[int, int]:
-    """Return this runtime's ``(magic_id, direct_magis_id)``.
+    """Return this runtime's ``(magi_id, direct_magis_id)``.
 
     Surfaces the public-PG-backed MAGIS membership row through the
     bus so the channel layer never opens a ``magi.db.magis`` session
     directly.
     """
-    magic_id = _runtime_magic_id()
-    membership = bus.memberships_book.get(magi_id=magic_id) if bus.memberships_book else None
+    magi_id = _runtime_magi_id()
+    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
     if membership is None:
-        raise MagiHTTPException(409, "access.magic_unassigned", "MAGI is not assigned to a MAGIS")
-    return magic_id, membership.magis_id
+        raise MagiHTTPException(409, "access.magi_unassigned", "MAGI is not assigned to a MAGIS")
+    return magi_id, membership.magis_id
 
 
 def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
@@ -135,7 +135,7 @@ def _new_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def _send_code(bus: Bus, magic_id: int, magis_id: int, telegram_id: int, text: str) -> str:
+async def _send_code(bus: Bus, magi_id: int, magis_id: int, telegram_id: int, text: str) -> str:
     bot_token = bus.settings_book.get(key="telegram.bot_token")
     if bot_token:
         await tg_bot.send_text_raw(bot_token, telegram_id, text)
@@ -147,9 +147,9 @@ async def _send_code(bus: Bus, magic_id: int, magis_id: int, telegram_id: int, t
 @router.get("/access/login-accounts", response_model=LoginAccountsResponse)
 async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse:
     _require_webui(request)
-    magic_id, magis_id = _direct_magis(bus)
+    magi_id, magis_id = _direct_magis(bus)
     return LoginAccountsResponse(
-        magic_id=magic_id,
+        magi_id=magi_id,
         magis_id=magis_id,
         accounts=sorted(_accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)),
     )
@@ -158,7 +158,7 @@ async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse
 @router.post("/access/send-login-code", response_model=LoginCodeResponse)
 async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusDep) -> LoginCodeResponse:
     _require_webui(request)
-    magic_id, magis_id = _direct_magis(bus)
+    magi_id, magis_id = _direct_magis(bus)
     account = _accounts(bus, magis_id).get(payload.telegram_id)
     if account is None:
         # Do not turn this into a principal-enumeration endpoint.
@@ -179,7 +179,7 @@ async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusD
     }))
     try:
         delivery = await _send_code(
-            bus, magic_id, magis_id, payload.telegram_id,
+            bus, magi_id, magis_id, payload.telegram_id,
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
@@ -193,7 +193,7 @@ async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusD
 @router.post("/access/verify-login-code", response_model=VerifyLoginCodeResponse)
 async def verify_login_code(payload: VerifyLoginCodeRequest, request: Request, bus: BusDep) -> VerifyLoginCodeResponse:
     _require_webui(request)
-    _magic_id, magis_id = _direct_magis(bus)
+    _magi_id, magis_id = _direct_magis(bus)
     account = _accounts(bus, magis_id).get(payload.telegram_id)
     if account is None:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")

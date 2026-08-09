@@ -56,7 +56,7 @@ def read_soul(*, bus: "Bus") -> str:
 
 def build_system_prompt(
     *,
-    uid: int,
+    contact_id: int,
     soul: str,
     bus: "Bus",
     magi_id: int | None = None,
@@ -76,31 +76,31 @@ def build_system_prompt(
 
     # 3. Memory
     try:
-        rows = bus.memory_book.list_by_owner(uid=uid)
+        rows = bus.memory_book.list_by_owner(contact_id=contact_id)
         block = _format_memory_block(rows)
     except Exception:
-        logger.exception("memory block load failed for uid=%s", uid)
+        logger.exception("memory block load failed for contact_id=%s", contact_id)
         block = ""
     if block:
         parts.append(block)
 
     # 4. Contact
     try:
-        contact = bus.contacts_book.get(contact_id=uid)
-        notes = bus.contact_notes_book.list_for_contact(contact_id=uid) if contact else None
+        contact = bus.contacts_book.get(contact_id=contact_id)
+        notes = bus.contact_notes_book.list_for_contact(contact_id=contact_id) if contact else None
         contact_block = _format_contact_block(contact, notes)
     except Exception:
-        logger.exception("contact block load failed for uid=%s", uid)
+        logger.exception("contact block load failed for contact_id=%s", contact_id)
         contact_block = ""
     if contact_block:
         parts.append(contact_block)
 
     # 5. Daily note
     try:
-        note = bus.contact_notes_book.read_daily_note(contact_id=uid)
+        note = bus.contact_notes_book.read_daily_note(contact_id=contact_id)
         daily_block = _format_daily_note_block(note)
     except Exception:
-        logger.exception("daily note block load failed for uid=%s", uid)
+        logger.exception("daily note block load failed for contact_id=%s", contact_id)
         daily_block = ""
     if daily_block:
         parts.append(daily_block)

@@ -87,7 +87,7 @@ class ActionItem:
     """
 
     id: int
-    uid: int
+    contact_id: int
     title: str
     description: str | None = None
     target_url: str | None = None
@@ -96,7 +96,7 @@ class ActionItem:
     source: str = SOURCE_PROACTIVE
     created_at: datetime | None = None
     completed_at: datetime | None = None
-    completed_by_uid: int | None = None
+    completed_by_contact_id: int | None = None
     completion_note: str | None = None
     dismissed: bool = False
 
@@ -126,7 +126,7 @@ class _ActionItemRow(Base):
     # ``SET NULL`` mirrors the previous policy: removing an
     # operator leaves the row as an orphan rather than wiping
     # action history. Re-binding is handled by the caller.
-    uid: Mapped[int | None] = mapped_column(
+    contact_id: Mapped[int | None] = mapped_column(
         ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -152,7 +152,7 @@ class _ActionItemRow(Base):
     )
     # Null = still open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_by_uid: Mapped[int | None] = mapped_column(
+    completed_by_contact_id: Mapped[int | None] = mapped_column(
         ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True,
     )
     # Optional reason captured at complete-time.
@@ -196,7 +196,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             )
             return self._row_to_dto(row) if row else None
 
-    # Note: a ``has_open(uid, kind)`` exists-check that lived
+    # Note: a ``has_open(contact_id, kind)`` exists-check that lived
     # here previously has been removed. Idempotency-on-first-
     # write is a policy concern (proactive decides which
     # specific rows to de-dupe on, usually by ``title``), not
@@ -211,7 +211,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     def list_actions(
         self,
         *,
-        owner_uid: int,
+        owner_contact_id: int,
         include_completed: bool,
         source: str | None = None,
         completed_visible_days: int = _COMPLETED_VISIBLE_DAYS,
@@ -233,7 +233,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         """
         with self._session() as s:
             stmt = select(_ActionItemRow).where(
-                _ActionItemRow.uid == owner_uid,
+                _ActionItemRow.contact_id == owner_contact_id,
             )
             if source is not None:
                 if source not in ALL_SOURCES:
@@ -266,7 +266,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     def add(
         self,
         *,
-        uid: int,
+        contact_id: int,
         title: str,
         description: str | None = None,
         target_url: str | None = None,
@@ -322,7 +322,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             )
         with self._session() as s:
             row = _ActionItemRow(
-                uid=uid,
+                contact_id=contact_id,
                 title=title,
                 description=description,
                 target_url=target_url,
@@ -340,7 +340,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         *,
         action_item_id: int,
         note: str | None = None,
-        completed_by_uid: int | None = None,
+        completed_by_contact_id: int | None = None,
     ) -> ActionItem | None:
         """Mark an action item complete.
 
@@ -349,7 +349,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         policy, dashboard route) is the layer that knows
         who's authorised to close which row; it must
         already have done so via a prior :meth:`get` and a
-        ``row.uid == caller_uid`` check before reaching
+        ``row.contact_id == caller_contact_id`` check before reaching
         here.
 
         Owns the ``completion_note`` length invariant
@@ -376,8 +376,8 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                 return None
             if row.completed_at is None:
                 row.completed_at = utcnow_naive()
-                if completed_by_uid is not None:
-                    row.completed_by_uid = completed_by_uid
+                if completed_by_contact_id is not None:
+                    row.completed_by_contact_id = completed_by_contact_id
                 if note is not None:
                     row.completion_note = note
                 s.commit()

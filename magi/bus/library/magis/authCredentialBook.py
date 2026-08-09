@@ -36,7 +36,7 @@ _VALID_KINDS: tuple[str, ...] = (PASSWORD, TG_CODE)
 @dataclass(frozen=True, slots=True)
 class AuthCredential:
     id: int
-    uid: int
+    contact_id: int
     kind: str
     secret_hash: str
     created_at: datetime | None = None
@@ -50,7 +50,7 @@ class _AuthCredentialRow(Base):
     __tablename__ = "auth_credentials"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    uid: Mapped[int] = mapped_column(
+    contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id"), nullable=False
     )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -63,8 +63,8 @@ class _AuthCredentialRow(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("uid", "kind", name="ux_auth_credentials_uid_kind"),
-        Index("ix_auth_credentials_uid", "uid"),
+        UniqueConstraint("contact_id", "kind", name="ux_auth_credentials_uid_kind"),
+        Index("ix_auth_credentials_contact_id", "contact_id"),
     )
 
 
@@ -83,26 +83,26 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
             )
             return self._row_to_dto(row) if row else None
 
-    def find(self, *, uid: int, kind: str) -> AuthCredential | None:
+    def find(self, *, contact_id: int, kind: str) -> AuthCredential | None:
         with self._session() as s:
             row = s.scalar(
                 select(_AuthCredentialRow).where(
-                    _AuthCredentialRow.uid == uid,
+                    _AuthCredentialRow.contact_id == contact_id,
                     _AuthCredentialRow.kind == kind,
                 )
             )
             return self._row_to_dto(row) if row else None
 
-    def list_for_contact(self, *, uid: int) -> list[AuthCredential]:
+    def list_for_contact(self, *, contact_id: int) -> list[AuthCredential]:
         with self._session() as s:
             rows = s.scalars(
-                select(_AuthCredentialRow).where(_AuthCredentialRow.uid == uid)
+                select(_AuthCredentialRow).where(_AuthCredentialRow.contact_id == contact_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, uid: int, kind: str, secret_hash: str) -> AuthCredential:
+    def add(self, *, contact_id: int, kind: str, secret_hash: str) -> AuthCredential:
         with self._session() as s:
-            row = _AuthCredentialRow(uid=uid, kind=kind, secret_hash=secret_hash)
+            row = _AuthCredentialRow(contact_id=contact_id, kind=kind, secret_hash=secret_hash)
             s.add(row)
             s.commit()
             s.refresh(row)
