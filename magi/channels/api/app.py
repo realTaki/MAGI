@@ -37,6 +37,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from magi.bus import Bus
     from magi.startup.workers import WorkerRegistry
+    from magi.startup.runtime import RuntimeContext
+    from magi.startup.webui import ControlContext
 
 logger = logging.getLogger("magi.channels.api")
 
@@ -334,14 +336,14 @@ def create_app(
     return app
 
 
-def create_runtime_app(*, bus: "Bus", workers: "WorkerRegistry") -> FastAPI:
+def create_runtime_app(*, context: "RuntimeContext") -> FastAPI:
     """Factory for the internal API served by every MAGI runtime."""
     return create_app(
-        bus=bus, workers=workers,
+        bus=context.bus, workers=context.workers,
         include_spa=False, include_control_routes=False,
     )
 
 
-def create_control_app(*, bus: "Bus") -> FastAPI:
+def create_control_app(*, context: "ControlContext") -> FastAPI:
     """Factory for the singleton browser-facing service; it has no local MAGI state."""
-    return create_app(bus=bus, include_spa=True, include_control_routes=True, include_private_routes=False)
+    return create_app(bus=context.bus, include_spa=True, include_control_routes=True, include_private_routes=False)

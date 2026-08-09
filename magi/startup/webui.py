@@ -56,6 +56,13 @@ class WebUIStatus:
     log_stderr: str
 
 
+@dataclass(frozen=True, slots=True)
+class ControlContext:
+    """Read/open-only control capability for the singleton WebUI process."""
+
+    bus: object
+
+
 # ----------------------------------------------------------------------
 # Local lifecycle
 # ----------------------------------------------------------------------
@@ -199,7 +206,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
         state_dir=str(root_workspace / "memories"),
         magis_url=spec.magis_database_url,
     )
-    app = create_control_app(bus=bus)
+    app = create_control_app(context=ControlContext(bus=bus))
     uvicorn.run(app, host=WEBUI_HOST, port=WEBUI_PORT, log_level="info")
 
 
@@ -278,6 +285,7 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
 __all__ = [
     "DEFAULT_WEBUI_PORT",
     "WebUIStatus",
+    "ControlContext",
     "start_webui",
     "stop_webui",
     "ensure_webui_running",

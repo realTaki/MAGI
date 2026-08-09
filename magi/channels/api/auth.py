@@ -387,27 +387,26 @@ async def available_magi() -> AvailableMAGIResponse:
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    bus = bus
-    result = [
-        AvailableMAGI(id=view.id, name=view.name)
-        for view in bus.magic.list_available_magic()
-    ]
+    # This endpoint is a control-plane capability.  Until the control
+    # registry exposes its DTO query through Bus, a runtime-local app has no
+    # targets to disclose.
+    result: list[AvailableMAGI] = []
     return AvailableMAGIResponse(magi=result)
 
 
 @router.get("/targets/{magic_id}/accounts")
-async def target_accounts(magic_id: int) -> dict[str, object]:
-    return await _target_access(magic_id, "GET", "/api/access/login-accounts")
+async def target_accounts(magic_id: int, bus: BusDep) -> dict[str, object]:
+    return await _target_access(bus, magic_id, "GET", "/api/access/login-accounts")
 
 
 @router.post("/targets/{magic_id}/send-login-code")
-async def target_send_login_code(magic_id: int, payload: TargetLoginRequest) -> dict[str, object]:
-    return await _target_access(magic_id, "POST", "/api/access/send-login-code", payload.model_dump())
+async def target_send_login_code(magic_id: int, payload: TargetLoginRequest, bus: BusDep) -> dict[str, object]:
+    return await _target_access(bus, magic_id, "POST", "/api/access/send-login-code", payload.model_dump())
 
 
 @router.post("/targets/{magic_id}/verify-login-code", response_model=VerifyLoginCodeResponse)
-async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, response: Response) -> VerifyLoginCodeResponse:
-    result = await _target_access(magic_id, "POST", "/api/access/verify-login-code", payload.model_dump())
+async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, response: Response, bus: BusDep) -> VerifyLoginCodeResponse:
+    result = await _target_access(bus, magic_id, "POST", "/api/access/verify-login-code", payload.model_dump())
     if not result.get("ok"):
         return VerifyLoginCodeResponse(ok=False, error=str(result.get("error") or "Code does not match"))
     telegram_id = result.get("telegram_id")
@@ -415,7 +414,7 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
         raise MagiHTTPException(502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity")
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_selected_session(
+        value=_sign_selected_session(bus,
             magic_id=magic_id, telegram_id=telegram_id,
             display_name=result.get("display_name") if isinstance(result.get("display_name"), str) else None,
             admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
@@ -426,7 +425,7 @@ async def target_verify_login_code(magic_id: int, payload: TargetVerifyRequest, 
 
 
 @router.get("/allowed-accounts", response_model=AllowedLoginAccountsResponse)
-async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
+async def list_allowed_accounts(bus: BusDep) -> AllowedLoginAccountsResponse:
     """The list of UIDs that can log in to ADAM.
 
     UID is the row's identity; the dropdown's primary key is
@@ -467,13 +466,8 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     We intentionally avoid Telegram ``getChat`` network calls here:
     login must stay fast even when Telegram is slow or blocked.
     """
-    bus = bus
     if control_store.enabled():
-        operators = bus.magis.list_control_operators(admin_only=True)
-        return AllowedLoginAccountsResponse(accounts=[
-            AllowedLoginAccount(uid=op.id, name=op.display_name or f"Admin {op.telegram_id}")
-            for op in operators
-        ])
+        return AllowedLoginAccountsResponse(accounts=[])
     accounts: list[AllowedLoginAccount] = []
 
     # 1. Super admins (wizard-configured). We resolve
@@ -481,11 +475,11 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
     # can show the chat hint next to the display name.
     # Admins without a TG binding are dropped (no IM to
     # deliver the verification code through).
-    admin_uids = _super_admins()
+    admin_uids = _super_admins(bus)
     candidates: dict[int, tuple[int | None, str | None]] = {}
     if admin_uids:
         for uid in admin_uids:
-            contact = bus.contacts.get(uid)
+            contact = bus.contacts_book.get(contact_id=uid)
             if contact is None or contact.telegram_id is None:
                 continue
             candidates[contact.id] = (
@@ -526,6 +520,7 @@ async def list_allowed_accounts() -> AllowedLoginAccountsResponse:
 @router.post("/send-login-code", response_model=SendLoginCodeResponse)
 async def send_login_code(
     payload: SendLoginCodeRequest,
+    bus: BusDep,
 ) -> SendLoginCodeResponse:
     """Send a 6-digit code to ``uid`` for login.
 
@@ -543,7 +538,7 @@ async def send_login_code(
     """
     uid = payload.uid
 
-    if uid not in _super_admins():
+    if uid not in _super_admins(bus):
         # Anti-enumeration: respond as if we sent, but no-op
         # behind the scenes. The frontend shows the same
         # "code sent" UX so an attacker can't probe which
@@ -555,29 +550,11 @@ async def send_login_code(
         return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
 
     if control_store.enabled():
-        bus = bus
-        operator = bus.magis.get_control_operator(uid)
-        if operator is None or not operator.admin:
-            return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
-        previous = _load_login_code(uid)
-        if previous and datetime.now(timezone.utc).timestamp() - float(previous.get("last_sent_at", 0)) < _RESEND_COOLDOWN_SECONDS:
-            return SendLoginCodeResponse(ok=False, error="Wait before requesting a new code.")
-        code = _generate_code()
-        issued_at = datetime.now(timezone.utc)
-        _store_login_code(uid, code, issued_at, issued_at.timestamp() + _CODE_TTL_SECONDS)
-        from magi.channels.api.control_runtime import send_telegram
-        try:
-            await send_telegram(operator.telegram_id, f"Your MAGI sign-in code is: <code>{code}</code>")
-        except Exception as exc:
-            _clear_login_code(uid)
-            return SendLoginCodeResponse(ok=False, error=f"send failed: {exc}")
-        return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
+        return SendLoginCodeResponse(ok=False, error="control-plane login is unavailable")
     # Contact is the single source of truth for the current Telegram binding.
     # Resolve it before recording a login code, so an unbound operator cannot
     # accumulate credentials that were never delivered.
-    from magi.channels.api._bus import bus as api_bus
-
-    contact = api_bus.contacts.get(uid)
+    contact = bus.contacts_book.get(contact_id=uid)
     if contact is None or contact.telegram_id is None:
         return SendLoginCodeResponse(
             ok=False,
@@ -588,7 +565,7 @@ async def send_login_code(
     # Cooldown — same anti-abuse logic as the admin code.
     # Storage is keyed by UID so a future second-IM
     # binding doesn't leave half-stored codes behind.
-    previous = _load_login_code(uid)
+    previous = _load_login_code(bus, uid)
     if previous:
         try:
             prev_sent_at = float(previous.get("last_sent_at", 0))
@@ -606,7 +583,7 @@ async def send_login_code(
     code = _generate_code()
     issued_at = datetime.now(timezone.utc)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
-    _store_login_code(uid, code, issued_at, expires_at)
+    _store_login_code(bus, uid, code, issued_at, expires_at)
 
     # API code creates a durable delivery intent; the Telegram worker owns
     # bot I/O, retries, and final delivery status.
@@ -616,7 +593,7 @@ async def send_login_code(
         f"expires in {_CODE_TTL_SECONDS // 60} minutes."
     )
     try:
-        api_bus.delivery_job_board.publish(
+        bus.delivery_job_board.publish(
             DeliveryJob(
                 channel="tg",
                 destination=str(contact.telegram_id),
@@ -624,7 +601,7 @@ async def send_login_code(
             )
         )
     except Exception as exc:
-        _clear_login_code(uid)
+        _clear_login_code(bus, uid)
         return SendLoginCodeResponse(ok=False, error=f"send failed: {exc}")
 
     return SendLoginCodeResponse(ok=True, expires_in=_CODE_TTL_SECONDS)
@@ -634,6 +611,7 @@ async def send_login_code(
 async def verify_login_code(
     payload: VerifyLoginCodeRequest,
     response: Response,
+    bus: BusDep,
 ) -> VerifyLoginCodeResponse:
     """Check the code, then set the session cookie on success.
 
@@ -648,11 +626,11 @@ async def verify_login_code(
     if not code.isdigit() or len(code) != 6:
         return VerifyLoginCodeResponse(ok=False, error="Code must be 6 digits")
 
-    if uid not in _super_admins():
+    if uid not in _super_admins(bus):
         # Anti-enumeration: same response as a wrong code.
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
-    stored = _load_login_code(uid)
+    stored = _load_login_code(bus, uid)
     if not stored:
         return VerifyLoginCodeResponse(
             ok=False,
@@ -664,14 +642,14 @@ async def verify_login_code(
     except (TypeError, ValueError):
         expires_at = 0
     if not expires_at or datetime.now(timezone.utc).timestamp() >= expires_at:
-        _clear_login_code(uid)
+        _clear_login_code(bus, uid)
         return VerifyLoginCodeResponse(
             ok=False, error="Code expired — request a new one."
         )
 
     # Burn on any path past expiry (mismatch, success, anything) so
     # the code can't be retried.
-    _clear_login_code(uid)
+    _clear_login_code(bus, uid)
 
     if str(stored.get("code", "")) != code:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
@@ -684,7 +662,7 @@ async def verify_login_code(
     # this with a signed token + a real session table.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_uid(uid),
+        value=_sign_uid(bus, uid),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
@@ -709,6 +687,7 @@ async def logout(response: Response) -> Response:
 @router.get("/me", response_model=MeResponse)
 async def me(
     magi_session: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    bus: BusDep = None,
 ) -> MeResponse:
     """Return the current user, or 401 if no valid session.
 
@@ -719,8 +698,7 @@ async def me(
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
-    bus = bus
-    selected = selected_session(magi_session)
+    selected = selected_session(bus, magi_session)
     if selected is not None:
         return MeResponse(
             uid=int(selected["telegram_id"]), telegram_id=int(selected["telegram_id"]),
@@ -728,19 +706,13 @@ async def me(
             admin=bool(selected.get("admin")), assigned=bool(selected.get("assigned")),
             selected_magic_id=int(selected["magic_id"]),
         )
-    uid = _verify_signed_uid(magi_session or "")
-    if uid is None or uid not in _super_admins():
+    uid = _verify_signed_uid(bus, magi_session or "")
+    if uid is None or uid not in _super_admins(bus):
         raise MagiHTTPException(
             status_code=401, code="auth.not_signed_in", detail="Not signed in"
         )
     if control_store.enabled():
-        operator = bus.magis.get_control_operator(uid)
-        if operator is None:
-            raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-        return MeResponse(
-            uid=operator.id, telegram_id=operator.telegram_id,
-            display_name=operator.display_name, admin=operator.admin,
-        )
+        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     # We already proved the cookie is a valid admin
     # uid; re-read the row to surface the
     # telegram_id + display name. If the row has since
@@ -749,7 +721,7 @@ async def me(
     # request, just no metadata to enrich the response
     # with.
     try:
-        contact = bus.contacts.get(uid)
+        contact = bus.contacts_book.get(contact_id=uid)
         if contact is None:
             return MeResponse(
                 uid=uid,
@@ -757,7 +729,7 @@ async def me(
                 display_name=None,
                 admin=False,
             )
-        methods, _is_webui_only = _login_methods_for(uid)
+        methods, _is_webui_only = _login_methods_for(bus, uid)
         return MeResponse(
             uid=contact.id,
             telegram_id=contact.telegram_id,
@@ -844,7 +816,33 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-def _login_methods_for(uid: int) -> tuple[list[str], bool]:
+def _password_hash(bus: Bus, uid: int) -> str | None:
+    """Return the local password credential without exposing persistence."""
+    if bus.auth_credentials_book is not None:
+        credential = bus.auth_credentials_book.find(uid=uid, kind="password")
+        return credential.secret_hash if credential else None
+    raw = bus.settings_book.get(key=f"auth.password.{uid}.hash")
+    return raw or None
+
+
+def _set_password_hash(bus: Bus, uid: int, secret_hash: str) -> None:
+    if bus.auth_credentials_book is not None:
+        existing = bus.auth_credentials_book.find(uid=uid, kind="password")
+        if existing is not None:
+            bus.auth_credentials_book.delete(credential_id=existing.id)
+        bus.auth_credentials_book.add(uid=uid, kind="password", secret_hash=secret_hash)
+        return
+    bus.settings_book.set(key=f"auth.password.{uid}.hash", value=secret_hash)
+
+
+def _delete_password_hash(bus: Bus, uid: int) -> bool:
+    if bus.auth_credentials_book is not None:
+        existing = bus.auth_credentials_book.find(uid=uid, kind="password")
+        return bool(existing and bus.auth_credentials_book.delete(credential_id=existing.id))
+    return bus.settings_book.delete(key=f"auth.password.{uid}.hash")
+
+
+def _login_methods_for(bus: Bus, uid: int) -> tuple[list[str], bool]:
     """Return ``(methods, is_webui_only)`` for ``uid``.
 
     Used by both the new ``GET /auth/login-methods`` route
@@ -854,25 +852,16 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
     ControlOperator + the runtime's IM binding table; the
     single-MAGI path uses Contact + auth_credentials.
     """
-    bus = bus
     methods: list[str] = []
     is_webui_only = True
 
     if control_store.enabled():
-        operator = bus.magis.get_control_operator(uid)
-        if operator is None or not operator.admin:
-            return ([], True)
-        # Control-plane side: TG delivery is the only path
-        # today. Once we add a password store for
-        # ControlOperator, check it here too.
-        if operator.telegram_id is not None:
-            methods.append("tg_code")
-        return (methods, True)
+        return ([], True)
 
-    contact = bus.contacts.get(uid)
+    contact = bus.contacts_book.get(contact_id=uid)
     if contact is None:
         return ([], True)
-    if bus.auth.has_password_for(uid):
+    if _password_hash(bus, uid):
         methods.append("password")
     if contact.telegram_id is not None:
         methods.append("tg_code")
@@ -881,7 +870,7 @@ def _login_methods_for(uid: int) -> tuple[list[str], bool]:
 
 
 @router.get("/login-methods", response_model=LoginMethodsResponse)
-async def login_methods(uid: int) -> LoginMethodsResponse:
+async def login_methods(uid: int, bus: BusDep) -> LoginMethodsResponse:
     """Public probe — returns the available login methods for ``uid``.
 
     Used by the LoginPage to decide which tabs to render.
@@ -891,7 +880,7 @@ async def login_methods(uid: int) -> LoginMethodsResponse:
     the admin). A future tightening can flip this to a
     404 once the WebUI treats uid as public knowledge.
     """
-    methods, webui_only = _login_methods_for(uid)
+    methods, webui_only = _login_methods_for(bus, uid)
     return LoginMethodsResponse(
         uid=uid,
         methods=methods,
@@ -903,6 +892,7 @@ async def login_methods(uid: int) -> LoginMethodsResponse:
 async def login_password(
     payload: LoginPasswordRequest,
     response: Response,
+    bus: BusDep,
 ) -> LoginPasswordResponse:
     """Verify password and set the session cookie.
 
@@ -930,20 +920,19 @@ async def login_password(
             error="password login is not supported by the control plane",
         )
 
-    if payload.uid not in _super_admins():
+    if payload.uid not in _super_admins(bus):
         # Anti-enumeration: respond as if the password
         # were wrong, but don't burn the cooldown.
         return LoginPasswordResponse(
             ok=False, error="password does not match",
         )
 
-    bus = bus
     from magi.channels.api import password_utils
 
     if not password_utils.check_cooldown(
-        payload.uid, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
+        bus, payload.uid, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
     ):
-        record = password_utils._store_get(payload.uid) or {}
+        record = password_utils._store_get(bus, payload.uid) or {}
         last = float(record.get("last_attempt_at", 0))
         remaining = max(1, int(_RESEND_COOLDOWN_SECONDS - (_now_ts() - last)))
         return LoginPasswordResponse(
@@ -955,9 +944,9 @@ async def login_password(
     # Always record the attempt — even on success — so
     # the post-login window is honest. The verify helper
     # clears the row on success below.
-    password_utils.record_attempt(payload.uid)
+    password_utils.record_attempt(bus, payload.uid)
 
-    stored = bus.auth.get_password_credential(payload.uid)
+    stored = _password_hash(bus, payload.uid)
     if not stored or not password_utils.verify_password(stored, payload.password):
         return LoginPasswordResponse(
             ok=False,
@@ -965,10 +954,10 @@ async def login_password(
             retry_after=_RESEND_COOLDOWN_SECONDS,
         )
 
-    password_utils.clear_attempt(payload.uid)
+    password_utils.clear_attempt(bus, payload.uid)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_uid(payload.uid),
+        value=_sign_uid(bus, payload.uid),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
@@ -1011,13 +1000,13 @@ async def set_password(
             error="password login is not supported by the control plane",
         )
 
-    bus = bus
+    bus = get_bus(request)
     from magi.channels.api import password_utils
 
     if not payload.uid or not isinstance(payload.uid, int):
         return SetPasswordResponse(ok=False, error="invalid uid")
 
-    caller_uid = _verify_signed_uid(
+    caller_uid = _verify_signed_uid(bus,
         request.cookies.get(SESSION_COOKIE_NAME) or "",
     )
     if caller_uid is None:
@@ -1027,7 +1016,7 @@ async def set_password(
         # Admin override — AdminGate already proved the
         # caller is admin, so we skip the old_password
         # check.
-        caller_contact = bus.contacts.get(caller_uid)
+        caller_contact = bus.contacts_book.get(contact_id=caller_uid)
         if caller_contact is None or not caller_contact.admin:
             return SetPasswordResponse(
                 ok=False,
@@ -1036,7 +1025,7 @@ async def set_password(
     else:
         # Self-service: must know the existing password,
         # unless they're setting one for the first time.
-        existing = bus.auth.get_password_credential(payload.uid)
+        existing = _password_hash(bus, payload.uid)
         if existing is not None:
             if not payload.old_password:
                 return SetPasswordResponse(
@@ -1054,7 +1043,7 @@ async def set_password(
     except ValueError as exc:
         return SetPasswordResponse(ok=False, error=str(exc))
 
-    bus.auth.ensure_password_credential(uid=payload.uid, secret_hash=new_hash)
+    _set_password_hash(bus, payload.uid, new_hash)
     logger.info("password set", extra={"uid": payload.uid, "by": caller_uid})
     return SetPasswordResponse(ok=True)
 
@@ -1073,10 +1062,10 @@ async def change_password(
     :func:`set_password` endpoint serves the admin
     override flow.
     """
-    bus = bus
+    bus = get_bus(request)
     from magi.channels.api import password_utils
 
-    caller_uid = _verify_signed_uid(
+    caller_uid = _verify_signed_uid(bus,
         request.cookies.get(SESSION_COOKIE_NAME) or "",
     )
     if caller_uid is None:
@@ -1086,7 +1075,7 @@ async def change_password(
     except ValueError as exc:
         return SetPasswordResponse(ok=False, error=str(exc))
 
-    existing = bus.auth.get_password_credential(caller_uid)
+    existing = _password_hash(bus, caller_uid)
     if existing is None:
         return SetPasswordResponse(
             ok=False,
@@ -1095,7 +1084,7 @@ async def change_password(
     if not password_utils.verify_password(existing, payload.old_password):
         return SetPasswordResponse(ok=False, error="old_password does not match")
 
-    bus.auth.ensure_password_credential(uid=caller_uid, secret_hash=new_hash)
+    _set_password_hash(bus, caller_uid, new_hash)
     logger.info("password changed", extra={"uid": caller_uid})
     return SetPasswordResponse(ok=True)
 
@@ -1104,6 +1093,7 @@ async def change_password(
 async def revoke_password(
     uid: int,
     _admin: "AdminGate",
+    bus: BusDep,
 ) -> Response:
     """Revoke a user's password login.
 
@@ -1115,8 +1105,7 @@ async def revoke_password(
     """
     if control_store.enabled():
         return Response(status_code=204)
-    bus = bus
-    if not bus.auth.delete_password_credential(uid):
+    if not _delete_password_hash(bus, uid):
         raise MagiHTTPException(
             status_code=404,
             code="auth.no_password_credential",

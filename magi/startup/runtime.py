@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
@@ -59,6 +60,38 @@ logger = logging.getLogger("magi.startup.runtime")
 _RUNTIME_HOST: str = RUNTIME_HOST
 _RUNTIME_PORT: int = RUNTIME_PORT
 _DEFAULT_LOG_LEVEL: str = DEFAULT_LOG_LEVEL
+
+
+@dataclass(slots=True)
+class RuntimeContext:
+    """The one BUS, worker registry, and immutable spec of one node process."""
+
+    startup: StartupContext
+    bus: "Bus"
+    workers: "WorkerRegistry"
+
+    @classmethod
+    def create(cls, startup: StartupContext) -> "RuntimeContext":
+        from magi.startup.workers import WorkerRegistry
+
+        bus = _build_bus(startup)
+        return cls(
+            startup=startup,
+            bus=bus,
+            workers=WorkerRegistry(
+                bus,
+                enabled_channels=_build_channels(startup, bus),
+                magi_id=_to_magi_id(startup.magi_id),
+            ),
+        )
+
+    @asynccontextmanager
+    async def running(self):
+        await self.workers.start()
+        try:
+            yield self
+        finally:
+            await self.workers.stop()
 
 
 # ----------------------------------------------------------------------
@@ -88,14 +121,9 @@ async def run_magi(config: StartupConfig) -> None:
         runtime_port=spec.runtime_port,
     )
 
-    bus = _build_bus(startup)
-    channels = _build_channels(startup, bus)
-
-    async with _runtime_lifespan(
-        channels, bus,
-        magi_id=_to_magi_id(startup.magi_id),
-    ) as workers:
-        await _serve_runtime_api(startup, bus, workers=workers)
+    context = RuntimeContext.create(startup)
+    async with context.running():
+        await _serve_runtime_api(context)
 
 
 # ----------------------------------------------------------------------
@@ -130,24 +158,6 @@ def _to_magi_id(raw: str) -> int | None:
 # ----------------------------------------------------------------------
 # Workers
 # ----------------------------------------------------------------------
-
-
-@asynccontextmanager
-async def _runtime_lifespan(
-    channels: list[str],
-    bus: "Bus",
-    *,
-    magi_id: int | None = None,
-):
-    """Start one centrally-owned worker registry and stop it in reverse."""
-    from magi.startup.workers import WorkerRegistry
-
-    registry = WorkerRegistry(bus, enabled_channels=channels, magi_id=magi_id)
-    await registry.start()
-    try:
-        yield registry
-    finally:
-        await registry.stop()
 
 
 # ----------------------------------------------------------------------
@@ -185,10 +195,7 @@ def _build_channels(
 
 
 async def _serve_runtime_api(
-    _startup: StartupContext,
-    bus: "Bus | None" = None,
-    *,
-    workers: "WorkerRegistry",
+    context: RuntimeContext,
 ) -> None:
     """Serve the private Runtime FastAPI app in the active event loop.
 
@@ -196,15 +203,15 @@ async def _serve_runtime_api(
     (CLI + K8s-dev default on, K8s production default off).
     """
     host = _RUNTIME_HOST  # internal host only; not externally exposed
-    port = _startup.runtime_port
+    port = context.startup.runtime_port
     reload = _reload_enabled()
-    log_level = _log_level(bus)
+    log_level = _log_level(context.bus)
     reload_dirs = _reload_dirs() if reload else None
 
     from magi.channels.api.app import create_runtime_app
 
     config = uvicorn.Config(
-        create_runtime_app(bus=bus, workers=workers),
+        create_runtime_app(context=context),
         factory=False,
         host=host,
         port=port,
@@ -268,5 +275,6 @@ def _reload_dirs() -> list[str]:
 
 
 __all__ = [
+    "RuntimeContext",
     "run_magi",
 ]
