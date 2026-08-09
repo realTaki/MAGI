@@ -192,7 +192,7 @@ def create_app(
         from magi.channels.api import runtime_proxy
 
         app.include_router(runtime_proxy.router, prefix="/api")
-    # Telegram binding (chat id ↔ uid, v0 admin endpoint;
+    # Telegram binding (chat id ↔ contact_id, v0 admin endpoint;
     # C2 will replace with a /start <code> flow that uses the
     # same underlying meta key).
     from magi.channels.api import tg_bindings
@@ -214,8 +214,8 @@ def create_app(
     from magi.channels.api import chat_sessions
 
     app.include_router(chat_sessions.router, prefix="/api")
-    # D.18 — full-text search across sessions. Same uid
-    # scope as ``chat_sessions``; the cookie-derived uid
+    # D.18 — full-text search across sessions. Same contact_id
+    # scope as ``chat_sessions``; the cookie-derived contact_id
     # is enforced in the SQL join.
     from magi.channels.api import chat_search
 

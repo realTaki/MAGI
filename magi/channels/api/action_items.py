@@ -31,11 +31,11 @@ opens a persistence session.
 Indexes used
 ============
 
-- ``ix_action_items_uid``  : every GET filters here.
-- ``ix_action_items_contact_recent``: the (uid,
+- ``ix_action_items_contact_id``  : every GET filters here.
+- ``ix_action_items_contact_recent``: the (contact_id,
   created_at DESC) ordering in the open + last-7-days list.
 - A unique partial index over the open reminder rows keyed
-  on ``(uid, title)``, used by the bus as the idempotency
+  on ``(contact_id, title)``, used by the bus as the idempotency
   guard so the same admin doesn't get two reminders
   before the first one is closed.
 """
@@ -67,7 +67,7 @@ router = APIRouter(tags=["action_items"])
 def _serialize(a) -> "ActionItemOut":
     return ActionItemOut(
         id=a.id,
-        uid=a.uid,
+        contact_id=a.contact_id,
         title=a.title,
         description=a.description,
         target_url=a.target_url,
@@ -76,7 +76,7 @@ def _serialize(a) -> "ActionItemOut":
         source=a.source,
         created_at=_iso(a.created_at) or "",
         completed_at=_iso(a.completed_at),
-        completed_by_uid=a.completed_by_uid,
+        completed_by_contact_id=a.completed_by_contact_id,
         completion_note=a.completion_note,
         dismissed=a.dismissed,
     )
@@ -84,7 +84,7 @@ def _serialize(a) -> "ActionItemOut":
 
 class ActionItemOut(BaseModel):
     id: int
-    uid: int | None
+    contact_id: int | None
     title: str
     description: str | None = None
     target_url: str | None = None
@@ -93,7 +93,7 @@ class ActionItemOut(BaseModel):
     source: str = "system"
     created_at: str
     completed_at: str | None = None
-    completed_by_uid: int | None = None
+    completed_by_contact_id: int | None = None
     completion_note: str | None = None
     dismissed: bool = False
 
@@ -129,7 +129,7 @@ _COMPLETED_VISIBLE_DAYS = 7
 
 
 def _current_admin_id(_admin: str) -> int:
-    """Reuse the AdminGate-resolved admin uid.
+    """Reuse the AdminGate-resolved admin contact_id.
 
     ``AdminGate`` already validated the cookie (or the
     control-plane proxy signature) and confirmed the
@@ -139,7 +139,7 @@ def _current_admin_id(_admin: str) -> int:
     caller from the raw ``magi_session`` cookie used to
     live here, but that broke the proxied/control-plane
     session shape (the v2 ``v2.<payload>.<sig>`` cookie
-    can't be parsed by the legacy single-uid helper)
+    can't be parsed by the legacy single-contact_id helper)
     and silently failed every admin action even after a
     successful sign-in.
     """
@@ -166,7 +166,7 @@ def list_action_items(
     open rows. The dashboard mixes them in the same
     scroll, so the default fits the typical panel.
 
-    Only items whose ``uid`` matches the current
+    Only items whose ``contact_id`` matches the current
     admin are returned. The endpoint resolves the admin id
     from the session cookie — never from a query parameter —
     so the URL has no "look at someone else's items"
@@ -181,7 +181,7 @@ def list_action_items(
     # 0), priority DESC ("high" > "normal" via alpha compare
     # which is enough for v0), then most-recent first.
     rows = bus.action_items_book.list_actions(
-        owner_uid=admin_id,
+        owner_contact_id=admin_id,
         include_completed=include_completed,
         completed_visible_days=_COMPLETED_VISIBLE_DAYS,
     )
@@ -214,9 +214,9 @@ def complete_action_item(
 
     Authorization is doubled: the AdminGate proves the cookie
     is admin + alive, and we additionally verify the row's
-    ``uid`` belongs to this admin. The second check
+    ``contact_id`` belongs to this admin. The second check
     defends against a future bug where some code path mints a
-    row tied to a different uid and the operator
+    row tied to a different contact_id and the operator
     could complete someone else's item via URL guessing.
     """
     admin_id = _current_admin_id(_admin)
@@ -228,10 +228,10 @@ def complete_action_item(
             code="not_found.action_item",
             detail=f"action item {item_id} not found",
         )
-    if row.uid != admin_id:
+    if row.contact_id != admin_id:
         logger.warning(
             "complete denied: admin=%s tried to complete item %s owned by %s",
-            admin_id, item_id, row.uid,
+            admin_id, item_id, row.contact_id,
         )
         raise MagiHTTPException(
             status_code=403,
@@ -242,7 +242,7 @@ def complete_action_item(
     row = service.complete(
         action_item_id=item_id,
         note=(payload.completion_note if "completion_note" in payload.model_fields_set else None),
-        completed_by_uid=admin_id,
+        completed_by_contact_id=admin_id,
     )
     if row is None:  # Ownership was rechecked inside the bus transaction.
         raise MagiHTTPException(

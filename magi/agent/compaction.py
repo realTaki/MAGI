@@ -18,7 +18,7 @@ _DEFAULT_THRESHOLD_PCT = 80
 
 
 async def maybe_compact(
-    uid: int,
+    contact_id: int,
     session_id: str | None,
     messages: list[dict],
     *,
@@ -56,7 +56,7 @@ async def maybe_compact(
         return
 
     try:
-        sess = bus.sessions_book.get_for_owner(uid=uid, session_id=session_id)
+        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=session_id)
         if sess is None:
             return
         messages[:] = [

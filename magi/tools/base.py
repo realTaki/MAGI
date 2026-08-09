@@ -82,7 +82,7 @@ class ToolContext:
     """
 
     workspace: str
-    uid: int
+    contact_id: int
     channel: str
     session_id: str = ""
     bus: "Bus | None" = None
@@ -288,7 +288,7 @@ class Tool(ABC):
         - ``ctx.bus.contacts_book.get(contact_id=...)`` →
           the MAGI-local role (``assigned`` / ``guest`` /
           ``contact``) — lives on ``Contact.role``.
-        - ``ctx.bus.magis_admins_book.is_admin_for(uid=...)``
+        - ``ctx.bus.magis_admins_book.is_admin_for(contact_id=...)``
           → ``True`` iff the caller has at least one row in
           the ``magis_admins`` table. Admin is a **MAGIS-level**
           concept; it never appears as a value on
@@ -319,16 +319,16 @@ class Tool(ABC):
             return None  # no gate configured — every caller passes
 
         try:
-            ct_id = int(ctx.uid)
+            ct_id = int(ctx.contact_id)
         except (TypeError, ValueError):
-            return f"uid {ctx.uid!r} is not a valid id"
+            return f"contact_id {ctx.contact_id!r} is not a valid id"
         if ct_id == 0:
             # The chat / TG handlers always set a real id;
             # ``0`` is the loop's placeholder for "no caller
             # resolved yet". Refuse rather than silently
             # letting an unset-context caller through.
             return (
-                "tool requires a known uid (got 0); "
+                "tool requires a known contact_id (got 0); "
                 "caller did not authenticate through a "
                 "cookie / TG binding."
             )
@@ -347,7 +347,7 @@ class Tool(ABC):
             return f"contact {ct_id!r} not found"
         effective: set[str] = {contact.role}
         admins_book = getattr(ctx.bus, "magis_admins_book", None)
-        if admins_book is not None and admins_book.is_admin_for(uid=ct_id):
+        if admins_book is not None and admins_book.is_admin_for(contact_id=ct_id):
             effective.add("admin")
 
         if effective.isdisjoint(self.ALLOWED_ROLES):

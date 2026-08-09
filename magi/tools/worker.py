@@ -410,7 +410,7 @@ class ToolsWorker(RuntimeWorker):
         #    don't carry a stale role on the context.
         ctx = ToolContext(
             workspace=str(ctx_data.get("workspace") or ""),
-            uid=int(ctx_data.get("uid") or 0),
+            contact_id=int(ctx_data.get("contact_id") or 0),
             channel=str(ctx_data.get("channel") or ""),
             session_id=str(ctx_data.get("session_id") or ""),
             bus=self.bus,
