@@ -67,5 +67,8 @@ async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bo
     token = get_bus(request).settings_book.get(key="telegram.bot_token")
     if not token:
         raise MagiHTTPException(status_code=409, code="telegram.not_configured", detail="Telegram is not configured")
-    await tg_bot.send_text_raw(token, payload.telegram_id, payload.text)
+    try:
+        await tg_bot.send_text_raw(token, payload.telegram_id, payload.text)
+    except RuntimeError as exc:
+        raise MagiHTTPException(status_code=502, code="telegram.send_failed", detail=str(exc)) from exc
     return {"ok": True}

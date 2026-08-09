@@ -17,6 +17,13 @@ async def _post(path: str, payload: dict[str, object]) -> None:
     base = os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(base + path, json=payload, headers=headers)
+    if response.is_error:
+        try:
+            detail = response.json().get("detail")
+        except Exception:
+            detail = None
+        if detail:
+            raise RuntimeError(str(detail))
     response.raise_for_status()
 
 
