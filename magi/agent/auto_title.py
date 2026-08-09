@@ -20,8 +20,6 @@ async def request_session_title(
     bus: "Bus",
 ) -> str | None:
     """Generate + persist a short chat title; return it."""
-    from magi.prompts import load_chat_title_prompt
-
     try:
         sess = bus.sessions_book.get_for_owner(uid=uid, session_id=session_id)
     except Exception:
@@ -41,7 +39,7 @@ async def request_session_title(
 
     job = CallLLMJob(
         messages=(
-            {"role": "system", "content": load_chat_title_prompt()},
+            {"role": "system", "content": bus.prompt_book.chat_title_prompt()},
             {"role": "user", "content": getattr(first_user, "text", "")},
         ),
         max_tokens=20,

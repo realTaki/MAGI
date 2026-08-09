@@ -38,7 +38,7 @@ from magi.bus.library.local.sessionBook import (
     Session,
     SessionBook,
 )
-from magi.bus.library.local.settingBook import Setting, SettingBook
+from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
 from magi.bus.library.local.tasksBook import (
     Channel,
     ChannelEnum,
@@ -88,6 +88,7 @@ __all__ = [
     "ROLE_GUEST",
     "Session",
     "SessionBook",
+    "MCPTimeout",
     "Setting",
     "SettingBook",
     "Task",

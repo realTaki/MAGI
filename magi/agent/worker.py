@@ -299,7 +299,7 @@ class AgentWorker:
 
         try:
             return build_system_prompt(
-                uid=ctx.uid or 0, soul=read_soul(), bus=self.bus,
+                uid=ctx.uid or 0, soul=read_soul(bus=self.bus), bus=self.bus,
             )
         except Exception:
             logger.exception("system_prompt build failed; falling back to bare soul")
@@ -335,8 +335,19 @@ class AgentWorker:
 
     # -- split tools ---------------------------------------------------------
 
-    def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
+    @staticmethod
+    def _make_tool_job(
+        tool_call_id: str, tool_name: str, arguments: dict,
+        context: dict, catalog_revision: int | None = None,
+    ) -> "RunToolJob":
         from magi.bus.guild.runToolJob import RunToolJob
+        return RunToolJob(
+            tool_call_id=tool_call_id, tool_name=tool_name,
+            payload={"arguments": arguments, "context": context},
+            catalog_revision=catalog_revision,
+        )
+
+    def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
         from magi.bus.guild.sendA2AJob import SendA2AJob
 
         tool_jobs: list[RunToolJob] = []
@@ -354,10 +365,10 @@ class AgentWorker:
             }
             if name == "message_magi":
                 if not _A2A_ENABLED:
-                    tool_jobs.append(RunToolJob(
-                        tool_call_id=tc_id, tool_name="message_magi",
-                        payload={"arguments": {"_validation_error": "a2a_disabled"}, "context": context},
-                        catalog_revision=catalog_revision,
+                    tool_jobs.append(self._make_tool_job(
+                        tc_id, "message_magi",
+                        {"_validation_error": "a2a_disabled"},
+                        context, catalog_revision,
                     ))
                     continue
                 try:
@@ -366,10 +377,10 @@ class AgentWorker:
                     if target_magic_id <= 0 or not text.strip():
                         raise ValueError("magic_id and text required")
                 except (KeyError, TypeError, ValueError) as exc:
-                    tool_jobs.append(RunToolJob(
-                        tool_call_id=tc_id, tool_name="message_magi",
-                        payload={"arguments": {"_validation_error": str(exc)}, "context": context},
-                        catalog_revision=catalog_revision,
+                    tool_jobs.append(self._make_tool_job(
+                        tc_id, "message_magi",
+                        {"_validation_error": str(exc)},
+                        context, catalog_revision,
                     ))
                     continue
                 a2a_jobs.append(SendA2AJob(
@@ -378,10 +389,8 @@ class AgentWorker:
                     request={"text": text, "uid": ctx.uid, "session_id": ctx.session_id},
                 ))
             else:
-                tool_jobs.append(RunToolJob(
-                    tool_call_id=tc_id, tool_name=name or "",
-                    payload={"arguments": args, "context": context},
-                    catalog_revision=catalog_revision,
+                tool_jobs.append(self._make_tool_job(
+                    tc_id, name or "", args, context, catalog_revision,
                 ))
         return _SplitJobs(tool_jobs=tool_jobs, a2a_jobs=a2a_jobs)
 
@@ -524,9 +533,8 @@ class AgentWorker:
         return msg
 
     def _fallback_reply(self) -> str:
-        from magi.prompts import load_bot_replies
         try:
-            return load_bot_replies().get("agent_no_credentials", "(no credentials)")
+            return self.bus.prompt_book.bot_replies().get("agent_no_credentials", "(no credentials)")
         except Exception:
             return "(no credentials)"
 

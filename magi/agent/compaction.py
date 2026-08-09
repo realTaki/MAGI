@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from magi.agent.tokens import estimate_messages_tokens
 
 if TYPE_CHECKING:
-    from magi.providers import ChatMessage
     from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.compaction")
@@ -21,7 +20,7 @@ _DEFAULT_THRESHOLD_PCT = 80
 async def maybe_compact(
     uid: int,
     session_id: str | None,
-    messages: list["ChatMessage"],
+    messages: list[dict],
     *,
     bus: "Bus",
 ) -> None:
@@ -69,18 +68,16 @@ async def maybe_compact(
 
 async def call_llm_for_summary(
     *,
-    to_compress: list["ChatMessage"],
+    to_compress: list[dict],
     wait_seconds: float = 30.0,
     bus: "Bus",
 ) -> str | None:
     """One LLM call to compress *to_compress* into a summary."""
-    from magi.prompts import load_compaction_prompt
-
-    system = load_compaction_prompt()
+    system = bus.prompt_book.compaction_prompt()
     user_lines: list[str] = []
     for m in to_compress:
-        who = m.role.upper()
-        user_lines.append(f"[{who}]\n{m.content}")
+        who = m["role"].upper()
+        user_lines.append(f"[{who}]\n{m['content']}")
     user_content = "\n\n".join(user_lines)
     if len(user_content) > 6000:
         return None

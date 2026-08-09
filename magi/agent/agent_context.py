@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.agent.agent_context")
 
 DEFAULT_MAX_TOKENS = 1024
-_FALLBACK_REPLY_CACHE: dict[str, str] = {}
 
 
 @dataclass
@@ -20,16 +19,6 @@ class AgentContext:
     soul: str
     tool_schemas: list[dict]
     messages: list[dict]
-
-
-def fallback_reply(key: str = "agent_fallback") -> str:
-    cached = _FALLBACK_REPLY_CACHE.get(key)
-    if cached is None:
-        from magi.prompts import load_bot_replies
-
-        cached = load_bot_replies()[key]
-        _FALLBACK_REPLY_CACHE[key] = cached
-    return cached
 
 
 def build_messages_from_session(
@@ -92,5 +81,4 @@ __all__ = [
     "DEFAULT_MAX_TOKENS",
     "build_context",
     "build_messages_from_session",
-    "fallback_reply",
 ]

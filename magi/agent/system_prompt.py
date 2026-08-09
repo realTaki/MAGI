@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
-
-from magi.startup.paths import resolve_workspace_dir as workspace_dir
 
 if TYPE_CHECKING:
     from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.system_prompt")
-
-SOUL_FILENAME = "SOUL.md"
 
 
 def _format_memory_block(rows) -> str:
@@ -47,16 +42,16 @@ def _format_daily_note_block(note) -> str:
     return f"## Daily note\n{body}" if body else ""
 
 
-def read_soul() -> str:
-    from magi.prompts import load_fallback_persona
+def read_soul(*, bus: "Bus") -> str:
+    """Read the SOUL persona via ``bus.prompt_book``.
 
-    soul_path = workspace_dir() / SOUL_FILENAME
-    try:
-        text = soul_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return load_fallback_persona()
-    text = text.strip()
-    return text or load_fallback_persona()
+    The Book already resolves the correct SOUL source (workspace or
+    bundled) via the prompts directory configured at bootstrap time.
+    Falls back to the bundled fallback persona only when the canonical
+    SOUL is empty.
+    """
+    text = bus.prompt_book.soul().strip()
+    return text or bus.prompt_book.fallback_persona()
 
 
 def build_system_prompt(
@@ -69,8 +64,6 @@ def build_system_prompt(
 
     Six blocks: SOUL → Instructions → Memory → Contact → Daily note → Skills
     """
-    from magi.prompts import load_skills_block_template
-
     parts: list[str] = [soul]
 
     # 2. Instructions
@@ -117,7 +110,7 @@ def build_system_prompt(
         try:
             metas = skills_book.list()
             if metas:
-                lines = ["", *load_skills_block_template().splitlines(), ""]
+                lines = ["", *bus.prompt_book.skills_block_template().splitlines(), ""]
                 for s in metas:
                     name = getattr(s, "name", "") or ""
                     desc = getattr(s, "description", "") or ""
@@ -134,4 +127,4 @@ def build_system_prompt(
     return rendered or soul
 
 
-__all__ = ["SOUL_FILENAME", "read_soul", "build_system_prompt"]
+__all__ = ["read_soul", "build_system_prompt"]
