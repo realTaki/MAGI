@@ -165,6 +165,30 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
             s.refresh(row)
         return self._row_to_dto(row)
 
+    def update(self, *, role_id: int, magis_id: int, name: str | None = None,
+               instruction: str | None = None) -> MagisRole | None:
+        with self._session() as s:
+            row = s.scalar(select(_MagisRoleRow).where(
+                _MagisRoleRow.id == role_id, _MagisRoleRow.magis_id == magis_id,
+            ))
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if instruction is not None:
+                row.instruction = instruction
+            s.commit(); s.refresh(row)
+            return self._row_to_dto(row)
+
+    def delete(self, *, role_id: int, magis_id: int) -> bool:
+        with self._session() as s:
+            row = s.scalar(select(_MagisRoleRow).where(
+                _MagisRoleRow.id == role_id, _MagisRoleRow.magis_id == magis_id,
+            ))
+            if row is None:
+                return False
+            s.delete(row); s.commit(); return True
+
 
 class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
@@ -229,6 +253,18 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             s.delete(row)
             s.commit()
             return True
+
+    def update_role(self, *, magi_id: int, magis_id: int, role_id: int) -> MagisMembership | None:
+        with self._session() as s:
+            row = s.scalar(select(_MagisMembershipRow).where(
+                _MagisMembershipRow.id == magi_id,
+                _MagisMembershipRow.magis_id == magis_id,
+            ))
+            if row is None:
+                return None
+            row.role_id = role_id
+            s.commit(); s.refresh(row)
+            return self._row_to_dto(row)
 
     # -- agent-worker-bus.md §6 helper --------------------------------
 

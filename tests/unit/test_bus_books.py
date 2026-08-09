@@ -315,8 +315,9 @@ def test_contact_book_full_lifecycle(factory):
     c = book.add(name="Alice", telegram_id=12345)
     assert isinstance(c, Contact)
     assert c.name == "Alice"
-    # DTO surface has no admin attribute — admin is MAGIS-side.
-    assert not hasattr(c, "admin") or getattr(c, "admin", None) is None
+    # Contact retains its local role flag; MAGIS membership remains the
+    # authority for organisation-level administration.
+    assert c.admin is False
 
     found = book.get(contact_id=c.id)
     assert found is not None and found.telegram_id == 12345

@@ -28,14 +28,14 @@ SCAN_PREFIXES: tuple[str, ...] = (
     "magi/proactive/",
 )
 
-# These are the production Actor/Tool/Delivery entry paths that must retain
-# their BUS-only boundary.
+# These are the remaining production Actor/Tool entry paths that must retain
+# their BUS-only boundary. Delivery is now represented by the durable
+# ``deliveryJob`` board and no longer has a channels/delivery.py module.
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "magi/agent/worker.py",
     "magi/agent/agent_context.py",
     "magi/tools/base.py",
     "magi/tools/worker.py",
-    "magi/channels/delivery.py",
 )
 
 _FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {

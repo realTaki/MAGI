@@ -159,6 +159,33 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             row.adam_id = adam_id
             s.commit()
 
+    def update(self, *, magis_id: int, name: str | None = None,
+               parent_id: int | None = None, instruction: str | None = None,
+               set_parent_id: bool = False) -> Magis | None:
+        """Update one MAGIS row and return a DTO, never an ORM row."""
+        with self._session() as s:
+            row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
+            if row is None:
+                return None
+            if name is not None:
+                row.name = name
+            if instruction is not None:
+                row.instruction = instruction
+            if set_parent_id:
+                row.parent_id = parent_id
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def delete(self, *, magis_id: int) -> bool:
+        with self._session() as s:
+            row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+            return True
+
 
 class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
     model_cls = _MagisAdminRow
@@ -216,6 +243,18 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
                     _MagisAdminRow.magis_id == magis_id,
                 )
             )
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+            return True
+
+    def remove_by_id(self, *, admin_id: int, magis_id: int) -> bool:
+        with self._session() as s:
+            row = s.scalar(select(_MagisAdminRow).where(
+                _MagisAdminRow.id == admin_id,
+                _MagisAdminRow.magis_id == magis_id,
+            ))
             if row is None:
                 return False
             s.delete(row)

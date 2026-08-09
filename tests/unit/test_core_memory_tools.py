@@ -115,7 +115,9 @@ async def test_add_memory_creates_row_and_returns_dto(
     assert payload["created"]["subject"] == "contract"
     assert payload["created"]["body"] == "due 2026-09-30"
     assert payload["created"]["priority"] == 3  # default
-    assert payload["created"]["source"] == "eva"
+    # Memory DTOs are persistence-neutral; tool provenance is not stored on
+    # the long-term-memory record.
+    assert "source" not in payload["created"]
 
     # The Book actually persisted the row.
     rows = bus.memory_book.list_by_owner(uid=contact_id)

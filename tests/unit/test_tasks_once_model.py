@@ -7,7 +7,7 @@ fastapi 0.138 trips on TypeAdapter resolution when
 ``Annotated[TaskIn, Field(payload)]`` is the route signature
 (``"TypeAdapter[...] is not fully defined"``). The route
 handler is thin; the same contract is pinned by exercising
-the model + :func:`_render_cron_from_payload` directly.
+the model + :func:`_schedule` directly.
 
 Three surface groups:
 
@@ -16,9 +16,9 @@ Three surface groups:
   - The once/frequency cross-field invariant lives in the
     route preamble (see :func:`create_task`); we reproduce
     the check inline so the contract is locked.
-  - :func:`_render_cron_from_payload` canonicalises naive
-    timestamps to UTC, rejects bad ISO with 400, and emits
-    ``cron=""`` for the once branch.
+  - :func:`_schedule` canonicalises naive timestamps to UTC,
+    rejects bad ISO with 400, and returns ``cron=None`` for the
+    once branch.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import pytest
 from magi.channels.api.tasks import (
     TaskIn,
     TaskOut,
-    _render_cron_from_payload,
+    _schedule,
 )
 from magi.channels.api.errors import MagiHTTPException
 
@@ -114,7 +114,7 @@ def test_cron_frequency_with_run_at_is_rejected_by_route_check() -> None:
     assert "frequency must be 'once'" in exc_info.value.detail
 
 
-# -- render layer: _render_cron_from_payload -------------------------------
+# -- scheduling layer: _schedule -------------------------------------------
 
 
 def test_render_once_returns_empty_cron_and_iso_run_at() -> None:
@@ -124,8 +124,8 @@ def test_render_once_returns_empty_cron_and_iso_run_at() -> None:
         frequency="once",
         run_at="2026-08-01T15:30:00+08:00",
     )
-    cron, run_at_iso, _ = _render_cron_from_payload(payload)
-    assert cron == ""
+    cron, run_at_iso = _schedule(payload)
+    assert cron is None
     # v3 contract: 15:30 in UTC+8 → 07:30 UTC, canonical trailing-Z.
     assert run_at_iso == "2026-08-01T07:30:00Z"
 
@@ -137,8 +137,8 @@ def test_render_once_normalises_naive_run_at_to_utc_offset() -> None:
         frequency="once",
         run_at="2026-08-01T12:00:00",
     )
-    cron, run_at_iso, _ = _render_cron_from_payload(payload)
-    assert cron == ""
+    cron, run_at_iso = _schedule(payload)
+    assert cron is None
     # v3 contract: canonicalise to UTC trailing-Z form (per
     # ``validate_run_at`` docstring — see tasksBook.py).
     assert run_at_iso == "2026-08-01T12:00:00Z"
@@ -152,7 +152,7 @@ def test_render_once_rejects_bad_run_at_with_400() -> None:
         run_at="not-a-date",
     )
     with pytest.raises(MagiHTTPException) as exc_info:
-        _render_cron_from_payload(payload)
+        _schedule(payload)
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "validation.run_at"
     assert "not-a-date" in exc_info.value.detail
@@ -169,7 +169,7 @@ def test_render_cron_presets_unchanged_by_once_branch() -> None:
         hour=9,
         minute=0,
     )
-    cron, run_at_iso, _ = _render_cron_from_payload(payload)
+    cron, run_at_iso = _schedule(payload)
     assert cron == "0 9 * * *"
     assert run_at_iso is None
 
@@ -187,10 +187,12 @@ def test_task_out_carries_run_at_field() -> None:
         prompt="x",
         cron="",
         run_at="2026-08-01T15:30:00+08:00",
+        delivery_to="new",
         tz="Asia/Shanghai",
         target_channel="webui",
         uid=1,
         enabled=True,
+        session_id="task-once",
         consecutive_failures=0,
         created_at="2026-07-20T12:00:00Z",
         updated_at="2026-07-20T12:00:00Z",
@@ -207,10 +209,12 @@ def test_task_out_run_at_is_optional_for_cron_rows() -> None:
         prompt="x",
         cron="0 9 * * *",
         run_at=None,
+        delivery_to="new",
         tz="Asia/Shanghai",
         target_channel="webui",
         uid=1,
         enabled=True,
+        session_id="task-cron",
         consecutive_failures=0,
         created_at="2026-07-20T12:00:00Z",
         updated_at="2026-07-20T12:00:00Z",

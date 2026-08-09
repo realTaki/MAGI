@@ -70,6 +70,18 @@ deploy/k8s/
 由 orchestrator 按 MAGI/MAGIS ID 创建稳定命名的资源；不要依赖 Kustomize name prefix
 推导这些名称。
 
+## 启动模型
+
+每个节点先由一次性 init container 执行 `magi init`，只负责 provision
+Genesis、`eva-000`、schema、默认资源和控制面记录。主容器随后仅执行
+`magi node run --foreground`：它读取并校验已持久化的 RuntimeSpec，绝不
+建表、创建目录或生成密钥。`magi-webui` 是独立控制面进程，使用
+`magi webui run --foreground`。
+
+因此 Kubernetes 不应把 `node run` 当成初始化命令，也不应以旧根目录
+`magi.db` 启动。节点私有数据库的唯一位置是
+`/MAGI_Citizens/<name>/memories/magi.db`。
+
 ## 前置条件
 
 需要：
@@ -114,7 +126,8 @@ images:
 
 - React 静态文件已经构建到镜像；
 - Python 源码位于镜像内的 `/app/magi`；
-- 只有 `/workspace` 是持久化挂载；
+- PVC 在容器根目录 `/` 挂载，持久化数据位于
+  `/MAGI_Citizens/<name>/memories/magi.db`；
 - 不需要在 Pod 内运行 Vite。
 
 ## 2. 创建 Genesis 数据库 Secret 并部署 ADAM
@@ -128,15 +141,9 @@ cp deploy/k8s/secrets/magis-genesis-db.example.yaml /tmp/magis-genesis-db.yaml
 kubectl -n magi apply -f /tmp/magis-genesis-db.yaml
 ```
 
-`MAGIS_DATABASE_URL` 必须指向 `magi-magis-genesis-01-db:5432/magis_1`。初始 ADAM
-会从这个 Secret 获得连接串，并在该 PostgreSQL 中创建 Genesis 与 `EVA-00 PROTO TYPE`。
-
-默认 ADAM 只挂载 WebUI；`MAGI_CHANNELS` 在 ConfigMap 里**不要**显式设置
-（启动逻辑会从 settings DB 自动检测已 onboarded 的通道）：
-
-```yaml
-MAGI_NODE_ROLE: adam
-```
+`MAGIS_DATABASE_URL` 必须指向 `magi-magis-1-genesis-db:5432/magis_1`。
+init container 从这个 Secret 获得连接串，并在监听任意 Runtime 端口前
+provision Genesis 与 `eva-000`。
 
 先预览渲染结果：
 

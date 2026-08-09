@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.api import auth, contacts, magic, magis, onboarding
+from magi.channels.api import auth, contacts, magis, onboarding
 
 from typing import TYPE_CHECKING
 
@@ -131,16 +131,6 @@ def create_app(
     app.state.bus = bus
     app.state.workers = workers
 
-    @app.middleware("http")
-    async def _bind_request_bus(request, call_next):
-        from magi.channels.api.context import bind_bus, reset_bus
-
-        token = bind_bus(request.app.state.bus)
-        try:
-            return await call_next(request)
-        finally:
-            reset_bus(token)
-
     # Install the i18n-ready error envelope BEFORE the
     # routers mount so :class:`MagiHTTPException` raised
     # anywhere in the app gets serialised as
@@ -185,19 +175,12 @@ def create_app(
     from magi.channels.a2a.router import router as a2a_router
     app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
-    # They therefore see only that MAGI's direct MAGIS database, rather than
-    # the singleton WebUI's bootstrap database connection.
     if not include_control_routes:
-        app.include_router(magic.router, prefix="/api")
         app.include_router(magis.router, prefix="/api")
     # Contacts router — unified contact directory + CRUD.
     # Serves both the Knowledge pane (GET ?with_notes=true)
     # and the admin management surface (POST/PATCH).
     app.include_router(contacts.router, prefix="/api")
-    # MAGIC router — the internal persistence/API surface for individual
-    # MAGIC agent rows under each MAGIS.
-    if include_control_routes:
-        app.include_router(magic.router, prefix="/api")
     # MAGIS router — the "MAGI Societies" surface for the group tree.
     if include_control_routes:
         app.include_router(magis.router, prefix="/api")
