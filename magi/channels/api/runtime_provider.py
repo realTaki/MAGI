@@ -33,8 +33,8 @@ from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
 )
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import admin_gate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.runtime_provider")
@@ -76,14 +76,14 @@ class ProviderPatch(BaseModel):
 # -- helpers ------------------------------------------------------------
 
 
-def _known_providers() -> set[str]:
+def _known_providers(bus) -> set[str]:
     """Return the set of known provider ids from settings_book.
 
     Falls back to a hardcoded list matching
     :data:`magi.providers.factory._KNOWN_PROVIDERS` when the
     worker hasn't seeded ``providers.options`` yet.
     """
-    raw = bus.settings.get(_PROVIDERS_OPTIONS_KEY)
+    raw = bus.settings_book.get(key=_PROVIDERS_OPTIONS_KEY)
     if raw:
         try:
             options = json.loads(raw)
@@ -93,7 +93,7 @@ def _known_providers() -> set[str]:
     return _FALLBACK_KNOWN_PROVIDERS
 
 
-def _validate_provider(provider: str | None) -> str | None:
+def _validate_provider(bus, provider: str | None) -> str | None:
     """Coerce + validate the provider id; raise on unknown.
 
     Empty string is treated as "clear", not as "unknown".  ``None``
@@ -104,8 +104,8 @@ def _validate_provider(provider: str | None) -> str | None:
         return None
     if provider == "":
         return None
-    if provider.strip().lower() not in _known_providers():
-        known_str = ", ".join(sorted(_known_providers()))
+    if provider.strip().lower() not in _known_providers(bus):
+        known_str = ", ".join(sorted(_known_providers(bus)))
         raise MagiHTTPException(
             status_code=400,
             code="validation.unknown_provider",
@@ -117,12 +117,12 @@ def _validate_provider(provider: str | None) -> str | None:
     return provider.strip().lower()
 
 
-def _read_current() -> tuple[str | None, str | None, str | None]:
+def _read_current(bus) -> tuple[str | None, str | None, str | None]:
     """Return ``(provider, api_key, model)`` from settings_book."""
     return (
-        bus.settings.get(PROVIDER_NAME_KEY),
-        bus.settings.get(PROVIDER_API_KEY_KEY),
-        bus.settings.get(PROVIDER_MODEL_KEY),
+        bus.settings_book.get(key=PROVIDER_NAME_KEY),
+        bus.settings_book.get(key=PROVIDER_API_KEY_KEY),
+        bus.settings_book.get(key=PROVIDER_MODEL_KEY),
     )
 
 
@@ -146,15 +146,15 @@ AdminGate = Annotated[str, Depends(_admin_gate)]
 
 
 @router.get("/magic/self/provider", response_model=ProviderOut)
-def get_self_provider(_admin: AdminGate) -> ProviderOut:
-    provider, api_key, model = _read_current()
+def get_self_provider(_admin: AdminGate, bus: BusDep) -> ProviderOut:
+    provider, api_key, model = _read_current(bus)
     return _to_out(provider, api_key, model)
 
 
 @router.patch("/magic/self/provider", response_model=ProviderOut)
-def patch_self_provider(payload: ProviderPatch, _admin: AdminGate) -> ProviderOut:
-    current_provider, current_api_key, current_model = _read_current()
-    new_provider = _validate_provider(payload.provider)
+def patch_self_provider(payload: ProviderPatch, _admin: AdminGate, bus: BusDep) -> ProviderOut:
+    current_provider, current_api_key, current_model = _read_current(bus)
+    new_provider = _validate_provider(bus, payload.provider)
     # Patch semantics: None means "leave alone", "" means "clear".
     # Pydantic ``model_fields_set`` distinguishes "omitted" from "None"
     # but the simpler rule below -- any non-None entry in the payload
@@ -177,7 +177,7 @@ def patch_self_provider(payload: ProviderPatch, _admin: AdminGate) -> ProviderOu
 
 
 @router.delete("/magic/self/provider", response_model=ProviderOut)
-def delete_self_provider(_admin: AdminGate) -> ProviderOut:
+def delete_self_provider(_admin: AdminGate, bus: BusDep) -> ProviderOut:
     """Clear all three fields.  Useful for re-provisioning."""
     bus.change_provider_config_job_board.publish(
         ChangeProviderConfigJob(provider=None, api_key=None, model=None)

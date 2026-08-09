@@ -38,8 +38,8 @@ from typing import Annotated
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.token_metrics")
 
@@ -103,6 +103,7 @@ class PeriodUsage:
 
 
 def _aggregate_period(
+    bus,
     uid: int,
     period: str,
     tz: zoneinfo.ZoneInfo,
@@ -120,7 +121,7 @@ def _aggregate_period(
     start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
     end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
 
-    in_sum, out_sum, calls = bus.token_usage.aggregate(
+    in_sum, out_sum, calls = bus.token_usage_book.aggregate(
         uid=uid, start=start_utc_naive, end=end_utc_naive,
     )
 
@@ -165,6 +166,7 @@ class TokenUsageOut(BaseModel):
 def get_contact_token_usage(
     uid: int,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> TokenUsageOut:
     """Aggregate token usage for one contact across three
     periods.
@@ -175,12 +177,12 @@ def get_contact_token_usage(
     contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
-    tz_name = bus.settings.system_timezone()
+    tz_name = bus.settings_book.get(key="system.timezone") or "UTC"
     tz = zoneinfo.ZoneInfo(tz_name)
 
-    week = _aggregate_period(uid, "week", tz)
-    month = _aggregate_period(uid, "month", tz)
-    total = _aggregate_period(uid, "total", tz)
+    week = _aggregate_period(bus, uid, "week", tz)
+    month = _aggregate_period(bus, uid, "month", tz)
+    total = _aggregate_period(bus, uid, "total", tz)
 
     return TokenUsageOut(
         uid=uid,

@@ -28,8 +28,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from magi.bus.library.file.skillsBook import SkillBookError, SkillNotFound
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.channels.api.skills")
@@ -40,12 +40,8 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _DISABLED_KEY = "skills.disabled"
 
 
-def _bus():
-    return bus
-
-
-def _load_disabled() -> set[str]:
-    raw = _bus().settings.get(_DISABLED_KEY)
+def _load_disabled(bus) -> set[str]:
+    raw = bus.settings_book.get(key=_DISABLED_KEY)
     if not raw:
         return set()
     try:
@@ -54,8 +50,8 @@ def _load_disabled() -> set[str]:
         return set()
 
 
-def _save_disabled(disabled: set[str]) -> None:
-    _bus().settings.set(_DISABLED_KEY, json.dumps(sorted(disabled)))
+def _save_disabled(bus, disabled: set[str]) -> None:
+    bus.settings_book.set(key=_DISABLED_KEY, value=json.dumps(sorted(disabled)))
 
 
 class SkillOut(BaseModel):
@@ -80,9 +76,10 @@ class SkillToggleIn(BaseModel):
 @router.get("/skills", response_model=list[SkillOut])
 def list_skills(
     _admin: AdminGate,
+    bus: BusDep,
 ) -> list[SkillOut]:
     """Enumerate every registered skill."""
-    disabled = _load_disabled()
+    disabled = _load_disabled(bus)
     return [
         SkillOut(
             name=s.name,
@@ -91,7 +88,7 @@ def list_skills(
             version=s.version,
             enabled=s.name not in disabled,
         )
-        for s in bus.skills.list()
+        for s in bus.skills_book.list()
     ]
 
 
@@ -100,19 +97,20 @@ def toggle_skill(
     name: str,
     body: SkillToggleIn,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> SkillOut:
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
-    meta = bus.skills.get(name)
+    meta = bus.skills_book.get(name)
     if meta is None:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
-    disabled = _load_disabled()
+    disabled = _load_disabled(bus)
     if body.enabled:
         disabled.discard(name)
     else:
         disabled.add(name)
-    _save_disabled(disabled)
+    _save_disabled(bus, disabled)
     return SkillOut(
         name=meta.name,
         description=meta.description,
@@ -126,12 +124,13 @@ def toggle_skill(
 def get_skill_body(
     name: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> SkillBodyOut:
     """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
         raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
     try:
-        body = bus.skills.read_body(name)
+        body = bus.skills_book.read_body(name)
     except SkillNotFound:
         raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered") from None
     except SkillBookError as exc:

@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["telegram"])
@@ -42,6 +42,7 @@ class TGBindResponse(BaseModel):
 def bind_telegram(
     payload: TGBindRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> TGBindResponse:
     """Bind ``telegram_id`` to ``uid``.
 
@@ -64,10 +65,10 @@ def bind_telegram(
             detail="telegram_id must fit in an integer",
         )
 
-    contact = bus.contacts.get(payload.uid)
+    contact = bus.contacts_book.get(contact_id=payload.uid)
     if contact is None:
         raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.uid} not found")
-    bus.contacts.bind_telegram(payload.uid, telegram_id_int)
+    bus.contacts_book.set_telegram_id(contact_id=payload.uid, telegram_id=telegram_id_int)
 
     return TGBindResponse(
         telegram_id=payload.telegram_id,
@@ -83,6 +84,7 @@ def bind_telegram(
 def unbind_telegram(
     telegram_id: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> Response:
     """Clear the binding for ``telegram_id``.
 
@@ -107,9 +109,9 @@ def unbind_telegram(
         )
 
     # ContactBook resolves the bound contact and clears the address.
-    contact = bus.contacts.find_by_telegram_id(telegram_id_int)
+    contact = bus.contacts_book.get_by_telegram(telegram_id=telegram_id_int)
     if contact is not None:
-        bus.contacts.set_telegram_id(contact.id, None)
+        bus.contacts_book.set_telegram_id(contact_id=contact.id, telegram_id=None)
     return Response(status_code=204)
 
 
@@ -126,6 +128,7 @@ class TGBindStatus(BaseModel):
 def get_telegram_binding(
     telegram_id: str,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> TGBindStatus:
     """Return the current binding (if any) for ``telegram_id``.
 
@@ -153,7 +156,7 @@ def get_telegram_binding(
 
     bound_uid = None
     bound_name = None
-    contact = bus.contacts.find_by_telegram_id(telegram_id_int)
+    contact = bus.contacts_book.get_by_telegram(telegram_id=telegram_id_int)
     if contact is not None:
         bound_uid = contact.id
         bound_name = contact.name

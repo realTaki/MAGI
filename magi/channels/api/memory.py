@@ -47,9 +47,9 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import _admin_uid
+from magi.channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.memory")
 
@@ -113,6 +113,7 @@ def _serialize(row) -> MemoryOut:
 def list_memory(
     request: Request,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> MemoryListOut:
     """Enumerate the calling admin's memory rows.
 
@@ -133,7 +134,7 @@ def list_memory(
     trail.
     """
     admin_id = _admin_uid(request)
-    rows = bus.memory.list_for_owner(
+    rows = bus.memory_book.list_by_owner(
         admin_id, include_completed=True, limit=_MAX_ROWS,
     )
     return MemoryListOut(

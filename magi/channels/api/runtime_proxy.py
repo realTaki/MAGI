@@ -5,14 +5,14 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, Request, Response
 
-from magi.channels.api._bus import bus
+from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
 
 router = APIRouter(tags=["runtime-proxy"])
 
 
-def _runtime_url(magic_id: int) -> str:
+def _runtime_url(bus, magic_id: int) -> str:
     """Resolve the upstream URL for the chosen MAGI's runtime.
 
     Phase 2 — delegates to :class:`RuntimeRegistryService` for the
@@ -21,11 +21,10 @@ def _runtime_url(magic_id: int) -> str:
     Falls back to the legacy ``bus.magis.root_runtime_url`` for the
     root-runtime case so K8s behaviour stays bit-identical.
     """
-    bus = bus
-    endpoint = bus.registry.resolve_endpoint(magic_id)
+    endpoint = bus.registry_book.resolve_endpoint(magic_id)
     if endpoint is not None:
         return endpoint.base_url
-    root_url = bus.magis.root_runtime_url(magic_id)
+    root_url = bus.magis_book.root_runtime_url(magic_id)
     if root_url is not None:
         return root_url
     raise MagiHTTPException(
@@ -86,7 +85,7 @@ async def proxy_runtime(
         async with httpx.AsyncClient(timeout=60.0) as client:
             upstream = await client.request(
                 request.method,
-                _runtime_url(magic_id) + runtime_path,
+                _runtime_url(get_bus(request), magic_id) + runtime_path,
                 content=body or None,
                 headers={"content-type": request.headers.get("content-type", "application/json"), **signed_headers},
             )

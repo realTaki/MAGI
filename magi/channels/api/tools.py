@@ -15,8 +15,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 
 router = APIRouter(tags=["tools"])
 
@@ -117,7 +117,7 @@ def _build_tool_out(
 
 
 @router.get("/tools", response_model=ToolListOut)
-def list_tools(_admin: AdminGate) -> ToolListOut:
+def list_tools(_admin: AdminGate, bus: BusDep) -> ToolListOut:
     """Render the durable bus catalog, never an execution registry."""
     definitions = bus.tool_definitions_book.list_enabled()
     items = [

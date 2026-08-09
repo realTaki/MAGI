@@ -15,8 +15,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels import Channel
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 from magi.startup.runtime import (
     is_channel_running,
@@ -42,8 +42,8 @@ _CHANNEL_META: list[dict] = [
 _REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
 
 
-def _read_enabled() -> list[str]:
-    raw = bus.settings.get(_SETTINGS_KEY)
+def _read_enabled(bus) -> list[str]:
+    raw = bus.settings_book.get(key=_SETTINGS_KEY)
     if raw:
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else raw
@@ -58,13 +58,13 @@ def _read_enabled() -> list[str]:
     return [Channel.WEBUI]
 
 
-def _write_enabled(channels: list[str]) -> None:
-    bus.settings.set(_SETTINGS_KEY, json.dumps(channels))
+def _write_enabled(bus, channels: list[str]) -> None:
+    bus.settings_book.set(key=_SETTINGS_KEY, value=json.dumps(channels))
 
 
-def _has_credentials(channel: str) -> bool:
+def _has_credentials(bus, channel: str) -> bool:
     if channel == Channel.TG:
-        return bool(bus.settings.get("telegram.bot_token"))
+        return bool(bus.settings_book.get(key="telegram.bot_token"))
     return True
 
 
@@ -91,8 +91,8 @@ class ChannelsUpdateRequest(BaseModel):
 # -- endpoints ------------------------------------------------------------
 
 @router.get("/channels", response_model=ChannelsResponse)
-def list_channels(_admin: AdminGate) -> ChannelsResponse:
-    enabled = _read_enabled()
+def list_channels(_admin: AdminGate, bus: BusDep) -> ChannelsResponse:
+    enabled = _read_enabled(bus)
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
         name = meta["name"]
@@ -100,7 +100,7 @@ def list_channels(_admin: AdminGate) -> ChannelsResponse:
             name=name,
             label=meta["label"],
             implemented=meta["implemented"],
-            has_credentials=_has_credentials(name),
+            has_credentials=_has_credentials(bus, name),
             enabled=name in enabled,
             running=is_channel_running(name),
         ))
@@ -111,6 +111,7 @@ def list_channels(_admin: AdminGate) -> ChannelsResponse:
 def update_channels(
     payload: ChannelsUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ChannelsResponse:
     unknown = [c for c in payload.enabled if c not in Channel]
     if unknown:
@@ -125,8 +126,8 @@ def update_channels(
         if req not in effective_enabled:
             effective_enabled.append(req)
 
-    _write_enabled(effective_enabled)
-    enabled_list = _read_enabled()
+    _write_enabled(bus, effective_enabled)
+    enabled_list = _read_enabled(bus)
 
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
@@ -145,7 +146,7 @@ def update_channels(
             name=name,
             label=meta["label"],
             implemented=meta["implemented"],
-            has_credentials=_has_credentials(name),
+            has_credentials=_has_credentials(bus, name),
             enabled=name in enabled_list,
             running=is_channel_running(name),
         ))

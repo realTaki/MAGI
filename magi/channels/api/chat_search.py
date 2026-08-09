@@ -15,9 +15,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_sessions import SessionServiceDep, _admin_uid
+from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_search")
@@ -41,6 +41,7 @@ def search_chat(
     request: Request,
     _admin: AdminGate,
     _service: SessionServiceDep,
+    bus: BusDep,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -56,7 +57,7 @@ def search_chat(
     uid = _admin_uid(request)
 
     try:
-        items, total = bus.session.search(uid, q, limit=limit, offset=offset)
+        items, total = bus.sessions_book.search(uid=uid, q=q, limit=limit, offset=offset)
     except SearchUnavailable as e:
         raise MagiHTTPException(
             status_code=503,

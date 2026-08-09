@@ -11,14 +11,9 @@ from pydantic import BaseModel, Field
 
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
-from magi.channels.api._bus import bus
+from magi.channels.api.dependencies import get_bus
 
 router = APIRouter(tags=["runtime-control"])
-
-
-def _bus():
-    return bus
-
 
 def _require_control(request: Request) -> None:
     if verified_proxy_operator(request) is None:
@@ -44,9 +39,9 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
     _require_control(request)
     from magi.channels.telegram import bot as tg_bot
 
-    bus = _bus()
-    bus.settings.set("telegram.bot_token", payload.token)
-    bus.settings.set("telegram.bot_username", payload.username)
+    bus = get_bus(request)
+    bus.settings_book.set(key="telegram.bot_token", value=payload.token)
+    bus.settings_book.set(key="telegram.bot_username", value=payload.username)
     if tg_bot.get_telegram_bot() is None:
         tg_bot.start_bot()
     return {"ok": True}
@@ -69,7 +64,7 @@ async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bo
     _require_control(request)
     from magi.channels.telegram import bot as tg_bot
 
-    token = _bus().settings.get("telegram.bot_token")
+    token = get_bus(request).settings_book.get(key="telegram.bot_token")
     if not token:
         raise MagiHTTPException(status_code=409, code="telegram.not_configured", detail="Telegram is not configured")
     await tg_bot.send_text_raw(token, payload.telegram_id, payload.text)

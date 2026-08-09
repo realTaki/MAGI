@@ -20,8 +20,8 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends
 from pydantic import BaseModel, Field
 
-from magi.channels.api._bus import bus
 from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.system_settings")
 
@@ -47,9 +47,9 @@ MIN_COMPACT_KEEP_RECENT = 5
 MAX_COMPACT_KEEP_RECENT = 100
 
 
-def _settings():
+def _settings(bus):
     """Return the bus settings service for the active state dir."""
-    return bus.settings
+    return bus.settings_book
 
 
 def _default_timezone() -> str:
@@ -59,8 +59,8 @@ def _default_timezone() -> str:
         return "Etc/UTC"
 
 
-def _read_int_setting(*, key: str, default: int, minimum: int, maximum: int) -> int:
-    raw = _settings().get(key)
+def _read_int_setting(bus, *, key: str, default: int, minimum: int, maximum: int) -> int:
+    raw = _settings(bus).get(key=key)
     try:
         value = int(raw) if raw is not None else default
     except (TypeError, ValueError):
@@ -88,10 +88,10 @@ class TimezoneUpdateRequest(BaseModel):
 
 
 @router.get("/system-settings/timezone", response_model=TimezoneOut)
-def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
-    svc = _settings()
+def get_system_timezone_endpoint(_admin: AdminGate, bus: BusDep) -> TimezoneOut:
+    svc = _settings(bus)
     default = _default_timezone()
-    current = svc.get(SYSTEM_TZ_KEY) or default
+    current = svc.get(key=SYSTEM_TZ_KEY) or default
     try:
         zoneinfo.ZoneInfo(current)
     except zoneinfo.ZoneInfoNotFoundError:
@@ -107,6 +107,7 @@ def get_system_timezone_endpoint(_admin: AdminGate) -> TimezoneOut:
 def put_system_timezone(
     payload: TimezoneUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> TimezoneOut:
     """Persist a new system timezone.
 
@@ -117,7 +118,7 @@ def put_system_timezone(
     from magi.channels.api.errors import MagiHTTPException
 
     tz = payload.timezone
-    svc = _settings()
+    svc = _settings(bus)
     try:
         zoneinfo.ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
@@ -131,7 +132,7 @@ def put_system_timezone(
     from magi.channels.api.tasks import _invalidate_system_tz_cache
     _invalidate_system_tz_cache()
     logger.info("system.timezone set to %r", tz)
-    svc.set(SYSTEM_TZ_KEY, tz)
+    svc.set(key=SYSTEM_TZ_KEY, value=tz)
     return TimezoneOut(
         current=tz,
         default=_default_timezone(),
@@ -163,10 +164,9 @@ class ToolMaxIterationsUpdateRequest(BaseModel):
     "/system-settings/tool-max-iterations",
     response_model=ToolMaxIterationsOut,
 )
-def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
-    svc = _settings()
+def get_tool_max_iterations_endpoint(_admin: AdminGate, bus: BusDep) -> ToolMaxIterationsOut:
     return ToolMaxIterationsOut(
-        current=_read_int_setting(
+        current=_read_int_setting(bus,
             key=TOOL_MAX_ITERATIONS_KEY,
             default=DEFAULT_TOOL_MAX_ITERATIONS,
             minimum=MIN_TOOL_MAX_ITERATIONS,
@@ -185,10 +185,11 @@ def get_tool_max_iterations_endpoint(_admin: AdminGate) -> ToolMaxIterationsOut:
 def put_tool_max_iterations(
     payload: ToolMaxIterationsUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> ToolMaxIterationsOut:
     """Persist a new max tool iterations value."""
-    svc = _settings()
-    svc.set(TOOL_MAX_ITERATIONS_KEY, str(payload.value))
+    svc = _settings(bus)
+    svc.set(key=TOOL_MAX_ITERATIONS_KEY, value=str(payload.value))
     logger.info("system.tool_max_iterations set to %d", payload.value)
     return ToolMaxIterationsOut(
         current=payload.value,
@@ -225,22 +226,21 @@ class CompactConfigUpdateRequest(BaseModel):
 
 
 @router.get("/system-settings/compact-config", response_model=CompactConfigOut)
-def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
-    svc = _settings()
+def get_compact_config(_admin: AdminGate, bus: BusDep) -> CompactConfigOut:
     return CompactConfigOut(
-        context_window=_read_int_setting(
+        context_window=_read_int_setting(bus,
             key=COMPACT_CONTEXT_WINDOW_KEY,
             default=DEFAULT_COMPACT_CONTEXT_WINDOW,
             minimum=MIN_COMPACT_CONTEXT_WINDOW,
             maximum=MAX_COMPACT_CONTEXT_WINDOW,
         ),
-        threshold_pct=_read_int_setting(
+        threshold_pct=_read_int_setting(bus,
             key=COMPACT_THRESHOLD_PCT_KEY,
             default=DEFAULT_COMPACT_THRESHOLD_PCT,
             minimum=MIN_COMPACT_THRESHOLD_PCT,
             maximum=MAX_COMPACT_THRESHOLD_PCT,
         ),
-        keep_recent=_read_int_setting(
+        keep_recent=_read_int_setting(bus,
             key=COMPACT_KEEP_RECENT_KEY,
             default=DEFAULT_COMPACT_KEEP_RECENT,
             minimum=MIN_COMPACT_KEEP_RECENT,
@@ -256,12 +256,13 @@ def get_compact_config(_admin: AdminGate) -> CompactConfigOut:
 def put_compact_config(
     payload: CompactConfigUpdateRequest,
     _admin: AdminGate,
+    bus: BusDep,
 ) -> CompactConfigOut:
     """Persist a new compact-config triple."""
-    svc = _settings()
-    svc.set(COMPACT_CONTEXT_WINDOW_KEY, str(payload.context_window))
-    svc.set(COMPACT_THRESHOLD_PCT_KEY, str(payload.threshold_pct))
-    svc.set(COMPACT_KEEP_RECENT_KEY, str(payload.keep_recent))
+    svc = _settings(bus)
+    svc.set(key=COMPACT_CONTEXT_WINDOW_KEY, value=str(payload.context_window))
+    svc.set(key=COMPACT_THRESHOLD_PCT_KEY, value=str(payload.threshold_pct))
+    svc.set(key=COMPACT_KEEP_RECENT_KEY, value=str(payload.keep_recent))
     logger.info(
         "compact-config set: window=%d threshold=%d%% keep=%d",
         payload.context_window, payload.threshold_pct, payload.keep_recent,
@@ -284,11 +285,11 @@ def put_compact_config(
 # Re-export the read helpers so any code that imported them from this
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
-def get_show_daily_note() -> bool:
-    raw = _settings().get("system.show_daily_note")
+def get_show_daily_note(bus) -> bool:
+    raw = _settings(bus).get(key="system.show_daily_note")
     return raw is None or raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def get_show_daily_note_prompt() -> bool:
-    raw = _settings().get("system.show_daily_note_prompt")
+def get_show_daily_note_prompt(bus) -> bool:
+    raw = _settings(bus).get(key="system.show_daily_note_prompt")
     return raw is not None and raw.strip().lower() in {"1", "true", "yes", "on"}
