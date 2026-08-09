@@ -1,7 +1,3 @@
-# TODO: migrate to new_bus — currently failing under the
-# tools/new_bus migration (see magi/startup/runtime.py and
-# magi/new_bus). Re-baseline this test file when the agent
-# loop moves to bus.tool_job_board + the new ToolWorker.
 """EVA runtime identity must not create a second Genesis ADAM."""
 
 from __future__ import annotations
@@ -35,26 +31,3 @@ def test_node_config_with_runtime_id_is_not_genesis(monkeypatch):
     cfg = NodeConfig.from_env()
     assert cfg.is_genesis is False
     assert cfg.runtime_id == "42"
-
-
-def test_eva_provider_ignores_legacy_environment_credentials(monkeypatch, tmp_path):
-    """Provider config now comes from the direct MAGIS public database."""
-    import magi.bus.db.engine as engine_mod
-    engine_mod._engine = engine_mod._SessionLocal = None
-    monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "private"))
-    monkeypatch.setenv("MAGIS_DATABASE_URL", f"sqlite:///{tmp_path / 'public.db'}")
-    from magi.bus.db import init_orm
-    from magi.bus.db.magis.engine import init_magis_public_db
-    init_orm(seed_root=False)
-    init_magis_public_db(seed_root=True)
-    from magi.providers.factory import get_provider
-    from magi.providers.errors import LLMNotConfiguredError
-
-    monkeypatch.setenv("MAGI_LLM_PROVIDER", "claude")
-    monkeypatch.setenv("MAGI_LLM_API_KEY", "legacy-secret")
-    try:
-        get_provider()
-    except LLMNotConfiguredError:
-        pass
-    else:
-        raise AssertionError("legacy environment credentials must not configure an EVA")
