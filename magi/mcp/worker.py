@@ -416,34 +416,20 @@ class McpWorker:
     def _timeouts_from_bus(self) -> MCPTimeoutConfig:
         """Read the three MCP timeouts from the settings book.
 
-        ``None`` on read error or unset value; the connection
-        falls back to the loader's defaults.
+        Delegates to :meth:`SettingBook.mcp_timeout_config` which
+        handles key lookup, type coercion, and defaults.
         """
         from magi.mcp.MCPClient import MCPTimeoutConfig
 
-        def _read(key: str, default: float) -> float:
-            try:
-                raw = self.bus.settings_book.get(key=key)
-            except Exception:
-                return default
-            if not raw:
-                return default
-            try:
-                value = float(raw)
-            except (TypeError, ValueError):
-                return default
-            return value
-
+        cfg = self.bus.settings_book.mcp_timeout_config(
+            connect_default=_DEFAULT_CONNECT_TIMEOUT,
+            execute_default=_DEFAULT_EXECUTE_TIMEOUT,
+            sse_default=_DEFAULT_SSE_READ_TIMEOUT,
+        )
         return MCPTimeoutConfig(
-            connect_timeout=_read(
-                "mcp.connect_timeout", _DEFAULT_CONNECT_TIMEOUT
-            ),
-            execute_timeout=_read(
-                "mcp.execute_timeout", _DEFAULT_EXECUTE_TIMEOUT
-            ),
-            sse_read_timeout=_read(
-                "mcp.sse_read_timeout", _DEFAULT_SSE_READ_TIMEOUT
-            ),
+            connect_timeout=cfg.connect_timeout,
+            execute_timeout=cfg.execute_timeout,
+            sse_read_timeout=cfg.sse_read_timeout,
         )
 
     def _reinject_tools(self) -> None:

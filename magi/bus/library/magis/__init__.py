@@ -20,7 +20,7 @@ from magi.bus.library.magis.authCredentialBook import (
     PASSWORD,
     TG_CODE,
 )
-from magi.bus.library.magis.control import (
+from magi.bus.library.magis.controlBook import (
     ControlRuntime,
     ControlRuntimeBook,
     ControlSecret,

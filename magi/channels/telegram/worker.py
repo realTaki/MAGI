@@ -71,13 +71,13 @@ class TelegramWorker(ChannelWorker):
         session_id = _resolve_tg_session(self.bus, uid=uid, tgid=tgid)
         _append_user_message(self.bus, session_id, text)
         asyncio.create_task(_send_read_receipt(update))
-        from magi.bus.guild.chatJob import ChatJob
+        from magi.bus.guild.chatJob import publish_chat
         try:
-            self.bus.agent_job_board.publish(ChatJob(
-                event_id=f"telegram:{tgid}:{update.effective_message.message_id}", kind="chat",
-                payload={"text": text, "channel": "tg", "uid": uid, "session_id": session_id,
-                         "tg_chat_id": tgid, "tg_message_id": update.effective_message.message_id, "caller_role": role},
-            ))
+            publish_chat(
+                self.bus, text=text, channel="tg", uid=uid, session_id=session_id,
+                caller_role=role, event_id=f"telegram:{tgid}:{update.effective_message.message_id}",
+                tg_chat_id=tgid, tg_message_id=update.effective_message.message_id,
+            )
         except Exception:
             logger.exception("TelegramWorker: publish ChatJob failed for tgid=%s", tgid)
 
@@ -107,18 +107,14 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
 
 
 def _resolve_tg_session(bus: Bus, *, uid: int, tgid: str) -> str:
-    import uuid; from datetime import datetime, timezone
-    sessions = bus.sessions_book.list_for_owner(uid=uid)
-    tg_sessions = [s for s in sessions if getattr(s, "channel", "") == "tg"]
-    if tg_sessions: return tg_sessions[0].session_id
-    now = datetime.now(timezone.utc).isoformat(); sid = f"tg_{uuid.uuid4().hex[:16]}"
-    bus.sessions_book.add(session_id=sid, delivery_address=tgid, uid=uid, channel="tg", created_at=now, updated_at=now)
-    return sid
+    session = bus.sessions_book.get_or_create_for_channel(
+        uid=uid, channel="tg", delivery_address=tgid,
+    )
+    return session.session_id
 
 
 def _append_user_message(bus: Bus, session_id: str, text: str) -> None:
-    import uuid; from datetime import datetime, timezone
-    try: bus.messages_book.add(session_id=session_id, message_id=uuid.uuid4().hex, role="user", text=text, ts=datetime.now(timezone.utc).isoformat())
+    try: bus.messages_book.add(session_id=session_id, role="user", text=text)
     except Exception: pass
 
 

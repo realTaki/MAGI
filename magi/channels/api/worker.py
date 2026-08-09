@@ -21,12 +21,9 @@ class WebUIWorker(ChannelWorker):
         await self._claim_delivery_loop(self._deliver_webui, "webui")
 
     async def _deliver_webui(self, job: DeliveryJob) -> None:
-        import uuid
-        from datetime import datetime, timezone
         session_id = str(job.payload.get("session_id") or "")
         uid = job.payload.get("uid")
         text = str(job.payload.get("text") or "")
         if not session_id or not isinstance(uid, int):
             raise ValueError("webui delivery missing session_id or uid")
-        self.bus.messages_book.add(session_id=session_id, message_id=uuid.uuid4().hex,
-                                   role="assistant", text=text, ts=datetime.now(timezone.utc).isoformat())
+        self.bus.messages_book.add(session_id=session_id, role="assistant", text=text)

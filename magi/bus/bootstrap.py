@@ -20,8 +20,49 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from magi.bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
+
+if TYPE_CHECKING:
+    from magi.bus.guild.callLLMJob import callLLMJobBoard
+    from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
+    from magi.bus.guild.chatJob import chatJobBoard
+    from magi.bus.guild.deliveryJob import deliveryJobBoard
+    from magi.bus.guild.mcpServerChangedJob import mcpServerChangedJobBoard
+    from magi.bus.guild.runTaskJob import runTaskJobBoard
+    from magi.bus.guild.runToolJob import runToolJobBoard
+    from magi.bus.guild.seedPresetTasksJob import seedPresetTasksJobBoard
+    from magi.bus.guild.sendA2AJob import sendA2AJobBoard
+    from magi.bus.library.file.promptBook import PromptBook
+    from magi.bus.library.file.skillsBook import SkillsBook
+    from magi.bus.library.local.actionItemBook import ActionItemBook
+    from magi.bus.library.local.contactBook import ContactBook, ContactNoteBook
+    from magi.bus.library.local.hookSignoffBook import HookSignoffBook
+    from magi.bus.library.local.mcpServerBook import McpServerBook
+    from magi.bus.library.local.memoryBook import MemoryBook
+    from magi.bus.library.local.sessionBook import MessageBook, SessionBook
+    from magi.bus.library.local.settingBook import SettingBook
+    from magi.bus.library.local.tasksBook import TaskBook, TaskRunBook
+    from magi.bus.library.local.tokenUsageBook import TokenUsageBook
+    from magi.bus.library.local.toolsBook import (
+        ToolCatalogStateBook,
+        ToolDefinitionBook,
+    )
+    from magi.bus.library.magis.authCredentialBook import AuthCredentialBook
+    from magi.bus.library.magis.controlBook import (
+        ControlRuntimeBook,
+        ControlSecretBook,
+        PortAllocationBook,
+        WorkspaceArchiveBook,
+    )
+    from magi.bus.library.magis.evaRuntimeBook import EvaRuntimeBook
+    from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
+    from magi.bus.library.magis.membershipBook import (
+        MagisMembershipBook,
+        MagisRoleBook,
+    )
+    from magi.bus.stream import StreamHub
 
 logger = logging.getLogger("magi.bus.bootstrap")
 
@@ -51,18 +92,18 @@ class Bus:
 
     # -- local: sessions_book (Books) ---------------------------------------------
 
-    sessions_book: object  # SessionBook
-    messages_book: object  # MessageBook
+    sessions_book: SessionBook  # SessionBook
+    messages_book: MessageBook  # MessageBook
 
     # -- local: memory_book & contacts_book (Books) ------------------------------------
 
-    memory_book: object  # MemoryBook
-    contacts_book: object  # ContactBook
-    contact_notes_book: object  # ContactNoteBook
+    memory_book: MemoryBook  # MemoryBook
+    contacts_book: ContactBook  # ContactBook
+    contact_notes_book: ContactNoteBook  # ContactNoteBook
 
     # -- local: settings_book (Book) -----------------------------------------
 
-    settings_book: object  # SettingBook
+    settings_book: SettingBook  # SettingBook
 
     # -- local: tasks_book (Books) --------------------------------------------
     #
@@ -72,51 +113,51 @@ class Bus:
     # ``task_presets_book`` field has been folded into this
     # single Book (parallel to the ``action_items`` refactor).
 
-    tasks_book: object  # TaskBook
-    task_runs_book: object  # TaskRunBook
+    tasks_book: TaskBook  # TaskBook
+    task_runs_book: TaskRunBook  # TaskRunBook
 
     # -- local: tools & MCP (Books + Job board) ------------------------------
 
-    tool_definitions_book: object  # ToolDefinitionBook
-    tool_catalog_book: object  # ToolCatalogStateBook
-    mcp_servers_book: object  # McpServerBook
-    mcp_server_changed_job_board: object  # mcpServerChangedJobBoard
-    tool_job_board: object  # runToolJobBoard
+    tool_definitions_book: ToolDefinitionBook  # ToolDefinitionBook
+    tool_catalog_book: ToolCatalogStateBook  # ToolCatalogStateBook
+    mcp_servers_book: McpServerBook  # McpServerBook
+    mcp_server_changed_job_board: mcpServerChangedJobBoard  # mcpServerChangedJobBoard
+    tool_job_board: runToolJobBoard  # runToolJobBoard
 
     # -- local: agent (Job board) ---------------------------------------------
 
-    agent_job_board: object  # chatJobBoard
+    agent_job_board: chatJobBoard  # chatJobBoard
 
     # -- local: LLM (Job board) ----------------------------------------------
 
-    llm_job_board: object  # callLLMJobBoard
+    llm_job_board: callLLMJobBoard  # callLLMJobBoard
 
     # -- local: delivery & A2A (Job boards) ----------------------------------
 
-    delivery_job_board: object  # deliveryJobBoard
-    a2a_job_board: object  # sendA2AJobBoard
+    delivery_job_board: deliveryJobBoard  # deliveryJobBoard
+    a2a_job_board: sendA2AJobBoard  # sendA2AJobBoard
 
     # -- local: provider config (Job board) ----------------------------------
 
-    change_provider_config_job_board: object  # changeProviderConfigJobBoard
+    change_provider_config_job_board: changeProviderConfigJobBoard  # changeProviderConfigJobBoard
 
     # -- local: streaming ---------------------------------------------------
 
-    stream_hub: object  # StreamHub
+    stream_hub: StreamHub  # StreamHub
 
     # -- local: proactive (Job board) ---------------------------------------
 
-    seed_preset_tasks_job_board: object  # seedPresetTasksJobBoard
+    seed_preset_tasks_job_board: seedPresetTasksJobBoard  # seedPresetTasksJobBoard
 
     # -- local: task trigger (Job board) -----------------------------------
 
-    run_task_job_board: object  # runTaskJobBoard
+    run_task_job_board: runTaskJobBoard  # runTaskJobBoard
 
     # -- local: misc (Books) -------------------------------------------------
 
-    token_usage_book: object  # TokenUsageBook
-    action_items_book: object  # ActionItemBook
-    hook_signoffs_book: object  # HookSignoffBook
+    token_usage_book: TokenUsageBook  # TokenUsageBook
+    action_items_book: ActionItemBook  # ActionItemBook
+    hook_signoffs_book: HookSignoffBook  # HookSignoffBook
 
     # -- internal factories (advanced / test use) ---------------------------
     # Positioned *before* defaulted fields so dataclass __init__ ordering
@@ -127,30 +168,30 @@ class Bus:
 
     # -- local: prompts (File-backed Book) ----------------------------------
 
-    prompt_book: object | None = None  # PromptBook | None
+    prompt_book: PromptBook | None = None  # PromptBook | None
 
     # -- local: skills (File-backed Book; two roots: bundle + operator) ----
 
-    skills_book: object | None = None  # SkillsBook | None
+    skills_book: SkillsBook | None = None  # SkillsBook | None
 
     # -- magis_book: society tree (all Optional — None when MAGIS DB absent) ------
 
-    magis_book: object | None = None  # MagisBook | None
-    magis_admins_book: object | None = None  # MagisAdminBook | None
-    memberships_book: object | None = None  # MagisMembershipBook | None
-    roles_book: object | None = None  # MagisRoleBook | None
+    magis_book: MagisBook | None = None  # MagisBook | None
+    magis_admins_book: MagisAdminBook | None = None  # MagisAdminBook | None
+    memberships_book: MagisMembershipBook | None = None  # MagisMembershipBook | None
+    roles_book: MagisRoleBook | None = None  # MagisRoleBook | None
 
     # -- magis_book: runtimes (Books) --------------------------------------------
 
-    eva_runtimes_book: object | None = None  # EvaRuntimeBook | None
-    control_runtimes_book: object | None = None  # ControlRuntimeBook | None
-    control_secrets_book: object | None = None  # ControlSecretBook | None
-    port_allocations_book: object | None = None  # PortAllocationBook | None
-    workspace_archives_book: object | None = None  # WorkspaceArchiveBook | None
+    eva_runtimes_book: EvaRuntimeBook | None = None  # EvaRuntimeBook | None
+    control_runtimes_book: ControlRuntimeBook | None = None  # ControlRuntimeBook | None
+    control_secrets_book: ControlSecretBook | None = None  # ControlSecretBook | None
+    port_allocations_book: PortAllocationBook | None = None  # PortAllocationBook | None
+    workspace_archives_book: WorkspaceArchiveBook | None = None  # WorkspaceArchiveBook | None
 
     # -- magis_book: auth (Book) --------------------------------------------------
 
-    auth_credentials_book: object | None = None  # AuthCredentialBook | None
+    auth_credentials_book: AuthCredentialBook | None = None  # AuthCredentialBook | None
 
 
 # ---------------------------------------------------------------------------

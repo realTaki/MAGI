@@ -73,15 +73,6 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
     model_cls = _TokenUsageRow
     dto_cls = TokenUsage
 
-    def list_for_run(self, *, run_id: str) -> list[TokenUsage]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_TokenUsageRow)
-                .where(_TokenUsageRow.run_id == run_id)
-                .order_by(_TokenUsageRow.created_at)
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
-
     def list_for_owner(self, *, uid: int) -> list[TokenUsage]:
         with self._session() as s:
             rows = s.scalars(

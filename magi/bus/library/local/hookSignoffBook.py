@@ -15,7 +15,6 @@ from typing import Any
 
 from sqlalchemy import (
     DateTime,
-    Integer,
     JSON,
     String,
     select,
@@ -91,15 +90,5 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
                 .order_by(_HookSignoffRow.created_at)
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def list_for_plugin(self, *, plugin_id: str) -> list[HookSignoff]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_HookSignoffRow)
-                .where(_HookSignoffRow.plugin_id == plugin_id)
-                .order_by(_HookSignoffRow.created_at)
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
-
 
 __all__ = ["HookSignoff", "HookSignoffBook", "_HookSignoffRow"]

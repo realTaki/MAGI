@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, select
+from sqlalchemy import DateTime, ForeignKey, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook
@@ -137,15 +137,6 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
     def list_all(self) -> list[Magis]:
         with self._session() as s:
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()
-            return [self._row_to_dto(r) for r in rows]
-
-    def list_children(self, *, parent_id: int) -> list[Magis]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_MagisRow)
-                .where(_MagisRow.parent_id == parent_id)
-                .order_by(_MagisRow.id)
-            ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def add(self, *, name: str, parent_id: int | None = None,

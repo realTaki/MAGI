@@ -727,15 +727,6 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run_id))
             return self._row_to_dto(row) if row else None
 
-    def list_for_task(self, *, task_id: str) -> list[TaskRun]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_TaskRunRow)
-                .where(_TaskRunRow.task_id == task_id)
-                .order_by(_TaskRunRow.started_at.desc())
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
-
     def add(self, **kwargs) -> TaskRun:
         with self._session() as s:
             row = _TaskRunRow(**kwargs)

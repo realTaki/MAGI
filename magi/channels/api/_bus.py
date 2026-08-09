@@ -63,13 +63,10 @@ class _Contacts:
 class _Session:
     def create(self, uid: int, channel: str = "webui", **kw):
         import uuid
-        from datetime import datetime, timezone
         sid = f"sess_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc).isoformat()
         return _new().sessions_book.add(
             session_id=sid, uid=uid, channel=channel,
             delivery_address=kw.get("delivery_address", ""),
-            created_at=now, updated_at=now,
         )
 
     def list_summaries(self, uid: int):

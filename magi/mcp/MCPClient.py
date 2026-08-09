@@ -77,43 +77,21 @@ class MCPTimeoutConfig:
 #
 # These live in the loader because the worker (and the rest of the
 # subsystem) reaches for them through ``magi.mcp.MCPClient``. They
-# no longer reach into the old ``get_bus().settings`` — the
-# worker passes a :class:`~magi.bus.Bus` and reads through
-# ``bus.settings_book`` directly.
-
-
-def _timeout_from_settings(settings_book: Any, key: str, default: float) -> float:
-    """Read a float setting, falling back to *default* on miss
-    or parse error.
-
-    The settings_book may be ``None`` in tests; treat that as
-    "fall through to the default" rather than crashing.
-    """
-    if settings_book is None:
-        return default
-    try:
-        raw = settings_book.get(key)
-    except Exception:
-        return default
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
+# read through ``bus.settings_book.mcp_timeout_config()`` directly.
 
 
 def _defaults(settings_book: Any) -> MCPTimeoutConfig:
+    """Resolve MCP timeouts from settings_book, falling back to built-in defaults."""
+    if settings_book is None:
+        return MCPTimeoutConfig()
+    try:
+        cfg = settings_book.mcp_timeout_config()
+    except Exception:
+        return MCPTimeoutConfig()
     return MCPTimeoutConfig(
-        connect_timeout=_timeout_from_settings(
-            settings_book, "mcp.connect_timeout", 10.0
-        ),
-        execute_timeout=_timeout_from_settings(
-            settings_book, "mcp.execute_timeout", 60.0
-        ),
-        sse_read_timeout=_timeout_from_settings(
-            settings_book, "mcp.sse_read_timeout", 120.0
-        ),
+        connect_timeout=cfg.connect_timeout,
+        execute_timeout=cfg.execute_timeout,
+        sse_read_timeout=cfg.sse_read_timeout,
     )
 
 

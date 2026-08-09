@@ -170,14 +170,6 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def mark_completed(self, *, memory_id: int) -> None:
-        with self._session() as s:
-            row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
-            if row is None:
-                return
-            row.completed_at = utcnow_naive()
-            s.commit()
-
     def complete(self, *, memory_id: int) -> Memory:
         """Mark an ongoing memory as done, idempotently.
 

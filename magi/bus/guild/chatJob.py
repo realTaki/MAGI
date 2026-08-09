@@ -16,11 +16,11 @@ from sqlalchemy import JSON, DateTime, Integer, String, and_, or_, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, MAX_ATTEMPTS, _row_to_job, new_job_id
+from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
 
 
 # =========================================================================
-# chatJobBoard — durable agent turn queue (agent_inbox table)
+# chatJobBoard — durable agent turn queue (chat_jobs table)
 # =========================================================================
 
 
@@ -203,9 +203,62 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             return None
 
 
+def publish_chat(
+    bus,  # type: ignore[no-untyped-def]
+    *,
+    text: str,
+    channel: str,
+    uid: int,
+    session_id: str,
+    kind: str = "chat",
+    caller_role: str | None = None,
+    event_id: str | None = None,
+    run_id: str | None = None,
+    conversation_id: str | None = None,
+    correlation_id: str | None = None,
+    **extras: Any,
+) -> str:
+    """Publish a ChatJob with the common channel→agent payload pattern.
+
+    All channel workers share the same core payload keys (text,
+    channel, uid, session_id, caller_role).  Channel-specific extras
+    (tg_chat_id, task_id, fired_by, etc.) are forwarded as additional
+    payload keys via **extras.
+
+    *event_id*, *run_id*, *conversation_id*, and *correlation_id*
+    are for callers that need stable idempotency keys (e.g. WebUI).
+
+    Returns the *event_id* of the published job.
+    """
+    import uuid
+    if event_id is None:
+        event_id = f"{channel}:{uuid.uuid4().hex[:16]}"
+    payload: dict[str, Any] = {
+        "text": text,
+        "channel": channel,
+        "uid": uid,
+        "session_id": session_id,
+    }
+    if caller_role is not None:
+        payload["caller_role"] = caller_role
+    payload.update(extras)
+
+    job = ChatJob(
+        event_id=str(event_id),
+        run_id=run_id or "",
+        conversation_id=conversation_id,
+        correlation_id=correlation_id,
+        kind=kind,
+        payload=payload,
+    )
+    bus.agent_job_board.publish(job)
+    return str(event_id)
+
+
 __all__ = [
     "ChatJob",
     "ChatJobResult",
     "chatJobBoard",
+    "publish_chat",
     "_ChatJobRow",
 ]

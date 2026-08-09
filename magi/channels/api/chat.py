@@ -306,26 +306,18 @@ async def send_chat(
     # becomes the bus ChatJob envelope (kind="chat", payload=...).
     bus = get_current_bus()
     if bus is not None:
-        from magi.bus.guild.chatJob import ChatJob
+        from magi.bus.guild.chatJob import publish_chat
 
         # Stable producer-side idempotency: the inbound session-message
         # id is what makes a network retry collapse to the same inbox row.
         chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
-        run_id = bus.agent_job_board.publish(
-            ChatJob(
-                event_id=chat_job_event_id,
-                run_id=chat_job_event_id,
-                conversation_id=f"webui:{uid}:{session_id}",
-                correlation_id=inbound_message_id,
-                kind="chat",
-                payload={
-                    "text": text,
-                    "channel": Channel.WEBUI,
-                    "uid": uid,
-                    "session_id": session_id,
-                    "caller_role": contact_role,
-                },
-            )
+        run_id = publish_chat(
+            bus,
+            text=text, channel=Channel.WEBUI, uid=uid, session_id=session_id,
+            caller_role=contact_role,
+            event_id=chat_job_event_id, run_id=chat_job_event_id,
+            conversation_id=f"webui:{uid}:{session_id}",
+            correlation_id=inbound_message_id,
         )
     else:
         run_id = bus.agent_runs.publish_input(

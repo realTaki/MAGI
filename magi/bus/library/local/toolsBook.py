@@ -188,15 +188,26 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
 
     # -- reads -----------------------------------------------------------
 
-    def list_enabled(self) -> list[ToolDefinition]:
-        """All enabled rows as :class:`ToolDefinition` DTOs."""
+    def list_enabled(
+        self, *, caller_role: str | None = None, caller_admin: bool = False,
+    ) -> list[ToolDefinition]:
+        """All enabled rows as :class:`ToolDefinition` DTOs.
+
+        When ``caller_role``/``caller_admin`` are given, only rows whose
+        ``allowed_roles`` permit that caller are returned (see
+        :func:`_role_allowed`).  Called with no args, returns every enabled
+        tool (backwards-compatible with the catalog-publish path).
+        """
         with self._session() as s:
             rows = s.scalars(
                 select(_ToolDefinitionRow)
                 .where(_ToolDefinitionRow.enabled == 1)
                 .order_by(_ToolDefinitionRow.name)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            dtos = [self._row_to_dto(r) for r in rows]
+        if caller_role is None and not caller_admin:
+            return dtos
+        return [d for d in dtos if _role_allowed(d.allowed_roles, caller_role, caller_admin)]
 
     def get_by_name(self, *, name: str) -> ToolDefinition | None:
         """One definition by tool name, or ``None`` when unknown.

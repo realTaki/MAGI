@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, select
+from sqlalchemy import DateTime, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook
@@ -128,67 +128,38 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             rows = s.scalars(select(_SettingRow).order_by(_SettingRow.key)).all()
             return [self._row_to_dto(r) for r in rows]
 
-    # -- compaction / daily-note policy helpers (agent-worker-bus.md §6) ----
-
-    #: Bounds are deliberately permissive — the agent loop only needs sane
-    #: defaults; the operator UI clamps inputs before persisting.
-    DEFAULT_COMPACT_CONTEXT_WINDOW = 100000
-    DEFAULT_COMPACT_THRESHOLD_PCT = 80
-    DEFAULT_COMPACT_KEEP_RECENT = 20
-    MIN_COMPACT_CONTEXT_WINDOW = 16000
-    MAX_COMPACT_CONTEXT_WINDOW = 200000
-    MIN_COMPACT_THRESHOLD_PCT = 50
-    MAX_COMPACT_THRESHOLD_PCT = 95
-    MIN_COMPACT_KEEP_RECENT = 5
-    MAX_COMPACT_KEEP_RECENT = 100
-
-    @staticmethod
-    def _clamp_int(raw: str | None, *, default: int, lo: int, hi: int, label: str) -> int:
-        if raw is None or raw == "":
-            return default
-        try:
-            v = int(raw)
-        except (TypeError, ValueError):
-            return default
-        if v < lo or v > hi:
-            return default
-        return v
-
     @staticmethod
     def _read_bool(raw: str | None, *, default: bool) -> bool:
         if raw is None:
             return default
         return raw.strip().lower() in ("1", "true", "yes", "on")
 
-    def compaction_policy(self) -> tuple[int, int, int]:
-        """Return ``(context_window, threshold_pct, keep_recent)``.
+    def mcp_timeout_config(
+        self,
+        *,
+        connect_default: float = 10.0,
+        execute_default: float = 60.0,
+        sse_default: float = 120.0,
+    ) -> MCPTimeout:
+        """Read the three MCP timeout settings with type coercion.
 
-        Mirrors ``SettingService.compaction_policy()`` in the old service.
-        Used by :func:`magi.agent.compaction.maybe_compact`.
+        Each key is read as a string, coerced to ``float``, and
+        falls back to its default on missing / unparseable values.
         """
-        return (
-            self._clamp_int(
-                self.get(key="system.compact_context_window"),
-                default=self.DEFAULT_COMPACT_CONTEXT_WINDOW,
-                lo=self.MIN_COMPACT_CONTEXT_WINDOW,
-                hi=self.MAX_COMPACT_CONTEXT_WINDOW,
-                label="context_window",
-            ),
-            self._clamp_int(
-                self.get(key="system.compact_threshold_pct"),
-                default=self.DEFAULT_COMPACT_THRESHOLD_PCT,
-                lo=self.MIN_COMPACT_THRESHOLD_PCT,
-                hi=self.MAX_COMPACT_THRESHOLD_PCT,
-                label="threshold_pct",
-            ),
-            self._clamp_int(
-                self.get(key="system.compact_keep_recent"),
-                default=self.DEFAULT_COMPACT_KEEP_RECENT,
-                lo=self.MIN_COMPACT_KEEP_RECENT,
-                hi=self.MAX_COMPACT_KEEP_RECENT,
-                label="keep_recent",
-            ),
+        return MCPTimeout(
+            connect_timeout=self._read_float("mcp.connect_timeout", connect_default),
+            execute_timeout=self._read_float("mcp.execute_timeout", execute_default),
+            sse_read_timeout=self._read_float("mcp.sse_read_timeout", sse_default),
         )
+
+    @staticmethod
+    def _read_float(raw: str | None, default: float) -> float:
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
 
     def show_daily_note(self) -> bool:
         return self._read_bool(
@@ -201,4 +172,12 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         )
 
 
-__all__ = ["Setting", "SettingBook", "_SettingRow"]  # noqa: E501
+@dataclass(frozen=True, slots=True)
+class MCPTimeout:
+    """The three MCP connection timeout knobs."""
+    connect_timeout: float = 10.0
+    execute_timeout: float = 60.0
+    sse_read_timeout: float = 120.0
+
+
+__all__ = ["Setting", "SettingBook", "MCPTimeout", "_SettingRow"]  # noqa: E501

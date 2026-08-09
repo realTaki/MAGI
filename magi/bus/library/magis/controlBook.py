@@ -180,76 +180,6 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def upsert_desired(self, *, runtime_id: int, backend_kind: str,
-                       desired: str) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ControlRuntimeRow)
-                .where(_ControlRuntimeRow.runtime_id == runtime_id)
-            )
-            if row is None:
-                row = _ControlRuntimeRow(
-                    runtime_id=runtime_id, backend_kind=backend_kind,
-                    desired_state=RuntimeDesiredState(desired),
-                    observed_state=RuntimeObservedState.UNKNOWN,
-                    backend_ref="", workspace_dir="", log_dir="",
-                    audit_log_path="",
-                    updated_at=utcnow_naive(),
-                )
-                s.add(row)
-            else:
-                row.desired_state = RuntimeDesiredState(desired)
-                row.updated_at = utcnow_naive()
-            s.commit()
-
-    def record_spawn(self, *, runtime_id: int, pid: int,
-                      base_url: str, port: int) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ControlRuntimeRow)
-                .where(_ControlRuntimeRow.runtime_id == runtime_id)
-            )
-            if row is None:
-                return
-            now = utcnow_naive()
-            row.observed_state = RuntimeObservedState.STARTED
-            row.pid = pid
-            row.base_url = base_url
-            row.port = port
-            row.spawned_at = now
-            row.stale = False
-            row.updated_at = now
-            s.commit()
-
-    def record_stop(self, *, runtime_id: int) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ControlRuntimeRow)
-                .where(_ControlRuntimeRow.runtime_id == runtime_id)
-            )
-            if row is None:
-                return
-            now = utcnow_naive()
-            row.observed_state = RuntimeObservedState.STOPPED
-            row.pid = None
-            row.base_url = None
-            row.stopped_at = now
-            row.updated_at = now
-            s.commit()
-
-    def mark_stale(self, *, runtime_id: int, stale: bool = True) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ControlRuntimeRow)
-                .where(_ControlRuntimeRow.runtime_id == runtime_id)
-            )
-            if row is None:
-                return
-            row.stale = stale
-            row.updated_at = utcnow_naive()
-            s.commit()
-
-
 class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
     model_cls = _ControlPortAllocationRow
     dto_cls = PortAllocation
@@ -261,14 +191,6 @@ class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
                 .where(_ControlPortAllocationRow.runtime_id == runtime_id)
             )
             return self._row_to_dto(row) if row else None
-
-    def list_held_ports(self) -> list[int]:
-        with self._session() as s:
-            rows = s.scalars(
-                select(_ControlPortAllocationRow.port)
-                .where(_ControlPortAllocationRow.released_at.is_(None))
-            ).all()
-            return list(rows)
 
     def allocate(self, *, runtime_id: int, port: int) -> PortAllocation:
         now = utcnow_naive()

@@ -29,7 +29,7 @@ from magi.bus.guild.mcpServerChangedJob import (
     McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
-from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
+from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard, publish_chat
 from magi.bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
 from magi.bus.guild.seedPresetTasksJob import (
     SeedPresetTasksJob,
@@ -47,7 +47,7 @@ __all__ = [
     "CallLLMJob", "CallLLMResult", "callLLMJobBoard",
     "RunToolJob", "RunToolResult", "runToolJobBoard",
     "DeliveryJob", "DeliveryResult", "deliveryJobBoard",
-    "ChatJob", "ChatJobResult", "chatJobBoard",
+    "ChatJob", "ChatJobResult", "chatJobBoard", "publish_chat",
     "SendA2AJob", "SendA2AResult", "sendA2AJobBoard",
     "ChangeProviderConfigJob", "ChangeProviderConfigResult", "changeProviderConfigJobBoard",
     "McpServerChangedJob", "McpServerChangedResult", "mcpServerChangedJobBoard",

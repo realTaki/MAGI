@@ -108,17 +108,6 @@ class AuthCredentialBook(BaseBook[_AuthCredentialRow, AuthCredential]):
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def update_hash(self, *, credential_id: int, secret_hash: str) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_AuthCredentialRow)
-                .where(_AuthCredentialRow.id == credential_id)
-            )
-            if row is None:
-                return
-            row.secret_hash = secret_hash
-            s.commit()
-
     def delete(self, *, credential_id: int) -> bool:
         with self._session() as s:
             row = s.scalar(

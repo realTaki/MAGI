@@ -552,16 +552,16 @@ class AgentWorker:
     # -- settings helpers ----------------------------------------------------
 
     def _read_max_iterations(self) -> int:
-        return _coerce_int(getattr(self.bus.settings_book, "get", lambda k: None)("agent.max_iterations"), _DEFAULT_MAX_ITERATIONS)
+        return _coerce_int(getattr(self.bus.settings_book, "get", lambda _: None)("agent.max_iterations"), _DEFAULT_MAX_ITERATIONS)
 
     def _read_max_tokens(self) -> int:
-        return _coerce_int(getattr(self.bus.settings_book, "get", lambda k: None)("agent.max_tokens"), _DEFAULT_MAX_TOKENS)
+        return _coerce_int(getattr(self.bus.settings_book, "get", lambda _: None)("agent.max_tokens"), _DEFAULT_MAX_TOKENS)
 
     def _read_tool_wait(self) -> float:
-        return _coerce_float(getattr(self.bus.settings_book, "get", lambda k: None)("agent.tool_wait_seconds"), _DEFAULT_TOOL_WAIT_SECONDS)
+        return _coerce_float(getattr(self.bus.settings_book, "get", lambda _: None)("agent.tool_wait_seconds"), _DEFAULT_TOOL_WAIT_SECONDS)
 
     def _read_llm_timeout(self) -> float:
-        return _coerce_float(getattr(self.bus.settings_book, "get", lambda k: None)("agent.llm_timeout_seconds"), _DEFAULT_LLM_TIMEOUT_SECONDS)
+        return _coerce_float(getattr(self.bus.settings_book, "get", lambda _: None)("agent.llm_timeout_seconds"), _DEFAULT_LLM_TIMEOUT_SECONDS)
 
 
 # ---------------------------------------------------------------------------

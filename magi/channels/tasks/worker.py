@@ -64,7 +64,7 @@ class TaskWorker(ChannelWorker):
         return last is None or (prev_fire and prev_fire > last)
 
     async def _fire_task(self, task, *, fired_by: str = "cron_tick", session_id: str | None = None, uid: int | None = None) -> None:
-        from magi.bus.guild.chatJob import ChatJob
+        from magi.bus.guild.chatJob import publish_chat
         task_id = task.id; effective_uid = uid or task.uid; effective_session = session_id or task.session_id
         schedule_desc = task.cron if task.cron else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
         contextual_prompt = (
@@ -76,15 +76,14 @@ class TaskWorker(ChannelWorker):
         except Exception: pass
         if effective_session and effective_uid:
             try:
-                import uuid
-                self.bus.messages_book.add(session_id=effective_session, message_id=uuid.uuid4().hex,
-                    role="user", text=contextual_prompt, ts=datetime.now(timezone.utc).isoformat())
+                self.bus.messages_book.add(session_id=effective_session,
+                    role="user", text=contextual_prompt)
             except Exception: pass
-        self.bus.agent_job_board.publish(ChatJob(
-            event_id=f"task:{task_id}:{datetime.now(timezone.utc).timestamp()}", kind="task.triggered",
-            payload={"text": contextual_prompt, "channel": "task", "uid": effective_uid,
-                     "session_id": effective_session, "task_id": task_id, "fired_by": fired_by},
-        ))
+        publish_chat(
+            self.bus, text=contextual_prompt, channel="task",
+            uid=effective_uid, session_id=effective_session,
+            kind="task.triggered", task_id=task_id, fired_by=fired_by,
+        )
         self._next_fire[task_id] = datetime.now(timezone.utc)
 
     async def _handle_run_task_job(self, rj: RunTaskJob) -> None:

@@ -275,8 +275,7 @@ def test_memory_book_update_invariants(factory, contact_id):
 
 def test_memory_book_complete_missing_id_raises_lookup(factory):
     """``complete`` raises :class:`LookupError` for a
-    missing id (unlike the legacy ``mark_completed``
-    which silently no-ops). The ``complete_memory``
+    missing id instead of silently no-oping. The ``complete_memory``
     tool catches it via the ``get``+``uid`` pre-check,
     so the LookupError is the second-line defence."""
     import pytest

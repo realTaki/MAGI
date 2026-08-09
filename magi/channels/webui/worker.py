@@ -40,15 +40,10 @@ class WebUIWorker(ChannelWorker):
         if not session_id or not isinstance(uid, int):
             raise ValueError("webui delivery missing session_id or uid")
 
-        import uuid
-        from datetime import datetime, timezone
-
         self.bus.messages_book.add(
             session_id=session_id,
-            message_id=uuid.uuid4().hex,
             role="assistant",
             text=text,
-            ts=datetime.now(timezone.utc).isoformat(),
         )
         logger.debug(
             "WebUIWorker: appended message to session %s (uid=%s)",

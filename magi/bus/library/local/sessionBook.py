@@ -16,7 +16,6 @@ Schema for ``chat_sessions`` + ``chat_messages`` tables.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -247,7 +246,13 @@ class SessionBook(BaseBook[_SessionRow, Session]):
 
     def add(self, *, session_id: str, delivery_address: str, uid: int,
             channel: str, title: str | None = None,
-            created_at: str = "", updated_at: str = "") -> Session:
+            created_at: str | None = None, updated_at: str | None = None) -> Session:
+        import uuid
+        from datetime import datetime, timezone
+        if created_at is None:
+            created_at = datetime.now(timezone.utc).isoformat()
+        if updated_at is None:
+            updated_at = created_at
         with self._session() as s:
             row = _SessionRow(
                 session_id=session_id,
@@ -262,6 +267,26 @@ class SessionBook(BaseBook[_SessionRow, Session]):
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
+
+    def get_or_create_for_channel(
+        self, *, uid: int, channel: str, delivery_address: str = "",
+    ) -> Session:
+        """Get the first session owned by *uid* on *channel*, or create one.
+
+        Idempotent — if a session already exists for this (uid, channel)
+        pair it is returned as-is; otherwise a new session is created.
+        The session_id is auto-generated.
+        """
+        import uuid
+        sessions = self.list_for_owner(uid=uid)
+        for s in sessions:
+            if getattr(s, "channel", "") == channel:
+                return s
+        sid = f"{channel}_{uuid.uuid4().hex[:16]}"
+        return self.add(
+            session_id=sid, delivery_address=delivery_address,
+            uid=uid, channel=channel,
+        )
 
     def touch(self, *, session_id: str, updated_at: str) -> None:
         with self._session() as s:
@@ -336,10 +361,17 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             rows = s.scalars(stmt).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, session_id: str, message_id: str, role: str, text: str,
-            ts: str, content_blocks: list[dict[str, Any]] | None = None,
+    def add(self, *, session_id: str, role: str, text: str,
+            message_id: str | None = None, ts: str | None = None,
+            content_blocks: list[dict[str, Any]] | None = None,
             run_id: str | None = None,
             llm_attempt_id: str | None = None) -> Message:
+        import uuid
+        from datetime import datetime, timezone
+        if message_id is None:
+            message_id = uuid.uuid4().hex
+        if ts is None:
+            ts = datetime.now(timezone.utc).isoformat()
         with self._session() as s:
             row = _MessageRow(
                 session_id=session_id,

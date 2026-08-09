@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook
@@ -80,14 +80,6 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
             )
             return self._row_to_dto(row) if row else None
 
-    def get_for_magic(self, *, magic_id: int) -> EvaRuntime | None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_EvaRuntimeRow)
-                .where(_EvaRuntimeRow.magic_id == magic_id)
-            )
-            return self._row_to_dto(row) if row else None
-
     def list_all(self) -> list[EvaRuntime]:
         with self._session() as s:
             rows = s.scalars(select(_EvaRuntimeRow).order_by(_EvaRuntimeRow.id)).all()
@@ -121,16 +113,5 @@ class EvaRuntimeBook(BaseBook[_EvaRuntimeRow, EvaRuntime]):
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
-
-    def set_observed(self, *, runtime_id: int, observed_state: str) -> None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_EvaRuntimeRow).where(_EvaRuntimeRow.id == runtime_id)
-            )
-            if row is None:
-                return
-            row.observed_state = observed_state
-            s.commit()
-
 
 __all__ = ["EvaRuntime", "EvaRuntimeBook", "_EvaRuntimeRow"]
