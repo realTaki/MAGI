@@ -974,83 +974,6 @@ export function useToggleTask() {
   });
 }
 
-// -- task presets (operator-editable templates) ---------------------------
-
-export type TaskPresetRow = {
-  id: string;
-  key: string;
-  name: string;
-  description: string;
-  prompt: string;
-  frequency: "hourly" | "daily" | "weekly" | "monthly" | "once";
-  hour: number;
-  minute: number;
-  day_of_week: number | null;
-  day_of_month: number | null;
-  run_at: string | null;
-  target_channel: "webui" | "tg";
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
-/** GET /api/task-presets — all templates (enabled or not).
- *
- * The Settings → 任务预设 card consumes this list. The
- * operator edits ``enabled`` per-row without opening the
- * modal — PATCHes go through ``useUpdateTaskPreset`` which
- * invalidates this same key.
- */
-export function useTaskPresets() {
-  return useQuery({
-    queryKey: qk.taskPresets,
-    queryFn: () => apiFetch<TaskPresetRow[]>("/api/task-presets"),
-  });
-}
-
-export type TaskPresetPatch = Partial<Omit<TaskPresetRow, "id" | "key" | "created_at" | "updated_at">>;
-
-export function useUpdateTaskPreset() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: TaskPresetPatch }) =>
-      apiFetch<TaskPresetRow>(
-        `/api/task-presets/${encodeURIComponent(id)}`,
-        { method: "PATCH", body: payload },
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.taskPresets });
-    },
-  });
-}
-
-export function useCreateTaskPreset() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: Omit<TaskPresetRow, "id" | "created_at" | "updated_at">) =>
-      apiFetch<TaskPresetRow>("/api/task-presets", {
-        method: "POST",
-        body: payload,
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.taskPresets });
-    },
-  });
-}
-
-export function useDeleteTaskPreset() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<void>(`/api/task-presets/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.taskPresets });
-    },
-  });
-}
-
 // -- Password login helpers (single-runtime / direct WebUI) --
 //
 // The control-plane login flow lives in
@@ -1093,4 +1016,3 @@ export function useLoginPassword() {
       ),
   });
 }
-

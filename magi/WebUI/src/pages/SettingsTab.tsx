@@ -39,7 +39,6 @@ import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard"
 import { SettingsInstructionCard } from "../components/settings/SettingsInstructionCard";
 import { SettingsSecurityCard } from "../components/settings/SettingsSecurityCard";
 import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSystemTimezoneCard";
-import { SettingsTaskPresetsCard } from "../components/settings/SettingsTaskPresetsCard";
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
 import { SettingsWebuiAccessCard } from "../components/settings/SettingsWebuiAccessCard";
 import { useT } from "../i18n/index";
@@ -52,7 +51,6 @@ export type SettingSection =
   | "tg-read"
   | "tz"
   | "agent"
-  | "task-presets"
   | "webui-access"
   | "security"
   | "onboarding";
@@ -64,7 +62,6 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "tg-read", label: "settings.navTgRead", icon: <IconReminders /> },
   { id: "tz", label: "settings.navTz", icon: <IconScheduledTasks /> },
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
-  { id: "task-presets", label: "settings.navTaskPresets", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
   { id: "security", label: "settings.navSecurity", icon: <IconContacts /> },
   { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
@@ -90,7 +87,7 @@ export default function SettingsTab(props: SettingsTabProps) {
   return (
     <div className="space-y-4">
       <SidebarShell
-        items={SETTINGS_SECTIONS.filter((it) => props.isAdmin || !["webui-access", "onboarding", "agent", "task-presets"].includes(it.id)).map((it) => ({
+        items={SETTINGS_SECTIONS.filter((it) => props.isAdmin || !["webui-access", "onboarding", "agent"].includes(it.id)).map((it) => ({
           ...it,
           // Translate the i18n key in the consumer (sidebar
           // shell expects pre-resolved labels). ``label`` is
@@ -112,7 +109,6 @@ export default function SettingsTab(props: SettingsTabProps) {
         {section === "tg-read" && <SettingsTgReadReactionCard />}
         {section === "tz" && <SettingsSystemTimezoneCard />}
         {section === "agent" && props.isAdmin && <SettingsAgentCard />}
-        {section === "task-presets" && props.isAdmin && <SettingsTaskPresetsCard />}
         {section === "webui-access" && props.isAdmin && (
           <SettingsWebuiAccessCard
             signedInUser={props.signedInUser}

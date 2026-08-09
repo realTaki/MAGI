@@ -235,6 +235,13 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         ``eva_runtimes.magic_id``).
         """
         with self._session() as s:
+            role = s.scalar(
+                select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
+            )
+            if role is None:
+                raise LookupError(f"role {role_id} not found")
+            if role.magis_id != magis_id:
+                raise ValueError("role must belong to the target MAGIS")
             row = _MagisMembershipRow(magis_id=magis_id, role_id=role_id)
             s.add(row)
             s.commit()
@@ -262,6 +269,13 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             ))
             if row is None:
                 return None
+            role = s.scalar(
+                select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
+            )
+            if role is None:
+                raise LookupError(f"role {role_id} not found")
+            if role.magis_id != magis_id:
+                raise ValueError("role must belong to the target MAGIS")
             row.role_id = role_id
             s.commit(); s.refresh(row)
             return self._row_to_dto(row)

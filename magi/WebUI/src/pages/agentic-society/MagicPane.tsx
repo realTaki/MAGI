@@ -177,7 +177,6 @@ export function MagicPane() {
             disabled={!form.magis_id}
           >
             <option value="">{t("magic.defaultRoleEVA")}</option>
-            <option value="__ADAM__">{t("magic.roleADAM")}</option>
           </select>
           <button
             disabled={busy !== null || !form.magis_id || !form.name}

@@ -40,7 +40,10 @@ export function setSelectedMagicId(magicId: number): void {
 }
 
 function isControlPath(url: string): boolean {
-  return ["/api/auth", "/api/onboarding", "/api/runtime"].some(
+  if (url === "/api/magic" || /^\/api\/magic\/\d+(?:\/|$)/.test(url)) {
+    return true;
+  }
+  return ["/api/auth", "/api/onboarding", "/api/runtime", "/api/magis"].some(
     (prefix) => url === prefix || url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`),
   );
 }
@@ -96,11 +99,6 @@ export const qk = {
    *  so a per-row fetch doesn't refetch the whole list. */
   task: (taskId: string) =>
     runtimeKey("task", taskId),
-  /** Global preset templates — the operator-editable
-   *  source of truth for the auto-seeded per-user
-   *  "预设任务" rows. Settings → 任务预设 drives this
-   *  cache; mutations invalidate on success. */
-  taskPresets: runtimeKey("taskPresets"),
   /** Active session messages — paginated per session. */
   chatMessages: (sessionId: string) =>
     runtimeKey("chatMessages", sessionId),

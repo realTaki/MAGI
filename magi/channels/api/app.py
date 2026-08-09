@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.api import auth, contacts, magis, onboarding
+from magi.channels.api import auth, contacts, magic, magis, onboarding
 
 from typing import TYPE_CHECKING
 
@@ -152,6 +152,11 @@ def create_app(
     if include_control_routes:
         app.include_router(auth.router, prefix="/api/auth")
         app.include_router(onboarding.router, prefix="/api/onboarding")
+        # MAGIC management is control-plane state (membership identity plus
+        # runtime registry), not a node-local API.  Its self-settings routes
+        # are deliberately mounted below on private runtimes only.
+        app.include_router(magic.router, prefix="/api")
+        app.include_router(magis.router, prefix="/api")
     from magi.channels.api import runtime_control
     app.include_router(runtime_control.router, prefix="/api")
     # Per-MAGI runtime-settings edit surface (provider / API key /
@@ -172,6 +177,7 @@ def create_app(
     # exists, so it must not be mounted on the browser-facing control service.
     from magi.channels.api import runtime_access
     app.include_router(runtime_access.router, prefix="/api")
+    app.include_router(magic.self_router, prefix="/api")
     from magi.channels.a2a.router import router as a2a_router
     app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
@@ -183,7 +189,6 @@ def create_app(
     app.include_router(contacts.router, prefix="/api")
     # MAGIS router — the "MAGI Societies" surface for the group tree.
     if include_control_routes:
-        app.include_router(magis.router, prefix="/api")
         from magi.channels.api import runtime_proxy
 
         app.include_router(runtime_proxy.router, prefix="/api")

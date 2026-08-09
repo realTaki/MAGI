@@ -64,7 +64,7 @@ export function MagisPane() {
   const adamByMagis = useMemo(() => {
     const m = new Map<number, MAGICRow>();
     for (const g of magic) for (const membership of g.memberships) {
-      if (membership.role_name === "Adam") m.set(membership.magis_id, g);
+      if (membership.role_name === "ADAM") m.set(membership.magis_id, g);
     }
     return m;
   }, [magic]);
@@ -257,7 +257,7 @@ export function MagisPane() {
         )}
       </ConsoleCard>
       {detailId !== null && magis.find((m) => m.id === detailId) && (
-        <SocietyControls society={magis.find((m) => m.id === detailId)!} magic={magic} onChanged={refresh} />
+        <SocietyControls society={magis.find((m) => m.id === detailId)!} onChanged={refresh} />
       )}
     </div>
   );

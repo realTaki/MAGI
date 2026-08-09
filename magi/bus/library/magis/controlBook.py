@@ -216,6 +216,69 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             s.refresh(row)
             return self._row_to_dto(row)
 
+    def rename(self, *, runtime_id: int, backend_ref: str) -> ControlRuntime | None:
+        """Rename the operator-facing runtime label for one MAGI.
+
+        ``backend_ref`` is deliberately owned by the control-plane record:
+        node-local settings are unavailable to the singleton WebUI.  Keeping
+        this small mutation in the Book prevents HTTP callers from reaching
+        into the MAGIS database to update a row themselves.
+        """
+        value = backend_ref.strip()
+        if not value:
+            raise ValueError("runtime name is required")
+        with self._session() as s:
+            row = s.scalar(
+                select(_ControlRuntimeRow).where(
+                    _ControlRuntimeRow.runtime_id == runtime_id
+                )
+            )
+            if row is None:
+                return None
+            row.backend_ref = value
+            row.updated_at = utcnow_naive()
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def set_desired_state(
+        self, *, runtime_id: int, desired_state: RuntimeDesiredState
+    ) -> ControlRuntime | None:
+        """Record a lifecycle intent for a provisioned runtime.
+
+        The launcher/orchestrator remains responsible for observing and
+        performing the transition.  This method only persists the requested
+        target state; it never pretends that a process has already started or
+        stopped.
+        """
+        with self._session() as s:
+            row = s.scalar(
+                select(_ControlRuntimeRow).where(
+                    _ControlRuntimeRow.runtime_id == runtime_id
+                )
+            )
+            if row is None:
+                return None
+            row.desired_state = desired_state
+            row.updated_at = utcnow_naive()
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def remove(self, *, runtime_id: int) -> bool:
+        """Remove a control record after its runtime has been deprovisioned."""
+        with self._session() as s:
+            row = s.scalar(
+                select(_ControlRuntimeRow).where(
+                    _ControlRuntimeRow.runtime_id == runtime_id
+                )
+            )
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+            return True
+
 class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
     model_cls = _ControlPortAllocationRow
     dto_cls = PortAllocation

@@ -7,10 +7,11 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from magi.bus import Bus
 from magi.channels.api.dependencies import BusDep
@@ -81,7 +82,15 @@ class MembershipOut(BaseModel):
 
 
 class MembershipCreate(BaseModel):
-    magic_id: int = Field(ge=1)
+    """Create a new MAGIC identity in this MAGIS.
+
+    ``magis_memberships.id`` *is* the MAGIC id.  There is no separate
+    MAGIC record that can be attached later, so accepting ``magic_id`` here
+    would either be impossible or silently ignored.  Reject unknown fields to
+    make that model boundary visible to API clients.
+    """
+
+    model_config = ConfigDict(extra="forbid")
     role_id: int = Field(ge=1)
 
 
@@ -139,12 +148,13 @@ def _membership_out(bus: Bus, view) -> MembershipOut:
     )
 
 
-def _admin_out(view) -> MAGISAdminOut:
+def _admin_out(bus: Bus, view) -> MAGISAdminOut:
+    contact = bus.contacts_book.get(contact_id=view.uid)
     return MAGISAdminOut(
         id=view.id,
         magis_id=view.magis_id,
-        telegram_id=view.uid,
-        display_name=None,
+        telegram_id=contact.telegram_id if contact and contact.telegram_id is not None else 0,
+        display_name=(contact.display_name or contact.name) if contact else None,
     )
 
 
@@ -181,7 +191,11 @@ def _translate_bus_error(exc: Exception) -> MagiHTTPException:
 
 
 def _served_direct_magis_id(bus: Bus) -> int | None:
-    return None
+    raw = os.environ.get("MAGI_RUNTIME_ID")
+    if not raw or not raw.isdigit() or bus.memberships_book is None:
+        return None
+    membership = bus.memberships_book.get(magi_id=int(raw))
+    return membership.magis_id if membership is not None else None
 
 
 def _require_managed(bus: Bus, magis_id: int) -> None:
@@ -234,11 +248,24 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
     except ValueError as exc:
         raise _translate_bus_error(exc) from exc
+    # Every new MAGIS has the reserved role vocabulary before a MAGIC can be
+    # created in it.  This is an API-level composition step over public Books;
+    # membership creation still owns the role/MAGIS invariant itself.
+    from magi.bus.library.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS
+
+    for role_name in ("ADAM", "EVA"):
+        bus.roles_book.add(
+            magis_id=view.id,
+            name=role_name,
+            instruction=DEFAULT_ROLE_INSTRUCTIONS[role_name],
+            is_reserved=True,
+        )
     return _magis_out(bus, view)
 
 
 @router.get("/magis/{magis_id}", response_model=MAGISOut)
 def get_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> MAGISOut:
+    _require_managed(bus, magis_id)
     return _magis_out(bus, _magis_or_404(bus, magis_id))
 
 
@@ -391,7 +418,7 @@ def delete_membership(
 @router.get("/magis/{magis_id}/admins", response_model=list[MAGISAdminOut])
 def list_magis_admins(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MAGISAdminOut]:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    return [_admin_out(v) for v in bus.magis_admins_book.list_for_magis(magis_id=magis_id)]
+    return [_admin_out(bus, v) for v in bus.magis_admins_book.list_for_magis(magis_id=magis_id)]
 
 
 @router.post("/magis/{magis_id}/admins", response_model=MAGISAdminOut, status_code=201)
@@ -401,11 +428,14 @@ def add_magis_admin(
     _admin: AdminGate, bus: BusDep,
 ) -> MAGISAdminOut:
     _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    contact = bus.contacts_book.get_by_telegram(telegram_id=payload.telegram_id)
+    if contact is None:
+        raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
     try:
-        view = bus.magis_admins_book.add(uid=payload.telegram_id, magis_id=magis_id)
+        view = bus.magis_admins_book.add(uid=contact.id, magis_id=magis_id)
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
-    return _admin_out(view)
+    return _admin_out(bus, view)
 
 
 @router.delete("/magis/{magis_id}/admins/{admin_id}", status_code=204)
