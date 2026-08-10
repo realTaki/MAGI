@@ -1,4 +1,4 @@
-# MAGI — Modular Agentic Group Intelligence
+# MAGI — Modular Agentic Governed Intelligences
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
@@ -6,41 +6,65 @@
 
 [中文 README](README_zh.md)
 
-> **MAGI is a runtime for persistent, modular agent societies.**
+> **MAGI is a runtime for persistent, modular, governable agent societies.**
 >
-> A MAGIS is not a one-off group chat or a task pipeline. It is a MAGI Society:
-> an
-> organization of independent MAGI: each has its own runtime,
-> workspace, memory, tools, provider credentials, and role in the Society.
-> They coordinate through ADAM, execute through EVAs, retain what they learn,
-> and grow into a durable collective intelligence.
+> A MAGIS is not a one-off group chat or a task pipeline. It is a **MAGI Society**:
+> an organization of independent MAGI, each with its own runtime, workspace,
+> memory, tools, provider credentials, and role in the Society.
+> They coordinate through the Society, execute through independently managed
+> MAGI runtimes, retain what they learn, and grow into a durable collective
+> intelligence without giving up boundaries, accountability, or operator control.
 
 MAGI is built for the question beyond “how do I delegate this task?”:
 
-**How do we give a group of AI agents an identity, continuity, organization,
-and the ability to improve together over time?**
+**How do we give a group of AI agents identity, continuity, organization, and
+the freedom to improve together over time — while keeping that autonomy
+observable, bounded, and governable?**
 
 ## Why MAGI?
 
 Most multi-agent systems assemble a temporary team around a workflow: assign a
 research task, collect a result, then tear the team down. MAGI treats the
-organization itself as the primary unit.
+**organization itself** as the primary unit.
 
 | Task-oriented multi-agent orchestration | MAGI Society runtime |
 | --- | --- |
 | Agents are steps in a workflow | MAGI are persistent members of an organization |
 | Collaboration ends with a task | Context, memory, skills, and relationships persist |
-| One process commonly hosts many agents | Every MAGI has an independent containerized runtime and workspace |
-| A manager delegates predefined work | ADAM coordinates a Society; EVAs are independently managed, started, and stopped |
+| One process commonly hosts many agents | Every MAGI has an independent runtime and workspace |
+| A controller defines the execution path | The Society coordinates agents while infrastructure enforces lifecycle and boundaries |
 | Scale means adding concurrent calls | Scale means adding capable MAGI and connected Societies |
 
-MAGI does not replace workflow engines. It provides the substrate on which a
-long-lived agent organization can operate, learn, and evolve.
+MAGI does not replace workflow engines. It provides a substrate for long-lived
+agent organizations that can operate, learn, reorganize, and eventually
+coordinate more of their own work.
 
-## Toward collective intelligence
+## Design philosophy
+
+MAGI is designed for a future in which **intelligence becomes cheaper and more
+abundant**, while **coordination, trust, security, and governance remain hard**.
+
+That leads to three principles:
+
+- **Do not hard-code around temporary model limitations.** Token cost, context
+  size, and reasoning quality will change quickly; the architecture should not
+  depend on them staying scarce.
+- **Prefer protocol-mediated coordination over rigid workflow control.** As
+  agents become more capable, infrastructure should increasingly define how
+  agents discover, communicate, and delegate — not prescribe every reasoning step.
+- **Keep governance mandatory.** Identity, permissions, isolation, observability,
+  resource boundaries, and accountability become more important as agents gain
+  more autonomy.
+
+The long-term goal is not to build a better workflow controller. It is to build
+the infrastructure in which autonomous intelligences can collaborate freely
+**within explicit, inspectable constraints**.
+
+## Toward governed collective intelligence
 
 The end state is not a static hierarchy that repeatedly delegates prompts. A
-MAGIS should become better because it has existed:
+MAGIS should become better because it has existed — while remaining inspectable
+and governable:
 
 - MAGI learn from the outcomes, failures, and observations of their work.
 - Useful procedures become reusable Skills rather than disappearing into an
@@ -50,13 +74,14 @@ MAGIS should become better because it has existed:
 - Societies can share knowledge and collaborate without reducing every member
   to a stateless API call.
 - Operators remain able to inspect the organization, its memory, its tools,
-  and the authority used to change it.
+  its resource boundaries, and the authority used to change it.
 
 > **Implementation status:** durable memory, Skills, Society/MAGI modeling,
-> and isolated EVA lifecycle management are the foundation available today.
-> Autonomous cross-MAGI learning, capability assessment, self-directed
-> organizational restructuring, and inter-Society knowledge exchange are
-> active design goals; they are **not implemented yet**.
+> isolated EVA lifecycle management, and restricted control-plane boundaries
+> are the foundation available today. Autonomous cross-MAGI learning,
+> capability assessment, self-directed organizational restructuring,
+> protocol-mediated coordination, richer policy enforcement, and inter-Society
+> knowledge exchange are active design goals; they are **not all implemented yet**.
 
 ## The MAGI model
 
@@ -64,7 +89,7 @@ The names are deliberate:
 
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | The general kind of autonomous agent in this system. |
+| **MAGI** | The general kind of autonomous, governable agent in this system. |
 | **MAGIS** | A **MAGI Society**: an organization of MAGI. Societies form a tree. |
 | **MAGIC** | Internal table/API name for an individual MAGI. It is not a separate product concept. |
 | **ADAM** | The leading MAGI of a Society. ADAM provides its control plane and coordinates its MAGI. |
@@ -81,11 +106,12 @@ MAGIS: Engineering
    │
    ├── EVA / MAGI                       independent runtime + workspace
    ├── EVA / MAGI                       independent runtime + workspace
-   └── child MAGIS: Research             its own ADAM and MAGI
+   └── child MAGIS: Research            its own ADAM and MAGI
 ```
 
-An ADAM is not granted the host Docker socket or broad Kubernetes credentials.
-It requests lifecycle changes through a restricted, authenticated orchestrator.
+ADAM is a coordinator, not an unrestricted host administrator. It is not
+granted the host Docker socket or broad Kubernetes credentials. Instead, it
+requests lifecycle changes through a restricted, authenticated orchestrator.
 The control plane creates only the scoped private MAGI workspace and runtime,
 plus the PostgreSQL and public workspace resources for a MAGIS when needed.
 
@@ -169,6 +195,9 @@ and environment-specific configuration.
 5. **Accumulate intelligence.** Conversations, task outcomes, contacts,
    memory, and reusable Skills remain part of the Society instead of being
    discarded when a single request ends.
+6. **Govern autonomy.** As the Society grows, keep lifecycle authority,
+   credentials, workspaces, and operator-visible boundaries explicit rather
+   than collapsing every MAGI into one unrestricted process.
 
 ## Architecture
 
@@ -179,21 +208,26 @@ and environment-specific configuration.
                         └──────────────┬──────────────┘
                                        │
                         ┌──────────────▼──────────────┐
-                        │          ADAM / MAGI               │
-                        │   Society control plane      │
+                        │          ADAM / MAGI        │
+                        │    Society control plane    │
                         └──────────────┬──────────────┘
                                        │ authenticated lifecycle request
                         ┌──────────────▼──────────────┐
-                        │       MAGI Orchestrator      │
-                        │   restricted Kubernetes API  │
+                        │       MAGI Orchestrator     │
+                        │   restricted Kubernetes API │
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVA / MAGI          │  │ EVA / MAGI              │
+                     │ EVA / MAGI   │  │ EVA / MAGI      │
                      │ Deployment   │  │ Deployment      │
                      │ PVC + Secret │  │ PVC + Secret    │
                      └──────────────┘  └─────────────────┘
 ```
+
+The orchestrator is a **lifecycle authority, not the Society's reasoning
+brain**. Its job is to enforce a narrow execution boundary around operations
+that require infrastructure privileges, while MAGI retain their own runtime,
+state, tools, and role in the Society.
 
 Kubernetes is the current deployment target. It gives each MAGI a concrete
 execution boundary and lets the orchestrator manage isolated runtime resources
@@ -241,10 +275,13 @@ For the implementation-level view, see:
 
 MAGI is experimental and under active construction. The present codebase is a
 working foundation for Society modeling, onboarding, isolated node deployment,
-and EVA lifecycle control. The collective-intelligence mechanisms described
-above are intentionally part of the public project vision; their implementation
-status is stated explicitly so the README remains ambitious without confusing
-roadmap with shipped behavior.
+persistent runtime state, and EVA lifecycle control.
+
+The broader vision — autonomous learning, protocol-mediated coordination,
+richer policy enforcement, and increasingly self-organizing governed
+intelligences — is intentionally public. The README distinguishes that direction
+from shipped behavior so MAGI can remain ambitious without confusing roadmap
+with implementation.
 
 ## Contributing
 
