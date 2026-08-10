@@ -96,7 +96,7 @@ class TestRecordRunStart:
     def test_run_id_can_be_provided(self, task_book):
         task = _make_test_task(task_book, task_book._factory, "task_rt2")
         run = task_book.record_run_start(
-            task_id=task.id, trigger="manual_run", run_id="my_run_42",
+            task_id=task.id, trigger="manual_run", id="my_run_42",
         )
         assert run.id == "my_run_42"
 
@@ -233,7 +233,7 @@ class TestReapStale:
         n = task_run_book.reap_stale(older_than_seconds=300)
         assert n == 1
 
-        reaped = task_run_book.get(run_id=run.id)
+        reaped = task_run_book.get(id=run.id)
         assert reaped is not None
         assert reaped.status == "failed"
         assert reaped.error == "abandoned by previous worker"

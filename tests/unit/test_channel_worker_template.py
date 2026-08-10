@@ -137,7 +137,7 @@ async def test_skips_job_with_wrong_channel():
 
     wrong_job = DeliveryJob(channel="tg", payload={}, job_id="j3")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim = _claim_sequence(wrong_job)
+    w.bus.delivery_job_board.claim_for_channel = _claim_sequence(wrong_job)
     w.bus.delivery_job_board.release = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get = MagicMock(return_value=None)
@@ -166,10 +166,10 @@ async def test_backpressure_throttle_skips_claim():
     w._last_error = None
 
     w.bus = MagicMock()
-    # claim would raise StopIteration if reached — backpressure branch
+    # claim_for_channel would raise StopIteration if reached — backpressure branch
     # must short-circuit BEFORE this mock is called.
-    w.bus.delivery_job_board.claim = MagicMock(
-        side_effect=AssertionError("claim should not be called under backpressure"),
+    w.bus.delivery_job_board.claim_for_channel = MagicMock(
+        side_effect=AssertionError("claim_for_channel should not be called under backpressure"),
     )
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=5000)
     w.bus.settings_book.get = MagicMock(return_value="10")  # max_depth=10
@@ -182,5 +182,5 @@ async def test_backpressure_throttle_skips_claim():
     w._stopping = True
     await asyncio.wait_for(task, timeout=2.0)
 
-    # claim should NOT be called because depth > max
-    w.bus.delivery_job_board.claim.assert_not_called()
+    # claim_for_channel should NOT be called because depth > max
+    w.bus.delivery_job_board.claim_for_channel.assert_not_called()
