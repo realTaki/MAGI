@@ -11,6 +11,7 @@ from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus, open_control_bus
 from magi.bus.db.engine import EngineFactory
+from magi.bus.db.schema import LOCAL_SCOPE, apply_initial_schema
 from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
@@ -63,6 +64,33 @@ def test_password_hash_is_local_to_contacts_not_magis() -> None:
 
     assert "REFERENCES contacts" not in admin_ddl
     assert "password_hash" in contact_ddl
+
+
+def test_existing_local_contacts_upgrade_with_password_hash(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local.db'}"
+    factory = EngineFactory(database_url)
+    with factory.engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE contacts (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(120) NOT NULL,
+                display_name VARCHAR(120),
+                role VARCHAR(16) NOT NULL,
+                telegram_id BIGINT,
+                admin BOOLEAN NOT NULL,
+                last_seen_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """))
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0003_rename_a2a_invocation_id_and_table')"))
+
+    apply_initial_schema(factory, scope=LOCAL_SCOPE)
+
+    assert "password_hash" in {
+        column["name"] for column in inspect(factory.engine).get_columns("contacts")
+    }
 
 
 def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(tmp_path: Path) -> None:
