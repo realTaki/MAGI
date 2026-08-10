@@ -4,7 +4,7 @@ Public surface:
 
 - ``Base`` / ``utcnow_naive`` — SQLAlchemy declarative base + UTC helper
 - ``EngineFactory`` — dialect-aware engine creator; multiple instances
-  can coexist (e.g. one local SQLite, one MAGIS PG)
+  can coexist (e.g. one local SQLite and one MAGIS SQLite or PostgreSQL store)
 - ``build_local_factory`` / ``build_magis_factory`` — convenience
   constructors for the two production deployments
 - ``FileShelf`` — file-system counterpart to EngineFactory, with

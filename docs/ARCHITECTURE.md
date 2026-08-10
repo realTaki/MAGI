@@ -377,11 +377,14 @@ tests in `tests/architecture/` (`test_hook_import_boundaries.py`,
 | Scope | Location | Book(s) |
 | --- | --- | --- |
 | **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books |
-| **MAGIS shared** | `MAGIS_DATABASE_URL` (Postgres or SQLite) | `magi.bus.library.magis.*` Books |
+| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books |
 | **File-backed** | `magi/prompts/`, `<workspace>/skills/` | `PromptBook`, `SkillsBook` |
 
 `magi.bus` owns the engine factories, table registration, and file-backed
 shelves for both scopes. No other package opens either database directly.
+SQLite MAGIS stores are isolated by `MAGIS_NAME`; PostgreSQL deployments use
+one service with one distinct database per MAGIS. BUS provisioning creates
+only the tables owned by the selected scope.
 Schema changes are explicit BUS migrations; the runtime uses one schema
 and one implementation, without fallback reads, compatibility imports, or
 dual writes. See [MAGI and MAGIS Storage](magi-magis-storage.md) and

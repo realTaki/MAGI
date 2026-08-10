@@ -1,6 +1,6 @@
 """引擎工厂 — 根据 database_url 自动适配 SQLite / PostgreSQL。
 
-支持多实例共存：local SQLite + MAGIS PostgreSQL 各持一个 EngineFactory::
+支持多实例共存：local SQLite + MAGIS SQLite 或 PostgreSQL 各持一个 EngineFactory::
 
     from magi.bus.db.engine import build_local_factory, build_magis_factory
 

@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook
@@ -97,9 +97,11 @@ class _MagisAdminRow(Base):
     __tablename__ = "magis_admins"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    contact_id: Mapped[int] = mapped_column(
-        ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False
-    )
+    # ``contacts`` belongs to a MAGI-private SQLite database.  This is an
+    # opaque identity reference validated by the control/API layer, never a
+    # database foreign key: a MAGIS SQLite/PG store must be creatable without
+    # a local ``contacts`` table.
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )

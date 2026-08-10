@@ -51,7 +51,7 @@ ID 作用域。映射使用 Telegram ID；MAGI 私有 SQLite 主键不会跨节�
 
 权限和验证数据归属如下：
 
-- `magis_admins` 位于某个 MAGIS 的 PostgreSQL：一个 MAGIS 可有多个 Admin；授权不继承到
+- `magis_admins` 位于某个 MAGIS 的共享数据库（SQLite 或 PostgreSQL）：一个 MAGIS 可有多个 Admin；授权不继承到
   父 MAGIS 或子 MAGIS。
 - `contacts.role='assigned'` 位于目标 MAGI 本地 SQLite：一个 MAGI 最多一个 assigned user。
 - 登录验证码位于**被登录 MAGI**的本地 SQLite。该 MAGI 有自己的 Bot 时由自己投递；尚未
