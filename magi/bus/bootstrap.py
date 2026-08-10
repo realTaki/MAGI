@@ -378,18 +378,16 @@ def _open_with_dirs(
         magis_book = MagisBook(magis_factory)
         magis_admins_book = MagisAdminBook(magis_factory)
         control_settings_book = ControlSettingBook(magis_factory)
-        # A control BUS deliberately has no node-private database.  Keep the
-        # legacy ``settings_book`` capability usable for control-only callers,
-        # but back it with a MAGIS-owned table rather than creating local
-        # settings in the shared store.
-        if local_provision_scope == "magis":
-            settings_book = control_settings_book
         # ``MagisMembershipBook.instruction_context`` reads the per-MAGI
         # personal instruction from the local SettingBook (agent-worker-
-        # bus.md §6). Inject it so the Book owns the join, not the
-        # caller.
+        # bus.md §6).  A singleton control process has no local MAGI
+        # settings, so it must not be given the MAGIS control KV as a
+        # substitute.
         memberships_book = MagisMembershipBook(
-            magis_factory, settings_book=settings_book,
+            magis_factory,
+            settings_book=(
+                None if local_provision_scope == "magis" else settings_book
+            ),
         )
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)

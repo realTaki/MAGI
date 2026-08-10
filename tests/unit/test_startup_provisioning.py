@@ -170,8 +170,8 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
     # The per-MAGIS control directory is provisioned with its control secret;
     # opening the control BUS must not touch the node-private database.
     assert control_dir.is_dir()
-    bus.settings_book.set(key="control.test", value="shared")
     assert bus.control_settings_book is not None
+    bus.control_settings_book.set(key="control.test", value="shared")
     assert bus.control_settings_book.get(key="control.test") == "shared"
     assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())
 
