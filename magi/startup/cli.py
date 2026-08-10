@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from typing import Sequence
+from collections.abc import Sequence
 
 from magi.startup import local, webui
 from magi.startup.config import DEFAULT_MAGI_NAME, WEBUI_PORT, StartupConfig

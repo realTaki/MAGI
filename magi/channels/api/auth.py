@@ -51,6 +51,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.guild.deliveryJob import DeliveryJob
+from magi.bus.library.magis.controlBook import RuntimeObservedState
 from magi.channels.api import control_store
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
@@ -387,17 +388,25 @@ async def _target_access(bus: Bus, magi_id: int, method: str, path: str, payload
 
 
 @router.get("/available-magi", response_model=AvailableMAGIResponse)
-async def available_magi() -> AvailableMAGIResponse:
+async def available_magi(bus: BusDep) -> AvailableMAGIResponse:
     """List login targets that are currently running.
 
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    # This endpoint is a control-plane capability.  Until the control
-    # registry exposes its DTO query through Bus, a runtime-local app has no
-    # targets to disclose.
-    result: list[AvailableMAGI] = []
-    return AvailableMAGIResponse(magi=result)
+    runtimes_book = bus.control_runtimes_book
+    if runtimes_book is None:
+        return AvailableMAGIResponse(magi=[])
+    running_states = {
+        RuntimeObservedState.STARTING,
+        RuntimeObservedState.STARTED,
+    }
+    targets = [
+        AvailableMAGI(id=rt.runtime_id, name=rt.backend_ref)
+        for rt in runtimes_book.list_all()
+        if rt.observed_state in running_states
+    ]
+    return AvailableMAGIResponse(magi=targets)
 
 
 @router.get("/targets/{magi_id}/accounts")

@@ -28,6 +28,7 @@ from typing import Literal
 
 from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
+    resolve_magis_database_url,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
@@ -148,15 +149,18 @@ def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
     pid = read_pid(pid_path)
     if pid is None:
         print(f"MAGI {config.magi_name!r}: no PID file", file=sys.stderr)
+        _mark_registry_stopped(config)
         return 1
     if not is_alive(pid):
         print(f"MAGI {config.magi_name!r}: already dead (pid={pid})")
         pid_path.unlink(missing_ok=True)
+        _mark_registry_stopped(config)
         return 0
     try:
         os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
     except ProcessLookupError:
         pid_path.unlink(missing_ok=True)
+        _mark_registry_stopped(config)
         return 0
 
     deadline = time.monotonic() + STOP_GRACE_S
@@ -171,6 +175,7 @@ def stop_magi(*, config: StartupConfig, force: bool = False) -> int:
             pass
 
     pid_path.unlink(missing_ok=True)
+    _mark_registry_stopped(config)
     print(f"MAGI {config.magi_name!r} stopped (pid={pid})")
     return 0
 
@@ -184,6 +189,68 @@ def restart_magi(*, config: StartupConfig) -> int:
     """Stop (force) then start. Used by ``magi node restart``."""
     stop_magi(config=config, force=True)
     return start_magi(config=config)
+
+
+# ----------------------------------------------------------------------
+# registry reconciliation
+# ----------------------------------------------------------------------
+
+
+def _mark_registry_stopped(config: StartupConfig) -> None:
+    """Flip ``control_runtime_state`` to STOPPED for this MAGI.
+
+    Called from :func:`stop_magi` after the process exits so the
+    singleton WebUI's ``/api/auth/available-magi`` endpoint stops
+    offering this runtime as a login target.  Best-effort: if the
+    MAGIS store isn't reachable or the runtime row is missing, the
+    ``start_magi`` path will still reconcile via
+    :meth:`set_desired_state` / :meth:`set_observed_state` on the
+    next launch.
+    """
+    try:
+        spec = load_runtime_spec(config.workspace_dir)
+    except Exception:
+        return
+    magi_id_raw = spec.magi_id
+    try:
+        magi_id = int(magi_id_raw)
+    except (TypeError, ValueError):
+        return
+
+    try:
+        from magi.bus.bootstrap import open_control_bus
+        from magi.bus.db.base import utcnow_naive
+        from magi.bus.library.magis.controlBook import (
+            RuntimeDesiredState,
+            RuntimeObservedState,
+        )
+
+        control_dir = str(
+            config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"
+        )
+        magis_url = config.magis_database_url or resolve_magis_database_url(
+            config.host_workspace_dir
+        )
+        bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    except Exception:
+        return
+
+    runtimes = bus.control_runtimes_book
+    if runtimes is None:
+        return
+    try:
+        runtimes.set_desired_state(
+            runtime_id=magi_id, desired_state=RuntimeDesiredState.STOPPED
+        )
+        runtimes.set_observed_state(
+            runtime_id=magi_id,
+            observed_state=RuntimeObservedState.STOPPED,
+            stopped_at=utcnow_naive(),
+        )
+    except Exception:
+        # Reconciliation is best-effort; do not mask stop_magi's
+        # exit status on a registry write failure.
+        pass
 
 
 # ----------------------------------------------------------------------

@@ -265,6 +265,50 @@ class ControlRuntimeBook(BaseBook[_ControlRuntimeRow, ControlRuntime]):
             s.refresh(row)
             return self._row_to_dto(row)
 
+    def set_observed_state(
+        self,
+        *,
+        runtime_id: int,
+        observed_state: RuntimeObservedState,
+        pid: int | None = None,
+        spawned_at: datetime | None = None,
+        stopped_at: datetime | None = None,
+    ) -> ControlRuntime | None:
+        """Record a lifecycle observation for a provisioned runtime.
+
+        Companion to :meth:`set_desired_state`: this records *what actually
+        happened*.  The launcher/orchestrator calls it after observing the
+        process transition (e.g. ``STARTING`` before spawn, ``STARTED`` once
+        the runtime is healthy, ``STOPPED`` once it has exited).
+
+        - ``pid`` is recorded only on startup; on stop we clear it.
+        - ``spawned_at`` / ``stopped_at`` capture the wall-clock transition
+          timestamps; both default to ``None`` to leave prior values intact
+          when the caller doesn't care to update them.
+        """
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(
+                select(_ControlRuntimeRow).where(
+                    _ControlRuntimeRow.runtime_id == runtime_id
+                )
+            )
+            if row is None:
+                return None
+            row.observed_state = observed_state
+            if pid is not None:
+                row.pid = pid
+            if spawned_at is not None:
+                row.spawned_at = spawned_at
+            if stopped_at is not None:
+                row.stopped_at = stopped_at
+                row.pid = None
+            row.stale = False
+            row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
     def remove(self, *, runtime_id: int) -> bool:
         """Remove a control record after its runtime has been deprovisioned."""
         with self._session() as s:

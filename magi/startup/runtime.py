@@ -35,6 +35,11 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
+from magi.bus.db.base import utcnow_naive
+from magi.bus.library.magis.controlBook import (
+    RuntimeDesiredState,
+    RuntimeObservedState,
+)
 from magi.startup.config import (
     DEFAULT_LOG_LEVEL,
     RUNTIME_HOST,
@@ -76,6 +81,26 @@ class RuntimeContext:
 
         bus = _build_bus(startup)
         _validate_runtime_identity(startup, bus)
+
+        # Announce ourselves to the control plane: flip
+        # control_runtime_state to STARTED + record our PID so the
+        # singleton WebUI's /api/auth/available-magi endpoint can
+        # include us in the login dropdown.  This is the runtime's
+        # half of the "control registry exposes its DTO query
+        # through Bus" handshake.
+        magi_id = _to_magi_id(startup.magi_id)
+        runtimes = bus.control_runtimes_book
+        if magi_id is not None and runtimes is not None:
+            runtimes.set_desired_state(
+                runtime_id=magi_id,
+                desired_state=RuntimeDesiredState.STARTED,
+            )
+            runtimes.set_observed_state(
+                runtime_id=magi_id,
+                observed_state=RuntimeObservedState.STARTED,
+                pid=os.getpid(),
+                spawned_at=utcnow_naive(),
+            )
         return cls(
             startup=startup,
             bus=bus,
