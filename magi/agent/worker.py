@@ -139,9 +139,9 @@ class AgentWorker(RuntimeWorker):
             # cancel
             if getattr(job, "kind", "") == "run.cancel":
                 await self.call(self.bus.agent_job_board.submit_result,
-                    key=job.event_id,
+                    key=job.job_id,
                     result=ChatJobResult(
-                        event_id=job.event_id, success=True, status="completed",
+                        job_id=job.job_id, success=True, status="completed",
                     ),
                 )
                 self._broadcast_cancel(conv_id)
@@ -149,13 +149,12 @@ class AgentWorker(RuntimeWorker):
 
             # steering — release back to board for _process to claim
             if conv_id and conv_id in self._active_sessions:
-                await self.call(self.bus.agent_job_board.release, key=job.event_id)
+                await self.call(self.bus.agent_job_board.release, key=job.job_id)
                 continue
 
             # new run
             self._active_sessions.add(conv_id)
             payload = getattr(job, "payload", None) or {}
-            run_id = getattr(job, "run_id", "") or ""
             ctx = RunContext(
                 contact_id=payload.get("contact_id"),
                 conversation_id=conv_id,
@@ -178,12 +177,12 @@ class AgentWorker(RuntimeWorker):
                     self._active_sessions.discard(conv_id)
                 succeeded = ctx.final_error is None
                 await self.call(self.bus.agent_job_board.submit_result,
-                    key=job.event_id,
+                    key=job.job_id,
                     result=ChatJobResult(
-                        event_id=job.event_id,
+                        job_id=job.job_id,
                         success=succeeded,
                         status="completed" if succeeded else "failed",
-                        result={"run_id": run_id} if run_id else None,
+                        result=None,
                         error_code=ctx.final_error,
                     ),
                 )
@@ -443,9 +442,9 @@ class AgentWorker(RuntimeWorker):
                         steering_parts.append(text)
                     from magi.bus.guild.chatJob import ChatJobResult
                     await self.call(self.bus.agent_job_board.submit_result,
-                        key=steer.event_id,
+                        key=steer.job_id,
                         result=ChatJobResult(
-                            event_id=steer.event_id, success=True, status="completed",
+                            job_id=steer.job_id, success=True, status="completed",
                         ),
                     )
 
@@ -587,8 +586,7 @@ class AgentWorker(RuntimeWorker):
 async def submit_agent_message(bus: "Bus", message: Any) -> str:
     from magi.bus.guild.chatJob import ChatJob
     job = ChatJob(
-        event_id=getattr(message, "event_id", "") or uuid.uuid4().hex,
-        run_id=getattr(message, "target_run_id", None) or f"turn-{uuid.uuid4().hex}",
+        job_id=getattr(message, "event_id", "") or uuid.uuid4().hex,
         conversation_id=getattr(message, "conversation_id", None) or "",
         kind=getattr(message, "kind", "channel.message.received"),
         payload={
@@ -602,10 +600,10 @@ async def submit_agent_message(bus: "Bus", message: Any) -> str:
     return await asyncio.to_thread(bus.agent_job_board.publish, job)
 
 
-async def wait_for_agent_run(bus: "Bus", event_id: str, *, timeout_seconds: float = 180.0) -> dict:
-    result = await bus.agent_job_board.wait_for_result(key=event_id, timeout=timeout_seconds)
+async def wait_for_agent_run(bus: "Bus", job_id: str, *, timeout_seconds: float = 180.0) -> dict:
+    result = await bus.agent_job_board.wait_for_result(key=job_id, timeout=timeout_seconds)
     if result is None:
-        raise AgentRunTimedOut(f"agent run {event_id} timed out")
+        raise AgentRunTimedOut(f"agent run {job_id} timed out")
     if not result.success:
         raise AgentRunFailed(error_code=result.error_code or "failed")
     return {"success": True, "error_code": result.error_code, "result": result.result}

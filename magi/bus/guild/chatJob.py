@@ -28,8 +28,7 @@ from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
 class ChatJob:
     """Snapshot of a turn request (publisher input)."""
 
-    event_id: str = ""
-    run_id: str = ""
+    job_id: str = ""
     conversation_id: str | None = None
     correlation_id: str | None = None
     kind: str = "chat"
@@ -43,7 +42,7 @@ class ChatJob:
 class ChatJobResult:
     """Final state of a turn."""
 
-    event_id: str = ""
+    job_id: str = ""
     success: bool = False
     status: str = "failed"
     result: dict[str, Any] | None = None
@@ -56,8 +55,7 @@ class _ChatJobRow(Base):
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    event_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     inbox_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -88,13 +86,12 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
     job_model = _ChatJobRow
     job_cls = ChatJob
     result_cls = ChatJobResult
-    natural_key_attr = "event_id"
+    natural_key_attr = "job_id"
 
     def _insert_pending(self, session, job: ChatJob, **kwargs) -> _ChatJobRow:
-        event_id = job.event_id or new_job_id()
+        job_id = job.job_id or new_job_id()
         row = _ChatJobRow(
-            event_id=event_id,
-            run_id=job.run_id,
+            job_id=job_id,
             conversation_id=job.conversation_id,
             correlation_id=job.correlation_id,
             inbox_event_id=job.inbox_event_id,
@@ -108,11 +105,11 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         return row
 
     def publish(self, job: ChatJob) -> str:
-        """发布 agent turn 请求，返回 event_id。"""
+        """发布 agent turn 请求，返回 job_id。"""
         with self._session() as s:
             row = self._insert_pending(s, job)
             s.commit()
-            return row.event_id
+            return row.job_id
 
     def claim_for_conversation(self, *, conversation_id: str) -> ChatJob | None:
         """[claude, 2026-08-08] CAS-claim a ChatJob scoped to one conversation.
@@ -212,8 +209,7 @@ def publish_chat(
     conversation_id: str,
     kind: str = "chat",
     caller_role: str | None = None,
-    event_id: str | None = None,
-    run_id: str | None = None,
+    job_id: str | None = None,
     correlation_id: str | None = None,
     **extras: Any,
 ) -> str:
@@ -224,14 +220,14 @@ def publish_chat(
     (chat_id, task_id, fired_by, etc.) are forwarded as additional
     payload keys via **extras.
 
-    *event_id*, *run_id*, *conversation_id*, and *correlation_id*
-    are for callers that need stable idempotency keys (e.g. WebUI).
+    *job_id*, *conversation_id*, and *correlation_id* are for callers
+    that need stable idempotency keys (e.g. WebUI).
 
-    Returns the *event_id* of the published job.
+    Returns the *job_id* of the published job.
     """
     import uuid
-    if event_id is None:
-        event_id = f"{channel}:{uuid.uuid4().hex[:16]}"
+    if job_id is None:
+        job_id = f"{channel}:{uuid.uuid4().hex[:16]}"
     payload: dict[str, Any] = {
         "text": text,
         "channel": channel,
@@ -243,15 +239,14 @@ def publish_chat(
     payload.update(extras)
 
     job = ChatJob(
-        event_id=str(event_id),
-        run_id=run_id or "",
+        job_id=str(job_id),
         conversation_id=conversation_id,
         correlation_id=correlation_id,
         kind=kind,
         payload=payload,
     )
     bus.agent_job_board.publish(job)
-    return str(event_id)
+    return str(job_id)
 
 
 __all__ = [
