@@ -8,8 +8,17 @@
 > `llm_job_board` / `a2a_job_board` / `mcp_server_changed_job_board` /
 > `seed_preset_tasks_job_board` / `change_provider_config_job_board` /
 > `run_task_job_board`）。旧的 `magi.bus.BusStore` / `agent_turn_store`
-> / `magi.agent.step.run_agent_step` 等已删除；文档里残留的旧符号
-> 仅作**行为锚点**参考，不是当前可调用路径。
+> / `magi.agent.step.run_agent_step` / `magic` 表 等已删除；文档里
+> 残留的旧符号仅作**行为锚点**参考，不是当前可调用路径。
+>
+> **Provider 凭证**：来自 `bus.settings_book` 三个 key —
+> `provider.name` / `provider.api_key` / `provider.model`。写侧唯一入口
+> 是 `bus.change_provider_config_job_board.publish(ChangeProviderConfigJob(...))`
+> （`publish()` 自包含：先落 settings_book 再建 job 行）。
+>
+> **Cookie**：v3 selected-MAGI session（`v3.<base64(payload)>.<sig>`，
+> payload 含 `v=3, magi_id, telegram_id, display_name, admin, assigned,
+> ts`）。v2 旧 cookie（payload 用 `magic_id`）在升级时强制失效。
 >
 > **实际入口**：
 >
@@ -190,30 +199,31 @@
 ```
 1. 提取 tgid = str(update.effective_chat.id)
 
-2. 身份解析 (_resolve_contact)
-   └─ ORM 查 Contact.telegram_id == tgid
-   └─ 返回 (contact_id, role, admin) 三元组
+2. 身份解析 (`_resolve_contact(bus, tgid)`)
+   └─ contacts_book.get_by_telegram(telegram_id=int(tgid)) — 返回
+     `(contact_id, role, admin)` 三元组或 None
+   └─ legacy `telegram.user.<tgid>.uid` meta key 已删除
 
 3. 角色分发:
    ├─ admin=True OR role=="assigned" → 通过，走 agent loop
    │   └─ admin 和 assigned 共享同一处理器 (admin 可在 TG 上与 MAGI 聊天)
    ├─ role=="guest" → 拒绝，发送 tgid 发现消息
-   └─ 无绑定 → 软自动创建 Contact (role="guest"，admin=False)
-       └─ 仍发送 tgid 发现消息，等待管理员提升角色
+   │   └─ `_send_stranger_reply` 同时软自动创建 Contact(role="guest", admin=False)
+   │     如果该 tgid 还没绑定 Contact
+   └─ 无绑定（contact is None）→ 也走 `_send_stranger_reply`，同样软创建
+       Contact(role="guest", admin=False)，并发送 tgid 发现消息
 
 4. 通过后:
-   ├─ resolve_or_create_tg_session → 一个 TG 对话一个持久 conversation
-   │   (sessions_book.get_or_create_for_channel(contact_id, channel="tg",
-   │    delivery_address=tgid))
-   ├─ bus.messages_book.add(conversation_id, role="user", text=text) —
-   │   落 user transcript（D.22 守卫在写入时执行）
-   └─ bus.agent_job_board.publish(ChatJob(
-        kind="channel.message.received",
-        conversation_id=f"tg:{tgid}",
-        payload={"text": text, "channel": "tg", "contact_id": contact_id,
-                 "conversation_id": conversation_id, "caller_role": role},
-        event_id=f"telegram:{tgid}:{message.message_id}",
-      ))
+   ├─ `conversation_id = _resolve_tg_session(bus, contact_id=..., tgid=...)` —
+     调 `bus.sessions_book.get_or_create_for_channel(contact_id=...,
+     channel="tg", delivery_address=tgid)`，一个 TG 对话一个持久 conversation
+   ├─ `_append_user_message(bus, conversation_id, text)` — 落 user transcript
+     （D.22 守卫在写入时执行）
+   ├─ fire-and-forget `_send_read_receipt(update, bus)` — 发一个"已读"表情
+   └─ `publish_chat(bus, text=..., channel="tg", contact_id=...,
+     conversation_id=..., caller_role=role,
+     event_id=f"telegram:{tgid}:{message_id}", chat_id=tgid,
+     tg_message_id=message_id)` — 投递到 agent_job_board
 ```
 
 **Contact.role 枚举 (2024 collapse)**:
@@ -394,40 +404,64 @@ POST /save-admin { tgids: list[str] }
 
 **入口**: `magi/channels/api/auth.py`
 
-### 两步骤登录
+### 两步骤登录（control-plane 入口）
 ```
 1. POST /auth/send-login-code { contact_id }
-   └─ 通过 delivery_job_board.publish(DeliveryJob(channel, destination, ...)) →
-     对应 channel worker claim loop → 原始 HTTP 发送 6 位码
-   └─ 5 分钟 TTL / 60s 冷却（settings_book 持久化）
+   └─ 通过 delivery_job_board.publish(DeliveryJob(channel="tg",
+     destination=str(contact.telegram_id),
+     payload={"text": code_text, "contact_id": contact_id}))
+     → 对应 channel worker claim loop → 原始 HTTP 发送 6 位码
+   └─ 5 分钟 TTL / 60s 冷却（settings_book 持久化在 auth.login_code）
+   └─ 发送失败 → 清掉 login_code 回滚
 
 2. POST /auth/verify-login-code { contact_id, code }
-   └─ 匹配 → 设置 magi_session cookie = sign_contact_id(contact_id)
-     （contact_id:timestamp:hmac[:16]）
-   └─ Cookie: HTTPOnly + SameSite=Lax + 14 天 TTL + HMAC 签名
-   └─ 签名密钥: SHA256(settings_book["auth.signing_key"] +
-      b"magi-session-signing")
+   └─ 匹配 → 设置 cookie
+     `_sign_selected_session(bus, magi_id, telegram_id, display_name,
+                              admin, assigned)` 返回 `v3.<body>.<sig>`
+   └─ Cookie: HTTPOnly + SameSite=Lax + 14 天 TTL + HMAC-SHA256 签名
 ```
 
-### Cookie 身份模型
+### Cookie 身份模型（两套共存）
 ```
-magi_session cookie → _verify_signed_contact_id(token) → contact_id (int)
-  └─ 过期检查 + HMAC 签名验证
-  └─ 签名密钥: SHA256(state_dir + "magi-session-signing")
+签名密钥来源（按优先级）:
+  1. 控制面启用时：`MAGI_CONTROL_SECRET` 环境变量 →
+     SHA256(secret + b"magi-control-session")
+  2. 否则：bus.settings_book.get("auth.signing_key") →
+     SHA256(raw + b"magi-session-signing")
+  3. 启动兜底：secrets.token_bytes(32)
+     （仅极早期 control-plane init 路径）
+
+格式 A（legacy / private-runtime tests）:
+  `_sign_contact_id(bus, contact_id)` →
+    base64(contact_id:ts:hmac[:16])
+  → `_verify_signed_contact_id(token)` → contact_id (int)
+
+格式 B（当前 control-plane 默认；v3）:
+  `_sign_selected_session(bus, magi_id, telegram_id, display_name,
+                          admin, assigned)` → `v3.<base64(payload)>.<sig>`
+  payload: {v: 3, magi_id, telegram_id, display_name, admin, assigned, ts}
+  → `selected_session(token)` → payload dict
+  └─ cookie v2 → v3 升级时把历史 key "magic_id" 改成 "magi_id"，
+     部署时强制作废旧 cookie（version bump 2 → 3）
 
 _super_admins():
-  1. 主路径: select Contact where admin=True → contact_id set
-  2. 回退: 旧的 telegram.super_admins meta key
+  1. 主路径: 读 contacts_book (admin=True) → contact_id 集合
+  2. 回退: 旧 telegram.super_admins meta key
      └─ 旧值是 tgid 列表 → 解析为 Contact.id
 ```
 
 **不可改的守卫**:
 
-- Cookie 存的是 contact_id (int)，**不是** tgid/telegram_id
-- 签名不防文件系统级攻击者（有 state_dir 访问权 = 已拥有 DB）
-- `_super_admins()` 的 ORM 读取失败必须回退到 legacy meta（极早期启动场景）
-- 旧 cookie（pre-D.24，值为 tgid）在升级后失效，需重新登录
-- `MAGI_CONTROL_SECRET` 存在时优先（control plane 用同一 secret 派生签名密钥）
+- Cookie payload 主键是 `contact_id`（历史 `uid` 即 `Contact.id`），
+  **不是** tgid / telegram_id。
+- v3 cookie 必须包含 `magi_id`（不是 `magic_id`）— 浏览器不能跨 MAGI
+  复用 cookie。
+- v3 cookie 必须包含 admin / assigned 标志 — 服务端不再次查表。
+- `_super_admins()` 的 ORM 读取失败必须回退到 legacy meta（极早期启动场景）。
+- 旧 cookie（pre-v3，payload 用 `magic_id`）在升级后失效，需重新登录。
+- 签名不防文件系统级攻击者（有 state_dir 访问权 = 已拥有 DB）。
+- `MAGI_CONTROL_SECRET` 存在时优先于 settings_book 来源（control plane
+  共用 secret 派生签名密钥）。
 
 ---
 
@@ -456,23 +490,41 @@ _super_admins():
 
 ---
 
-## 10. Contact 工具 — Upsert 逻辑
+## 10. Contact 工具 — Notes 模型
 
 **入口**: `magi/tools/memory/contacts/`
+（每个工具一个模块：`add_contact.py` / `add_contact_note.py` /
+`update_contact_note.py` / `delete_contact_note.py` /
+`update_daily_note.py` / `search_contacts.py`）
 
 ```
-工具: add_contact / update_contact / delete_contact / search_contacts
+工具清单:
+  - add_contact              — 新建或更新 Contact 主档（owner_id, person_id 唯一）
+  - add_contact_note         — 给 Contact 添加一条 note 行
+  - update_contact_note      — 按 note_id 更新某条 note
+  - delete_contact_note      — 按 note_id 删除某条 note
+  - update_daily_note        — upsert 当天 daily note（按 contact_id + date 唯一）
+  - search_contacts          — 按 name / display_name 搜索
 
-写门禁（Tool.gate 合并 role + admin）:
+写门禁（Tool.gate 合并 role + admin；ALLOWED_ROLES = {"admin", "assigned"}）:
   admin=True → 允许
   role="assigned" → 允许
   其他 → 拒绝
 
-add_contact:
+add_contact（upsert 语义）:
   └─ 查找 (owner_id, person_id) 唯一对
-  └─ 存在 → upsert (累积 notes)，不创建重复行
+  └─ 存在 → 累积更新 name / display_name，不创建重复行
+  └─ 不存在 → 创建 Contact(role 默认 "assigned"，admin 必须 False)
 
-format_contact_block:
+add/update/delete_contact_note:
+  └─ 每个 note 是 contact_notes 表的独立行
+  └─ update / delete 必须按 note_id，**不**整体重写 contact
+
+update_daily_note:
+  └─ 按 (contact_id, date) upsert — 一天一行
+  └─ 读路径：`contact_notes_book.read_daily_note(contact_id)` 返回当天行
+
+format_contact_block（在 system prompt 中渲染）:
   └─ 仅渲染当前对话者 (per-chat)
   └─ 2KB 上限
   └─ WebUI 空 chat_id 跳过
@@ -482,9 +534,14 @@ format_contact_block:
 
 **不可改的守卫**:
 
-- (owner_id, person_id) 唯一约束，不可移除
-- add_contact 必须是 upsert 语义（累积更新，不创建重复行）
+- `(owner_id, person_id)` 唯一约束，不可移除
+- `add_contact` 必须是 upsert 语义（累积更新，不创建重复行）
+- note 的增删改必须按 `note_id` 走独立工具 — **不能**在 `add_contact`
+  里覆盖 notes 列表
+- daily note 必须按天 upsert（一天一行）— 不允许任意时间戳多条
 - contact block 渲染必须用真实 display_name，绝不显示原始 person_id
+- contact / guest 角色**所有** Contact 写工具都被拒（add / note /
+  daily note / search 都被 gate）
 
 ---
 
@@ -656,7 +713,8 @@ Hook 点（v1）:
 - [ ] D.22 通道守卫未被移除（MessageBook.add 写入时检查 channel 匹配）
 - [ ] LLM 凭证严格模式未被回退（get_provider 必须 strict mode）
 - [ ] LLM 凭证只从 `bus.settings_book` 读取，不从 Contact 表
-- [ ] Cookie 值仍为 `contact_id` (int)，非 tgid
+- [ ] Cookie 值仍为 `contact_id` (int)，非 tgid / magic_id
+- [ ] v3 selected-MAGI cookie 必须包含 `magi_id`（不是 `magic_id`）
 - [ ] Onboarding 验证码一次性使用（任何路径都 state_delete）
 - [ ] TG adapter send 走原始 HTTP，不走 bot.send_message
 - [ ] Task runner 不绑定 TG 回调，只发 ChatJob 给 AgentWorker
@@ -666,3 +724,4 @@ Hook 点（v1）:
 - [ ] Agent Worker 接收 `magi_id` 用于渲染 per-MAGI instruction block
 - [ ] Hook handlers 不持有 Bus 引用（仅 HookEnvelope 输入）
 - [ ] ProactiveWorker 是 WorkerRegistry 最后启动的 Worker
+- [ ] Provider 配置变更只走 `change_provider_config_job_board`，不直接 `settings_book.set`
