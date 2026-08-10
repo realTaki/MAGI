@@ -114,17 +114,16 @@ PostgreSQL 与公共工作区资源。
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`，然后依次执行 `magi init`、`magi node run`、`magi webui run` |
+| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`（安装、初始化并启动） |
 | 我在迭代 k8s 模块化方案 | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 **单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker，也没有 k8s），
-状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`（macOS、Windows）。
-先执行 `magi init` provision 第一个 MAGI（`eva-000`）和根 MAGI Society
-**Genesis**（让 `eva-000` 担任 ADAM）；再执行 `magi node run` 与
-`magi webui run`。运行命令不会创建状态。打开
-[http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，
-再完成 onboarding。需要新 MAGI 时，运行
+状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`（macOS、Windows）。只需运行
+`./deploy/cli/install.sh`：它会安装 MAGI，provision 第一个 MAGI（`eva-000`）和根
+MAGI Society **Genesis**（让 `eva-000` 担任 ADAM），并启动 Runtime 与 WebUI。打开
+[http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成
+onboarding。以后只需执行 `magi start`，它会保留现有状态并恢复未运行的服务。需要新 MAGI 时，运行
 `magi node create --name eva-001`、`magi node run --name eva-001` 即可；
 每个新 MAGI 都是独立 OS 进程。
 

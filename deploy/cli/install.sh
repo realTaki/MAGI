@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Install MAGI for the openclaw-style single-machine deployment.
 #
-# This script performs three things and then exits:
+# This script installs MAGI and starts a usable local instance:
 #
 #  1. Verify the `magi` console script is on PATH (or invoke uv to
 #     install the package into a user venv).
-#  2. Print the data root under the OS-specific MAGI path:
+#  2. Provision Genesis on the first run, then start the first MAGI and WebUI.
+#  3. Print the data root under the OS-specific MAGI path:
 #       - Linux:   ~/.magi
 #       - macOS:   ~/Documents/.magi
 #       - Windows: ~/Documents/.magi  (resolved via $USERPROFILE)
-#  3. Print a one-page cheat sheet of the post-install commands.
-#
-# It does not start a Runtime or register a service.  Provision explicitly
-# with `magi init`, then choose either managed `magi node run` or a service
-# manager invoking `magi node run --foreground`.
+# `magi start` is idempotent: later invocations preserve the existing
+# Society and only recover processes that are not already running.
 set -euo pipefail
 
 HOST_WORKSPACE_DIR_DEFAULT() {
@@ -48,19 +46,20 @@ else
   log "magi already installed: $(command -v magi)"
 fi
 
-# 2. Print the cheat sheet. `magi init` owns state materialisation.
+# 2. Provision and start.  Keep the resolved path explicit so the CLI and the
+# installer always operate on the same data root.
+log "starting MAGI (data: $DATA_ROOT)"
+HOST_WORKSPACE_DIR="$DATA_ROOT" magi start
 
 cat <<EOF
 
-[$(basename "$0")] Done. Three things you can do next:
+[$(basename "$0")] MAGI is ready: http://127.0.0.1:42069
+Data: $DATA_ROOT
 
-    magi init                     # provision Genesis and eva-000
-    magi node run                 # launch eva-000 as a managed local process
-    magi webui run                # launch the singleton control service
+Later use:
 
-Optional environment overrides:
-
-    HOST_WORKSPACE_DIR=/some/path     # relocate the data root before 'init'
-    MAGI_KUBECONFIG=...           # only relevant for the k8s deploy paths
+    magi start                    # safely start/recover the local instance
+    magi node create --name eva-001
+    magi node run --name eva-001
 
 EOF

@@ -4,7 +4,7 @@
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
-| 单机本地（非容器 / CLI） | [deploy/cli/](cli/) | `./deploy/cli/install.sh` + `magi init` + `magi node run` |
+| 单机本地（非容器 / CLI） | [deploy/cli/](cli/) | `./deploy/cli/install.sh`（安装、初始化并启动） |
 | k8s 单机（dev 模式） | [deploy/k8s-dev/](k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | k8s 生产（已有集群） | [deploy/k8s/](k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 

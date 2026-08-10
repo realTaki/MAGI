@@ -138,18 +138,19 @@ supported and live under `deploy/`. All startup code paths converge on
 
 | Situation | Path | Entry point |
 | --- | --- | --- |
-| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`, `magi init`, then `magi node run` + `magi webui run` |
+| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` (installs, initializes, and starts MAGI) |
 | I'm iterating on the k8s modular approach | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 The **single-machine path** is the fastest way to take MAGI for a
 spin. It runs directly on the host (no Docker, no k8s) and stores
 state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
-Windows). After `./deploy/cli/install.sh`, run `magi init` to provision
-the first MAGI (`eva-000`) and the root MAGI Society **Genesis**. Then run
-`magi node run` and `magi webui run`; neither run command creates state. Open
-[http://127.0.0.1:42069](http://127.0.0.1:42069), select the running
-MAGI, and complete onboarding. Each new MAGI is a separate
+Windows). Run `./deploy/cli/install.sh` once: it installs MAGI, provisions
+the first MAGI (`eva-000`) and the root MAGI Society **Genesis**, then starts
+the Runtime and WebUI. Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
+select the running MAGI, and complete onboarding. Afterwards, `magi start`
+safely preserves the existing Society and recovers services that are not
+running. Each new MAGI is a separate
 process: `magi node create --name eva-001`, then `magi node run --name eva-001`.
 
 The **k8s-dev path** starts a local `kind` cluster and the first

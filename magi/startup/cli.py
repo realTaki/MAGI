@@ -7,7 +7,8 @@ import asyncio
 from typing import Sequence
 
 from magi.startup import local, webui
-from magi.startup.config import DEFAULT_MAGI_NAME, StartupConfig
+from magi.startup.config import DEFAULT_MAGI_NAME, WEBUI_PORT, StartupConfig
+from magi.startup.paths import resolve_runtime_state_path
 from magi.startup.provision import create_node, init_first_magi
 
 
@@ -23,6 +24,30 @@ def _config(args: argparse.Namespace) -> StartupConfig:
 def cmd_init(args: argparse.Namespace) -> int:
     spec = init_first_magi(_config(args))
     print(f"initialized {spec.magi_name} (MAGI_ID={spec.magi_id}, port={spec.runtime_port})")
+    return 0
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    """Start a usable local MAGI installation in one idempotent command.
+
+    A missing first-node runtime specification means this is a first launch,
+    so provisioning is performed before either process is started.  Existing
+    state is never recreated: an invalid or retired workspace still fails via
+    the normal lifecycle commands rather than being silently replaced.
+    """
+    config = _config(args)
+    if not resolve_runtime_state_path(config.workspace_dir).exists():
+        spec = init_first_magi(config)
+        print(f"initialized {spec.magi_name} (MAGI_ID={spec.magi_id})")
+
+    node_status = local.status_magi(config=config)
+    if node_status.alive:
+        print(f"MAGI {config.magi_name!r} is already running (pid={node_status.pid})")
+    elif local.start_magi(config=config) != 0:
+        return 1
+
+    webui.ensure_webui_running(config=config)
+    print(f"MAGI is ready at http://127.0.0.1:{WEBUI_PORT}")
     return 0
 
 
@@ -101,6 +126,11 @@ def _lifecycle_parser(parent: argparse._SubParsersAction, name: str, handler, *,
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="magi", description="MAGI provisioning and runtime lifecycle")
     root = parser.add_subparsers(dest="command", required=True)
+
+    start = root.add_parser("start", help="initialize (when needed) and start local MAGI + WebUI")
+    _common(start)
+    start.set_defaults(handler=cmd_start)
+
     init = root.add_parser("init", help="provision Genesis and eva-000")
     _common(init)
     init.set_defaults(handler=cmd_init)
