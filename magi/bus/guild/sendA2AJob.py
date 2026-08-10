@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Index, Integer, String
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
@@ -24,7 +24,6 @@ class SendA2AJob:
     """Publisher input — one row per peer-MAGI call."""
 
     invocation_id: str = ""
-    run_id: str = ""
     target: str = ""
     tool_call_id: str | None = None
     request_event_id: str | None = None
@@ -55,7 +54,6 @@ class _A2AInvocationRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     invocation_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), nullable=False)
     target: Mapped[str] = mapped_column(String(512), nullable=False)
     tool_call_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     request_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
@@ -79,8 +77,6 @@ class _A2AInvocationRow(Base):
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
-    __table_args__ = (Index("ix_a2a_invocations_run_id", "run_id"),)
-
 
 # -- Queue ----------------------------------------------------------------
 
@@ -99,7 +95,6 @@ class sendA2AJobBoard(
         invocation_id = job.invocation_id or new_job_id()
         row = _A2AInvocationRow(
             invocation_id=invocation_id,
-            run_id=job.run_id,
             target=job.target,
             tool_call_id=job.tool_call_id,
             request_event_id=job.request_event_id,

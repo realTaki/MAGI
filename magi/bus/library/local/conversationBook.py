@@ -62,7 +62,6 @@ class Message:
     ts: str
     archived: int = 0
     content_blocks: list[dict[str, Any]] | None = None
-    run_id: str | None = None
     llm_attempt_id: str | None = None
 
 
@@ -273,7 +272,6 @@ class _MessageRow(Base):
     content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )
-    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
@@ -625,7 +623,6 @@ class MessageBook(BaseBook[_MessageRow, Message]):
     def add(self, *, conversation_id: str, role: str, text: str,
             message_id: str | None = None, ts: str | None = None,
             content_blocks: list[dict[str, Any]] | None = None,
-            run_id: str | None = None,
             llm_attempt_id: str | None = None) -> Message:
         """Add one message row."""
         import uuid
@@ -642,7 +639,6 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 text=text,
                 ts=ts,
                 content_blocks=content_blocks,
-                run_id=run_id,
                 llm_attempt_id=llm_attempt_id,
             )
             s.add(row)

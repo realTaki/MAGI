@@ -40,7 +40,6 @@ class RunTaskJob:
 class RunTaskResult:
     job_id: str
     success: bool
-    run_id: str | None = None
     error: str | None = None
 
 
@@ -60,7 +59,6 @@ class _RunTaskJobRow(Base):
         type_=__import__("sqlalchemy").JSON, nullable=True,
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)

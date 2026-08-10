@@ -37,14 +37,10 @@ from magi.bus.library.magis.membershipBook import (
 from magi.bus.library.magis.runtimeBook import (
     ControlSecret,
     ControlSecretBook,
-    PortAllocation,
-    PortAllocationBook,
     Runtime,
     RuntimeBook,
     RuntimeDesiredState,
     RuntimeObservedState,
-    WorkspaceArchive,
-    WorkspaceArchiveBook,
 )
 
 
@@ -63,14 +59,10 @@ __all__ = [
     "MagisRole",
     "MagisRoleBook",
     "PASSWORD",
-    "PortAllocation",
-    "PortAllocationBook",
     "RESERVED_ROLE_NAMES",
     "Runtime",
     "RuntimeBook",
     "RuntimeDesiredState",
     "RuntimeObservedState",
     "TG_CODE",
-    "WorkspaceArchive",
-    "WorkspaceArchiveBook",
 ]

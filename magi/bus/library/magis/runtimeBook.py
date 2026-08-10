@@ -1,23 +1,40 @@
-"""RuntimeBook — unified runtime registry for both local and K8s backends.
+"""RuntimeBook — single unified runtime registry for MAGI Society.
 
-One row per provisioned MAGI runtime. Replaces the old pair of
-``control_runtime_state`` (launcher view: PID / port / workspace) and
-``eva_runtimes`` (orchestrator view: K8s Deployment name / namespace /
-image) with a single table that discriminates by ``backend_kind``.
+One row per provisioned MAGI runtime. Replaces the previous quartet of
+tables — ``control_runtime_state`` (launcher view), ``eva_runtimes``
+(orchestrator view), ``control_port_allocations`` (sticky port
+allocations), ``control_workspace_archive`` (soft-deleted tombstones)
+— with a single ``runtime_state`` table that discriminates by
+``backend_kind``.
 
-- Local mode populates the process fields (``pid``, ``base_url``,
-  ``port``, ``workspace_dir``, ``log_dir``, ``audit_log_path``,
-  ``spawned_at``, ``stopped_at``); K8s-only fields stay NULL.
-- K8s mode populates the resource fields (``deployment_name``,
-  ``namespace``, ``image``, ``extra``); the launcher still records
-  ``pid`` once the Deployment is up and the pod sidecar reports its
-  PID back through the runtime.
-- Lifecycle enums (``desired_state`` / ``observed_state``) live once
-  here, instead of being duplicated across the two old tables.
+Field groups on the unified row
+-------------------------------
 
-FK target: ``runtime_id`` is the same identity used everywhere else
-(``magis.adam_id``, the runtime spec's ``magi_id``, etc.) so callers
-can pass it without translating between ``magi_id`` and ``runtime_id``.
+- **Identity + lifecycle** — ``runtime_id`` (PK, = MAGI 身份),
+  ``backend_kind``, ``desired_state``, ``observed_state``,
+  ``updated_at``, ``stale``.
+- **Local-mode address** — ``backend_ref``, ``workspace_dir``,
+  ``log_dir``, ``audit_log_path``, ``pid``, ``port``, ``base_url``,
+  ``spawned_at``, ``stopped_at``.
+- **K8s-mode address** — ``deployment_name``, ``namespace``,
+  ``image``, ``extra``.
+- **Sticky port allocation** — ``port_in_use_since``,
+  ``port_released_at``.  ``port_in_use_since`` is set when the
+  launcher first claims a port for this runtime;
+  ``port_released_at`` is set when the orchestrator hands it back.
+  Rows where ``port_released_at IS NULL`` are the "active
+  allocations" enumerated by ``list_allocated_ports``.
+- **Workspace archive (tombstone)** — ``archive_path``,
+  ``archived_at``, ``restored``.  Set only when a runtime's
+  workspace has been soft-deleted; ``restored=True`` records that
+  it was later brought back.
+
+The unified design means:
+
+- `_validate_runtime_identity` only needs one Book lookup (no JOIN).
+- `_register_local_runtime` records the port allocation in the same
+  upsert as the static config — no second Book write.
+- `available_magi` filters in-process; no cross-table read.
 """
 
 from __future__ import annotations
@@ -30,12 +47,10 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum as SAEnum,
-    ForeignKey,
     Integer,
     LargeBinary,
     String,
     Text,
-    UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -84,21 +99,12 @@ class Runtime:
     namespace: str | None = None
     image: str | None = None
     extra: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PortAllocation:
-    port: int
-    runtime_id: int
-    in_use_since: datetime
-    released_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class WorkspaceArchive:
-    runtime_id: int
-    archive_path: str
-    archived_at: datetime
+    # Sticky port allocation (NULL for an un-allocated runtime).
+    port_in_use_since: datetime | None = None
+    port_released_at: datetime | None = None
+    # Workspace tombstone (NULL for live runtimes).
+    archive_path: str | None = None
+    archived_at: datetime | None = None
     restored: bool = False
 
 
@@ -142,30 +148,12 @@ class _RuntimeRow(Base):
     namespace: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image: Mapped[str | None] = mapped_column(String(256), nullable=True)
     extra: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class _ControlPortAllocationRow(Base):
-    __tablename__ = "control_port_allocations"
-
-    port: Mapped[int] = mapped_column(Integer, primary_key=True)
-    runtime_id: Mapped[int] = mapped_column(
-        ForeignKey("runtime_state.runtime_id"),
-        unique=True, nullable=False,
-    )
-    in_use_since: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    __table_args__ = (
-        UniqueConstraint("runtime_id", name="uq_control_port_alloc_runtime"),
-    )
-
-
-class _ControlWorkspaceArchiveRow(Base):
-    __tablename__ = "control_workspace_archive"
-
-    runtime_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    archive_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    archived_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Sticky port allocation.
+    port_in_use_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    port_released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Workspace tombstone.
+    archive_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     restored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
@@ -214,6 +202,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         namespace: str | None = None,
         image: str | None = None,
         extra: str | None = None,
+        allocate_port: bool = True,
     ) -> Runtime:
         """Insert or update the static config for one runtime.
 
@@ -222,6 +211,12 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         :meth:`set_desired_state` / :meth:`set_observed_state` helpers
         below. ``upsert`` only writes the identity and address fields;
         it never pretends a process is alive.
+
+        When ``allocate_port=True`` (default) and ``port`` is set, the
+        sticky port allocation is also recorded in the same write
+        (``port_in_use_since = now``, ``port_released_at = NULL``).
+        Pass ``allocate_port=False`` to skip — useful for ops callers
+        that only want to refresh metadata.
         """
         now = utcnow_naive()
         with self._session() as s:
@@ -236,6 +231,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
                     port=port, base_url=base_url,
                     deployment_name=deployment_name, namespace=namespace,
                     image=image, extra=extra, updated_at=now,
+                    port_in_use_since=now if (allocate_port and port is not None) else None,
                 )
                 s.add(row)
             else:
@@ -250,6 +246,9 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
                 row.namespace = namespace
                 row.image = image
                 row.extra = extra
+                if allocate_port and port is not None and row.port_in_use_since is None:
+                    row.port_in_use_since = now
+                    row.port_released_at = None
                 row.updated_at = now
             s.commit()
             s.refresh(row)
@@ -342,6 +341,102 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             s.refresh(row)
             return self._row_to_dto(row)
 
+    def allocate_port(self, *, runtime_id: int, port: int) -> Runtime | None:
+        """Record (or refresh) a sticky port allocation.
+
+        Caller is expected to have already inserted the runtime row
+        via :meth:`upsert`; this method only stamps the
+        ``port_in_use_since`` field if missing, clears
+        ``port_released_at``, and updates the live ``port``.  Returns
+        ``None`` if no such runtime exists.
+        """
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(
+                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
+            )
+            if row is None:
+                return None
+            if row.port_in_use_since is None:
+                row.port_in_use_since = now
+            row.port_released_at = None
+            row.port = port
+            row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def release_port(self, *, runtime_id: int) -> Runtime | None:
+        """Hand back the sticky port allocation for one runtime.
+
+        The next :meth:`allocate_port` (or :meth:`upsert`) call will
+        record a new ``port_in_use_since``.  The ``port`` field is
+        cleared so the row no longer advertises a live address.
+        """
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(
+                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
+            )
+            if row is None:
+                return None
+            if row.port_in_use_since is None:
+                return self._row_to_dto(row)
+            row.port_released_at = now
+            row.port = None
+            row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def list_allocated_ports(self) -> set[int]:
+        """Return the set of currently-allocated ports (no released rows).
+
+        Used by ``create_node`` to pick the next free sticky port for
+        a new runtime.  Rows with ``port_released_at IS NOT NULL`` are
+        skipped — they have handed their port back.
+        """
+        with self._session() as s:
+            rows = s.scalars(
+                select(_RuntimeRow).where(
+                    _RuntimeRow.port_released_at.is_(None),
+                    _RuntimeRow.port.is_not(None),
+                )
+            ).all()
+            return {row.port for row in rows if row.port is not None}
+
+    def archive_workspace(self, *, runtime_id: int, archive_path: str) -> Runtime | None:
+        """Record a workspace tombstone for a soft-deleted runtime."""
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(
+                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
+            )
+            if row is None:
+                return None
+            row.archive_path = archive_path
+            row.archived_at = now
+            row.restored = False
+            row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def restore_workspace(self, *, runtime_id: int) -> Runtime | None:
+        """Mark an archived workspace as restored."""
+        now = utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(
+                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
+            )
+            if row is None:
+                return None
+            row.restored = True
+            row.updated_at = now
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
     def remove(self, *, runtime_id: int) -> bool:
         """Remove a control record after its runtime has been deprovisioned."""
         with self._session() as s:
@@ -355,48 +450,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             return True
 
 
-# -- Control-plane auxiliary Books (port allocations, archive, secrets) --
-
-
-class PortAllocationBook(BaseBook[_ControlPortAllocationRow, PortAllocation]):
-    model_cls = _ControlPortAllocationRow
-    dto_cls = PortAllocation
-
-    def get(self, *, runtime_id: int) -> PortAllocation | None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_ControlPortAllocationRow).where(
-                    _ControlPortAllocationRow.runtime_id == runtime_id
-                )
-            )
-            return self._row_to_dto(row) if row else None
-
-    def list_all(self) -> list[PortAllocation]:
-        with self._session() as s:
-            rows = s.scalars(select(_ControlPortAllocationRow)).all()
-            return [self._row_to_dto(r) for r in rows]
-
-    def allocate(self, *, runtime_id: int, port: int) -> PortAllocation:
-        """Record a sticky port allocation for one runtime."""
-        now = utcnow_naive()
-        with self._session() as s:
-            row = _ControlPortAllocationRow(
-                port=port, runtime_id=runtime_id, in_use_since=now,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
-
-
-class WorkspaceArchiveBook(BaseBook[_ControlWorkspaceArchiveRow, WorkspaceArchive]):
-    model_cls = _ControlWorkspaceArchiveRow
-    dto_cls = WorkspaceArchive
-
-    def list_all(self) -> list[WorkspaceArchive]:
-        with self._session() as s:
-            rows = s.scalars(select(_ControlWorkspaceArchiveRow)).all()
-            return [self._row_to_dto(r) for r in rows]
+# -- Control-plane secret Book (kept separate — orthogonal concern) -----
 
 
 class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
@@ -421,10 +475,6 @@ __all__ = [
     "RuntimeBook",
     "RuntimeDesiredState",
     "RuntimeObservedState",
-    "PortAllocation",
-    "PortAllocationBook",
-    "WorkspaceArchive",
-    "WorkspaceArchiveBook",
     "ControlSecret",
     "ControlSecretBook",
 ]
