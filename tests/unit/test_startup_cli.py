@@ -23,7 +23,7 @@ def _stopped_status(root: Path) -> LocalSlotStatus:
 
 def test_start_provisions_then_starts_local_services(monkeypatch, tmp_path: Path, capsys) -> None:
     calls: list[str] = []
-    spec = RuntimeSpec("eva-000", "1", "sqlite:///magis.db", 42070, True)
+    spec = RuntimeSpec("eva-000", "1", "genesis", "sqlite:///magis.db", 42070, True)
 
     monkeypatch.setattr(cli, "init_first_magi", lambda _config: calls.append("init") or spec)
     monkeypatch.setattr(cli.local, "status_magi", lambda **_kwargs: _stopped_status(tmp_path))

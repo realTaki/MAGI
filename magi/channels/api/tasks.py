@@ -57,7 +57,7 @@ class TaskOut(BaseModel):
 
 
 class RunResponse(BaseModel):
-    run_id: str
+    job_id: str
 
 
 class TaskRunOut(BaseModel):
@@ -170,11 +170,11 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
         raise MagiHTTPException(404, "not_found.task", "task not found")
     if not task.enabled:
         raise MagiHTTPException(409, "task.disabled", "task is disabled")
-    run_id = bus.run_task_job_board.publish(RunTaskJob(
+    job_id = bus.run_task_job_board.publish(RunTaskJob(
         task_id=task.id, manual=True, fired_by="api_manual_run",
         conversation_id=task.conversation_id, contact_id=task.contact_id,
     ))
-    return RunResponse(run_id=run_id)
+    return RunResponse(job_id=job_id)
 
 
 @router.get("/tasks/{task_id}/runs", response_model=list[TaskRunOut])

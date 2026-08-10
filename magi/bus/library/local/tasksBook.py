@@ -740,11 +740,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
           'cron_tick' | 'run_at_consume' | 'manual_run' |
           'api_manual_run' | 'schedule_task_tool'
         """
-        run_id = id or uuid.uuid4().hex
+        new_id = id or uuid.uuid4().hex
         started_at = utcnow_naive().isoformat()
         with self._session() as s:
             run_row = _TaskRunRow(
-                id=run_id, task_id=task_id, trigger=trigger,
+                id=new_id, task_id=task_id, trigger=trigger,
                 started_at=started_at, status="running",
             )
             s.add(run_row)

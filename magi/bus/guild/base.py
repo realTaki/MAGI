@@ -77,7 +77,7 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
             return _row_to_job(row, self.job_cls) if row else None
 
     def submit_result(self, *, key: str, result: ResultT) -> None:
-        """提交结果，key 为 natural_key_attr 的值（如 job_id / event_id）。"""
+        """提交结果，key 为 natural_key_attr 的值（如 job_id / invocation_id）。"""
         with self._session() as s:
             self._submit(s, key=key, result=result)
             s.commit()

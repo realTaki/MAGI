@@ -91,7 +91,7 @@ class TelegramWorker(ChannelWorker):
         try:
             publish_chat(
                 self.bus, text=text, channel="tg", contact_id=contact_id, conversation_id=conversation_id,
-                caller_role=role, event_id=f"telegram:{tgid}:{update.effective_message.message_id}",
+                caller_role=role, job_id=f"telegram:{tgid}:{update.effective_message.message_id}",
                 chat_id=tgid, tg_message_id=update.effective_message.message_id,
             )
         except Exception:

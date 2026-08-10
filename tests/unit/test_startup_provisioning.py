@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from magi.bus import open_bus, open_control_bus
 from magi.bus.provision import StorageNotProvisioned
@@ -31,6 +31,23 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert open_bus(
         state_dir=str(workspace / "memories"), magis_url=spec.magis_database_url,
     ).settings_book.get(key="auth.signing_key")
+
+
+def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None:
+    config = StartupConfig(tmp_path, DEFAULT_MAGI_NAME, None, None, "research")
+    spec = init_first_magi(config)
+
+    assert spec.magis_name == "research"
+    assert (tmp_path / "MAGI_Societies" / "research" / "magis.db").is_file()
+    bus = open_bus(
+        state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
+    )
+    local_tables = set(inspect(bus._local_factory.engine).get_table_names())
+    magis_tables = set(inspect(bus._magis_factory.engine).get_table_names())
+    assert {"settings", "chat_jobs"} <= local_tables
+    assert "magis" not in local_tables
+    assert {"magis", "runtime_state"} <= magis_tables
+    assert "settings" not in magis_tables
 
 
 def test_node_creation_has_sticky_distinct_runtime_port(tmp_path: Path) -> None:
@@ -102,7 +119,13 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
 
     assert bus._local_factory.url == spec.magis_database_url
     assert bus._magis_factory is not None
-    assert not control_dir.exists()
+    # The per-MAGIS control directory is provisioned with its control secret;
+    # opening the control BUS must not touch the node-private database.
+    assert control_dir.is_dir()
+    bus.settings_book.set(key="control.test", value="shared")
+    assert bus.control_settings_book is not None
+    assert bus.control_settings_book.get(key="control.test") == "shared"
+    assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())
     assert node_database.stat().st_mtime_ns == before
 
 
