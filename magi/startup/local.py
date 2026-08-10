@@ -28,7 +28,7 @@ from typing import Literal
 
 from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
-    resolve_magis_database_url,
+    resolve_magis_control_dir,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
@@ -225,12 +225,8 @@ def _mark_registry_stopped(config: StartupConfig) -> None:
             RuntimeObservedState,
         )
 
-        control_dir = str(
-            config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"
-        )
-        magis_url = config.magis_database_url or resolve_magis_database_url(
-            config.host_workspace_dir
-        )
+        control_dir = str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name))
+        magis_url = spec.magis_database_url
         bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
     except Exception:
         return

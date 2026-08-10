@@ -1,7 +1,7 @@
-"""PostgreSQL-backed state used exclusively by the singleton WebUI.
+"""MAGIS-backed state used exclusively by the singleton WebUI.
 
 This module is the channel-side façade for the singleton WebUI's
-PG-backed control-plane KV. Reads and writes are forwarded through the bus
+shared control-plane KV. Reads and writes are forwarded through the bus
 facade so the channel layer does not open persistence directly.
 
 The ``enabled()`` flag is intentionally local: it's a pure env-var
@@ -17,8 +17,12 @@ from magi.bus import Bus
 
 
 def _control(bus: Bus):
-    """Return the explicit settings Book for this control application."""
-    return bus.settings_book
+    """Return the MAGIS-owned control setting book.
+
+    The fallback keeps small Bus-shaped test doubles working; a real control
+    BUS always has ``control_settings_book``.
+    """
+    return bus.control_settings_book or bus.settings_book
 
 
 def enabled() -> bool:

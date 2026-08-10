@@ -16,6 +16,7 @@ class RuntimeSpec:
 
     magi_name: str
     magi_id: str
+    magis_name: str
     magis_database_url: str
     runtime_port: int
     is_first_magi: bool
@@ -42,6 +43,7 @@ def load_runtime_spec(workspace_dir: Path) -> RuntimeSpec:
         return RuntimeSpec(
             magi_name=str(data["magi_name"]),
             magi_id=str(data["magi_id"]),
+            magis_name=str(data["magis_name"]),
             magis_database_url=str(data["magis_database_url"]),
             runtime_port=int(data["runtime_port"]),
             is_first_magi=bool(data["is_first_magi"]),

@@ -6,8 +6,12 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect, text
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus, open_control_bus
+from magi.bus.library.magis.authCredentialBook import _AuthCredentialRow
+from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
 from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, StartupConfig
 from magi.startup.provision import create_node, init_first_magi
@@ -48,6 +52,15 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     assert "magis" not in local_tables
     assert {"magis", "runtime_state"} <= magis_tables
     assert "settings" not in magis_tables
+
+
+def test_shared_magis_tables_have_no_foreign_key_to_local_contacts() -> None:
+    dialect = postgresql.dialect()
+    admin_ddl = str(CreateTable(_MagisAdminRow.__table__).compile(dialect=dialect))
+    credential_ddl = str(CreateTable(_AuthCredentialRow.__table__).compile(dialect=dialect))
+
+    assert "REFERENCES contacts" not in admin_ddl
+    assert "REFERENCES contacts" not in credential_ddl
 
 
 def test_node_creation_has_sticky_distinct_runtime_port(tmp_path: Path) -> None:

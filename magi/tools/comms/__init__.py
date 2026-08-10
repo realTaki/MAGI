@@ -9,6 +9,6 @@
     schema-only effect: declares an outbound
     agent-to-agent intent without firing any local
     tool work. The AgentWorker persists it onto
-    ``bus.a2a_job_board`` (``a2a_invocations``) at
+    ``bus.a2a_job_board`` (``a2a_jobs``) at
     transition-commit time.
 """

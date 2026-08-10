@@ -29,9 +29,8 @@ async def receive(request: Request) -> JSONResponse:
 
 # ---------------------------------------------------------------------------
 # Previous full implementation, kept commented out for future reference.
-# Restoring this requires (a) finishing the A2A protocol design, (b) re-
-# introducing ``run_id`` only if a real cross-MAGI correlation key is
-# needed, and (c) re-routing through ``bus.agent_job_board`` after the
+# Restoring this requires (a) finishing the A2A protocol design and (b)
+# re-routing through ``bus.agent_job_board`` after the
 # ``event_id`` → ``job_id`` rename in chatJob.py.
 # ---------------------------------------------------------------------------
 #
@@ -84,7 +83,7 @@ async def receive(request: Request) -> JSONResponse:
 #         bus.a2a_job_board.submit_result(
 #             key=reply_to,
 #             result=SendA2AResult(
-#                 invocation_id=reply_to,
+#                 job_id=reply_to,
 #                 success=not is_error,
 #                 status="completed" if not is_error else "failed",
 #                 response={"text": text},
@@ -93,12 +92,12 @@ async def receive(request: Request) -> JSONResponse:
 #         )
 #         return JSONResponse(
 #             status_code=202,
-#             content={"accepted": True, "event_id": event_id, "run_id": reply_to},
+#             content={"accepted": True, "event_id": event_id},
 #         )
 #     if kind != "request":
 #         return _error(400, "bad_request")
 #     from magi.bus.guild.chatJob import ChatJob
-#     run_id = bus.agent_job_board.publish(
+#     bus.agent_job_board.publish(
 #         ChatJob(
 #             job_id=f"a2a:{magi_id}:{event_id}",
 #             conversation_id=f"a2a:{magi_id}:{reply_to or event_id}",
@@ -119,7 +118,6 @@ async def receive(request: Request) -> JSONResponse:
 #         content={
 #             "accepted": True,
 #             "event_id": event_id,
-#             "run_id": run_id,
 #             "received_at": datetime.now(timezone.utc).isoformat(),
 #         },
 #     )

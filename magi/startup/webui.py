@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, Optional
 
 from magi.startup.config import StartupConfig, WEBUI_HOST, WEBUI_PORT
 from magi.startup.paths import (
+    resolve_magis_control_dir,
+    resolve_magis_database_url,
     resolve_webui_log_paths,
     resolve_webui_pid_path,
 )
@@ -203,11 +205,15 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
 
     root_workspace = config.host_workspace_dir / "MAGI_Citizens" / "eva-000"
     spec = load_runtime_spec(root_workspace)
+    # Control routes use the shared MAGIS Books.  Preserve that mode for an
+    # explicitly foreground-launched WebUI too, not only for its detached
+    # child process.
+    os.environ["MAGIS_DATABASE_URL"] = spec.magis_database_url
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.
     bus = open_control_bus(
-        control_dir=str(config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"),
+        control_dir=str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name)),
         magis_url=spec.magis_database_url,
     )
     app = create_control_app(context=ControlContext(bus=bus))
@@ -233,8 +239,10 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     # configurability — these are internal-only communication.
     env["MAGI_WEBUI_PORT"] = str(port)
     env["MAGI_WEBUI_HOST"] = WEBUI_HOST
-    if config.magis_database_url:
-        env["MAGIS_DATABASE_URL"] = config.magis_database_url
+    env["MAGIS_DATABASE_URL"] = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
+    env["MAGIS_NAME"] = config.magis_name
     return env
 
 

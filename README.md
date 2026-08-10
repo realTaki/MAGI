@@ -237,10 +237,12 @@ single-replica SQLite workspace under
 `/MAGI_Citizens/<MAGI_NAME>/memories/magi.db` — the path resolver
 detects `KUBERNETES_SERVICE_HOST` and defaults `HOST_WORKSPACE_DIR`
 to `/`, the PVC mounts the container root, and `MAGI_Citizens/<name>`
-is derived from `MAGI_NAME`. Each MAGIS has its own PostgreSQL database
-and public workspace PVC for organization facts and shared files.
-The four startup inputs
-(`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_DATABASE_URL`, `MAGI_ID`) are
+is derived from `MAGI_NAME`. Each MAGIS has its own database and public
+workspace PVC for organization facts and shared files: local deployments use
+an isolated SQLite file under `MAGI_Societies/<MAGIS_NAME>/`, while Kubernetes
+provisions one database per MAGIS in a shared PostgreSQL service. The startup
+inputs (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_NAME`,
+`MAGIS_DATABASE_URL`, `MAGI_ID`) are
 the only contract Runtime sees; workspace paths are derived, never
 configured. See [the storage boundary](docs/magi-magis-storage.md) and
 [BUS runtime architecture](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md) for the

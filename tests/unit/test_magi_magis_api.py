@@ -91,7 +91,7 @@ def test_magis_admin_resolves_telegram_id_to_contact_uid(bus: SimpleNamespace) -
     )
 
     stored = bus.magis_admins_book.list_for_magis(magis_id=society.id)
-    assert stored[0].uid == contact.id
+    assert stored[0].contact_id == contact.id
     assert result.telegram_id == 4242
     assert result.display_name == "Operator"
 

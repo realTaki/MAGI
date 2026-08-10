@@ -12,7 +12,7 @@ class MessageMagiTool(Tool):
 
     The AgentWorker persists this effect with the transition by
     publishing a :class:`magi.bus.guild.sendA2AJob.SendA2AJob`
-    onto ``bus.a2a_job_board`` (``a2a_invocations`` table). It must
+    onto ``bus.a2a_job_board`` (``a2a_jobs`` table). It must
     never be executed by ToolWorker, otherwise an A2A write could
     escape the actor's transactional outbox.
     """

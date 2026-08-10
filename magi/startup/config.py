@@ -4,7 +4,8 @@ Per the refactor plan, exactly four inputs define a MAGI startup:
 
 - ``HOST_WORKSPACE_DIR`` — root of operator persistent data (default ``~/.magi``)
 - ``MAGI_NAME``            — display name (default ``eva-000``)
-- ``MAGIS_DATABASE_URL``   — MAGIS DSN (omit ⇒ bootstrap first MAGIS)
+- ``MAGIS_NAME``           — stable MAGIS storage name (default ``genesis``)
+- ``MAGIS_DATABASE_URL``   — MAGIS DSN (omit ⇒ local SQLite for ``MAGIS_NAME``)
 - ``MAGI_ID``              — MAGIS identity when joining an existing MAGIS
 
 Workspace is *derived*, never passed in:
@@ -28,6 +29,9 @@ class ConfigurationError(Exception):
 
 DEFAULT_MAGI_NAME = "eva-000"
 """The first MAGI is always ``eva-000`` (plan §2.2)."""
+
+DEFAULT_MAGIS_NAME = "genesis"
+"""Stable storage name for the default, locally bootstrapped MAGIS."""
 
 MAGI_CITIZENS_DIR = "MAGI_Citizens"
 """Canonical on-disk folder name for per-MAGI workspaces (plan §9)."""
@@ -59,7 +63,7 @@ DEFAULT_LOG_LEVEL: str = "info"
 class StartupConfig:
     """Immutable startup configuration.
 
-    All four fields are read from environment or CLI.  The workspace
+    All fields are read from environment or CLI.  The workspace
     directory is derived — callers must not supply it directly.
     """
 
@@ -67,6 +71,7 @@ class StartupConfig:
     magi_name: str
     magis_database_url: str | None
     magi_id: str | None
+    magis_name: str = DEFAULT_MAGIS_NAME
 
     @property
     def workspace_dir(self) -> Path:
@@ -81,8 +86,8 @@ class StartupConfig:
     def is_first_magi(self) -> bool:
         """True when no ``MAGIS_DATABASE_URL`` is set — bootstrap first MAGIS.
 
-        Per plan §3: the absence of MAGIS_DATABASE_URL means this is the
-        first MAGI (``eva-000``) that must create the MAGIS database.
+        The absence of ``MAGIS_DATABASE_URL`` selects a local SQLite MAGIS
+        store at ``MAGI_Societies/<MAGIS_NAME>/magis.db``.
         """
         return self.magis_database_url is None
 
@@ -97,6 +102,7 @@ class StartupConfig:
         Defaults:
         - ``HOST_WORKSPACE_DIR`` → ``~/.magi``
         - ``MAGI_NAME``          → ``"eva-000"``
+        - ``MAGIS_NAME``         → ``"genesis"``
         - ``MAGIS_DATABASE_URL`` → ``None`` (bootstrap first MAGIS)
         - ``MAGI_ID``            → ``None``
         """
@@ -107,6 +113,7 @@ class StartupConfig:
         host = Path(host_raw).expanduser().resolve()
 
         magi_name = os.environ.get("MAGI_NAME", DEFAULT_MAGI_NAME)
+        magis_name = os.environ.get("MAGIS_NAME", DEFAULT_MAGIS_NAME).strip().lower()
 
         magis_db_url: str | None = os.environ.get("MAGIS_DATABASE_URL")
         if magis_db_url is not None:
@@ -121,6 +128,7 @@ class StartupConfig:
             magi_name=magi_name,
             magis_database_url=magis_db_url,
             magi_id=magi_id,
+            magis_name=magis_name,
         )
 
     @classmethod
@@ -131,6 +139,7 @@ class StartupConfig:
         magi_name: str | None = None,
         magis_database_url: str | None = None,
         magi_id: str | None = None,
+        magis_name: str | None = None,
     ) -> StartupConfig:
         """Build config from explicit CLI arguments.
 
@@ -142,6 +151,7 @@ class StartupConfig:
             magi_name=magi_name or base.magi_name,
             magis_database_url=magis_database_url if magis_database_url is not None else base.magis_database_url,
             magi_id=magi_id if magi_id is not None else base.magi_id,
+            magis_name=magis_name.strip().lower() if magis_name is not None else base.magis_name,
         )
 
     # ------------------------------------------------------------------
@@ -153,20 +163,6 @@ class StartupConfig:
 
         Raises :class:`ConfigurationError` on invalid combinations.
         """
-        # MAGIS provided but no MAGI_ID → ambiguous identity
-        if self.magis_database_url is not None and self.magi_id is None:
-            raise ConfigurationError(
-                "MAGI_ID is required when joining an existing MAGIS "
-                "(MAGIS_DATABASE_URL is set)."
-            )
-
-        # First MAGI must be eva-000 when bootstrapping
-        if self.magis_database_url is None and self.magi_name != DEFAULT_MAGI_NAME:
-            raise ConfigurationError(
-                f"The first MAGI must be {DEFAULT_MAGI_NAME!r}, got {self.magi_name!r}. "
-                "To join an existing MAGIS, set MAGIS_DATABASE_URL and MAGI_ID."
-            )
-
         # Host workspace must exist or be creatable
         # (we validate lazily — the bootstrap step creates dirs)
 
@@ -175,6 +171,16 @@ class StartupConfig:
             raise ConfigurationError(
                 f"Invalid MAGI name: {self.magi_name!r}. "
                 "Name must be non-empty and contain no spaces."
+            )
+        if (
+            not self.magis_name
+            or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in self.magis_name)
+            or self.magis_name.startswith("-")
+            or self.magis_name.endswith("-")
+        ):
+            raise ConfigurationError(
+                f"Invalid MAGIS name: {self.magis_name!r}. "
+                "Use a lowercase letter/digit slug with optional internal hyphens."
             )
 
 
@@ -205,6 +211,7 @@ class StartupContext:
     - ``workspace_dir``      — per-MAGI workspace (derived)
     - ``magi_name``          — display name
     - ``magi_id``            — MAGIS identity (``magis_memberships.id``)
+    - ``magis_name``         — stable local-storage name for the MAGIS
     - ``magis_database_url`` — DSN of the MAGIS public database
     - ``private_database_url`` — DSN of this MAGI's private SQLite
     - ``is_first_magi``      — True for the ``eva-000`` Genesis bootstrap
@@ -214,6 +221,7 @@ class StartupContext:
     workspace_dir: Path
     magi_name: str
     magi_id: str
+    magis_name: str
     magis_database_url: str
     private_database_url: str
     is_first_magi: bool
@@ -234,6 +242,7 @@ __all__ = [
     "StartupContext",
     "ConfigurationError",
     "DEFAULT_MAGI_NAME",
+    "DEFAULT_MAGIS_NAME",
     "MAGI_CITIZENS_DIR",
     # constants
     "RUNTIME_HOST",

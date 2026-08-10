@@ -141,6 +141,7 @@ async def run_magi(config: StartupConfig) -> None:
         workspace_dir=config.workspace_dir,
         magi_name=spec.magi_name,
         magi_id=spec.magi_id,
+        magis_name=spec.magis_name,
         magis_database_url=spec.magis_database_url,
         private_database_url=resolve_private_database_url(config.workspace_dir),
         is_first_magi=spec.is_first_magi,
@@ -190,16 +191,16 @@ def _validate_runtime_identity(startup: StartupContext, bus: "Bus") -> None:
         raise RuntimeError(f"runtime identity {startup.magi_id!r} is not registered in MAGIS")
 
     runtimes = bus.runtime_state_book
-    ports = bus.port_allocations_book
     runtime = runtimes.get(runtime_id=magi_id) if runtimes is not None else None
-    allocation = ports.get(runtime_id=magi_id) if ports is not None else None
-    if runtime is None or allocation is None:
+    if runtime is None:
         raise RuntimeError(f"runtime {magi_id} has no provisioned control-plane record")
+    if runtime.port_in_use_since is None:
+        raise RuntimeError(f"runtime {magi_id} has no sticky port allocation")
     if runtime.backend_ref != startup.magi_name:
         raise RuntimeError(
             f"runtime spec name {startup.magi_name!r} does not match registered node {runtime.backend_ref!r}"
         )
-    if runtime.port != startup.runtime_port or allocation.port != startup.runtime_port:
+    if runtime.port != startup.runtime_port:
         raise RuntimeError(
             f"runtime spec port {startup.runtime_port} conflicts with its sticky control-plane allocation"
         )

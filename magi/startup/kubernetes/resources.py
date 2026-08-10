@@ -56,6 +56,11 @@ def _magis_resource_name(magis_id: int | str, name: str) -> str:
     return f"magi-magis-{magis_id}-{_slug(name, 'magis')}"[:55].rstrip("-")
 
 
+def _shared_magis_database_resource_name() -> str:
+    """The one PostgreSQL service that contains one database per MAGIS."""
+    return "magi-magis-postgres"
+
+
 def _webui_resource_name() -> str:
     return "magi-webui"
 
@@ -383,129 +388,116 @@ class KubernetesEvaBackend:
             )
 
     def provision_magis(self, binding) -> MagisProvisionResult:
-        """Provision one MAGIS's private PostgreSQL and public workspace."""
+        """Provision a MAGIS database in the shared PostgreSQL service.
+
+        A MAGIS is a database boundary, not a PostgreSQL-server boundary.
+        The server/PVC/credentials are shared; each MAGIS receives a distinct
+        database and connection secret, plus its own public workspace PVC.
+        """
         resource = _magis_k8s_resource_name(binding)
-        database_service = f"{resource}-db"
-        database_claim = f"{resource}-db-data"
+        database_service = _shared_magis_database_resource_name()
+        database_claim = f"{database_service}-data"
+        shared_secret = f"{database_service}-credentials"
+        magis_secret = f"{resource}-db"
         workspace_claim = f"{resource}-workspace"
-        secret_name = f"{resource}-db"
         password = hmac.new(
             os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
-            f"magis-db:{binding.id}".encode(),
+            b"magis-postgres",
             hashlib.sha256,
         ).hexdigest()
         database = f"magis_{binding.id}"
-        database_url = (
-            f"postgresql+psycopg://magi:{password}@{database_service}:5432/{database}"
-        )
+        database_url = f"postgresql+psycopg://magi:{password}@{database_service}:5432/{database}"
         labels = {
             "app.kubernetes.io/name": "magi",
-            "app.kubernetes.io/component": "magis-database",
             "magi.io/managed-by": "magi-orchestrator",
-            "magi.io/magis-id": str(binding.id),
         }
         prefix = f"/api/v1/namespaces/{self.namespace}"
         self._apply(
-            f"{prefix}/secrets/{secret_name}",
+            f"{prefix}/secrets/{shared_secret}",
             {
-                "apiVersion": "v1",
-                "kind": "Secret",
-                "metadata": {"name": secret_name, "labels": labels},
-                "type": "Opaque",
-                "data": _k8s_secret_data(
-                    {"POSTGRES_PASSWORD": password, "MAGIS_DATABASE_URL": database_url}
-                ),
+                "apiVersion": "v1", "kind": "Secret",
+                "metadata": {"name": shared_secret, "labels": {**labels, "app.kubernetes.io/component": "magis-database"}},
+                "type": "Opaque", "data": _k8s_secret_data({"POSTGRES_PASSWORD": password}),
             },
         )
-        for claim, component in (
-            (database_claim, "magis-database"),
-            (workspace_claim, "magis-workspace"),
-        ):
-            self._apply(
-                f"{prefix}/persistentvolumeclaims/{claim}",
-                {
-                    "apiVersion": "v1",
-                    "kind": "PersistentVolumeClaim",
-                    "metadata": {
-                        "name": claim,
-                        "labels": {**labels, "app.kubernetes.io/component": component},
-                    },
-                    "spec": {
-                        "accessModes": ["ReadWriteOnce"],
-                        "resources": {"requests": {"storage": "10Gi"}},
-                    },
-                },
-            )
+        self._apply(
+            f"{prefix}/persistentvolumeclaims/{database_claim}",
+            {
+                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
+                "metadata": {"name": database_claim, "labels": {**labels, "app.kubernetes.io/component": "magis-database"}},
+                "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+            },
+        )
         self._apply(
             f"{prefix}/services/{database_service}",
             {
-                "apiVersion": "v1",
-                "kind": "Service",
+                "apiVersion": "v1", "kind": "Service",
                 "metadata": {"name": database_service, "labels": labels},
-                "spec": {
-                    "selector": {"magi.io/magis-db": resource},
-                    "ports": [
-                        {"name": "postgres", "port": 5432, "targetPort": "postgres"}
-                    ],
-                },
+                "spec": {"selector": {"magi.io/magis-db": "shared"}, "ports": [{"name": "postgres", "port": 5432, "targetPort": "postgres"}]},
             },
         )
         self._apply(
             f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{database_service}",
             {
-                "apiVersion": "apps/v1",
-                "kind": "Deployment",
+                "apiVersion": "apps/v1", "kind": "Deployment",
                 "metadata": {"name": database_service, "labels": labels},
                 "spec": {
-                    "replicas": 1,
-                    "strategy": {"type": "Recreate"},
-                    "selector": {"matchLabels": {"magi.io/magis-db": resource}},
+                    "replicas": 1, "strategy": {"type": "Recreate"},
+                    "selector": {"matchLabels": {"magi.io/magis-db": "shared"}},
                     "template": {
-                        "metadata": {
-                            "labels": {**labels, "magi.io/magis-db": resource}
-                        },
+                        "metadata": {"labels": {**labels, "magi.io/magis-db": "shared"}},
                         "spec": {
                             "securityContext": {"fsGroup": 999},
-                            "containers": [
-                                {
-                                    "name": "postgres",
-                                    "image": "postgres:16-alpine",
-                                    "ports": [
-                                        {"name": "postgres", "containerPort": 5432}
-                                    ],
-                                    "env": [
-                                        {"name": "POSTGRES_USER", "value": "magi"},
-                                        {"name": "POSTGRES_DB", "value": database},
-                                        {
-                                            "name": "POSTGRES_PASSWORD",
-                                            "valueFrom": {
-                                                "secretKeyRef": {
-                                                    "name": secret_name,
-                                                    "key": "POSTGRES_PASSWORD",
-                                                }
-                                            },
-                                        },
-                                    ],
-                                    "volumeMounts": [
-                                        {
-                                            "name": "data",
-                                            "mountPath": "/var/lib/postgresql/data",
-                                        }
-                                    ],
-                                    "securityContext": {
-                                        "allowPrivilegeEscalation": False,
-                                        "capabilities": {"drop": ["ALL"]},
-                                    },
-                                }
-                            ],
-                            "volumes": [
-                                {
-                                    "name": "data",
-                                    "persistentVolumeClaim": {
-                                        "claimName": database_claim
-                                    },
-                                }
-                            ],
+                            "containers": [{
+                                "name": "postgres", "image": "postgres:16-alpine",
+                                "ports": [{"name": "postgres", "containerPort": 5432}],
+                                "env": [
+                                    {"name": "POSTGRES_USER", "value": "magi"},
+                                    {"name": "POSTGRES_DB", "value": "postgres"},
+                                    {"name": "POSTGRES_PASSWORD", "valueFrom": {"secretKeyRef": {"name": shared_secret, "key": "POSTGRES_PASSWORD"}}},
+                                ],
+                                "volumeMounts": [{"name": "data", "mountPath": "/var/lib/postgresql/data"}],
+                                "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},
+                            }],
+                            "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": database_claim}}],
+                        },
+                    },
+                },
+            },
+        )
+        self._apply(
+            f"{prefix}/secrets/{magis_secret}",
+            {
+                "apiVersion": "v1", "kind": "Secret",
+                "metadata": {"name": magis_secret, "labels": {**labels, "magi.io/magis-id": str(binding.id)}},
+                "type": "Opaque", "data": _k8s_secret_data({"MAGIS_DATABASE_URL": database_url}),
+            },
+        )
+        self._apply(
+            f"{prefix}/persistentvolumeclaims/{workspace_claim}",
+            {
+                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
+                "metadata": {"name": workspace_claim, "labels": {**labels, "app.kubernetes.io/component": "magis-workspace", "magi.io/magis-id": str(binding.id)}},
+                "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+            },
+        )
+        self._apply(
+            f"/apis/batch/v1/namespaces/{self.namespace}/jobs/{resource}-db-init",
+            {
+                "apiVersion": "batch/v1", "kind": "Job",
+                "metadata": {"name": f"{resource}-db-init", "labels": {**labels, "magi.io/magis-id": str(binding.id)}},
+                "spec": {
+                    "backoffLimit": 12,
+                    "template": {
+                        "metadata": {"labels": labels},
+                        "spec": {
+                            "restartPolicy": "OnFailure",
+                            "containers": [{
+                                "name": "create-database", "image": "postgres:16-alpine",
+                                "command": ["sh", "-ec", f"psql -h {database_service} -U magi -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname = '{database}'\" | grep -q 1 || psql -h {database_service} -U magi -d postgres -v ON_ERROR_STOP=1 -c \"CREATE DATABASE {database}\""],
+                                "env": [{"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": shared_secret, "key": "POSTGRES_PASSWORD"}}}],
+                                "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},
+                            }],
                         },
                     },
                 },
@@ -514,7 +506,7 @@ class KubernetesEvaBackend:
         return MagisProvisionResult(
             database_service_name=database_service,
             workspace_claim_name=workspace_claim,
-            message="MAGIS PostgreSQL and public workspace PVC applied.",
+            message="MAGIS database, shared PostgreSQL service, and public workspace PVC applied.",
         )
 
     def _magis_database_url(self, binding) -> str:
@@ -532,11 +524,11 @@ class KubernetesEvaBackend:
             pass
         password = hmac.new(
             os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
-            f"magis-db:{binding.id}".encode(),
+            b"magis-postgres",
             hashlib.sha256,
         ).hexdigest()
         return (
-            f"postgresql+psycopg://magi:{password}@{resource}-db:5432/"
+            f"postgresql+psycopg://magi:{password}@{_shared_magis_database_resource_name()}:5432/"
             f"magis_{binding.id}"
         )
 

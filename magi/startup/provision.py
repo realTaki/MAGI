@@ -6,12 +6,16 @@ from dataclasses import replace
 
 from magi.bus.provision import provision_node_storage
 from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, RUNTIME_PORT, StartupConfig
-from magi.startup.paths import resolve_magis_database_path, resolve_magis_database_url
+from magi.startup.paths import (
+    resolve_magis_control_dir,
+    resolve_magis_database_path,
+    resolve_magis_database_url,
+)
 from magi.startup.spec import RuntimeSpec, write_runtime_spec
 
 
-def _ensure_first_magi_identity(factory) -> int:
-    """Create Genesis and its sole ADAM membership if absent."""
+def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
+    """Create one MAGIS root and its sole ADAM membership if absent."""
     from magi.bus.library.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
         MagisBook,
@@ -22,22 +26,23 @@ def _ensure_first_magi_identity(factory) -> int:
     magis = MagisBook(factory)
     roles = MagisRoleBook(factory)
     memberships = MagisMembershipBook(factory)
-    genesis = magis.get_root() or magis.add(name="Genesis")
-    adam_role = roles.find(magis_id=genesis.id, name="ADAM")
+    root_name = "Genesis" if magis_name == "genesis" else magis_name
+    root = magis.get_root() or magis.add(name=root_name)
+    adam_role = roles.find(magis_id=root.id, name="ADAM")
     if adam_role is None:
         adam_role = roles.add(
-            magis_id=genesis.id,
+            magis_id=root.id,
             name="ADAM",
             instruction=DEFAULT_ROLE_INSTRUCTIONS["ADAM"],
             is_reserved=True,
         )
     member = next(
-        (item for item in memberships.list_for_magis(magis_id=genesis.id) if item.role_id == adam_role.id),
+        (item for item in memberships.list_for_magis(magis_id=root.id) if item.role_id == adam_role.id),
         None,
     )
     if member is None:
-        member = memberships.add(magis_id=genesis.id, role_id=adam_role.id)
-    magis.set_adam(magis_id=genesis.id, adam_id=member.id)
+        member = memberships.add(magis_id=root.id, role_id=adam_role.id)
+    magis.set_adam(magis_id=root.id, adam_id=member.id)
     return member.id
 
 
@@ -75,30 +80,38 @@ def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port
 
 
 def init_first_magi(config: StartupConfig) -> RuntimeSpec:
-    """Provision the only allowed first node and its Genesis topology."""
+    """Provision the first MAGI and the selected MAGIS shared store."""
     if config.magi_name != DEFAULT_MAGI_NAME:
         raise ConfigurationError("`magi init` only provisions the first eva-000 MAGI")
     config.host_workspace_dir.mkdir(parents=True, exist_ok=True)
     for name in ("logs", "run"):
         (config.host_workspace_dir / name).mkdir(parents=True, exist_ok=True)
-    magis_url = config.magis_database_url or resolve_magis_database_url(config.host_workspace_dir)
+    config.validate()
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
     if config.magis_database_url is None:
-        resolve_magis_database_path(config.host_workspace_dir).parent.mkdir(parents=True, exist_ok=True)
+        resolve_magis_database_path(
+            config.host_workspace_dir, config.magis_name
+        ).parent.mkdir(parents=True, exist_ok=True)
     bus = provision_node_storage(
         state_dir=str(config.workspace_dir / "memories"), magis_url=magis_url,
     )
     if bus._magis_factory is None:
         raise RuntimeError("MAGIS store was not provisioned")
-    magi_id = _ensure_first_magi_identity(bus._magis_factory)
+    magi_id = _ensure_first_magi_identity(bus._magis_factory, magis_name=config.magis_name)
     _register_local_runtime(bus=bus, runtime_id=magi_id, config=config, port=RUNTIME_PORT)
-    if bus.port_allocations_book is None:
+    if bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
-    if bus.port_allocations_book.get(runtime_id=magi_id) is None:
-        bus.port_allocations_book.allocate(runtime_id=magi_id, port=RUNTIME_PORT)
-    _ensure_control_secret(resolve_magis_database_path(config.host_workspace_dir).parent / "control-secret")
+    if bus.runtime_state_book.get(runtime_id=magi_id) is None or bus.runtime_state_book.get(runtime_id=magi_id).port_in_use_since is None:
+        bus.runtime_state_book.allocate_port(runtime_id=magi_id, port=RUNTIME_PORT)
+    _ensure_control_secret(
+        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name) / "control-secret"
+    )
     spec = RuntimeSpec(
         magi_name=DEFAULT_MAGI_NAME,
         magi_id=str(magi_id),
+        magis_name=config.magis_name,
         magis_database_url=magis_url,
         runtime_port=RUNTIME_PORT,
         is_first_magi=True,
@@ -108,39 +121,41 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
 
 
 def create_node(config: StartupConfig) -> RuntimeSpec:
-    """Register and provision one EVA under an already initialised Genesis."""
+    """Register and provision one EVA under an already initialised MAGIS."""
     if config.magi_name == DEFAULT_MAGI_NAME:
         raise ConfigurationError("eva-000 is created only by `magi init`")
     if config.workspace_dir.exists():
         raise ConfigurationError(
             f"node workspace already exists at {config.workspace_dir}; clean the state before creating it again"
         )
-    magis_url = config.magis_database_url or resolve_magis_database_url(config.host_workspace_dir)
+    config.validate()
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
     from magi.bus import open_control_bus
     from magi.bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
 
     node_config = replace(config, magis_database_url=magis_url)
     control_bus = open_control_bus(
-        control_dir=str(config.host_workspace_dir / "MAGI_Societies" / "genesis" / "control"),
+        control_dir=str(resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)),
         magis_url=magis_url,
     )
     if control_bus._magis_factory is None:
-        raise ConfigurationError("Genesis MAGIS is not provisioned; run `magi init` first")
+        raise ConfigurationError(f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first")
     factory = control_bus._magis_factory
     magis = MagisBook(factory)
     roles = MagisRoleBook(factory)
     memberships = MagisMembershipBook(factory)
-    genesis = magis.get_root()
-    if genesis is None:
-        raise ConfigurationError("Genesis MAGIS is not provisioned; run `magi init` first")
-    eva_role = roles.find(magis_id=genesis.id, name="EVA")
+    root = magis.get_root()
+    if root is None:
+        raise ConfigurationError(f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first")
+    eva_role = roles.find(magis_id=root.id, name="EVA")
     if eva_role is None:
-        eva_role = roles.add(magis_id=genesis.id, name="EVA", is_reserved=True)
+        eva_role = roles.add(magis_id=root.id, name="EVA", is_reserved=True)
 
-    ports = control_bus.port_allocations_book
-    if ports is None:
+    if control_bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
-    used = {item.port for item in ports.list_active()}
+    used = control_bus.runtime_state_book.list_allocated_ports()
     port = next((candidate for candidate in range(RUNTIME_PORT + 1, RUNTIME_PORT + 100) if candidate not in used), None)
     if port is None:
         raise ConfigurationError("no local runtime port is available")
@@ -151,16 +166,17 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     provision_node_storage(
         state_dir=str(node_config.workspace_dir / "memories"), magis_url=magis_url,
     )
-    membership = memberships.add(magis_id=genesis.id, role_id=eva_role.id)
+    membership = memberships.add(magis_id=root.id, role_id=eva_role.id)
     _register_local_runtime(
         bus=control_bus, runtime_id=membership.id, config=config, port=port,
     )
-    ports.allocate(runtime_id=membership.id, port=port)
+    control_bus.runtime_state_book.allocate_port(runtime_id=membership.id, port=port)
 
     node_config = replace(node_config, magi_id=str(membership.id))
     spec = RuntimeSpec(
         magi_name=node_config.magi_name,
         magi_id=str(membership.id),
+        magis_name=node_config.magis_name,
         magis_database_url=magis_url,
         runtime_port=port,
         is_first_magi=False,

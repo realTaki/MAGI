@@ -18,6 +18,7 @@ def _config(args: argparse.Namespace) -> StartupConfig:
         magi_name=getattr(args, "name", None),
         magis_database_url=getattr(args, "magis_database_url", None),
         magi_id=getattr(args, "magi_id", None),
+        magis_name=getattr(args, "magis_name", None),
     )
 
 
@@ -110,6 +111,7 @@ def _common(
     parser.add_argument("--host-workspace-dir")
     parser.add_argument("--name", default=name_default, required=name_required)
     parser.add_argument("--magis", dest="magis_database_url")
+    parser.add_argument("--magis-name", help="MAGIS storage name when using local SQLite")
     parser.add_argument("--magi-id")
 
 

@@ -31,18 +31,18 @@ class A2AWorker(ChannelWorker):
             try:
                 await self._deliver_a2a(job)
                 result = SendA2AResult(
-                    invocation_id=job.invocation_id, success=True, status="delivered")
-                await self.call(self.bus.a2a_job_board.submit_result, key=job.invocation_id, result=result)
+                    job_id=job.job_id, success=True, status="delivered")
+                await self.call(self.bus.a2a_job_board.submit_result, key=job.job_id, result=result)
                 self.succeeded()
             except Exception as exc:
                 self.failed(exc)
-                logger.exception("A2AWorker: delivery %s failed", job.invocation_id)
+                logger.exception("A2AWorker: delivery %s failed", job.job_id)
                 result = SendA2AResult(
-                    invocation_id=job.invocation_id, success=False, status="failed", error=str(exc)[:1024])
-                await self.call(self.bus.a2a_job_board.submit_result, key=job.invocation_id, result=result)
+                    job_id=job.job_id, success=False, status="failed", error=str(exc)[:1024])
+                await self.call(self.bus.a2a_job_board.submit_result, key=job.job_id, result=result)
 
     async def _deliver_a2a(self, job: SendA2AJob) -> None:
         from magi.channels.a2a.transport import send_a2a_delivery
         target = int(job.target) if job.target else 0
         if not target: raise ValueError("A2A delivery missing target")
-        await send_a2a_delivery(self.bus, target, job.invocation_id, job.request or {})
+        await send_a2a_delivery(self.bus, target, job.job_id, job.request or {})

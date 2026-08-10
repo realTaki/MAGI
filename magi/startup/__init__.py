@@ -6,6 +6,7 @@ commands only open already-provisioned state.
 
 - ``HOST_WORKSPACE_DIR``   — root of operator persistent data
 - ``MAGI_NAME``            — display name (default ``eva-000``)
+- ``MAGIS_NAME``           — local MAGIS storage name (default ``genesis``)
 - ``MAGIS_DATABASE_URL``   — optional explicit MAGIS DSN for provisioning
 - ``MAGI_ID``              — stored identity; runtime reads it from RuntimeSpec
 

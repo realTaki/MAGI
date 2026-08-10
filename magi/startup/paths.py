@@ -36,6 +36,7 @@ Layout (per refactor plan §7, §9):
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -107,12 +108,26 @@ def resolve_magi_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
 # databases
 # ------------------------------------------------------------------
 
-def resolve_magis_database_path(host_workspace_dir: Path) -> Path:
-    """Return the default MAGIS SQLite path for the first MAGIS.
+def _magis_storage_name(magis_name: str) -> str:
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", magis_name):
+        raise ValueError(
+            "MAGIS storage name must be a lowercase letter/digit slug with optional internal hyphens"
+        )
+    return magis_name
 
-    ``<host>/MAGI_Societies/genesis/magis.db``
+
+def resolve_magis_directory(host_workspace_dir: Path, magis_name: str = "genesis") -> Path:
+    """Return the durable filesystem directory for one SQLite MAGIS."""
+    return host_workspace_dir / "MAGI_Societies" / _magis_storage_name(magis_name)
+
+
+def resolve_magis_database_path(host_workspace_dir: Path, magis_name: str = "genesis") -> Path:
+    """Return the SQLite path for one named MAGIS.
+
+    ``<host>/MAGI_Societies/<magis_name>/magis.db``.  This is deliberately
+    distinct from a MAGI's private ``memories/magi.db``.
     """
-    return host_workspace_dir / "MAGI_Societies" / "genesis" / "magis.db"
+    return resolve_magis_directory(host_workspace_dir, magis_name) / "magis.db"
 
 
 def resolve_private_database_path(workspace_dir: Path) -> Path:
@@ -129,10 +144,15 @@ def resolve_private_database_url(workspace_dir: Path) -> str:
     return f"sqlite:///{db_path}"
 
 
-def resolve_magis_database_url(host_workspace_dir: Path) -> str:
-    """Return a ``sqlite:///...`` URL for the default MAGIS database."""
-    db_path = resolve_magis_database_path(host_workspace_dir)
+def resolve_magis_database_url(host_workspace_dir: Path, magis_name: str = "genesis") -> str:
+    """Return the SQLite URL for one named MAGIS shared database."""
+    db_path = resolve_magis_database_path(host_workspace_dir, magis_name)
     return f"sqlite:///{db_path}"
+
+
+def resolve_magis_control_dir(host_workspace_dir: Path, magis_name: str = "genesis") -> Path:
+    """Return the sidecar control-file directory for one MAGIS."""
+    return resolve_magis_directory(host_workspace_dir, magis_name) / "control"
 
 
 # ------------------------------------------------------------------
@@ -310,6 +330,8 @@ __all__ = [
     "resolve_magi_workspace",
     # databases
     "resolve_magis_database_path",
+    "resolve_magis_directory",
+    "resolve_magis_control_dir",
     "resolve_private_database_path",
     "resolve_private_database_url",
     "resolve_magis_database_url",
