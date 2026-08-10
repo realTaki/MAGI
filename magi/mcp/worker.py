@@ -71,7 +71,7 @@ from magi.bus.guild import (
     McpServerChangedResult,
 )
 from magi.tools.registry import register_tools
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig

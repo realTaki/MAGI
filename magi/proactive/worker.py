@@ -18,7 +18,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus

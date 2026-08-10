@@ -29,7 +29,6 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
         channel="tg",
         destination="123456",
         payload={"text": "hello"},
-        run_id="run_1",
     ))
 
     # Create a mock bus for the worker

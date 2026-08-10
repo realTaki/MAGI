@@ -285,22 +285,32 @@ def _build_channels(
     Channels state lives in ``settings_book.channels.enabled`` per the
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
+    If the setting is missing or unparseable, fall back to the
+    required-channel default (``['webui']``). This is the runtime-side
+    counterpart to the provisioning default written by
+    :mod:`magi.bus.provision` — workspaces provisioned before that
+    default was added still get a working WebUI delivery worker.
+
     Reads the explicitly injected Bus only.
     """
     import json
 
     if bus is None:
-        return []
+        return ["webui"]
 
     try:
         raw = bus.settings_book.get(key="channels.enabled")
         if raw:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                return [c for c in parsed if isinstance(c, str)]
+                cleaned = [c for c in parsed if isinstance(c, str)]
+                if cleaned:
+                    if "webui" not in cleaned:
+                        cleaned.append("webui")
+                    return cleaned
     except Exception:  # noqa: BLE001
         logger.warning("could not read channels.enabled from Bus", exc_info=True)
-    return []
+    return ["webui"]
 
 
 # ----------------------------------------------------------------------

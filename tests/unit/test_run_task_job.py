@@ -57,12 +57,12 @@ def test_submit_result_success(board):
 
     board.submit_result(
         key=jid,
-        result=RunTaskResult(job_id=jid, success=True, run_id="run_42"),
+        result=RunTaskResult(job_id=jid, success=True),
     )
     result = board.get_result(key=jid)
     assert result is not None
     assert result.success is True
-    assert result.run_id == "run_42"
+    assert result.error is None
 
 
 def test_submit_result_failure(board):

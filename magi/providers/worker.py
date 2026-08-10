@@ -51,7 +51,7 @@ from magi.bus.guild import (
 )
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.base import LLMProvider, LLMStreamEvent
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus

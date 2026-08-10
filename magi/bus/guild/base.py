@@ -167,28 +167,87 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
     # -- 内部 --------------------------------------------------------------
 
     def _claim(self, session: Session) -> RowT | None:
+        """CAS-claim the oldest pending (or lease-expired) row.
+
+        Replaces the previous SELECT ... FOR UPDATE SKIP LOCKED path,
+        which SQLite silently no-ops under WAL — multiple consumers
+        would happily read the same "locked" row, leading to duplicate
+        execution and ``release`` churn on delivery boards. The CAS
+        pattern (find candidate → conditional UPDATE → check rowcount)
+        is what :meth:`chatJobBoard.claim_for_conversation` already
+        uses; this is the shared default so every board benefits.
+
+        ``MAX_ATTEMPTS_CANDIDATES`` bounds the loop when many workers
+        race for the same hot row, matching the chatJobBoard ceiling.
+        """
+        from sqlalchemy import update as _sa_update
+
+        MAX_ATTEMPTS_CANDIDATES = 10
+        owner = f"worker:{self.__class__.__name__}:{id(self)}"
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
-        while True:
+        has_leased_by = hasattr(self.job_model, "leased_by")
+        has_started_at = hasattr(self.job_model, "started_at")
+        for _ in range(MAX_ATTEMPTS_CANDIDATES):
             candidate = self._pick_candidate(session, now)
             if candidate is None:
                 return None
             status = getattr(candidate, "status", "")
             attempts = getattr(candidate, "attempts", 0)
+            # MAX_ATTEMPTS exhaustion happens on the read path so the
+            # exhausted-result write commits before we move on to the
+            # next candidate.
             if status == "processing" and attempts >= MAX_ATTEMPTS:
                 exhausted = self._make_exhausted_result(candidate)
                 self._submit(session, key=self._key_of(candidate), result=exhausted)
                 session.flush()
                 continue
             is_reclaim = status == "processing"
-            setattr(candidate, "status", "processing")
-            setattr(candidate, "leased_until", lease_until)
-            setattr(candidate, "attempts", attempts + 1)
-            if not is_reclaim and hasattr(candidate, "started_at"):
-                setattr(candidate, "started_at", now)
-            return candidate
+            # Conditional UPDATE: same row, same status / lease invariants
+            # — atomic on SQLite. rowcount == 1 ⇒ we own the row; 0 ⇒
+            # another worker grabbed it first; retry with the next
+            # candidate.
+            where_clauses = [
+                getattr(self.job_model, "id") == getattr(candidate, "id"),
+                or_(
+                    getattr(self.job_model, "status") == "pending",
+                    and_(
+                        getattr(self.job_model, "status") == "processing",
+                        getattr(self.job_model, "leased_until") < now,
+                    ),
+                ),
+            ]
+            values: dict = {
+                "status": "processing",
+                "leased_until": lease_until,
+                "attempts": attempts + 1,
+            }
+            if has_leased_by:
+                values["leased_by"] = owner
+            if not is_reclaim and has_started_at:
+                values["started_at"] = now
+            result = session.execute(
+                _sa_update(self.job_model).where(*where_clauses).values(**values)
+            )
+            if getattr(result, "rowcount", 0) == 1:
+                # Reload the fresh row so the caller sees the
+                # post-UPDATE values (leased_until, attempts, …).
+                fresh = session.get(self.job_model, getattr(candidate, "id"))
+                return fresh
+            # Lost the race — try the next candidate.
+            session.rollback()
+            now = utcnow_naive()
+            lease_until = now + timedelta(seconds=self._lease_seconds)
+        return None
 
     def _pick_candidate(self, session: Session, now: datetime) -> RowT | None:
+        """Pick the oldest pending / lease-expired row WITHOUT a lock.
+
+        The lock is the conditional UPDATE in :meth:`_claim`. This
+        SELECT is purely for ordering and filtering — a stale read here
+        is harmless because the UPDATE re-validates the row's
+        status / lease invariants.
+        """
         return session.scalar(
             select(self.job_model)
             .where(or_(
@@ -203,7 +262,6 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
                 getattr(self.job_model, "id"),
             )
             .limit(1)
-            .with_for_update(skip_locked=True)
         )
 
     def _submit(self, session: Session, *, key: str, result: ResultT) -> None:

@@ -60,6 +60,15 @@ def provision_node_storage(
     bus.messages_book.ensure_fts()
     if not bus.settings_book.get(key="auth.signing_key"):
         bus.settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
+    # ``channels.enabled`` is the runtime's single source of truth for which
+    # channel workers to start. WebUI is a required channel — the operator
+    # dashboard depends on its delivery worker — so seed the default at
+    # provisioning time. Without this default, a fresh workspace has no
+    # ``channels.enabled`` row, ``_build_channels`` returns ``[]`` at
+    # runtime, and WebUI's delivery worker is silently never started
+    # (P1 issue noted in the 2026-08-10 architecture review).
+    if not bus.settings_book.get(key="channels.enabled"):
+        bus.settings_book.set(key="channels.enabled", value='["webui"]')
     resolved_prompts = _resolve_prompts_dir(prompts_dir)
     if resolved_prompts is not None:
         _ensure_workspace_soul(workspace_dir, resolved_prompts)

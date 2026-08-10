@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -35,6 +35,17 @@ class WorkerRegistry:
         from magi.tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
+        # WebUI is a required runtime channel: the operator dashboard and
+        # the chat console depend on its delivery worker, so the registry
+        # enforces it unconditionally even if the configured
+        # ``enabled_channels`` list omits it. This is the
+        # composition-root-level counterpart to the
+        # ``channels.enabled`` default written by :mod:`magi.bus.provision`
+        # and the runtime-side fallback in
+        # :func:`magi.startup.runtime._build_channels` — together they
+        # close the P1 "default channels behaviour" gap from the
+        # 2026-08-10 architecture review.
+        enabled.add("webui")
         self._workers: dict[str, RuntimeWorker] = {
             "providers": ProvidersWorker(bus),
             "tools": ToolsWorker(bus),

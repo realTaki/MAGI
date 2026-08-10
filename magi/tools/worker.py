@@ -54,7 +54,7 @@ from magi.bus.library.local import ToolDefinition
 from magi.bus.guild.runToolJob import RunToolResult
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus

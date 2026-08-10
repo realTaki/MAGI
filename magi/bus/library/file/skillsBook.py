@@ -5,11 +5,10 @@ two roots at construction and merges them with operator-overrides-bundle
 semantics:
 
   - **bundle** root — ``<magi>/skills/`` (the image-shipped default catalog).
-    Auto-detected via :func:`importlib`-style anchor on the ``magi``
-    package itself, mirroring :func:`_resolve_prompts_dir` in
-    :mod:`magi.bus.bootstrap`. Falls back to deriving from
+    Resolved by the book itself via :func:`_resolve_bundle_skills_dir`
+    (anchors on the ``magi`` package; falls back to deriving from
     ``__file__`` when the package is not importable in the usual way
-    (tests / zip-app installs).
+    — tests / zip-app installs).
 
   - **operator** root — ``<workspace>/skills/`` (the deployer's
     customised catalog). Resolved by the caller from
@@ -82,7 +81,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from magi.bus.db.file import FileShelf
-from magi.startup.paths import resolve_bundle_skills_dir
 
 logger = logging.getLogger("magi.bus.library.file.skills_book")
 
@@ -719,13 +717,41 @@ class SkillsBook:
 # ──────────────────────────────────────────────────────────────────────── #
 
 
+def _resolve_bundle_skills_dir() -> Path:
+    """Return the path to the image-shipped skills bundle.
+
+    Two-tier resolution, mirroring the prompts-bundle resolver:
+
+    - Tier 1 anchors on the ``magi`` package itself (normal installs
+      and wheel / zip-app installs).
+    - Tier 2 derives from this file's ``__file__`` (when the package
+      is not importable — e.g. ad-hoc test runs from a checkout).
+
+    Lives here in the bus layer rather than in :mod:`magi.startup.paths`
+    so the bus does not depend on the composition root.
+    See ARCHITECTURE_REVIEW_2026-08-10 P2.
+    """
+    try:
+        import magi
+        candidate = Path(magi.__file__).resolve().parent / "skills"
+        if candidate.is_dir():
+            return candidate
+    except Exception:
+        pass
+
+    # Tier 2: ``__file__`` fallback. This module lives at
+    # ``magi/bus/library/file/skillsBook.py``; three levels up is ``magi/``.
+    # ``+ "skills"`` gives ``magi/skills/``.
+    return Path(__file__).resolve().parents[3] / "skills"
+
+
 def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
     """Construct the standard SkillsBook for a MAGI workspace.
 
     Two roots:
 
       - **bundle** — ``<magi>/skills/`` (image-shipped defaults,
-        resolved via :func:`magi.startup.paths.resolve_bundle_skills_dir`).
+        resolved via :func:`_resolve_bundle_skills_dir`).
       - **operator** — ``<workspace_dir>/skills/`` (the deployer's
         customised catalog). Provisioning creates this root; opening a BUS
         passes ``create_root=False`` so runtime startup cannot create it.
@@ -735,7 +761,7 @@ def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
     a custom layout should construct :class:`SkillsBook` directly
     with explicit :class:`~magi.bus.db.file.FileShelf` instances.
     """
-    bundle_shelf = FileShelf(resolve_bundle_skills_dir(), create_root=False)
+    bundle_shelf = FileShelf(_resolve_bundle_skills_dir(), create_root=False)
     operator_shelf = FileShelf(workspace_dir / "skills", create_root=False)
     return SkillsBook(bundle_shelf, operator_shelf)
 

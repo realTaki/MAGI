@@ -1,5 +1,24 @@
 # MAGI — Roadmap (C0 → C8)
 
+> ⚠️ **ARCHIVED — historical planning document (2026-08-10).**
+>
+> This file is kept for archaeology and contributor context only.
+> It is **not** the source of truth for the current architecture or
+> current work. The C0–C8 checkpoint names, the file paths
+> (``magi/db/``, ``main.py``, ``loop.py``), and several subsystems
+> described below refer to code that has since been removed or
+> superseded.
+>
+> **For the current architecture, read [ARCHITECTURE.md](ARCHITECTURE.md).**
+> **For the most recent review, read
+> [ARCHITECTURE_REVIEW_2026-08-10.md](ARCHITECTURE_REVIEW_2026-08-10.md).**
+>
+> Do **not** add new entries here; the post-refactor backlog lives
+> in the review document and in the issue tracker. New readers:
+> stop reading at the first line below the banner.
+
+---
+
 > **Documentation note (2026-07):** this file preserves detailed historical
 > planning notes and completed milestones. For the current terminology, use
 > **MAGIS = MAGI Society**. `MAGIC` is the internal table/API name for an

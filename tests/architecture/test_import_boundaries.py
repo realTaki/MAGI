@@ -63,3 +63,25 @@ def test_bus_does_not_import_domain_implementations() -> None:
             if any(module == root or module.startswith(root + ".") for root in forbidden):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, "Bus must not import domain implementations:\n  " + "\n  ".join(offenders)
+
+
+def test_bus_does_not_depend_on_startup() -> None:
+    """The composition root (``magi.startup``) imports the bus, never
+    the other way around.  Catches the legacy reverse edge where
+    :mod:`magi.bus.library.file.skillsBook` reached into
+    :mod:`magi.startup.paths`.
+
+    Note: ``magi.startup`` itself is a composition root and is
+    *expected* to import from the bus; the test only walks the
+    bus subtree, not the startup subtree.
+    """
+    offenders: list[str] = []
+    for path in (MAGI_ROOT / "bus").rglob("*.py"):
+        for module, lineno in _imports(path):
+            if module == "magi.startup" or module.startswith("magi.startup."):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    assert not offenders, (
+        "Bus must not import from the composition root "
+        "(magi.startup); the bus layer should reach for its own "
+        "resource resolvers:\n  " + "\n  ".join(offenders)
+    )

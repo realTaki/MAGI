@@ -8,7 +8,7 @@ from abc import abstractmethod
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Awaitable, Callable, ClassVar
 
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -43,6 +43,14 @@ class ChannelWorker(RuntimeWorker):
     async def _claim_delivery_loop(
         self, deliver_fn: Callable[[DeliveryJob], Awaitable[None]], channel_label: str,
     ) -> None:
+        """Channel-scoped delivery claim loop.
+
+        Uses :meth:`deliveryJobBoard.claim_for_channel` so each worker
+        only reads its own row slice. The previous "claim any, release
+        mismatches" pattern (P1 issue in the 2026-08-10 architecture
+        review) caused every worker to thrash on rows it didn't own
+        and amplified duplicate-delivery risk under restart.
+        """
         from magi.bus.guild.deliveryJob import DeliveryResult
         max_depth = await self._read_max_queue_depth()
         while not self._stopping:
@@ -52,7 +60,10 @@ class ChannelWorker(RuntimeWorker):
                 await asyncio.sleep(self.poll_seconds * 5)
                 continue
             try:
-                job = await self.call(self.bus.delivery_job_board.claim)
+                job = await self.call(
+                    self.bus.delivery_job_board.claim_for_channel,
+                    channel=channel_label,
+                )
             except Exception:
                 logger.exception("channels[%s]: claim failed", channel_label)
                 await asyncio.sleep(self.poll_seconds)
@@ -60,10 +71,19 @@ class ChannelWorker(RuntimeWorker):
             if job is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
+            # Defensive: if the row's channel ever drifts from
+            # ``channel_label``, skip it rather than delivering to the
+            # wrong channel. ``claim_for_channel`` already filters at
+            # the SQL layer, so this is a safety net — not a hot path.
             if getattr(job, "channel", "") != channel_label:
-                try: await self.call(self.bus.delivery_job_board.release, key=job.job_id)
-                except Exception: pass
-                await asyncio.sleep(0.01)
+                logger.warning(
+                    "channels[%s]: claim_for_channel returned a row with channel=%r; releasing",
+                    channel_label, getattr(job, "channel", None),
+                )
+                try:
+                    await self.call(self.bus.delivery_job_board.release, key=job.job_id)
+                except Exception:
+                    pass
                 continue
             self.polled()
             try:

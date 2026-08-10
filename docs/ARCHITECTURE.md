@@ -352,25 +352,6 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 - The LLM never calls a connector directly; tool wrappers call
   `connector.fetch(...)` (Gmail, Calendar, Linear, …).
 
-## Hook subsystem (BUS-centric)
-
-The Hook subsystem is the BUS-centric replacement for the legacy
-fire-and-forget `magi.plugins.bus`. Eleven first-version hook points:
-
-`agent.input.pending`, `llm.request.prepared`, `llm.response.received`,
-`tool.call.pending`, `tool.result.received`, `a2a.invocation.pending`,
-`a2a.result.received`, `delivery.pending`, `run.transition.committed`,
-`operation.failed`, `operation.dead_lettered`.
-
-Hooks declare the `HookDataScope`s they need; the Bus materialises a
-frozen `HookEnvelope` carrying only those scopes. Handlers never receive
-a `Bus` reference — the envelope is the only input. Persistent tables
-`hook_evaluations` and `hook_plugin_configs` back the lifecycle; tool
-worker gates on `TOOL_CALL_PENDING` before invoking executors, agent
-step gates on `LLM_REQUEST_PREPARED` before provider calls. Architecture
-tests in `tests/architecture/` (`test_hook_import_boundaries.py`,
-`test_hook_envelope_purity.py`) enforce the boundary.
-
 ## Storage ownership
 
 | Scope | Location | Book(s) |
