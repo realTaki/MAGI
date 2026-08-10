@@ -25,6 +25,15 @@ from sqlalchemy import Table
 from magi.bus.db.base import Base
 from magi.bus.db.engine import EngineFactory
 
+# Pull in every ORM module so ``Base.registry.mappers`` is fully populated
+# by the time ``_tables_for_scope`` or any caller walks it.  Both packages'
+# ``__init__`` modules import every table / book — we just need to make
+# sure ``schema`` itself triggers that import.  Without this, a fresh
+# import of ``magi.bus.db.schema`` would leave the mapper registry empty
+# and ``apply_initial_schema`` would silently build zero tables.
+import magi.bus.guild  # noqa: F401  (side-effect: registers guild tables)
+import magi.bus.library.local  # noqa: F401  (side-effect: registers local tables)
+
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 

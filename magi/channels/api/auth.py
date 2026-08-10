@@ -259,7 +259,7 @@ class MeResponse(BaseModel):
     assigned: bool = False
     selected_magi_id: int | None = None
     # ``login_methods`` + ``password_set`` mirror the
-    # :class:`AuthCredential` table + the bound IM. The
+    # local Contact password hash + the bound IM. The
     # Settings → Security card renders the form from
     # these; the LoginPage uses ``/api/auth/login-methods``
     # so it doesn't need a valid session.
@@ -790,7 +790,7 @@ class LoginMethodsResponse(BaseModel):
 
     The frontend uses this to decide whether to show a
     "password" tab, a "TG code" tab, or both. Steered by
-    the :class:`AuthCredential` table on the single-MAGI
+    the local :class:`ContactBook` password hash on the single-MAGI
     path and the ``magis_admins`` row (bound Telegram
     chat id) on the control-plane path.
     """
@@ -839,28 +839,17 @@ class ChangePasswordRequest(BaseModel):
 
 def _password_hash(bus: Bus, contact_id: int) -> str | None:
     """Return the local password credential without exposing persistence."""
-    if bus.auth_credentials_book is not None:
-        credential = bus.auth_credentials_book.find(contact_id=contact_id, kind="password")
-        return credential.secret_hash if credential else None
-    raw = bus.settings_book.get(key=f"auth.password.{contact_id}.hash")
-    return raw or None
+    return bus.contacts_book.get_password_hash(contact_id=contact_id)
 
 
 def _set_password_hash(bus: Bus, contact_id: int, secret_hash: str) -> None:
-    if bus.auth_credentials_book is not None:
-        existing = bus.auth_credentials_book.find(contact_id=contact_id, kind="password")
-        if existing is not None:
-            bus.auth_credentials_book.delete(credential_id=existing.id)
-        bus.auth_credentials_book.add(contact_id=contact_id, kind="password", secret_hash=secret_hash)
-        return
-    bus.settings_book.set(key=f"auth.password.{contact_id}.hash", value=secret_hash)
+    bus.contacts_book.set_password_hash(
+        contact_id=contact_id, password_hash=secret_hash,
+    )
 
 
 def _delete_password_hash(bus: Bus, contact_id: int) -> bool:
-    if bus.auth_credentials_book is not None:
-        existing = bus.auth_credentials_book.find(contact_id=contact_id, kind="password")
-        return bool(existing and bus.auth_credentials_book.delete(credential_id=existing.id))
-    return bus.settings_book.delete(key=f"auth.password.{contact_id}.hash")
+    return bus.contacts_book.clear_password_hash(contact_id=contact_id)
 
 
 def _login_methods_for(bus: Bus, contact_id: int) -> tuple[list[str], bool]:
@@ -873,7 +862,7 @@ def _login_methods_for(bus: Bus, contact_id: int) -> tuple[list[str], bool]:
     admin up in ``magis_admins`` by the Telegram chat id
     (the value the WebUI uses as the login ``contact_id`` on
     that deployment mode); the single-MAGI path uses
-    Contact + auth_credentials.
+    Contact + its local password hash.
     """
     methods: list[str] = []
     is_webui_only = True

@@ -1,7 +1,7 @@
-"""ContactBook + ContactNoteBook — unified person directory + per-fact notes.
+"""ContactBook + ContactNoteBook — local people, credentials, and notes.
 
 Two tables:
-- ``contacts``       — one row per person
+- ``contacts``       — one row per person and its password credential
 - ``contact_notes``  — one row per fact (kind='permanent') or daily log (kind='daily')
 
 Schema for ``contacts`` + ``contact_notes`` tables.
@@ -133,6 +133,10 @@ class _ContactRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
+    # Password hashes belong to the local contact identity.  This field is
+    # deliberately absent from the public Contact DTO, so directory reads can
+    # never expose the hash.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class _ContactNoteRow(Base):
@@ -170,6 +174,53 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 select(_ContactRow).where(_ContactRow.telegram_id == telegram_id)
             )
             return self._row_to_dto(row) if row else None
+
+    def get_password_hash(self, *, contact_id: int) -> str | None:
+        """Return the local password hash for one contact, if configured.
+
+        The hash is intentionally available only through this explicit
+        authentication-oriented operation; it is not a ``Contact`` field.
+        """
+        with self._session() as s:
+            row = s.get(_ContactRow, contact_id)
+            return row.password_hash if row else None
+
+    def set_password_hash(self, *, contact_id: int, password_hash: str) -> None:
+        """Create or replace a contact's local password hash.
+
+        Hashing and password-strength validation happen in the auth channel;
+        this method owns only persistence and parent-contact validation.
+        """
+        if not password_hash:
+            raise ValueError("password_hash is required")
+        with self._session() as s:
+            row = s.get(_ContactRow, contact_id)
+            if row is None:
+                raise LookupError(f"contact {contact_id!r} not found")
+            row.password_hash = password_hash
+            s.commit()
+
+    def clear_password_hash(self, *, contact_id: int) -> bool:
+        """Remove a configured password hash; return whether one existed."""
+        with self._session() as s:
+            row = s.get(_ContactRow, contact_id)
+            if row is None or row.password_hash is None:
+                return False
+            row.password_hash = None
+            s.commit()
+            return True
+
+    def password_contact_ids(self, *, contact_ids: list[int]) -> set[int]:
+        """Return the subset of ids that have a local password configured."""
+        if not contact_ids:
+            return set()
+        with self._session() as s:
+            return set(s.scalars(
+                select(_ContactRow.id).where(
+                    _ContactRow.id.in_(contact_ids),
+                    _ContactRow.password_hash.is_not(None),
+                )
+            ))
 
     def add(self, *, name: str, role: str = ROLE_GUEST,
             display_name: str | None = None,

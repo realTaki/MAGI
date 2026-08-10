@@ -158,7 +158,7 @@ class SetAdminPasswordRequest(BaseModel):
     The wizard collects a name + password for the
     operator's first admin row. The endpoint upserts the
     :class:`Contact` row with ``admin=True`` and writes a
-    hashed :class:`AuthCredential` (kind=password) so the
+    password hash on that local :class:`Contact` so the
     operator can sign in without a Telegram binding.
     """
 
@@ -230,7 +230,7 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
         # source of truth.
         if admin_rows:
             first = admin_rows[0]
-            has_password = bool(bus.auth_credentials_book and bus.auth_credentials_book.find(contact_id=first.id, kind="password"))
+            has_password = bus.contacts_book.get_password_hash(contact_id=first.id) is not None
             if has_password:
                 login_methods.append("password")
             if first.telegram_id is not None:
@@ -306,7 +306,7 @@ async def set_admin_password_onboarding(
     It upserts a ``Contact`` row with ``admin=True`` and
     ``role='assigned'`` (the operator is the person
     being served, which is the single-MAGI default) and
-    writes a hashed :class:`AuthCredential`. There is no
+    writes a password hash on that local contact. There is no
     telegram_id — the row is a WebUI-only admin.
 
     If a previous admin row exists (an operator who
@@ -335,11 +335,9 @@ async def set_admin_password_onboarding(
     # Upsert the first admin Contact row (create on first call, rename on
     # subsequent calls so chat history survives a re-entered wizard).
     admin_contact_id = bus.contacts_book.upsert_first_admin(name=name)
-    # Upsert the password credential.
-    if bus.auth_credentials_book is not None:
-        bus.auth_credentials_book.add(contact_id=admin_contact_id, kind="password", secret_hash=new_hash)
-    else:
-        bus.settings_book.set(key=f"auth.password.{admin_contact_id}.hash", value=new_hash)
+    bus.contacts_book.set_password_hash(
+        contact_id=admin_contact_id, password_hash=new_hash,
+    )
 
     logger.info(
         "onboarding: admin password set",
@@ -433,7 +431,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
     #      relies on the existing admin-row check above.
     if admins:
         has_password = any(
-            bus.auth_credentials_book and bus.auth_credentials_book.find(contact_id=admin.id, kind="password")
+            bus.contacts_book.get_password_hash(contact_id=admin.id) is not None
             for admin in admins
         )
         # ``has_tg`` = any admin has a telegram_id.

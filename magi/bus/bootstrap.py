@@ -52,7 +52,7 @@ if TYPE_CHECKING:
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.bus.library.magis.authCredentialBook import AuthCredentialBook
+    from magi.bus.library.magis.controlSettingBook import ControlSettingBook
     from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
     from magi.bus.library.magis.membershipBook import (
         MagisMembershipBook,
@@ -188,9 +188,9 @@ class Bus:
     runtime_state_book: RuntimeBook | None = None  # RuntimeBook | None
     control_secrets_book: ControlSecretBook | None = None  # ControlSecretBook | None
 
-    # -- magis_book: auth (Book) --------------------------------------------------
+    # -- magis_book: control-plane state (Book) -----------------------------------
 
-    auth_credentials_book: AuthCredentialBook | None = None  # AuthCredentialBook | None
+    control_settings_book: ControlSettingBook | None = None  # MAGIS control-plane KV
 
 
 # ---------------------------------------------------------------------------
@@ -280,8 +280,8 @@ def _open_with_dirs(
         ToolDefinitionBook,
     )
     from magi.bus.library.magis import (
-        AuthCredentialBook,
         ControlSecretBook,
+        ControlSettingBook,
         MagisAdminBook,
         MagisBook,
         MagisMembershipBook,
@@ -377,6 +377,13 @@ def _open_with_dirs(
     if magis_factory is not None:
         magis_book = MagisBook(magis_factory)
         magis_admins_book = MagisAdminBook(magis_factory)
+        control_settings_book = ControlSettingBook(magis_factory)
+        # A control BUS deliberately has no node-private database.  Keep the
+        # legacy ``settings_book`` capability usable for control-only callers,
+        # but back it with a MAGIS-owned table rather than creating local
+        # settings in the shared store.
+        if local_provision_scope == "magis":
+            settings_book = control_settings_book
         # ``MagisMembershipBook.instruction_context`` reads the per-MAGI
         # personal instruction from the local SettingBook (agent-worker-
         # bus.md §6). Inject it so the Book owns the join, not the
@@ -387,7 +394,6 @@ def _open_with_dirs(
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
         control_secrets_book = ControlSecretBook(magis_factory)
-        auth_credentials_book = AuthCredentialBook(magis_factory)
     else:
         magis_book = None
         magis_admins_book = None
@@ -395,7 +401,7 @@ def _open_with_dirs(
         roles_book = None
         runtime_state_book = None
         control_secrets_book = None
-        auth_credentials_book = None
+        control_settings_book = None
 
     # ---- assemble ----------------------------------------------------------
     return Bus(
@@ -431,7 +437,7 @@ def _open_with_dirs(
         roles_book=roles_book,
         runtime_state_book=runtime_state_book,
         control_secrets_book=control_secrets_book,
-        auth_credentials_book=auth_credentials_book,
+        control_settings_book=control_settings_book,
         _local_factory=local_factory,
         _magis_factory=magis_factory,
     )

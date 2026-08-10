@@ -326,6 +326,20 @@ def test_contact_book_full_lifecycle(factory):
     assert tg is not None and tg.id == c.id
 
 
+def test_contact_book_keeps_password_hash_private_and_local(factory):
+    book = ContactBook(factory)
+    contact = book.add(name="Password Owner")
+
+    assert book.get_password_hash(contact_id=contact.id) is None
+    book.set_password_hash(contact_id=contact.id, password_hash="scrypt$hash")
+    assert book.get_password_hash(contact_id=contact.id) == "scrypt$hash"
+    assert book.password_contact_ids(contact_ids=[contact.id, 999]) == {contact.id}
+    # The public directory DTO must never contain a credential hash.
+    assert "password_hash" not in contact.to_dict()
+    assert book.clear_password_hash(contact_id=contact.id) is True
+    assert book.clear_password_hash(contact_id=contact.id) is False
+
+
 def test_contact_note_book(factory):
     cbook = ContactBook(factory)
     nbook = ContactNoteBook(factory)

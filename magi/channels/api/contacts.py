@@ -77,11 +77,10 @@ class ContactOut(BaseModel):
     updated_at: str = ""
     # ``password_set`` is a boolean flag — the operator
     # never sees the hash, only whether the contact has
-    # a credential row. Looks at the ``auth_credentials``
-    # table; computed per-call so a row added via the
+    # local password hash. Computed per-call so a password added via the
     # onboarding wizard appears immediately.
     password_set: bool = False
-    # ``login_methods`` mirrors the AuthCredential table
+    # ``login_methods`` mirrors the ContactBook password state
     # + the bound IM. The frontend uses this to render
     # the Settings → Security card without a second
     # query round-trip.
@@ -184,11 +183,9 @@ def _bulk_login_methods(
     if not views:
         return {}
     contact_ids = [v.id for v in views]
-    password_contact_ids = {
-        contact_id for contact_id in contact_ids
-        if bus.auth_credentials_book is not None
-        and bus.auth_credentials_book.find(contact_id=contact_id, kind="password") is not None
-    }
+    password_contact_ids = bus.contacts_book.password_contact_ids(
+        contact_ids=contact_ids
+    )
     out: dict[int, list[str]] = {}
     for v in views:
         methods: list[str] = []

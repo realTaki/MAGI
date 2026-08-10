@@ -11,7 +11,7 @@ from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus, open_control_bus
 from magi.bus.db.engine import EngineFactory
-from magi.bus.library.magis.authCredentialBook import _AuthCredentialRow
+from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
 from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, StartupConfig
@@ -49,19 +49,20 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     )
     local_tables = set(inspect(bus._local_factory.engine).get_table_names())
     magis_tables = set(inspect(bus._magis_factory.engine).get_table_names())
-    assert {"settings", "chat_jobs"} <= local_tables
+    assert {"settings", "chat_jobs", "contacts"} <= local_tables
     assert "magis" not in local_tables
     assert {"magis", "runtime_state"} <= magis_tables
     assert "settings" not in magis_tables
+    assert "auth_credentials" not in magis_tables
 
 
-def test_shared_magis_tables_have_no_foreign_key_to_local_contacts() -> None:
+def test_password_hash_is_local_to_contacts_not_magis() -> None:
     dialect = postgresql.dialect()
     admin_ddl = str(CreateTable(_MagisAdminRow.__table__).compile(dialect=dialect))
-    credential_ddl = str(CreateTable(_AuthCredentialRow.__table__).compile(dialect=dialect))
+    contact_ddl = str(CreateTable(_ContactRow.__table__).compile(dialect=dialect))
 
     assert "REFERENCES contacts" not in admin_ddl
-    assert "REFERENCES contacts" not in credential_ddl
+    assert "password_hash" in contact_ddl
 
 
 def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(tmp_path: Path) -> None:

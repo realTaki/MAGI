@@ -6,7 +6,6 @@ PostgreSQL connection:
 - ``magis`` + ``magis_admins`` — MAGI Society tree + admins
 - ``magis_memberships`` + ``magis_roles`` — memberships & roles
 - ``runtime_state``      — unified runtime registry (local + K8s)
-- ``auth_credentials``   — per-UID login credentials
 - ``control_*``          — control-plane registry (ports, archive, secrets)
 
 Per-MAGI fields that used to live on the old ``magic`` table
@@ -14,12 +13,7 @@ Per-MAGI fields that used to live on the old ``magic`` table
 LOCAL :class:`SettingBook` — see :attr:`SettingBook.KNOWN_KEYS`.
 """
 
-from magi.bus.library.magis.authCredentialBook import (
-    AuthCredential,
-    AuthCredentialBook,
-    PASSWORD,
-    TG_CODE,
-)
+from magi.bus.library.magis.controlSettingBook import ControlSetting, ControlSettingBook
 from magi.bus.library.magis.magisBook import (
     Magis,
     MagisAdmin,
@@ -45,10 +39,10 @@ from magi.bus.library.magis.runtimeBook import (
 
 
 __all__ = [
-    "AuthCredential",
-    "AuthCredentialBook",
     "ControlSecret",
     "ControlSecretBook",
+    "ControlSetting",
+    "ControlSettingBook",
     "DEFAULT_ROLE_INSTRUCTIONS",
     "Magis",
     "MagisAdmin",
@@ -58,11 +52,9 @@ __all__ = [
     "MagisMembershipBook",
     "MagisRole",
     "MagisRoleBook",
-    "PASSWORD",
     "RESERVED_ROLE_NAMES",
     "Runtime",
     "RuntimeBook",
     "RuntimeDesiredState",
     "RuntimeObservedState",
-    "TG_CODE",
 ]
