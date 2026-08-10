@@ -58,11 +58,15 @@ depends_on: str | Sequence[str] | None = None
 
 def _has_column(conn: sa.engine.Connection, table: str, column: str) -> bool:
     insp = sa.inspect(conn)
+    if table not in insp.get_table_names():
+        return False
     return any(c["name"] == column for c in insp.get_columns(table))
 
 
 def _has_index(conn: sa.engine.Connection, table: str, index_name: str) -> bool:
     insp = sa.inspect(conn)
+    if table not in insp.get_table_names():
+        return False
     return any(idx["name"] == index_name for idx in insp.get_indexes(table))
 
 

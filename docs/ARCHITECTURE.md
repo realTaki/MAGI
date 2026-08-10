@@ -238,7 +238,6 @@ Bus (magi/bus/bootstrap.py)
    ├─ control_secrets_book    ControlSecretBook
    ├─ port_allocations_book   PortAllocationBook
    ├─ workspace_archives_book WorkspaceArchiveBook
-   └─ auth_credentials_book   AuthCredentialBook
 ```
 
 All Book/Job imports are **lazy** inside `_open_with_dirs`; merely
