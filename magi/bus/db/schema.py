@@ -4,7 +4,7 @@ The provisioning flow has two phases:
 
 1. :func:`synchronise_schema` runs ``Base.metadata.create_all`` so every
    table the ORM knows about is present (idempotent on already-present
-   tables — safe to run on every boot).
+   tables — safe to run whenever a BUS is opened).
 2. :func:`upgrade_schema` runs the migration versions stored in
    :mod:`magi.bus.db.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
@@ -17,33 +17,28 @@ any other module can query them, and existing stores are advanced through the
 versioned, data-preserving migrations.
 
 Both phases are scoped to a single physical store (``local`` SQLite or
-``magis`` shared DB) via :func:`_tables_for_scope`; provisioning picks
-the right table set per call instead of materialising everything into
-both databases.
+``magis`` shared DB) via :func:`_tables_for_scope`; BUS bootstrap picks the
+right table set per call instead of materialising everything into both
+databases.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
-from sqlalchemy import Table
-
-from magi.bus.db.base import Base
-from magi.bus.db.engine import EngineFactory
+from sqlalchemy import Connection, Table, text
 
 # Pull in every ORM module so ``Base.registry.mappers`` is fully populated
 # by the time ``_tables_for_scope`` or any caller walks it.  Both packages'
 # ``__init__`` modules import every table / book — we just need to make
 # sure ``schema`` itself triggers that import.  Without this, a fresh
 # import of ``magi.bus.db.schema`` would leave the mapper registry empty
-# and ``apply_initial_schema`` would silently build zero tables.
+# and ``synchronise_schema`` would silently build zero tables.
 import magi.bus.guild  # noqa: F401  (side-effect: registers guild tables)
 import magi.bus.library.local  # noqa: F401  (side-effect: registers local tables)
 import magi.bus.library.magis  # noqa: F401  (side-effect: registers MAGIS tables)
-
-if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection
-
+from magi.bus.db.base import Base
+from magi.bus.db.engine import EngineFactory
 
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"
@@ -104,17 +99,23 @@ def synchronise_schema(factory: EngineFactory, *, scope: str) -> None:
     new declarative model left them missing.  Renames, dropped columns,
     constraints and data transformations stay in explicit Alembic revisions.
     """
-    Base.metadata.create_all(factory.engine, tables=_tables_for_scope(scope))
-    upgrade_schema(factory, scope=scope)
+    # Keep additive metadata repair and revisioned DDL in one transaction.  On
+    # SQLite EngineFactory begins this transaction with ``BEGIN IMMEDIATE``;
+    # PostgreSQL uses an advisory transaction lock so concurrent runtime
+    # starts/reloads cannot observe or apply a partial schema transition.
+    with factory.engine.begin() as connection:
+        if factory.dialect == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(hashtext('magi.bus.schema'))"))
+        Base.metadata.create_all(connection, tables=_tables_for_scope(scope))
+        upgrade_schema(factory, scope=scope, connection=connection)
 
 
-# Kept as an internal spelling for callers introduced during the BUS cutover.
-# New code should use ``synchronise_schema`` to make the start-time contract
-# explicit.
-apply_initial_schema = synchronise_schema
-
-
-def upgrade_schema(factory: EngineFactory, *, scope: str) -> None:
+def upgrade_schema(
+    factory: EngineFactory,
+    *,
+    scope: str,
+    connection: Connection | None = None,
+) -> None:
     """Run pending migrations for ``scope``'s store.
 
     Uses Alembic's programmatic API — there is no operator-facing
@@ -135,12 +136,17 @@ def upgrade_schema(factory: EngineFactory, *, scope: str) -> None:
     # than importing a dotted Python package.
     cfg.set_main_option("script_location", str(ALEMBIC_DIRECTORY))
     cfg.set_main_option("version_locations", str(versions_path))
+    cfg.set_main_option("path_separator", "os")
     # The URL comes from the engine — no env-var indirection at runtime.
     cfg.set_main_option("sqlalchemy.url", factory.url)
     # Do not let Alembic create a second engine: migrations need exactly the
     # same SQLite pragmas and transaction behaviour as normal BUS operations.
-    with factory.engine.connect() as connection:
+    if connection is not None:
         cfg.attributes["connection"] = connection
+        command.upgrade(cfg, "head")
+        return
+    with factory.engine.begin() as owned_connection:
+        cfg.attributes["connection"] = owned_connection
         command.upgrade(cfg, "head")
 
 
@@ -149,7 +155,6 @@ __all__ = [
     "MAGIS_SCOPE",
     "ALEMBIC_DIRECTORY",
     "VERSION_DIRECTORIES",
-    "apply_initial_schema",
     "synchronise_schema",
     "upgrade_schema",
 ]

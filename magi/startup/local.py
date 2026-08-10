@@ -295,6 +295,7 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
     env = os.environ.copy()
     env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
     env["MAGI_NAME"] = config.magi_name
+    env["MAGIS_NAME"] = config.magis_name
     if config.magis_database_url is not None:
         env["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id:

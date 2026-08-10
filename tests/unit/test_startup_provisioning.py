@@ -11,10 +11,10 @@ from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus, open_control_bus
 from magi.bus.db.engine import EngineFactory
-from magi.bus.db.schema import LOCAL_SCOPE, apply_initial_schema
 from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
+from magi.startup import runtime
 from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, StartupConfig
 from magi.startup.provision import create_node, init_first_magi
 from magi.startup.spec import load_runtime_spec
@@ -55,6 +55,12 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     assert {"magis", "runtime_state"} <= magis_tables
     assert "settings" not in magis_tables
     assert "auth_credentials" not in magis_tables
+    assert "magi_schema_revisions" not in local_tables
+    assert "magi_schema_revisions" not in magis_tables
+    with bus._local_factory.engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_add_contact_password_hash"
+    with bus._magis_factory.engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0001_magis_baseline"
 
 
 def test_password_hash_is_local_to_contacts_not_magis() -> None:
@@ -66,8 +72,10 @@ def test_password_hash_is_local_to_contacts_not_magis() -> None:
     assert "password_hash" in contact_ddl
 
 
-def test_existing_local_contacts_upgrade_with_password_hash(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'local.db'}"
+def test_open_bus_upgrades_existing_local_contacts_with_password_hash(tmp_path: Path) -> None:
+    state_dir = tmp_path / "memories"
+    state_dir.mkdir()
+    database_url = f"sqlite:///{state_dir / 'magi.db'}"
     factory = EngineFactory(database_url)
     with factory.engine.begin() as connection:
         connection.execute(text("""
@@ -86,11 +94,13 @@ def test_existing_local_contacts_upgrade_with_password_hash(tmp_path: Path) -> N
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
         connection.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0003_rename_a2a_invocation_id_and_table')"))
 
-    apply_initial_schema(factory, scope=LOCAL_SCOPE)
+    bus = open_bus(state_dir=str(state_dir))
 
     assert "password_hash" in {
-        column["name"] for column in inspect(factory.engine).get_columns("contacts")
+        column["name"] for column in inspect(bus._local_factory.engine).get_columns("contacts")
     }
+    with bus._local_factory.engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_add_contact_password_hash"
 
 
 def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(tmp_path: Path) -> None:
@@ -176,16 +186,77 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
     assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())
 
 
-def test_runtime_open_rejects_an_outdated_schema_without_migrating(tmp_path: Path) -> None:
+def test_runtime_open_repairs_an_outdated_schema_before_exposing_books(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
     bus = open_bus(
         state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
     )
     with bus._local_factory.engine.begin() as connection:
+        connection.execute(text("ALTER TABLE contacts DROP COLUMN password_hash"))
         connection.execute(
-            text("UPDATE magi_schema_revisions SET revision = 'stale' WHERE scope = 'node'")
+            text("UPDATE alembic_version SET version_num = '0003_rename_a2a_invocation_id_and_table'")
         )
 
-    with pytest.raises(StorageNotProvisioned, match="expected '0001'"):
-        open_bus(state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url)
+    repaired = open_bus(
+        state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
+    )
+    assert "password_hash" in {
+        column["name"] for column in inspect(repaired._local_factory.engine).get_columns("contacts")
+    }
+    with repaired._local_factory.engine.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_add_contact_password_hash"
+
+
+def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_path: Path) -> None:
+    config = _first_config(tmp_path)
+    spec = init_first_magi(config)
+    bus = open_bus(
+        state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
+    )
+    with bus._local_factory.engine.begin() as connection:
+        connection.execute(text("DROP TABLE action_items"))
+
+    repaired = open_bus(
+        state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
+    )
+    assert "action_items" in set(inspect(repaired._local_factory.engine).get_table_names())
+
+
+def test_reload_app_factory_repairs_schema_before_runtime_context_is_exposed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _first_config(tmp_path)
+    spec = init_first_magi(config)
+    bus = open_bus(
+        state_dir=str(config.workspace_dir / "memories"), magis_url=spec.magis_database_url,
+    )
+    with bus._local_factory.engine.begin() as connection:
+        connection.execute(text("DROP TABLE action_items"))
+
+    runtime._publish_runtime_config(config)
+    app = runtime.create_runtime_app_from_environment()
+
+    assert "action_items" in set(inspect(app.state.bus._local_factory.engine).get_table_names())
+
+
+def test_run_magi_uses_import_factory_for_uvicorn_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _first_config(tmp_path)
+    spec = init_first_magi(config)
+    captured: dict[str, object] = {}
+
+    def _run(app, **kwargs) -> None:
+        captured["app"] = app
+        captured.update(kwargs)
+
+    monkeypatch.setattr(runtime.uvicorn, "run", _run)
+    monkeypatch.setattr(runtime, "_reload_enabled", lambda: True)
+
+    runtime.run_magi(config)
+
+    assert captured["app"] == "magi.startup.runtime:create_runtime_app_from_environment"
+    assert captured["factory"] is True
+    assert captured["reload"] is True
+    assert captured["port"] == spec.runtime_port

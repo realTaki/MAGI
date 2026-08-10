@@ -19,8 +19,13 @@ What this file does:
    Alembic invocation can still fall back to ``sqlalchemy.url``.
 
 Offline mode (``--sql``) is supported but never invoked in normal boot
-— ``upgrade_schema`` always runs online against the live SQLite file.
+— ``upgrade_schema`` always runs online against the live BUS store.
 """
+
+# Alembic requires this executable environment to modify ``sys.path`` before
+# importing application models, so its import order is intentionally unlike a
+# normal module.
+# ruff: noqa: E402, I001
 
 from __future__ import annotations
 

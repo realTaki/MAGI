@@ -5,7 +5,7 @@ Revises:
 Create Date: 2026-08-10 00:00:00
 
 MAGI bootstraps its tables via SQLAlchemy ``Base.metadata.create_all``
-in :func:`magi.bus.db.schema.apply_initial_schema` at every boot
+in :func:`magi.bus.db.schema.synchronise_schema` before a BUS is opened
 (idempotent on already-present tables).  This baseline migration
 exists only so the schema-upgrade machinery has a known starting
 revision for the post-bootstrap state — ``upgrade`` / ``downgrade``
@@ -15,7 +15,7 @@ is invoked.
 
 Workflow:
 
-- **Fresh DB**: ``apply_initial_schema`` runs ``create_all`` first
+- **Fresh DB**: ``synchronise_schema`` runs ``create_all`` first
   (so the tables exist), then ``upgrade_schema`` lands on
   ``0001_baseline`` and stamps it.  Subsequent migrations
   (``0002``, ``0003``, ...) modify the schema in place.

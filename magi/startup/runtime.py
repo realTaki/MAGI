@@ -72,11 +72,11 @@ class RuntimeContext:
     """The one BUS, worker registry, and immutable spec of one node process."""
 
     startup: StartupContext
-    bus: "Bus"
-    workers: "WorkerRegistry"
+    bus: Bus
+    workers: WorkerRegistry
 
     @classmethod
-    def create(cls, startup: StartupContext) -> "RuntimeContext":
+    def create(cls, startup: StartupContext) -> RuntimeContext:
         from magi.startup.workers import WorkerRegistry
 
         bus = _build_bus(startup)
@@ -125,18 +125,14 @@ class RuntimeContext:
 # ----------------------------------------------------------------------
 
 
-async def run_magi(config: StartupConfig) -> None:
-    """Run one MAGI process until interrupted.
-
-    Blocking — uvicorn.serve() blocks the event loop. The function does
-    not return until uvicorn is asked to shut down.
-    """
+def _startup_context(config: StartupConfig) -> StartupContext:
+    """Resolve one provisioned node before its ASGI app is built."""
     spec = load_runtime_spec(config.workspace_dir)
     if spec.magi_name != config.magi_name:
         raise RuntimeError(
             f"runtime spec belongs to {spec.magi_name!r}, not {config.magi_name!r}"
         )
-    startup = StartupContext(
+    return StartupContext(
         host_workspace_dir=config.host_workspace_dir,
         workspace_dir=config.workspace_dir,
         magi_name=spec.magi_name,
@@ -148,9 +144,73 @@ async def run_magi(config: StartupConfig) -> None:
         runtime_port=spec.runtime_port,
     )
 
-    context = RuntimeContext.create(startup)
-    async with context.running():
-        await _serve_runtime_api(context)
+
+
+def _publish_runtime_config(config: StartupConfig) -> None:
+    """Make the explicitly selected node available to a reload child.
+
+    Uvicorn's reload supervisor imports the ASGI factory in a fresh Python
+    process.  Its only stable input channel is the child environment, so copy
+    the already-resolved CLI configuration there before the supervisor starts.
+    The runtime spec remains the source of identity and database URLs.
+    """
+    os.environ["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
+    os.environ["MAGI_NAME"] = config.magi_name
+    os.environ["MAGIS_NAME"] = config.magis_name
+    if config.magis_database_url is None:
+        os.environ.pop("MAGIS_DATABASE_URL", None)
+    else:
+        os.environ["MAGIS_DATABASE_URL"] = config.magis_database_url
+    if config.magi_id is None:
+        os.environ.pop("MAGI_ID", None)
+    else:
+        os.environ["MAGI_ID"] = config.magi_id
+
+
+def create_runtime_app_from_environment():
+    """Uvicorn reload factory for one MAGI Runtime API.
+
+    Constructing :class:`RuntimeContext` runs the BUS schema barrier before
+    the FastAPI app or any worker becomes available.  The app lifespan then
+    owns worker start/stop, which means every Uvicorn reload gets a fresh,
+    correctly ordered lifecycle.
+    """
+    config = StartupConfig.from_env()
+    context = RuntimeContext.create(_startup_context(config))
+
+    from magi.channels.api.app import create_runtime_app
+
+    app = create_runtime_app(context=context)
+
+    @asynccontextmanager
+    async def _runtime_lifespan(_app):
+        async with context.running():
+            yield
+
+    app.router.lifespan_context = _runtime_lifespan
+    return app
+
+
+def run_magi(config: StartupConfig) -> None:
+    """Run one MAGI with a real Uvicorn reload supervisor when enabled.
+
+    The ASGI application must be an import-string factory for Uvicorn to
+    supervise code changes.  On every spawned/reloaded child, the factory
+    above synchronises the database before it starts workers or serves HTTP.
+    """
+    startup = _startup_context(config)
+    _publish_runtime_config(config)
+    reload = _reload_enabled()
+    reload_dirs = _reload_dirs() if reload else None
+    uvicorn.run(
+        "magi.startup.runtime:create_runtime_app_from_environment",
+        factory=True,
+        host=_RUNTIME_HOST,
+        port=startup.runtime_port,
+        log_level=_DEFAULT_LOG_LEVEL,
+        reload=reload,
+        reload_dirs=reload_dirs,
+    )
 
 
 # ----------------------------------------------------------------------
@@ -158,14 +218,14 @@ async def run_magi(config: StartupConfig) -> None:
 # ----------------------------------------------------------------------
 
 
-def _build_bus(startup: StartupContext) -> "Bus":
+def _build_bus(startup: StartupContext) -> Bus:
     """Construct the single Bus facade for this process.
 
     Paths are resolved by :class:`StartupContext` and passed through
     explicitly.  The runtime never bootstraps the retired ``magi.bus``
     facade or shares its process-global state.
     """
-    from magi.bus.bootstrap import Bus, open_bus
+    from magi.bus.bootstrap import open_bus
 
     state_dir = str(startup.workspace_dir / "memories")
     return open_bus(
@@ -182,7 +242,7 @@ def _to_magi_id(raw: str) -> int | None:
         return None
 
 
-def _validate_runtime_identity(startup: StartupContext, bus: "Bus") -> None:
+def _validate_runtime_identity(startup: StartupContext, bus: Bus) -> None:
     """Reject a mismatched spec or sticky-port conflict before workers listen."""
     magi_id = _to_magi_id(startup.magi_id)
     if magi_id is None or bus.memberships_book is None:
@@ -218,7 +278,7 @@ def _validate_runtime_identity(startup: StartupContext, bus: "Bus") -> None:
 
 def _build_channels(
     _startup: StartupContext,
-    bus: "Bus | None" = None,
+    bus: Bus | None = None,
 ) -> list[str]:
     """Resolve enabled message channels from bus settings_book.
 
@@ -246,34 +306,6 @@ def _build_channels(
 # ----------------------------------------------------------------------
 # HTTP serve
 # ----------------------------------------------------------------------
-
-
-async def _serve_runtime_api(
-    context: RuntimeContext,
-) -> None:
-    """Serve the private Runtime FastAPI app in the active event loop.
-
-    Per plan §21 — host + port are hardcoded; reload is decided by
-    :func:`_reload_enabled` (mode-aware: deploy configs or defaults).
-    """
-    host = _RUNTIME_HOST  # internal host only; not externally exposed
-    port = context.startup.runtime_port
-    reload = _reload_enabled()
-    log_level = _log_level(context.bus)
-    reload_dirs = _reload_dirs() if reload else None
-
-    from magi.channels.api.app import create_runtime_app
-
-    config = uvicorn.Config(
-        create_runtime_app(context=context),
-        factory=False,
-        host=host,
-        port=port,
-        log_level=log_level,
-        reload=reload,
-        reload_dirs=reload_dirs,
-    )
-    await uvicorn.Server(config).serve()
 
 
 def _reload_enabled() -> bool:
@@ -307,20 +339,6 @@ def _reload_enabled() -> bool:
     return True
 
 
-def _log_level(bus: "Bus") -> str:
-    """Read DB-driven log level if present, fall back to default.
-
-    Reads the explicitly injected Bus only.
-    """
-    try:
-        raw = bus.settings_book.get(key="system.log_level")
-        if raw and raw in {"debug", "info", "warning", "error"}:
-            return raw
-    except Exception:  # noqa: BLE001
-        logger.warning("could not read system.log_level from Bus", exc_info=True)
-    return _DEFAULT_LOG_LEVEL
-
-
 def _reload_dirs() -> list[str]:
     """Resolve uvicorn's reload directory — the package root."""
     import magi
@@ -330,5 +348,6 @@ def _reload_dirs() -> list[str]:
 
 __all__ = [
     "RuntimeContext",
+    "create_runtime_app_from_environment",
     "run_magi",
 ]

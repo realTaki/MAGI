@@ -38,13 +38,13 @@ if TYPE_CHECKING:
     from magi.bus.library.file.skillsBook import SkillsBook
     from magi.bus.library.local.actionItemBook import ActionItemBook
     from magi.bus.library.local.contactBook import ContactBook, ContactNoteBook
-    from magi.bus.library.local.hookSignoffBook import HookSignoffBook
-    from magi.bus.library.local.mcpServerBook import McpServerBook
-    from magi.bus.library.local.memoryBook import MemoryBook
     from magi.bus.library.local.conversationBook import (
         ConversationBook,
         MessageBook,
     )
+    from magi.bus.library.local.hookSignoffBook import HookSignoffBook
+    from magi.bus.library.local.mcpServerBook import McpServerBook
+    from magi.bus.library.local.memoryBook import MemoryBook
     from magi.bus.library.local.settingBook import SettingBook
     from magi.bus.library.local.tasksBook import TaskBook, TaskRunBook
     from magi.bus.library.local.tokenUsageBook import TokenUsageBook
@@ -214,11 +214,12 @@ def open_bus(
     If *prompts_dir* is ``None``, the bundled ``magi/prompts/``
     directory is auto-detected from the package location.
 
-    Storage provisioning is intentionally a separate operation in
-    :mod:`magi.bus.provision`.  This function never creates directories,
-    tables, default settings, or workspace files.  It raises
-    :class:`magi.bus.provision.StorageNotProvisioned` when either requested
-    database has not been provisioned.
+    Before returning the facade, this function synchronises all existing BUS
+    stores.  That happens before any Book or JobBoard is constructed, so a
+    startup or code-reload cannot let another module query a stale table.
+    Topology/workspace provisioning remains separate in
+    :mod:`magi.bus.provision`; this function does not create node identity or
+    default application settings.
 
     Returns a ready-to-use ``Bus``.  The caller is responsible for
     passing it to workers via constructor injection.  There is no
@@ -255,7 +256,7 @@ def _open_with_dirs(
     prompts_dir: str | None = None,
     allow_unprovisioned: bool = False,
     local_database_url: str | None = None,
-    local_provision_scope: str = "node",
+    local_provision_scope: str = "local",
 ) -> Bus:
     """Wire the bus with explicit paths (for tests).
 
@@ -263,15 +264,29 @@ def _open_with_dirs(
     registering ORM tables at module-import time.
     """
     # ---- lazy imports (avoid eager ORM table registration) ----------------
+    from magi.bus.db.file import FileShelf
+    from magi.bus.guild import (
+        callLLMJobBoard,
+        changeProviderConfigJobBoard,
+        chatJobBoard,
+        deliveryJobBoard,
+        mcpServerChangedJobBoard,
+        runTaskJobBoard,
+        runToolJobBoard,
+        seedPresetTasksJobBoard,
+        sendA2AJobBoard,
+    )
+    from magi.bus.library.file.promptBook import PromptBook
+    from magi.bus.library.file.skillsBook import build_default_skills_book
     from magi.bus.library.local import (
         ActionItemBook,
         ContactBook,
         ContactNoteBook,
+        ConversationBook,
         HookSignoffBook,
         McpServerBook,
         MemoryBook,
         MessageBook,
-        ConversationBook,
         SettingBook,
         TaskBook,
         TaskRunBook,
@@ -288,20 +303,6 @@ def _open_with_dirs(
         MagisRoleBook,
         RuntimeBook,
     )
-    from magi.bus.guild import (
-        callLLMJobBoard,
-        changeProviderConfigJobBoard,
-        deliveryJobBoard,
-        mcpServerChangedJobBoard,
-        chatJobBoard,
-        runTaskJobBoard,
-        runToolJobBoard,
-        seedPresetTasksJobBoard,
-        sendA2AJobBoard,
-    )
-    from magi.bus.db.file import FileShelf
-    from magi.bus.library.file.promptBook import PromptBook
-    from magi.bus.library.file.skillsBook import build_default_skills_book
 
     # ---- wire factories ----------------------------------------------------
     state_path = Path(state_dir)
@@ -323,12 +324,24 @@ def _open_with_dirs(
     # resolution.  No env reads — ``magis_url=None`` simply means
     # "no MAGIS database configured" (test / single-MAGIS scenarios).
     magis_factory = build_magis_factory(magis_url) if magis_url else None
-    if not allow_unprovisioned:
-        from magi.bus.provision import require_provisioned
+    # Schema synchronisation is the bootstrap barrier: do this before any
+    # Book/JobBoard exists, and therefore before workers or HTTP handlers can
+    # query the database.  A uvicorn reload starts a new RuntimeContext and
+    # passes this barrier again.
+    from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 
-        require_provisioned(local_factory, scope=local_provision_scope)
-        if magis_factory is not None:
-            require_provisioned(magis_factory, scope="magis")
+    local_scope = MAGIS_SCOPE if local_provision_scope == "magis" else LOCAL_SCOPE
+    if (
+        magis_factory is not None
+        and local_scope == LOCAL_SCOPE
+        and local_factory.url == magis_factory.url
+    ):
+        raise ValueError("MAGI-local and MAGIS stores must use distinct database URLs")
+    synchronise_schema(local_factory, scope=local_scope)
+    if magis_factory is not None and not (
+        local_scope == MAGIS_SCOPE and local_factory.url == magis_factory.url
+    ):
+        synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
 
     # ---- local books -------------------------------------------------------
     conversations_book = ConversationBook(local_factory)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 from collections.abc import Sequence
 
 from magi.startup import local, webui
@@ -64,7 +63,7 @@ def cmd_node_run(args: argparse.Namespace) -> int:
         return local.start_magi(config=config)
     from magi.startup.runtime import run_magi
 
-    asyncio.run(run_magi(config))
+    run_magi(config)
     return 0
 
 

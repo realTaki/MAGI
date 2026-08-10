@@ -13,8 +13,8 @@ Idempotency
 
 Every DDL statement is guarded by an inspection of the live schema
 — re-running against an already-current DB is a no-op.  This matters
-because :func:`magi.bus.db.schema.upgrade_schema` runs on every
-boot, and :func:`apply_initial_schema` runs ``create_all`` first
+because :func:`magi.bus.db.schema.upgrade_schema` runs before every
+BUS is opened, and :func:`synchronise_schema` runs ``create_all`` first
 (which already produces the post-migration shape on a fresh DB).
 Without these guards, a fresh DB would hit ``no such column:
 event_id`` on the very first boot.

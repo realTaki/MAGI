@@ -15,7 +15,7 @@ Idempotency
 ===========
 
 Both renames are guarded by an inspection of the live schema.  On a
-fresh DB :func:`magi.bus.db.schema.apply_initial_schema` runs
+fresh DB :func:`magi.bus.db.schema.synchronise_schema` runs
 ``create_all`` first, which already produces ``a2a_jobs`` with
 ``job_id`` — re-running this migration on top of that is a no-op.
 
