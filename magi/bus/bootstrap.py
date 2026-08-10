@@ -60,9 +60,7 @@ if TYPE_CHECKING:
     )
     from magi.bus.library.magis.runtimeBook import (
         ControlSecretBook,
-        PortAllocationBook,
         RuntimeBook,
-        WorkspaceArchiveBook,
     )
     from magi.bus.stream import StreamHub
 
@@ -189,8 +187,6 @@ class Bus:
 
     runtime_state_book: RuntimeBook | None = None  # RuntimeBook | None
     control_secrets_book: ControlSecretBook | None = None  # ControlSecretBook | None
-    port_allocations_book: PortAllocationBook | None = None  # PortAllocationBook | None
-    workspace_archives_book: WorkspaceArchiveBook | None = None  # WorkspaceArchiveBook | None
 
     # -- magis_book: auth (Book) --------------------------------------------------
 
@@ -290,9 +286,7 @@ def _open_with_dirs(
         MagisBook,
         MagisMembershipBook,
         MagisRoleBook,
-        PortAllocationBook,
         RuntimeBook,
-        WorkspaceArchiveBook,
     )
     from magi.bus.guild import (
         callLLMJobBoard,
@@ -393,8 +387,6 @@ def _open_with_dirs(
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
         control_secrets_book = ControlSecretBook(magis_factory)
-        port_allocations_book = PortAllocationBook(magis_factory)
-        workspace_archives_book = WorkspaceArchiveBook(magis_factory)
         auth_credentials_book = AuthCredentialBook(magis_factory)
     else:
         magis_book = None
@@ -403,8 +395,6 @@ def _open_with_dirs(
         roles_book = None
         runtime_state_book = None
         control_secrets_book = None
-        port_allocations_book = None
-        workspace_archives_book = None
         auth_credentials_book = None
 
     # ---- assemble ----------------------------------------------------------
@@ -441,8 +431,6 @@ def _open_with_dirs(
         roles_book=roles_book,
         runtime_state_book=runtime_state_book,
         control_secrets_book=control_secrets_book,
-        port_allocations_book=port_allocations_book,
-        workspace_archives_book=workspace_archives_book,
         auth_credentials_book=auth_credentials_book,
         _local_factory=local_factory,
         _magis_factory=magis_factory,

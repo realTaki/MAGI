@@ -732,7 +732,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
     def record_run_start(
         self, *, task_id: str, trigger: str,
-        run_id: str | None = None,
+        id: str | None = None,
     ) -> TaskRun:
         """Insert a task_runs row, write task.last_run_at.
 
@@ -740,7 +740,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
           'cron_tick' | 'run_at_consume' | 'manual_run' |
           'api_manual_run' | 'schedule_task_tool'
         """
-        run_id = run_id or uuid.uuid4().hex
+        run_id = id or uuid.uuid4().hex
         started_at = utcnow_naive().isoformat()
         with self._session() as s:
             run_row = _TaskRunRow(
@@ -789,9 +789,9 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
     dto_cls = TaskRun
 
-    def get(self, *, run_id: str) -> TaskRun | None:
+    def get(self, *, id: str) -> TaskRun | None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run_id))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
             return self._row_to_dto(row) if row else None
 
     def add(self, **kwargs) -> TaskRun:
@@ -802,13 +802,13 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def complete(self, *, run_id: str, status: str,
+    def complete(self, *, id: str, status: str,
                  error: str | None = None,
                  reply_excerpt: str | None = None,
                  finished_at: str = "",
                  latency_ms: int | None = None) -> None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run_id))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
             if row is None:
                 return
             row.status = status

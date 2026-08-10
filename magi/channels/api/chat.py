@@ -140,7 +140,7 @@ class ChatSendRequest(BaseModel):
 
 
 class ChatSendResponse(BaseModel):
-    run_id: str
+    job_id: str
     status: str = "accepted"
     # Always returned so the frontend can stash it on a
     # fresh chat. For an existing-session send it equals
@@ -334,13 +334,13 @@ async def send_chat(
 
     # Stable producer-side idempotency: the inbound session-message
     # id is what makes a network retry collapse to the same inbox row.
-    chat_job_event_id = f"webui:{session_id}:{inbound_message_id}"
-    run_id = publish_chat(
+    chat_job_id = f"webui:{session_id}:{inbound_message_id}"
+    job_id = publish_chat(
         bus,
         text=text, channel=Channel.WEBUI, contact_id=contact_id,
         conversation_id=session_id,
         caller_role=contact_role,
-        event_id=chat_job_event_id, run_id=chat_job_event_id,
+        job_id=chat_job_id,
         correlation_id=inbound_message_id,
     )
-    return ChatSendResponse(run_id=run_id, session_id=session_id)
+    return ChatSendResponse(job_id=job_id, session_id=session_id)

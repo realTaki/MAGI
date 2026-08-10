@@ -178,6 +178,8 @@ def create_app(
     from magi.channels.api import runtime_access
     app.include_router(runtime_access.router, prefix="/api")
     app.include_router(magi.self_router, prefix="/api")
+    # A2A router is a stub — its entry point raises NotImplementedError.
+    # Mount it anyway so the endpoint exists and fails loudly.
     from magi.channels.a2a.router import router as a2a_router
     app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
@@ -204,8 +206,6 @@ def create_app(
     from magi.channels.api import chat
 
     app.include_router(chat.router, prefix="/api")
-    from magi.channels.api import runs
-    app.include_router(runs.router, prefix="/api")
     # Chat session CRUD — file-backed per-user conversation
     # history (D.6). Each operator's sessions live under
     # ``<workspace>/memories/<state>.db`` (D.18) and the
