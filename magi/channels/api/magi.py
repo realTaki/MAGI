@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.library.magis.controlBook import RuntimeDesiredState
+from magi.bus.library.magis.runtimeBook import RuntimeDesiredState
 from magi.channels.api.auth_gates import admin_gate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -144,8 +144,8 @@ def _magi_out(bus: Bus, membership) -> MagiOut:
     magis = bus.magis_book.get(magis_id=membership.magis_id) if bus.magis_book else None
     role = bus.roles_book.get(role_id=membership.role_id) if bus.roles_book else None
     runtime = (
-        bus.control_runtimes_book.get(runtime_id=membership.id)
-        if bus.control_runtimes_book else None
+        bus.runtime_state_book.get(runtime_id=membership.id)
+        if bus.runtime_state_book else None
     )
     return MagiOut(
         id=membership.id,
@@ -207,8 +207,8 @@ def create_magi(payload: MagiCreate, _admin: AdminGate, bus: BusDep) -> MagiOut:
     # by the node lifecycle; the control row keeps the display label while
     # that provisioning is pending.  Creating it for every identity also
     # makes later rename/delete semantics uniform.
-    if bus.control_runtimes_book:
-        bus.control_runtimes_book.upsert(
+    if bus.runtime_state_book:
+        bus.runtime_state_book.upsert(
             runtime_id=membership.id,
             backend_kind="unprovisioned",
             backend_ref=(payload.name or f"EVA-{membership.id:03d}").strip() or f"EVA-{membership.id:03d}",
@@ -230,9 +230,9 @@ def get_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> MagiOut:
 @router.patch("/magi/{magi_id}", response_model=MagiOut)
 def update_magi(magi_id: int, payload: MagiUpdate, _admin: AdminGate, bus: BusDep) -> MagiOut:
     _require_visible(bus, magi_id)
-    if bus.control_runtimes_book is None:
+    if bus.runtime_state_book is None:
         raise MagiHTTPException(503, "runtime.unavailable", "runtime registry is unavailable")
-    runtime = bus.control_runtimes_book.rename(runtime_id=magi_id, backend_ref=payload.name)
+    runtime = bus.runtime_state_book.rename(runtime_id=magi_id, backend_ref=payload.name)
     if runtime is None:
         raise MagiHTTPException(409, "runtime.not_provisioned", "MAGI has no control runtime record")
     return _magi_out(bus, _membership_or_404(bus, magi_id))
@@ -242,12 +242,12 @@ def _set_lifecycle(bus: Bus, *, magi_id: int, desired_state: RuntimeDesiredState
     _require_visible(bus, magi_id)
     if magi_id == _runtime_magi_id_optional():
         raise MagiHTTPException(409, "runtime.current_magi_protected", "Cannot stop the MAGI serving this request")
-    if bus.control_runtimes_book is None:
+    if bus.runtime_state_book is None:
         raise MagiHTTPException(503, "runtime.unavailable", "runtime registry is unavailable")
-    existing = bus.control_runtimes_book.get(runtime_id=magi_id)
+    existing = bus.runtime_state_book.get(runtime_id=magi_id)
     if existing is None or existing.backend_kind == "unprovisioned":
         raise MagiHTTPException(409, "runtime.not_provisioned", "Provision this MAGI before changing its lifecycle")
-    runtime = bus.control_runtimes_book.set_desired_state(runtime_id=magi_id, desired_state=desired_state)
+    runtime = bus.runtime_state_book.set_desired_state(runtime_id=magi_id, desired_state=desired_state)
     result = _runtime_out(runtime)
     assert result is not None
     return result
@@ -273,11 +273,11 @@ def delete_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> Response:
     _require_visible(bus, magi_id)
     if magi_id == _runtime_magi_id_optional():
         raise MagiHTTPException(409, "runtime.current_magi_protected", "Cannot delete the MAGI serving this request")
-    runtime = bus.control_runtimes_book.get(runtime_id=magi_id) if bus.control_runtimes_book else None
+    runtime = bus.runtime_state_book.get(runtime_id=magi_id) if bus.runtime_state_book else None
     if runtime is not None and runtime.backend_kind != "unprovisioned":
         raise MagiHTTPException(409, "runtime.deprovision_required", "Deprovision the runtime before removing its identity")
-    if runtime is not None and bus.control_runtimes_book:
-        bus.control_runtimes_book.remove(runtime_id=magi_id)
+    if runtime is not None and bus.runtime_state_book:
+        bus.runtime_state_book.remove(runtime_id=magi_id)
     if not bus.memberships_book or not bus.memberships_book.remove(magi_id=magi_id):
         raise MagiHTTPException(404, "not_found.magi", "MAGI not found")
     return Response(status_code=204)

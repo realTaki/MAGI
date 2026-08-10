@@ -53,17 +53,16 @@ if TYPE_CHECKING:
         ToolDefinitionBook,
     )
     from magi.bus.library.magis.authCredentialBook import AuthCredentialBook
-    from magi.bus.library.magis.controlBook import (
-        ControlRuntimeBook,
-        ControlSecretBook,
-        PortAllocationBook,
-        WorkspaceArchiveBook,
-    )
-    from magi.bus.library.magis.evaRuntimeBook import EvaRuntimeBook
     from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
     from magi.bus.library.magis.membershipBook import (
         MagisMembershipBook,
         MagisRoleBook,
+    )
+    from magi.bus.library.magis.runtimeBook import (
+        ControlSecretBook,
+        PortAllocationBook,
+        RuntimeBook,
+        WorkspaceArchiveBook,
     )
     from magi.bus.stream import StreamHub
 
@@ -188,8 +187,7 @@ class Bus:
 
     # -- magis_book: runtimes (Books) --------------------------------------------
 
-    eva_runtimes_book: EvaRuntimeBook | None = None  # EvaRuntimeBook | None
-    control_runtimes_book: ControlRuntimeBook | None = None  # ControlRuntimeBook | None
+    runtime_state_book: RuntimeBook | None = None  # RuntimeBook | None
     control_secrets_book: ControlSecretBook | None = None  # ControlSecretBook | None
     port_allocations_book: PortAllocationBook | None = None  # PortAllocationBook | None
     workspace_archives_book: WorkspaceArchiveBook | None = None  # WorkspaceArchiveBook | None
@@ -287,14 +285,13 @@ def _open_with_dirs(
     )
     from magi.bus.library.magis import (
         AuthCredentialBook,
-        ControlRuntimeBook,
         ControlSecretBook,
-        EvaRuntimeBook,
         MagisAdminBook,
         MagisBook,
         MagisMembershipBook,
         MagisRoleBook,
         PortAllocationBook,
+        RuntimeBook,
         WorkspaceArchiveBook,
     )
     from magi.bus.guild import (
@@ -394,8 +391,7 @@ def _open_with_dirs(
             magis_factory, settings_book=settings_book,
         )
         roles_book = MagisRoleBook(magis_factory)
-        eva_runtimes_book = EvaRuntimeBook(magis_factory)
-        control_runtimes_book = ControlRuntimeBook(magis_factory)
+        runtime_state_book = RuntimeBook(magis_factory)
         control_secrets_book = ControlSecretBook(magis_factory)
         port_allocations_book = PortAllocationBook(magis_factory)
         workspace_archives_book = WorkspaceArchiveBook(magis_factory)
@@ -405,8 +401,7 @@ def _open_with_dirs(
         magis_admins_book = None
         memberships_book = None
         roles_book = None
-        eva_runtimes_book = None
-        control_runtimes_book = None
+        runtime_state_book = None
         control_secrets_book = None
         port_allocations_book = None
         workspace_archives_book = None
@@ -444,8 +439,7 @@ def _open_with_dirs(
         magis_admins_book=magis_admins_book,
         memberships_book=memberships_book,
         roles_book=roles_book,
-        eva_runtimes_book=eva_runtimes_book,
-        control_runtimes_book=control_runtimes_book,
+        runtime_state_book=runtime_state_book,
         control_secrets_book=control_secrets_book,
         port_allocations_book=port_allocations_book,
         workspace_archives_book=workspace_archives_book,

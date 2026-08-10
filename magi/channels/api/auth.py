@@ -51,7 +51,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.guild.deliveryJob import DeliveryJob
-from magi.bus.library.magis.controlBook import RuntimeObservedState
+from magi.bus.library.magis.runtimeBook import RuntimeObservedState
 from magi.channels.api import control_store
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
@@ -363,7 +363,7 @@ async def _target_access(bus: Bus, magi_id: int, method: str, path: str, payload
     selected runtime id and exact path.
     """
     try:
-        runtime = bus.eva_runtimes_book.get(runtime_id=magi_id) if bus.eva_runtimes_book else None
+        runtime = bus.runtime_state_book.get(runtime_id=magi_id) if bus.runtime_state_book else None
         base = getattr(runtime, "base_url", None) if runtime else None
         if not base:
             raise RuntimeError("runtime unavailable")
@@ -394,7 +394,7 @@ async def available_magi(bus: BusDep) -> AvailableMAGIResponse:
     The control deployment reads runtime registry metadata only.  It does not
     read a target's local workspace or user records.
     """
-    runtimes_book = bus.control_runtimes_book
+    runtimes_book = bus.runtime_state_book
     if runtimes_book is None:
         return AvailableMAGIResponse(magi=[])
     running_states = {
