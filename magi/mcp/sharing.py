@@ -20,7 +20,7 @@ MAGIS root can also call its tools. Three design shapes
 were considered:
 
   1. **Inherited rows** — keep the ``mcp_servers`` table
-     in the *public* MAGIS PostgreSQL; every MAGI inherits
+     in the *public* MAGIS shared database; every MAGI inherits
      all rows from its parent MAGIS. Simple; loses the
      "operator-only" gate (a per-MAGI admin would leak
      siblings' state).
@@ -40,13 +40,13 @@ were considered:
 
 This module scaffolds option (2). It's the shape that
 fits the existing deployment model (one process per
-MAGI, private SQLite, public PostgreSQL via the direct
+MAGI, private SQLite, public MAGIS database via the direct
 MAGIS binding) and avoids the per-call network hop.
 
 Schema (planned)
 ----------------
 
-A new table on the **public** MAGIS PostgreSQL:
+A new table on the **public** MAGIS shared database:
 
   - ``magis_shared_mcp_servers`` — adopted by an ADAM
     MAGIS, marked as "shared by this MAGIS". Columns

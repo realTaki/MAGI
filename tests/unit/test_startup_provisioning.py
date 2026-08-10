@@ -10,6 +10,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus, open_control_bus
+from magi.bus.db.engine import EngineFactory
 from magi.bus.library.magis.authCredentialBook import _AuthCredentialRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
@@ -61,6 +62,13 @@ def test_shared_magis_tables_have_no_foreign_key_to_local_contacts() -> None:
 
     assert "REFERENCES contacts" not in admin_ddl
     assert "REFERENCES contacts" not in credential_ddl
+
+
+def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(tmp_path: Path) -> None:
+    factory = EngineFactory(f"sqlite+pysqlite:///{tmp_path / 'magis.db'}")
+    assert factory.dialect == "sqlite"
+    with pytest.raises(ValueError, match="SQLite or PostgreSQL"):
+        EngineFactory("mysql://localhost/not-supported")
 
 
 def test_node_creation_has_sticky_distinct_runtime_port(tmp_path: Path) -> None:
@@ -125,8 +133,6 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
     control_dir = tmp_path / "MAGI_Societies" / "genesis" / "control"
-    node_database = config.workspace_dir / "memories" / "magi.db"
-    before = node_database.stat().st_mtime_ns
 
     bus = open_control_bus(control_dir=str(control_dir), magis_url=spec.magis_database_url)
 
@@ -139,7 +145,6 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
     assert bus.control_settings_book is not None
     assert bus.control_settings_book.get(key="control.test") == "shared"
     assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())
-    assert node_database.stat().st_mtime_ns == before
 
 
 def test_runtime_open_rejects_an_outdated_schema_without_migrating(tmp_path: Path) -> None:

@@ -113,7 +113,7 @@ ADAM is a coordinator, not an unrestricted host administrator. It is not
 granted the host Docker socket or broad Kubernetes credentials. Instead, it
 requests lifecycle changes through a restricted, authenticated orchestrator.
 The control plane creates only the scoped private MAGI workspace and runtime,
-plus the PostgreSQL and public workspace resources for a MAGIS when needed.
+plus the shared-database and public workspace resources for a MAGIS when needed.
 
 ## What exists today
 
