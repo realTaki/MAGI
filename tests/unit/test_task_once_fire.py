@@ -102,9 +102,9 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     f.create_all()
     tb = TaskBook(f)
 
-    # ``tasks.uid`` → ``contacts.id`` is a RESTRICT FK; seed a contact
-    # so the INSERT below doesn't trip it.
-    uid = ContactBook(f).add(name="test-contact", role="assigned").id
+    # ``tasks.contact_id`` → ``contacts.id`` is a RESTRICT FK; seed a
+    # contact so the INSERT below doesn't trip it.
+    contact_id = ContactBook(f).add(name="test-contact", role="assigned").id
 
     future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     now = datetime.now(timezone.utc).isoformat()
@@ -114,8 +114,8 @@ def test_mark_run_at_consumed_sets_enabled_zero():
         prompt="run once then disable",
         run_at=future,
         target_channel=ChannelEnum.WEBUI,
-        uid=uid,
-        session_id=None,
+        contact_id=contact_id,
+        conversation_id=None,
         tz="UTC",
         created_at=now,
         updated_at=now,

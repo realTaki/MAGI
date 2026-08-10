@@ -23,7 +23,7 @@ def factory():
     # ``EngineFactory.create_all`` lays down the whole schema —
     # otherwise the FKs on ``tasks`` (chat_sessions, contacts) are
     # left dangling and the INSERT below fails.
-    from magi.bus.library.local.sessionBook import SessionBook  # noqa: F401
+    from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
     from magi.bus.library.local.contactBook import ContactBook  # noqa: F401
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
@@ -61,16 +61,16 @@ def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
     uid = _seed_contact(factory)
 
     now = datetime.now(timezone.utc).isoformat()
-    # Use the TaskBook's add with valid schedule. ``session_id`` is
-    # None so we don't trip the FK to ``chat_sessions`` — the
+    # Use the TaskBook's add with valid schedule. ``conversation_id``
+    # is None so we don't trip the FK to ``chat_sessions`` — the
     # session-creation flow is exercised by chat tests, not here.
     return task_book.add(
         name=f"Test Task {task_id}",
         prompt="Do nothing",
         cron=cron,
         target_channel=ChannelEnum.WEBUI,
-        uid=uid,
-        session_id=None,
+        contact_id=uid,
+        conversation_id=None,
         tz="UTC",
         created_at=now,
         updated_at=now,
@@ -124,8 +124,8 @@ class TestMarkRunAtConsumed:
             prompt="Run once",
             run_at=future_iso,
             target_channel=ChannelEnum.WEBUI,
-            uid=uid,
-            session_id=None,
+            contact_id=uid,
+            conversation_id=None,
             tz="UTC",
             created_at=now,
             updated_at=now,
@@ -158,8 +158,8 @@ class TestListAllEnabledForWorkers:
             prompt="do stuff",
             cron="0 9 * * *",
             target_channel=ChannelEnum.WEBUI,
-            uid=uid_a,
-            session_id=None,
+            contact_id=uid_a,
+            conversation_id=None,
             tz="UTC",
             created_at=now,
             updated_at=now,
@@ -169,8 +169,8 @@ class TestListAllEnabledForWorkers:
             prompt="do other stuff",
             cron="*/30 * * * *",
             target_channel=ChannelEnum.TG,
-            uid=uid_b,
-            session_id=None,
+            contact_id=uid_b,
+            conversation_id=None,
             tz="UTC",
             created_at=now,
             updated_at=now,
@@ -178,7 +178,7 @@ class TestListAllEnabledForWorkers:
 
         tasks = task_book.list_all_enabled_for_workers()
         assert len(tasks) == 2
-        uids = {t.uid for t in tasks}
+        uids = {t.contact_id for t in tasks}
         assert uid_a in uids
         assert uid_b in uids
 
@@ -195,13 +195,13 @@ class TestListAllEnabledForWorkers:
             prompt="skip",
             cron="0 9 * * *",
             target_channel=ChannelEnum.WEBUI,
-            uid=uid,
-            session_id=None,
+            contact_id=uid,
+            conversation_id=None,
             tz="UTC",
             created_at=now,
             updated_at=now,
         )
-        task_book.disable(task_id=t.id, uid=uid)
+        task_book.disable(task_id=t.id, contact_id=uid)
 
         tasks = task_book.list_all_enabled_for_workers()
         task_ids = {t.id for t in tasks}

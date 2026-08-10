@@ -26,8 +26,8 @@ def test_publish_returns_job_id(board):
         task_id="task_abc",
         manual=True,
         fired_by="api_manual_run",
-        session_id="sess_001",
-        uid=42,
+        conversation_id="conv_001",
+        contact_id=42,
     )
     jid = board.publish(job)
     assert isinstance(jid, str)
