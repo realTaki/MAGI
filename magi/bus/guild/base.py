@@ -58,9 +58,9 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
     # ``None``). Each concrete Board (``runToolJobBoard``,
     # ``chatJobBoard``, ...) supplies the row / DTO / result
     # types that match its ``Generic[RowT, JobT, ResultT]`` args.
-    job_model: ClassVar[type[RowT]]
-    job_cls: ClassVar[type[JobT]]
-    result_cls: ClassVar[type[ResultT]]
+    job_model: ClassVar[type[RowT]]  # type: ignore[reportGeneralTypeIssues]
+    job_cls: ClassVar[type[JobT]]  # type: ignore[reportGeneralTypeIssues]
+    result_cls: ClassVar[type[ResultT]]  # type: ignore[reportGeneralTypeIssues]
     natural_key_attr: ClassVar[str] = "job_id"
 
     def __init__(self, factory: EngineFactory,
@@ -136,11 +136,12 @@ class BaseJobBoard(BaseNotifyBoard[JobT], Generic[RowT, JobT, ResultT]):
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while True:
-            # ``run_in_executor`` takes ``*args`` positionally; the
-            # previous ``key=key`` shape raised Pylance's
-            # ``reportCallIssue`` AND would TypeError at runtime.
+            # ``get_result``'s ``key`` is keyword-only, so we can't
+            # pass it positionally through ``run_in_executor``'s
+            # ``*args``. Wrap in a lambda so Pylance sees a no-arg
+            # callable and the runtime forwards ``key=key`` correctly.
             result = await loop.run_in_executor(
-                None, self.get_result, key,
+                None, lambda: self.get_result(key=key),
             )
             if result is not None:
                 return result

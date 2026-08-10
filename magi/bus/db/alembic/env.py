@@ -4,18 +4,19 @@ This file is **not an operator-facing script**.  It exists only because
 alembic's ``command.upgrade`` unconditionally loads ``env.py`` from the
 ``script_location`` directory; :func:`magi.bus.db.schema.upgrade_schema`
 sets ``script_location`` to this package and calls ``command.upgrade``
-programmatically on every boot.
+programmatically before a BUS is opened.
 
 What this file does:
 
 1. Imports :class:`magi.bus.db.base.Base` after pulling in the ORM
-   tables from :mod:`magi.bus.guild` and :mod:`magi.bus.library.local`
+   tables from :mod:`magi.bus.guild`, :mod:`magi.bus.library.local`, and
+   :mod:`magi.bus.library.magis`
    (their ``__init__`` modules do the import side-effects so every
    table is registered on ``Base.metadata``).
 2. Sets ``target_metadata = Base.metadata`` so alembic can walk it.
-3. Connects using ``sqlalchemy.url`` from the alembic ``Config`` —
-   ``upgrade_schema`` writes the engine's URL into the Config before
-   invoking ``command.upgrade``.
+3. Reuses the connection supplied by ``upgrade_schema``.  This preserves
+   the BUS engine's SQLite pragmas and transaction semantics.  A standalone
+   Alembic invocation can still fall back to ``sqlalchemy.url``.
 
 Offline mode (``--sql``) is supported but never invoked in normal boot
 — ``upgrade_schema`` always runs online against the live SQLite file.
@@ -43,6 +44,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # every table is registered before alembic walks the metadata.
 import magi.bus.guild  # noqa: F401  (side-effect: registers guild tables)
 import magi.bus.library.local  # noqa: F401  (side-effect: registers local tables)
+import magi.bus.library.magis  # noqa: F401  (side-effect: registers MAGIS tables)
 
 from magi.bus.db.base import Base  # noqa: E402  (must come after the imports above)
 
@@ -69,6 +71,13 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Connect to the live DB and run every pending migration."""
+    supplied_connection = config.attributes.get("connection")
+    if supplied_connection is not None:
+        context.configure(connection=supplied_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

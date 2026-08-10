@@ -1,14 +1,20 @@
-"""Internal schema revision materialisation owned by BUS provisioning.
+"""Internal schema synchronisation owned by the BUS bootstrap.
 
 The provisioning flow has two phases:
 
-1. :func:`apply_initial_schema` runs ``Base.metadata.create_all`` so every
+1. :func:`synchronise_schema` runs ``Base.metadata.create_all`` so every
    table the ORM knows about is present (idempotent on already-present
    tables — safe to run on every boot).
 2. :func:`upgrade_schema` runs the migration versions stored in
    :mod:`magi.bus.db.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
    without requiring an operator to invoke ``alembic`` from a shell.
+
+The synchronisation is deliberately performed before a :class:`Bus` exposes
+any Book or JobBoard.  It is therefore safe to call on every process start
+(including a development code-reload): missing tables are materialised before
+any other module can query them, and existing stores are advanced through the
+versioned, data-preserving migrations.
 
 Both phases are scoped to a single physical store (``local`` SQLite or
 ``magis`` shared DB) via :func:`_tables_for_scope`; provisioning picks
@@ -33,6 +39,7 @@ from magi.bus.db.engine import EngineFactory
 # and ``apply_initial_schema`` would silently build zero tables.
 import magi.bus.guild  # noqa: F401  (side-effect: registers guild tables)
 import magi.bus.library.local  # noqa: F401  (side-effect: registers local tables)
+import magi.bus.library.magis  # noqa: F401  (side-effect: registers MAGIS tables)
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
@@ -41,11 +48,14 @@ if TYPE_CHECKING:
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"
 
-# Dotted module path to the migration versions directory.
-# ``upgrade_schema`` points alembic at this via ``Config(script_location=...)``
-# so the migration files ship with the package (k8s image build picks up
-# ``magi/`` via ``[tool.uv.build-backend]`` in ``pyproject.toml``).
-VERSIONS_PACKAGE = "magi.bus.db.alembic"
+# Alembic's environment is shared, while each physical store has its own
+# revision history.  Keeping the version directories separate prevents a
+# local-only migration from being accidentally applied to the MAGIS store.
+ALEMBIC_DIRECTORY = Path(__file__).with_name("alembic")
+VERSION_DIRECTORIES = {
+    LOCAL_SCOPE: ALEMBIC_DIRECTORY / "versions",
+    MAGIS_SCOPE: ALEMBIC_DIRECTORY / "magis_versions",
+}
 
 
 def _tables_for_scope(scope: str) -> list[Table]:
@@ -78,72 +88,68 @@ def _tables_for_scope(scope: str) -> list[Table]:
     return list(tables.values())
 
 
-def apply_initial_schema(factory: EngineFactory, *, scope: str) -> None:
-    """Materialise the requested store's schema and run pending migrations.
+def synchronise_schema(factory: EngineFactory, *, scope: str) -> None:
+    """Synchronise one BUS store before it is made available to callers.
 
     ``scope='local'`` is a MAGI's private SQLite store.  ``scope='magis'`` is
     the shared MAGIS database, regardless of whether its URL is SQLite or
     PostgreSQL.
 
     Both phases are no-ops on subsequent boots: ``create_all`` skips tables
-    that already exist, and ``upgrade_schema`` is a no-op once the version
-    table reaches ``head``.
+    that already exist, and ``upgrade_schema`` is a no-op once Alembic's
+    version table reaches the scope's ``head``.
+
+    ``create_all`` intentionally remains the additive half of this operation:
+    it repairs tables that are absent because an interrupted provisioning or a
+    new declarative model left them missing.  Renames, dropped columns,
+    constraints and data transformations stay in explicit Alembic revisions.
     """
     Base.metadata.create_all(factory.engine, tables=_tables_for_scope(scope))
     upgrade_schema(factory, scope=scope)
 
 
+# Kept as an internal spelling for callers introduced during the BUS cutover.
+# New code should use ``synchronise_schema`` to make the start-time contract
+# explicit.
+apply_initial_schema = synchronise_schema
+
+
 def upgrade_schema(factory: EngineFactory, *, scope: str) -> None:
     """Run pending migrations for ``scope``'s store.
 
-    Uses alembic's programmatic API — there is no ``alembic.ini`` and
-    no operator-facing CLI.  ``Config`` is built in memory and pointed at
-    :data:`VERSIONS_PACKAGE`, the version files live entirely inside the
-    ``magi`` package.
-
-    Scope handling: the ``local`` scope runs every migration in the
-    versions directory; the ``magis`` scope currently has no migrations
-    (its tables don't intersect with the run_id / event_id renames), so
-    it skips the upgrade entirely.  When magis gets its first migration,
-    it goes into a parallel sub-package (e.g.
-    ``magi.bus.db.alembic.magis_versions``) and gets picked up
-    here alongside ``local``.
+    Uses Alembic's programmatic API — there is no operator-facing
+    ``alembic.ini``.  The Config is built in memory and points at the
+    package-shipped migration environment plus the selected scope's version
+    directory.
     """
-    if scope == MAGIS_SCOPE:
-        # No magis-scoped migrations yet; the shared store is created by
-        # ``create_all`` alone.  When the first magis migration lands,
-        # dispatch to its own versions directory here.
-        return
-
-    from pathlib import Path
-
     from alembic import command
     from alembic.config import Config
 
-    # ``script_location`` must be an absolute filesystem path — alembic's
-    # ``ScriptDirectory.from_config`` walks the directory directly without
-    # going through ``importlib``.  Resolve the dotted module path
-    # (:data:`VERSIONS_PACKAGE`) into the package's on-disk location.
-    import importlib
-    pkg = importlib.import_module(VERSIONS_PACKAGE)
-    pkg_path = Path(next(iter(pkg.__path__)))
+    try:
+        versions_path = VERSION_DIRECTORIES[scope]
+    except KeyError as exc:
+        raise ValueError(f"unknown BUS schema scope: {scope!r}") from exc
+
     cfg = Config()
-    cfg.set_main_option("script_location", str(pkg_path))
+    # Both settings must be real paths: Alembic walks them directly rather
+    # than importing a dotted Python package.
+    cfg.set_main_option("script_location", str(ALEMBIC_DIRECTORY))
+    cfg.set_main_option("version_locations", str(versions_path))
     # The URL comes from the engine — no env-var indirection at runtime.
     cfg.set_main_option("sqlalchemy.url", factory.url)
-
-    # ``command.upgrade`` opens its own engine internally.  Pragmas
-    # (WAL / foreign_keys / busy_timeout / BEGIN IMMEDIATE) are set
-    # on the engine factory we already have, so the migration runs
-    # against the same SQLite file with the same connection semantics
-    # as the rest of the app — no special plumbing needed.
-    command.upgrade(cfg, "head")
+    # Do not let Alembic create a second engine: migrations need exactly the
+    # same SQLite pragmas and transaction behaviour as normal BUS operations.
+    with factory.engine.connect() as connection:
+        cfg.attributes["connection"] = connection
+        command.upgrade(cfg, "head")
 
 
 __all__ = [
     "LOCAL_SCOPE",
     "MAGIS_SCOPE",
-    "VERSIONS_PACKAGE",
+    "ALEMBIC_DIRECTORY",
+    "VERSION_DIRECTORIES",
     "apply_initial_schema",
+    "synchronise_schema",
     "upgrade_schema",
 ]
