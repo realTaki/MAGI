@@ -402,8 +402,6 @@ and `test_hook_envelope_purity.py`).
 
 ## Further reading
 
-- [MAGI BUS-Centric Architecture](MAGI_BUS_CENTRIC_ARCHITECTURE.md) — the
-  authoritative contract for `magi.bus`.
 - [MAGI terms](terms.md) — vocabulary.
 - [Unified WebUI and Runtime API](unified-webui.md) — browser-facing
   WebUI ↔ Runtime proxy contract.
