@@ -197,7 +197,7 @@ def restart_magi(*, config: StartupConfig) -> int:
 
 
 def _mark_registry_stopped(config: StartupConfig) -> None:
-    """Flip ``control_runtime_state`` to STOPPED for this MAGI.
+    """Flip ``runtime_state`` to STOPPED for this MAGI.
 
     Called from :func:`stop_magi` after the process exits so the
     singleton WebUI's ``/api/auth/available-magi`` endpoint stops
@@ -220,7 +220,7 @@ def _mark_registry_stopped(config: StartupConfig) -> None:
     try:
         from magi.bus.bootstrap import open_control_bus
         from magi.bus.db.base import utcnow_naive
-        from magi.bus.library.magis.controlBook import (
+        from magi.bus.library.magis.runtimeBook import (
             RuntimeDesiredState,
             RuntimeObservedState,
         )
@@ -235,7 +235,7 @@ def _mark_registry_stopped(config: StartupConfig) -> None:
     except Exception:
         return
 
-    runtimes = bus.control_runtimes_book
+    runtimes = bus.runtime_state_book
     if runtimes is None:
         return
     try:

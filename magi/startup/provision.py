@@ -58,7 +58,7 @@ def _ensure_control_secret(path) -> str:
 
 
 def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port: int) -> None:
-    runtimes = bus.control_runtimes_book
+    runtimes = bus.runtime_state_book
     if runtimes is None:
         raise RuntimeError("MAGIS runtime registry unavailable")
     workspace = config.workspace_dir

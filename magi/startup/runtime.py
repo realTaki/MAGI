@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 import uvicorn
 
 from magi.bus.db.base import utcnow_naive
-from magi.bus.library.magis.controlBook import (
+from magi.bus.library.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
@@ -83,13 +83,13 @@ class RuntimeContext:
         _validate_runtime_identity(startup, bus)
 
         # Announce ourselves to the control plane: flip
-        # control_runtime_state to STARTED + record our PID so the
+        # runtime_state to STARTED + record our PID so the
         # singleton WebUI's /api/auth/available-magi endpoint can
         # include us in the login dropdown.  This is the runtime's
         # half of the "control registry exposes its DTO query
         # through Bus" handshake.
         magi_id = _to_magi_id(startup.magi_id)
-        runtimes = bus.control_runtimes_book
+        runtimes = bus.runtime_state_book
         if magi_id is not None and runtimes is not None:
             runtimes.set_desired_state(
                 runtime_id=magi_id,
@@ -189,7 +189,7 @@ def _validate_runtime_identity(startup: StartupContext, bus: "Bus") -> None:
     if bus.memberships_book.get(magi_id=magi_id) is None:
         raise RuntimeError(f"runtime identity {startup.magi_id!r} is not registered in MAGIS")
 
-    runtimes = bus.control_runtimes_book
+    runtimes = bus.runtime_state_book
     ports = bus.port_allocations_book
     runtime = runtimes.get(runtime_id=magi_id) if runtimes is not None else None
     allocation = ports.get(runtime_id=magi_id) if ports is not None else None
