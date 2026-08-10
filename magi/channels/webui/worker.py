@@ -33,19 +33,19 @@ class WebUIWorker(ChannelWorker):
 
     async def _deliver_webui(self, job: DeliveryJob) -> None:
         """将 delivery 内容追加到 Session 消息。"""
-        session_id = str(job.payload.get("session_id") or "")
+        conversation_id = str(job.payload.get("conversation_id") or "")
         contact_id = job.payload.get("contact_id")
         text = str(job.payload.get("text") or "")
 
-        if not session_id or not isinstance(contact_id, int):
-            raise ValueError("webui delivery missing session_id or contact_id")
+        if not conversation_id or not isinstance(contact_id, int):
+            raise ValueError("webui delivery missing conversation_id or contact_id")
 
         await self.call(self.bus.messages_book.add,
-            session_id=session_id,
+            conversation_id=conversation_id,
             role="assistant",
             text=text,
         )
         logger.debug(
-            "WebUIWorker: appended message to session %s (contact_id=%s)",
-            session_id, contact_id,
+            "WebUIWorker: appended message to conversation %s (contact_id=%s)",
+            conversation_id, contact_id,
         )
