@@ -96,7 +96,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     from magi.bus.db import EngineFactory
     from magi.bus.library.local.tasksBook import TaskBook, ChannelEnum, SOURCE_USER
     from magi.bus.library.local.contactBook import ContactBook
-    from magi.bus.library.local.sessionBook import SessionBook  # noqa: F401
+    from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()

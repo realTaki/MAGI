@@ -18,6 +18,8 @@ from magi.bus.library.local import (
     Contact,
     ContactBook,
     ContactNoteBook,
+    Conversation,
+    ConversationBook,
     HookSignoffBook,
     McpServer,
     McpServerBook,
@@ -27,8 +29,6 @@ from magi.bus.library.local import (
     MessageBook,
     Setting,
     SettingBook,
-    Session,
-    SessionBook,
     SOURCE_PROACTIVE,
     SOURCE_USER,
     Task,
@@ -335,33 +335,33 @@ def test_contact_note_book(factory):
     assert len(nbook.list_for_contact(contact_id=c.id)) == 1
 
 
-# -- SessionBook + MessageBook -----------------------------------------
+# -- ConversationBook + MessageBook -------------------------------------
 
 
-def test_session_and_message(factory):
-    sbook = SessionBook(factory)
+def test_conversation_and_message(factory):
+    sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
 
     s = sbook.add(
-        session_id="01ABC",
+        conversation_id="01ABC",
         delivery_address="tg:12345",
-        uid=1,
+        contact_id=1,
         channel="tg",
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
-    assert isinstance(s, Session)
-    assert s.session_id == "01ABC"
+    assert isinstance(s, Conversation)
+    assert s.conversation_id == "01ABC"
 
     m = mbook.add(
-        session_id="01ABC",
+        conversation_id="01ABC",
         message_id="m1",
         role="user",
         text="hi",
         ts="2026-08-05T00:00:01Z",
     )
     assert isinstance(m, Message)
-    msgs = mbook.list_for_session(session_id="01ABC")
+    msgs = mbook.list_for_conversation(conversation_id="01ABC")
     assert len(msgs) == 1
     assert msgs[0].text == "hi"
 
@@ -1050,14 +1050,14 @@ def test_task_book_upsert_by_name(factory, contact_id):
     """
     book = TaskBook(factory)
 
-    # ``session_id`` is a FK to ``chat_sessions.session_id``;
+    # ``conversation_id`` is a FK to ``chat_conversations.conversation_id``;
     # seed the row first so the task insert doesn't trip
     # SQLite's FK guard.
-    from magi.bus.library.local.sessionBook import SessionBook
-    SessionBook(factory).add(
-        session_id="01ABC",
+    from magi.bus.library.local.conversationBook import ConversationBook
+    ConversationBook(factory).add(
+        conversation_id="01ABC",
         delivery_address="webui:dashboard",
-        uid=contact_id,
+        contact_id=contact_id,
         channel="webui",
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
@@ -1071,8 +1071,8 @@ def test_task_book_upsert_by_name(factory, contact_id):
         run_at=None,
         delivery_to=None,
         target_channel="webui",
-        uid=contact_id,
-        session_id="01ABC",
+        contact_id=contact_id,
+        conversation_id="01ABC",
         tz="UTC",
     )
     assert is_update_1 is False
@@ -1086,20 +1086,20 @@ def test_task_book_upsert_by_name(factory, contact_id):
         run_at=None,
         delivery_to=None,
         target_channel="tg",
-        uid=contact_id,
-        session_id="01DEF",  # different from the row's current session
+        contact_id=contact_id,
+        conversation_id="01DEF",  # different from the row's current session
         tz="UTC",
     )
     assert is_update_2 is True
     assert task_id_2 == task_id_1
 
-    # Verify the row got refreshed, with session_id kept sticky.
+    # Verify the row got refreshed, with conversation_id kept sticky.
     row = book.get(task_id=task_id_1)
     assert row is not None
     assert row.prompt == "summarise the dashboard v2"
     assert row.cron == "0 10 * * *"
     assert row.target_channel == "tg"
-    assert row.session_id == "01ABC"  # sticky: NOT overwritten by 01DEF
+    assert row.conversation_id == "01ABC"  # sticky: NOT overwritten by 01DEF
 
     # Book invariants still fire via the insert branch —
     # inserting a third task with bad data raises.
@@ -1111,8 +1111,8 @@ def test_task_book_upsert_by_name(factory, contact_id):
             run_at=None,
             delivery_to=None,
             target_channel="webui",
-            uid=contact_id,
-            session_id="x",
+            contact_id=contact_id,
+            conversation_id="x",
             tz="UTC",
         )
 
@@ -1136,8 +1136,8 @@ __all__ = [
     "MessageBook",
     "Setting",
     "SettingBook",
-    "Session",
-    "SessionBook",
+    "Conversation",
+    "ConversationBook",
     "Task",
     "TaskBook",
     "TaskRun",
