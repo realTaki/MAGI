@@ -6,9 +6,9 @@ Result shape mirrors :class:`CallLLMResult`: ``success`` is
 the gate, ``error`` / ``error_code`` are the failure pair
 (human-readable + machine-stable), ``content`` / ``is_error``
 are the legacy :class:`ToolResult` fields the executable
-``Tool.run()`` returns. ``run_id`` / ``tool_call_id`` round-
-trip with :class:`RunToolJob` so the agent can correlate a
-finished tool call with the LLM turn that produced it.
+``Tool.run()`` returns. ``tool_call_id`` round-trips with
+:class:`RunToolJob` so the agent can correlate a finished tool
+call with the LLM turn that produced it.
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ class RunToolJob:
 
     tool_name: str
     payload: dict
-    run_id: str = ""
     tool_call_id: str = ""
     job_id: str = ""
     attempts: int = 0
@@ -70,7 +69,6 @@ class RunToolResult:
     is_error: bool = False
     error: str | None = None
     error_code: str = ""
-    run_id: str = ""
     tool_call_id: str = ""
     # 给上层 structured use（与 ``content`` 不冲突；
     # ``content`` 是 ``str``，``result`` 是 ``dict``）。
@@ -86,7 +84,6 @@ class _ToolJobRow(Base):
     status: Mapped[str] = mapped_column(String(24), default="pending")
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    run_id: Mapped[str] = mapped_column(String(64), default="")
     tool_call_id: Mapped[str] = mapped_column(String(128), default="")
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     catalog_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -129,7 +126,6 @@ class runToolJobBoard(BaseJobBoard[_ToolJobRow, RunToolJob, RunToolResult]):
                 status="pending",
                 tool_name=job.tool_name,
                 payload=job.payload,
-                run_id=job.run_id,
                 tool_call_id=job.tool_call_id,
                 source=job.source or "",
                 catalog_revision=int(job.catalog_revision or 0),

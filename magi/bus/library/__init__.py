@@ -11,7 +11,7 @@ Subpackages
 - :mod:`.local`   — Books for the local SQLite runtime database
   (session, contact, memory, task, tool, mcp, action_item, token_usage,
   setting, hook_signoff)
-- :mod:`.magis`   — Books for the MAGIS PostgreSQL database
+- :mod:`.magis`   — Books for the shared MAGIS SQLite or PostgreSQL database
   (magis, membership, runtime, auth_credential, control)
 """
 

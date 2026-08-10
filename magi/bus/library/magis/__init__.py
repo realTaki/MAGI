@@ -1,7 +1,7 @@
-"""bus.library.magis — Books for the MAGIS PostgreSQL database.
+"""bus.library.magis — Books for one shared MAGIS database.
 
-Each module maps to one (or a small group of) PG tables in the
-``magis.db`` connection:
+Each module maps to one (or a small group of) tables in a MAGIS SQLite or
+PostgreSQL connection:
 
 - ``magis`` + ``magis_admins`` — MAGI Society tree + admins
 - ``magis_memberships`` + ``magis_roles`` — memberships & roles

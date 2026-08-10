@@ -21,7 +21,6 @@ class DeliveryJob:
     channel: str
     payload: dict
     destination: str | None = None
-    run_id: str = ""
     job_id: str = ""
 
 
@@ -42,7 +41,6 @@ class _DeliveryJobRow(Base):
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    run_id: Mapped[str] = mapped_column(String(64), default="")
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -69,7 +67,6 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
                 channel=job.channel,
                 payload=job.payload,
                 destination=job.destination,
-                run_id=job.run_id,
             )
             s.add(row)
             s.flush()

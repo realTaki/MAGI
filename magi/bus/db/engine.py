@@ -21,13 +21,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from magi.bus.db.base import Base
-
-_SQLITE_PREFIX = "sqlite:///"
-_PG_PREFIX = "postgresql://"
-
 
 class EngineFactory:
     """根据 database_url 创建引擎，统一 SQLite 和 PG 的差异。
@@ -42,7 +39,16 @@ class EngineFactory:
 
     def __init__(self, database_url: str):
         self._url = database_url
-        self._dialect = "sqlite" if database_url.startswith(_SQLITE_PREFIX) else "postgresql"
+        drivername = make_url(database_url).drivername
+        if drivername.startswith("sqlite"):
+            self._dialect = "sqlite"
+        elif drivername.startswith("postgresql"):
+            self._dialect = "postgresql"
+        else:
+            raise ValueError(
+                "BUS storage only supports SQLite or PostgreSQL URLs; "
+                f"got {drivername!r}"
+            )
         self._engine = self._build_engine()
         self._session_factory = sessionmaker(
             bind=self._engine,
@@ -128,9 +134,10 @@ def build_local_factory(state_dir: str) -> EngineFactory:
 
 
 def build_magis_factory(database_url: str) -> EngineFactory:
-    """Build the MAGIS PostgreSQL ``EngineFactory`` from a connection URL.
+    """Build the shared MAGIS ``EngineFactory`` from a SQLite or PostgreSQL URL.
 
-    No SQLite pragmas are applied (PG uses the connection-level
-    transaction model).
+    A SQLite URL identifies a per-MAGIS database file; a PostgreSQL URL
+    identifies one database in a shared PostgreSQL service.  SQLite-specific
+    pragmas are selected by :class:`EngineFactory` automatically.
     """
     return EngineFactory(database_url)

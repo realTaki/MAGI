@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from magi.bus.db.engine import EngineFactory
-from magi.bus.db.schema import apply_initial_schema
+from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, apply_initial_schema
 
 SCHEMA_REVISION = "0001"
 
@@ -109,10 +109,10 @@ def provision_node_storage(
         prompts_dir=prompts_dir,
         allow_unprovisioned=True,
     )
-    apply_initial_schema(bus._local_factory)
+    apply_initial_schema(bus._local_factory, scope=LOCAL_SCOPE)
     _mark_provisioned(bus._local_factory, scope="node")
     if bus._magis_factory is not None:
-        apply_initial_schema(bus._magis_factory)
+        apply_initial_schema(bus._magis_factory, scope=MAGIS_SCOPE)
         _mark_provisioned(bus._magis_factory, scope="magis")
 
     bus.messages_book.ensure_fts()
