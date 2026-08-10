@@ -41,7 +41,7 @@ WORKDIR /app
 # the checkout replaces it at runtime via PYTHONPATH.
 COPY pyproject.toml uv.lock* README.md alembic.ini ./
 COPY magi ./magi
-RUN uv sync --frozen --no-dev --extra adam --extra eve
+RUN uv sync --frozen --no-dev --extra adam --extra eva
 
 # Install web deps alongside the baked-in source. At runtime the source
 # tree is replaced by a read-only bind mount at the same path, while a

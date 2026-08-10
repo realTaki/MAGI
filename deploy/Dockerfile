@@ -39,7 +39,7 @@ WORKDIR /app
 # pyproject declares it under [project] readme.
 COPY pyproject.toml uv.lock* README.md alembic.ini ./
 COPY magi ./magi
-RUN uv sync --frozen --no-dev --extra adam --extra eve
+RUN uv sync --frozen --no-dev --extra adam --extra eva
 
 # -----------------------------------------------------------------------------
 # Stage 3: one runtime image — Python + prebuilt SPA, run as non-root magi user
