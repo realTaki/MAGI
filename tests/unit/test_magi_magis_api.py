@@ -17,9 +17,9 @@ from pydantic import ValidationError
 from magi.bus.db.engine import EngineFactory
 from magi.bus.library.local.contactBook import ContactBook
 from magi.bus.library.local.settingBook import SettingBook
-from magi.bus.library.magis.controlBook import ControlRuntimeBook
 from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
 from magi.bus.library.magis.membershipBook import MagisMembershipBook, MagisRoleBook
+from magi.bus.library.magis.runtimeBook import RuntimeBook
 from magi.channels.api import magi, magis
 from magi.channels.api.app import create_app
 
@@ -34,7 +34,7 @@ def bus(tmp_path) -> SimpleNamespace:
     return SimpleNamespace(
         contacts_book=ContactBook(factory),
         settings_book=SettingBook(factory),
-        control_runtimes_book=ControlRuntimeBook(factory),
+        runtime_state_book=RuntimeBook(factory),
         magis_book=MagisBook(factory),
         magis_admins_book=MagisAdminBook(factory),
         memberships_book=MagisMembershipBook(factory),
@@ -66,7 +66,7 @@ def test_magi_api_creates_membership_identity_and_control_label(bus: SimpleNames
         )
     ]
     assert bus.memberships_book.get(magi_id=result.id).role_id == eva.id
-    assert bus.control_runtimes_book.get(runtime_id=result.id).backend_ref == "eve-one"
+    assert bus.runtime_state_book.get(runtime_id=result.id).backend_ref == "eve-one"
 
 
 def test_membership_api_rejects_retired_magi_id_and_cross_magis_role(bus: SimpleNamespace) -> None:

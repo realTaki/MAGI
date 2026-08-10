@@ -471,7 +471,6 @@ class ToolsWorker(RuntimeWorker):
                     is_error=True,
                     error=content,
                     error_code=error_code,
-                    run_id=job.run_id,
                     tool_call_id=job.tool_call_id,
                 ),
             )
@@ -497,6 +496,5 @@ def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
         success=not result.is_error,
         content=result.content[:8000],
         is_error=result.is_error,
-        run_id=job.run_id,
         tool_call_id=job.tool_call_id,
     )

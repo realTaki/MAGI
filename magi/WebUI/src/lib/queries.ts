@@ -949,7 +949,7 @@ export function useRunTaskNow() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) =>
-      apiFetch<{ run_id: string }>(
+      apiFetch<{ job_id: string }>(
         `/api/tasks/${encodeURIComponent(taskId)}/run`,
         { method: "POST" },
       ),

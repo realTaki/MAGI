@@ -76,7 +76,7 @@ export function formatRunTimestamp(iso: string | null): string {
 // by the run-now polling loop to detect when a fire settles
 // into ``success`` / ``failed``. The runner writes
 // ``status="running"`` first, then transitions to a terminal
-// state; the loop bails when our ``run_id`` is terminal.
+// state; the loop bails when our ``job_id`` is terminal.
 export type TaskRunRow = {
   id: string;
   task_id: string;
@@ -143,11 +143,11 @@ export default function TaskListPane() {
   const tzQuery = useSystemTimezone();
   const systemTz = tzQuery.data?.current || tzQuery.data?.default || "UTC";
 
-  // ``runningTaskIds`` carries the task_id → run_id mapping
+  // ``runningTaskIds`` carries the task_id → job_id mapping
   // for in-flight manual fires across BOTH sections. A row
   // from either list renders the spinner while the id is
   // here. Map (not Set) so the polling loop can match the
-  // exact ``run_id`` the API returned.
+  // exact ``job_id`` the API returned.
   const [runningTasks, setRunningTasks] = useState<
     Map<string, string>
   >(() => new Map());
@@ -230,15 +230,15 @@ export default function TaskListPane() {
       next.set(t.id, "__pending__");
       return next;
     });
-    let run_id: string;
+    let job_id: string;
     try {
       const r = await fetch(`/api/tasks/${t.id}/run`, {
         method: "POST",
         credentials: "include",
       });
       if (!r.ok) throw new Error(`Run failed: ${r.status}`);
-      const out = (await r.json()) as { run_id: string };
-      run_id = out.run_id;
+      const out = (await r.json()) as { job_id: string };
+      job_id = out.job_id;
     } catch {
       setRunningTasks((prev) => {
         if (!prev.has(t.id) || prev.get(t.id) !== "__pending__") {
@@ -253,7 +253,7 @@ export default function TaskListPane() {
     setRunningTasks((prev) => {
       if (!prev.has(t.id)) return prev;
       const next = new Map(prev);
-      next.set(t.id, run_id);
+      next.set(t.id, job_id);
       return next;
     });
   }

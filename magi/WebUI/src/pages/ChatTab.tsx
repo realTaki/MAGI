@@ -595,11 +595,11 @@ export default function ChatTab() {
   const queryClientForChat = useQueryClient();
   const sendChatMut = useMutation({
     mutationFn: (vars: { text: string; sessionId: string | null }) =>
-      apiFetch<{ run_id: string; status: string; session_id: string }>("/api/chat/send", {
+      apiFetch<{ job_id: string; status: string; session_id: string }>("/api/chat/send", {
         method: "POST",
         body: { text: vars.text, session_id: vars.sessionId },
       }),
-    onSuccess: (data: { run_id: string; status: string; session_id: string }, vars: { text: string; sessionId: string | null }) => {
+    onSuccess: (data: { job_id: string; status: string; session_id: string }, vars: { text: string; sessionId: string | null }) => {
       if (data.session_id !== vars.sessionId) {
         setSessionId(data.session_id);
         localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
@@ -607,18 +607,12 @@ export default function ChatTab() {
         setActivePreview(vars.text);
         void refreshHistory();
       }
-      const events = new EventSource(`/api/runs/${data.run_id}/events`);
-      const refreshCommitted = () => {
-        events.close();
-        void loadSession(data.session_id);
-        void queryClientForChat.invalidateQueries({ queryKey: qk.chatMessages(data.session_id) });
-      };
-      events.addEventListener("message.committed", refreshCommitted);
-      events.onerror = () => {
-        events.close();
-        // StreamHub is best-effort; committed state remains recoverable.
-        window.setTimeout(() => void loadSession(data.session_id), 500);
-      };
+      // Refresh the conversation after a short delay — the chat turn
+      // completes asynchronously.  Streaming hooks live in
+      // magi/bus/stream.py (in-process); there is no SSE endpoint to
+      // subscribe to from the WebUI.
+      window.setTimeout(() => void loadSession(data.session_id), 500);
+      void queryClientForChat.invalidateQueries({ queryKey: qk.chatMessages(data.session_id) });
     },
     onError: (err: unknown): void => {
       if (err && typeof err === "object" && "status" in err) {
