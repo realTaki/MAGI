@@ -13,7 +13,7 @@ Route resolver contract:
       Future work; raises ``NotImplementedError`` for now.
   - ``lookup_im_id(contact_id=magi_id)``
       Returns the cluster DNS name of the peer's runtime pod,
-      resolved from the public MAGIS PostgreSQL
+      resolved from the public MAGIS shared database
       ``magis_memberships.id`` row + k8s convention
       ``magi-magi-node-<magi_id>-<suffix>``.
       **Implemented as a stub** — returns a synthetic
@@ -51,7 +51,7 @@ class A2AAdapter:
     Holds the explicit BUS dependency. The HTTP client (when implemented) will be
     cached per peer ``magi_id`` and refreshed when the
     direct-membership list changes (the membership change is
-    visible to this process via the public MAGIS PostgreSQL,
+    visible to this process via the public MAGIS shared database,
     same engine used by every other runtime path).
     """
 
@@ -93,7 +93,7 @@ class A2AAdapter:
         client would resolve via DNS SRV lookup in
         production.
 
-        Future work: query the public MAGIS PostgreSQL for
+        Future work: query the public MAGIS shared database for
         the peer's ``magis_memberships.id`` row, then build the actual
         FQDN from the orchestrator-managed ``Service`` /
         ``Deployment`` name.
@@ -112,7 +112,7 @@ class A2AAdapter:
         raise NotImplementedError(
             "A2AAdapter.bind_im_id is not applicable: peer "
             "routing is identity-based via the public "
-            "MAGIS PostgreSQL magis_memberships table"
+            "MAGIS shared-database magis_memberships table"
         )
 
     def unbind_im_id(self, contact_id: int) -> None:
@@ -120,7 +120,7 @@ class A2AAdapter:
         raise NotImplementedError(
             "A2AAdapter.unbind_im_id is not applicable: peer "
             "routing is identity-based via the public "
-            "MAGIS PostgreSQL magis_memberships table"
+            "MAGIS shared-database magis_memberships table"
         )
 
 

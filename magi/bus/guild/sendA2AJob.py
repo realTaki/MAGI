@@ -1,7 +1,7 @@
 """sendA2AJobBoard — peer-MAGI call lifecycle.
 
-Backed by the ``a2a_invocations`` table.  Natural key is
-``invocation_id``.
+Backed by the ``a2a_jobs`` table.  Natural key is ``job_id`` (same
+shape as :class:`runTaskJobBoard` and :class:`chatJobBoard`).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from magi.bus.guild.base import BaseJobBoard, new_job_id
 class SendA2AJob:
     """Publisher input — one row per peer-MAGI call."""
 
-    invocation_id: str = ""
+    job_id: str = ""
     target: str = ""
     tool_call_id: str | None = None
     request_event_id: str | None = None
@@ -38,7 +38,7 @@ class SendA2AJob:
 class SendA2AResult:
     """Worker output — terminal state of one peer-MAGI call."""
 
-    invocation_id: str = ""
+    job_id: str = ""
     success: bool = False
     status: str = "failed"
     response: dict[str, Any] | None = None
@@ -48,12 +48,12 @@ class SendA2AResult:
 # -- internal ORM --------------------------------------------------------
 
 
-class _A2AInvocationRow(Base):
-    __tablename__ = "a2a_invocations"
+class _A2AJobRow(Base):
+    __tablename__ = "a2a_jobs"
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    invocation_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    job_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     target: Mapped[str] = mapped_column(String(512), nullable=False)
     tool_call_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     request_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
@@ -82,19 +82,19 @@ class _A2AInvocationRow(Base):
 
 
 class sendA2AJobBoard(
-    BaseJobBoard[_A2AInvocationRow, SendA2AJob, SendA2AResult]
+    BaseJobBoard[_A2AJobRow, SendA2AJob, SendA2AResult]
 ):
     """Queue (write + claim + submit_result) for peer-MAGI calls."""
 
-    job_model = _A2AInvocationRow
+    job_model = _A2AJobRow
     job_cls = SendA2AJob
     result_cls = SendA2AResult
-    natural_key_attr = "invocation_id"
+    natural_key_attr = "job_id"
 
-    def _insert_pending(self, session, job: SendA2AJob, **kwargs) -> _A2AInvocationRow:
-        invocation_id = job.invocation_id or new_job_id()
-        row = _A2AInvocationRow(
-            invocation_id=invocation_id,
+    def _insert_pending(self, session, job: SendA2AJob, **kwargs) -> _A2AJobRow:
+        job_id = job.job_id or new_job_id()
+        row = _A2AJobRow(
+            job_id=job_id,
             target=job.target,
             tool_call_id=job.tool_call_id,
             request_event_id=job.request_event_id,
@@ -114,5 +114,5 @@ __all__ = [
     "SendA2AJob",
     "SendA2AResult",
     "sendA2AJobBoard",
-    "_A2AInvocationRow",
+    "_A2AJobRow",
 ]

@@ -421,7 +421,7 @@ class AgentWorker(RuntimeWorker):
     ) -> _GatherResult | None:
         deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
         tool_timeout: dict[str, str] = dict(tool_ids)  # tc_id → job_id (copy to mutate)
-        a2a_timeout: dict[str, str] = {aj.tool_call_id: aj.invocation_id for aj in split.a2a_jobs}
+        a2a_timeout: dict[str, str] = {aj.tool_call_id: aj.job_id for aj in split.a2a_jobs}
         tool_results: dict[str, Any] = {}
         a2a_results: dict[str, Any] = {}
         steering_parts: list[str] = []
