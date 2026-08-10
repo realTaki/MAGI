@@ -103,7 +103,8 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     _register_local_runtime(bus=bus, runtime_id=magi_id, config=config, port=RUNTIME_PORT)
     if bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
-    if bus.runtime_state_book.get(runtime_id=magi_id) is None or bus.runtime_state_book.get(runtime_id=magi_id).port_in_use_since is None:
+    existing_state = bus.runtime_state_book.get(runtime_id=magi_id)
+    if existing_state is None or existing_state.port_in_use_since is None:
         bus.runtime_state_book.allocate_port(runtime_id=magi_id, port=RUNTIME_PORT)
     _ensure_control_secret(
         resolve_magis_control_dir(config.host_workspace_dir, config.magis_name) / "control-secret"

@@ -6,7 +6,7 @@ The provisioning flow has two phases:
    table the ORM knows about is present (idempotent on already-present
    tables — safe to run on every boot).
 2. :func:`upgrade_schema` runs the migration versions stored in
-   :mod:`magi.bus.db.schema_migrations.versions` against the live DB.
+   :mod:`magi.bus.db.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
    without requiring an operator to invoke ``alembic`` from a shell.
 
@@ -87,7 +87,7 @@ def upgrade_schema(factory: EngineFactory, *, scope: str) -> None:
     (its tables don't intersect with the run_id / event_id renames), so
     it skips the upgrade entirely.  When magis gets its first migration,
     it goes into a parallel sub-package (e.g.
-    ``magi.bus.db.schema_migrations.magis_versions``) and gets picked up
+    ``magi.bus.db.alembic.magis_versions``) and gets picked up
     here alongside ``local``.
     """
     if scope == MAGIS_SCOPE:
@@ -96,41 +96,29 @@ def upgrade_schema(factory: EngineFactory, *, scope: str) -> None:
         # dispatch to its own versions directory here.
         return
 
+    from pathlib import Path
+
     from alembic import command
     from alembic.config import Config
 
+    # ``script_location`` must be an absolute filesystem path — alembic's
+    # ``ScriptDirectory.from_config`` walks the directory directly without
+    # going through ``importlib``.  Resolve the dotted module path
+    # (:data:`VERSIONS_PACKAGE`) into the package's on-disk location.
+    import importlib
+    pkg = importlib.import_module(VERSIONS_PACKAGE)
+    pkg_path = Path(next(iter(pkg.__path__)))
     cfg = Config()
-    cfg.set_main_option("script_location", VERSIONS_PACKAGE)
+    cfg.set_main_option("script_location", str(pkg_path))
     # The URL comes from the engine — no env-var indirection at runtime.
     cfg.set_main_option("sqlalchemy.url", factory.url)
-    cfg.attributes["target_metadata"] = Base.metadata
 
-    # Reuse the engine's connection so pragmas (WAL, foreign_keys,
-    # busy_timeout, BEGIN IMMEDIATE) stay consistent with normal
-    # application traffic.
-    with factory.engine.connect() as connection:
-        _run_alembic_upgrade(cfg, connection)
-        connection.commit()
-
-
-def _run_alembic_upgrade(cfg: "Config", connection: "Connection") -> None:
-    """Bind the alembic ``Context`` to an existing connection and run.
-
-    Split out so :func:`upgrade_schema` keeps the scope-dispatch +
-    engine-borrow logic linear.
-    """
-    from alembic.runtime.environments import EnvironmentContext
-
-    script_dir = cfg.get_main_option("script_location")
-    with EnvironmentContext(
-        cfg,
-        script_dir,
-        script=cfg.get_section(cfg.config_ini_section)["script_location"],
-        target_metadata=cfg.attributes.get("target_metadata"),
-    ) as env:
-        env.configure(connection=connection, target_metadata=cfg.attributes.get("target_metadata"))
-        with env.begin_transaction():
-            env.run_migrations()
+    # ``command.upgrade`` opens its own engine internally.  Pragmas
+    # (WAL / foreign_keys / busy_timeout / BEGIN IMMEDIATE) are set
+    # on the engine factory we already have, so the migration runs
+    # against the same SQLite file with the same connection semantics
+    # as the rest of the app — no special plumbing needed.
+    command.upgrade(cfg, "head")
 
 
 __all__ = [
