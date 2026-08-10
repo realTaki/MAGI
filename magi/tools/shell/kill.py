@@ -56,7 +56,7 @@ class BashKillTool(Tool):
 
     async def run(
         self,
-        _ctx: ToolContext,
+        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         bash_id = (kwargs.get("bash_id") or "").strip()

@@ -64,7 +64,17 @@ def _tables_for_scope(scope: str) -> list[Table]:
     for mapper in Base.registry.mappers:
         is_magis_table = mapper.class_.__module__.startswith("magi.bus.library.magis.")
         if (scope == MAGIS_SCOPE) == is_magis_table:
-            tables[mapper.local_table.name] = mapper.local_table
+            # Every ORM class in MAGI is table-mapped (no joins / aliases
+            # here), so ``mapper.local_table`` is always a ``Table`` at
+            # runtime.  SQLAlchemy's stub types it as the wider
+            # ``FromClause`` because the type covers non-table mappings
+            # too — narrow with ``isinstance`` so the type checker
+            # accepts the ``.name`` access and the ``Table``-valued
+            # ``__setitem__``.
+            local_table = mapper.local_table
+            if not isinstance(local_table, Table):
+                continue
+            tables[local_table.name] = local_table
     return list(tables.values())
 
 

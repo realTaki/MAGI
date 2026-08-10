@@ -29,7 +29,7 @@ class MessageMagiTool(Tool):
         "required": ["magi_id", "text"],
     }
 
-    async def run(self, _ctx: ToolContext, **_kwargs: Any) -> ToolResult:
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         return ToolResult(
             content="message_magi is scheduled by the actor and must not run in ToolWorker",
             is_error=True,
