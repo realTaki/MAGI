@@ -85,6 +85,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
         from datetime import timedelta
 
         MAX_ATTEMPTS_CANDIDATES = 10
+        MAX_ATTEMPTS = 10
         owner = f"delivery:{channel}:{id(self)}"
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
@@ -151,6 +152,8 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
                 if getattr(result, "rowcount", 0) == 1:
                     s.commit()
                     fresh = s.get(_DeliveryJobRow, candidate.id)
+                    if fresh is None:
+                        return None
                     return DeliveryJob(
                         channel=fresh.channel,
                         payload=fresh.payload,
