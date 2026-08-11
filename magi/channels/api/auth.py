@@ -614,11 +614,21 @@ def _merge_login_accounts(
     (typical when the runtime doesn't have MAGIS DB access).
     """
     merged: dict[tuple[int, str], dict[str, object]] = {}
+
+    def _int(raw: object) -> int:
+        # The picker shape guarantees ints here; the cast
+        # through ``object`` only exists because the row
+        # type is ``dict[str, object]``.
+        return int(raw)  # type: ignore[arg-type]
+
+    def _str(raw: object) -> str:
+        return str(raw)  # type: ignore[arg-type]
+
     for row in runtime_accounts:
-        key = (int(row.get("contact_id", 0)), str(row.get("role", "assigned")))
+        key = (_int(row.get("contact_id", 0)), _str(row.get("role", "assigned")))
         merged[key] = dict(row)
     for row in admin_accounts:
-        key = (int(row.get("contact_id", 0)), str(row.get("role", "admin")))
+        key = (_int(row.get("contact_id", 0)), _str(row.get("role", "admin")))
         if key in merged:
             existing = merged[key]
             for field in ("admin", "assigned", "has_password", "has_tg_code"):
@@ -629,7 +639,7 @@ def _merge_login_accounts(
         else:
             merged[key] = dict(row)
     out = list(merged.values())
-    out.sort(key=lambda r: (str(r.get("role", "assigned")), str(r.get("name", "")).lower(), int(r.get("contact_id", 0))))
+    out.sort(key=lambda r: (_str(r.get("role", "assigned")), _str(r.get("name", "")).lower(), _int(r.get("contact_id", 0))))
     return out
 
 
