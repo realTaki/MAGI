@@ -210,7 +210,7 @@ async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
     accounts = sorted(
-        _accounts(bus, magis_id).values(),
+        _accounts(bus, magis_id),
         key=lambda row: (row.role, row.name.lower(), row.contact_id),
     )
     return LoginAccountsResponse(

@@ -133,7 +133,8 @@ def _sign_selected_session(
     bus: Bus,
     *,
     magi_id: int,
-    tgid: int,
+    contact_id: int,
+    tgid: int | None,
     display_name: str | None,
     admin: bool,
     assigned: bool,
@@ -154,10 +155,20 @@ def _sign_selected_session(
     version was bumped 3 → 4 so every v3 cookie is rejected outright at
     deploy time. Operators are signed out once; the alternative is a
     payload whose key silently no longer matches what the reader expects.
+
+    ``contact_id`` and ``tgid`` are separate payload fields on purpose.
+    They are different identifiers (``contacts.id`` versus the Telegram
+    chat id) and only the former is the session identity. Earlier v4
+    drafts stored one slot that held a tgid when the contact had a TG
+    binding and fell back to the contact_id when they did not, which
+    made :func:`resolve_session` hand downstream callers a TG chat id
+    in place of a contact_id for every TG-bound operator. ``tgid`` is
+    nullable because a WebUI-only operator legitimately has none.
     """
     payload = {
         "v": 4,
         "magi_id": magi_id,
+        "contact_id": contact_id,
         "tgid": tgid,
         "display_name": display_name,
         "admin": admin,
@@ -180,10 +191,12 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
         if not hmac.compare_digest(signature, expected):
             return None
         payload = json.loads(raw)
+        tgid = payload.get("tgid")
         if (
             payload.get("v") != 4
             or not isinstance(payload.get("magi_id"), int)
-            or not isinstance(payload.get("tgid"), int)
+            or not isinstance(payload.get("contact_id"), int)
+            or not (tgid is None or isinstance(tgid, bool) is False and isinstance(tgid, int))
         ):
             return None
         if datetime.now(UTC).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
