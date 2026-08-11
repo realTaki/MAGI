@@ -1,4 +1,3 @@
-
 """``read_file`` tool — read a UTF-8 file inside the
 workspace root.
 
@@ -74,8 +73,8 @@ class ReadFileTool(Tool):
 
     description = (
         "Read the contents of a UTF-8 text file. ``path`` is "
-        "relative to the workspace root (e.g. ``\"SOUL.md\"`` "
-        "or ``\"skills/calc.py\"``). Use ``list_files`` first "
+        'relative to the workspace root (e.g. ``"SOUL.md"`` '
+        'or ``"skills/calc.py"``). Use ``list_files`` first '
         "to discover files.\n\n"
         "Two read modes:\n"
         "  - No ``offset``/``limit``: returns the whole file. "
@@ -83,7 +82,7 @@ class ReadFileTool(Tool):
         "``[truncated at N bytes]`` marker.\n"
         "  - With ``offset`` and/or ``limit``: returns a "
         "**window** of lines (1-indexed). Output is "
-        "``\"     N|<line content>\"`` per line so the LLM "
+        '``"     N|<line content>"`` per line so the LLM '
         "can cross-reference line numbers against "
         "``grep`` / ``edit_file`` output.\n\n"
         "Use ``edit_file`` for small targeted edits, "
@@ -198,9 +197,7 @@ class ReadFileTool(Tool):
             head_bytes = raw[:_MAX_BYTES]
             # Round down to a valid UTF-8 boundary so we
             # never cut a multi-byte char in half.
-            while head_bytes and (
-                (head_bytes[-1] & 0b11000000) == 0b11000000
-            ):
+            while head_bytes and ((head_bytes[-1] & 0b11000000) == 0b11000000):
                 head_bytes = head_bytes[:-1]
             text = head_bytes.decode("utf-8", errors="replace")
             truncated_marker = (
@@ -270,9 +267,7 @@ class ReadFileTool(Tool):
         # read those.
         formatted = "\n".join(
             f"{line_no:>{_LINE_NUMBER_WIDTH}d}|{line}"
-            for line_no, line in zip(
-                range(start + 1, end + 1), selected
-            )
+            for line_no, line in zip(range(start + 1, end + 1), selected, strict=False)
         )
 
         # Annotate the slice so the LLM can resume
@@ -282,10 +277,7 @@ class ReadFileTool(Tool):
         header = f"[lines {start + 1}-{end} of {len(lines)} in {path_arg!r}]"
         suffix = ""
         if end < len(lines):
-            suffix = (
-                f"\n[... {len(lines) - end} more lines; use "
-                f"``offset={end + 1}`` to continue]"
-            )
+            suffix = f"\n[... {len(lines) - end} more lines; use ``offset={end + 1}`` to continue]"
         return ToolResult(content=f"{header}\n{formatted}{suffix}")
 
 

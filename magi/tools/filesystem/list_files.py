@@ -1,4 +1,3 @@
-
 """``list_files`` tool — list immediate children of a
 directory inside the workspace.
 
@@ -41,7 +40,7 @@ class ListFilesTool(Tool):
     description = (
         "List the immediate children of a directory "
         "(non-recursive). ``path`` is relative to the "
-        "workspace root; default ``\".\"`` lists the "
+        'workspace root; default ``"."`` lists the '
         "workspace itself. Each entry includes ``name``, "
         "``type`` (``file`` or ``dir``), and ``size`` in "
         "bytes (files only). Output is capped at 200 entries."
@@ -53,7 +52,7 @@ class ListFilesTool(Tool):
                 "type": "string",
                 "description": (
                     "Directory path relative to the workspace "
-                    "root. Defaults to ``\".\"`` (the workspace "
+                    'root. Defaults to ``"."`` (the workspace '
                     "itself). Must be a directory; passing a "
                     "file path is rejected."
                 ),
@@ -111,11 +110,13 @@ class ListFilesTool(Tool):
                     # via ``is_dir``. Symlinks show their
                     # target's size; v0 doesn't bother
                     # resolving them.
-                    entries.append({
-                        "name": p.name,
-                        "type": "file",
-                        "size": p.stat().st_size,
-                    })
+                    entries.append(
+                        {
+                            "name": p.name,
+                            "type": "file",
+                            "size": p.stat().st_size,
+                        }
+                    )
             except OSError:
                 # Broken symlink, race, permission denied
                 # on a single entry — skip rather than fail
@@ -127,12 +128,12 @@ class ListFilesTool(Tool):
                 "path": path_arg,
                 "entries": entries,
                 "truncated": truncated,
-                "total_seen": len(entries_raw) + (len(entries_raw) - len(entries) if truncated else 0),
+                "total_seen": len(entries_raw)
+                + (len(entries_raw) - len(entries) if truncated else 0),
             },
             ensure_ascii=False,
         )
         suffix = (
-            f"\n\n…[truncated: directory has more than {_MAX_ENTRIES} entries]"
-            if truncated else ""
+            f"\n\n…[truncated: directory has more than {_MAX_ENTRIES} entries]" if truncated else ""
         )
         return ToolResult(content=body + suffix)

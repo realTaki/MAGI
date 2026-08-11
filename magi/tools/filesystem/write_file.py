@@ -1,4 +1,3 @@
-
 """``write_file`` tool — atomically write a UTF-8 file
 inside the workspace root.
 
@@ -66,8 +65,7 @@ class WriteFileTool(Tool):
             "content": {
                 "type": "string",
                 "description": (
-                    "Full file contents. UTF-8. Limited to "
-                    "256 KB to keep tool calls cheap."
+                    "Full file contents. UTF-8. Limited to 256 KB to keep tool calls cheap."
                 ),
             },
         },
@@ -146,8 +144,4 @@ class WriteFileTool(Tool):
             )
 
         bytes_written = len(content_arg.encode("utf-8"))
-        return ToolResult(
-            content=(
-                f"write_file: wrote {bytes_written} bytes to {path_arg!r}"
-            )
-        )
+        return ToolResult(content=(f"write_file: wrote {bytes_written} bytes to {path_arg!r}"))

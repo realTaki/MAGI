@@ -1,4 +1,3 @@
-
 """``edit_file`` tool — exact-string replacement in a workspace file.
 
 Why this exists as a separate tool from ``write_file``:
@@ -36,7 +35,6 @@ from typing import Any
 
 from magi.tools._safe_path import safe_resolve
 from magi.tools.base import Tool, ToolContext, ToolResult
-
 
 # Cap on the size of the matched ``old_str`` string the
 # LLM can send. A multi-megabyte "old" string is almost
@@ -103,8 +101,7 @@ class EditFileTool(Tool):
             "new_str": {
                 "type": "string",
                 "description": (
-                    "Replacement string. Use ``\"\"`` (empty) "
-                    "to delete the matched chunk."
+                    'Replacement string. Use ``""`` (empty) to delete the matched chunk.'
                 ),
             },
         },
