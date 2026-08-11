@@ -182,11 +182,6 @@ def create_app(
 
     app.include_router(runtime_access.router, prefix="/api")
     app.include_router(magi.self_router, prefix="/api")
-    # A2A router is a stub — its entry point raises NotImplementedError.
-    # Mount it anyway so the endpoint exists and fails loudly.
-    from magi.channels.a2a.router import router as a2a_router
-
-    app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
     if not include_control_routes:
         app.include_router(magis.router, prefix="/api")

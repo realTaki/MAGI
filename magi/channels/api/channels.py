@@ -29,7 +29,6 @@ _SETTINGS_KEY = "channels.enabled"
 _CHANNEL_META: list[dict] = [
     {"name": Channel.WEBUI, "label": "WebUI", "implemented": True},
     {"name": Channel.TG, "label": "Telegram", "implemented": True},
-    {"name": Channel.A2A, "label": "A2A", "implemented": True},
     {"name": "wechat", "label": "WeChat", "implemented": False},
     {"name": "lark", "label": "Lark", "implemented": False},
     {"name": "teams", "label": "Teams", "implemented": False},
@@ -37,10 +36,9 @@ _CHANNEL_META: list[dict] = [
 
 #: Channels the operator-facing toggle API refuses to disable.
 #: Mirrors :data:`magi.startup.workers._REQUIRED_CHANNELS` — both
-#: WebUI (dashboard / chat console) and A2A (MAGI peer exchange)
-#: are runtime base capabilities per the 2026-08-10 architecture
-#: review, so the operator cannot toggle them off via this API.
-_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI, Channel.A2A})
+#: The WebUI dashboard is the one mandatory human-facing channel. A2A is a
+#: MAGIS-shared durable board, so it is deliberately absent from this API.
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
 
 
 def _read_enabled(bus) -> list[str]:
