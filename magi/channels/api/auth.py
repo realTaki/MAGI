@@ -24,8 +24,8 @@ Authorization model (D.24):
   ``telegram_id`` (the latter may be ``None`` for admins
   who never bound a TG bot).
 
-  Reads (list / get sessions) are scoped by ``contact_id``
-  on the server side (see the bus session service) —
+  Reads (list / get conversations) are scoped by ``contact_id``
+  on the server side (see the bus conversation service) —
   a contact sees their own history across every channel,
   regardless of which one was used to create a given row.
   Writes (continue-send / append) are still channel-owned

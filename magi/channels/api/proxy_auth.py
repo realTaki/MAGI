@@ -135,7 +135,7 @@ def ensure_runtime_operator(request: Request) -> int | None:
     Contacts are private MAGI data, so their numeric IDs are not global.  A
     verified control request is mapped by Telegram identity when available; an
     explicit system marker covers WebUI-only operators.  The returned local
-    contact ID keeps existing chat/session APIs correctly scoped.
+    contact ID keeps existing chat/conversation APIs correctly scoped.
     """
     identity = verified_proxy_operator(request)
     if identity is None:

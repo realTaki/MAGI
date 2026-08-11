@@ -50,13 +50,13 @@ def search_chat(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> SearchResponse:
-    """Full-text search across the operator's sessions.
+    """Full-text search across the operator's conversations.
 
     Scope: cross-platform via the calling contact's row id.
     AdminGate proves "is an admin"; ``_admin_contact_id`` resolves the
     cookie's contact_id to the matching Contact row; the SQL clause
-    ``WHERE s.contact_id = :contact_id`` picks up every session this contact
-    owns — webui, TG, or any future channel.
+    ``WHERE s.contact_id = :contact_id`` picks up every conversation this
+    contact owns — webui, TG, or any future channel.
     """
     contact_id = _admin_contact_id(request)
 
