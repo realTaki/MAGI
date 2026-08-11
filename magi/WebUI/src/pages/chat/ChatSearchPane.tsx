@@ -7,12 +7,12 @@
  *    input (300 ms) and calls
  *    ``GET /api/chat/search?q=...&limit=20`` for FTS5
  *    matches. Renders one row per hit with a
- *    ``<mark>``-highlighted snippet + the session title +
+ *    ``<mark>``-highlighted snippet + the conversation title +
  *    role tag.
  *
  *  - **Browse mode** (query empty). Calls
- *    ``GET /api/chat/sessions?limit=N&offset=M`` and renders
- *    the most-recently-updated sessions as a
+ *    ``GET /api/chat/conversations?limit=N&offset=M`` and renders
+ *    the most-recently-updated conversations as a
  *    "latest conversations" list. Infinite-scroll via an
  *    IntersectionObserver on a sentinel ``<div>`` at the
  *    bottom: when it scrolls into view, fetch the next
@@ -23,12 +23,12 @@
  * Both modes use the same row layout (so an operator
  * transitioning from "no search" → "search" sees a
  * consistent visual) and the same ``onOpen`` callback —
- * row click → ``openSession(id)`` → chat pane.
+ * row click → ``openConversation(id)`` → chat pane.
  *
  * Auth + scope:
  *   The cookie-based admin gate is handled upstream by the
  *   HTTP route. The search route scopes by ``uid``
- *   (D.18+1); the sessions list route scopes by
+ *   (D.18+1); the conversations list route scopes by
  *   ``delivery_address`` (the per-channel delivery address
  *   column — D.28 renamed the legacy ``tgid`` column).
  *   Both end up showing the operator's own history — the
@@ -48,8 +48,8 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/index";
 import {
   useChatSearch,
-  useChatSessions,
-  type ChatSessionList,
+  useChatConversations,
+  type ChatConversationList,
   type ChatSearchResult,
 } from "../../lib/queries";
 
@@ -59,12 +59,12 @@ import {
 // Lives here as a named alias so the row component
 // doesn't have to thread the parent type through.
 type SearchHit = ChatSearchResult["items"][number];
-type SessionSummary = ChatSessionList["items"][number];
+type ConversationSummary = ChatConversationList["items"][number];
 
 type Props = {
   /** Deep-link into the matching thread. Matches
-   *  DashboardPage's ``openSession`` helper. */
-  onOpen: (sessionId: string) => void;
+   *  DashboardPage's ``openConversation`` helper. */
+  onOpen: (conversationId: string) => void;
 };
 
 const DEBOUNCE_MS = 300;
@@ -88,7 +88,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
   // an infinite scroll doesn't drop earlier entries
   // when react-query re-fetches a new page (each page
   // is its own cache entry, not a replace).
-  const [browseItems, setBrowseItems] = useState<SessionSummary[]>([]);
+  const [browseItems, setBrowseItems] = useState<ConversationSummary[]>([]);
   const [browseTotal, setBrowseTotal] = useState(0);
   const [browseOffset, setBrowseOffset] = useState(0);
   const [browseExhausted, setBrowseExhausted] = useState(false);
@@ -102,7 +102,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
   // is the default when the search box is empty). The
   // query is keyed by ``(limit, offset)`` so each page
   // is its own cache entry — perfect for infinite scroll.
-  const browseQuery = useChatSessions({
+  const browseQuery = useChatConversations({
     limit: BROWSE_PAGE,
     offset: browseOffset,
   });
@@ -138,7 +138,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
   useEffect(() => {
     if (query.trim()) return; // search mode owns the result list
     if (!browseQuery.data) return;
-    const body: ChatSessionList = browseQuery.data;
+    const body: ChatConversationList = browseQuery.data;
     setBrowseTotal(body.total);
     setBrowseExhausted(browseOffset + body.items.length >= body.total);
     setBrowseItems((prev) =>

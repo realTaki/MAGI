@@ -405,7 +405,6 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
         job_id="shutdown-job",
         run_id="run-1",
         conversation_id="conv-1",
-        kind="channel.message.received",
         payload={},
     )
     claimed = False

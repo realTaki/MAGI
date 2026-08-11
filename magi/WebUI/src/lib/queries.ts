@@ -94,7 +94,7 @@ export type TaskRow = {
   id: string; name: string; prompt: string;
   target_channel: "webui" | "tg";
   delivery_to: string | null; enabled: boolean;
-  session_id: string | null;
+  conversation_id: string | null;
   last_run_at: string | null; last_status: string | null;
   consecutive_failures: number;
   created_at: string; updated_at: string;
@@ -136,7 +136,7 @@ export function useTasks(filter?: { enabled?: boolean; kind?: "preset" | "custom
 }
 
 export type TaskRunRow = {
-  id: string; task_id: string; session_id: string | null;
+  id: string; task_id: string; conversation_id: string | null;
   trigger: string; started_at: string; finished_at: string | null;
   latency_ms: number | null; status: string; error: string | null;
   reply_excerpt: string | null;
@@ -761,7 +761,7 @@ export type ChatSearchResult = {
   q: string;
   uid: number;
   items: Array<{
-    session_id: string;
+    conversation_id: string;
     message_id: string;
     role: string;
     ts: string;
@@ -797,9 +797,9 @@ export function useChatSearch(q: string) {
   });
 }
 
-export type ChatSessionList = {
+export type ChatConversationList = {
   items: Array<{
-    session_id: string;
+    conversation_id: string;
     created_at: string;
     created_by_uid: number;
     updated_at: string;
@@ -813,24 +813,24 @@ export type ChatSessionList = {
 };
 
 /**
- * Browse-mode sessions list. Paginated; the caller is
+ * Browse-mode conversations list. Paginated; the caller is
  * responsible for accumulating ``items`` across pages
  * (react-query fetches one page at a time).
  */
-export function useChatSessions(opts: { limit?: number; offset?: number; enabled?: boolean } = {}) {
+export function useChatConversations(opts: { limit?: number; offset?: number; enabled?: boolean } = {}) {
   const { limit = 20, offset = 0, enabled = true } = opts;
   return useQuery({
-    queryKey: qk.chatSessions(limit, offset),
+    queryKey: qk.chatConversations(limit, offset),
     queryFn: () => {
       const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-      return apiFetch<ChatSessionList>(`/api/chat/sessions?${params.toString()}`);
+      return apiFetch<ChatConversationList>(`/api/chat/conversations?${params.toString()}`);
     },
     enabled,
   });
 }
 
-export type ChatSessionOut = {
-  session_id: string;
+export type ChatConversationOut = {
+  conversation_id: string;
   uid: number;
   channel: string;
   delivery_address: string;
@@ -845,15 +845,15 @@ export type ChatSessionOut = {
   }>;
 };
 
-/** GET /api/chat/sessions/{id} — full session incl. messages. */
-export function useChatSession(sessionId: string | null) {
+/** GET /api/chat/conversations/{id} — full conversation incl. messages. */
+export function useChatConversation(conversationId: string | null) {
   return useQuery({
-    queryKey: sessionId ? qk.chatSession(sessionId) : ["chatSession", "none"],
+    queryKey: conversationId ? qk.chatConversation(conversationId) : ["chatConversation", "none"],
     queryFn: () =>
-      apiFetch<ChatSessionOut>(
-        `/api/chat/sessions/${encodeURIComponent(sessionId as string)}`,
+      apiFetch<ChatConversationOut>(
+        `/api/chat/conversations/${encodeURIComponent(conversationId as string)}`,
       ),
-    enabled: !!sessionId,
+    enabled: !!conversationId,
   });
 }
 
@@ -877,7 +877,7 @@ export type TaskOut = {
   created_at: string;
   updated_at: string;
   description?: string | null;
-  session_id?: string | null;
+  conversation_id?: string | null;
   // Preset back-pointers (read-only on the per-user row).
   // ``preset_key IS NOT NULL`` is the source of truth for
   // the Knowledge → Tasks pane's "preset" / "custom" split;

@@ -2,39 +2,39 @@
  * RunsHistoryDrawer — chat-style log of a task's runs.
  *
  * Mirrors the conversation page bubble layout (user right,
- * assistant left). Fetches the task session via
- * ``GET /api/chat/sessions/{id}`` and overlays per-fire run
+ * assistant left). Fetches the task conversation via
+ * ``GET /api/chat/conversations/{id}`` and overlays per-fire run
  * status from ``GET /api/tasks/{id}/runs``.
  *
  * Migrated to react-query: the Promise.all in the
  * original ``useEffect`` collapses to two independent
- * ``useQuery`` hooks (``useChatSession`` + ``useTaskRuns``)
+ * ``useQuery`` hooks (``useChatConversation`` + ``useTaskRuns``)
  * that fire in parallel and dedup across drawer re-opens.
  */
-import { useChatSession, useTaskRuns, type TaskRunRow } from "../../lib/queries";
+import { useChatConversation, useTaskRuns, type TaskRunRow } from "../../lib/queries";
 import { formatRunTimestamp } from "./TaskListPane";
 
 export function RunsHistoryDrawer(props: {
   taskId: string;
   taskName: string;
-  sessionId: string | null;
+  conversationId: string | null;
   onClose: () => void;
 }) {
-  // Chat-style log view for a task's session. Mirrors the
+  // Chat-style log view for a task's conversation. Mirrors the
   // main conversation page's bubble layout (see
   // ``ChatTab.tsx`` — user bubbles right-aligned, assistant
   // bubbles left-aligned) so the operator's mental model
   // of "this is just a chat, the timer started it" holds
   // across both surfaces.
-  const sessionQuery = useChatSession(props.sessionId);
+  const conversationQuery = useChatConversation(props.conversationId);
   const runsQuery = useTaskRuns(props.taskId);
 
-  const messages = sessionQuery.data?.messages ?? null;
-  const sessionTitle = sessionQuery.data?.title ?? null;
+  const messages = conversationQuery.data?.messages ?? null;
+  const sessionTitle = conversationQuery.data?.title ?? null;
   const runs = runsQuery.data ?? null;
   // Combine the two query errors; first non-null wins.
   const loadError =
-    (sessionQuery.error as Error | null)?.message ??
+    (conversationQuery.error as Error | null)?.message ??
     (runsQuery.error as Error | null)?.message ??
     null;
 
@@ -70,9 +70,9 @@ export function RunsHistoryDrawer(props: {
               {props.taskName}
             </h3>
             <p className="text-xs text-ink-soft mt-0.5">
-              {sessionTitle ?? "[定时] session"}
-              {props.sessionId
-                ? ` · ${props.sessionId.slice(0, 8)}…`
+              {sessionTitle ?? "[定时] conversation"}
+              {props.conversationId
+                ? ` · ${props.conversationId.slice(0, 8)}…`
                 : ""}
             </p>
           </div>
@@ -94,17 +94,17 @@ export function RunsHistoryDrawer(props: {
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-3">
           {loadError && <p className="form-error">✗ {loadError}</p>}
-          {props.sessionId === null ? (
+          {props.conversationId === null ? (
             <p className="text-sm text-ink-soft">
-              这条任务还没有被 fire 过（session 在第一次 cron
+              这条任务还没有被 fire 过（conversation 在第一次 cron
               时由 runner 自动回填）。请先等一次 cron 触发，
-              或者用「▶」立刻跑一下让 runner 初始化 session。
+              或者用「▶」立刻跑一下让 runner 初始化 conversation。
             </p>
           ) : messages === null && !loadError ? (
             <p className="text-sm text-ink-soft">加载中…</p>
           ) : messages && messages.length === 0 ? (
             <p className="text-sm text-ink-soft">
-              Session 已创建但还没有对话记录。
+              Conversation 已创建但还没有对话记录。
             </p>
           ) : messages ? (
             messages.map((m) => (

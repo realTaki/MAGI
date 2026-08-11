@@ -111,16 +111,16 @@ export const qk = {
    *  so a per-row fetch doesn't refetch the whole list. */
   task: (taskId: string) =>
     runtimeKey("task", taskId),
-  /** Active session messages — paginated per session. */
-  chatMessages: (sessionId: string) =>
-    runtimeKey("chatMessages", sessionId),
-  chatSessions: (limit?: number, offset?: number) =>
+  /** Active conversation messages — paginated per conversation. */
+  chatMessages: (conversationId: string) =>
+    runtimeKey("chatMessages", conversationId),
+  chatConversations: (limit?: number, offset?: number) =>
     limit === undefined && offset === undefined
-      ? runtimeKey("chatSessions")
-      : runtimeKey("chatSessions", { limit, offset }),
-  /** Full session detail (messages included). */
-  chatSession: (sessionId: string) =>
-    runtimeKey("chatSession", sessionId),
+      ? runtimeKey("chatConversations")
+      : runtimeKey("chatConversations", { limit, offset }),
+  /** Full conversation detail (messages included). */
+  chatConversation: (conversationId: string) =>
+    runtimeKey("chatConversation", conversationId),
   /** Chat search results — keyed by query string so a
    *  re-typed query hits the cache. */
   chatSearch: (q: string) =>

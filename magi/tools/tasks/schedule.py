@@ -194,7 +194,7 @@ class ScheduleTaskTool(Tool):
             # facing schema: the tool no longer accepts a
             # caller-supplied destination. The server
             # derives it from channel + the caller's
-            # ToolContext (session_id for webui; the
+            # ToolContext (conversation_id for webui; the
             # operator's bound chat id for tg). The column
             # stays on Task for backward compat with rows
             # created before this unification.
@@ -253,7 +253,7 @@ class ScheduleTaskTool(Tool):
         if target_channel == ChannelEnum.WEBUI:
             delivery_to = None
         elif target_channel == ChannelEnum.TG:
-            delivery_to = ctx.bus.sessions_book.resolve_delivery_address(
+            delivery_to = ctx.bus.conversations_book.resolve_delivery_address(
                 conversation_id=ctx.conversation_id
             )
         else:
@@ -298,13 +298,13 @@ class ScheduleTaskTool(Tool):
         # is enforced by the worker via ``Tool.gate(ctx)``
         # before ``run()`` is called — no manual re-check here.
 
-        # Stamp the Contact-owned Telegram address on the new session as a
+        # Stamp the Contact-owned Telegram address on the new conversation as a
         # breadcrumb. Resolve it outside the task write transaction because
         # ContactBook uses its own short SQLite transaction.
         # Empty string when the operator has no TG binding.
         operator_id = int(ctx.contact_id)
         contact = ctx.bus.contacts_book.get(contact_id=operator_id)
-        task_session_delivery_address = (
+        task_conversation_delivery_address = (
             str(contact.telegram_id)
             if contact is not None and contact.telegram_id is not None
             else ""
@@ -314,15 +314,15 @@ class ScheduleTaskTool(Tool):
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
         resolved_tz = ctx.bus.settings_book.system_timezone()
-        # Allocate the task's home session up-front so cron fires
+        # Allocate the task's home conversation up-front so cron fires
         # accumulate into one conversation per task. The
         # ``upsert_by_name`` body preserves the existing
-        # ``session_id`` for update-paths (continuity across
+        # ``conversation_id`` for update-paths (continuity across
         # prompt edits).
-        new_session_id_str = ctx.bus.sessions_book.create_task_session(
+        new_conversation_id_str = ctx.bus.conversations_book.create_task_conversation(
             contact_id=operator_id,
             title=f"[定时] {name}",
-            delivery_address=task_session_delivery_address,
+            delivery_address=task_conversation_delivery_address,
         )
         try:
             task_id, is_update = ctx.bus.tasks_book.upsert_by_name(
@@ -333,7 +333,7 @@ class ScheduleTaskTool(Tool):
                 delivery_to=delivery_to,
                 target_channel=target_channel,
                 contact_id=operator_id,
-                conversation_id=new_session_id_str,
+                conversation_id=new_conversation_id_str,
                 tz=resolved_tz,
             )
         except ValueError as e:

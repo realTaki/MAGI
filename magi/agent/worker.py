@@ -234,18 +234,26 @@ class AgentWorker(RuntimeWorker):
     async def _claim_next_turn(self) -> tuple[str | None, Any | None]:
         """Fairly claim local chat and MAGIS-shared A2A work."""
         choices: list[tuple[str, Any]] = [("chat", self.bus.agent_job_board.claim)]
-        if self._magi_id is not None and self.bus.a2a_request_job_board is not None:
+        # Bind to locals so Pylance keeps the ``is not None``
+        # narrowing across the lambda boundary; ``self.bus.*`` and
+        # ``self._magi_id`` would otherwise be re-typed as
+        # ``T | None`` inside the closure and trigger
+        # ``reportOptionalMemberAccess`` / ``reportArgumentType``.
+        magi_id = self._magi_id
+        request_board = self.bus.a2a_request_job_board
+        notify_board = self.bus.a2a_notify_job_board
+        if magi_id is not None and request_board is not None:
             choices.append(
                 (
                     "a2a.request",
-                    lambda: self.bus.a2a_request_job_board.claim_for_target(magi_id=self._magi_id),
+                    lambda: request_board.claim_for_target(magi_id=magi_id),
                 )
             )
-        if self._magi_id is not None and self.bus.a2a_notify_job_board is not None:
+        if magi_id is not None and notify_board is not None:
             choices.append(
                 (
                     "a2a.notify",
-                    lambda: self.bus.a2a_notify_job_board.claim_for_target(magi_id=self._magi_id),
+                    lambda: notify_board.claim_for_target(magi_id=magi_id),
                 )
             )
         offset = self._claim_cursor % len(choices)
