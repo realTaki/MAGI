@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from magi.bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
 if TYPE_CHECKING:
+    from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
     from magi.bus.guild.callLLMJob import callLLMJobBoard
     from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
     from magi.bus.guild.chatJob import chatJobBoard
@@ -33,7 +34,6 @@ if TYPE_CHECKING:
     from magi.bus.guild.runTaskJob import runTaskJobBoard
     from magi.bus.guild.runToolJob import runToolJobBoard
     from magi.bus.guild.seedPresetTasksJob import seedPresetTasksJobBoard
-    from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import SkillsBook
     from magi.bus.library.local.actionItemBook import ActionItemBook
@@ -272,6 +272,8 @@ def _open_with_dirs(
     # ---- lazy imports (avoid eager ORM table registration) ----------------
     from magi.bus.db.file import FileShelf
     from magi.bus.guild import (
+        a2aNotifyBoard,
+        a2aRequestJobBoard,
         callLLMJobBoard,
         changeProviderConfigJobBoard,
         chatJobBoard,
@@ -280,8 +282,6 @@ def _open_with_dirs(
         runTaskJobBoard,
         runToolJobBoard,
         seedPresetTasksJobBoard,
-        a2aNotifyBoard,
-        a2aRequestJobBoard,
     )
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import build_default_skills_book

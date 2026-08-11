@@ -39,13 +39,10 @@ class WorkerRegistry:
         from magi.tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
-        # Required channels (WebUI + A2A per the 2026-08-10 architecture
-        # review) are unconditionally started regardless of the
-        # configured ``enabled_channels`` list. This is the
-        # composition-root-level counterpart to the
-        # ``channels.enabled`` default written by :mod:`magi.bus.provision`
-        # and the runtime-side fallback in
-        # :func:`magi.startup.runtime._build_channels`.
+        # The WebUI is started regardless of ``enabled_channels``. This is
+        # the composition-root-level counterpart to the ``channels.enabled``
+        # default written by :mod:`magi.bus.provision` and the runtime-side
+        # fallback in :func:`magi.startup.runtime._build_channels`.
         enabled.update(_REQUIRED_CHANNELS)
         self._workers: dict[str, RuntimeWorker] = {
             "providers": ProvidersWorker(bus),
