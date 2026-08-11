@@ -633,11 +633,16 @@ async def target_verify_login_code(
         return VerifyLoginCodeResponse(
             ok=False, error=str(result.get("error") or "Code does not match")
         )
-    tgid = result.get("tgid")
-    if not isinstance(tgid, int):
+    # The identity is the contact_id; the tgid is optional
+    # colour (a WebUI-only operator has none). Validating the
+    # tgid here instead would reject a legitimate password- or
+    # WebUI-bound account as an "invalid identity".
+    contact_id = result.get("contact_id")
+    if not isinstance(contact_id, int):
         raise MagiHTTPException(
             502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity"
         )
+    tgid = result.get("tgid")
     raw_display_name = result.get("display_name")
     display_name = raw_display_name if isinstance(raw_display_name, str) else None
     response.set_cookie(
@@ -645,7 +650,8 @@ async def target_verify_login_code(
         value=_sign_selected_session(
             bus,
             magi_id=magi_id,
-            tgid=tgid,
+            contact_id=contact_id,
+            tgid=tgid if isinstance(tgid, int) else None,
             display_name=display_name,
             admin=bool(result.get("admin")),
             assigned=bool(result.get("assigned")),
@@ -900,7 +906,7 @@ async def verify_login_code(
             ok=False, error="contact not found"
         )
 
-    # Sign in: set the v3 session cookie so /me and
+    # Sign in: set the v4 session cookie so /me and
     # the runtime proxy both recognise the session in
     # control-plane mode. The legacy ``_sign_contact_id``
     # cookie is no longer issued by any login endpoint —
@@ -911,7 +917,8 @@ async def verify_login_code(
         value=_sign_selected_session(
             bus,
             magi_id=payload.magi_id,
-            tgid=int(contact_row.tgid) if contact_row.tgid is not None else contact_id,
+            contact_id=contact_id,
+            tgid=int(contact_row.tgid) if contact_row.tgid is not None else None,
             display_name=contact_row.display_name,
             admin=bool(contact_row.admin),
             # TG-code login alone doesn't bind the operator
@@ -1188,7 +1195,8 @@ async def _login_password_via_runtime(
         value=_sign_selected_session(
             bus,
             magi_id=magi_id,
-            tgid=int(upstream.get("tgid") or payload.contact_id),
+            contact_id=int(upstream.get("contact_id") or payload.contact_id),
+            tgid=upstream.get("tgid"),
             display_name=upstream.get("display_name"),
             admin=bool(upstream.get("admin")),
             assigned=bool(upstream.get("assigned")),
@@ -1253,7 +1261,8 @@ async def _login_password_local(
         value=_sign_selected_session(
             bus,
             magi_id=payload.magi_id,
-            tgid=int(contact_row.tgid) if contact_row.tgid is not None else payload.contact_id,
+            contact_id=payload.contact_id,
+            tgid=int(contact_row.tgid) if contact_row.tgid is not None else None,
             display_name=contact_row.display_name,
             admin=payload.role == "admin",
             assigned=payload.role == "assigned" and contact_row.role == "assigned",
