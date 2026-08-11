@@ -26,8 +26,8 @@ import httpx
 from magi.startup.config import (
     DEFAULT_MAGI_NAME,
     RUNTIME_PORT,
-    StartupConfig,
     WEBUI_PORT,
+    StartupConfig,
 )
 from magi.startup.kubernetes.contracts import (
     EvaOperationResult,
@@ -108,67 +108,62 @@ def create_magi_resources(*, config: StartupConfig, magi_id: int) -> dict[str, A
     runtime_port = RUNTIME_PORT
     return {
         "pvc": {
-                "apiVersion": "v1",
-                "kind": "PersistentVolumeClaim",
-                "metadata": {"name": pvc_name, "namespace": ns},
-                "spec": {
-                    "accessModes": ["ReadWriteOnce"],
-                    "resources": {"requests": {"storage": "10Gi"}},
-                },
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "metadata": {"name": pvc_name, "namespace": ns},
+            "spec": {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {"requests": {"storage": "10Gi"}},
             },
+        },
         "service": {
-                "apiVersion": "v1",
-                "kind": "Service",
-                "metadata": {"name": name, "namespace": ns},
-                "spec": {
-                    "selector": {"magi.io/magi-id": str(magi_id)},
-                    # ClusterIP is the default; do not mark externally
-                    # reachable (plan §15 — only the WebUI is).
-                    "ports": [
-                        {"name": "http", "port": runtime_port, "targetPort": runtime_port}
-                    ],
-                },
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": name, "namespace": ns},
+            "spec": {
+                "selector": {"magi.io/magi-id": str(magi_id)},
+                # ClusterIP is the default; do not mark externally
+                # reachable (plan §15 — only the WebUI is).
+                "ports": [{"name": "http", "port": runtime_port, "targetPort": runtime_port}],
             },
+        },
         "deployment": {
-                "apiVersion": "apps/v1",
-                "kind": "Deployment",
-                "metadata": {"name": name, "namespace": ns},
-                "spec": {
-                    "replicas": 1,
-                    "strategy": {"type": "Recreate"},
-                    "selector": {"matchLabels": {"magi.io/magi-id": str(magi_id)}},
-                    "template": {
-                        "metadata": {"labels": {"magi.io/magi-id": str(magi_id)}},
-                        "spec": {
-                            "containers": [
-                                {
-                                    "name": "magi",
-                                    "image": _image(),
-                                    "env": [
-                                        {"name": "HOST_WORKSPACE_DIR", "value": "/workspace"},
-                                        {"name": "MAGI_NAME", "value": config.magi_name},
-                                        {"name": "MAGI_ID", "value": str(magi_id)},
-                                        {
-                                            "name": "MAGIS_DATABASE_URL",
-                                            "value": config.magis_database_url
-                                            or "",
-                                        },
-                                    ],
-                                    "volumeMounts": [
-                                        {"name": "workspace", "mountPath": "/workspace"}
-                                    ],
-                                }
-                            ],
-                            "volumes": [
-                                {
-                                    "name": "workspace",
-                                    "persistentVolumeClaim": {"claimName": pvc_name},
-                                }
-                            ],
-                        },
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": name, "namespace": ns},
+            "spec": {
+                "replicas": 1,
+                "strategy": {"type": "Recreate"},
+                "selector": {"matchLabels": {"magi.io/magi-id": str(magi_id)}},
+                "template": {
+                    "metadata": {"labels": {"magi.io/magi-id": str(magi_id)}},
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "magi",
+                                "image": _image(),
+                                "env": [
+                                    {"name": "HOST_WORKSPACE_DIR", "value": "/workspace"},
+                                    {"name": "MAGI_NAME", "value": config.magi_name},
+                                    {"name": "MAGI_ID", "value": str(magi_id)},
+                                    {
+                                        "name": "MAGIS_DATABASE_URL",
+                                        "value": config.magis_database_url or "",
+                                    },
+                                ],
+                                "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
+                            }
+                        ],
+                        "volumes": [
+                            {
+                                "name": "workspace",
+                                "persistentVolumeClaim": {"claimName": pvc_name},
+                            }
+                        ],
                     },
                 },
             },
+        },
     }
 
 
@@ -179,6 +174,7 @@ def create_magis_resources(
     magis_name: str,
 ) -> dict[str, Any]:
     """Build the per-MAGIS database + workspace manifests."""
+    _ = config
     name = _magis_resource_name(magis_id, magis_name)
     ns = _namespace()
     return {
@@ -258,6 +254,7 @@ def ensure_webui_service(*, config: StartupConfig) -> dict[str, Any]:
     operator-facing surface.  ``port`` / ``targetPort`` forward to the
     WebUI port, never the Runtime port.
     """
+    _ = config
     name = _webui_resource_name()
     ns = _namespace()
     return {
@@ -286,6 +283,7 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
     Plan §15 — only the singleton WebUI is touched. Per-MAGI resources
     are managed by ``create_magi_resources``.
     """
+    _ = config
     name = _webui_resource_name()
     logger.info("deleting singleton WebUI resources: %s", name)
     try:
@@ -415,51 +413,90 @@ class KubernetesEvaBackend:
         self._apply(
             f"{prefix}/secrets/{shared_secret}",
             {
-                "apiVersion": "v1", "kind": "Secret",
-                "metadata": {"name": shared_secret, "labels": {**labels, "app.kubernetes.io/component": "magis-database"}},
-                "type": "Opaque", "data": _k8s_secret_data({"POSTGRES_PASSWORD": password}),
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": shared_secret,
+                    "labels": {**labels, "app.kubernetes.io/component": "magis-database"},
+                },
+                "type": "Opaque",
+                "data": _k8s_secret_data({"POSTGRES_PASSWORD": password}),
             },
         )
         self._apply(
             f"{prefix}/persistentvolumeclaims/{database_claim}",
             {
-                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
-                "metadata": {"name": database_claim, "labels": {**labels, "app.kubernetes.io/component": "magis-database"}},
-                "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "name": database_claim,
+                    "labels": {**labels, "app.kubernetes.io/component": "magis-database"},
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": "10Gi"}},
+                },
             },
         )
         self._apply(
             f"{prefix}/services/{database_service}",
             {
-                "apiVersion": "v1", "kind": "Service",
+                "apiVersion": "v1",
+                "kind": "Service",
                 "metadata": {"name": database_service, "labels": labels},
-                "spec": {"selector": {"magi.io/magis-db": "shared"}, "ports": [{"name": "postgres", "port": 5432, "targetPort": "postgres"}]},
+                "spec": {
+                    "selector": {"magi.io/magis-db": "shared"},
+                    "ports": [{"name": "postgres", "port": 5432, "targetPort": "postgres"}],
+                },
             },
         )
         self._apply(
             f"/apis/apps/v1/namespaces/{self.namespace}/deployments/{database_service}",
             {
-                "apiVersion": "apps/v1", "kind": "Deployment",
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
                 "metadata": {"name": database_service, "labels": labels},
                 "spec": {
-                    "replicas": 1, "strategy": {"type": "Recreate"},
+                    "replicas": 1,
+                    "strategy": {"type": "Recreate"},
                     "selector": {"matchLabels": {"magi.io/magis-db": "shared"}},
                     "template": {
                         "metadata": {"labels": {**labels, "magi.io/magis-db": "shared"}},
                         "spec": {
                             "securityContext": {"fsGroup": 999},
-                            "containers": [{
-                                "name": "postgres", "image": "postgres:16-alpine",
-                                "ports": [{"name": "postgres", "containerPort": 5432}],
-                                "env": [
-                                    {"name": "POSTGRES_USER", "value": "magi"},
-                                    {"name": "POSTGRES_DB", "value": "postgres"},
-                                    {"name": "POSTGRES_PASSWORD", "valueFrom": {"secretKeyRef": {"name": shared_secret, "key": "POSTGRES_PASSWORD"}}},
-                                ],
-                                "volumeMounts": [{"name": "data", "mountPath": "/var/lib/postgresql/data"}],
-                                "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},
-                            }],
-                            "volumes": [{"name": "data", "persistentVolumeClaim": {"claimName": database_claim}}],
+                            "containers": [
+                                {
+                                    "name": "postgres",
+                                    "image": "postgres:16-alpine",
+                                    "ports": [{"name": "postgres", "containerPort": 5432}],
+                                    "env": [
+                                        {"name": "POSTGRES_USER", "value": "magi"},
+                                        {"name": "POSTGRES_DB", "value": "postgres"},
+                                        {
+                                            "name": "POSTGRES_PASSWORD",
+                                            "valueFrom": {
+                                                "secretKeyRef": {
+                                                    "name": shared_secret,
+                                                    "key": "POSTGRES_PASSWORD",
+                                                }
+                                            },
+                                        },
+                                    ],
+                                    "volumeMounts": [
+                                        {"name": "data", "mountPath": "/var/lib/postgresql/data"}
+                                    ],
+                                    "securityContext": {
+                                        "allowPrivilegeEscalation": False,
+                                        "capabilities": {"drop": ["ALL"]},
+                                    },
+                                }
+                            ],
+                            "volumes": [
+                                {
+                                    "name": "data",
+                                    "persistentVolumeClaim": {"claimName": database_claim},
+                                }
+                            ],
                         },
                     },
                 },
@@ -468,36 +505,76 @@ class KubernetesEvaBackend:
         self._apply(
             f"{prefix}/secrets/{magis_secret}",
             {
-                "apiVersion": "v1", "kind": "Secret",
-                "metadata": {"name": magis_secret, "labels": {**labels, "magi.io/magis-id": str(binding.id)}},
-                "type": "Opaque", "data": _k8s_secret_data({"MAGIS_DATABASE_URL": database_url}),
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": magis_secret,
+                    "labels": {**labels, "magi.io/magis-id": str(binding.id)},
+                },
+                "type": "Opaque",
+                "data": _k8s_secret_data({"MAGIS_DATABASE_URL": database_url}),
             },
         )
         self._apply(
             f"{prefix}/persistentvolumeclaims/{workspace_claim}",
             {
-                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
-                "metadata": {"name": workspace_claim, "labels": {**labels, "app.kubernetes.io/component": "magis-workspace", "magi.io/magis-id": str(binding.id)}},
-                "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "10Gi"}}},
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "name": workspace_claim,
+                    "labels": {
+                        **labels,
+                        "app.kubernetes.io/component": "magis-workspace",
+                        "magi.io/magis-id": str(binding.id),
+                    },
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": "10Gi"}},
+                },
             },
         )
         self._apply(
             f"/apis/batch/v1/namespaces/{self.namespace}/jobs/{resource}-db-init",
             {
-                "apiVersion": "batch/v1", "kind": "Job",
-                "metadata": {"name": f"{resource}-db-init", "labels": {**labels, "magi.io/magis-id": str(binding.id)}},
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "metadata": {
+                    "name": f"{resource}-db-init",
+                    "labels": {**labels, "magi.io/magis-id": str(binding.id)},
+                },
                 "spec": {
                     "backoffLimit": 12,
                     "template": {
                         "metadata": {"labels": labels},
                         "spec": {
                             "restartPolicy": "OnFailure",
-                            "containers": [{
-                                "name": "create-database", "image": "postgres:16-alpine",
-                                "command": ["sh", "-ec", f"psql -h {database_service} -U magi -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname = '{database}'\" | grep -q 1 || psql -h {database_service} -U magi -d postgres -v ON_ERROR_STOP=1 -c \"CREATE DATABASE {database}\""],
-                                "env": [{"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": shared_secret, "key": "POSTGRES_PASSWORD"}}}],
-                                "securityContext": {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}},
-                            }],
+                            "containers": [
+                                {
+                                    "name": "create-database",
+                                    "image": "postgres:16-alpine",
+                                    "command": [
+                                        "sh",
+                                        "-ec",
+                                        f'psql -h {database_service} -U magi -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = \'{database}\'" | grep -q 1 || psql -h {database_service} -U magi -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE {database}"',
+                                    ],
+                                    "env": [
+                                        {
+                                            "name": "PGPASSWORD",
+                                            "valueFrom": {
+                                                "secretKeyRef": {
+                                                    "name": shared_secret,
+                                                    "key": "POSTGRES_PASSWORD",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "securityContext": {
+                                        "allowPrivilegeEscalation": False,
+                                        "capabilities": {"drop": ["ALL"]},
+                                    },
+                                }
+                            ],
                         },
                     },
                 },
@@ -659,9 +736,7 @@ class KubernetesEvaBackend:
                                 },
                                 {
                                     "name": "magis-workspace",
-                                    "persistentVolumeClaim": {
-                                        "claimName": magis_workspace_claim
-                                    },
+                                    "persistentVolumeClaim": {"claimName": magis_workspace_claim},
                                 },
                             ],
                         },

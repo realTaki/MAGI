@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
+from magi.bus.library.local.tasksBook import Channel
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -13,13 +14,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.startup.workers")
 
+#: Channel workers that must always run, regardless of the
+#: configured ``enabled_channels`` list. WebUI powers the operator
+#: dashboard and chat console; A2A is the MAGI peer exchange. Both
+#: are part of the runtime's base capability — disabling them
+#: would silently break the control plane (WebUI) or inter-agent
+#: routing (A2A). The list uses :data:`Channel` enum values so
+#: renames stay in sync.
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI.value, Channel.A2A.value})
+
 
 class WorkerRegistry:
     """The sole owner of one process' runtime-worker instances."""
 
     def __init__(
         self,
-        bus: "Bus",
+        bus: Bus,
         *,
         enabled_channels: Iterable[str] = (),
         magi_id: int | None = None,
@@ -35,17 +45,14 @@ class WorkerRegistry:
         from magi.tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
-        # WebUI is a required runtime channel: the operator dashboard and
-        # the chat console depend on its delivery worker, so the registry
-        # enforces it unconditionally even if the configured
-        # ``enabled_channels`` list omits it. This is the
+        # Required channels (WebUI + A2A per the 2026-08-10 architecture
+        # review) are unconditionally started regardless of the
+        # configured ``enabled_channels`` list. This is the
         # composition-root-level counterpart to the
         # ``channels.enabled`` default written by :mod:`magi.bus.provision`
         # and the runtime-side fallback in
-        # :func:`magi.startup.runtime._build_channels` — together they
-        # close the P1 "default channels behaviour" gap from the
-        # 2026-08-10 architecture review.
-        enabled.add("webui")
+        # :func:`magi.startup.runtime._build_channels`.
+        enabled.update(_REQUIRED_CHANNELS)
         self._workers: dict[str, RuntimeWorker] = {
             "providers": ProvidersWorker(bus),
             "tools": ToolsWorker(bus),
@@ -69,7 +76,8 @@ class WorkerRegistry:
 
     def channel_workers(self) -> dict[str, RuntimeWorker]:
         return {
-            name: worker for name, worker in self._workers.items()
+            name: worker
+            for name, worker in self._workers.items()
             if worker.worker_kind == "channel"
         }
 

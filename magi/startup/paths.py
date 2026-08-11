@@ -39,7 +39,6 @@ import os
 import re
 from pathlib import Path
 
-
 # ------------------------------------------------------------------
 # deployment mode detection
 # ------------------------------------------------------------------
@@ -64,6 +63,7 @@ def is_kubernetes_mode() -> bool:
 # ------------------------------------------------------------------
 # host workspace
 # ------------------------------------------------------------------
+
 
 def resolve_host_workspace() -> Path:
     """Return the default host workspace directory.
@@ -96,6 +96,7 @@ def resolve_host_workspace() -> Path:
 # MAGI workspace
 # ------------------------------------------------------------------
 
+
 def resolve_magi_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
     """Derive the MAGI workspace from host root and name.
 
@@ -107,6 +108,7 @@ def resolve_magi_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
 # ------------------------------------------------------------------
 # databases
 # ------------------------------------------------------------------
+
 
 def _magis_storage_name(magis_name: str) -> str:
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", magis_name):
@@ -159,6 +161,7 @@ def resolve_magis_control_dir(host_workspace_dir: Path, magis_name: str = "genes
 # runtime state
 # ------------------------------------------------------------------
 
+
 def resolve_runtime_state_path(workspace_dir: Path) -> Path:
     """Path to ``runtime.json`` — persisted identity record.
 
@@ -189,6 +192,7 @@ def resolve_runtime_log_paths(workspace_dir: Path) -> tuple[Path, Path]:
 # WebUI (singleton — lives at host level, not per-MAGI)
 # ------------------------------------------------------------------
 
+
 def resolve_webui_pid_path(host_workspace_dir: Path) -> Path:
     """Path to the singleton WebUI PID file.
 
@@ -210,6 +214,7 @@ def resolve_webui_log_paths(host_workspace_dir: Path) -> tuple[Path, Path]:
 # skills / memories / SOUL (workspace subdirectories)
 # ------------------------------------------------------------------
 
+
 def resolve_skills_dir(workspace_dir: Path) -> Path:
     return workspace_dir / "skills"
 
@@ -227,6 +232,7 @@ def resolve_bundle_skills_dir() -> Path:
     # bundle, which is shipped inside the installed package.
     try:
         import magi
+
         candidate = Path(magi.__file__).resolve().parent / "skills"
         if candidate.is_dir():
             return candidate

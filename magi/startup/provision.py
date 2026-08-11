@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from magi.bus.provision import provision_node_storage
-from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, RUNTIME_PORT, StartupConfig
+from magi.startup.config import DEFAULT_MAGI_NAME, RUNTIME_PORT, ConfigurationError, StartupConfig
 from magi.startup.paths import (
     resolve_magis_control_dir,
     resolve_magis_database_path,
@@ -37,7 +37,11 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
             is_reserved=True,
         )
     member = next(
-        (item for item in memberships.list_for_magis(magis_id=root.id) if item.role_id == adam_role.id),
+        (
+            item
+            for item in memberships.list_for_magis(magis_id=root.id)
+            if item.role_id == adam_role.id
+        ),
         None,
     )
     if member is None:
@@ -91,11 +95,12 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
         config.host_workspace_dir, config.magis_name
     )
     if config.magis_database_url is None:
-        resolve_magis_database_path(
-            config.host_workspace_dir, config.magis_name
-        ).parent.mkdir(parents=True, exist_ok=True)
+        resolve_magis_database_path(config.host_workspace_dir, config.magis_name).parent.mkdir(
+            parents=True, exist_ok=True
+        )
     bus = provision_node_storage(
-        state_dir=str(config.workspace_dir / "memories"), magis_url=magis_url,
+        state_dir=str(config.workspace_dir / "memories"),
+        magis_url=magis_url,
     )
     if bus._magis_factory is None:
         raise RuntimeError("MAGIS store was not provisioned")
@@ -142,14 +147,18 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         magis_url=magis_url,
     )
     if control_bus._magis_factory is None:
-        raise ConfigurationError(f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first")
+        raise ConfigurationError(
+            f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first"
+        )
     factory = control_bus._magis_factory
     magis = MagisBook(factory)
     roles = MagisRoleBook(factory)
     memberships = MagisMembershipBook(factory)
     root = magis.get_root()
     if root is None:
-        raise ConfigurationError(f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first")
+        raise ConfigurationError(
+            f"MAGIS {config.magis_name!r} is not provisioned; run `magi init` first"
+        )
     eva_role = roles.find(magis_id=root.id, name="EVA")
     if eva_role is None:
         eva_role = roles.add(magis_id=root.id, name="EVA", is_reserved=True)
@@ -157,7 +166,14 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     if control_bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
     used = control_bus.runtime_state_book.list_allocated_ports()
-    port = next((candidate for candidate in range(RUNTIME_PORT + 1, RUNTIME_PORT + 100) if candidate not in used), None)
+    port = next(
+        (
+            candidate
+            for candidate in range(RUNTIME_PORT + 1, RUNTIME_PORT + 100)
+            if candidate not in used
+        ),
+        None,
+    )
     if port is None:
         raise ConfigurationError("no local runtime port is available")
 
@@ -165,11 +181,15 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     # known valid, and before allocating a membership/port.  A rejected legacy
     # node path therefore cannot leave an orphaned registry record.
     provision_node_storage(
-        state_dir=str(node_config.workspace_dir / "memories"), magis_url=magis_url,
+        state_dir=str(node_config.workspace_dir / "memories"),
+        magis_url=magis_url,
     )
     membership = memberships.add(magis_id=root.id, role_id=eva_role.id)
     _register_local_runtime(
-        bus=control_bus, runtime_id=membership.id, config=config, port=port,
+        bus=control_bus,
+        runtime_id=membership.id,
+        config=config,
+        port=port,
     )
     control_bus.runtime_state_book.allocate_port(runtime_id=membership.id, port=port)
 

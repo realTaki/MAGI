@@ -17,7 +17,6 @@ only wires the process / PID / log bookkeeping around it.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
@@ -25,10 +24,9 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from magi.startup.config import StartupConfig, WEBUI_HOST, WEBUI_PORT
+from magi.startup.config import WEBUI_HOST, WEBUI_PORT, StartupConfig
 from magi.startup.paths import (
     resolve_magis_control_dir,
     resolve_magis_database_url,
@@ -65,7 +63,7 @@ class WebUIStatus:
 class ControlContext:
     """Read/open-only control capability for the singleton WebUI process."""
 
-    bus: "Bus"
+    bus: Bus
 
 
 # ----------------------------------------------------------------------
@@ -163,7 +161,7 @@ def ensure_webui_running(
     *,
     config: StartupConfig,
     port: int = DEFAULT_WEBUI_PORT,
-) -> Optional[str]:
+) -> str | None:
     """Start the WebUI if its PID file is missing or stale.
 
     Called from the first-MAGI bootstrap. Returns the URL on success,
@@ -196,7 +194,12 @@ def get_webui_status(*, config: StartupConfig) -> WebUIStatus:
 
 
 def run_webui_foreground(*, config: StartupConfig) -> None:
-    """Run the control service without creating node storage or workers."""
+    """Run the control service without creating node storage or workers.
+
+    ``MAGI_WEBUI_PORT`` is set by the detached launcher and the Kind dev
+    overlay. Production keeps the canonical :data:`WEBUI_PORT` default;
+    the override lets Vite own 42069 while its proxied API runs on 8000.
+    """
     import uvicorn
 
     from magi.bus import open_control_bus
@@ -217,7 +220,8 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
         magis_url=spec.magis_database_url,
     )
     app = create_control_app(context=ControlContext(bus=bus))
-    uvicorn.run(app, host=WEBUI_HOST, port=WEBUI_PORT, log_level="info")
+    port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
+    uvicorn.run(app, host=WEBUI_HOST, port=port, log_level="info")
 
 
 # ----------------------------------------------------------------------
@@ -266,7 +270,10 @@ def ensure_webui_deployment(*, config: StartupConfig) -> None:
         logger.debug("Kubernetes deployment skipped — no k8s module")
         return
     manifest = _build(config=config)
-    logger.info("WebUI Deployment manifest ready: %s", manifest.get("deployment", {}).get("metadata", {}).get("name", "?"))
+    logger.info(
+        "WebUI Deployment manifest ready: %s",
+        manifest.get("deployment", {}).get("metadata", {}).get("name", "?"),
+    )
 
 
 def ensure_webui_service(*, config: StartupConfig) -> None:
@@ -279,7 +286,10 @@ def ensure_webui_service(*, config: StartupConfig) -> None:
         logger.debug("Kubernetes service skipped — no k8s module")
         return
     manifest = _build(config=config)
-    logger.info("WebUI Service manifest ready: %s", manifest.get("service", {}).get("metadata", {}).get("name", "?"))
+    logger.info(
+        "WebUI Service manifest ready: %s",
+        manifest.get("service", {}).get("metadata", {}).get("name", "?"),
+    )
 
 
 def delete_webui_resources(*, config: StartupConfig) -> None:

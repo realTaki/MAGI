@@ -92,7 +92,9 @@ def start_magi(
 
     log_stdout, log_stderr = resolve_runtime_log_paths(config.workspace_dir)
     if not log_stdout.parent.is_dir() or not log_stderr.parent.is_dir():
-        raise ConfigurationError("node logs are not provisioned; run `magi init` or `magi node create`")
+        raise ConfigurationError(
+            "node logs are not provisioned; run `magi init` or `magi node create`"
+        )
 
     stdout_fh = open(log_stdout, "ab")
     stderr_fh = open(log_stderr, "ab")
@@ -235,9 +237,7 @@ def _mark_registry_stopped(config: StartupConfig) -> None:
     if runtimes is None:
         return
     try:
-        runtimes.set_desired_state(
-            runtime_id=magi_id, desired_state=RuntimeDesiredState.STOPPED
-        )
+        runtimes.set_desired_state(runtime_id=magi_id, desired_state=RuntimeDesiredState.STOPPED)
         runtimes.set_observed_state(
             runtime_id=magi_id,
             observed_state=RuntimeObservedState.STOPPED,
@@ -306,8 +306,14 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
 def _build_subprocess_argv(config: StartupConfig) -> list[str]:
     """Build the foreground child command for one provisioned MAGI."""
     return [
-        sys.executable, "-m", "magi", "node", "run", "--foreground",
-        "--name", config.magi_name,
+        sys.executable,
+        "-m",
+        "magi",
+        "node",
+        "run",
+        "--foreground",
+        "--name",
+        config.magi_name,
     ]
 
 

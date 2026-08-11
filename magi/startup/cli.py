@@ -77,7 +77,9 @@ def cmd_node_restart(args: argparse.Namespace) -> int:
 
 def cmd_node_status(args: argparse.Namespace) -> int:
     status = local.status_magi(config=_config(args))
-    print(f"{status.magi_name}\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}")
+    print(
+        f"{status.magi_name}\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}"
+    )
     return 0
 
 
@@ -114,7 +116,14 @@ def _common(
     parser.add_argument("--magi-id")
 
 
-def _lifecycle_parser(parent: argparse._SubParsersAction, name: str, handler, *, foreground: bool = False, force: bool = False) -> None:
+def _lifecycle_parser(
+    parent: argparse._SubParsersAction,
+    name: str,
+    handler,
+    *,
+    foreground: bool = False,
+    force: bool = False,
+) -> None:
     parser = parent.add_parser(name)
     _common(parser)
     if foreground:
@@ -125,7 +134,9 @@ def _lifecycle_parser(parent: argparse._SubParsersAction, name: str, handler, *,
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="magi", description="MAGI provisioning and runtime lifecycle")
+    parser = argparse.ArgumentParser(
+        prog="magi", description="MAGI provisioning and runtime lifecycle"
+    )
     root = parser.add_subparsers(dest="command", required=True)
 
     start = root.add_parser("start", help="initialize (when needed) and start local MAGI + WebUI")

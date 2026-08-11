@@ -129,9 +129,7 @@ def _startup_context(config: StartupConfig) -> StartupContext:
     """Resolve one provisioned node before its ASGI app is built."""
     spec = load_runtime_spec(config.workspace_dir)
     if spec.magi_name != config.magi_name:
-        raise RuntimeError(
-            f"runtime spec belongs to {spec.magi_name!r}, not {config.magi_name!r}"
-        )
+        raise RuntimeError(f"runtime spec belongs to {spec.magi_name!r}, not {config.magi_name!r}")
     return StartupContext(
         host_workspace_dir=config.host_workspace_dir,
         workspace_dir=config.workspace_dir,
@@ -143,7 +141,6 @@ def _startup_context(config: StartupConfig) -> StartupContext:
         is_first_magi=spec.is_first_magi,
         runtime_port=spec.runtime_port,
     )
-
 
 
 def _publish_runtime_config(config: StartupConfig) -> None:
@@ -286,17 +283,21 @@ def _build_channels(
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
     If the setting is missing or unparseable, fall back to the
-    required-channel default (``['webui']``). This is the runtime-side
-    counterpart to the provisioning default written by
-    :mod:`magi.bus.provision` — workspaces provisioned before that
-    default was added still get a working WebUI delivery worker.
+    required-channel default (``[Channel.WEBUI, Channel.A2A]``).
+    This is the runtime-side counterpart to the provisioning
+    default in :mod:`magi.bus.provision` — workspaces provisioned
+    before that default was added still get the required
+    channels' delivery workers.
 
     Reads the explicitly injected Bus only.
     """
     import json
 
+    from magi.bus.library.local.tasksBook import Channel
+
+    required = (Channel.WEBUI.value, Channel.A2A.value)
     if bus is None:
-        return ["webui"]
+        return list(required)
 
     try:
         raw = bus.settings_book.get(key="channels.enabled")
@@ -305,12 +306,13 @@ def _build_channels(
             if isinstance(parsed, list):
                 cleaned = [c for c in parsed if isinstance(c, str)]
                 if cleaned:
-                    if "webui" not in cleaned:
-                        cleaned.append("webui")
+                    for ch in required:
+                        if ch not in cleaned:
+                            cleaned.append(ch)
                     return cleaned
     except Exception:  # noqa: BLE001
         logger.warning("could not read channels.enabled from Bus", exc_info=True)
-    return ["webui"]
+    return list(required)
 
 
 # ----------------------------------------------------------------------

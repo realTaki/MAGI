@@ -147,9 +147,13 @@ class StartupConfig:
         """
         base = cls.from_env()
         return cls(
-            host_workspace_dir=Path(host_workspace_dir) if host_workspace_dir else base.host_workspace_dir,
+            host_workspace_dir=Path(host_workspace_dir)
+            if host_workspace_dir
+            else base.host_workspace_dir,
             magi_name=magi_name or base.magi_name,
-            magis_database_url=magis_database_url if magis_database_url is not None else base.magis_database_url,
+            magis_database_url=magis_database_url
+            if magis_database_url is not None
+            else base.magis_database_url,
             magi_id=magi_id if magi_id is not None else base.magi_id,
             magis_name=magis_name.strip().lower() if magis_name is not None else base.magis_name,
         )
@@ -187,6 +191,7 @@ class StartupConfig:
 # ------------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------------
+
 
 def _resolve_workspace(host_workspace_dir: Path, magi_name: str) -> Path:
     """Derive the MAGI workspace from host root and name.
