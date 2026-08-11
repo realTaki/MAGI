@@ -62,7 +62,7 @@ _KNOWN_PROVIDERS: list[str] = [
 # ── factory: 从 settings_book 读凭据并实例化 provider ──────────────────────
 
 
-def get_provider(*, bus: "Bus", model: str | None = None) -> LLMProvider:
+def get_provider(*, bus: Bus, model: str | None = None) -> LLMProvider:
     """从 ``bus.settings_book`` 读凭据并实例化 provider。
 
     Parameters
@@ -86,13 +86,9 @@ def get_provider(*, bus: "Bus", model: str | None = None) -> LLMProvider:
     effective_model = model or bus.settings_book.get(key=PROVIDER_MODEL_KEY)
 
     if not provider_name:
-        raise LLMNotConfiguredError(
-            "no LLM provider configured; set provider.name in settings"
-        )
+        raise LLMNotConfiguredError("no LLM provider configured; set provider.name in settings")
     if not api_key:
-        raise LLMNotConfiguredError(
-            "no API key configured; set provider.api_key in settings"
-        )
+        raise LLMNotConfiguredError("no API key configured; set provider.api_key in settings")
     return _build_provider(
         provider_name=provider_name,
         api_key=api_key,
@@ -110,21 +106,22 @@ def _build_provider(
     name = provider_name.strip().lower()
     if name in ("minimax", "minimax-cn"):
         return MinimaxProvider.for_region(
-            "minimax-cn", api_key=api_key, model=model,
+            "minimax-cn",
+            api_key=api_key,
+            model=model,
         )
     if name == "minimax-global":
         return MinimaxProvider.for_region(
-            "minimax-global", api_key=api_key, model=model,
+            "minimax-global",
+            api_key=api_key,
+            model=model,
         )
     if name == "claude":
         return ClaudeProvider(api_key=api_key, model=model)
     if name == "openai":
         return OpenAIProvider(api_key=api_key, model=model)
 
-    raise LLMError(
-        f"Unknown LLM provider: {provider_name!r}. "
-        f"Known: {', '.join(_KNOWN_PROVIDERS)}"
-    )
+    raise LLMError(f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(_KNOWN_PROVIDERS)}")
 
 
 __all__ = ["get_provider"]

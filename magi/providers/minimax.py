@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from magi.providers.anthropic import AnthropicProvider
 
-
 # Base URLs as published by Minimax. Both routes are
 # Anthropic-Messages-API-compatible. Hardcoded for v0
 # — moving to env / settings once the user has a
@@ -67,7 +66,7 @@ class MinimaxProvider(AnthropicProvider):
         region: str,
         api_key: str,
         model: str | None = None,
-    ) -> "MinimaxProvider":
+    ) -> MinimaxProvider:
         """Return a Minimax provider for a specific region.
 
         ``region`` is either ``"minimax-cn"`` or
@@ -85,8 +84,6 @@ class MinimaxProvider(AnthropicProvider):
         """
         if region not in _BASE_URLS:
             from magi.providers.errors import LLMError
-            raise LLMError(
-                f"Unknown minimax region: {region!r}. "
-                f"Known: {list(_BASE_URLS.keys())}"
-            )
+
+            raise LLMError(f"Unknown minimax region: {region!r}. Known: {list(_BASE_URLS.keys())}")
         return cls(api_key=api_key, model=model, base_url=_BASE_URLS[region])

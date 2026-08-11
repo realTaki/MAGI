@@ -36,6 +36,8 @@ from openai import (
     RateLimitError,
 )
 
+from magi.providers._utils import is_context_length_error, safe_dump
+from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
@@ -43,8 +45,6 @@ from magi.providers.errors import (
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.base import LLMProvider, LLMStreamEvent
-from magi.providers._utils import is_context_length_error, safe_dump
 
 logger = logging.getLogger("magi.providers.openai")
 
@@ -239,7 +239,8 @@ def _parse_arguments(arguments: Any, *, call_id: str) -> dict[str, Any]:
         except json.JSONDecodeError as exc:
             logger.warning(
                 "openai provider: tool_call %s had non-JSON arguments (%s); using empty dict",
-                call_id, exc,
+                call_id,
+                exc,
             )
             return {}
         if isinstance(decoded, dict):
@@ -414,15 +415,18 @@ class OpenAIProvider(LLMProvider):
         if thinking:
             raw_blocks.append({"type": "thinking", "thinking": thinking})
 
-        yield LLMStreamEvent("usage.updated", {
-            "model": model_name or self.model,
-            "stop_reason": _normalize_finish_reason(finish_reason),
-            "usage": _convert_usage(final_usage) or {},
-            "tool_uses": tool_uses,
-            "text": text or "(empty reply)",
-            "thinking": thinking,
-            "raw_blocks": raw_blocks,
-        })
+        yield LLMStreamEvent(
+            "usage.updated",
+            {
+                "model": model_name or self.model,
+                "stop_reason": _normalize_finish_reason(finish_reason),
+                "usage": _convert_usage(final_usage) or {},
+                "tool_uses": tool_uses,
+                "text": text or "(empty reply)",
+                "thinking": thinking,
+                "raw_blocks": raw_blocks,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -458,9 +462,7 @@ def _message_to_dict(*, message: Any, raw_response: Any) -> dict[str, Any]:
         arguments = _arguments_from_tool_call(call)
         parsed = _parse_arguments(arguments, call_id=call_id)
         tool_uses.append({"id": call_id, "name": name, "input": parsed})
-        raw_blocks.append(
-            {"type": "tool_use", "id": call_id, "name": name, "input": parsed}
-        )
+        raw_blocks.append({"type": "tool_use", "id": call_id, "name": name, "input": parsed})
 
     if text:
         raw_blocks.insert(0, {"type": "text", "text": text})

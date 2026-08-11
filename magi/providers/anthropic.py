@@ -32,15 +32,15 @@ from typing import Any
 
 import anthropic
 
+from magi.providers._utils import is_context_length_error, safe_dump
 from magi.providers.base import LLMProvider, LLMStreamEvent, StreamEventKind
 from magi.providers.errors import (
+    LLMAuthError,
     LLMContextLengthError,
     LLMError,
-    LLMAuthError,
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers._utils import is_context_length_error, safe_dump
 
 logger = logging.getLogger("magi.providers.anthropic")
 
@@ -88,9 +88,7 @@ class AnthropicProvider(LLMProvider):
         # region — they can pass the URL directly. Kept keyword-only.
         url = base_url or self._BASE_URL
         if not url:
-            raise LLMError(
-                f"{type(self).__name__} must declare _BASE_URL or pass base_url"
-            )
+            raise LLMError(f"{type(self).__name__} must declare _BASE_URL or pass base_url")
         super().__init__(api_key, model)
         self._client = anthropic.Anthropic(
             api_key=api_key,
@@ -122,7 +120,8 @@ class AnthropicProvider(LLMProvider):
         label = self._ERROR_LABEL
         try:
             response = await asyncio.to_thread(
-                self._client.messages.create, **kwargs,
+                self._client.messages.create,
+                **kwargs,
             )
         except anthropic.APIError as exc:
             raise _wrap_anthropic_error(exc, label) from exc
@@ -170,7 +169,8 @@ class AnthropicProvider(LLMProvider):
 
         def _emit(kind: StreamEventKind, payload: dict[str, Any]) -> None:
             asyncio.run_coroutine_threadsafe(
-                _yield(LLMStreamEvent(kind, payload)), loop,
+                _yield(LLMStreamEvent(kind, payload)),
+                loop,
             ).result()
 
         # Tool-call buffers keyed by the slot index Anthropic assigns
@@ -216,7 +216,11 @@ class AnthropicProvider(LLMProvider):
                         elif dtype in {"input_json_delta", "json_delta"}:
                             slot_idx = getattr(event, "index", None)
                             partial = getattr(delta, "partial_json", "") or ""
-                            slot = tool_buffers_by_slot.get(slot_idx) if isinstance(slot_idx, int) else None
+                            slot = (
+                                tool_buffers_by_slot.get(slot_idx)
+                                if isinstance(slot_idx, int)
+                                else None
+                            )
                             if slot is not None:
                                 slot["input_json"] += partial
                             else:
@@ -225,7 +229,11 @@ class AnthropicProvider(LLMProvider):
                                 # extremely rare but tolerated: stash
                                 # under a synthetic slot so the
                                 # arguments aren't lost.
-                                key = slot_idx if isinstance(slot_idx, int) else len(tool_buffers_by_slot)
+                                key = (
+                                    slot_idx
+                                    if isinstance(slot_idx, int)
+                                    else len(tool_buffers_by_slot)
+                                )
                                 tool_buffers_by_slot[key] = {
                                     "id": "",
                                     "name": "",
@@ -235,9 +243,14 @@ class AnthropicProvider(LLMProvider):
                     elif etype == "content_block_stop":
                         pass
                     elif etype == "message_delta":
-                        stop_reason = getattr(
-                            getattr(event, "delta", None), "stop_reason", None,
-                        ) or stop_reason
+                        stop_reason = (
+                            getattr(
+                                getattr(event, "delta", None),
+                                "stop_reason",
+                                None,
+                            )
+                            or stop_reason
+                        )
                     elif etype == "message_start":
                         msg = getattr(event, "message", None)
                         if msg is not None:
@@ -273,11 +286,13 @@ class AnthropicProvider(LLMProvider):
                     parsed = json.loads(args_raw)
                 except json.JSONDecodeError:
                     parsed = {}
-            tool_uses.append({
-                "id": slot.get("id") or "",
-                "name": slot.get("name") or "",
-                "input": parsed if isinstance(parsed, dict) else {},
-            })
+            tool_uses.append(
+                {
+                    "id": slot.get("id") or "",
+                    "name": slot.get("name") or "",
+                    "input": parsed if isinstance(parsed, dict) else {},
+                }
+            )
 
         # Deltas concatenate without separator (SDK guarantees they
         # already carry whatever spacing the model intended). The
@@ -287,15 +302,18 @@ class AnthropicProvider(LLMProvider):
         thinking = "".join(p for p in thinking_parts if p).strip() or None
         # Single trailing usage.updated carrying everything the
         # consumer needs to rebuild the final dict.
-        yield LLMStreamEvent("usage.updated", {
-            "model": model_name,
-            "stop_reason": stop_reason,
-            "usage": usage_dict or {},
-            "tool_uses": tool_uses,
-            "text": text,
-            "thinking": thinking,
-            "raw_blocks": raw_blocks,
-        })
+        yield LLMStreamEvent(
+            "usage.updated",
+            {
+                "model": model_name,
+                "stop_reason": stop_reason,
+                "usage": usage_dict or {},
+                "tool_uses": tool_uses,
+                "text": text,
+                "thinking": thinking,
+                "raw_blocks": raw_blocks,
+            },
+        )
 
         # Drain anything the SDK emitted after we built the terminal
         # payload (e.g. trailing text deltas). The queue is bounded by
@@ -366,11 +384,13 @@ def _response_to_dict(response: Any, default_model: str) -> dict[str, Any]:
         elif btype == "thinking":
             thinking_parts.append(getattr(block, "thinking", "") or "")
         elif btype == "tool_use":
-            tool_uses.append({
-                "id": getattr(block, "id", "") or "",
-                "name": getattr(block, "name", "") or "",
-                "input": dict(getattr(block, "input", {}) or {}),
-            })
+            tool_uses.append(
+                {
+                    "id": getattr(block, "id", "") or "",
+                    "name": getattr(block, "name", "") or "",
+                    "input": dict(getattr(block, "input", {}) or {}),
+                }
+            )
 
     usage = safe_dump(getattr(response, "usage", None))
     text = "\n".join(p for p in text_parts if p).strip()

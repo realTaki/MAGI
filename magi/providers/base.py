@@ -47,7 +47,6 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any, Literal
 
-
 StreamEventKind = Literal["text.delta", "tool_arguments.delta", "usage.updated"]
 
 

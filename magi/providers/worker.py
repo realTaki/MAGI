@@ -39,7 +39,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -49,8 +48,8 @@ from magi.bus.guild import (
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
 )
-from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -94,7 +93,7 @@ class ProvidersWorker(RuntimeWorker):
 
     def __init__(
         self,
-        bus: "Bus",
+        bus: Bus,
         *,
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
@@ -124,7 +123,6 @@ class ProvidersWorker(RuntimeWorker):
 
         # Build the cached provider client from current config.
         await self.call(self._rebuild_provider)
-
 
     async def on_stopped(self) -> None:
         if self._inflight:
@@ -199,12 +197,15 @@ class ProvidersWorker(RuntimeWorker):
             result = ChangeProviderConfigResult(job_id=job.job_id, success=True)
         else:
             result = ChangeProviderConfigResult(
-                job_id=job.job_id, success=False,
+                job_id=job.job_id,
+                success=False,
                 error=str(self._provider_error) if self._provider_error else "unknown",
             )
         try:
-            await self.call(self.bus.change_provider_config_job_board.submit_result,
-                key=job.job_id, result=result,
+            await self.call(
+                self.bus.change_provider_config_job_board.submit_result,
+                key=job.job_id,
+                result=result,
             )
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -266,8 +267,7 @@ class ProvidersWorker(RuntimeWorker):
         instead of silently AttributeError-ing.
         """
         assert self._provider is not None, (
-            "_update_model requires a cached provider; "
-            "caller must guard before calling"
+            "_update_model requires a cached provider; caller must guard before calling"
         )
         self._provider.model = model
         logger.info(
@@ -299,9 +299,7 @@ class ProvidersWorker(RuntimeWorker):
                 _PROVIDERS_KEY,
             )
         except Exception:  # noqa: BLE001
-            logger.exception(
-                "providers worker: failed to publish known providers"
-            )
+            logger.exception("providers worker: failed to publish known providers")
 
     # ----- LLM invocation -----------------------------------------------
 
@@ -342,7 +340,9 @@ class ProvidersWorker(RuntimeWorker):
                 else type(exc).__name__
             )
             await self._safe_submit_failure(
-                job, error_code=error_code, error_detail=str(exc),
+                job,
+                error_code=error_code,
+                error_detail=str(exc),
             )
             return
 
