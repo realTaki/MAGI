@@ -1,4 +1,3 @@
-
 """``send_message`` tool — deliver a message to the
 operator without leaving the tool loop.
 
@@ -93,9 +92,7 @@ class SendMessageTool(Tool):
         "properties": {
             "text": {
                 "type": "string",
-                "description": (
-                    "Message body. Up to 4000 characters."
-                ),
+                "description": ("Message body. Up to 4000 characters."),
             },
         },
         "required": ["text"],
@@ -116,10 +113,7 @@ class SendMessageTool(Tool):
             )
         if len(text) > _MAX_TEXT_LEN:
             return ToolResult(
-                content=(
-                    f"send_message: text is {len(text)} chars; "
-                    f"v0 limit is {_MAX_TEXT_LEN}."
-                ),
+                content=(f"send_message: text is {len(text)} chars; v0 limit is {_MAX_TEXT_LEN}."),
                 is_error=True,
             )
 
@@ -141,7 +135,9 @@ class SendMessageTool(Tool):
         # actual protocol I/O after the agent transition has committed.
         logger.info(
             "send_message: enqueueing %d chars for session=%s channel=%s",
-            len(text), ctx.conversation_id, ctx.channel,
+            len(text),
+            ctx.conversation_id,
+            ctx.channel,
         )
         try:
             bus = ctx.bus
@@ -159,7 +155,11 @@ class SendMessageTool(Tool):
                 DeliveryJob(
                     channel=session.channel,
                     destination=session.delivery_address or None,
-                    payload={"text": text, "conversation_id": session.conversation_id, "contact_id": session.contact_id},
+                    payload={
+                        "text": text,
+                        "conversation_id": session.conversation_id,
+                        "contact_id": session.contact_id,
+                    },
                 )
             )
             logger.info("send_message: queued for session=%s", ctx.conversation_id)
@@ -186,8 +186,5 @@ class SendMessageTool(Tool):
             )
 
         return ToolResult(
-            content=(
-                f"send_message: queued {len(text)} chars "
-                f"to session {ctx.conversation_id}"
-            )
+            content=(f"send_message: queued {len(text)} chars to session {ctx.conversation_id}")
         )

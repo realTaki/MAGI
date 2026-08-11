@@ -22,7 +22,10 @@ class MessageMagiTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
-            "magi_id": {"type": "integer", "description": "Target MAGI id (``magis_memberships.id``)."},
+            "magi_id": {
+                "type": "integer",
+                "description": "Target MAGI id (``magis_memberships.id``).",
+            },
             "text": {"type": "string", "description": "Message to the peer MAGI."},
             "expect_reply": {"type": "boolean", "default": False},
         },
@@ -30,6 +33,7 @@ class MessageMagiTool(Tool):
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+        _ = ctx, kwargs
         return ToolResult(
             content="message_magi is scheduled by the actor and must not run in ToolWorker",
             is_error=True,
