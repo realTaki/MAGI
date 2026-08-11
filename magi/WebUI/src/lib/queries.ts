@@ -541,35 +541,34 @@ export function useSendAdminCode() {
   });
 }
 
-// WebUI-only onboarding step 2 — write the first two
-// operators in one shot. The wizard collects:
+// WebUI-only onboarding step 2 — register the first
+// operator in one shot. The wizard collects a single
+// name + password and the backend writes:
 //
-//   • admin_*    — the Genesis-level admin (recorded in
-//                  MAGIS `magis_admins`; can sign in to
-//                  every MAGI in Genesis).
-//   • assigned_* — the per-MAGI assigned user (lives only
-//                  in the runtime's local SQLite; signs
-//                  in to eva-000 only).
+//   • one Contact row on the runtime's local SQLite
+//     (``role='assigned'`` for per-MAGI scope).
+//   • one ``magis_admins`` row on the MAGIS-shared DB
+//     pointing at the same contact_id for per-MAGIS
+//     (Genesis admin) scope.
 //
-// Both rows carry a password hash on the runtime's local
-// SQLite so login works without a Telegram binding. Used
-// when the wizard's first step picked "WebUI only" instead
-// of "Telegram". The response carries both new contact ids
-// so the wizard's Step3 summary can render the real names.
+// One Contact row covers both scopes; the login picker
+// joins them by ``(contact_id, role)`` so the operator
+// gets a single identity with two login options. Used
+// when the wizard's first step picked "WebUI only"
+// instead of "Telegram". The response carries the new
+// contact id so the wizard's Step3 summary can render
+// the real name.
 export function useSetAdminPassword() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: {
-      admin_name: string;
-      admin_password: string;
-      assigned_name: string;
-      assigned_password: string;
+      operator_name: string;
+      operator_password: string;
     }) =>
       apiFetch<{
         ok: boolean;
         error?: string;
-        admin_contact_id?: number | null;
-        assigned_contact_id?: number | null;
+        contact_id?: number | null;
       }>("/api/onboarding/set-admin-password", { method: "POST", body: payload }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.onboardingStatus });

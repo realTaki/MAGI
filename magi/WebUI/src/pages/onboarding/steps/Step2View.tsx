@@ -383,22 +383,23 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
 // -- WebUI-only variant ---------------------------------------------------
 //
 // Initial onboarding registers ONE operator who serves
-// both roles at once:
+// both scopes at once:
 //
-//   • Genesis admin — recorded in MAGIS `magis_admins` so
-//     they can sign in to every MAGI in Genesis (admin
-//     scope cookie).
-//   • eva-000 assigned — the per-MAGI served user; signs
-//     in to eva-000 only (assigned scope cookie).
+//   • Genesis admin scope — recorded in MAGIS
+//     `magis_admins` (per-MAGIS); they can sign in to every
+//     MAGI in Genesis.
+//   • eva-000 assigned scope — written as a single Contact
+//     row with `role='assigned'` on the runtime (per-MAGI);
+//     they can sign in to eva-000 only.
 //
-// The wizard exposes a SINGLE name + password + confirm
-// form. On submit the same operator identity is auto-applied
-// to both the admin slot and the assigned slot of the
-// ``/api/onboarding/set-admin-password`` payload — the
-// operator never has to type the same name twice. The
-// backend still mints two Contact rows for those two slots
-// (one per scope) so the login picker can offer admin vs
-// assigned sign-in independently.
+// One Contact row covers both scopes — admin is per-MAGIS
+// (lives in `magis_admins`), assigned is per-MAGI (lives
+// in `contacts`). The login picker joins them by
+// `(contact_id, role)` so the operator gets one identity
+// with two login options. The wizard exposes a SINGLE
+// name + password + confirm form, sends
+// `operator_name` + `operator_password` to the backend,
+// and the backend writes the row + the magis_admins link.
 
 function Step2WebUIOnly(props: {
   onBack: () => void;
@@ -427,15 +428,8 @@ function Step2WebUIOnly(props: {
     try {
       const trimmed = operatorName.trim();
       const res = await setMut.mutateAsync({
-        // One form → both slots. The backend mints two
-        // Contact rows for these two names (admin scope +
-        // assigned scope) so the login picker can offer
-        // both. When the names match, the backend
-        // deliberately keeps them as two distinct rows.
-        admin_name: trimmed,
-        admin_password: operatorPassword,
-        assigned_name: trimmed,
-        assigned_password: operatorPassword,
+        operator_name: trimmed,
+        operator_password: operatorPassword,
       });
       if (res.ok) {
         // The wizard's Step3 carries the operator's name
