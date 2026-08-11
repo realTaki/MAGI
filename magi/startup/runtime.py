@@ -188,6 +188,12 @@ def create_runtime_app_from_environment():
     correctly ordered lifecycle.
     """
     config = StartupConfig.from_env()
+    # ``run_magi`` already publishes ``MAGI_RUNTIME_ID`` /
+    # ``MAGI_ID`` before invoking uvicorn. Re-publish here
+    # defensively so a process that bypasses ``run_magi``
+    # (e.g. ``magi webui`` shells, IDE runners) still has
+    # the env the proxy-auth header check expects.
+    _publish_runtime_config(config)
     context = RuntimeContext.create(_startup_context(config))
 
     from magi.channels.api.app import create_runtime_app

@@ -300,6 +300,19 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
         env["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id:
         env["MAGI_ID"] = str(config.magi_id)
+    # The runtime verifies webui-originated requests with
+    # HMAC over the request line + selected MAGI; that HMAC
+    # needs the same shared secret the webui uses. The
+    # single-machine install provisions it under the MAGIS
+    # control dir at init time; thread it into the node child
+    # so the proxy layer can sign-verify inbound requests.
+    control_secret_path = resolve_magis_control_dir(
+        config.host_workspace_dir, config.magis_name
+    ) / "control-secret"
+    if control_secret_path.exists():
+        env["MAGI_CONTROL_SECRET"] = control_secret_path.read_text(
+            encoding="utf-8"
+        ).strip()
     return env
 
 
