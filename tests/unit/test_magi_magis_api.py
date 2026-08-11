@@ -80,6 +80,28 @@ def test_membership_api_rejects_retired_magi_id_and_cross_magis_role(bus: Simple
         bus.memberships_book.add(magis_id=first.id, role_id=other_role.id)
 
 
+def test_membership_api_persists_public_collaboration_responsibility(bus: SimpleNamespace) -> None:
+    society, eva, _ = _society(bus)
+
+    created = magis.create_membership(
+        society.id,
+        magis.MembershipCreate(role_id=eva.id, responsibility="Owns release validation."),
+        "admin",
+        bus,
+    )
+    updated = magis.update_membership(
+        society.id,
+        created.id,
+        magis.MembershipUpdate(responsibility="Owns frontend release validation."),
+        "admin",
+        bus,
+    )
+
+    assert created.responsibility == "Owns release validation."
+    assert updated.role_id == eva.id
+    assert updated.responsibility == "Owns frontend release validation."
+
+
 def test_magis_admin_resolves_telegram_id_to_contact_uid(bus: SimpleNamespace) -> None:
     society, _, _ = _society(bus)
     contact = bus.contacts_book.add(name="operator", display_name="Operator", telegram_id=4242)

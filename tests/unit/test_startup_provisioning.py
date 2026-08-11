@@ -236,6 +236,26 @@ def test_runtime_open_repairs_an_outdated_schema_before_exposing_books(tmp_path:
         )
 
 
+def test_runtime_open_drops_the_retired_local_a2a_outbox(tmp_path: Path) -> None:
+    config = _first_config(tmp_path)
+    spec = init_first_magi(config)
+    bus = open_bus(
+        state_dir=str(config.workspace_dir / "memories"),
+        magis_url=spec.magis_database_url,
+    )
+    with bus._local_factory.engine.begin() as connection:
+        connection.execute(text("CREATE TABLE a2a_jobs (id INTEGER PRIMARY KEY)"))
+        connection.execute(
+            text("UPDATE alembic_version SET version_num = '0004_add_contact_password_hash'")
+        )
+
+    repaired = open_bus(
+        state_dir=str(config.workspace_dir / "memories"),
+        magis_url=spec.magis_database_url,
+    )
+    assert "a2a_jobs" not in set(inspect(repaired._local_factory.engine).get_table_names())
+
+
 def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     spec = init_first_magi(config)

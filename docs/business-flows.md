@@ -5,7 +5,8 @@
 >
 > **当前 cutover**：所有运行时路径都走 `magi.bus` Job Board 模型
 > （`agent_job_board` / `delivery_job_board` / `tool_job_board` /
-> `llm_job_board` / `a2a_job_board` / `mcp_server_changed_job_board` /
+> `llm_job_board` / `a2a_request_job_board` / `a2a_notify_job_board` /
+> `mcp_server_changed_job_board` /
 > `seed_preset_tasks_job_board` / `change_provider_config_job_board` /
 > `run_task_job_board`）。旧的 `magi.bus.BusStore` / `agent_turn_store`
 > / `magi.agent.step.run_agent_step` / `magic` 表 等已删除；文档里

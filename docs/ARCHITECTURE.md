@@ -92,15 +92,15 @@ WorkerRegistry (composition root)
  ├─ task        — TaskWorker                (enabled_channels ⊇ {"task", "scheduled"})
  ├─ tg          — TelegramWorker            (enabled_channels ⊇ {"tg", "telegram"})
  ├─ webui       — WebUIWorker               (always)
- ├─ a2a         — A2AWorker                 (always)
  └─ proactive   — ProactiveWorker           (always)
 ```
 
 Channel workers are conditional: Telegram and TaskWorkers start only when
-`bus.settings_book["channels.enabled"]` lists the channel. WebUI and A2A are
-required runtime capabilities and are always added by the composition root
-(the persisted and fallback default is `["webui"]`). Proactive is a runtime
-worker, not a configured channel, and always starts.
+`bus.settings_book["channels.enabled"]` lists the channel. WebUI is always
+enabled by the composition root (the persisted and fallback default is
+`["webui"]`). A2A is a MAGIS-shared board consumed by `AgentWorker`, not a
+channel worker. Proactive is a runtime worker, not a configured channel, and
+always starts.
 
 The shared lifecycle primitives (`start`/`stop`, `health()`, `call()` for
 blocking BUS calls, `spawn()` for owned child tasks) live in
@@ -182,7 +182,6 @@ Each outbound worker reduces to a `_deliver_<channel>` coroutine:
 | --- | --- |
 | `TelegramWorker._deliver_tg` | raw HTTP via `channels.telegram.bot.send_text_raw(token, chat_id, text)` |
 | `WebUIWorker._deliver_webui` | append `assistant` row via `bus.messages_book.add` |
-| `A2AWorker._deliver_a2a` | peer HTTP via `channels.a2a.transport.send_a2a_delivery` |
 | `TaskWorker` (no channel loop) | publishes a `ChatJob` after `_fire_task`; the `AgentWorker` does the work and the channel-worker path delivers the reply |
 
 The shared `ChannelWorker` template means per-channel workers never
@@ -222,12 +221,15 @@ Bus (magi/bus/bootstrap.py)
 │  │   tool_job_board         runToolJobBoard     (RunToolJob in/out)
 │  │   llm_job_board          callLLMJobBoard     (CallLLMJob in/out)
 │  │   delivery_job_board     deliveryJobBoard    (DeliveryJob out)
-│  │   a2a_job_board          sendA2AJobBoard     (SendA2AJob out)
 │  │   mcp_server_changed_job_board  mcpServerChangedJobBoard
 │  │   change_provider_config_job_board  changeProviderConfigJobBoard
 │  │   seed_preset_tasks_job_board     seedPresetTasksJobBoard
 │  │   run_task_job_board     runTaskJobBoard     (RunTaskJob trigger)
 │  └─ StreamHub
+│
+│  MAGIS shared job boards
+│  ├─ a2a_request_job_board   a2aRequestJobBoard  (one request, one response)
+│  └─ a2a_notify_job_board    a2aNotifyBoard      (durable one-way notify)
 │      stream_hub             StreamHub (in-process SSE only)
 └─ magis (None unless MAGIS database configured)
    ├─ magis_book              MagisBook (society tree)
@@ -256,7 +258,7 @@ Boards above.
 | `magi.tools` | tool contracts, registry, durable tool execution | `magi.bus` |
 | `magi.providers` | provider adapters and durable LLM-job consumer | `magi.bus` |
 | `magi.mcp` | MCP connection lifecycle, `McpServerChangedJob` glue | `magi.bus`, `magi.tools` |
-| `magi.channels` | HTTP, WebUI, Telegram, task, A2A adapters | `magi.bus` |
+| `magi.channels` | HTTP, WebUI, Telegram, task adapters | `magi.bus` |
 | `magi.proactive` | system-level proactive policies + Worker | `magi.bus` |
 | `magi.connectors` | long-lived external data sources, in-process event bus | `magi.bus` (configs) |
 
@@ -266,14 +268,16 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 
 ### `magi.agent` — AgentWorker
 
-- Sequential consumer of `agent_job_board` (chatJobBoard).
+- Fair sequential consumer of local `agent_job_board` and the MAGIS-shared
+  A2A request/notify boards addressed to its own `magi_id`.
 - Receives a fully-wired `Bus` and the runtime's `magi_id` via constructor
   injection (`AgentWorker(bus, magi_id=…)`). `magi_id` is used to render the
   per-MAGI instruction block via `magi.bus.library.magis.membershipBook
   .MagisMembershipBook.instruction_context`.
 - Loops claim → context assembly → `llm_job_board.publish(CallLLMJob)` →
-  wait-for-result → tool dispatch (`tool_job_board` / `a2a_job_board`) →
-  `_gather_all` → publish reply via `delivery_job_board`.
+  wait-for-result → tool dispatch (`tool_job_board` / A2A request or notify)
+  → `_gather_all`. Human turns publish via `delivery_job_board`; A2A requests
+  complete one durable response and A2A notifications do not auto-reply.
 - Steering is in-band: when a fresh `ChatJob` for an already-active
   conversation arrives, the Worker releases it back to the board; the
   active loop pulls it as steering via
@@ -318,8 +322,8 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 - **Ingress** writes to `sessions_book` / `messages_book` and publishes a
   `ChatJob` to `agent_job_board`. Telegram is a long-polling inbound worker
   (`python-telegram-bot` v21+ `Application.start_polling`); the WebUI
-  ingress is the FastAPI route `POST /api/chat/send`. A2A peer ingress is
-  the `a2a_job_board` plus the `a2a_router` FastAPI route.
+  ingress is the FastAPI route `POST /api/chat/send`. A2A is not HTTP ingress:
+  peer tools persist directly to MAGIS-shared boards.
 - **Egress** is the `ChannelWorker._claim_delivery_loop` template above.
   Each channel worker adds its own `_run` that calls the template with a
   `_deliver_<channel>` function.
