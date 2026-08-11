@@ -1,0 +1,94 @@
+"""Timeout policy for control-plane → MAGI Runtime HTTP calls.
+
+Every call the WebUI control plane makes into a Runtime crosses a
+process boundary that can disappear mid-request: ``magi node run``
+serves the Runtime under a Uvicorn reload supervisor
+(:func:`magi.startup.runtime._reload_enabled` defaults to **on**), and
+the *supervisor* — not the worker — owns the listening socket.  While a
+worker restarts, the socket stays in ``LISTEN`` with its backlog
+intact, so the client's ``connect()`` succeeds immediately and then
+blocks waiting for a reply that nobody is going to write until the new
+worker finishes booting.
+
+A flat ``timeout=30.0`` turns that window into a 30-second hang.  Behind
+a tunnel or ingress whose own gateway timeout is shorter, the browser
+never sees our error at all — it gets an opaque 504 instead of the
+actionable 503 the handler would have raised.  Splitting the budget per
+phase is what makes the failure legible:
+
+``connect`` / ``pool``
+    Deliberately short.  A Runtime that is genuinely down refuses the
+    connection at once, and there is no reason to wait longer than a
+    couple of seconds for a socket on localhost or a cluster-internal
+    Service.
+
+``read``
+    Where the two call sites diverge.  Control-plane calls (login
+    target lookup, onboarding forwards, Telegram bootstrap) are small
+    local writes that finish in milliseconds, so :data:`CONTROL_TIMEOUT`
+    caps them tightly.  The generic proxy in
+    :mod:`magi.channels.api.runtime_proxy` forwards *arbitrary* Runtime
+    endpoints, some legitimately slow — ``GET
+    /api/mcp-servers/{name}/tools`` dials a third-party MCP server under
+    its own 60-second ``execute_timeout`` — so :data:`PROXY_TIMEOUT`
+    keeps a generous read budget and leans on :func:`runtime_is_live`
+    to tell "restarting" apart from "working".
+"""
+
+from __future__ import annotations
+
+import httpx
+
+# Login / onboarding / bootstrap calls. Each one is a small write
+# against the target Runtime's local SQLite, so ten seconds is already
+# an order of magnitude more than the slowest healthy case; anything
+# beyond that means the far side is restarting, not thinking.
+CONTROL_TIMEOUT = httpx.Timeout(connect=2.0, read=10.0, write=10.0, pool=2.0)
+
+# The generic browser-facing proxy. ``read`` stays at the historical 60
+# seconds because the path set includes endpoints that legitimately
+# block on third parties (MCP tool discovery). Fast failure for the
+# restart case comes from :func:`runtime_is_live`, not from this
+# budget.
+PROXY_TIMEOUT = httpx.Timeout(connect=2.0, read=60.0, write=10.0, pool=2.0)
+
+# The liveness probe itself. ``/health`` touches no I/O, so a healthy
+# Runtime answers in single-digit milliseconds either way; the two
+# seconds exist purely to bound the reload window.
+LIVENESS_TIMEOUT = httpx.Timeout(2.0)
+
+
+async def runtime_is_live(base_url: str) -> bool:
+    """Report whether ``base_url`` is accepting requests *right now*.
+
+    Used as a pre-flight before forwarding a request whose own read
+    budget is too generous to double as a restart detector.  ``/health``
+    is unauthenticated and does no I/O, which is what makes it usable
+    here: during a reload it hangs on exactly the same accept queue as
+    the real request would, so a two-second timeout converts a
+    60-second stall into an immediate 503.
+
+    This narrows the failure window rather than closing it — a reload
+    that begins in the milliseconds between the probe and the forwarded
+    request still stalls that one request for the full read budget.
+    Closing it completely would require the Runtime to drain its
+    listening socket on shutdown, which the reload supervisor owns and
+    we do not.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=LIVENESS_TIMEOUT) as client:
+            response = await client.get(f"{base_url.rstrip('/')}/health")
+    except httpx.HTTPError:
+        return False
+    # A booting worker can bind and answer before its dependencies are
+    # ready; treat any 5xx as "not live yet" so the caller reports the
+    # same 503 it would for a refused connection.
+    return not response.is_server_error
+
+
+__all__ = [
+    "CONTROL_TIMEOUT",
+    "LIVENESS_TIMEOUT",
+    "PROXY_TIMEOUT",
+    "runtime_is_live",
+]

@@ -497,9 +497,11 @@ async def _forward_set_admin_password_to_runtime(
         return None
     import httpx
 
+    from magi.channels.api.runtime_http import CONTROL_TIMEOUT
+
     url = f"{runtime.base_url.rstrip('/')}/api/onboarding/set-admin-password"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=CONTROL_TIMEOUT) as client:
             upstream = await client.post(url, json=payload.model_dump())
     except httpx.HTTPError as exc:
         logger.warning(

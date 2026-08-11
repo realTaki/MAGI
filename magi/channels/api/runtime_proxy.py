@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request, Response
 from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
+from magi.channels.api.runtime_http import PROXY_TIMEOUT, runtime_is_live
 
 router = APIRouter(tags=["runtime-proxy"])
 
@@ -93,11 +94,25 @@ async def proxy_runtime(
             status_code=503, code="runtime.proxy_unavailable", detail=str(exc)
         ) from exc
     body = await request.body()
+    upstream_base = _runtime_url(get_bus(request), magi_id)
+    # ``PROXY_TIMEOUT`` deliberately keeps a 60-second read budget for
+    # the handful of endpoints that block on third parties (MCP tool
+    # discovery), which makes it useless as a restart detector: a
+    # Runtime cycling under its reload supervisor keeps the listening
+    # socket open, so the forwarded request would connect and then
+    # stall for the full minute. Probe first — see
+    # :func:`runtime_is_live`.
+    if not await runtime_is_live(upstream_base):
+        raise MagiHTTPException(
+            status_code=503,
+            code="runtime.unreachable",
+            detail="Selected MAGI runtime is restarting or unreachable",
+        )
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
             upstream = await client.request(
                 request.method,
-                _runtime_url(get_bus(request), magi_id) + runtime_path,
+                upstream_base + runtime_path,
                 content=body or None,
                 headers={
                     "content-type": request.headers.get("content-type", "application/json"),

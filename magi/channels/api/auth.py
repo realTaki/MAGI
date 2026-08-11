@@ -57,6 +57,7 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
+from magi.channels.api.runtime_http import CONTROL_TIMEOUT
 
 logger = logging.getLogger("magi.api.auth")
 
@@ -504,7 +505,7 @@ async def _target_access(
         tgid=None,
     )
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=CONTROL_TIMEOUT) as client:
             response = await client.request(method, base + path, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         raise MagiHTTPException(
