@@ -31,20 +31,22 @@ defensive ceiling on top.
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
+
 from magi.bus import Bus
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.chat_sessions import SessionMessageOut
 from magi.bus.library.local.conversationBook import (
+    ChannelMismatchError,
     ConversationMessage,
     ConversationPathError,
-    ChannelMismatchError,
 )
 from magi.channels import Channel
+from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.chat_sessions import SessionMessageOut
+from magi.channels.api.dependencies import BusDep
+from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -61,14 +63,16 @@ _MAX_OUTPUT_CHARS = 4000
 
 def _utcnow_iso() -> str:
     """Return the current UTC time as an ISO 8601 string."""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat()
+    from datetime import datetime
+
+    return datetime.now(UTC).isoformat()
 
 
 def new_session_id() -> str:
     """Generate a new session/message id as a Crockford-base32
     ULID-like string (26 chars)."""
     import uuid
+
     raw = uuid.uuid4().bytes  # 16 bytes = 128 bits
     # Encode as 26-char Crockford-like base32 string:
     # 16 bytes → ~26 chars in base32 (ceil(128/5) = 26).
@@ -200,6 +204,7 @@ async def send_chat(
     # but we stamp it on the session row for cross-channel
     # tooling.
     from magi.channels.api.auth import _verify_signed_contact_id
+
     cookie_raw = request.cookies.get("magi_session", "")
     cookie_contact_id = _verify_signed_contact_id(bus, cookie_raw)
     if cookie_contact_id is None:
@@ -230,7 +235,6 @@ async def send_chat(
     # (when the caller passed a session_id) or by reading
     # the Contact row via the channel dispatcher (when we
     # mint a fresh session below).
-    delivery_address = ""
     if session_id:
         try:
             # D.23: session key is now ``contact_id`` (the
@@ -242,7 +246,7 @@ async def send_chat(
             # is NOT a session key.
             existing = store.get_for_owner(contact_id=contact_id, conversation_id=session_id)
         except ConversationPathError as e:
-            raise MagiHTTPException(
+            raise MagiHTTPException(  # noqa: B904
                 status_code=400,
                 code="validation.session_id_invalid",
                 detail=str(e),
@@ -259,7 +263,7 @@ async def send_chat(
             # here keeps the dispatcher lookup scoped to
             # the auto-create branch — when the row
             # already exists, we trust its own column.
-            delivery_address = existing.delivery_address or ""
+            pass
     if not session_id:
         # ``delivery_address=`` here is the per-channel
         # delivery address stamped on the session row.
@@ -273,7 +277,9 @@ async def send_chat(
         contact = bus.contacts_book.get(contact_id=contact_id)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.add(
-            conversation_id=new_session_id(), contact_id=contact_id, channel=Channel.WEBUI,
+            conversation_id=new_session_id(),
+            contact_id=contact_id,
+            channel=Channel.WEBUI,
             delivery_address=tg_im_id,
         )
         session_id = sess.conversation_id
@@ -291,12 +297,17 @@ async def send_chat(
     ts_in = _utcnow_iso()
     inbound_message_id = new_session_id()
     try:
-        post = store.append_messages(
-            contact_id, session_id,
-            [ConversationMessage(
-                role="user", text=text, ts=ts_in,
-                message_id=inbound_message_id,
-            )],
+        store.append_messages(
+            contact_id,
+            session_id,
+            [
+                ConversationMessage(
+                    role="user",
+                    text=text,
+                    ts=ts_in,
+                    message_id=inbound_message_id,
+                )
+            ],
             channel=Channel.WEBUI,
         )
     except ChannelMismatchError as e:
@@ -307,11 +318,11 @@ async def send_chat(
         # message input; the user can continue the
         # conversation on the original channel.
         logger.info(
-            "chat: refusing cross-channel write "
-            "(session=%s owned by %r, caller=webui)",
-            session_id, e.session_channel,
+            "chat: refusing cross-channel write (session=%s owned by %r, caller=webui)",
+            session_id,
+            e.session_channel,
         )
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=403,
             code="chat.session_channel_mismatch",
             detail=(
@@ -322,9 +333,10 @@ async def send_chat(
         )
     except Exception:
         logger.exception(
-            "chat: failed to append user message for session %s", session_id,
+            "chat: failed to append user message for session %s",
+            session_id,
         )
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=500,
             code="chat.session_store_failed",
             detail="could not persist chat message",
@@ -337,7 +349,9 @@ async def send_chat(
     chat_job_id = f"webui:{session_id}:{inbound_message_id}"
     job_id = publish_chat(
         bus,
-        text=text, channel=Channel.WEBUI, contact_id=contact_id,
+        text=text,
+        channel=Channel.WEBUI,
+        contact_id=contact_id,
         conversation_id=session_id,
         caller_role=contact_role,
         job_id=chat_job_id,

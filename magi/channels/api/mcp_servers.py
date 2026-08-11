@@ -110,7 +110,8 @@ class McpServerIn(BaseModel):
     # only as a no-op echo (rename is not supported — to
     # rename, delete + create).
     name: str = Field(
-        min_length=1, max_length=64,
+        min_length=1,
+        max_length=64,
         pattern=r"^[A-Za-z0-9_\-]+$",
     )
     connection_type: ConnectionType
@@ -188,19 +189,14 @@ def _validate_payload_for_connection_type(payload: McpServerIn) -> None:
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.mcp_stdio_requires_command",
-                detail=(
-                    "connection_type='stdio' requires a non-empty 'command'"
-                ),
+                detail=("connection_type='stdio' requires a non-empty 'command'"),
             )
     else:  # sse / streamable_http
         if not (payload.url and payload.url.strip()):
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.mcp_http_requires_url",
-                detail=(
-                    f"connection_type={payload.connection_type!r} "
-                    "requires a non-empty 'url'"
-                ),
+                detail=(f"connection_type={payload.connection_type!r} requires a non-empty 'url'"),
             )
 
 
@@ -286,9 +282,7 @@ def _summarize_tool_for_server(tool) -> McpServerToolOut:
     # would invoke through Claude / the test harness.
     server_prefix = f"{tool.name.split('__', 1)[0]}__"
     bare_name = (
-        full_name[len(server_prefix):]
-        if full_name.startswith(server_prefix)
-        else full_name
+        full_name[len(server_prefix) :] if full_name.startswith(server_prefix) else full_name
     )
     props = (schema.get("input_schema") or {}).get("properties")
     return McpServerToolOut(
@@ -366,10 +360,16 @@ def create_mcp_server(
         )
 
     row = service.upsert(
-        name=payload.name, connection_type=payload.connection_type,
-        command=payload.command, args=payload.args, env=payload.env,
-        url=payload.url, headers=payload.headers, enabled=payload.enabled,
-        connect_timeout=payload.connect_timeout, execute_timeout=payload.execute_timeout,
+        name=payload.name,
+        connection_type=payload.connection_type,
+        command=payload.command,
+        args=payload.args,
+        env=payload.env,
+        url=payload.url,
+        headers=payload.headers,
+        enabled=payload.enabled,
+        connect_timeout=payload.connect_timeout,
+        execute_timeout=payload.execute_timeout,
         sse_read_timeout=payload.sse_read_timeout,
     )
     # TODO(mcp-worker): publish McpServerChangedJob after writing
@@ -420,10 +420,16 @@ def update_mcp_server(
     _validate_payload_for_connection_type(payload)
 
     row = service.upsert(
-        name=name, connection_type=payload.connection_type,
-        command=payload.command, args=payload.args, env=payload.env,
-        url=payload.url, headers=payload.headers, enabled=payload.enabled,
-        connect_timeout=payload.connect_timeout, execute_timeout=payload.execute_timeout,
+        name=name,
+        connection_type=payload.connection_type,
+        command=payload.command,
+        args=payload.args,
+        env=payload.env,
+        url=payload.url,
+        headers=payload.headers,
+        enabled=payload.enabled,
+        connect_timeout=payload.connect_timeout,
+        execute_timeout=payload.execute_timeout,
         sse_read_timeout=payload.sse_read_timeout,
     )
     # TODO(mcp-worker): publish McpServerChangedJob after writing

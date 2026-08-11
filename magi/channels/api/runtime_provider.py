@@ -27,10 +27,10 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from magi.bus.guild.changeProviderConfigJob import (
-    ChangeProviderConfigJob,
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
+    ChangeProviderConfigJob,
 )
 from magi.channels.api.auth_gates import admin_gate
 from magi.channels.api.dependencies import BusDep
@@ -108,10 +108,7 @@ def _validate_provider(bus, provider: str | None) -> str | None:
         raise MagiHTTPException(
             status_code=400,
             code="validation.unknown_provider",
-            detail=(
-                f"unknown provider {provider!r}; "
-                f"known: {known_str}"
-            ),
+            detail=(f"unknown provider {provider!r}; known: {known_str}"),
         )
     return provider.strip().lower()
 

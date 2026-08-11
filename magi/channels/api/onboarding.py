@@ -31,24 +31,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import UTC
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from magi.bus import Bus
 from magi.bus.library.local.actionItemBook import SOURCE_PROACTIVE
 from magi.bus.library.local.contactBook import ROLE_ASSIGNED
-from magi.bus import Bus
+from magi.channels.api import control_store
 from magi.channels.api.dependencies import BusDep, WorkersDep
 from magi.channels.telegram import bot as tg_bot
-from magi.channels import Channel
-from magi.channels.api import control_store
 
 logger = logging.getLogger("magi.api.onboarding")
 
 router = APIRouter(tags=["onboarding"])
-
-
 
 
 # -- request / response schemas -----------------------------------------
@@ -198,9 +196,12 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
         )
         username = control_store.get(bus, "telegram.bot_username")
         return OnboardingStatus(
-            bot_saved=bool(username), bot_username=username,
-            super_admins_count=len(admins), super_admins=admins,
-            onboarding_complete=(control_store.get(bus, "onboarding.complete") or "").lower() in {"true", "1"},
+            bot_saved=bool(username),
+            bot_username=username,
+            super_admins_count=len(admins),
+            super_admins=admins,
+            onboarding_complete=(control_store.get(bus, "onboarding.complete") or "").lower()
+            in {"true", "1"},
             login_methods=["tg_code"] if admins else [],
             mode="with_tg" if admins else None,
         )
@@ -235,8 +236,8 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
                 login_methods.append("password")
             if first.telegram_id is not None:
                 login_methods.append("tg_code")
-            chosen_mode = "with_tg" if first.telegram_id else (
-                "webui_only" if has_password else None
+            chosen_mode = (
+                "with_tg" if first.telegram_id else ("webui_only" if has_password else None)
             )
     except Exception:
         # If the table is unreachable (very early boot) the
@@ -278,9 +279,7 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
             )
     else:
         old_raw = None
-    onboarding_complete = (
-        str(complete_raw or old_raw or "").strip().lower() in ("true", "1")
-    )
+    onboarding_complete = str(complete_raw or old_raw or "").strip().lower() in ("true", "1")
 
     return OnboardingStatus(
         bot_saved=bool(bot_username),
@@ -336,7 +335,8 @@ async def set_admin_password_onboarding(
     # subsequent calls so chat history survives a re-entered wizard).
     admin_contact_id = bus.contacts_book.upsert_first_admin(name=name)
     bus.contacts_book.set_password_hash(
-        contact_id=admin_contact_id, password_hash=new_hash,
+        contact_id=admin_contact_id,
+        password_hash=new_hash,
     )
 
     logger.info(
@@ -382,17 +382,15 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
     #    bus.action_items_book.  Idempotent — re-running is a
     #    no-op for any admin that already has an open row.
     _NUDGE_TITLE = "设置你的 LLM provider 和 API key"
-    _NUDGE_DESC = (
-        "切到「Contacts」,找到自己的档案,"
-        "把 Provider 和 API Key 填上。"
-    )
+    _NUDGE_DESC = "切到「Contacts」,找到自己的档案,把 Provider 和 API Key 填上。"
     _NUDGE_URL = "/dashboard?tab=organization"
     try:
         admins = bus.contacts_book.list_admins()
         inserted = 0
         for admin in admins:
             existing_open = [
-                row for row in bus.action_items_book.list_actions(
+                row
+                for row in bus.action_items_book.list_actions(
                     owner_contact_id=admin.id,
                     include_completed=False,
                     source=SOURCE_PROACTIVE,
@@ -402,7 +400,8 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
             if existing_open:
                 continue
             existing_done = [
-                row for row in bus.action_items_book.list_actions(
+                row
+                for row in bus.action_items_book.list_actions(
                     owner_contact_id=admin.id,
                     include_completed=True,
                     source=SOURCE_PROACTIVE,
@@ -431,8 +430,7 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
     #      relies on the existing admin-row check above.
     if admins:
         has_password = any(
-            bus.contacts_book.get_password_hash(contact_id=admin.id) is not None
-            for admin in admins
+            bus.contacts_book.get_password_hash(contact_id=admin.id) is not None for admin in admins
         )
         # ``has_tg`` = any admin has a telegram_id.
         has_tg = any(admin.telegram_id for admin in admins)
@@ -513,7 +511,9 @@ async def verify_bot(payload: VerifyBotRequest) -> VerifyBotResponse:
 
 @router.post("/save-bot", response_model=SaveBotResponse)
 async def save_bot(
-    payload: SaveBotRequest, bus: BusDep, workers: WorkersDep,
+    payload: SaveBotRequest,
+    bus: BusDep,
+    workers: WorkersDep,
 ) -> SaveBotResponse:
     """Persist the verified bot token + username into the settings table.
 
@@ -524,6 +524,7 @@ async def save_bot(
     """
     if control_store.enabled():
         from magi.channels.api.control_runtime import bootstrap_telegram
+
         try:
             await bootstrap_telegram(payload.token, payload.username)
             control_store.set(bus, "telegram.bot_username", payload.username)
@@ -614,7 +615,7 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
     ``/save-admin`` lands, the operator IS bound to a contact_id and
     every subsequent outbound goes through the dispatcher.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     if control_store.enabled():
         delivery_address = payload.tgid.strip()
@@ -623,16 +624,35 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
         previous = control_store.get(bus, f"telegram.verify_code.{delivery_address}")
         if previous:
             try:
-                if datetime.now(timezone.utc).timestamp() - float(json.loads(previous).get("last_sent_at", 0)) < _RESEND_COOLDOWN_SECONDS:
-                    return SendAdminCodeResponse(ok=False, error="Wait before requesting a new code.")
+                if (
+                    datetime.now(UTC).timestamp()
+                    - float(json.loads(previous).get("last_sent_at", 0))
+                    < _RESEND_COOLDOWN_SECONDS
+                ):
+                    return SendAdminCodeResponse(
+                        ok=False, error="Wait before requesting a new code."
+                    )
             except (TypeError, ValueError, json.JSONDecodeError):
                 pass
         code = _generate_code()
-        now = datetime.now(timezone.utc)
-        control_store.set(bus, f"telegram.verify_code.{delivery_address}", json.dumps({"code": code, "expires_at": now.timestamp() + _CODE_TTL_SECONDS, "last_sent_at": now.timestamp()}))
+        now = datetime.now(UTC)
+        control_store.set(
+            bus,
+            f"telegram.verify_code.{delivery_address}",
+            json.dumps(
+                {
+                    "code": code,
+                    "expires_at": now.timestamp() + _CODE_TTL_SECONDS,
+                    "last_sent_at": now.timestamp(),
+                }
+            ),
+        )
         from magi.channels.api.control_runtime import send_telegram
+
         try:
-            await send_telegram(int(delivery_address), f"Your MAGI setup code is: <code>{code}</code>")
+            await send_telegram(
+                int(delivery_address), f"Your MAGI setup code is: <code>{code}</code>"
+            )
         except Exception as exc:
             control_store.delete(bus, f"telegram.verify_code.{delivery_address}")
             return SendAdminCodeResponse(ok=False, error=f"Telegram send failed: {exc}")
@@ -674,15 +694,13 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
         except (TypeError, ValueError, json.JSONDecodeError):
             prev_sent_at = 0
         if prev_sent_at:
-            elapsed = datetime.now(timezone.utc).timestamp() - prev_sent_at
+            elapsed = datetime.now(UTC).timestamp() - prev_sent_at
             if elapsed < _RESEND_COOLDOWN_SECONDS:
                 remaining = int(_RESEND_COOLDOWN_SECONDS - elapsed)
                 # How much life the old code still has (may already be
                 # 0 if the previous send was close to its expiry).
                 prev_expires = float(prev_data.get("expires_at", 0))
-                prev_remaining = max(
-                    0, int(prev_expires - datetime.now(timezone.utc).timestamp())
-                )
+                prev_remaining = max(0, int(prev_expires - datetime.now(UTC).timestamp()))
                 return SendAdminCodeResponse(
                     ok=False,
                     error=(
@@ -697,7 +715,7 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
                 )
 
     code = _generate_code()
-    issued_at = datetime.now(timezone.utc)
+    issued_at = datetime.now(UTC)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
 
     # Persist BEFORE we send — if Telegram fails, the user can retry
@@ -730,7 +748,8 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
     except Exception as exc:
         bus.settings_book.delete(key=f"telegram.verify_code.{delivery_address}")
         return SendAdminCodeResponse(
-            ok=False, error=f"Telegram send failed: {exc}",
+            ok=False,
+            error=f"Telegram send failed: {exc}",
         )
 
     logger.info(
@@ -741,7 +760,9 @@ async def _send_admin_code_inner(bus: Bus, payload: SendAdminCodeRequest) -> Sen
 
 
 @router.post("/verify-admin-code", response_model=VerifyAdminCodeResponse)
-async def verify_admin_code(payload: VerifyAdminCodeRequest, bus: BusDep) -> VerifyAdminCodeResponse:
+async def verify_admin_code(
+    payload: VerifyAdminCodeRequest, bus: BusDep
+) -> VerifyAdminCodeResponse:
     """Check the code the user typed against the one we sent to the
     candidate chat. On success:
 
@@ -757,7 +778,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest, bus: BusDep) -> Ver
        final admin list.
     4. Fetch a display name via ``getChat`` for the frontend.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     if control_store.enabled():
         delivery_address, code = payload.tgid.strip(), payload.code.strip()
@@ -767,7 +788,10 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest, bus: BusDep) -> Ver
         control_store.delete(bus, f"telegram.verify_code.{delivery_address}")
         try:
             stored = json.loads(raw)
-            if datetime.now(timezone.utc).timestamp() >= float(stored.get("expires_at", 0)) or stored.get("code") != code:
+            if (
+                datetime.now(UTC).timestamp() >= float(stored.get("expires_at", 0))
+                or stored.get("code") != code
+            ):
                 return VerifyAdminCodeResponse(ok=False, error="Code does not match or expired")
         except (TypeError, ValueError, json.JSONDecodeError):
             return VerifyAdminCodeResponse(ok=False, error="Stored code is corrupt")
@@ -804,7 +828,7 @@ async def verify_admin_code(payload: VerifyAdminCodeRequest, bus: BusDep) -> Ver
         expires_at = float(payload_data.get("expires_at", 0))
     except (TypeError, ValueError):
         expires_at = 0
-    now_ts = datetime.now(timezone.utc).timestamp()
+    now_ts = datetime.now(UTC).timestamp()
 
     if not expires_at or now_ts >= expires_at:
         bus.settings_book.delete(key=f"telegram.verify_code.{delivery_address}")
@@ -935,7 +959,7 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
             *(tg_bot.get_chat_name_raw(bot_token, c) for c in parsed_ids),
             return_exceptions=True,
         )
-        for cid, name in zip(parsed_ids, results):
+        for cid, name in zip(parsed_ids, results, strict=False):
             if isinstance(name, BaseException):
                 # getChat failed (timeout, 4xx, etc.). The admin
                 # row is still created — we just fall back to
@@ -950,9 +974,7 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
     # new set, upsert/insert the rest) and returns the resulting
     # contact ids in input order.
     try:
-        new_ct_ids = bus.contacts_book.replace_admin_set(
-            [(cid, display_names.get(cid)) for cid in parsed_ids]
-        )
+        bus.contacts_book.replace_admin_set([(cid, display_names.get(cid)) for cid in parsed_ids])
     except Exception as exc:
         logger.exception("failed to write admin contacts")
         return SaveAdminResponse(ok=False, error=str(exc))

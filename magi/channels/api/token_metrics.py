@@ -33,11 +33,11 @@ from __future__ import annotations
 import logging
 import zoneinfo
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 
@@ -53,7 +53,7 @@ class PeriodBounds:
     time as new chat turns land."""
 
     start: datetime  # tz-aware in the configured tz
-    end: datetime    # tz-aware in the configured tz
+    end: datetime  # tz-aware in the configured tz
 
 
 def _period_bounds(period: str, tz: zoneinfo.ZoneInfo) -> PeriodBounds:
@@ -73,12 +73,19 @@ def _period_bounds(period: str, tz: zoneinfo.ZoneInfo) -> PeriodBounds:
     if period == "week":
         monday_local = now_local - timedelta(days=now_local.weekday())
         monday_local = monday_local.replace(
-            hour=0, minute=0, second=0, microsecond=0,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
         return PeriodBounds(start=monday_local, end=now_local)
     if period == "month":
         first_local = now_local.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
         return PeriodBounds(start=first_local, end=now_local)
     raise ValueError(f"unknown period: {period!r}")
@@ -118,11 +125,13 @@ def _aggregate_period(
     the aggregation logic cares about timezone math.
     """
     bounds = _period_bounds(period, tz)
-    start_utc_naive = bounds.start.astimezone(timezone.utc).replace(tzinfo=None)
-    end_utc_naive = bounds.end.astimezone(timezone.utc).replace(tzinfo=None)
+    start_utc_naive = bounds.start.astimezone(UTC).replace(tzinfo=None)
+    end_utc_naive = bounds.end.astimezone(UTC).replace(tzinfo=None)
 
     in_sum, out_sum, calls = bus.token_usage_book.aggregate(
-        contact_id=contact_id, start=start_utc_naive, end=end_utc_naive,
+        contact_id=contact_id,
+        start=start_utc_naive,
+        end=end_utc_naive,
     )
 
     return PeriodUsage(

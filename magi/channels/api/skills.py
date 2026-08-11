@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -76,7 +75,7 @@ class SkillOut(BaseModel):
     name: str
     description: str
     path: str
-    version: Optional[str] = None
+    version: str | None = None
     enabled: bool = True
 
 
@@ -119,10 +118,14 @@ def toggle_skill(
 ) -> SkillOut:
     """Enable or disable a skill."""
     if not _NAME_RE.match(name):
-        raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
+        raise MagiHTTPException(
+            status_code=400, code="validation.skill_name", detail="invalid skill name"
+        )
     meta = _skills_book(bus).get(name)
     if meta is None:
-        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered")
+        raise MagiHTTPException(
+            status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered"
+        )
     disabled = _load_disabled(bus)
     if body.enabled:
         disabled.discard(name)
@@ -146,13 +149,21 @@ def get_skill_body(
 ) -> SkillBodyOut:
     """Return the SKILL.md markdown body for ``name``."""
     if not _NAME_RE.match(name):
-        raise MagiHTTPException(status_code=400, code="validation.skill_name", detail="invalid skill name")
+        raise MagiHTTPException(
+            status_code=400, code="validation.skill_name", detail="invalid skill name"
+        )
     try:
         body = _skills_book(bus).read_body(name)
     except SkillNotFound:
-        raise MagiHTTPException(status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered") from None
+        raise MagiHTTPException(
+            status_code=404, code="not_found.skill", detail=f"skill {name!r} not registered"
+        ) from None
     except SkillBookError as exc:
         logger.warning("get_skill_body: read failed: %s", exc)
-        raise MagiHTTPException(status_code=500, code="skill.read_failed", detail="read failed") from exc
+        raise MagiHTTPException(
+            status_code=500, code="skill.read_failed", detail="read failed"
+        ) from exc
     mtime = body.mtime.isoformat().replace("+00:00", "Z")
-    return SkillBodyOut(name=name, content=body.content, modified_at=mtime, truncated=body.truncated)
+    return SkillBodyOut(
+        name=name, content=body.content, modified_at=mtime, truncated=body.truncated
+    )

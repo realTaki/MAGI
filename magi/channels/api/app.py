@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -32,13 +33,11 @@ from pydantic import BaseModel
 from magi import __version__
 from magi.channels.api import auth, contacts, magi, magis, onboarding
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.startup.workers import WorkerRegistry
     from magi.startup.runtime import RuntimeContext
     from magi.startup.webui import ControlContext
+    from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.channels.api")
 
@@ -96,8 +95,8 @@ class HealthResponse(BaseModel):
 
 def create_app(
     *,
-    bus: "Bus",
-    workers: "WorkerRegistry | None" = None,
+    bus: Bus,
+    workers: WorkerRegistry | None = None,
     include_spa: bool = True,
     include_control_routes: bool = True,
     include_private_routes: bool = True,
@@ -145,6 +144,7 @@ def create_app(
 
     # Channel Worker health endpoint
     from magi.channels.api import health as health_api
+
     app.include_router(health_api.router)
 
     # Feature routers — registered BEFORE the SPA static mount so
@@ -158,15 +158,18 @@ def create_app(
         app.include_router(magi.router, prefix="/api")
         app.include_router(magis.router, prefix="/api")
     from magi.channels.api import runtime_control
+
     app.include_router(runtime_control.router, prefix="/api")
     # Per-MAGI runtime-settings edit surface (provider / API key /
     # model).  Lives next to ``runtime_control`` because both are
     # platform-internal endpoints; ``runtime_proxy`` is what lets
     # the WebUI admin reach this on a non-session MAGI's runtime.
     from magi.channels.api import runtime_provider
+
     app.include_router(runtime_provider.router, prefix="/api")
     if not include_private_routes:
         from magi.channels.api import runtime_proxy
+
         app.include_router(runtime_proxy.router, prefix="/api")
         spa_dist = _find_spa_dist() if include_spa else None
         if spa_dist is not None:
@@ -176,11 +179,13 @@ def create_app(
     # calls it with a target-bound internal signature before a browser session
     # exists, so it must not be mounted on the browser-facing control service.
     from magi.channels.api import runtime_access
+
     app.include_router(runtime_access.router, prefix="/api")
     app.include_router(magi.self_router, prefix="/api")
     # A2A router is a stub — its entry point raises NotImplementedError.
     # Mount it anyway so the endpoint exists and fails loudly.
     from magi.channels.a2a.router import router as a2a_router
+
     app.include_router(a2a_router)
     # Organisation routes execute inside the selected MAGI runtime as well.
     if not include_control_routes:
@@ -313,14 +318,18 @@ def create_app(
     return app
 
 
-def create_runtime_app(*, context: "RuntimeContext") -> FastAPI:
+def create_runtime_app(*, context: RuntimeContext) -> FastAPI:
     """Factory for the internal API served by every MAGI runtime."""
     return create_app(
-        bus=context.bus, workers=context.workers,
-        include_spa=False, include_control_routes=False,
+        bus=context.bus,
+        workers=context.workers,
+        include_spa=False,
+        include_control_routes=False,
     )
 
 
-def create_control_app(*, context: "ControlContext") -> FastAPI:
+def create_control_app(*, context: ControlContext) -> FastAPI:
     """Factory for the singleton browser-facing service; it has no local MAGI state."""
-    return create_app(bus=context.bus, include_spa=True, include_control_routes=True, include_private_routes=False)
+    return create_app(
+        bus=context.bus, include_spa=True, include_control_routes=True, include_private_routes=False
+    )

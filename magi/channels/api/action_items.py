@@ -43,18 +43,18 @@ Indexes used
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
 
 # ``_iso`` is the timestamp helper ``contacts`` uses for the same
 # payload shape; import it from there rather than redefining.
 from magi.channels.api.contacts import _iso
+from magi.channels.api.dependencies import BusDep
+from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.action_items")
 
@@ -64,7 +64,7 @@ router = APIRouter(tags=["action_items"])
 # -- response / request shapes --------------------------------------------
 
 
-def _serialize(a) -> "ActionItemOut":
+def _serialize(a) -> ActionItemOut:
     return ActionItemOut(
         id=a.id,
         contact_id=a.contact_id,
@@ -187,15 +187,11 @@ def list_action_items(
     )
     return ActionItemListOut(
         items=[_serialize(r) for r in rows],
-        server_time=datetime.now(timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        server_time=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
 
 
-@router.post(
-    "/action_items/{item_id}/complete", response_model=ActionItemOut
-)
+@router.post("/action_items/{item_id}/complete", response_model=ActionItemOut)
 def complete_action_item(
     item_id: int,
     payload: ActionItemCompleteRequest,
@@ -231,7 +227,9 @@ def complete_action_item(
     if row.contact_id != admin_id:
         logger.warning(
             "complete denied: admin=%s tried to complete item %s owned by %s",
-            admin_id, item_id, row.contact_id,
+            admin_id,
+            item_id,
+            row.contact_id,
         )
         raise MagiHTTPException(
             status_code=403,
@@ -252,6 +250,8 @@ def complete_action_item(
         )
     logger.info(
         "action item completed (id=%s, source=%s, admin=%s)",
-        row.id, row.source, admin_id,
+        row.id,
+        row.source,
+        admin_id,
     )
     return _serialize(row)

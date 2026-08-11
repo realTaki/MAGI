@@ -28,9 +28,8 @@ I/O in the API layer.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminOrAssignedGate
@@ -113,6 +112,7 @@ def update_soul(
         # but the trim happens here — refuse the post-trim
         # whitespace-only case too.
         from magi.channels.api.errors import MagiHTTPException
+
         raise MagiHTTPException(
             status_code=400,
             code="validation.soul_empty",

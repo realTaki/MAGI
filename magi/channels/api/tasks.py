@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
@@ -72,6 +71,7 @@ class TaskRunOut(BaseModel):
 
 def _owner(request: Request, admin: AdminGate) -> int:
     """The gate already authenticated this request; keep ownership explicit."""
+    _ = request
     try:
         return int(admin)
     except ValueError as exc:  # defensive only; AdminGate is a contact id
@@ -80,26 +80,39 @@ def _owner(request: Request, admin: AdminGate) -> int:
 
 def _out(task) -> TaskOut:
     return TaskOut(
-        id=task.id, name=task.name, prompt=task.prompt, cron=task.cron,
-        run_at=task.run_at, delivery_to=task.delivery_to, tz=task.tz,
-        target_channel=task.target_channel, contact_id=task.contact_id,
-        enabled=bool(task.enabled), conversation_id=task.conversation_id,
-        created_at=task.created_at, updated_at=task.updated_at,
+        id=task.id,
+        name=task.name,
+        prompt=task.prompt,
+        cron=task.cron,
+        run_at=task.run_at,
+        delivery_to=task.delivery_to,
+        tz=task.tz,
+        target_channel=task.target_channel,
+        contact_id=task.contact_id,
+        enabled=bool(task.enabled),
+        conversation_id=task.conversation_id,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
     )
 
 
 def _schedule(payload: TaskIn) -> tuple[str | None, str | None]:
     if payload.frequency == "once":
         if not payload.run_at:
-            raise MagiHTTPException(400, "validation.run_at", "run_at is required for one-shot tasks")
+            raise MagiHTTPException(
+                400, "validation.run_at", "run_at is required for one-shot tasks"
+            )
         try:
             return None, validate_run_at(payload.run_at)
         except ValueError as exc:
             raise MagiHTTPException(400, "validation.run_at", str(exc)) from exc
     try:
         return preset_to_cron(
-            payload.frequency, hour=payload.hour, minute=payload.minute,
-            day_of_week=payload.day_of_week, day_of_month=payload.day_of_month,
+            payload.frequency,
+            hour=payload.hour,
+            minute=payload.minute,
+            day_of_week=payload.day_of_week,
+            day_of_month=payload.day_of_month,
         ), None
     except ValueError as exc:
         raise MagiHTTPException(400, "validation.schedule", str(exc)) from exc
@@ -124,19 +137,30 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
     cron, run_at = _schedule(payload)
     contact = bus.contacts_book.get(contact_id=contact_id)
     if payload.target_channel == Channel.TG and (contact is None or contact.telegram_id is None):
-        raise MagiHTTPException(400, "tasks.telegram_not_bound", "Telegram is not bound for this contact")
+        raise MagiHTTPException(
+            400, "tasks.telegram_not_bound", "Telegram is not bound for this contact"
+        )
     delivery_to = payload.delivery_to
     if delivery_to is None and payload.target_channel == Channel.TG:
         delivery_to = str(contact.telegram_id)
     conversation_id = f"task_{uuid.uuid4().hex}"
     bus.sessions_book.add(
-        conversation_id=conversation_id, contact_id=contact_id, channel="task", delivery_address=delivery_to or "",
+        conversation_id=conversation_id,
+        contact_id=contact_id,
+        channel="task",
+        delivery_address=delivery_to or "",
     )
     try:
         task = bus.tasks_book.add(
-            name=payload.name, prompt=payload.prompt, cron=cron, run_at=run_at,
-            delivery_to=delivery_to or "new", target_channel=payload.target_channel,
-            contact_id=contact_id, conversation_id=conversation_id, tz=bus.settings_book.get(key="system.timezone") or "UTC",
+            name=payload.name,
+            prompt=payload.prompt,
+            cron=cron,
+            run_at=run_at,
+            delivery_to=delivery_to or "new",
+            target_channel=payload.target_channel,
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+            tz=bus.settings_book.get(key="system.timezone") or "UTC",
         )
     except ValueError as exc:
         raise MagiHTTPException(400, "validation.task", str(exc)) from exc
@@ -144,10 +168,13 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskOut)
-def update_task(task_id: str, payload: TaskPatch, request: Request, _admin: AdminGate, bus: BusDep) -> TaskOut:
+def update_task(
+    task_id: str, payload: TaskPatch, request: Request, _admin: AdminGate, bus: BusDep
+) -> TaskOut:
     try:
         task = bus.tasks_book.update(
-            task_id=task_id, contact_id=_owner(request, _admin),
+            task_id=task_id,
+            contact_id=_owner(request, _admin),
             **payload.model_dump(exclude_unset=True),
         )
     except ValueError as exc:
@@ -170,15 +197,27 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
         raise MagiHTTPException(404, "not_found.task", "task not found")
     if not task.enabled:
         raise MagiHTTPException(409, "task.disabled", "task is disabled")
-    job_id = bus.run_task_job_board.publish(RunTaskJob(
-        task_id=task.id, manual=True, fired_by="api_manual_run",
-        conversation_id=task.conversation_id, contact_id=task.contact_id,
-    ))
+    job_id = bus.run_task_job_board.publish(
+        RunTaskJob(
+            task_id=task.id,
+            manual=True,
+            fired_by="api_manual_run",
+            conversation_id=task.conversation_id,
+            contact_id=task.contact_id,
+        )
+    )
     return RunResponse(job_id=job_id)
 
 
 @router.get("/tasks/{task_id}/runs", response_model=list[TaskRunOut])
-def list_task_runs(task_id: str, request: Request, _admin: AdminGate, bus: BusDep, limit: int = Query(20, ge=1, le=100)) -> list[TaskRunOut]:
+def list_task_runs(
+    task_id: str,
+    request: Request,
+    _admin: AdminGate,
+    bus: BusDep,
+    limit: int = Query(20, ge=1, le=100),
+) -> list[TaskRunOut]:
+    _ = limit
     task = bus.tasks_book.get(task_id=task_id)
     if task is None or task.contact_id != _owner(request, _admin):
         raise MagiHTTPException(404, "not_found.task", "task not found")

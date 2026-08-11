@@ -9,15 +9,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from magi.channels.api.dependencies import get_bus, get_workers
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import verified_proxy_operator
-from magi.channels.api.dependencies import get_bus, get_workers
 
 router = APIRouter(tags=["runtime-control"])
 
+
 def _require_control(request: Request) -> None:
     if verified_proxy_operator(request) is None:
-        raise MagiHTTPException(status_code=401, code="control.unauthorized", detail="Invalid control request")
+        raise MagiHTTPException(
+            status_code=401, code="control.unauthorized", detail="Invalid control request"
+        )
 
 
 class TelegramBootstrap(BaseModel):
@@ -70,9 +73,13 @@ async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bo
 
     token = get_bus(request).settings_book.get(key="telegram.bot_token")
     if not token:
-        raise MagiHTTPException(status_code=409, code="telegram.not_configured", detail="Telegram is not configured")
+        raise MagiHTTPException(
+            status_code=409, code="telegram.not_configured", detail="Telegram is not configured"
+        )
     try:
         await tg_bot.send_text_raw(token, payload.telegram_id, payload.text)
     except RuntimeError as exc:
-        raise MagiHTTPException(status_code=502, code="telegram.send_failed", detail=str(exc)) from exc
+        raise MagiHTTPException(
+            status_code=502, code="telegram.send_failed", detail=str(exc)
+        ) from exc
     return {"ok": True}

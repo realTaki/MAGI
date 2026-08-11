@@ -82,6 +82,7 @@ def install_error_handler(app: FastAPI) -> None:
     ``detail`` — useful for framework-raised errors that
     we haven't yet migrated).
     """
+
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception_handler(
         _request: Request, exc: StarletteHTTPException
@@ -111,4 +112,3 @@ def install_error_handler(app: FastAPI) -> None:
             content=body,
             headers=headers,
         )
-

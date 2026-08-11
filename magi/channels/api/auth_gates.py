@@ -16,8 +16,8 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.dependencies import get_bus
+from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.auth_gates")
 
@@ -52,6 +52,7 @@ def _is_admin_contact_id(bus, contact_id: int) -> bool:
 def _resolve_contact_id(bus, raw: str | None) -> int | None:
     """Verify the signed session cookie, return contact_id or None."""
     from magi.channels.api.auth import _verify_signed_contact_id
+
     return _verify_signed_contact_id(bus, raw or "")
 
 
@@ -67,14 +68,14 @@ def admin_gate(request: Request) -> str:
         if _is_admin_contact_id(get_bus(request), proxied_contact_id):
             return str(proxied_contact_id)
         raise MagiHTTPException(
-            status_code=403, code="auth.magis_admin_required", detail="This action requires a MAGIS administrator"
+            status_code=403,
+            code="auth.magis_admin_required",
+            detail="This action requires a MAGIS administrator",
         )
     raw = request.cookies.get("magi_session")
     contact_id = _resolve_contact_id(get_bus(request), raw)
     if contact_id is None or not _is_admin_contact_id(get_bus(request), contact_id):
-        raise MagiHTTPException(
-            status_code=401, code="auth.not_signed_in", detail="Not signed in"
-        )
+        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     return str(contact_id)
 
 
@@ -104,7 +105,11 @@ def admin_or_assigned_gate(request: Request) -> str:
         contact = get_bus(request).contacts_book.get(contact_id=proxied_contact_id)
         if contact is not None and (contact.admin or contact.role == "assigned"):
             return str(proxied_contact_id)
-        raise MagiHTTPException(status_code=403, code="auth.soul_edit_forbidden", detail="This action requires node access")
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.soul_edit_forbidden",
+            detail="This action requires node access",
+        )
 
     raw = request.cookies.get("magi_session") or ""
     contact_id = _resolve_contact_id(get_bus(request), raw)
@@ -118,7 +123,7 @@ def admin_or_assigned_gate(request: Request) -> str:
         c = get_bus(request).contacts_book.get(contact_id=contact_id)
     except Exception:
         logger.exception("admin_or_assigned_gate: ORM read failed")
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=403,
             code="auth.soul_edit_forbidden",
             detail="internal error verifying role",

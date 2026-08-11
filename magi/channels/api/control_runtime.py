@@ -11,8 +11,12 @@ from magi.channels.api.proxy_auth import build_proxy_headers
 
 async def _post(path: str, payload: dict[str, object]) -> None:
     headers = build_proxy_headers(
-        method="POST", path_and_query=path, target_id=1, operator_id=0,
-        operator_name="WebUI bootstrap", telegram_id=None,
+        method="POST",
+        path_and_query=path,
+        target_id=1,
+        operator_id=0,
+        operator_name="WebUI bootstrap",
+        telegram_id=None,
     )
     base = os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
     async with httpx.AsyncClient(timeout=30.0) as client:

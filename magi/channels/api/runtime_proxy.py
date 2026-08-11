@@ -34,7 +34,9 @@ def _runtime_url(bus, magi_id: int) -> str:
     )
 
 
-@router.api_route("/runtime/{magi_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@router.api_route(
+    "/runtime/{magi_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"]
+)
 async def proxy_runtime(
     magi_id: int,
     path: str,
@@ -54,7 +56,9 @@ async def proxy_runtime(
     switching sessions.
     """
     if not path or path.startswith("/") or ".." in path.split("/"):
-        raise MagiHTTPException(status_code=400, code="runtime.path_invalid", detail="Invalid runtime path")
+        raise MagiHTTPException(
+            status_code=400, code="runtime.path_invalid", detail="Invalid runtime path"
+        )
     from magi.channels.api.auth import selected_session
 
     browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
@@ -63,7 +67,11 @@ async def proxy_runtime(
     session_magi_id = int(browser_session["magi_id"])
     session_is_admin = bool(browser_session.get("admin"))
     if session_magi_id != magi_id and not session_is_admin:
-        raise MagiHTTPException(status_code=403, code="auth.target_mismatch", detail="The session is bound to another MAGI")
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.target_mismatch",
+            detail="The session is bound to another MAGI",
+        )
     runtime_path = f"/api/{path}"
     if request.url.query:
         runtime_path = f"{runtime_path}?{request.url.query}"
@@ -81,7 +89,9 @@ async def proxy_runtime(
             assigned=bool(browser_session.get("assigned")),
         )
     except RuntimeError as exc:
-        raise MagiHTTPException(status_code=503, code="runtime.proxy_unavailable", detail=str(exc)) from exc
+        raise MagiHTTPException(
+            status_code=503, code="runtime.proxy_unavailable", detail=str(exc)
+        ) from exc
     body = await request.body()
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -89,10 +99,17 @@ async def proxy_runtime(
                 request.method,
                 _runtime_url(get_bus(request), magi_id) + runtime_path,
                 content=body or None,
-                headers={"content-type": request.headers.get("content-type", "application/json"), **signed_headers},
+                headers={
+                    "content-type": request.headers.get("content-type", "application/json"),
+                    **signed_headers,
+                },
             )
     except httpx.HTTPError as exc:
-        raise MagiHTTPException(status_code=503, code="runtime.unreachable", detail="Selected MAGI runtime is unreachable") from exc
+        raise MagiHTTPException(
+            status_code=503,
+            code="runtime.unreachable",
+            detail="Selected MAGI runtime is unreachable",
+        ) from exc
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,

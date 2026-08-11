@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
+
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -59,7 +60,7 @@ def bind_telegram(
     try:
         telegram_id_int = int(payload.telegram_id)
     except ValueError:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.telegram_id_invalid",
             detail="telegram_id must fit in an integer",
@@ -67,7 +68,11 @@ def bind_telegram(
 
     contact = bus.contacts_book.get(contact_id=payload.contact_id)
     if contact is None:
-        raise MagiHTTPException(status_code=404, code="not_found.contact", detail=f"contact {payload.contact_id} not found")
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.contact",
+            detail=f"contact {payload.contact_id} not found",
+        )
     bus.contacts_book.set_telegram_id(contact_id=payload.contact_id, telegram_id=telegram_id_int)
 
     return TGBindResponse(
@@ -102,7 +107,7 @@ def unbind_telegram(
     try:
         telegram_id_int = int(telegram_id)
     except ValueError:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.telegram_id_invalid",
             detail="telegram_id must fit in an integer",
@@ -148,7 +153,7 @@ def get_telegram_binding(
     try:
         telegram_id_int = int(telegram_id)
     except ValueError:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.telegram_id_invalid",
             detail="telegram_id must fit in an integer",

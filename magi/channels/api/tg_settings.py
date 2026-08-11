@@ -23,9 +23,8 @@ on the next message — no restart, no reload.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
@@ -43,9 +42,6 @@ from magi.channels.telegram.config import (
 logger = logging.getLogger("magi.api.tg_settings")
 
 router = APIRouter(tags=["tg-settings"])
-
-
-
 
 
 class ReactionChoice(BaseModel):
@@ -109,10 +105,7 @@ def get_read_reaction(_admin: AdminGate, bus: BusDep) -> ReadReactionOut:
     return ReadReactionOut(
         current=get_read_reaction_emoji(bus),
         default=DEFAULT_READ_REACTION_EMOJI,
-        choices=[
-            ReactionChoice(value=v, label=lbl)
-            for v, lbl in REACTION_CHOICES
-        ],
+        choices=[ReactionChoice(value=v, label=lbl) for v, lbl in REACTION_CHOICES],
     )
 
 
@@ -136,10 +129,7 @@ def put_read_reaction(
         raise MagiHTTPException(
             status_code=400,
             code="validation.unknown_reaction_emoji",
-            detail=(
-                f"emoji {payload.emoji!r} is not in the allowed "
-                f"set: {sorted(allowed)}"
-            ),
+            detail=(f"emoji {payload.emoji!r} is not in the allowed set: {sorted(allowed)}"),
         )
 
     set_read_reaction_emoji(bus, payload.emoji)
@@ -147,10 +137,7 @@ def put_read_reaction(
     return ReadReactionOut(
         current=payload.emoji,
         default=DEFAULT_READ_REACTION_EMOJI,
-        choices=[
-            ReactionChoice(value=v, label=lbl)
-            for v, lbl in REACTION_CHOICES
-        ],
+        choices=[ReactionChoice(value=v, label=lbl) for v, lbl in REACTION_CHOICES],
     )
 
 
@@ -160,10 +147,7 @@ def get_done_reaction(_admin: AdminGate, bus: BusDep) -> DoneReactionOut:
     return DoneReactionOut(
         current=get_done_reaction_emoji(bus),
         default=DEFAULT_DONE_REACTION_EMOJI,
-        choices=[
-            ReactionChoice(value=v, label=lbl)
-            for v, lbl in REACTION_CHOICES
-        ],
+        choices=[ReactionChoice(value=v, label=lbl) for v, lbl in REACTION_CHOICES],
     )
 
 
@@ -189,10 +173,7 @@ def put_done_reaction(
         raise MagiHTTPException(
             status_code=400,
             code="validation.unknown_reaction_emoji",
-            detail=(
-                f"emoji {payload.emoji!r} is not in the allowed "
-                f"set: {sorted(allowed)}"
-            ),
+            detail=(f"emoji {payload.emoji!r} is not in the allowed set: {sorted(allowed)}"),
         )
 
     set_done_reaction_emoji(bus, payload.emoji)
@@ -200,8 +181,5 @@ def put_done_reaction(
     return DoneReactionOut(
         current=payload.emoji,
         default=DEFAULT_DONE_REACTION_EMOJI,
-        choices=[
-            ReactionChoice(value=v, label=lbl)
-            for v, lbl in REACTION_CHOICES
-        ],
+        choices=[ReactionChoice(value=v, label=lbl) for v, lbl in REACTION_CHOICES],
     )

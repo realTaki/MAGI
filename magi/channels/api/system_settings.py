@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import logging
 import zoneinfo
-from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
@@ -122,7 +121,7 @@ def put_system_timezone(
     try:
         zoneinfo.ZoneInfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.unknown_timezone",
             detail=f"timezone {tz!r} is not a valid IANA tz name",
@@ -165,7 +164,8 @@ class ToolMaxIterationsUpdateRequest(BaseModel):
 )
 def get_tool_max_iterations_endpoint(_admin: AdminGate, bus: BusDep) -> ToolMaxIterationsOut:
     return ToolMaxIterationsOut(
-        current=_read_int_setting(bus,
+        current=_read_int_setting(
+            bus,
             key=TOOL_MAX_ITERATIONS_KEY,
             default=DEFAULT_TOOL_MAX_ITERATIONS,
             minimum=MIN_TOOL_MAX_ITERATIONS,
@@ -213,33 +213,30 @@ class CompactConfigOut(BaseModel):
 
 
 class CompactConfigUpdateRequest(BaseModel):
-    context_window: int = Field(
-        ge=MIN_COMPACT_CONTEXT_WINDOW, le=MAX_COMPACT_CONTEXT_WINDOW
-    )
-    threshold_pct: int = Field(
-        ge=MIN_COMPACT_THRESHOLD_PCT, le=MAX_COMPACT_THRESHOLD_PCT
-    )
-    keep_recent: int = Field(
-        ge=MIN_COMPACT_KEEP_RECENT, le=MAX_COMPACT_KEEP_RECENT
-    )
+    context_window: int = Field(ge=MIN_COMPACT_CONTEXT_WINDOW, le=MAX_COMPACT_CONTEXT_WINDOW)
+    threshold_pct: int = Field(ge=MIN_COMPACT_THRESHOLD_PCT, le=MAX_COMPACT_THRESHOLD_PCT)
+    keep_recent: int = Field(ge=MIN_COMPACT_KEEP_RECENT, le=MAX_COMPACT_KEEP_RECENT)
 
 
 @router.get("/system-settings/compact-config", response_model=CompactConfigOut)
 def get_compact_config(_admin: AdminGate, bus: BusDep) -> CompactConfigOut:
     return CompactConfigOut(
-        context_window=_read_int_setting(bus,
+        context_window=_read_int_setting(
+            bus,
             key=COMPACT_CONTEXT_WINDOW_KEY,
             default=DEFAULT_COMPACT_CONTEXT_WINDOW,
             minimum=MIN_COMPACT_CONTEXT_WINDOW,
             maximum=MAX_COMPACT_CONTEXT_WINDOW,
         ),
-        threshold_pct=_read_int_setting(bus,
+        threshold_pct=_read_int_setting(
+            bus,
             key=COMPACT_THRESHOLD_PCT_KEY,
             default=DEFAULT_COMPACT_THRESHOLD_PCT,
             minimum=MIN_COMPACT_THRESHOLD_PCT,
             maximum=MAX_COMPACT_THRESHOLD_PCT,
         ),
-        keep_recent=_read_int_setting(bus,
+        keep_recent=_read_int_setting(
+            bus,
             key=COMPACT_KEEP_RECENT_KEY,
             default=DEFAULT_COMPACT_KEEP_RECENT,
             minimum=MIN_COMPACT_KEEP_RECENT,
@@ -264,7 +261,9 @@ def put_compact_config(
     svc.set(key=COMPACT_KEEP_RECENT_KEY, value=str(payload.keep_recent))
     logger.info(
         "compact-config set: window=%d threshold=%d%% keep=%d",
-        payload.context_window, payload.threshold_pct, payload.keep_recent,
+        payload.context_window,
+        payload.threshold_pct,
+        payload.keep_recent,
     )
     return CompactConfigOut(
         context_window=payload.context_window,

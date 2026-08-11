@@ -19,7 +19,7 @@ from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 if TYPE_CHECKING:
-    from magi.bus.library.magis.magisBook import Magis, MagisAdmin, MagisBook, MagisAdminBook
+    from magi.bus.library.magis.magisBook import Magis, MagisAdmin, MagisAdminBook, MagisBook
     from magi.bus.library.magis.membershipBook import (
         MagisMembership,
         MagisMembershipBook,
@@ -32,6 +32,7 @@ router = APIRouter(tags=["magis"])
 
 def _admin_gate(request: Request) -> str:
     from magi.channels.api.auth_gates import admin_gate
+
     return admin_gate(request)
 
 
@@ -41,7 +42,7 @@ AdminGate = Annotated[str, Depends(_admin_gate)]
 _BookT = TypeVar("_BookT")
 
 
-def _require_book(book: _BookT | None, name: str) -> _BookT:
+def _require_book[BookT](book: _BookT | None, name: str) -> _BookT:
     """Return *book*, or 503 when the MAGIS database isn't attached.
 
     All four MAGIS-side Books on the bus are ``| None`` — they're only
@@ -178,8 +179,14 @@ def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
         parent_id=view.parent_id,
         adam_id=view.adam_id,
         instruction=view.instruction,
-        child_count=sum(1 for row in (bus.magis_book.list_all() if bus.magis_book else []) if row.parent_id == view.id),
-        member_count=len(bus.memberships_book.list_for_magis(magis_id=view.id)) if bus.memberships_book else 0,
+        child_count=sum(
+            1
+            for row in (bus.magis_book.list_all() if bus.magis_book else [])
+            if row.parent_id == view.id
+        ),
+        member_count=len(bus.memberships_book.list_for_magis(magis_id=view.id))
+        if bus.memberships_book
+        else 0,
         created_at=_iso(view.created_at),
         updated_at=_iso(view.updated_at),
     )
@@ -329,7 +336,8 @@ def get_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> MAGISOut:
 
 @router.patch("/magis/{magis_id}", response_model=MAGISOut)
 def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: BusDep) -> MAGISOut:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     fields_set = payload.model_fields_set
     kwargs: dict[str, Any] = {}
     if "name" in fields_set:
@@ -339,7 +347,9 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
     if "parent_id" in fields_set:
         kwargs["parent_id"] = payload.parent_id
     try:
-        view = _magis_book(bus).update(magis_id=magis_id, set_parent_id="parent_id" in fields_set, **kwargs)
+        view = _magis_book(bus).update(
+            magis_id=magis_id, set_parent_id="parent_id" in fields_set, **kwargs
+        )
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     if view is None:
@@ -349,7 +359,8 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
 
 @router.delete("/magis/{magis_id}", status_code=204)
 def delete_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> Response:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     _magis_book(bus).delete(magis_id=magis_id)
     return Response(status_code=204)
 
@@ -359,13 +370,15 @@ def delete_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> Response:
 
 @router.get("/magis/{magis_id}/roles", response_model=list[RoleOut])
 def list_roles(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[RoleOut]:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     return [_role_out(v) for v in _roles_book(bus).list_for_magis(magis_id=magis_id)]
 
 
 @router.post("/magis/{magis_id}/roles", response_model=RoleOut, status_code=201)
 def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, bus: BusDep) -> RoleOut:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     try:
         view = _roles_book(bus).add(
             magis_id=magis_id,
@@ -382,7 +395,8 @@ def update_role(
     magis_id: int,
     role_id: int,
     payload: RoleUpdate,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> RoleOut:
     _require_managed(bus, magis_id)
     fields_set = payload.model_fields_set
@@ -425,17 +439,22 @@ def delete_role(magis_id: int, role_id: int, _admin: AdminGate, bus: BusDep) -> 
 
 @router.get("/magis/{magis_id}/memberships", response_model=list[MembershipOut])
 def list_memberships(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MembershipOut]:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
-    return [_membership_out(bus, v) for v in _memberships_book(bus).list_for_magis(magis_id=magis_id)]
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
+    return [
+        _membership_out(bus, v) for v in _memberships_book(bus).list_for_magis(magis_id=magis_id)
+    ]
 
 
 @router.post("/magis/{magis_id}/memberships", response_model=MembershipOut, status_code=201)
 def create_membership(
     magis_id: int,
     payload: MembershipCreate,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> MembershipOut:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     try:
         view = _memberships_book(bus).add(
             magis_id=magis_id,
@@ -451,11 +470,15 @@ def update_membership(
     magis_id: int,
     membership_id: int,
     payload: MembershipUpdate,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> MembershipOut:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     try:
-        view = _memberships_book(bus).update_role(magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id)
+        view = _memberships_book(bus).update_role(
+            magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id
+        )
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     if view is None:
@@ -467,12 +490,18 @@ def update_membership(
 def delete_membership(
     magis_id: int,
     membership_id: int,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> Response:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     try:
         member = _memberships_book(bus).get(magi_id=membership_id)
-        deleted = bool(member and member.magis_id == magis_id and _memberships_book(bus).remove(magi_id=membership_id))
+        deleted = bool(
+            member
+            and member.magis_id == magis_id
+            and _memberships_book(bus).remove(magi_id=membership_id)
+        )
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.membership", str(exc)) from exc
     if not deleted:
@@ -485,7 +514,8 @@ def delete_membership(
 
 @router.get("/magis/{magis_id}/admins", response_model=list[MAGISAdminOut])
 def list_magis_admins(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MAGISAdminOut]:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     return [_admin_out(bus, v) for v in _admins_book(bus).list_for_magis(magis_id=magis_id)]
 
 
@@ -493,9 +523,11 @@ def list_magis_admins(magis_id: int, _admin: AdminGate, bus: BusDep) -> list[MAG
 def add_magis_admin(
     magis_id: int,
     payload: MAGISAdminCreate,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> MAGISAdminOut:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     contact = bus.contacts_book.get_by_telegram(telegram_id=payload.telegram_id)
     if contact is None:
         raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
@@ -510,9 +542,11 @@ def add_magis_admin(
 def delete_magis_admin(
     magis_id: int,
     admin_id: int,
-    _admin: AdminGate, bus: BusDep,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> Response:
-    _magis_or_404(bus, magis_id); _require_managed(bus, magis_id)
+    _magis_or_404(bus, magis_id)
+    _require_managed(bus, magis_id)
     deleted = _admins_book(bus).remove_by_id(admin_id=admin_id, magis_id=magis_id)
     if not deleted:
         raise MagiHTTPException(404, "not_found.magis_admin", "MAGIS admin not found")

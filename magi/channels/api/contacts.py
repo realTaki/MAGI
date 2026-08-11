@@ -16,14 +16,14 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
-from magi.channels.api.auth_gates import admin_gate, AdminGate
+from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
@@ -47,6 +47,7 @@ _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 # -- helpers ----------------------------------------------------------------
 
+
 def _iso(dt) -> str:
     if dt is None:
         return ""
@@ -56,6 +57,7 @@ def _iso(dt) -> str:
 
 
 # -- response / payload shapes ----------------------------------------------
+
 
 class ContactOut(BaseModel):
     id: int
@@ -111,16 +113,16 @@ class ContactCreate(BaseModel):
 
 class ContactUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=120)
-    name: Optional[str] = Field(default=None, max_length=120)
-    role: Optional[str] = Field(default=None, max_length=16)
+    name: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, max_length=16)
     # ``None`` (omitted from the PATCH body) means "leave
     # admin unchanged"; ``True`` / ``False`` flips the bit.
     # The ``model_fields_set`` check on the route side
     # distinguishes the two cases — critical because
     # ``False`` is a meaningful value (we want to be able
     # to revoke admin).
-    admin: Optional[bool] = None
-    telegram_id: Optional[int] = None
+    admin: bool | None = None
+    telegram_id: int | None = None
 
 
 def _serialize(
@@ -183,9 +185,7 @@ def _bulk_login_methods(
     if not views:
         return {}
     contact_ids = [v.id for v in views]
-    password_contact_ids = bus.contacts_book.password_contact_ids(
-        contact_ids=contact_ids
-    )
+    password_contact_ids = bus.contacts_book.password_contact_ids(contact_ids=contact_ids)
     out: dict[int, list[str]] = {}
     for v in views:
         methods: list[str] = []
@@ -207,13 +207,14 @@ def _single_login_methods(
 
 # -- routes -----------------------------------------------------------------
 
+
 @router.get("/contacts", response_model=ContactListOut)
 def list_contacts(
     _admin: AdminGate,
     bus: BusDep,
     with_notes: bool = False,
     role: str | None = None,
-    admin: Optional[bool] = None,
+    admin: bool | None = None,
     page: int = 1,
     page_size: int = _PAGE_SIZE_DEFAULT,
 ) -> ContactListOut:
@@ -272,12 +273,12 @@ def list_contacts(
         )
 
     rows = [
-        view for view in bus.contacts_book.list_all()
-        if (role is None or view.role == role)
-        and (admin is None or view.admin == admin)
+        view
+        for view in bus.contacts_book.list_all()
+        if (role is None or view.role == role) and (admin is None or view.admin == admin)
     ]
     total = len(rows)
-    rows = rows[(page - 1) * page_size: page * page_size]
+    rows = rows[(page - 1) * page_size : page * page_size]
     login_methods = _bulk_login_methods(bus, rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
     return ContactListOut(
@@ -298,28 +299,36 @@ def create_contact(
     name = payload.name.strip()
     if not name:
         raise MagiHTTPException(
-            status_code=400, code="validation.name_required",
+            status_code=400,
+            code="validation.name_required",
             detail="name must not be empty",
         )
     if any(view.name == name for view in bus.contacts_book.list_all()):
         raise MagiHTTPException(
-            status_code=409, code="conflict.contact_name_exists",
+            status_code=409,
+            code="conflict.contact_name_exists",
             detail=f"contact {name!r} already exists",
         )
     if payload.role not in _CONTACT_ROLES:
         raise MagiHTTPException(
-            status_code=400, code="validation.role_unknown",
+            status_code=400,
+            code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
         )
-    if payload.role == "assigned" and any(view.role == "assigned" for view in bus.contacts_book.list_all()):
+    if payload.role == "assigned" and any(
+        view.role == "assigned" for view in bus.contacts_book.list_all()
+    ):
         raise MagiHTTPException(
             status_code=409,
             code="conflict.assigned_user_exists",
             detail="This MAGI already has an assigned user",
         )
-    if payload.telegram_id is not None and bus.contacts_book.get_by_telegram(telegram_id=payload.telegram_id):
+    if payload.telegram_id is not None and bus.contacts_book.get_by_telegram(
+        telegram_id=payload.telegram_id
+    ):
         raise MagiHTTPException(
-            status_code=409, code="conflict.telegram_id_already_bound",
+            status_code=409,
+            code="conflict.telegram_id_already_bound",
             detail=f"telegram_id {payload.telegram_id} is already bound",
         )
     view = bus.contacts_book.add(
@@ -350,13 +359,15 @@ def create_contact(
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for newly-created contact %d: %s",
-                view.id, exc,
+                view.id,
+                exc,
             )
 
     return _serialize(view, login_methods=_single_login_methods(bus, view))
 
 
 # -- notes sub-resource ---------------------------------------------------
+
 
 class NoteOut(BaseModel):
     id: int
@@ -390,7 +401,8 @@ def list_contact_notes(
     contact = bus.contacts_book.get(contact_id=contact_id)
     if contact is None:
         raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
+            status_code=404,
+            code="not_found.contact",
             detail="contact not found",
         )
     notes = bus.contact_notes_book.list_for_contact(contact_id=contact_id)
@@ -407,7 +419,8 @@ def get_contact(
     view = bus.contacts_book.get(contact_id=contact_id)
     if view is None:
         raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
+            status_code=404,
+            code="not_found.contact",
             detail="contact not found",
         )
     return _serialize(view, login_methods=_single_login_methods(bus, view))
@@ -423,7 +436,8 @@ def update_contact(
     existing = bus.contacts_book.get(contact_id=contact_id)
     if existing is None:
         raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
+            status_code=404,
+            code="not_found.contact",
             detail="contact not found",
         )
 
@@ -433,19 +447,20 @@ def update_contact(
     # ``role`` is a clean no-op.
     newly_assigned = False
 
-    new_name: Optional[str] = None
+    new_name: str | None = None
     if "name" in payload.model_fields_set and payload.name:
         new_name = payload.name.strip()
 
-    new_display_name: Optional[str] = None
+    new_display_name: str | None = None
     if "display_name" in payload.model_fields_set:
         new_display_name = payload.display_name
 
-    new_role: Optional[str] = None
+    new_role: str | None = None
     if "role" in payload.model_fields_set and payload.role is not None:
         if payload.role not in _CONTACT_ROLES:
             raise MagiHTTPException(
-                status_code=400, code="validation.role_unknown",
+                status_code=400,
+                code="validation.role_unknown",
                 detail=f"Unknown role {payload.role!r}",
             )
         # Capture the *prior* role so the post-commit
@@ -453,9 +468,13 @@ def update_contact(
         # an idempotent assigned→assigned PATCH that
         # shouldn't trigger a fresh seed round).
         prev_role = existing.role
-        if payload.role == "assigned" and prev_role != "assigned" and any(
-            view.role == "assigned" and view.id != contact_id
-            for view in bus.contacts_book.list_all()
+        if (
+            payload.role == "assigned"
+            and prev_role != "assigned"
+            and any(
+                view.role == "assigned" and view.id != contact_id
+                for view in bus.contacts_book.list_all()
+            )
         ):
             raise MagiHTTPException(
                 status_code=409,
@@ -466,24 +485,25 @@ def update_contact(
         # Tag the local variable for the post-commit
         # branch. We need this outside the ``if`` so it
         # survives the conditional execution.
-        newly_assigned = (
-            payload.role == "assigned" and prev_role != "assigned"
-        )
+        newly_assigned = payload.role == "assigned" and prev_role != "assigned"
 
-    new_admin: Optional[bool] = None
+    new_admin: bool | None = None
     # ``admin`` toggle — independent of ``role`` (the role
     # transition above has its own seed-hook trigger; the
     # admin bit doesn't affect seeding).
     if "admin" in payload.model_fields_set and payload.admin is not None:
         new_admin = bool(payload.admin)
 
-    new_telegram_id: Optional[int] = None
+    new_telegram_id: int | None = None
     if "telegram_id" in payload.model_fields_set:
         new_tg = payload.telegram_id
-        bound = bus.contacts_book.get_by_telegram(telegram_id=new_tg) if new_tg is not None else None
+        bound = (
+            bus.contacts_book.get_by_telegram(telegram_id=new_tg) if new_tg is not None else None
+        )
         if bound is not None and bound.id != contact_id:
             raise MagiHTTPException(
-                status_code=409, code="conflict.telegram_id_already_bound",
+                status_code=409,
+                code="conflict.telegram_id_already_bound",
                 detail=f"telegram_id {new_tg} is already bound",
             )
         new_telegram_id = new_tg
@@ -500,7 +520,8 @@ def update_contact(
     )
     if view is None:
         raise MagiHTTPException(
-            status_code=404, code="not_found.contact",
+            status_code=404,
+            code="not_found.contact",
             detail="contact not found",
         )
 
@@ -525,7 +546,8 @@ def update_contact(
         except Exception as exc:
             logger.warning(
                 "preset seeding failed for contact %d (role → assigned): %s",
-                view.id, exc,
+                view.id,
+                exc,
             )
 
     return _serialize(view, login_methods=_single_login_methods(bus, view))

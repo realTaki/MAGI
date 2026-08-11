@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from magi.channels.api.auth_gates import AdminGate
@@ -57,8 +57,8 @@ class ToolOut(BaseModel):
     description: str
     prop_count: int
     source: Literal["builtin", "mcp"] = "builtin"
-    allowed_roles: list[str] = []    # sorted; [] = no role gate
-    server: str | None = None        # MCP server name this tool came from
+    allowed_roles: list[str] = []  # sorted; [] = no role gate
+    server: str | None = None  # MCP server name this tool came from
 
 
 class ToolListOut(BaseModel):

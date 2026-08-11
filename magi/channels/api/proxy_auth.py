@@ -12,7 +12,6 @@ import hashlib
 import hmac
 import os
 import time
-from collections.abc import Mapping
 
 from fastapi import Request
 
@@ -24,11 +23,30 @@ def _secret() -> bytes | None:
     return value.encode() if value else None
 
 
-def _canonical(method: str, path_and_query: str, timestamp: str, target_id: str, operator_id: str, scope: str = "") -> bytes:
-    return "\n".join((method.upper(), path_and_query, timestamp, target_id, operator_id, scope)).encode()
+def _canonical(
+    method: str,
+    path_and_query: str,
+    timestamp: str,
+    target_id: str,
+    operator_id: str,
+    scope: str = "",
+) -> bytes:
+    return "\n".join(
+        (method.upper(), path_and_query, timestamp, target_id, operator_id, scope)
+    ).encode()
 
 
-def build_proxy_headers(*, method: str, path_and_query: str, target_id: int, operator_id: int, operator_name: str, telegram_id: int | None, admin: bool = True, assigned: bool = False) -> dict[str, str]:
+def build_proxy_headers(
+    *,
+    method: str,
+    path_and_query: str,
+    target_id: int,
+    operator_id: int,
+    operator_name: str,
+    telegram_id: int | None,
+    admin: bool = True,
+    assigned: bool = False,
+) -> dict[str, str]:
     """Return service-to-service headers for one selected MAGI request."""
     secret = _secret()
     if secret is None:
@@ -77,7 +95,12 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
     if request.url.query:
         path = f"{path}?{request.url.query}"
     scope = request.headers.get("X-MAGI-Proxy-Scope", "")
-    if scope not in {"admin=0;assigned=0", "admin=0;assigned=1", "admin=1;assigned=0", "admin=1;assigned=1"}:
+    if scope not in {
+        "admin=0;assigned=0",
+        "admin=0;assigned=1",
+        "admin=1;assigned=0",
+        "admin=1;assigned=1",
+    }:
         return None
     expected = hmac.new(
         secret,
@@ -91,7 +114,11 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
         telegram_id = int(telegram_raw) if telegram_raw else None
     except ValueError:
         return None
-    return operator_id, request.headers.get("X-MAGI-Proxy-Operator-Name", "WebUI operator"), telegram_id
+    return (
+        operator_id,
+        request.headers.get("X-MAGI-Proxy-Operator-Name", "WebUI operator"),
+        telegram_id,
+    )
 
 
 def verified_proxy_scope(request: Request) -> tuple[bool, bool] | None:
@@ -118,7 +145,6 @@ def ensure_runtime_operator(request: Request) -> int | None:
     if scope is None:
         return None
     is_admin, is_assigned = scope
-    import os
 
     from magi.channels.api.dependencies import get_bus
 
@@ -131,4 +157,9 @@ def ensure_runtime_operator(request: Request) -> int | None:
     )
 
 
-__all__ = ["build_proxy_headers", "ensure_runtime_operator", "verified_proxy_operator", "verified_proxy_scope"]
+__all__ = [
+    "build_proxy_headers",
+    "ensure_runtime_operator",
+    "verified_proxy_operator",
+    "verified_proxy_scope",
+]

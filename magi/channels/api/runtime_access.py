@@ -16,17 +16,16 @@ from __future__ import annotations
 import json
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import httpx
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.channels.telegram import bot as tg_bot
-from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.dependencies import BusDep
-from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator
+from magi.channels.api.errors import MagiHTTPException
+from magi.channels.api.proxy_auth import verified_proxy_operator
+from magi.channels.telegram import bot as tg_bot
 
 router = APIRouter(tags=["runtime-access"])
 
@@ -82,7 +81,9 @@ def _require_webui(request: Request) -> None:
 def _runtime_magi_id() -> int:
     value = os.environ.get("MAGI_RUNTIME_ID")
     if not value or not value.isdigit():
-        raise MagiHTTPException(503, "access.runtime_identity_missing", "MAGI runtime identity is missing")
+        raise MagiHTTPException(
+            503, "access.runtime_identity_missing", "MAGI runtime identity is missing"
+        )
     return int(value)
 
 
@@ -103,7 +104,9 @@ def _direct_magis(bus: Bus) -> tuple[int, int]:
 def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
     """Enumerate sign-in candidates for the local MAGI's direct MAGIS."""
     result: dict[int, LoginAccount] = {}
-    for admin in (bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []):
+    for admin in (
+        bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []
+    ):
         result[admin.contact_id] = LoginAccount(
             telegram_id=admin.contact_id,
             name=f"Admin {admin.contact_id}",
@@ -115,10 +118,13 @@ def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
         if tg is None:
             continue
         existing = result.get(tg)
-        display = (contact.display_name or contact.name or "")
+        display = contact.display_name or contact.name or ""
         if existing is None:
             result[tg] = LoginAccount(
-                telegram_id=tg, name=display, admin=False, assigned=True,
+                telegram_id=tg,
+                name=display,
+                admin=False,
+                assigned=True,
             )
         else:
             existing.assigned = True
@@ -136,6 +142,7 @@ def _new_code() -> str:
 
 
 async def _send_code(bus: Bus, magi_id: int, magis_id: int, telegram_id: int, text: str) -> str:
+    _ = magi_id, magis_id
     bot_token = bus.settings_book.get(key="telegram.bot_token")
     if bot_token:
         await tg_bot.send_text_raw(bot_token, telegram_id, text)
@@ -151,12 +158,16 @@ async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse
     return LoginAccountsResponse(
         magi_id=magi_id,
         magis_id=magis_id,
-        accounts=sorted(_accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)),
+        accounts=sorted(
+            _accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)
+        ),
     )
 
 
 @router.post("/access/send-login-code", response_model=LoginCodeResponse)
-async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusDep) -> LoginCodeResponse:
+async def send_login_code(
+    payload: LoginCodeRequest, request: Request, bus: BusDep
+) -> LoginCodeResponse:
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
     account = _accounts(bus, magis_id).get(payload.telegram_id)
@@ -167,31 +178,48 @@ async def send_login_code(payload: LoginCodeRequest, request: Request, bus: BusD
     if previous_raw:
         try:
             previous = json.loads(previous_raw)
-            elapsed = datetime.now(timezone.utc).timestamp() - float(previous.get("last_sent_at", 0))
+            elapsed = datetime.now(UTC).timestamp() - float(previous.get("last_sent_at", 0))
             if elapsed < _COOLDOWN_SECONDS:
-                return LoginCodeResponse(ok=False, error=f"Wait {int(_COOLDOWN_SECONDS - elapsed)}s before requesting a new code.")
+                return LoginCodeResponse(
+                    ok=False,
+                    error=f"Wait {int(_COOLDOWN_SECONDS - elapsed)}s before requesting a new code.",
+                )
         except (TypeError, ValueError, json.JSONDecodeError):
             pass
     code = _new_code()
-    now = datetime.now(timezone.utc)
-    bus.settings_book.set(key=_code_key(payload.telegram_id), value=json.dumps({
-        "code": code, "expires_at": now.timestamp() + _TTL_SECONDS, "last_sent_at": now.timestamp(),
-    }))
+    now = datetime.now(UTC)
+    bus.settings_book.set(
+        key=_code_key(payload.telegram_id),
+        value=json.dumps(
+            {
+                "code": code,
+                "expires_at": now.timestamp() + _TTL_SECONDS,
+                "last_sent_at": now.timestamp(),
+            }
+        ),
+    )
     try:
         delivery = await _send_code(
-            bus, magi_id, magis_id, payload.telegram_id,
+            bus,
+            magi_id,
+            magis_id,
+            payload.telegram_id,
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
         bus.settings_book.delete(key=_code_key(payload.telegram_id))
         if isinstance(exc, MagiHTTPException):
             raise
-        raise MagiHTTPException(503, "access.delivery_failed", "Could not deliver the login code") from exc
+        raise MagiHTTPException(
+            503, "access.delivery_failed", "Could not deliver the login code"
+        ) from exc
     return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS, delivery=delivery)
 
 
 @router.post("/access/verify-login-code", response_model=VerifyLoginCodeResponse)
-async def verify_login_code(payload: VerifyLoginCodeRequest, request: Request, bus: BusDep) -> VerifyLoginCodeResponse:
+async def verify_login_code(
+    payload: VerifyLoginCodeRequest, request: Request, bus: BusDep
+) -> VerifyLoginCodeResponse:
     _require_webui(request)
     _magi_id, magis_id = _direct_magis(bus)
     account = _accounts(bus, magis_id).get(payload.telegram_id)
@@ -203,7 +231,7 @@ async def verify_login_code(payload: VerifyLoginCodeRequest, request: Request, b
     bus.settings_book.delete(key=_code_key(payload.telegram_id))
     try:
         stored = json.loads(raw)
-        valid = datetime.now(timezone.utc).timestamp() < float(stored.get("expires_at", 0))
+        valid = datetime.now(UTC).timestamp() < float(stored.get("expires_at", 0))
     except (TypeError, ValueError, json.JSONDecodeError):
         valid = False
         stored = {}

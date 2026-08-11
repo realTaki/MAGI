@@ -17,7 +17,7 @@ def get_bus(request: Request) -> Bus:
     return request.app.state.bus
 
 
-def get_workers(request: Request) -> "WorkerRegistry":
+def get_workers(request: Request) -> WorkerRegistry:
     return request.app.state.workers
 
 

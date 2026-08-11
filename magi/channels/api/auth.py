@@ -42,7 +42,7 @@ import json
 import logging
 import os
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import httpx
@@ -91,12 +91,13 @@ def _signing_key(bus: Bus) -> bytes:
     # seeded yet.  The bootstrap path always sets this, but the
     # control-plane path short-circuits before bus init.
     import secrets
+
     return secrets.token_bytes(32)
 
 
 def _sign_contact_id(bus: Bus, contact_id: int) -> str:
     """Return ``contact_id:timestamp:hmac`` signed token."""
-    ts = str(int(datetime.now(timezone.utc).timestamp()))
+    ts = str(int(datetime.now(UTC).timestamp()))
     payload = f"{contact_id}:{ts}".encode()
     sig = hmac.new(_signing_key(bus), payload, hashlib.sha256).hexdigest()[:16]
     token = f"{contact_id}:{ts}:{sig}".encode()
@@ -116,7 +117,7 @@ def _verify_signed_contact_id(bus: Bus, token: str) -> int | None:
         contact_id = int(contact_id_str)
         ts = int(ts_str)
         # Check expiry
-        if datetime.now(timezone.utc).timestamp() - ts > SESSION_TTL_SECONDS:
+        if datetime.now(UTC).timestamp() - ts > SESSION_TTL_SECONDS:
             return None
         # Verify signature
         payload = f"{contact_id}:{ts}".encode()
@@ -128,7 +129,15 @@ def _verify_signed_contact_id(bus: Bus, token: str) -> int | None:
         return None
 
 
-def _sign_selected_session(bus: Bus, *, magi_id: int, telegram_id: int, display_name: str | None, admin: bool, assigned: bool) -> str:
+def _sign_selected_session(
+    bus: Bus,
+    *,
+    magi_id: int,
+    telegram_id: int,
+    display_name: str | None,
+    admin: bool,
+    assigned: bool,
+) -> str:
     """Sign a browser session bound to exactly one selected MAGI.
 
     ``_sign_contact_id`` remains for compatibility with private-runtime tests and
@@ -142,9 +151,13 @@ def _sign_selected_session(bus: Bus, *, magi_id: int, telegram_id: int, display_
     deploy time rather than risk a soft-mismatch.
     """
     payload = {
-        "v": 3, "magi_id": magi_id, "telegram_id": telegram_id,
-        "display_name": display_name, "admin": admin, "assigned": assigned,
-        "ts": int(datetime.now(timezone.utc).timestamp()),
+        "v": 3,
+        "magi_id": magi_id,
+        "telegram_id": telegram_id,
+        "display_name": display_name,
+        "admin": admin,
+        "assigned": assigned,
+        "ts": int(datetime.now(UTC).timestamp()),
     }
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     signature = hmac.new(_signing_key(bus), raw, hashlib.sha256).hexdigest()[:24]
@@ -162,9 +175,13 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
         if not hmac.compare_digest(signature, expected):
             return None
         payload = json.loads(raw)
-        if payload.get("v") != 3 or not isinstance(payload.get("magi_id"), int) or not isinstance(payload.get("telegram_id"), int):
+        if (
+            payload.get("v") != 3
+            or not isinstance(payload.get("magi_id"), int)
+            or not isinstance(payload.get("telegram_id"), int)
+        ):
             return None
-        if datetime.now(timezone.utc).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
+        if datetime.now(UTC).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
             return None
         return payload
     except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
@@ -190,7 +207,9 @@ def _super_admins(bus: Bus) -> set[int]:
     """
     if control_store.enabled():
         admins = bus.magis_admins_book
-        return {admin.contact_id for admin in admins.list_for_magis(magis_id=1)} if admins else set()
+        return (
+            {admin.contact_id for admin in admins.list_for_magis(magis_id=1)} if admins else set()
+        )
     contacts = bus.contacts_book.list_admins()
     return {contact.id for contact in contacts}
 
@@ -313,7 +332,9 @@ def _load_login_code(bus: Bus, contact_id: int) -> dict | None:
         return None
 
 
-def _store_login_code(bus: Bus, contact_id: int, code: str, issued_at: datetime, expires_at: float) -> None:
+def _store_login_code(
+    bus: Bus, contact_id: int, code: str, issued_at: datetime, expires_at: float
+) -> None:
     value = json.dumps(
         {
             "code": code,
@@ -355,7 +376,9 @@ class TargetVerifyRequest(TargetLoginRequest):
     code: str = Field(min_length=6, max_length=6)
 
 
-async def _target_access(bus: Bus, magi_id: int, method: str, path: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
+async def _target_access(
+    bus: Bus, magi_id: int, method: str, path: str, payload: dict[str, object] | None = None
+) -> dict[str, Any]:
     """Call a target runtime before a browser identity exists.
 
     This is still authenticated service-to-service: ``operator_id=0`` marks
@@ -368,22 +391,34 @@ async def _target_access(bus: Bus, magi_id: int, method: str, path: str, payload
         if not base:
             raise RuntimeError("runtime unavailable")
     except RuntimeError as exc:
-        raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
+        raise MagiHTTPException(
+            503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable"
+        ) from exc
     headers = build_proxy_headers(
-        method=method, path_and_query=path, target_id=magi_id,
-        operator_id=0, operator_name="WebUI login", telegram_id=None,
+        method=method,
+        path_and_query=path,
+        target_id=magi_id,
+        operator_id=0,
+        operator_name="WebUI login",
+        telegram_id=None,
     )
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.request(method, base + path, json=payload, headers=headers)
     except httpx.HTTPError as exc:
-        raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable") from exc
+        raise MagiHTTPException(
+            503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable"
+        ) from exc
     try:
         body = response.json()
     except ValueError:
         body = {"detail": "Selected MAGI returned an invalid response"}
     if response.is_error:
-        raise MagiHTTPException(response.status_code, str(body.get("code", "access.target_error")), str(body.get("detail", "Target request failed")))
+        raise MagiHTTPException(
+            response.status_code,
+            str(body.get("code", "access.target_error")),
+            str(body.get("detail", "Target request failed")),
+        )
     return body
 
 
@@ -415,28 +450,46 @@ async def target_accounts(magi_id: int, bus: BusDep) -> dict[str, object]:
 
 
 @router.post("/targets/{magi_id}/send-login-code")
-async def target_send_login_code(magi_id: int, payload: TargetLoginRequest, bus: BusDep) -> dict[str, object]:
-    return await _target_access(bus, magi_id, "POST", "/api/access/send-login-code", payload.model_dump())
+async def target_send_login_code(
+    magi_id: int, payload: TargetLoginRequest, bus: BusDep
+) -> dict[str, object]:
+    return await _target_access(
+        bus, magi_id, "POST", "/api/access/send-login-code", payload.model_dump()
+    )
 
 
 @router.post("/targets/{magi_id}/verify-login-code", response_model=VerifyLoginCodeResponse)
-async def target_verify_login_code(magi_id: int, payload: TargetVerifyRequest, response: Response, bus: BusDep) -> VerifyLoginCodeResponse:
-    result = await _target_access(bus, magi_id, "POST", "/api/access/verify-login-code", payload.model_dump())
+async def target_verify_login_code(
+    magi_id: int, payload: TargetVerifyRequest, response: Response, bus: BusDep
+) -> VerifyLoginCodeResponse:
+    result = await _target_access(
+        bus, magi_id, "POST", "/api/access/verify-login-code", payload.model_dump()
+    )
     if not result.get("ok"):
-        return VerifyLoginCodeResponse(ok=False, error=str(result.get("error") or "Code does not match"))
+        return VerifyLoginCodeResponse(
+            ok=False, error=str(result.get("error") or "Code does not match")
+        )
     telegram_id = result.get("telegram_id")
     if not isinstance(telegram_id, int):
-        raise MagiHTTPException(502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity")
+        raise MagiHTTPException(
+            502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity"
+        )
     raw_display_name = result.get("display_name")
     display_name = raw_display_name if isinstance(raw_display_name, str) else None
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_selected_session(bus,
-            magi_id=magi_id, telegram_id=telegram_id,
+        value=_sign_selected_session(
+            bus,
+            magi_id=magi_id,
+            telegram_id=telegram_id,
             display_name=display_name,
-            admin=bool(result.get("admin")), assigned=bool(result.get("assigned")),
+            admin=bool(result.get("admin")),
+            assigned=bool(result.get("assigned")),
         ),
-        max_age=SESSION_TTL_SECONDS, httponly=True, samesite="lax", path="/",
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/",
     )
     return VerifyLoginCodeResponse(ok=True)
 
@@ -576,7 +629,7 @@ async def send_login_code(
         return SendLoginCodeResponse(
             ok=False,
             error="This account has no IM channel configured; "
-                  "ask the deployer to bind a TG chat first.",
+            "ask the deployer to bind a TG chat first.",
         )
 
     # Cooldown — same anti-abuse logic as the admin code.
@@ -589,7 +642,7 @@ async def send_login_code(
         except (TypeError, ValueError):
             prev_sent_at = 0
         if prev_sent_at:
-            elapsed = datetime.now(timezone.utc).timestamp() - prev_sent_at
+            elapsed = datetime.now(UTC).timestamp() - prev_sent_at
             if elapsed < _RESEND_COOLDOWN_SECONDS:
                 remaining = int(_RESEND_COOLDOWN_SECONDS - elapsed)
                 return SendLoginCodeResponse(
@@ -598,7 +651,7 @@ async def send_login_code(
                 )
 
     code = _generate_code()
-    issued_at = datetime.now(timezone.utc)
+    issued_at = datetime.now(UTC)
     expires_at = issued_at.timestamp() + _CODE_TTL_SECONDS
     _store_login_code(bus, contact_id, code, issued_at, expires_at)
 
@@ -658,11 +711,9 @@ async def verify_login_code(
         expires_at = float(stored.get("expires_at", 0))
     except (TypeError, ValueError):
         expires_at = 0
-    if not expires_at or datetime.now(timezone.utc).timestamp() >= expires_at:
+    if not expires_at or datetime.now(UTC).timestamp() >= expires_at:
         _clear_login_code(bus, contact_id)
-        return VerifyLoginCodeResponse(
-            ok=False, error="Code expired — request a new one."
-        )
+        return VerifyLoginCodeResponse(ok=False, error="Code expired — request a new one.")
 
     # Burn on any path past expiry (mismatch, success, anything) so
     # the code can't be retried.
@@ -722,16 +773,16 @@ async def me(
         raw_display_name = selected.get("display_name")
         display_name = raw_display_name if isinstance(raw_display_name, str) else None
         return MeResponse(
-            contact_id=telegram_id_value, telegram_id=telegram_id_value,
+            contact_id=telegram_id_value,
+            telegram_id=telegram_id_value,
             display_name=display_name,
-            admin=bool(selected.get("admin")), assigned=bool(selected.get("assigned")),
+            admin=bool(selected.get("admin")),
+            assigned=bool(selected.get("assigned")),
             selected_magi_id=magi_id_value,
         )
     contact_id = _verify_signed_contact_id(bus, magi_session or "")
     if contact_id is None or contact_id not in _super_admins(bus):
-        raise MagiHTTPException(
-            status_code=401, code="auth.not_signed_in", detail="Not signed in"
-        )
+        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     if control_store.enabled():
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     # We already proved the cookie is a valid admin
@@ -844,7 +895,8 @@ def _password_hash(bus: Bus, contact_id: int) -> str | None:
 
 def _set_password_hash(bus: Bus, contact_id: int, secret_hash: str) -> None:
     bus.contacts_book.set_password_hash(
-        contact_id=contact_id, password_hash=secret_hash,
+        contact_id=contact_id,
+        password_hash=secret_hash,
     )
 
 
@@ -951,13 +1003,16 @@ async def login_password(
         # Anti-enumeration: respond as if the password
         # were wrong, but don't burn the cooldown.
         return LoginPasswordResponse(
-            ok=False, error="password does not match",
+            ok=False,
+            error="password does not match",
         )
 
     from magi.channels.api import password_utils
 
     if not password_utils.check_cooldown(
-        bus, payload.contact_id, cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
+        bus,
+        payload.contact_id,
+        cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
     ):
         record = password_utils._store_get(bus, payload.contact_id) or {}
         last = float(record.get("last_attempt_at", 0))
@@ -995,7 +1050,7 @@ async def login_password(
 
 
 def _now_ts() -> float:
-    return datetime.now(timezone.utc).timestamp()
+    return datetime.now(UTC).timestamp()
 
 
 @router.post("/set-password", response_model=SetPasswordResponse)
@@ -1033,7 +1088,8 @@ async def set_password(
     if not payload.contact_id or not isinstance(payload.contact_id, int):
         return SetPasswordResponse(ok=False, error="invalid contact_id")
 
-    caller_contact_id = _verify_signed_contact_id(bus,
+    caller_contact_id = _verify_signed_contact_id(
+        bus,
         request.cookies.get(SESSION_COOKIE_NAME) or "",
     )
     if caller_contact_id is None:
@@ -1092,7 +1148,8 @@ async def change_password(
     bus = get_bus(request)
     from magi.channels.api import password_utils
 
-    caller_contact_id = _verify_signed_contact_id(bus,
+    caller_contact_id = _verify_signed_contact_id(
+        bus,
         request.cookies.get(SESSION_COOKIE_NAME) or "",
     )
     if caller_contact_id is None:

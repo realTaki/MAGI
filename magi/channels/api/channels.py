@@ -29,12 +29,18 @@ _SETTINGS_KEY = "channels.enabled"
 _CHANNEL_META: list[dict] = [
     {"name": Channel.WEBUI, "label": "WebUI", "implemented": True},
     {"name": Channel.TG, "label": "Telegram", "implemented": True},
+    {"name": Channel.A2A, "label": "A2A", "implemented": True},
     {"name": "wechat", "label": "WeChat", "implemented": False},
     {"name": "lark", "label": "Lark", "implemented": False},
     {"name": "teams", "label": "Teams", "implemented": False},
 ]
 
-_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
+#: Channels the operator-facing toggle API refuses to disable.
+#: Mirrors :data:`magi.startup.workers._REQUIRED_CHANNELS` — both
+#: WebUI (dashboard / chat console) and A2A (MAGI peer exchange)
+#: are runtime base capabilities per the 2026-08-10 architecture
+#: review, so the operator cannot toggle them off via this API.
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI, Channel.A2A})
 
 
 def _read_enabled(bus) -> list[str]:
@@ -65,6 +71,7 @@ def _has_credentials(bus, channel: str) -> bool:
 
 # -- response / request shapes --------------------------------------------
 
+
 class ChannelInfo(BaseModel):
     name: str
     label: str
@@ -85,23 +92,28 @@ class ChannelsUpdateRequest(BaseModel):
 
 # -- endpoints ------------------------------------------------------------
 
+
 @router.get("/channels", response_model=ChannelsResponse)
 async def list_channels(
-    request: Request, _admin: AdminGate, bus: BusDep,
+    request: Request,
+    _admin: AdminGate,
+    bus: BusDep,
 ) -> ChannelsResponse:
     enabled = _read_enabled(bus)
     registry = getattr(request.app.state, "workers", None)
     available: list[ChannelInfo] = []
     for meta in _CHANNEL_META:
         name = meta["name"]
-        available.append(ChannelInfo(
-            name=name,
-            label=meta["label"],
-            implemented=meta["implemented"],
-            has_credentials=_has_credentials(bus, name),
-            enabled=name in enabled,
-            running=bool(meta["implemented"] and registry and registry.is_running(name)),
-        ))
+        available.append(
+            ChannelInfo(
+                name=name,
+                label=meta["label"],
+                implemented=meta["implemented"],
+                has_credentials=_has_credentials(bus, name),
+                enabled=name in enabled,
+                running=bool(meta["implemented"] and registry and registry.is_running(name)),
+            )
+        )
     return ChannelsResponse(enabled=enabled, available=available)
 
 
@@ -133,9 +145,7 @@ async def update_channels(
     for meta in _CHANNEL_META:
         name = meta["name"]
         should_run = name in enabled_list and meta["implemented"]
-        currently_running = bool(
-            meta["implemented"] and registry and registry.is_running(name)
-        )
+        currently_running = bool(meta["implemented"] and registry and registry.is_running(name))
 
         if registry is not None and should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
@@ -144,13 +154,15 @@ async def update_channels(
             logger.info("channels: stopping %r (toggled off)", name)
             await registry.stop_worker(name)
 
-        available.append(ChannelInfo(
-            name=name,
-            label=meta["label"],
-            implemented=meta["implemented"],
-            has_credentials=_has_credentials(bus, name),
-            enabled=name in enabled_list,
-            running=bool(meta["implemented"] and registry and registry.is_running(name)),
-        ))
+        available.append(
+            ChannelInfo(
+                name=name,
+                label=meta["label"],
+                implemented=meta["implemented"],
+                has_credentials=_has_credentials(bus, name),
+                enabled=name in enabled_list,
+                running=bool(meta["implemented"] and registry and registry.is_running(name)),
+            )
+        )
 
     return ChannelsResponse(enabled=enabled_list, available=available)

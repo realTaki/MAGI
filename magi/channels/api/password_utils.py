@@ -34,11 +34,9 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import secrets
-import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Final
 
 from magi.bus import Bus
@@ -48,7 +46,7 @@ from magi.bus import Bus
 # ``n=2**14`` is the cost factor. ``r=8`` and ``p=1`` are
 # OpenSSL's recommended defaults at this ``n``. A verify
 # call takes ~100 ms on a 2024-era x86 core.
-_SCRYPT_N: Final[int] = 2 ** 14
+_SCRYPT_N: Final[int] = 2**14
 _SCRYPT_R: Final[int] = 8
 _SCRYPT_P: Final[int] = 1
 _SCRYPT_DKLEN: Final[int] = 32
@@ -81,13 +79,9 @@ def hash_password(password: str) -> str:
     if not isinstance(password, str):
         raise ValueError("password must be a string")
     if len(password) < _MIN_PASSWORD_LEN:
-        raise ValueError(
-            f"password must be at least {_MIN_PASSWORD_LEN} characters"
-        )
+        raise ValueError(f"password must be at least {_MIN_PASSWORD_LEN} characters")
     if len(password) > _MAX_PASSWORD_LEN:
-        raise ValueError(
-            f"password must be at most {_MAX_PASSWORD_LEN} characters"
-        )
+        raise ValueError(f"password must be at most {_MAX_PASSWORD_LEN} characters")
     salt = secrets.token_bytes(_SALT_BYTES)
     digest = hashlib.scrypt(
         password.encode("utf-8"),
@@ -180,7 +174,7 @@ def _store_clear(bus: Bus, contact_id: int) -> None:
 
 
 def _now_ts() -> float:
-    return datetime.now(timezone.utc).timestamp()
+    return datetime.now(UTC).timestamp()
 
 
 def check_cooldown(bus: Bus, contact_id: int, *, cooldown_seconds: int) -> bool:

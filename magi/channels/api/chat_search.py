@@ -12,17 +12,17 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_sessions import SessionServiceDep, _admin_contact_id
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
 from magi.bus.library.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
+from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.chat_sessions import SessionServiceDep, _admin_contact_id
+from magi.channels.api.dependencies import BusDep
+from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_search")
 
@@ -61,16 +61,21 @@ def search_chat(
     contact_id = _admin_contact_id(request)
 
     try:
-        items, total = bus.messages_book.search(contact_id=contact_id, q=q, limit=limit, offset=offset)
+        items, total = bus.messages_book.search(
+            contact_id=contact_id, q=q, limit=limit, offset=offset
+        )
     except SearchUnavailable as e:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=503,
             code="search.unavailable",
             detail=str(e),
         )
 
     return SearchResponse(
-        q=q, contact_id=contact_id,
-        items=items, total=total,
-        limit=limit, offset=offset,
+        q=q,
+        contact_id=contact_id,
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
     )

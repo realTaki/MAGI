@@ -29,9 +29,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep, get_bus
-from magi.channels.api.errors import MagiHTTPException
+
 from magi.bus.library.local.conversationBook import (
     Conversation,
     ConversationCorruptError,
@@ -41,6 +39,9 @@ from magi.bus.library.local.conversationBook import (
     Message,
 )
 from magi.channels import Channel
+from magi.channels.api.auth_gates import AdminGate
+from magi.channels.api.dependencies import BusDep, get_bus
+from magi.channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_sessions")
 
@@ -252,8 +253,10 @@ def _resolve_contact_id(request: Request) -> int:
     endpoints.
     """
     from magi.channels.api.auth import _verify_signed_contact_id
+
     raw = request.cookies.get("magi_session") or ""
     from magi.channels.api.dependencies import get_bus
+
     contact_id = _verify_signed_contact_id(get_bus(request), raw)
     if contact_id is None:
         raise MagiHTTPException(
@@ -317,7 +320,9 @@ def create_session(
     # :meth:`SessionService.create`.
     delivery_address = _delivery_address_for_contact_id(request, contact_id)
     sess = service.create(
-        contact_id, channel=Channel.WEBUI, delivery_address=delivery_address,
+        contact_id,
+        channel=Channel.WEBUI,
+        delivery_address=delivery_address,
     )
     return CreateSessionResponse(session_id=sess.conversation_id)
 
@@ -358,13 +363,12 @@ def list_sessions(
     # renders the channel alongside each row (D.22
     # added the field).
     items, total = service.list_summaries(
-        contact_id, limit=limit, offset=offset,
+        contact_id,
+        limit=limit,
+        offset=offset,
     )
     return SessionListOut(
-        items=[
-            _summary_to_out(i, contact_id=contact_id)
-            for i in items
-        ],
+        items=[_summary_to_out(i, contact_id=contact_id) for i in items],
         total=total,
         limit=limit,
         offset=offset,
@@ -391,16 +395,18 @@ def get_session(
         # not a 404 (the id is invalid, not absent).
         logger.warning(
             "session get rejected (bad session_id %r from contact %s): %s",
-            session_id, contact_id, e,
+            session_id,
+            contact_id,
+            e,
         )
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.conversation_id_invalid",
             detail=str(e),
         )
     except ConversationCorruptError as e:
         logger.error("session file corrupt: %s", e)
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=500,
             code="validation.session_corrupt",
             detail="session file is malformed",
@@ -433,7 +439,7 @@ def delete_session(
     try:
         removed = service.delete(contact_id, session_id)
     except ConversationPathError as e:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.conversation_id_invalid",
             detail=str(e),
@@ -490,27 +496,26 @@ def update_session(
             new_title = raw
 
         try:
-            sess = service.rename(
-                contact_id, session_id, new_title, bump_updated=False
-            )
+            sess = service.rename(contact_id, session_id, new_title, bump_updated=False)
         except ConversationPathError as e:
-            raise MagiHTTPException(
+            raise MagiHTTPException(  # noqa: B904
                 status_code=400,
                 code="validation.conversation_id_invalid",
                 detail=str(e),
             )
         except ConversationCorruptError as e:
             logger.error(
-                "rename failed: session file corrupt: %s", e,
+                "rename failed: session file corrupt: %s",
+                e,
                 extra={"session_id": session_id},
             )
-            raise MagiHTTPException(
+            raise MagiHTTPException(  # noqa: B904
                 status_code=500,
                 code="validation.session_corrupt",
                 detail="session file is malformed",
             )
         except ConversationNotFoundError:
-            raise MagiHTTPException(
+            raise MagiHTTPException(  # noqa: B904
                 status_code=404,
                 code="not_found.session",
                 detail=f"session {session_id} not found",
@@ -525,17 +530,18 @@ def update_session(
     try:
         sess = service.get(contact_id, session_id)
     except ConversationPathError as e:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.conversation_id_invalid",
             detail=str(e),
         )
     except ConversationCorruptError as e:
         logger.error(
-            "get failed: session file corrupt: %s", e,
+            "get failed: session file corrupt: %s",
+            e,
             extra={"session_id": session_id},
         )
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=500,
             code="validation.session_corrupt",
             detail="session file is malformed",
@@ -614,8 +620,10 @@ def get_session_messages(
         offset = 0
     try:
         msgs, total_active, total_all = service.get_messages_page(
-            contact_id, session_id,
-            limit=limit, offset=offset,
+            contact_id,
+            session_id,
+            limit=limit,
+            offset=offset,
             include_archived=include_archived,
         )
     except ConversationNotFoundError:
@@ -623,13 +631,13 @@ def get_session_messages(
         # doesn't exist OR doesn't belong to ``contact_id`` — both
         # cases are 404 to the operator (don't leak existence of
         # other operators' conversations).
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=404,
             code="not_found.session",
             detail=f"session {session_id} not found",
         )
     except ConversationPathError as e:
-        raise MagiHTTPException(
+        raise MagiHTTPException(  # noqa: B904
             status_code=400,
             code="validation.conversation_id_invalid",
             detail=str(e),
