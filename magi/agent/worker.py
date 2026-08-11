@@ -25,11 +25,10 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from magi.runtime_worker import RuntimeWorker
-from magi.bus.db.base import utcnow_naive
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -333,7 +332,6 @@ class AgentWorker(RuntimeWorker):
                 tool_ids, request_ids, notify_results = await self._publish_effects(split)
                 gather = await self._gather_all(
                     ctx,
-                    split,
                     tool_ids,
                     request_ids,
                     notify_results,
@@ -517,7 +515,7 @@ class AgentWorker(RuntimeWorker):
                 try:
                     target_magi_id = int(args["magi_id"])
                     text = str(args["text"])
-                    mode = str(args.get("mode") or "notify").strip().lower()
+                    mode = str(args["mode"]).strip().lower()
                     if target_magi_id <= 0 or not text.strip() or mode not in {"notify", "request"}:
                         raise ValueError("magi_id, text, and mode=notify|request required")
                     deadline_seconds = int(args.get("deadline_seconds") or 120)
@@ -549,7 +547,10 @@ class AgentWorker(RuntimeWorker):
                                 "source_channel": ctx.channel,
                                 "source_conversation_id": ctx.conversation_id,
                             },
-                            deadline_at=utcnow_naive() + timedelta(seconds=deadline_seconds),
+                            deadline_at=(
+                                datetime.now(UTC).replace(tzinfo=None)
+                                + timedelta(seconds=deadline_seconds)
+                            ),
                         )
                     )
                 else:
@@ -597,15 +598,28 @@ class AgentWorker(RuntimeWorker):
             tool_ids[tj.tool_call_id] = jid
         if self.bus.a2a_request_job_board is not None:
             for request in split.a2a_request_jobs:
-                jid = await self.call(self.bus.a2a_request_job_board.publish, request)
-                request_ids[request.tool_call_id] = jid
+                try:
+                    jid = await self.call(self.bus.a2a_request_job_board.publish, request)
+                    request_ids[request.tool_call_id] = jid
+                except (LookupError, ValueError) as exc:
+                    notify_results[request.tool_call_id] = {
+                        "success": False,
+                        "content": f"A2A request was rejected: {exc}",
+                    }
         if self.bus.a2a_notify_job_board is not None:
             for notify in split.a2a_notify_jobs:
-                await self.call(self.bus.a2a_notify_job_board.publish, notify)
-                notify_results[notify.correlation_id or notify.job_id] = {
-                    "success": True,
-                    "content": "A2A notification persisted for the target MAGI.",
-                }
+                key = notify.correlation_id or notify.job_id
+                try:
+                    await self.call(self.bus.a2a_notify_job_board.publish, notify)
+                    notify_results[key] = {
+                        "success": True,
+                        "content": "A2A notification persisted for the target MAGI.",
+                    }
+                except (LookupError, ValueError) as exc:
+                    notify_results[key] = {
+                        "success": False,
+                        "content": f"A2A notification was rejected: {exc}",
+                    }
         return tool_ids, request_ids, notify_results
 
     # -- gather results + steering -------------------------------------------
@@ -613,7 +627,6 @@ class AgentWorker(RuntimeWorker):
     async def _gather_all(
         self,
         ctx: RunContext,
-        split: _SplitJobs,
         tool_ids: dict[str, str],  # tool_call_id → job_id
         request_ids: dict[str, str],
         notify_results: dict[str, Any],
