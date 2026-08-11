@@ -160,26 +160,23 @@ class RestartResponse(BaseModel):
 
 
 class SetAdminPasswordRequest(BaseModel):
-    """WebUI-only onboarding step 2 input.
+    """WebUI-only onboarding step 2 input — **two** operators.
 
-    The wizard collects **two** operator identities for the
-    first launch:
+    Initial onboarding creates two operator identities for
+    the first launch:
 
-      * ``admin_*`` — the Genesis-level admin. Lives in
-        :class:`MagisAdminBook` (MAGIS DB) so the same
-        person can sign in to every MAGI in the Genesis
-        Society.
-      * ``assigned_*`` — the person served by ``eva-000``
-        (the runtime being onboarded). Their :class:`Contact`
-        carries ``role='assigned'`` in the runtime's local
-        SQLite so they can sign in to eva-000 only.
+      * **Genesis admin** (``admin_*``) — recorded in
+        MAGIS-shared :class:`MagisAdminBook` so they can sign
+        in to every MAGI in the Genesis Society.
+      * **eva-000's assigned user** (``assigned_*``) — the
+        per-MAGI identity living in the runtime's local
+        SQLite as a :class:`Contact` with ``role='assigned'``;
+        signs in to ``eva-000`` only.
 
-    Both rows carry a password hash on the runtime's local
-    SQLite so login works without a Telegram binding.
-    ``admin=True`` is **not** set on either row — admin is
-    a MAGIS-level concept and is recorded only in
-    :class:`MagisAdminBook` (``magis_admins.contact_id``,
-    opaque integer reference).
+    If the same operator fills both forms with the same
+    name, two distinct contact rows are created so the
+    login picker can offer the choice between admin scope
+    and assigned scope (each granting a different cookie).
     """
 
     admin_name: str = Field(min_length=1, max_length=120)
@@ -325,40 +322,35 @@ async def set_admin_password_onboarding(
     """WebUI-only onboarding step 2: create the first two operators.
 
     The TG wizard's step 2 collects TG chat ids via
-    :func:`save_admin`; this endpoint is the parallel flow for
-    operators who picked "WebUI only" in step 1. Two
-    identities land on the same wizard:
+    :func:`save_admin`; this endpoint is the parallel flow
+    for operators who picked "WebUI only" in step 1. The
+    wizard collects two pairs and the backend writes two
+    distinct :class:`Contact` rows in the runtime's local
+    SQLite plus a single ``magis_admins`` row in MAGIS:
 
-      * **Genesis admin** (``admin_name`` / ``admin_password``)
-        — recorded in MAGIS-shared :class:`MagisAdminBook` so
-        they can sign in to **every** MAGI in the Genesis
-        Society. Their ``contact_id`` is an opaque integer
-        reference into the runtime's local ``contacts`` table.
-      * **eva-000's assigned user**
-        (``assigned_name`` / ``assigned_password``) — a
-        per-MAGI identity living only in the runtime's local
-        SQLite as a ``Contact`` row with
-        ``role='assigned'``. They can sign in to eva-000
-        only.
+      * **Genesis admin** (``admin_*``) — recorded in MAGIS
+        ``magis_admins`` so they can sign in to every MAGI
+        in the Genesis Society.
+      * **eva-000's assigned user** (``assigned_*``) — the
+        per-MAGI identity with ``role='assigned'``; signs in
+        to eva-000 only.
 
-    Both rows live in the **runtime's local SQLite** (the
-    runtime owns ``contacts`` and ``contacts.password_hash``)
-    and **neither** sets ``Contact.admin=True`` — admin is a
-    MAGIS-level concept and lives in ``magis_admins``.
+    If the operator fills both forms with the same name
+    (e.g. "Taki"), two rows are still produced (the admin
+    row's ``name`` is suffixed " (admin)" when the assigned
+    row claims it) so the login picker can offer both
+    scopes without collapsing them.
 
     Storage split:
 
-      * Runtime (per-MAGI SQLite) → upserts two ``Contact``
-        rows, each with ``role='assigned'``, writes a
-        password hash on each.
-      * Webui (MAGIS DB) → registers a ``magis_admins`` row
-        for the admin contact only; the assigned contact
-        stays runtime-local.
+      * Runtime (per-MAGI SQLite) → upserts two Contacts
+        (``role='assigned'`` each, ``admin=True`` NOT set),
+        writes both password hashes.
+      * Webui (MAGIS DB) → registers one ``magis_admins``
+        row pointing at the admin's contact_id.
 
     The runtime responds first with both contact ids; the
     webui then writes the MAGIS-side ``magis_admins`` row.
-    Re-entering the wizard is idempotent — both sides
-    reuse previous rows so chat history survives.
     """
     admin_name = payload.admin_name.strip()
     assigned_name = payload.assigned_name.strip()
@@ -471,19 +463,29 @@ def _upsert_local_contact(
 ) -> int:
     """Create a Contact named ``name`` if absent, else reuse in place.
 
-    The new row carries ``role='assigned'`` and **does not** set
-    ``admin=True`` — admin is a MAGIS-level concept and lives in
-    :class:`MagisAdminBook`. Contact rows created here are only the
-    "person" identity; the wizard / auth layer joins them with
-    ``magis_admins`` (webui) or reads the password hash directly
-    (runtime login).
+    The wizard writes **two** Contact rows per onboarding —
+    one for Genesis admin scope, one for the runtime's
+    assigned scope — so the login picker can offer both
+    scopes (each granting a different cookie). When the
+    same operator supplies the same name in both slots,
+    we deliberately mint **two** distinct rows so the admin
+    and assigned scopes stay independent: the admin row's
+    ``name`` is suffixed ``" (admin)"`` so the unique-name
+    constraint is satisfied, and both rows reuse the same
+    display name the operator typed.
 
-    ``slot`` distinguishes wizard steps that may collide by name
-    ("Taki" appearing as both Genesis admin AND per-MAGI
-    assigned): the admin slot always lands on its own row by
-    suffixing when needed, the assigned slot reuses an existing
-    row only if its id is NOT the one just minted for the admin
-    in the same wizard call.
+    ``slot`` tells the helper which scope is being written
+    (``"admin"`` or ``"assigned"``). The admin slot always
+    lands on its own row when a collision is imminent; the
+    assigned slot reuses an existing row only if its id is
+    NOT the one just minted for the admin in the same
+    wizard call (``skip_existing_contact_id``).
+
+    ``admin=True`` is **not** set on either row — admin is
+    a MAGIS-level concept and lives only in
+    :class:`MagisAdminBook` (``magis_admins.contact_id``,
+    opaque integer reference into this runtime's
+    ``contacts`` table).
     """
     contacts = bus.contacts_book
     for existing in contacts.list_all():
@@ -491,13 +493,15 @@ def _upsert_local_contact(
             return int(existing.id)
     base = name
     if slot == "admin" and any(c.name == base for c in contacts.list_all()):
-        # Avoid colliding with the just-allocated assigned row by
-        # appending a slot suffix. The display_name keeps the
+        # Avoid colliding with the just-allocated assigned row
+        # by appending a slot suffix. display_name keeps the
         # operator's chosen name; the row's `name` is unique.
         base = f"{name} (admin)"
     try:
         created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
     except ValueError:
+        # Name collision with an existing row whose name differs
+        # in case / whitespace — fall back to a unique rename.
         base = f"{base}-onboarding"
         created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
     return int(created.id)
