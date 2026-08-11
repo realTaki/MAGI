@@ -58,7 +58,7 @@ async def maybe_compact(
         return
 
     try:
-        sess = bus.sessions_book.get_for_owner(
+        sess = bus.conversations_book.get_for_owner(
             contact_id=contact_id, conversation_id=conversation_id
         )
         if sess is None:

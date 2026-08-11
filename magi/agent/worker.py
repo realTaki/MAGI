@@ -147,20 +147,6 @@ class AgentWorker(RuntimeWorker):
 
             conv_id = getattr(job, "conversation_id", None) or ""
 
-            # cancel
-            if source == "chat" and getattr(job, "kind", "") == "run.cancel":
-                await self.call(
-                    self.bus.agent_job_board.submit_result,
-                    key=job.job_id,
-                    result=ChatJobResult(
-                        job_id=job.job_id,
-                        success=True,
-                        status="completed",
-                    ),
-                )
-                self._broadcast_cancel(conv_id)
-                continue
-
             # steering — release back to board for _process to claim
             if source == "chat" and conv_id and conv_id in self._active_sessions:
                 await self.call(self.bus.agent_job_board.release, key=job.job_id)
@@ -853,7 +839,6 @@ async def submit_agent_message(bus: Bus, message: Any) -> str:
     job = ChatJob(
         job_id=getattr(message, "event_id", "") or uuid.uuid4().hex,
         conversation_id=getattr(message, "conversation_id", None) or "",
-        kind=getattr(message, "kind", "channel.message.received"),
         payload={
             "text": getattr(message, "text", ""),
             "channel": getattr(message, "channel", ""),

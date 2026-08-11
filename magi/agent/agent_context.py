@@ -33,7 +33,7 @@ def build_messages_from_session(
         return [{"role": "user", "content": new_user_text}]
 
     try:
-        session = bus.sessions_book.get_for_owner(
+        session = bus.conversations_book.get_for_owner(
             contact_id=contact_id, conversation_id=conversation_id
         )
         if session is None:

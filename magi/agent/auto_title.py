@@ -19,7 +19,7 @@ async def request_session_title(
 ) -> str | None:
     """Generate + persist a short chat title; return it."""
     try:
-        sess = bus.sessions_book.get_for_owner(
+        sess = bus.conversations_book.get_for_owner(
             contact_id=contact_id, conversation_id=conversation_id
         )
     except Exception:
@@ -59,7 +59,7 @@ async def request_session_title(
         return None
 
     try:
-        fresh = bus.sessions_book.set_title_if_null(
+        fresh = bus.conversations_book.set_title_if_null(
             contact_id=contact_id,
             conversation_id=conversation_id,
             title=cleaned,
