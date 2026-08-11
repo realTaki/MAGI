@@ -91,7 +91,7 @@ Genesis、`eva-000`、schema、默认资源和控制面记录。主容器随后�
 - 一个可被集群拉取的 MAGI 镜像仓库；
 - 集群有默认 StorageClass，或者在 overlay 中指定 `storageClassName`。
 
-MAGI 的私人状态使用 SQLite，因此每个 MAGI 私有 PVC 必须保持单副本；MAGIS 的组织数据使用独立 PostgreSQL。完整边界见 [MAGI 与 MAGIS 的存储边界](../../docs/magi-magis-storage.md)。
+MAGI 的私人状态使用 SQLite，因此每个 MAGI 私有 PVC 必须保持单副本；MAGIS 的组织数据使用独立 PostgreSQL。完整边界见 [存储所有权](../../docs/ARCHITECTURE.md#storage-ownership)。
 
 先创建 namespace（幂等操作）：
 
