@@ -144,7 +144,7 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
     if delivery_to is None and payload.target_channel == Channel.TG:
         delivery_to = str(contact.telegram_id)
     conversation_id = f"task_{uuid.uuid4().hex}"
-    bus.sessions_book.add(
+    bus.conversations_book.add(
         conversation_id=conversation_id,
         contact_id=contact_id,
         channel="task",

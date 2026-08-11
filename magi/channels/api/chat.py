@@ -14,7 +14,7 @@ Credentials are resolved inside :func:`magi.providers.factory
 parameters. The seeded adam ``Magi`` row owns the
 provider + API key; the chat handler only reads the
 operator's ``role`` (for the tool-menu filter) and ``contact_id``
-(for the session). Token usage is still recorded per-
+(for the conversation). Token usage is still recorded per-
 operator via ``token_usage.contact_id``.
 
 The cookie / contact_id / row-exists checks are NOT done here
@@ -44,7 +44,7 @@ from magi.bus.library.local.conversationBook import (
 )
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_sessions import SessionMessageOut
+from magi.channels.api.chat_conversations import ConversationMessageOut
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
@@ -68,8 +68,8 @@ def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def new_session_id() -> str:
-    """Generate a new session/message id as a Crockford-base32
+def new_conversation_id() -> str:
+    """Generate a new conversation/message id as a Crockford-base32
     ULID-like string (26 chars)."""
     import uuid
 
@@ -125,12 +125,12 @@ def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
 class ChatSendRequest(BaseModel):
     """Body for ``POST /api/chat/send``.
 
-    ``text`` is the only required field. ``session_id``
-    (optional) ties the message to a persisted session;
-    the cookie's contact_id pins the session to that operator.
-    If absent, the backend auto-creates a new session
+    ``text`` is the only required field. ``conversation_id``
+    (optional) ties the message to a persisted conversation;
+    the cookie's contact_id pins the conversation to that operator.
+    If absent, the backend auto-creates a new conversation
     and returns its id in the response — so the frontend
-    doesn't have to know about session lifecycle.
+    doesn't have to know about conversation lifecycle.
     """
 
     text: str = Field(min_length=1, max_length=_MAX_INPUT_CHARS)
@@ -139,18 +139,18 @@ class ChatSendRequest(BaseModel):
     # Crockford base32-ULID length (26) so any plausible
     # future id format is accommodated. A hand-crafted
     # value outside this length is treated as
-    # ``validation.session_id_invalid``.
-    session_id: str | None = Field(default=None, max_length=64)
+    # ``validation.conversation_id_invalid``.
+    conversation_id: str | None = Field(default=None, max_length=64)
 
 
 class ChatSendResponse(BaseModel):
     job_id: str
     status: str = "accepted"
     # Always returned so the frontend can stash it on a
-    # fresh chat. For an existing-session send it equals
+    # fresh chat. For an existing-conversation send it equals
     # what was sent in.
-    session_id: str
-    messages: list[SessionMessageOut] = []
+    conversation_id: str
+    messages: list[ConversationMessageOut] = []
 
 
 @router.post("/chat/send", response_model=ChatSendResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -170,17 +170,17 @@ async def send_chat(
     fall-back to the system default. The audit row records
     the operator's ``contact_id`` regardless.
 
-    Session lifecycle (D.6):
+    Conversation lifecycle (D.6):
       - The user message is appended to the resolved
-        session **before** the LLM call so a crash mid-call
+        conversation **before** the LLM call so a crash mid-call
         leaves the inbound row visible in the file. The
         LLM reply is appended after the call returns.
       - The assistant message is appended **after** the LLM
         returns successfully (matches ``chat.outbound``).
-      - If no ``session_id`` is sent, a new session is
+      - If no ``conversation_id`` is sent, a new conversation is
         created on-the-fly; the id is returned in the
         response so the frontend can persist it.
-      - If the supplied ``session_id`` is invalid or has
+      - If the supplied ``conversation_id`` is invalid or has
         been deleted, the same auto-create path runs.
     """
     text = payload.text.strip()
@@ -201,7 +201,7 @@ async def send_chat(
     # the per-channel delivery address (TG chat id) is
     # looked up separately by the channel dispatcher
     # (D.28) below — WebUI doesn't need it for send / read
-    # but we stamp it on the session row for cross-channel
+    # but we stamp it on the conversation row for cross-channel
     # tooling.
     from magi.channels.api.auth import _verify_signed_contact_id
 
@@ -215,58 +215,58 @@ async def send_chat(
         )
     contact_id, contact_role = _resolve_caller_credentials(bus, cookie_contact_id)
     # D.24: per-channel delivery address stamped on the
-    # session row's ``delivery_address`` column (renamed
+    # conversation row's ``delivery_address`` column (renamed
     # from the legacy per-channel chat-id column in D.28).
     # WebUI
     # doesn't need it for send/read, but cross-channel
     # tooling may address the operator's bot from this
     # column. ``""`` if the operator never bound TG.
 
-    # -- session lifecycle ------------------------------------------
-    # ``contact_id`` (cross-channel identity) is the session key
+    # -- conversation lifecycle -----------------------------------------
+    # ``contact_id`` (cross-channel identity) is the conversation key
     # — NOT the per-channel delivery address. The store
     # resolves rows by contact_id; the channel adapter interprets
     # the delivery address when it has to push a reply.
-    store = bus.sessions_book
-    session_id = payload.session_id
+    store = bus.conversations_book
+    conversation_id = payload.conversation_id
     # The per-channel delivery address stamped on the
-    # session row. ``""`` if the operator never bound TG.
+    # conversation row. ``""`` if the operator never bound TG.
     # We always need this — either from the existing row
-    # (when the caller passed a session_id) or by reading
+    # (when the caller passed a conversation_id) or by reading
     # the Contact row via the channel dispatcher (when we
-    # mint a fresh session below).
-    if session_id:
+    # mint a fresh conversation below).
+    if conversation_id:
         try:
-            # D.23: session key is now ``contact_id`` (the
+            # D.23: conversation key is now ``contact_id`` (the
             # cross-channel identity of the operator),
             # not the cookie's chat id. The chat id is
             # still carried on the row's
             # ``delivery_address`` column for
             # legacy / outbound-delivery reasons, but it
-            # is NOT a session key.
-            existing = store.get_for_owner(contact_id=contact_id, conversation_id=session_id)
+            # is NOT a conversation key.
+            existing = store.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
         except ConversationPathError as e:
             raise MagiHTTPException(  # noqa: B904
                 status_code=400,
-                code="validation.session_id_invalid",
+                code="validation.conversation_id_invalid",
                 detail=str(e),
             )
         # Stale / deleted / never-existed → auto-create
         # fresh. Keeps the operator unblocked if they
         # re-open a tab after a manual delete.
         if existing is None:
-            session_id = None
+            conversation_id = None
         else:
             # Carry the row's delivery address forward to
             # the auto-title job below (which runs on
-            # every fresh session). Reading the column
+            # every fresh conversation). Reading the column
             # here keeps the dispatcher lookup scoped to
             # the auto-create branch — when the row
             # already exists, we trust its own column.
             pass
-    if not session_id:
+    if not conversation_id:
         # ``delivery_address=`` here is the per-channel
-        # delivery address stamped on the session row.
+        # delivery address stamped on the conversation row.
         # The value comes from the channel dispatcher
         # (D.28 centralised the contact_id → IM-id mapping in
         # the adapter registry, so this file no longer
@@ -277,29 +277,29 @@ async def send_chat(
         contact = bus.contacts_book.get(contact_id=contact_id)
         tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
         sess = store.add(
-            conversation_id=new_session_id(),
+            conversation_id=new_conversation_id(),
             contact_id=contact_id,
             channel=Channel.WEBUI,
             delivery_address=tg_im_id,
         )
-        session_id = sess.conversation_id
+        conversation_id = sess.conversation_id
 
     # Inbound audit + SQLite append happen atomically inside
     # ``store.append_messages`` (single INSERT). Pre-D.18 this
-    # block held the per-session ``asyncio.Lock`` so the
+    # block held the per-conversation ``asyncio.Lock`` so the
     # auto-title worker (D.7) saw a coherent state; SQLite's
     # per-statement atomicity replaces that need.
     #
     # D.22: ``channel=Channel.WEBUI`` is the cross-channel guard —
-    # if the session was created on TG, the store raises
+    # if the conversation was created on TG, the store raises
     # ``ChannelMismatchError`` and we 403 the caller instead
     # of mixing two LLM loops into one history.
     ts_in = _utcnow_iso()
-    inbound_message_id = new_session_id()
+    inbound_message_id = new_conversation_id()
     try:
         store.append_messages(
             contact_id,
-            session_id,
+            conversation_id,
             [
                 ConversationMessage(
                     role="user",
@@ -311,34 +311,34 @@ async def send_chat(
             channel=Channel.WEBUI,
         )
     except ChannelMismatchError as e:
-        # D.22: the session was created on a different
+        # D.22: the conversation was created on a different
         # channel (most commonly TG). Refuse to write so
         # two LLM loops don't fight over the same history.
         # The UI surfaces this as a banner next to the
         # message input; the user can continue the
         # conversation on the original channel.
         logger.info(
-            "chat: refusing cross-channel write (session=%s owned by %r, caller=webui)",
-            session_id,
-            e.session_channel,
+            "chat: refusing cross-channel write (conversation=%s owned by %r, caller=webui)",
+            conversation_id,
+            e.conversation_channel,
         )
         raise MagiHTTPException(  # noqa: B904
             status_code=403,
-            code="chat.session_channel_mismatch",
+            code="chat.conversation_channel_mismatch",
             detail=(
-                f"this session was started on "
-                f"{e.session_channel!r}; continue the "
+                f"this conversation was started on "
+                f"{e.conversation_channel!r}; continue the "
                 "conversation on that channel."
             ),
         )
     except Exception:
         logger.exception(
-            "chat: failed to append user message for session %s",
-            session_id,
+            "chat: failed to append user message for conversation %s",
+            conversation_id,
         )
         raise MagiHTTPException(  # noqa: B904
             status_code=500,
-            code="chat.session_store_failed",
+            code="chat.conversation_store_failed",
             detail="could not persist chat message",
         )
 
@@ -346,15 +346,15 @@ async def send_chat(
 
     # Stable producer-side idempotency: the inbound session-message
     # id is what makes a network retry collapse to the same inbox row.
-    chat_job_id = f"webui:{session_id}:{inbound_message_id}"
+    chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
     job_id = publish_chat(
         bus,
         text=text,
         channel=Channel.WEBUI,
         contact_id=contact_id,
-        conversation_id=session_id,
+        conversation_id=conversation_id,
         caller_role=contact_role,
         job_id=chat_job_id,
         correlation_id=inbound_message_id,
     )
-    return ChatSendResponse(job_id=job_id, session_id=session_id)
+    return ChatSendResponse(job_id=job_id, conversation_id=conversation_id)

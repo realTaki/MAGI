@@ -12,7 +12,7 @@ Cross-channel delivery (D.28)
 -----------------------------
 
 The push target is determined by the **session's channel**
-(``chat_sessions.channel``) and dispatched via the channel-
+(``chat_conversations.channel``) and dispatched via the channel-
 owned delivery worker. The tool never reads the per-channel
 IM id itself — that's the adapter's job.
 
@@ -38,8 +38,8 @@ same way regardless.
 
 Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via
-``ctx.bus.sessions_book`` (cross-contact-safe session
-lookup via :meth:`SessionBook.get_for_owner`) and
+``ctx.bus.conversations_book`` (cross-contact-safe conversation
+lookup via :meth:`ConversationBook.get_for_owner`) and
 ``ctx.bus.delivery_job_board`` (publish a
 :class:`magi.bus.guild.deliveryJob.DeliveryJob` to
 the durable ``delivery_outbox`` queue — the channel-owned
@@ -117,8 +117,8 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # Empty session_id means the tool is being called
-        # outside a session context (rare — agent-loop test
+        # Empty conversation_id means the tool is being called
+        # outside a conversation context (rare — agent-loop test
         # harnesses, edge cases). Surface as a clear error.
         if not ctx.conversation_id:
             return ToolResult(
@@ -145,12 +145,12 @@ class SendMessageTool(Tool):
             # returns ``None`` when the session doesn't belong to
             # ``ctx.contact_id`` even if a future caller ever forgets the
             # gate layer, defence-in-depth over the bare ``get``.
-            session = bus.sessions_book.get_for_owner(
+            session = bus.conversations_book.get_for_owner(
                 contact_id=int(ctx.contact_id),
                 conversation_id=ctx.conversation_id,
             )
             if session is None:
-                raise KeyError(f"unknown session {ctx.conversation_id!r}")
+                raise KeyError(f"unknown conversation {ctx.conversation_id!r}")
             bus.delivery_job_board.publish(
                 DeliveryJob(
                     channel=session.channel,
@@ -162,9 +162,9 @@ class SendMessageTool(Tool):
                     },
                 )
             )
-            logger.info("send_message: queued for session=%s", ctx.conversation_id)
+            logger.info("send_message: queued for conversation=%s", ctx.conversation_id)
         except KeyError as e:
-            # Unknown channel / missing session — surface
+            # Unknown channel / missing conversation — surface
             # the dispatcher's diagnostic verbatim.
             return ToolResult(
                 content=f"send_message: {e}",
@@ -186,5 +186,5 @@ class SendMessageTool(Tool):
             )
 
         return ToolResult(
-            content=(f"send_message: queued {len(text)} chars to session {ctx.conversation_id}")
+            content=(f"send_message: queued {len(text)} chars to conversation {ctx.conversation_id}")
         )

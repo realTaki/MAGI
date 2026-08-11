@@ -22,7 +22,7 @@ Scope
 Same per-contact scope as the WebUI's ``/api/chat/search``:
 the calling operator's ``Contact.id`` (resolved by the
 agent loop from the ``magi_session`` cookie on every call).
-The SQL filter scopes by ``chat_sessions.contact_id``;
+The SQL filter scopes by ``chat_conversations.contact_id``;
 channel and per-channel delivery address are not part of the search predicate.
 
 Output format
@@ -284,7 +284,7 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
         contact_id=contact_id,
         hit=hit,
         context_n=context_n,
-        sessions_book=bus.sessions_book,
+        conversations_book=bus.conversations_book,
     )
     if resolved is None:
         # Hit's session doesn't belong to the caller (or
