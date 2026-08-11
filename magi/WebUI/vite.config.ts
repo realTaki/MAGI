@@ -52,15 +52,5 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
-    rollupOptions: {
-      output: {
-        // Hash the entry filename so a code rebuild forces
-        // the browser to drop its cached bundle (the picker
-        // login flow hangs at "加载中…" with a stale bundle).
-        entryFileNames: `assets/index-[hash].js`,
-        chunkFileNames: `assets/[name]-[hash].js`,
-        assetFileNames: `assets/[name]-[hash][extname]`,
-      },
-    },
   },
 });

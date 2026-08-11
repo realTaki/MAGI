@@ -266,3 +266,37 @@ def test_me_degrades_when_the_runtime_cannot_answer(monkeypatch) -> None:
 
     assert result.contact_id == 3
     assert result.login_methods == []
+
+
+def test_a_non_int_tgid_cannot_mint_a_permanently_unusable_cookie() -> None:
+    """A cookie must never sign cleanly and then fail its own type check.
+
+    ``tgid`` arrives from another service's JSON on the
+    password-via-runtime path. If a string slipped through,
+    ``_sign_selected_session`` accepted it and
+    ``selected_session`` then rejected the result on every
+    request — a 401 that signing in again could not clear,
+    because each attempt minted the same unusable cookie.
+    """
+    from magi.channels.api.auth import (
+        _as_optional_int,
+        _sign_selected_session,
+        resolve_session,
+    )
+
+    bus = MagicMock()
+    bus.settings_book.get.return_value = "test-signing-secret"
+
+    for raw in ("987654321", 987654321, None, "not-a-number"):
+        token = _sign_selected_session(
+            bus,
+            magi_id=7,
+            contact_id=3,
+            tgid=_as_optional_int(raw),
+            display_name="Operator",
+            admin=True,
+            assigned=False,
+        )
+        session = resolve_session(bus, token)
+        assert session is not None, f"tgid={raw!r} produced an unusable cookie"
+        assert session["contact_id"] == 3

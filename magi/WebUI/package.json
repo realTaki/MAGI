@@ -6,7 +6,7 @@
   "description": "MAGI web frontend — single Vite SPA. Currently C1.0b: skeleton + first onboarding page (step 1 only).",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
     "preview": "vite preview",
     "lint": "echo 'lint placeholder — wired up later'",
     "test": "echo 'test placeholder — wired up later'"
