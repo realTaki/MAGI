@@ -45,7 +45,7 @@ class AddContactTool(Tool):
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create a new contact (person) in the directory. "
-        "Name is required. display_name, telegram_id, "
+        "Name is required. display_name, tgid, "
         "role ('assigned' default / 'guest'), and "
         "notes (initial note, optional) are optional. "
         "To add notes about an existing contact, use "
@@ -64,7 +64,7 @@ class AddContactTool(Tool):
                 "type": "string",
                 "description": "Display name (optional).",
             },
-            "telegram_id": {
+            "tgid": {
                 "type": "integer",
                 "description": "Telegram user id (optional).",
             },
@@ -105,7 +105,7 @@ class AddContactTool(Tool):
                 name=name,
                 display_name=kwargs.get("display_name"),
                 role=role,
-                telegram_id=kwargs.get("telegram_id"),
+                tgid=kwargs.get("tgid"),
             )
         except ValueError as e:
             # ``contacts_book.add`` owns write invariants

@@ -235,7 +235,7 @@ class ScheduleTaskTool(Tool):
         #   channel='tg'    + LLM-in-TG  → ctx.delivery_address (the
         #     TG chat the LLM is responding to)
         #   channel='tg'    + cold call  → None (runner
-        #     falls back to operator.telegram_id at fire time)
+        #     falls back to operator.tgid at fire time)
         # The LLM does NOT choose; any caller-supplied
         # ``delivery_to`` is intentionally discarded (the
         # form is no longer a user-facing control, and a
@@ -305,8 +305,8 @@ class ScheduleTaskTool(Tool):
         operator_id = int(ctx.contact_id)
         contact = ctx.bus.contacts_book.get(contact_id=operator_id)
         task_conversation_delivery_address = (
-            str(contact.telegram_id)
-            if contact is not None and contact.telegram_id is not None
+            str(contact.tgid)
+            if contact is not None and contact.tgid is not None
             else ""
         )
 
