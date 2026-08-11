@@ -62,14 +62,8 @@ def provision_node_storage(
     if not bus.settings_book.get(key="auth.signing_key"):
         bus.settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
     # ``channels.enabled`` is the runtime's single source of truth for which
-    # channel workers to start. WebUI and A2A are required runtime
-    # channels — the operator dashboard (WebUI) and the MAGI peer
-    # exchange (A2A) both need their delivery workers — so seed the
-    # default at provisioning time. Without this default, a fresh
-    # workspace has no ``channels.enabled`` row, ``_build_channels``
-    # returns ``[]`` at runtime, and the WebUI/A2A delivery workers
-    # are silently never started (P1 issue noted in the 2026-08-10
-    # architecture review).
+    # channel workers to start. WebUI is required for the operator dashboard;
+    # A2A is MAGIS-internal durable work and is not a channel worker.
     from magi.bus.library.local.tasksBook import Channel
 
     if not bus.settings_book.get(key="channels.enabled"):
@@ -77,7 +71,7 @@ def provision_node_storage(
         # so renaming the enum keeps the persisted default in sync.
         bus.settings_book.set(
             key="channels.enabled",
-            value=json.dumps([Channel.WEBUI.value, Channel.A2A.value]),
+            value=json.dumps([Channel.WEBUI.value]),
         )
     resolved_prompts = _resolve_prompts_dir(prompts_dir)
     if resolved_prompts is not None:
