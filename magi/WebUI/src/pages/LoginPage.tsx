@@ -45,7 +45,7 @@ type Method = "password" | "tg_code";
 
 export default function LoginPage(props: {
   magiId: number;
-  onLoggedIn: (telegramId: number) => void;
+  onLoggedIn: (tgid: number) => void;
   onBack: () => void;
 }) {
   const t = useT();
@@ -78,7 +78,7 @@ export default function LoginPage(props: {
     if (!accountsQuery.data) return;
     if (selectedTelegramId !== null) return;
     const list = accountsQuery.data.accounts;
-    if (list.length > 0) setSelectedTelegramId(list[0].telegram_id);
+    if (list.length > 0) setSelectedTelegramId(list[0].tgid);
   }, [accountsQuery.data, selectedTelegramId]);
 
   // When the picked uid's methods load, pick the first
@@ -125,7 +125,7 @@ export default function LoginPage(props: {
     setPhase("verifying");
     try {
       const data = await verifyMut.mutateAsync({
-        telegram_id: selectedTelegramId,
+        tgid: selectedTelegramId,
         code: c,
       });
       if (data.ok) {
@@ -226,7 +226,7 @@ export default function LoginPage(props: {
                   }}
                 >
                   {accounts.map((a) => (
-                    <option key={a.telegram_id} value={a.telegram_id}>
+                    <option key={a.tgid} value={a.tgid}>
                       {a.name}
                     </option>
                   ))}

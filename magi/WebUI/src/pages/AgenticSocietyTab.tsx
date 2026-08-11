@@ -30,7 +30,7 @@ export type ContactRow = {
   display_name: string | null;
   role: "assigned" | "guest";
   admin: boolean;
-  telegram_id: number | null;
+  tgid: number | null;
   notes: string;
   notes_count: number;
   source: string;

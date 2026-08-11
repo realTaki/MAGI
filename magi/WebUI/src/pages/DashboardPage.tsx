@@ -41,10 +41,10 @@ import SettingsTab from "./SettingsTab";
 
 export default function DashboardPage(props: {
   data: OnboardingData | null;
-  signedInUser: { telegram_id: string; display_name: string | null; admin: boolean } | null;
+  signedInUser: { tgid: string; display_name: string | null; admin: boolean } | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
-    next: Array<{ telegramId: string; displayName: string | null }>,
+    next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
   onRestart: () => void;
   onSignOut: () => void;
@@ -80,11 +80,11 @@ export default function DashboardPage(props: {
 // shown in the reference (logo + inline nav + identity pill +
 // utility buttons on the right, all on one row).
 function PostLoginLayout(props: {
-  user: { telegram_id: string; display_name: string | null; admin: boolean };
+  user: { tgid: string; display_name: string | null; admin: boolean };
   data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
-    next: Array<{ telegramId: string; displayName: string | null }>,
+    next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
   onRestart: () => void;
   onSignOut: () => void;
@@ -124,7 +124,7 @@ function PostLoginLayout(props: {
           <div className="flex items-center gap-3 shrink-0">
             <SignedInLabel
               displayName={props.user.display_name}
-              telegramId={props.user.telegram_id}
+              tgid={props.user.tgid}
             />
             {/* Language picker — globe icon + dropdown. Sits
                 right of the identity pill and before the
@@ -206,14 +206,14 @@ type TabKey = "chat" | "magic" | "knowledge" | "settings";
  *  stays readable. */
 function SignedInLabel(props: {
   displayName: string | null;
-  telegramId: string;
+  tgid: string;
 }) {
   const t = useT();
   return (
     <span className="text-xs text-ink-soft hidden sm:inline">
       {t("topbar.signedInAs")}{" "}
       <span className="font-mono text-ink">
-        {props.displayName ?? props.telegramId}
+        {props.displayName ?? props.tgid}
       </span>
     </span>
   );

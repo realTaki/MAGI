@@ -30,9 +30,9 @@ import { qk } from "../../lib/queryClient";
 import { useAdminContacts, type ContactRow } from "../../lib/queries";
 
 export function SettingsWebuiAccessCard(props: {
-  signedInUser: { telegram_id: string; display_name: string | null };
+  signedInUser: { tgid: string; display_name: string | null };
   onAdminsChanged: (
-    next: Array<{ telegramId: string; displayName: string | null }>,
+    next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
 }) {
   const t = useT();
@@ -52,7 +52,7 @@ export function SettingsWebuiAccessCard(props: {
     // admin bit. The backend's auth gate would refuse the
     // next /api/auth/me anyway, but fail-closed client-side
     // is friendlier.
-    if (String(emp.telegram_id ?? "") === props.signedInUser.telegram_id) return;
+    if (String(emp.tgid ?? "") === props.signedInUser.tgid) return;
     if (!confirm(t("settings.adminRemoveConfirm").replace("{name}", emp.name))) return;
     // Direct PATCH — no wizard. Replaces the pre-2024
     // "save-admin with remaining TG ids" diff step which
@@ -101,7 +101,7 @@ export function SettingsWebuiAccessCard(props: {
             </thead>
             <tbody>
               {admins.map((emp: ContactRow) => {
-                const isSelf = String(emp.telegram_id ?? "") === props.signedInUser.telegram_id;
+                const isSelf = String(emp.tgid ?? "") === props.signedInUser.tgid;
                 return (
                   <tr key={emp.id}>
                     <td className="py-2 pr-4 text-ink">{emp.display_name ?? emp.name}</td>
@@ -109,7 +109,7 @@ export function SettingsWebuiAccessCard(props: {
                       <RoleBadge role={emp.role} />
                     </td>
                     <td className="py-2 pr-4 font-mono text-xs text-ink-soft">
-                      {emp.telegram_id ?? <span className="text-ink-soft">—</span>}
+                      {emp.tgid ?? <span className="text-ink-soft">—</span>}
                     </td>
                     <td className="py-2 text-right">
                       {isSelf ? (
@@ -172,17 +172,17 @@ function RoleBadge(props: { role: ContactRow["role"] }) {
 }
 
 export function AddAdminForm(props: {
-  onAdded: (telegramId: string, displayName: string | null) => void;
+  onAdded: (tgid: string, displayName: string | null) => void;
   onCancel: () => void;
 }) {
   const t = useT();
-  const [telegramId, setTelegramId] = useState("");
+  const [tgid, setTelegramId] = useState("");
   const [code, setCode] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "code-sent" | "verifying" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function sendCode() {
-    const cid = telegramId.trim();
+    const cid = tgid.trim();
     if (!/^-?\d+$/.test(cid)) { setState("error"); setError(t("settings.addAdminTgidNotNumeric")); return; }
     setState("sending"); setError(null);
     try {
@@ -204,10 +204,10 @@ export function AddAdminForm(props: {
     try {
       const r = await fetch("/api/onboarding/verify-admin-code", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tgid: telegramId.trim(), code: c }), credentials: "include",
+        body: JSON.stringify({ tgid: tgid.trim(), code: c }), credentials: "include",
       });
       const data = (await r.json()) as { ok: boolean; display_name?: string | null; error?: string };
-      if (data.ok) { props.onAdded(telegramId.trim(), data.display_name ?? null); }
+      if (data.ok) { props.onAdded(tgid.trim(), data.display_name ?? null); }
       else { setState("error"); setError(data.error ?? t("settings.addAdminCodeMismatch")); }
     } catch (err) {
       setState("error"); setError(err instanceof Error ? err.message : t("settings.networkError"));
@@ -219,12 +219,12 @@ export function AddAdminForm(props: {
   return (
     <div className="mt-4 rounded-lg border border-sky-light/40 bg-white/60 p-3">
       <div className="flex items-center gap-2">
-        <input type="text" inputMode="numeric" value={telegramId}
+        <input type="text" inputMode="numeric" value={tgid}
           onChange={(e) => { setTelegramId(e.target.value); if (state === "error") setState("idle"); }}
           placeholder={t("settings.addAdminTgPlaceholder")}
           className="form-input flex-1 text-sm py-2 px-3 font-mono" />
         <button type="button" onClick={sendCode}
-          disabled={state === "sending" || state === "verifying" || !telegramId.trim()}
+          disabled={state === "sending" || state === "verifying" || !tgid.trim()}
           className="btn btn-primary text-sm py-2 px-3 shrink-0">
           {state === "sending" ? t("settings.addAdminSending") : state === "code-sent" ? t("settings.addAdminResend") : t("settings.addAdminSendCode")}
         </button>

@@ -65,7 +65,7 @@ export default function App() {
   // the user. Null when we landed on dashboard via the wizard
   // — there the user hasn't authenticated yet.
   const [signedInUser, setSignedInUser] = useState<{
-    telegram_id: string;
+    tgid: string;
     display_name: string | null;
     admin: boolean;
   } | null>(null);
@@ -92,7 +92,7 @@ export default function App() {
         : {
             bot: { token: "", username: statusQuery.data!.bot_username! },
             superAdmins: (statusQuery.data!.super_admins ?? []).map(
-              (c) => ({ telegramId: c, displayName: null }),
+              (c) => ({ tgid: c, displayName: null }),
             ),
           },
     );
@@ -102,14 +102,14 @@ export default function App() {
   // ``meQuery.data`` is undefined and the user is null.
   useEffect(() => {
     if (meQuery.data) {
-      // ``telegram_id`` is ``string | null`` — v3
+      // ``tgid`` is ``string | null`` — v3
       // sessions expose ``contact_id`` (the cross-
-      // channel identity) and surface ``telegram_id``
+      // channel identity) and surface ``tgid``
       // only when the operator has bound a TG bot.
       // We fall back to ``""`` so the dashboard's
       // signedInUser state stays a string.
       setSignedInUser({
-        telegram_id: meQuery.data.telegram_id ?? "",
+        tgid: meQuery.data.tgid ?? "",
         display_name: meQuery.data.display_name,
         admin: meQuery.data.admin,
       });
@@ -165,7 +165,7 @@ export default function App() {
     content = (
       <LoginPage
         magiId={loginMagiId ?? 1}
-        onLoggedIn={async (telegramId) => {
+        onLoggedIn={async (tgid) => {
           // The LoginPage's verify mutation
           // invalidated ``qk.me``; force a fresh read
           // so the dashboard can greet the user.
@@ -174,7 +174,7 @@ export default function App() {
           setSignedInUser(
             me
               ? {
-                  telegram_id: me.telegram_id ?? "",
+                  tgid: me.tgid ?? "",
                   display_name: me.display_name,
                   admin: me.admin,
                 }
@@ -182,9 +182,9 @@ export default function App() {
                   // Fallback for the very first paint
                   // after ``onSuccess`` before the
                   // refetch settles — the LoginPage
-                  // passes the chosen telegram_id so
+                  // passes the chosen tgid so
                   // the dashboard can greet by it.
-                  telegram_id: String(telegramId),
+                  tgid: String(tgid),
                   display_name: null,
                   admin: false,
                 },

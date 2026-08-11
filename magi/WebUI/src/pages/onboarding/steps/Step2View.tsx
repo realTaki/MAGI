@@ -13,11 +13,11 @@ import {
 // inline keeps the wizard self-contained.
 interface OnboardingData {
   bot: { token: string; username: string };
-  superAdmins: Array<{ telegramId: string; displayName: string | null }>;
+  superAdmins: Array<{ tgid: string; displayName: string | null }>;
 }
 type AdminRow = {
   id: number;
-  telegramId: string;
+  tgid: string;
   code: string;
   displayName: string | null;
   rowState: "idle" | "sending-code" | "code-sent" | "verifying-code" | "verified" | "error";
@@ -27,7 +27,7 @@ type AdminRow = {
 
 export function Step2View(props: {
   bot: { token: string; username: string };
-  initialSuperAdmins: Array<{ telegramId: string; displayName: string | null }>;
+  initialSuperAdmins: Array<{ tgid: string; displayName: string | null }>;
   onBack: () => void;
   onComplete: (data: OnboardingData) => void;
   /** ``"with_tg"`` (default) runs the original TG-code flow.
@@ -55,7 +55,7 @@ export function Step2View(props: {
       return [
         {
           id: 1,
-          telegramId: "",
+          tgid: "",
           code: "",
           displayName: null,
           rowState: "idle",
@@ -65,7 +65,7 @@ export function Step2View(props: {
     }
     return initial.map((a, i) => ({
       id: i + 1,
-      telegramId: a.telegramId,
+      tgid: a.tgid,
       code: "",
       displayName: a.displayName,
       rowState: "verified",
@@ -79,7 +79,7 @@ export function Step2View(props: {
       ...prev,
       {
         id: prev.length ? Math.max(...prev.map((r) => r.id)) + 1 : 1,
-        telegramId: "",
+        tgid: "",
         code: "",
         displayName: null,
         rowState: "idle",
@@ -100,8 +100,8 @@ export function Step2View(props: {
       const wasVerified = prev.find((r) => r.id === id)?.rowState === "verified";
       if (wasVerified) {
         const remainingIds = next
-          .filter((r) => r.rowState === "verified" && r.telegramId.trim())
-          .map((r) => r.telegramId.trim());
+          .filter((r) => r.rowState === "verified" && r.tgid.trim())
+          .map((r) => r.tgid.trim());
         // Fire-and-forget; the mutation is keyed on
         // ``tgids`` so a stale snapshot of the list
         // would still hit the right endpoint.
@@ -116,14 +116,14 @@ export function Step2View(props: {
   }
 
   async function sendCode(row: AdminRow) {
-    const telegramId = row.telegramId.trim();
-    if (!telegramId) {
+    const tgid = row.tgid.trim();
+    if (!tgid) {
       updateRow(row.id, { rowState: "error", error: "tgid is empty" });
       return;
     }
     updateRow(row.id, { rowState: "sending-code", error: "" });
     try {
-      const data = await sendMut.mutateAsync(telegramId);
+      const data = await sendMut.mutateAsync(tgid);
       if (data.ok) {
         updateRow(row.id, { rowState: "code-sent", error: "" });
       } else {
@@ -141,7 +141,7 @@ export function Step2View(props: {
   }
 
   async function verifyCode(row: AdminRow) {
-    const telegramId = row.telegramId.trim();
+    const tgid = row.tgid.trim();
     const code = row.code.trim();
     if (!code || code.length !== 6) {
       updateRow(row.id, { rowState: "error", error: "Code must be 6 digits" });
@@ -149,7 +149,7 @@ export function Step2View(props: {
     }
     updateRow(row.id, { rowState: "verifying-code", error: "" });
     try {
-      const data = await verifyMut.mutateAsync({ tgid: telegramId, code });
+      const data = await verifyMut.mutateAsync({ tgid: tgid, code });
       if (data.ok) {
         updateRow(row.id, {
           rowState: "verified",
@@ -171,7 +171,7 @@ export function Step2View(props: {
   }
 
   async function handleFinish() {
-    const verified = rows.filter((r) => r.rowState === "verified" && r.telegramId.trim());
+    const verified = rows.filter((r) => r.rowState === "verified" && r.tgid.trim());
     if (!verified.length) {
       setSaveError("Verify at least one super admin before finishing.");
       return;
@@ -179,13 +179,13 @@ export function Step2View(props: {
     setSaveError(null);
     try {
       const data = await saveMut.mutateAsync(
-        verified.map((r) => r.telegramId.trim()),
+        verified.map((r) => r.tgid.trim()),
       );
       if (data.ok) {
         props.onComplete({
           bot: props.bot,
           superAdmins: verified.map((r) => ({
-            telegramId: r.telegramId.trim(),
+            tgid: r.tgid.trim(),
             displayName: r.displayName,
           })),
         });
@@ -215,7 +215,7 @@ export function Step2View(props: {
           <AdminRowView
             key={row.id}
             row={row}
-            onChangeTelegramId={(v) => updateRow(row.id, { telegramId: v })}
+            onChangeTelegramId={(v) => updateRow(row.id, { tgid: v })}
             onChangeCode={(v) => updateRow(row.id, { code: v })}
             onSendCode={() => sendCode(row)}
             onVerifyCode={() => verifyCode(row)}
@@ -282,7 +282,7 @@ function AdminRowView(props: {
         <input
           type="text"
           inputMode="numeric"
-          value={row.telegramId}
+          value={row.tgid}
           onChange={(e) => onChangeTelegramId(e.target.value)}
           placeholder="TG chat ID (e.g. 123456789)"
           className="form-input flex-1 text-sm py-2 px-3 font-mono"
@@ -293,7 +293,7 @@ function AdminRowView(props: {
           disabled={
             row.rowState === "sending-code" ||
             row.rowState === "verifying-code" ||
-            !row.telegramId.trim()
+            !row.tgid.trim()
           }
           className="btn btn-primary text-sm py-2 px-3 shrink-0"
         >
@@ -382,10 +382,16 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
 
 // -- WebUI-only variant ---------------------------------------------------
 //
-// Collects the first admin's name + password and writes
-// them via ``/api/onboarding/set-admin-password``. The
-// resulting Step 3 data carries the chosen admin name so
-// the dashboard's greeting lands on something useful.
+// Collects TWO operator identities and writes them via
+// ``/api/onboarding/set-admin-password``:
+//
+//   • Genesis admin — recorded in MAGIS `magis_admins` so
+//     they can sign in to every MAGI in Genesis.
+//   • eva-000 assigned — the per-MAGI served user; signs
+//     in to eva-000 only.
+//
+// Step 3 receives both names so the dashboard's greeting
+// and the operator list reflect the real identities.
 
 function Step2WebUIOnly(props: {
   onBack: () => void;
@@ -393,23 +399,39 @@ function Step2WebUIOnly(props: {
 }) {
   const t = useT();
   const setMut = useSetAdminPassword();
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminConfirm, setAdminConfirm] = useState("");
+  const [assignedName, setAssignedName] = useState("");
+  const [assignedPassword, setAssignedPassword] = useState("");
+  const [assignedConfirm, setAssignedConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const tooShort = !!password && password.length < 8;
-  const mismatch = !!confirm && confirm !== password;
-  const canSubmit = !!name.trim() && !!password && !tooShort && !mismatch && !busy;
+  const adminTooShort = !!adminPassword && adminPassword.length < 8;
+  const assignedTooShort = !!assignedPassword && assignedPassword.length < 8;
+  const adminMismatch = !!adminConfirm && adminConfirm !== adminPassword;
+  const assignedMismatch = !!assignedConfirm && assignedConfirm !== assignedPassword;
+  const canSubmit =
+    !!adminName.trim() &&
+    !!assignedName.trim() &&
+    !!adminPassword &&
+    !!assignedPassword &&
+    !adminTooShort &&
+    !assignedTooShort &&
+    !adminMismatch &&
+    !assignedMismatch &&
+    !busy;
 
   async function handleSubmit() {
     setError(null);
     setBusy(true);
     try {
       const res = await setMut.mutateAsync({
-        name: name.trim(),
-        password,
+        admin_name: adminName.trim(),
+        admin_password: adminPassword,
+        assigned_name: assignedName.trim(),
+        assigned_password: assignedPassword,
       });
       if (res.ok) {
         // The wizard's Step3 carries an empty bot +
@@ -421,7 +443,8 @@ function Step2WebUIOnly(props: {
         props.onComplete({
           bot: { token: "", username: "" },
           superAdmins: [
-            { telegramId: "", displayName: name.trim() },
+            { tgid: "", displayName: adminName.trim() },
+            { tgid: "", displayName: assignedName.trim() },
           ],
         });
       } else {
@@ -443,60 +466,128 @@ function Step2WebUIOnly(props: {
         {t("onboarding.step2WebuiOnlyDesc")}
       </p>
 
-      <div className="mt-6 space-y-4 max-w-md">
-        <div>
-          <label htmlFor="admin-name" className="block text-sm font-medium text-sky-deep mb-1">
-            {t("onboarding.webuiOnlyNameLabel")}
-          </label>
-          <input
-            id="admin-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
-            className="form-input w-full text-base py-3 px-4"
-          />
-        </div>
-        <div>
-          <label htmlFor="admin-password" className="block text-sm font-medium text-sky-deep mb-1">
-            {t("onboarding.webuiOnlyPasswordLabel")}
-          </label>
-          <input
-            id="admin-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
-            autoComplete="new-password"
-            className="form-input w-full text-base py-3 px-4"
-          />
-          <p className="mt-1 text-xs text-ink-soft">
-            {t("onboarding.webuiOnlyPasswordHint")}
+      <div className="mt-6 space-y-6 max-w-md">
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-semibold text-ink">
+            {t("onboarding.webuiOnlyAdminSection")}
+          </legend>
+          <p className="text-xs text-ink-soft">
+            {t("onboarding.webuiOnlyAdminDesc")}
           </p>
-        </div>
-        <div>
-          <label htmlFor="admin-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
-            {t("onboarding.webuiOnlyConfirmLabel")}
-          </label>
-          <input
-            id="admin-password-confirm"
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-            className="form-input w-full text-base py-3 px-4"
-          />
-        </div>
-        {tooShort && (
-          <p className="text-xs text-amber-700">
-            {t("onboarding.webuiOnlyPasswordHint")}
+          <div>
+            <label htmlFor="admin-name" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyAdminNameLabel")}
+            </label>
+            <input
+              id="admin-name"
+              type="text"
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+              placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
+              className="form-input w-full text-base py-3 px-4"
+            />
+          </div>
+          <div>
+            <label htmlFor="admin-password" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyPasswordLabel")}
+            </label>
+            <input
+              id="admin-password"
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
+              autoComplete="new-password"
+              className="form-input w-full text-base py-3 px-4"
+            />
+            <p className="mt-1 text-xs text-ink-soft">
+              {t("onboarding.webuiOnlyPasswordHint")}
+            </p>
+          </div>
+          <div>
+            <label htmlFor="admin-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyConfirmLabel")}
+            </label>
+            <input
+              id="admin-password-confirm"
+              type="password"
+              value={adminConfirm}
+              onChange={(e) => setAdminConfirm(e.target.value)}
+              autoComplete="new-password"
+              className="form-input w-full text-base py-3 px-4"
+            />
+          </div>
+          {adminTooShort && (
+            <p className="text-xs text-amber-700">
+              {t("onboarding.webuiOnlyPasswordHint")}
+            </p>
+          )}
+          {adminMismatch && (
+            <p className="form-error">
+              {t("onboarding.webuiOnlyPasswordMismatch")}
+            </p>
+          )}
+        </fieldset>
+
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-semibold text-ink">
+            {t("onboarding.webuiOnlyAssignedSection")}
+          </legend>
+          <p className="text-xs text-ink-soft">
+            {t("onboarding.webuiOnlyAssignedDesc")}
           </p>
-        )}
-        {mismatch && (
-          <p className="form-error">
-            {t("onboarding.webuiOnlyPasswordMismatch")}
-          </p>
-        )}
+          <div>
+            <label htmlFor="assigned-name" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyAssignedNameLabel")}
+            </label>
+            <input
+              id="assigned-name"
+              type="text"
+              value={assignedName}
+              onChange={(e) => setAssignedName(e.target.value)}
+              placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
+              className="form-input w-full text-base py-3 px-4"
+            />
+          </div>
+          <div>
+            <label htmlFor="assigned-password" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyPasswordLabel")}
+            </label>
+            <input
+              id="assigned-password"
+              type="password"
+              value={assignedPassword}
+              onChange={(e) => setAssignedPassword(e.target.value)}
+              placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
+              autoComplete="new-password"
+              className="form-input w-full text-base py-3 px-4"
+            />
+          </div>
+          <div>
+            <label htmlFor="assigned-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyConfirmLabel")}
+            </label>
+            <input
+              id="assigned-password-confirm"
+              type="password"
+              value={assignedConfirm}
+              onChange={(e) => setAssignedConfirm(e.target.value)}
+              autoComplete="new-password"
+              className="form-input w-full text-base py-3 px-4"
+            />
+          </div>
+          {assignedTooShort && (
+            <p className="text-xs text-amber-700">
+              {t("onboarding.webuiOnlyPasswordHint")}
+            </p>
+          )}
+          {assignedMismatch && (
+            <p className="form-error">
+              {t("onboarding.webuiOnlyPasswordMismatch")}
+            </p>
+          )}
+        </fieldset>
+
         {error && <p className="form-error">✗ {error}</p>}
 
         <div className="flex items-center gap-3">

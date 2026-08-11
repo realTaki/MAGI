@@ -38,7 +38,7 @@ export default function OnboardingPage(props: {
   const [step1Mode, setStep1Mode] = useState<"view" | "edit">("edit");
   const [mode, setMode] = useState<Mode | null>(null);
   const [initialSuperAdmins, setInitialSuperAdmins] = useState<
-    Array<{ telegramId: string; displayName: string | null }>
+    Array<{ tgid: string; displayName: string | null }>
   >([]);
   const [completedData, setCompletedData] = useState<OnboardingData | null>(null);
 
@@ -62,7 +62,7 @@ export default function OnboardingPage(props: {
     setStep1Mode("view");
     setInitialSuperAdmins(
       (statusQuery.data.super_admins ?? []).map((c) => ({
-        telegramId: c,
+        tgid: c,
         displayName: null,
       })),
     );

@@ -2,7 +2,7 @@ import { useT } from '../../../i18n/index';
 
 interface OnboardingData {
   bot: { token: string; username: string };
-  superAdmins: Array<{ telegramId: string; displayName: string | null }>;
+  superAdmins: Array<{ tgid: string; displayName: string | null }>;
 }
 
 export function Step3View(props: {
@@ -26,7 +26,7 @@ export function Step3View(props: {
         <dd className="text-sky-deep">
           {props.data.superAdmins.length} (
           {props.data.superAdmins
-            .map((a) => (a.displayName ? `${a.displayName}` : a.telegramId))
+            .map((a) => (a.displayName ? `${a.displayName}` : a.tgid))
             .join(", ")}
           )
         </dd>

@@ -48,7 +48,7 @@ export function TaskFormDrawer(props: {
   const [target_channel, setTargetChannel] = useState<"webui" | "tg">("webui");
   // ``delivery_to`` is server-derived per the unified rule:
   //   channel=webui → "new" (every fire spawns a fresh session)
-  //   channel=tg    → operator.telegram_id (server-side; the
+  //   channel=tg    → operator.tgid (server-side; the
   //                   form doesn't pick — and 400s if not bound)
   // The form no longer asks. The table's "→ <target>" snippet
   // is rendered from the row's resolved value.
@@ -126,7 +126,7 @@ export function TaskFormDrawer(props: {
     if (frequency === "weekly") body["day_of_week"] = dayOfWeek;
     if (frequency === "monthly") body["day_of_month"] = dayOfMonth;
     // ``delivery_to`` is server-derived from channel +
-    // operator.telegram_id; the form does not send it.
+    // operator.tgid; the form does not send it.
     // ``<input type="datetime-local">`` returns a
     // timezone-less string. The operator's browser TZ is
     // usually the same as their admin machine's clock;
@@ -428,7 +428,7 @@ export function TaskFormDrawer(props: {
               {/* ``delivery_to`` is no longer a form control:
                   server-derived from channel + operator.
                   channel=webui → "new"; channel=tg → operator's
-                  bound telegram_id (400 if unbound). The cell
+                  bound tgid (400 if unbound). The cell
                   snippet further down renders the resolved value. */}
             </div>
             <div className="text-xs text-ink-soft self-end pb-2">

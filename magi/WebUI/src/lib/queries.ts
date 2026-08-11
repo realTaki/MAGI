@@ -348,7 +348,7 @@ export function useToggleMcpServer() {
 
 export type MeRow = {
   contact_id: number;
-  telegram_id: string | null;
+  tgid: string | null;
   display_name: string | null;
   // ``admin`` is sourced from the contact row (replaces the
   // pre-2024 ``is_super_admin`` boolean that was hardcoded
@@ -400,7 +400,7 @@ export function useAvailableMagi() {
 }
 
 export type TargetLoginAccount = {
-  telegram_id: number; name: string; admin: boolean; assigned: boolean;
+  tgid: number; name: string; admin: boolean; assigned: boolean;
 };
 export function useTargetLoginAccounts(magiId: number | null) {
   return useQuery({
@@ -412,8 +412,8 @@ export function useTargetLoginAccounts(magiId: number | null) {
 
 export function useSendTargetLoginCode(magiId: number) {
   return useMutation({
-    mutationFn: (telegram_id: number) => apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
-      `/api/auth/targets/${magiId}/send-login-code`, { method: "POST", body: { telegram_id } },
+    mutationFn: (tgid: number) => apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
+      `/api/auth/targets/${magiId}/send-login-code`, { method: "POST", body: { tgid } },
     ),
   });
 }
@@ -421,7 +421,7 @@ export function useSendTargetLoginCode(magiId: number) {
 export function useVerifyTargetLoginCode(magiId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { telegram_id: number; code: string }) => apiFetch<{ ok: boolean; error?: string }>(
+    mutationFn: (payload: { tgid: number; code: string }) => apiFetch<{ ok: boolean; error?: string }>(
       `/api/auth/targets/${magiId}/verify-login-code`, { method: "POST", body: payload },
     ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.me }); },
@@ -528,19 +528,36 @@ export function useSendAdminCode() {
   });
 }
 
-// WebUI-only onboarding step 2 — write the first admin
-// row + a password credential in one shot. Used when
-// the wizard's first step picked "WebUI only" instead of
-// "Telegram". The response carries the new admin uid so
-// the wizard's Step3 summary can render the real name.
+// WebUI-only onboarding step 2 — write the first two
+// operators in one shot. The wizard collects:
+//
+//   • admin_*    — the Genesis-level admin (recorded in
+//                  MAGIS `magis_admins`; can sign in to
+//                  every MAGI in Genesis).
+//   • assigned_* — the per-MAGI assigned user (lives only
+//                  in the runtime's local SQLite; signs
+//                  in to eva-000 only).
+//
+// Both rows carry a password hash on the runtime's local
+// SQLite so login works without a Telegram binding. Used
+// when the wizard's first step picked "WebUI only" instead
+// of "Telegram". The response carries both new contact ids
+// so the wizard's Step3 summary can render the real names.
 export function useSetAdminPassword() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { name: string; password: string }) =>
-      apiFetch<{ ok: boolean; error?: string; admin_uid?: number | null }>(
-        "/api/onboarding/set-admin-password",
-        { method: "POST", body: payload },
-      ),
+    mutationFn: (payload: {
+      admin_name: string;
+      admin_password: string;
+      assigned_name: string;
+      assigned_password: string;
+    }) =>
+      apiFetch<{
+        ok: boolean;
+        error?: string;
+        admin_contact_id?: number | null;
+        assigned_contact_id?: number | null;
+      }>("/api/onboarding/set-admin-password", { method: "POST", body: payload }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
     },
