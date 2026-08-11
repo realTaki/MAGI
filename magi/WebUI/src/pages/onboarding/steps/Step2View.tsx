@@ -382,16 +382,23 @@ function RowStatusMessage({ row }: { row: AdminRow }) {
 
 // -- WebUI-only variant ---------------------------------------------------
 //
-// Collects TWO operator identities and writes them via
-// ``/api/onboarding/set-admin-password``:
+// Initial onboarding registers ONE operator who serves
+// both roles at once:
 //
 //   • Genesis admin — recorded in MAGIS `magis_admins` so
-//     they can sign in to every MAGI in Genesis.
+//     they can sign in to every MAGI in Genesis (admin
+//     scope cookie).
 //   • eva-000 assigned — the per-MAGI served user; signs
-//     in to eva-000 only.
+//     in to eva-000 only (assigned scope cookie).
 //
-// Step 3 receives both names so the dashboard's greeting
-// and the operator list reflect the real identities.
+// The wizard exposes a SINGLE name + password + confirm
+// form. On submit the same operator identity is auto-applied
+// to both the admin slot and the assigned slot of the
+// ``/api/onboarding/set-admin-password`` payload — the
+// operator never has to type the same name twice. The
+// backend still mints two Contact rows for those two slots
+// (one per scope) so the login picker can offer admin vs
+// assigned sign-in independently.
 
 function Step2WebUIOnly(props: {
   onBack: () => void;
@@ -399,53 +406,47 @@ function Step2WebUIOnly(props: {
 }) {
   const t = useT();
   const setMut = useSetAdminPassword();
-  const [adminName, setAdminName] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [adminConfirm, setAdminConfirm] = useState("");
-  const [assignedName, setAssignedName] = useState("");
-  const [assignedPassword, setAssignedPassword] = useState("");
-  const [assignedConfirm, setAssignedConfirm] = useState("");
+  const [operatorName, setOperatorName] = useState("");
+  const [operatorPassword, setOperatorPassword] = useState("");
+  const [operatorConfirm, setOperatorConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const adminTooShort = !!adminPassword && adminPassword.length < 8;
-  const assignedTooShort = !!assignedPassword && assignedPassword.length < 8;
-  const adminMismatch = !!adminConfirm && adminConfirm !== adminPassword;
-  const assignedMismatch = !!assignedConfirm && assignedConfirm !== assignedPassword;
+  const passwordTooShort = !!operatorPassword && operatorPassword.length < 8;
+  const passwordMismatch = !!operatorConfirm && operatorConfirm !== operatorPassword;
   const canSubmit =
-    !!adminName.trim() &&
-    !!assignedName.trim() &&
-    !!adminPassword &&
-    !!assignedPassword &&
-    !adminTooShort &&
-    !assignedTooShort &&
-    !adminMismatch &&
-    !assignedMismatch &&
+    !!operatorName.trim() &&
+    !!operatorPassword &&
+    !passwordTooShort &&
+    !passwordMismatch &&
     !busy;
 
   async function handleSubmit() {
     setError(null);
     setBusy(true);
     try {
+      const trimmed = operatorName.trim();
       const res = await setMut.mutateAsync({
-        admin_name: adminName.trim(),
-        admin_password: adminPassword,
-        assigned_name: assignedName.trim(),
-        assigned_password: assignedPassword,
+        // One form → both slots. The backend mints two
+        // Contact rows for these two names (admin scope +
+        // assigned scope) so the login picker can offer
+        // both. When the names match, the backend
+        // deliberately keeps them as two distinct rows.
+        admin_name: trimmed,
+        admin_password: operatorPassword,
+        assigned_name: trimmed,
+        assigned_password: operatorPassword,
       });
       if (res.ok) {
-        // The wizard's Step3 carries an empty bot +
-        // superAdmins to satisfy the existing shape;
-        // a separate render path on Step3 handles the
-        // "webui_only" case. The unused fields are
-        // ok — the App-level `onComplete` uses the
-        // data argument only as a "wizard done" signal.
+        // The wizard's Step3 carries the operator's name
+        // as a single superAdmin row to satisfy the
+        // existing data shape; Step3 renders the
+        // "Operator" line accordingly. The bot field is
+        // intentionally empty — this branch does not use
+        // a Telegram bot.
         props.onComplete({
           bot: { token: "", username: "" },
-          superAdmins: [
-            { tgid: "", displayName: adminName.trim() },
-            { tgid: "", displayName: assignedName.trim() },
-          ],
+          superAdmins: [{ tgid: "", displayName: trimmed }],
         });
       } else {
         setError(res.error ?? t("onboarding.webuiOnlySaveFailed"));
@@ -469,33 +470,34 @@ function Step2WebUIOnly(props: {
       <div className="mt-6 space-y-6 max-w-md">
         <fieldset className="space-y-3">
           <legend className="text-sm font-semibold text-ink">
-            {t("onboarding.webuiOnlyAdminSection")}
+            {t("onboarding.webuiOnlyOperatorSection")}
           </legend>
           <p className="text-xs text-ink-soft">
-            {t("onboarding.webuiOnlyAdminDesc")}
+            {t("onboarding.webuiOnlyOperatorDesc")}
           </p>
           <div>
-            <label htmlFor="admin-name" className="block text-sm font-medium text-sky-deep mb-1">
-              {t("onboarding.webuiOnlyAdminNameLabel")}
+            <label htmlFor="operator-name" className="block text-sm font-medium text-sky-deep mb-1">
+              {t("onboarding.webuiOnlyNameLabel")}
             </label>
             <input
-              id="admin-name"
+              id="operator-name"
               type="text"
-              value={adminName}
-              onChange={(e) => setAdminName(e.target.value)}
+              value={operatorName}
+              onChange={(e) => setOperatorName(e.target.value)}
               placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
+              autoComplete="username"
               className="form-input w-full text-base py-3 px-4"
             />
           </div>
           <div>
-            <label htmlFor="admin-password" className="block text-sm font-medium text-sky-deep mb-1">
+            <label htmlFor="operator-password" className="block text-sm font-medium text-sky-deep mb-1">
               {t("onboarding.webuiOnlyPasswordLabel")}
             </label>
             <input
-              id="admin-password"
+              id="operator-password"
               type="password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
+              value={operatorPassword}
+              onChange={(e) => setOperatorPassword(e.target.value)}
               placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
               autoComplete="new-password"
               className="form-input w-full text-base py-3 px-4"
@@ -505,83 +507,24 @@ function Step2WebUIOnly(props: {
             </p>
           </div>
           <div>
-            <label htmlFor="admin-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
+            <label htmlFor="operator-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
               {t("onboarding.webuiOnlyConfirmLabel")}
             </label>
             <input
-              id="admin-password-confirm"
+              id="operator-password-confirm"
               type="password"
-              value={adminConfirm}
-              onChange={(e) => setAdminConfirm(e.target.value)}
+              value={operatorConfirm}
+              onChange={(e) => setOperatorConfirm(e.target.value)}
               autoComplete="new-password"
               className="form-input w-full text-base py-3 px-4"
             />
           </div>
-          {adminTooShort && (
+          {passwordTooShort && (
             <p className="text-xs text-amber-700">
               {t("onboarding.webuiOnlyPasswordHint")}
             </p>
           )}
-          {adminMismatch && (
-            <p className="form-error">
-              {t("onboarding.webuiOnlyPasswordMismatch")}
-            </p>
-          )}
-        </fieldset>
-
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold text-ink">
-            {t("onboarding.webuiOnlyAssignedSection")}
-          </legend>
-          <p className="text-xs text-ink-soft">
-            {t("onboarding.webuiOnlyAssignedDesc")}
-          </p>
-          <div>
-            <label htmlFor="assigned-name" className="block text-sm font-medium text-sky-deep mb-1">
-              {t("onboarding.webuiOnlyAssignedNameLabel")}
-            </label>
-            <input
-              id="assigned-name"
-              type="text"
-              value={assignedName}
-              onChange={(e) => setAssignedName(e.target.value)}
-              placeholder={t("onboarding.webuiOnlyNamePlaceholder")}
-              className="form-input w-full text-base py-3 px-4"
-            />
-          </div>
-          <div>
-            <label htmlFor="assigned-password" className="block text-sm font-medium text-sky-deep mb-1">
-              {t("onboarding.webuiOnlyPasswordLabel")}
-            </label>
-            <input
-              id="assigned-password"
-              type="password"
-              value={assignedPassword}
-              onChange={(e) => setAssignedPassword(e.target.value)}
-              placeholder={t("onboarding.webuiOnlyPasswordPlaceholder")}
-              autoComplete="new-password"
-              className="form-input w-full text-base py-3 px-4"
-            />
-          </div>
-          <div>
-            <label htmlFor="assigned-password-confirm" className="block text-sm font-medium text-sky-deep mb-1">
-              {t("onboarding.webuiOnlyConfirmLabel")}
-            </label>
-            <input
-              id="assigned-password-confirm"
-              type="password"
-              value={assignedConfirm}
-              onChange={(e) => setAssignedConfirm(e.target.value)}
-              autoComplete="new-password"
-              className="form-input w-full text-base py-3 px-4"
-            />
-          </div>
-          {assignedTooShort && (
-            <p className="text-xs text-amber-700">
-              {t("onboarding.webuiOnlyPasswordHint")}
-            </p>
-          )}
-          {assignedMismatch && (
+          {passwordMismatch && (
             <p className="form-error">
               {t("onboarding.webuiOnlyPasswordMismatch")}
             </p>

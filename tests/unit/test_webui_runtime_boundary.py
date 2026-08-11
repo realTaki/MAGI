@@ -81,3 +81,66 @@ def test_apps_keep_explicit_bus_instances_isolated() -> None:
 
     assert get_bus(Request({"type": "http", "app": first_app})) is first
     assert get_bus(Request({"type": "http", "app": second_app})) is second
+
+
+def test_selected_session_keeps_contact_id_and_tgid_distinct() -> None:
+    """A TG-bound operator's contact_id must survive the cookie round-trip.
+
+    The v4 payload carries ``contact_id`` and ``tgid`` in
+    separate slots. An earlier draft stored a single slot
+    that held the tgid when the contact had a TG binding
+    and fell back to the contact_id when they did not;
+    :func:`resolve_session` then read that one slot as the
+    contact_id, so every TG-bound operator was handed their
+    Telegram chat id as their identity. The two values are
+    deliberately far apart here so a regression cannot pass
+    by coincidence.
+    """
+    from magi.channels.api.auth import _sign_selected_session, resolve_session
+
+    bus = MagicMock()
+    bus.settings_book.get.return_value = "test-signing-secret"
+
+    token = _sign_selected_session(
+        bus,
+        magi_id=7,
+        contact_id=3,
+        tgid=987654321,
+        display_name="Operator",
+        admin=True,
+        assigned=False,
+    )
+    session = resolve_session(bus, token)
+
+    assert session is not None
+    assert session["contact_id"] == 3
+    assert session["tgid"] == 987654321
+    assert session["magi_id"] == 7
+
+
+def test_selected_session_allows_a_webui_only_operator_without_tgid() -> None:
+    """``tgid=None`` is legitimate — a WebUI-only operator has no TG binding.
+
+    Guards the other direction of the same fix: making
+    ``tgid`` nullable must not make the cookie unreadable,
+    otherwise password-only operators cannot stay signed in.
+    """
+    from magi.channels.api.auth import _sign_selected_session, resolve_session
+
+    bus = MagicMock()
+    bus.settings_book.get.return_value = "test-signing-secret"
+
+    token = _sign_selected_session(
+        bus,
+        magi_id=7,
+        contact_id=3,
+        tgid=None,
+        display_name="WebUI operator",
+        admin=False,
+        assigned=True,
+    )
+    session = resolve_session(bus, token)
+
+    assert session is not None
+    assert session["contact_id"] == 3
+    assert session["tgid"] is None
