@@ -227,7 +227,9 @@ def open_bus(
     explicitly.
     """
     return _open_with_dirs(
-        state_dir=state_dir, magis_url=magis_url, prompts_dir=prompts_dir,
+        state_dir=state_dir,
+        magis_url=magis_url,
+        prompts_dir=prompts_dir,
     )
 
 
@@ -398,9 +400,7 @@ def _open_with_dirs(
         # substitute.
         memberships_book = MagisMembershipBook(
             magis_factory,
-            settings_book=(
-                None if local_provision_scope == "magis" else settings_book
-            ),
+            settings_book=(None if local_provision_scope == "magis" else settings_book),
         )
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
@@ -478,6 +478,7 @@ def _resolve_prompts_dir(prompts_dir: str | None) -> Path:
     # empty or bogus directories on ``sys.path``.
     try:
         import magi
+
         candidate = Path(magi.__file__).resolve().parent / "prompts"
         if candidate.is_dir() and (candidate / "soul.md").exists():
             return candidate
