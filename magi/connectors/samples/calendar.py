@@ -65,14 +65,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from magi.connectors.base import (
-    Connector,
     ConnectorConfig,
     ConnectorEvent,
     ConnectorEventKind,
@@ -106,17 +104,13 @@ class CalendarConnector:
         self._config = config
         self._source: str = str(config.settings.get("source", _default_source()))
         self._path: Path | None = (
-            Path(str(config.settings["path"]))
-            if "path" in config.settings
-            else None
+            Path(str(config.settings["path"])) if "path" in config.settings else None
         )
         self._poll_seconds: float = float(
             config.settings.get("poll_interval_seconds", _DEFAULT_POLL_SECONDS)
         )
         self._calendar_name: str | None = (
-            str(config.settings["calendar"])
-            if "calendar" in config.settings
-            else None
+            str(config.settings["calendar"]) if "calendar" in config.settings else None
         )
         self._poll_task: asyncio.Task[None] | None = None
         self._stopped = asyncio.Event()
@@ -134,19 +128,22 @@ class CalendarConnector:
         try:
             await self._probe()
             logger.info(
-                "calendar connector ready: source=%s path=%s "
-                "calendar=%s poll=%.0fs",
-                self._source, self._path, self._calendar_name,
+                "calendar connector ready: source=%s path=%s calendar=%s poll=%.0fs",
+                self._source,
+                self._path,
+                self._calendar_name,
                 self._poll_seconds,
             )
         except Exception as exc:
             logger.exception(
-                "calendar connector initial probe failed: %s", exc,
+                "calendar connector initial probe failed: %s",
+                exc,
             )
 
         self._stopped.clear()
         self._poll_task = asyncio.create_task(
-            self._poll_loop(), name="calendar-connector-poll",
+            self._poll_loop(),
+            name="calendar-connector-poll",
         )
 
     async def disconnect(self) -> None:
@@ -201,14 +198,9 @@ class CalendarConnector:
         """
         if self._source == "ical":
             if self._path is None:
-                raise ValueError(
-                    "calendar connector source=ical requires "
-                    "settings.path"
-                )
+                raise ValueError("calendar connector source=ical requires settings.path")
             if not self._path.is_file():
-                raise FileNotFoundError(
-                    f"calendar ical file not found: {self._path}"
-                )
+                raise FileNotFoundError(f"calendar ical file not found: {self._path}")
         elif self._source == "osascript":
             # Defer to first poll: ``osascript -e 'tell
             # application "Calendar" to ...'`` will surface
@@ -217,16 +209,14 @@ class CalendarConnector:
             # dialog.
             return
         else:
-            raise ValueError(
-                f"calendar connector unknown source: {self._source!r}"
-            )
+            raise ValueError(f"calendar connector unknown source: {self._source!r}")
 
     async def _poll_loop(self) -> None:
         """Periodic poll. Emits one CREATED event per event."""
         try:
             while not self._stopped.is_set():
                 try:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     events = await self._read_events(
                         now - timedelta(days=1),
                         now + timedelta(days=30),
@@ -246,7 +236,7 @@ class CalendarConnector:
                         timeout=self._poll_seconds,
                     )
                     return  # stopped — exit the loop
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # poll again
         except asyncio.CancelledError:
             raise
@@ -263,7 +253,10 @@ class CalendarConnector:
             return _parse_ical_file(self._path, calendar, from_dt, to_dt)
         if self._source == "osascript":
             return await asyncio.to_thread(
-                _osascript_read_events, calendar, from_dt, to_dt,
+                _osascript_read_events,
+                calendar,
+                from_dt,
+                to_dt,
             )
         return []
 
@@ -285,7 +278,7 @@ class CalendarConnector:
         ev = ConnectorEvent(
             connector=self.name,
             kind=ConnectorEventKind.ERROR,
-            id=f"err-{datetime.now(timezone.utc).timestamp()}",
+            id=f"err-{datetime.now(UTC).timestamp()}",
             payload={"message": message},
         )
         publish(ev)
@@ -313,7 +306,6 @@ def sys_platform() -> str:
 # ``sys`` is imported lazily to keep the module import
 # surface minimal.
 import sys  # noqa: E402  (intentional — after the helpers above)
-
 
 # -- osascript transport ---------------------------------------------------
 
@@ -382,9 +374,10 @@ def _osascript_read_events(
     """
     try:
         proc = subprocess_run(
-            ["osascript", "-e", _APPLESCRIPT,
-             from_dt.isoformat(), to_dt.isoformat(), calendar],
-            capture_output=True, text=True, timeout=10,
+            ["osascript", "-e", _APPLESCRIPT, from_dt.isoformat(), to_dt.isoformat(), calendar],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except FileNotFoundError:
         logger.warning("osascript not on PATH; calendar connector will be idle")
@@ -442,7 +435,7 @@ def _parse_ical_date(value: str) -> datetime | None:
         int(hhmmss[:2] or 0),
         int(hhmmss[2:4] or 0),
         int(hhmmss[4:6] or 0),
-        tzinfo=timezone.utc,
+        tzinfo=UTC,
     )
     return dt
 
@@ -480,11 +473,7 @@ def _parse_ical_file(
         if dtstart is None:
             continue
         dtend_m = re.search(r"DTEND[^:]*:(.+)", block)
-        dtend = (
-            _parse_ical_date(dtend_m.group(1).strip())
-            if dtend_m is not None
-            else None
-        )
+        dtend = _parse_ical_date(dtend_m.group(1).strip()) if dtend_m is not None else None
 
         # Filter by window.
         if dtend is not None and dtend < from_dt:
@@ -503,16 +492,18 @@ def _parse_ical_file(
 
         all_day = "DTSTART;VALUE=DATE" in block
 
-        events.append({
-            "id": contact_id,
-            "title": summary,
-            "start": dtstart.isoformat(),
-            "end": dtend.isoformat() if dtend else None,
-            "all_day": all_day,
-            "location": location,
-            "notes": description,
-            "calendar": cal_name,
-        })
+        events.append(
+            {
+                "id": contact_id,
+                "title": summary,
+                "start": dtstart.isoformat(),
+                "end": dtend.isoformat() if dtend else None,
+                "all_day": all_day,
+                "location": location,
+                "notes": description,
+                "calendar": cal_name,
+            }
+        )
     return events
 
 

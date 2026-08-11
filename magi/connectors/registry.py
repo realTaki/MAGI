@@ -70,7 +70,7 @@ def register_connector(
     factory-built (e.g. an in-memory calendar stub).
     """
     iid = instance_id if instance_id is not None else getattr(connector, "_instance_id", "_default")
-    setattr(connector, "_instance_id", iid)
+    connector._instance_id = iid
     key = (connector.name, iid)
     _INSTANCES[key] = connector
 
@@ -104,9 +104,9 @@ async def load_connectors(configs: list[ConnectorConfig]) -> list[Connector]:
         factory = _FACTORIES.get(config.name)
         if factory is None:
             logger.warning(
-                "connector type %r has no registered factory; "
-                "skipping instance %r",
-                config.name, config.instance_id,
+                "connector type %r has no registered factory; skipping instance %r",
+                config.name,
+                config.instance_id,
             )
             continue
         key = (config.name, config.instance_id)
@@ -116,8 +116,8 @@ async def load_connectors(configs: list[ConnectorConfig]) -> list[Connector]:
                 await previous.disconnect()
             except Exception:
                 logger.exception(
-                    "previous connector %r disconnect failed; "
-                    "continuing with new instance", key,
+                    "previous connector %r disconnect failed; continuing with new instance",
+                    key,
                 )
 
         try:
@@ -125,7 +125,8 @@ async def load_connectors(configs: list[ConnectorConfig]) -> list[Connector]:
         except Exception:
             logger.exception(
                 "connector factory %r failed for %r",
-                config.name, config.instance_id,
+                config.name,
+                config.instance_id,
             )
             continue
 
@@ -134,15 +135,15 @@ async def load_connectors(configs: list[ConnectorConfig]) -> list[Connector]:
         # :class:`Protocol` so we can't add an attribute to the
         # type; ``setattr`` on the concrete instance is the
         # least-invasive way.
-        setattr(connector, "_instance_id", config.instance_id)
+        connector._instance_id = config.instance_id
         _INSTANCES[key] = connector
 
         try:
             await connector.connect()
         except Exception:
             logger.exception(
-                "connector %r connect failed; instance is "
-                "loaded but in a non-running state", key,
+                "connector %r connect failed; instance is loaded but in a non-running state",
+                key,
             )
 
         loaded.append(connector)

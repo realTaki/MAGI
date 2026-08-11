@@ -44,7 +44,7 @@ class EventBus:
     """
 
     def __init__(self, *, dedup_window_seconds: float = 5.0) -> None:
-        self._subscribers: dict[str, list["EventHandler"]] = defaultdict(list)
+        self._subscribers: dict[str, list[EventHandler]] = defaultdict(list)
         # ``kind -> set of seen keys`` — pruned lazily on each
         # ``publish`` so the set never grows unbounded. The
         # dedup window is short on purpose: real upstream
@@ -57,7 +57,7 @@ class EventBus:
     def subscribe(
         self,
         kind: str,
-        handler: "EventHandler",
+        handler: EventHandler,
     ) -> None:
         """Register ``handler`` to be called for every
         event with ``event.kind == kind``.
@@ -71,14 +71,14 @@ class EventBus:
     def unsubscribe(
         self,
         kind: str,
-        handler: "EventHandler",
+        handler: EventHandler,
     ) -> None:
         try:
             self._subscribers[kind].remove(handler)
         except ValueError:
             pass
 
-    async def publish(self, event: "ConnectorEvent") -> None:
+    async def publish(self, event: ConnectorEvent) -> None:
         """Fan out an event to every subscriber for its kind.
 
         Dedup: if the same ``(connector, id)`` was published
@@ -99,7 +99,8 @@ class EventBus:
             if key in seen_for_kind:
                 logger.debug(
                     "bus.publish: dedup drop %s key=%s",
-                    event.kind.value, event.key(),
+                    event.kind.value,
+                    event.key(),
                 )
                 return
             seen_for_kind[key] = now
@@ -109,7 +110,9 @@ class EventBus:
 
         logger.debug(
             "bus.publish: kind=%s id=%s subscribers=%d",
-            event.kind.value, event.id, subscribers_total,
+            event.kind.value,
+            event.id,
+            subscribers_total,
         )
         # Schedule outside the lock so a slow handler
         # doesn't delay the next publish.
@@ -118,8 +121,8 @@ class EventBus:
 
     @staticmethod
     async def _invoke(
-        handler: "EventHandler",
-        event: "ConnectorEvent",
+        handler: EventHandler,
+        event: ConnectorEvent,
     ) -> None:
         """Call one handler with one event, swallowing errors.
 
@@ -132,7 +135,9 @@ class EventBus:
         except Exception:
             logger.exception(
                 "connector bus: handler %r raised on %s/%s",
-                handler, event.connector, event.id,
+                handler,
+                event.connector,
+                event.id,
             )
 
 
@@ -161,7 +166,7 @@ def reset_bus() -> None:
 
 def subscribe(
     kind: str,
-    handler: "EventHandler",
+    handler: EventHandler,
 ) -> None:
     """Sugar over :meth:`EventBus.subscribe` on the global bus."""
     get_bus().subscribe(kind, handler)
@@ -169,12 +174,12 @@ def subscribe(
 
 def unsubscribe(
     kind: str,
-    handler: "EventHandler",
+    handler: EventHandler,
 ) -> None:
     get_bus().unsubscribe(kind, handler)
 
 
-def publish(event: "ConnectorEvent") -> None:
+def publish(event: ConnectorEvent) -> None:
     """Schedule ``event`` on the global bus.
 
     Synchronous wrapper because call sites are everywhere —

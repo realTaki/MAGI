@@ -103,8 +103,10 @@ from magi.connectors.registry import (
     load_connectors,
     register_connector,
     register_connector_factory,
-    reset as reset_registry,
     unload_all,
+)
+from magi.connectors.registry import (
+    reset as reset_registry,
 )
 
 __all__ = [

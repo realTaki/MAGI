@@ -42,6 +42,7 @@ logger = logging.getLogger("magi.connectors.boot")
 # ``MAGI_CALENDAR_POLL`` (seconds, default 300).
 def _default_configs() -> list[ConnectorConfig]:
     import os
+
     settings: dict[str, Any] = {}
     source = os.environ.get("MAGI_CALENDAR_SOURCE")
     if source:
@@ -55,7 +56,8 @@ def _default_configs() -> list[ConnectorConfig]:
             settings["poll_interval_seconds"] = float(poll)
         except ValueError:
             logger.warning(
-                "MAGI_CALENDAR_POLL is not a number: %r", poll,
+                "MAGI_CALENDAR_POLL is not a number: %r",
+                poll,
             )
 
     return [
@@ -105,7 +107,8 @@ def load_connectors_from_db() -> int:
     loaded = asyncio.run(registry_load(configs))
     logger.info(
         "connectors: %d enabled, %d loaded: %s",
-        len(configs), len(loaded),
+        len(configs),
+        len(loaded),
         [f"{c.name}/{getattr(c, '_instance_id', '?')}" for c in loaded],
     )
     return len(loaded)

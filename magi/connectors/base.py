@@ -17,11 +17,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-
 # -- Event kinds ------------------------------------------------------------
 
 
-class ConnectorEventKind(str, enum.Enum):
+class ConnectorEventKind(enum.StrEnum):
     """Coarse taxonomy of connector events.
 
     Subscribers pattern-match on ``kind``. New kinds can be added
