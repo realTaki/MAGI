@@ -27,7 +27,7 @@ import pytest
 class _FakeSession:
     """Mimics Session DTO."""
 
-    session_id: str = "sess-1"
+    conversation_id: str = "sess-1"
     uid: int = 42
     delivery_address: str = "tg:123"
 
@@ -114,11 +114,11 @@ def _make_bus(**overrides) -> Mock:
     bus.delivery_job_board.publish = Mock()
 
     # -- books --
-    bus.sessions_book = Mock()
-    bus.sessions_book.get_for_owner = Mock(return_value=None)
+    bus.conversations_book = Mock()
+    bus.conversations_book.get_for_owner = Mock(return_value=None)
 
     bus.messages_book = Mock()
-    bus.messages_book.list_for_session = Mock(return_value=[])
+    bus.messages_book.list_for_conversation = Mock(return_value=[])
 
     bus.memory_book = Mock()
     bus.memory_book.list_by_owner = Mock(return_value=[])

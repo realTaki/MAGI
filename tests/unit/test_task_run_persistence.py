@@ -22,7 +22,7 @@ from magi.bus.library.local.tasksBook import (
 def factory():
     # Import every Book that registers an inline ORM model so
     # ``EngineFactory.create_all`` lays down the whole schema —
-    # otherwise the FKs on ``tasks`` (chat_sessions, contacts) are
+    # otherwise the FKs on ``tasks`` (chat_conversations, contacts) are
     # left dangling and the INSERT below fails.
     from magi.bus.library.local.contactBook import ContactBook  # noqa: F401
     from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
@@ -65,7 +65,7 @@ def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
 
     now = datetime.now(UTC).isoformat()
     # Use the TaskBook's add with valid schedule. ``conversation_id``
-    # is None so we don't trip the FK to ``chat_sessions`` — the
+    # is None so we don't trip the FK to ``chat_conversations`` — the
     # session-creation flow is exercised by chat tests, not here.
     return task_book.add(
         name=f"Test Task {task_id}",

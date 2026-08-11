@@ -252,7 +252,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
               <ul className="flex flex-col gap-3">
                 {searchData.items.map((h) => (
                   <SearchHitRow
-                    key={`${h.session_id}:${h.message_id}`}
+                    key={`${h.conversation_id}:${h.message_id}`}
                     hit={h}
                     onOpen={onOpen}
                   />
@@ -281,7 +281,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
               <ul className="flex flex-col gap-3">
                 {browseItems.map((s) => (
                   <SessionSummaryRow
-                    key={s.session_id}
+                    key={s.conversation_id}
                     summary={s}
                     onOpen={onOpen}
                   />
@@ -324,26 +324,26 @@ function SearchHitRow({
   onOpen,
 }: {
   hit: SearchHit;
-  onOpen: (sessionId: string) => void;
+  onOpen: (conversationId: string) => void;
 }) {
   const t = useT();
   return (
     <li
       className="rounded-lg border border-sky-light/40 bg-white/60 hover:bg-white transition cursor-pointer"
-      onClick={() => onOpen(hit.session_id)}
+      onClick={() => onOpen(hit.conversation_id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onOpen(hit.session_id);
+          onOpen(hit.conversation_id);
         }
       }}
     >
       <div className="p-3">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="text-sm font-medium text-ink truncate">
-            {hit.title ?? hit.session_id.slice(0, 13) + "…"}
+            {hit.title ?? hit.conversation_id.slice(0, 13) + "…"}
           </h3>
           <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-soft border border-sky-light/40 rounded px-1.5 py-0.5">
             {hit.role === "user"
@@ -358,7 +358,7 @@ function SearchHitRow({
           dangerouslySetInnerHTML={{ __html: hit.snippet }}
         />
         <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-ink-soft">
-          <span className="truncate font-mono">{hit.session_id}</span>
+          <span className="truncate font-mono">{hit.conversation_id}</span>
           <span>{formatTime(hit.ts)}</span>
         </div>
       </div>
@@ -371,7 +371,7 @@ function SessionSummaryRow({
   onOpen,
 }: {
   summary: SessionSummary;
-  onOpen: (sessionId: string) => void;
+  onOpen: (conversationId: string) => void;
 }) {
   const t = useT();
   // Build a single display line. ``title`` wins (manual or
@@ -382,13 +382,13 @@ function SessionSummaryRow({
   return (
     <li
       className="rounded-lg border border-sky-light/40 bg-white/60 hover:bg-white transition cursor-pointer"
-      onClick={() => onOpen(summary.session_id)}
+      onClick={() => onOpen(summary.conversation_id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onOpen(summary.session_id);
+          onOpen(summary.conversation_id);
         }
       }}
     >
@@ -406,7 +406,7 @@ function SessionSummaryRow({
         </p>
         <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-ink-soft">
           <span className="truncate font-mono">
-            {summary.session_id.slice(0, 13) + "…"}
+            {summary.conversation_id.slice(0, 13) + "…"}
           </span>
           <span>{formatRelative(summary.updated_at)}</span>
         </div>

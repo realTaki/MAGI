@@ -80,7 +80,7 @@ export function formatRunTimestamp(iso: string | null): string {
 export type TaskRunRow = {
   id: string;
   task_id: string;
-  session_id: string | null;
+  conversation_id: string | null;
   trigger: string;
   started_at: string;
   finished_at: string | null;
@@ -376,7 +376,7 @@ export default function TaskListPane() {
           <RunsHistoryDrawer
             taskName={t.name}
             taskId={t.id}
-            sessionId={t.session_id ?? null}
+            conversationId={t.conversation_id ?? null}
             onClose={() => setRunsForId(null)}
           />
         );

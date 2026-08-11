@@ -98,9 +98,13 @@ WorkerRegistry (composition root)
 Channel workers are conditional: Telegram and TaskWorkers start only when
 `bus.settings_book["channels.enabled"]` lists the channel. WebUI is always
 enabled by the composition root (the persisted and fallback default is
-`["webui"]`). A2A is a MAGIS-shared board consumed by `AgentWorker`, not a
-channel worker. Proactive is a runtime worker, not a configured channel, and
-always starts.
+`["webui"]`). A2A is the **MAGIS-internal persistent communication channel**
+between MAGI of the same Society: messages are persisted into the shared
+MAGIS database via two job boards (`a2a_request_job_board` for one-shot
+questions, `a2a_notify_job_board` for one-way notifications) and consumed by
+`AgentWorker` as a persistent actor effect — never through HTTP, webhooks,
+or external signature protocols. Proactive is a runtime worker, not a
+configured channel, and always starts.
 
 The shared lifecycle primitives (`start`/`stop`, `health()`, `call()` for
 blocking BUS calls, `spawn()` for owned child tasks) live in
@@ -140,13 +144,15 @@ Durable runtime rules (enforced by the architecture guard):
 | `magi/startup/runtime.py` | composition root + worker lifecycle |
 | `magi/startup/workers.py` | `WorkerRegistry` — sole owner of all Worker instances |
 | `magi/startup/worker.py` | `RuntimeWorker` — shared lifecycle primitives |
-| `magi/agent/worker.py` | durable agent-turn consumer (chat loop) |
+| `magi/agent/worker.py` | durable agent-turn consumer (chat loop + A2A receiver) |
 | `magi/tools/worker.py` | durable tool-effect consumer |
+| `magi/tools/comms/` | A2A `message_magi` tool (persistent actor effect, not delegated to ToolsWorker) |
 | `magi/providers/worker.py` | durable LLM-job consumer |
 | `magi/mcp/worker.py` | sole MCP connection lifecycle owner |
 | `magi/channels/worker_base.py` | `ChannelWorker` — shared outbound-delivery template |
-| `magi/channels/{tg,webui,tasks,a2a}/worker.py` | per-channel Worker implementations |
+| `magi/channels/{tg,webui,tasks}/worker.py` | per-channel Worker implementations |
 | `magi/channels/api/app.py` | FastAPI app factory (Runtime, Control, standalone) |
+| `magi/bus/library/magis/responsibility.py` | `MagisMembershipBook.responsibility` + collaboration directory |
 | `magi/proactive/worker.py` | system-level proactive policies (last to start) |
 | `magi/connectors/` | long-lived external data sources + in-process event bus |
 
@@ -156,12 +162,16 @@ forbidden by `tests/architecture/test_import_boundaries.py`.
 
 ## Channel egress — `ChannelWorker` template
 
-Every channel (Telegram, WebUI, A2A, task) implements the same shape via
-`magi.channels.worker_base.ChannelWorker`:
+Every *human-facing* channel (Telegram, WebUI, task) implements the same
+shape via `magi.channels.worker_base.ChannelWorker`. **A2A is not a channel
+worker** — it is the internal MAGIS-internal collaboration path consumed by
+`AgentWorker` (see [A2A — MAGIS collaboration](#a2a--magis-collaboration)).
+
+For channels that do follow this template:
 
 - Constructor injection of `Bus` and a `poll_seconds` interval.
 - `worker_name = self.channel_name`; a class-level literal (`"tg"` /
-  `"webui"` / `"a2a"`) declares the channel tag.
+  `"webui"`) declares the channel tag.
 - `start()` / `stop()` lifecycle inherited from `RuntimeWorker`.
 - `_claim_delivery_loop(deliver_fn, channel_label)` — a template method
   that does:
@@ -234,7 +244,7 @@ Bus (magi/bus/bootstrap.py)
 └─ magis (None unless MAGIS database configured)
    ├─ magis_book              MagisBook (society tree)
    ├─ magis_admins_book       MagisAdminBook
-   ├─ memberships_book        MagisMembershipBook + instruction_context
+   ├─ memberships_book        MagisMembershipBook + instruction_context + responsibility + collaboration_directory
    ├─ roles_book              MagisRoleBook (ADAM/EVA reserved)
    ├─ eva_runtimes_book       EvaRuntimeBook
    ├─ control_runtimes_book   ControlRuntimeBook
@@ -269,15 +279,25 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 ### `magi.agent` — AgentWorker
 
 - Fair sequential consumer of local `agent_job_board` and the MAGIS-shared
-  A2A request/notify boards addressed to its own `magi_id`.
+  A2A request/notify boards addressed to its own `magi_id`. A single
+  `claim_next_turn()` round-robins across the three sources with per-source
+  consecutive-consumption caps so a busy A2A stream cannot starve the local
+  chat loop and vice versa.
 - Receives a fully-wired `Bus` and the runtime's `magi_id` via constructor
   injection (`AgentWorker(bus, magi_id=…)`). `magi_id` is used to render the
   per-MAGI instruction block via `magi.bus.library.magis.membershipBook
-  .MagisMembershipBook.instruction_context`.
+  .MagisMembershipBook.instruction_context` and to scope the
+  **MAGIS collaboration directory** the LLM sees at every turn
+  (`MagisMembershipBook.list_collaboration_directory(magi_id=…)`, filtered to
+  the current MAGIS only).
 - Loops claim → context assembly → `llm_job_board.publish(CallLLMJob)` →
-  wait-for-result → tool dispatch (`tool_job_board` / A2A request or notify)
-  → `_gather_all`. Human turns publish via `delivery_job_board`; A2A requests
-  complete one durable response and A2A notifications do not auto-reply.
+  wait-for-result → tool dispatch (`tool_job_board` / A2A `message_magi`
+  with `mode ∈ {notify, request}`) → `_gather_all`. Human turns publish via
+  `delivery_job_board`; A2A `notify` calls `ack()` and never produces an
+  outbound A2A message; A2A `request` records **exactly one** response via
+  compare-and-set and ends the run. Responses are not new inbound messages
+  and cannot themselves carry `request` / `expect_reply` semantics, so
+  two Agents never auto-loop just because each wants to "answer the other".
 - Steering is in-band: when a fresh `ChatJob` for an already-active
   conversation arrives, the Worker releases it back to the board; the
   active loop pulls it as steering via
@@ -285,6 +305,10 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 - Module-private helpers (`agent_context.build_messages_from_session`,
   `system_prompt.build_system_prompt`, `auto_title.request_session_title`,
   `token_usage.record_token_usage`) keep the Worker thin.
+- A2A input runs carry an internal-only `RunContext.channel` (`a2a.notify`
+  or `a2a.request`) so terminal text is never routed to a human channel and
+  the response path is enforced by the runtime rather than by prompt
+  heuristics.
 
 ### `magi.tools` — ToolsWorker
 
@@ -322,8 +346,10 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 - **Ingress** writes to `sessions_book` / `messages_book` and publishes a
   `ChatJob` to `agent_job_board`. Telegram is a long-polling inbound worker
   (`python-telegram-bot` v21+ `Application.start_polling`); the WebUI
-  ingress is the FastAPI route `POST /api/chat/send`. A2A is not HTTP ingress:
-  peer tools persist directly to MAGIS-shared boards.
+  ingress is the FastAPI route `POST /api/chat/send`. A2A is **not** an HTTP
+  ingress: peer `message_magi` tool effects persist directly into the
+  MAGIS-shared `a2a_request_job_board` / `a2a_notify_job_board` and are
+  claimed by `AgentWorker` itself (see [A2A — MAGIS collaboration](#a2a--magis-collaboration)).
 - **Egress** is the `ChannelWorker._claim_delivery_loop` template above.
   Each channel worker adds its own `_run` that calls the template with a
   `_deliver_<channel>` function.
@@ -331,6 +357,112 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
   `create_app`) mounts the channel-agnostic feature routers (auth,
   onboarding, chat sessions, contacts, memory, tasks, MCP, skills, …)
   plus the per-channel delivery surface.
+
+## A2A — MAGIS collaboration
+
+The A2A surface is how MAGI of the same Society collaborate. It is not an
+HTTP route, not a webhook, and not a signed external protocol: messages
+are persisted into the shared MAGIS database and consumed by
+`AgentWorker` as a persistent actor effect.
+
+### Two terminal modes, never an open conversation
+
+The old `expect_reply: bool` switch could not express correct loop
+termination and was replaced by two explicit, terminal message modes:
+
+| Mode | Sender semantics | Receiver terminal state | Auto-reply? |
+| --- | --- | --- | --- |
+| `notify` | "Here is a fact / progress / reminder" — no business answer expected | Agent processes and acknowledges consumption | No |
+| `request` | "Please answer this one question / delegation" | Agent's final text is written as the request's unique response | Yes, once, only back to the original request |
+
+Responses are **not** new inbound messages and carry no `request` /
+`expect_reply` semantics, so two Agents never enter a free-running
+  "answer-the-other" loop. A receiver that genuinely needs to reach back
+to the sender must call `message_magi` itself with a fresh `notify` or
+`request`. Each `request` admits at most one response; late responses do
+not silently re-awaken a sender that already terminated.
+
+### BUS data model
+
+The boards are instantiated through `Bus._magis_factory` and never write
+to a MAGI's local SQLite:
+
+- `A2ARequestJobBoard` extends `BaseJobBoard` (publish → CAS claim →
+  lease → retry → `submit_result` / `get_result`) with a
+  `claim_for_target(magi_id=…)` so only the addressed MAGI can claim.
+  Request rows carry `source_magi_id`, `target_magi_id` (both FKs to
+  `magis_memberships.id`), `conversation_id` / `correlation_id` (tracking
+  only, no auto-reply semantics), `text` / JSON payload, `deadline_at`,
+  lease, attempt, timestamps, and a `response_status` /
+  `response_payload` pair (`pending` / `responded` / `rejected` /
+  `timed_out` / `failed`) that may be written **exactly once**.
+  "Target claimed" and "request has a business response" are deliberately
+  separated, unlike the previous `sendA2AJob` path.
+- `A2ANotifyBoard` reuses `BaseNotifyBoard` as the sender's
+  fire-and-forget base — successful `publish()` means "persisted", with
+  no sender-side result polling. The concrete board additionally
+  implements the receiver-side primitives `claim_for_target(magi_id=…)`,
+  `ack()`, retry on failure, and expiration handling. These primitives
+  live on the A2A board until a second consumer-of-notifications proves
+  the need for a shared base class.
+- Both tables carry a `(target_magi_id, status, available_at)` claim
+  index and a unique idempotency index for the sender's effect.
+  Pre-insert validation in the Book/board enforces that `source` and
+  `target` belong to the same MAGIS and that a MAGI cannot send to itself.
+
+### `message_magi` tool
+
+The single persistent-actor-effect tool for A2A lives in
+`magi/tools/comms/` and is recognised by `AgentWorker` as a durable
+actor effect (it is never delegated to `ToolsWorker`):
+
+```json
+{
+  "magi_id": 42,
+  "mode": "notify | request",
+  "text": "...",
+  "deadline_seconds": 120
+}
+```
+
+- `magi_id` must come from the collaboration directory; the worker
+  re-validates same-MAGIS and not-self before persisting.
+- A `notify` tool result is "persisted" and never enters a wait set.
+- A `request` joins the existing gather flow until it gets the unique
+  response, fails, or hits its `deadline_seconds`; the response arrives
+  as the matching `tool_use_id`'s `tool_result` in the current Agent
+  reasoning.
+- The old `expect_reply` switch, the model-controlled `reply_to`, and
+  HTTP address parameters are gone.
+
+### MAGIS collaboration directory
+
+`magis_memberships.role` is an org classification, not a directory
+entry. Each membership now carries a public, editable
+`responsibility: Text` describing the MAGI's current scope,
+specialisations, boundaries, and expected deliverables
+(e.g. "owns the WebUI frontend, React Query, and build verification;
+does not run database migrations"). It does not replace the role
+instruction and is never stored in a MAGI's private settings.
+
+The directory is exposed by
+`MagisMembershipBook.list_collaboration_directory(magi_id=…)` and
+returns only the public directory for the caller's MAGIS. Each entry
+contains `magi_id`, the public runtime name (resolved via
+`runtime_state_book.backend_ref`, defaulting to `MAGI #id`),
+`role_name`, and `responsibility`. Private prompts, API keys, memory,
+and conversation contents never leak into the directory.
+
+`AgentWorker` reads the directory on every turn and renders it as a
+compact "MAGIS collaboration directory" block in the system prompt, with
+the self entry highlighted so the model can pick collaborators
+correctly before calling a tool. Updates to `responsibility` or role
+take effect without restarting the Agent.
+
+The WebUI MAGIS membership create/update models and serializers carry
+`responsibility` as well. The field is treated as public collaboration
+metadata maintained by MAGIS operators, never as a free-form LLM
+setting.
 
 ### `magi.proactive` — ProactiveWorker
 
@@ -362,7 +494,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 | Scope | Location | Book(s) |
 | --- | --- | --- |
 | **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books |
-| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books |
+| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
 | **File-backed** | `magi/prompts/`, `<workspace>/skills/` | `PromptBook`, `SkillsBook` |
 
 `magi.bus` owns the engine factories, table registration, and file-backed
@@ -372,8 +504,7 @@ one service with one distinct database per MAGIS. BUS provisioning creates
 only the tables owned by the selected scope.
 Schema changes are explicit BUS migrations; the runtime uses one schema
 and one implementation, without fallback reads, compatibility imports, or
-dual writes. See [MAGI and MAGIS Storage](magi-magis-storage.md) and
-[Production Persistence](production-persistence.md).
+dual writes. See [MAGI and MAGIS Storage](magi-magis-storage.md).
 
 ## Verification
 
@@ -396,8 +527,7 @@ and `test_hook_envelope_purity.py`).
 - [Business flows](business-flows.md) — invariant behaviour and guard
   conditions for the chat loop, channels, tasks, onboarding, login, and
   tools.
-- [MAGI and MAGIS storage](magi-magis-storage.md),
-  [Production persistence](production-persistence.md) — storage
+- [MAGI and MAGIS storage](magi-magis-storage.md) — storage
   boundaries.
 - [ID naming standard](design/id-naming-standard.md) — the migration
   table for the `magic_id → magi_id` / `uid → contact_id` /

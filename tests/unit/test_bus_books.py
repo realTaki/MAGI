@@ -1154,7 +1154,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
 
     First call inserts; second call with the same name
     updates in place and returns the **same** ``task_id``
-    with ``is_update=True``. ``session_id`` is sticky on
+    with ``is_update=True``. ``conversation_id`` is sticky on
     update (preserves conversation continuity); only
     inserts consume the caller-supplied session.
 

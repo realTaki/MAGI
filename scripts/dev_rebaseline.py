@@ -79,19 +79,19 @@ INSERT_ORDER: list[str] = [
     "magics",
     # Tier 2: depend on tier 1
     "magis",          # → magics.id
-    "chat_sessions",  # → contacts.id
+    "chat_conversations",  # → contacts.id
     "settings",       # KV — no FKs
     # Tier 3: depend on tier 2
     "action_items",   # → contacts.id
-    "chat_messages",  # → chat_sessions.session_id
+    "chat_messages",  # → chat_conversations.conversation_id
     "memory_entries", # → contacts.id
     "mcp_servers",    # no FKs
     "task_presets",   # no FKs (target of tasks.preset_id FK, but no FKs itself)
     # Tier 4: depend on tier 3
-    "tasks",          # → contacts.id, chat_sessions.session_id, task_presets.id
+    "tasks",          # → contacts.id, chat_conversations.conversation_id, task_presets.id
     "token_usage",    # → contacts.id
     # Tier 5: depends on tier 4
-    "task_runs",      # → tasks.id, chat_sessions.session_id
+    "task_runs",      # → tasks.id, chat_conversations.conversation_id
 ]
 
 

@@ -105,7 +105,7 @@ def _build_bus(tmp_path) -> Bus:
     # ``Bus`` dataclass uses ``object`` for everything but
     # ``_local_factory`` and ``_magis_factory``).
     return Bus(
-        sessions_book=None,  # type: ignore[arg-type]
+        conversations_book=None,  # type: ignore[arg-type]
         messages_book=None,  # type: ignore[arg-type]
         memory_book=None,  # type: ignore[arg-type]
         contacts_book=None,  # type: ignore[arg-type]
