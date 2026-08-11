@@ -437,7 +437,8 @@ class AvailableMAGIResponse(BaseModel):
 
 
 class TargetLoginRequest(BaseModel):
-    tgid: int
+    contact_id: int
+    role: str = "assigned"
 
 
 class TargetVerifyRequest(TargetLoginRequest):
@@ -514,7 +515,89 @@ async def available_magi(bus: BusDep) -> AvailableMAGIResponse:
 
 @router.get("/targets/{magi_id}/accounts")
 async def target_accounts(magi_id: int, bus: BusDep) -> dict[str, object]:
-    return await _target_access(bus, magi_id, "GET", "/api/access/login-accounts")
+    """Unified login-accounts picker for the selected MAGI.
+
+    The runtime only sees the per-MAGI assigned users in its
+    local SQLite; Genesis admins live in the webui's MAGIS DB.
+    We proxy to the runtime for assigned, then merge in the
+    webui's ``magis_admins`` so the picker offers every
+    identity this MAGI accepts — including the same person
+    appearing under both ``admin`` and ``assigned`` scopes.
+    """
+    runtime_view = await _target_access(bus, magi_id, "GET", "/api/access/login-accounts")
+    runtime_accounts = list(runtime_view.get("accounts", []) or [])
+    admin_accounts = _admin_accounts_for_magi(bus, magi_id)
+    merged = _merge_login_accounts(runtime_accounts, admin_accounts)
+    return {
+        "magi_id": runtime_view.get("magi_id", magi_id),
+        "magis_id": runtime_view.get("magis_id"),
+        "accounts": merged,
+    }
+
+
+def _admin_accounts_for_magi(bus: Bus, magi_id: int) -> list[dict[str, object]]:
+    """Return admin-side picker rows for ``magi_id``'s MAGIS.
+
+    The webui owns the MAGIS DB; the runtime does not. For
+    each ``magis_admins`` row we emit one picker row keyed
+    by the runtime-local ``contact_id`` (opaque int). The
+    display name falls back to ``"Admin #<id>"`` when the
+    webui cannot resolve the runtime contact's display_name
+    (which it normally cannot — the contacts live in the
+    runtime's local SQLite). The runtime's own picker row
+    for the same ``contact_id`` + ``role="admin"`` is
+    de-duplicated by :func:`_merge_login_accounts`.
+    """
+    if bus.magis_admins_book is None or bus.magis_admins_book is None:
+        return []
+    root = bus.magis_book.get_root() if bus.magis_book else None
+    if root is None:
+        return []
+    out: list[dict[str, object]] = []
+    for admin in bus.magis_admins_book.list_for_magis(magis_id=root.id):
+        out.append(
+            {
+                "contact_id": admin.contact_id,
+                "name": f"Admin #{admin.contact_id}",
+                "role": "admin",
+                "admin": True,
+                "assigned": False,
+                "has_password": True,
+                "has_tg_code": False,
+                "tgid": None,
+            }
+        )
+    return out
+
+
+def _merge_login_accounts(
+    runtime_accounts: list[dict[str, object]],
+    admin_accounts: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Combine the runtime's picker with webui admin rows.
+
+    ``(contact_id, role)`` is the dedup key. Admin rows from
+    the webui fill in any admin slot the runtime missed
+    (typical when the runtime doesn't have MAGIS DB access).
+    """
+    merged: dict[tuple[int, str], dict[str, object]] = {}
+    for row in runtime_accounts:
+        key = (int(row.get("contact_id", 0)), str(row.get("role", "assigned")))
+        merged[key] = dict(row)
+    for row in admin_accounts:
+        key = (int(row.get("contact_id", 0)), str(row.get("role", "admin")))
+        if key in merged:
+            existing = merged[key]
+            for field in ("admin", "assigned", "has_password", "has_tg_code"):
+                if row.get(field):
+                    existing[field] = True
+            if not existing.get("name") and row.get("name"):
+                existing["name"] = row["name"]
+        else:
+            merged[key] = dict(row)
+    out = list(merged.values())
+    out.sort(key=lambda r: (str(r.get("role", "assigned")), str(r.get("name", "")).lower(), int(r.get("contact_id", 0))))
+    return out
 
 
 @router.post("/targets/{magi_id}/send-login-code")
@@ -936,6 +1019,11 @@ class LoginMethodsResponse(BaseModel):
 
 class LoginPasswordRequest(BaseModel):
     contact_id: int
+    # "admin" picks a Genesis admin scope (cookie admin=True);
+    # "assigned" picks the per-MAGI scope (cookie assigned=True).
+    # The same contact can appear under both, letting the
+    # operator pick which layer they want to log in as.
+    role: str = "assigned"
     password: str
     # The MAGI the operator picked on LandingPage — written
     # into the v3 session cookie (see ``_sign_selected_session``).
@@ -1051,45 +1139,71 @@ async def login_methods(contact_id: int, bus: BusDep) -> LoginMethodsResponse:
     )
 
 
-@router.post("/login-password", response_model=LoginPasswordResponse)
-async def login_password(
+async def _login_password_via_runtime(
+    bus: Bus,
     payload: LoginPasswordRequest,
     response: Response,
-    bus: BusDep,
+    *,
+    magi_id: int,
 ) -> LoginPasswordResponse:
-    """Verify password and set the session cookie.
+    """Webui control-plane path — forward to the runtime.
 
-    The 60s cooldown is enforced per-contact_id, regardless of
-    the verify outcome. A successful verify calls
-    :func:`password_utils.clear_attempt` so the user
-    isn't locked out of their next login by the current
-    one. The cooldown store is the same settings KV the
-    TG-code path uses, just a different sub-prefix.
-
-    Anti-enumeration: a contact_id that is not an admin
-    responds as "ok" but never sets a cookie. Same shape
-    as the ``send_login_code`` short-circuit.
+    The runtime owns the password_hash in its local SQLite.
+    The webui calls ``/api/access/login-password`` (which
+    always requires ``_require_webui`` HMAC auth — it never
+    reaches the browser directly) and uses the runtime's
+    authoritative response to set the cookie.
     """
-    if not payload.contact_id or not isinstance(payload.contact_id, int):
-        return LoginPasswordResponse(ok=False, error="invalid contact_id")
-    if not payload.password:
-        return LoginPasswordResponse(ok=False, error="password required")
-
-    if control_store.enabled():
-        # Control-plane side doesn't have a password
-        # store yet — out of scope for this PR.
+    upstream = await _target_access(
+        bus,
+        magi_id or 0,
+        "POST",
+        "/api/access/login-password",
+        {
+            "contact_id": payload.contact_id,
+            "role": payload.role,
+            "password": payload.password,
+        },
+    )
+    if not upstream.get("ok"):
         return LoginPasswordResponse(
             ok=False,
-            error="password login is not supported by the control plane",
+            error=str(upstream.get("error") or "Sign-in failed"),
         )
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=_sign_selected_session(
+            bus,
+            magi_id=magi_id,
+            tgid=int(upstream.get("tgid") or payload.contact_id),
+            display_name=upstream.get("display_name"),
+            admin=bool(upstream.get("admin")),
+            assigned=bool(upstream.get("assigned")),
+        ),
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    logger.info(
+        "user signed in via password (via runtime)",
+        extra={
+            "contact_id": payload.contact_id,
+            "role": payload.role,
+            "magi_id": magi_id,
+        },
+    )
+    return LoginPasswordResponse(ok=True)
 
+
+async def _login_password_local(
+    bus: Bus,
+    payload: LoginPasswordRequest,
+    response: Response,
+) -> LoginPasswordResponse:
+    """Runtime-only path — verify the password against this Bus's local SQLite."""
     if payload.contact_id not in _super_admins(bus):
-        # Anti-enumeration: respond as if the password
-        # were wrong, but don't burn the cooldown.
-        return LoginPasswordResponse(
-            ok=False,
-            error="password does not match",
-        )
+        return LoginPasswordResponse(ok=False, error="password does not match")
 
     from magi.channels.api import password_utils
 
@@ -1107,9 +1221,6 @@ async def login_password(
             retry_after=remaining,
         )
 
-    # Always record the attempt — even on success — so
-    # the post-login window is honest. The verify helper
-    # clears the row on success below.
     password_utils.record_attempt(bus, payload.contact_id)
 
     stored = _password_hash(bus, payload.contact_id)
@@ -1123,9 +1234,6 @@ async def login_password(
     password_utils.clear_attempt(bus, payload.contact_id)
     contact_row = bus.contacts_book.get(contact_id=payload.contact_id)
     if contact_row is None:
-        # Contact deleted between admin-list check and
-        # password verify — treat as auth failure rather
-        # than crashing the login flow.
         return LoginPasswordResponse(ok=False, error="contact not found")
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -1134,10 +1242,8 @@ async def login_password(
             magi_id=payload.magi_id,
             tgid=int(contact_row.tgid) if contact_row.tgid is not None else payload.contact_id,
             display_name=contact_row.display_name,
-            admin=bool(contact_row.admin),
-            # Password login alone doesn't bind the operator
-            # to a specific runtime; same as TG-code.
-            assigned=False,
+            admin=payload.role == "admin",
+            assigned=payload.role == "assigned" and contact_row.role == "assigned",
         ),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
@@ -1146,9 +1252,48 @@ async def login_password(
     )
     logger.info(
         "user signed in via password",
-        extra={"contact_id": payload.contact_id, "magi_id": payload.magi_id},
+        extra={"contact_id": payload.contact_id, "role": payload.role, "magi_id": payload.magi_id},
     )
     return LoginPasswordResponse(ok=True)
+
+
+@router.post("/login-password", response_model=LoginPasswordResponse)
+async def login_password(
+    payload: LoginPasswordRequest,
+    response: Response,
+    bus: BusDep,
+) -> LoginPasswordResponse:
+    """Verify password and set the session cookie.
+
+    The webui (control-plane) has no local contacts_book for
+    password hashes; it forwards the verify to the runtime
+    via the existing ``_target_access`` proxy and trusts the
+    runtime's authoritative response. The runtime path
+    enforces the 60s cooldown, verifies the scrypt hash,
+    and looks up the contact's role for the cookie flags.
+
+    On success the cookie carries ``admin = (role == "admin")``
+    (cookie layer) plus ``assigned = (role == "assigned" and
+    contact.role == "assigned")``. The webui re-validates
+    ``admin`` on every request via
+    :func:`_super_admins` so the cookie flag is a hint, not
+    the source of truth.
+
+    Anti-enumeration: a contact_id that the picker did not
+    offer (and therefore has no password_hash) responds as
+    "ok" but never sets a cookie.
+    """
+    if not payload.contact_id or not isinstance(payload.contact_id, int):
+        return LoginPasswordResponse(ok=False, error="invalid contact_id")
+    if not payload.password:
+        return LoginPasswordResponse(ok=False, error="password required")
+
+    if control_store.enabled():
+        return await _login_password_via_runtime(
+            bus, payload, response, magi_id=payload.magi_id
+        )
+
+    return await _login_password_local(bus, payload, response)
 
 
 def _now_ts() -> float:

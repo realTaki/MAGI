@@ -35,10 +35,14 @@ _CODE_PREFIX = "auth.target_login_code"
 
 
 class LoginAccount(BaseModel):
-    tgid: int
+    contact_id: int  # runtime-local contacts.id (opaque; primary key)
     name: str
-    admin: bool
-    assigned: bool
+    role: str = "assigned"  # "admin" | "assigned" — explicit so the picker can disambiguate
+    admin: bool = False
+    assigned: bool = False
+    has_password: bool = False
+    has_tg_code: bool = False
+    tgid: int | None = None  # TG chat id when bound; legacy key for the TG-code path
 
 
 class LoginAccountsResponse(BaseModel):
@@ -48,7 +52,8 @@ class LoginAccountsResponse(BaseModel):
 
 
 class LoginCodeRequest(BaseModel):
-    tgid: int
+    contact_id: int
+    role: str = "assigned"
 
 
 class LoginCodeResponse(BaseModel):
@@ -64,11 +69,19 @@ class VerifyLoginCodeRequest(LoginCodeRequest):
 
 class VerifyLoginCodeResponse(BaseModel):
     ok: bool
+    contact_id: int | None = None
+    role: str | None = None
     tgid: int | None = None
     display_name: str | None = None
     admin: bool = False
     assigned: bool = False
     error: str | None = None
+
+
+class LoginPasswordRequest(BaseModel):
+    contact_id: int
+    role: str = "assigned"
+    password: str
 
 
 def _require_webui(request: Request) -> None:
@@ -101,51 +114,92 @@ def _direct_magis(bus: Bus) -> tuple[int, int]:
     return magi_id, membership.magis_id
 
 
-def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
-    """Enumerate sign-in candidates for the local MAGI's direct MAGIS."""
-    result: dict[int, LoginAccount] = {}
-    for admin in (
-        bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []
-    ):
-        result[admin.contact_id] = LoginAccount(
-            tgid=admin.contact_id,
-            name=f"Admin {admin.contact_id}",
-            admin=True,
-            assigned=False,
-        )
+def _accounts(bus: Bus, magis_id: int) -> list[LoginAccount]:
+    """Enumerate sign-in candidates for the local MAGI's direct MAGIS.
+
+    A person who appears as both Genesis admin AND per-MAGI
+    assigned produces two picker rows — each login grants a
+    different scope of permissions.
+
+    ``contact_id`` is the runtime-local ``contacts.id`` —
+    opaque from the wire but unique within the runtime. The
+    ``role`` distinguishes the picker row, the cookie scope,
+    and the runtime ``assigned=True`` check.
+    """
+    result: list[LoginAccount] = []
+
+    # 1. Genesis admins (MAGIS-side). The runtime may or may
+    # not have MAGIS DB access; if it doesn't (the typical
+    # webui-only deploy), the webui adds Genesis admins
+    # separately before responding to the picker.
+    if bus.magis_admins_book is not None:
+        for admin in bus.magis_admins_book.list_for_magis(magis_id=magis_id):
+            contact = bus.contacts_book.get(contact_id=admin.contact_id)
+            display = (contact.display_name or contact.name) if contact else f"Admin #{admin.contact_id}"
+            has_pw = contact is not None and bus.contacts_book.get_password_hash(contact_id=admin.contact_id) is not None
+            result.append(
+                LoginAccount(
+                    contact_id=admin.contact_id,
+                    name=display or f"Admin #{admin.contact_id}",
+                    role="admin",
+                    admin=True,
+                    assigned=contact is not None and contact.role == "assigned",
+                    has_password=has_pw,
+                    has_tg_code=contact is not None and contact.tgid is not None,
+                    tgid=contact.tgid if contact else None,
+                )
+            )
+
+    # 2. Per-MAGI assigned users. Includes webui-only users
+    # (no TG binding) so the wizard's password-only path
+    # shows up in the picker.
     for contact in (row for row in bus.contacts_book.list_all() if row.role == "assigned"):
-        tg = contact.tgid
-        if tg is None:
-            continue
-        existing = result.get(tg)
+        # If a Genesis-admin row with the same contact_id
+        # already exists, still produce an assigned row
+        # so the picker offers both login scopes.
         display = contact.display_name or contact.name or ""
-        if existing is None:
-            result[tg] = LoginAccount(
-                tgid=tg,
+        has_pw = bus.contacts_book.get_password_hash(contact_id=contact.id) is not None
+        result.append(
+            LoginAccount(
+                contact_id=contact.id,
                 name=display,
+                role="assigned",
                 admin=False,
                 assigned=True,
+                has_password=has_pw,
+                has_tg_code=contact.tgid is not None,
+                tgid=contact.tgid,
             )
-        else:
-            existing.assigned = True
-            if not existing.name and display:
-                existing.name = display
+        )
+
     return result
 
 
-def _code_key(tgid: int) -> str:
-    return f"{_CODE_PREFIX}.{tgid}"
+def _code_key(contact_id: int, role: str) -> str:
+    return f"{_CODE_PREFIX}.{role}.{contact_id}"
+
+
+def _find_account(accounts: list[LoginAccount], contact_id: int, role: str) -> LoginAccount | None:
+    for row in accounts:
+        if row.contact_id == contact_id and row.role == role:
+            return row
+    return None
 
 
 def _new_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def _send_code(bus: Bus, magi_id: int, magis_id: int, tgid: int, text: str) -> str:
+async def _send_code(bus: Bus, magi_id: int, magis_id: int, contact_id: int, role: str, text: str) -> str:
     _ = magi_id, magis_id
+    account = _find_account(_accounts(bus, magis_id), contact_id, role)
+    if account is None or account.tgid is None:
+        raise MagiHTTPException(
+            409, "access.no_tg_binding", "This account has no Telegram binding"
+        )
     bot_token = bus.settings_book.get(key="telegram.bot_token")
     if bot_token:
-        await tg_bot.send_text_raw(bot_token, tgid, text)
+        await tg_bot.send_text_raw(bot_token, account.tgid, text)
         return "self"
 
     raise MagiHTTPException(409, "access.no_delivery_bot", "This MAGI has no Bot configured")
@@ -155,12 +209,14 @@ async def _send_code(bus: Bus, magi_id: int, magis_id: int, tgid: int, text: str
 async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse:
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
+    accounts = sorted(
+        _accounts(bus, magis_id).values(),
+        key=lambda row: (row.role, row.name.lower(), row.contact_id),
+    )
     return LoginAccountsResponse(
         magi_id=magi_id,
         magis_id=magis_id,
-        accounts=sorted(
-            _accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.tgid)
-        ),
+        accounts=accounts,
     )
 
 
@@ -170,11 +226,11 @@ async def send_login_code(
 ) -> LoginCodeResponse:
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
-    account = _accounts(bus, magis_id).get(payload.tgid)
-    if account is None:
+    account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
+    if account is None or account.tgid is None:
         # Do not turn this into a principal-enumeration endpoint.
         return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS)
-    previous_raw = bus.settings_book.get(key=_code_key(payload.tgid))
+    previous_raw = bus.settings_book.get(key=_code_key(payload.contact_id, payload.role))
     if previous_raw:
         try:
             previous = json.loads(previous_raw)
@@ -189,7 +245,7 @@ async def send_login_code(
     code = _new_code()
     now = datetime.now(UTC)
     bus.settings_book.set(
-        key=_code_key(payload.tgid),
+        key=_code_key(payload.contact_id, payload.role),
         value=json.dumps(
             {
                 "code": code,
@@ -203,11 +259,12 @@ async def send_login_code(
             bus,
             magi_id,
             magis_id,
-            payload.tgid,
+            payload.contact_id,
+            payload.role,
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
-        bus.settings_book.delete(key=_code_key(payload.tgid))
+        bus.settings_book.delete(key=_code_key(payload.contact_id, payload.role))
         if isinstance(exc, MagiHTTPException):
             raise
         raise MagiHTTPException(
@@ -216,19 +273,87 @@ async def send_login_code(
     return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS, delivery=delivery)
 
 
+@router.post("/access/login-password", response_model=VerifyLoginCodeResponse)
+async def access_login_password(
+    payload: LoginPasswordRequest, request: Request, bus: BusDep
+) -> VerifyLoginCodeResponse:
+    """Verify a password against this runtime's local ``contacts`` table.
+
+    Called by the singleton webui via the proxy layer. The
+    webui hands us ``(contact_id, role, password)``; we
+    look up the local contact, verify the scrypt hash, and
+    return the cookie inputs (``display_name``, ``admin``,
+    ``assigned``, ``tgid``).
+
+    Anti-enumeration: a ``contact_id`` the picker did not
+    offer (and that therefore has no password_hash) responds
+    as ``ok=False`` with a generic error and never sets a
+    cookie on the calling webui.
+    """
+    from magi.channels.api import password_utils
+
+    _require_webui(request)
+    _magi_id, magis_id = _direct_magis(bus)
+    account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
+    if account is None or not account.has_password:
+        return VerifyLoginCodeResponse(ok=False, error="password does not match")
+
+    if not password_utils.check_cooldown(
+        bus,
+        f"{payload.role}:{payload.contact_id}",
+        cooldown_seconds=60,
+    ):
+        record = password_utils._store_get(bus, f"{payload.role}:{payload.contact_id}") or {}
+        last = float(record.get("last_attempt_at", 0))
+        remaining = max(1, int(60 - (_now_ts() - last)))
+        return VerifyLoginCodeResponse(
+            ok=False,
+            error=f"Wait {remaining}s before trying again.",
+        )
+
+    password_utils.record_attempt(bus, f"{payload.role}:{payload.contact_id}")
+
+    stored = _password_hash(bus, payload.contact_id)
+    if not stored or not password_utils.verify_password(stored, payload.password):
+        return VerifyLoginCodeResponse(ok=False, error="password does not match")
+
+    password_utils.clear_attempt(bus, f"{payload.role}:{payload.contact_id}")
+    contact = bus.contacts_book.get(contact_id=payload.contact_id)
+    if contact is None:
+        return VerifyLoginCodeResponse(ok=False, error="contact not found")
+    return VerifyLoginCodeResponse(
+        ok=True,
+        contact_id=contact.id,
+        role=payload.role,
+        tgid=contact.tgid,
+        display_name=contact.display_name or contact.name or "",
+        admin=payload.role == "admin",
+        assigned=payload.role == "assigned" and contact.role == "assigned",
+    )
+
+
+def _password_hash(bus: Bus, contact_id: int) -> str | None:
+    return bus.contacts_book.get_password_hash(contact_id=contact_id)
+
+
+def _now_ts() -> float:
+    import time
+    return time.time()
+
+
 @router.post("/access/verify-login-code", response_model=VerifyLoginCodeResponse)
 async def verify_login_code(
     payload: VerifyLoginCodeRequest, request: Request, bus: BusDep
 ) -> VerifyLoginCodeResponse:
     _require_webui(request)
     _magi_id, magis_id = _direct_magis(bus)
-    account = _accounts(bus, magis_id).get(payload.tgid)
+    account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
     if account is None:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
-    raw = bus.settings_book.get(key=_code_key(payload.tgid))
+    raw = bus.settings_book.get(key=_code_key(payload.contact_id, payload.role))
     if not raw:
         return VerifyLoginCodeResponse(ok=False, error="No code was sent — request a new one.")
-    bus.settings_book.delete(key=_code_key(payload.tgid))
+    bus.settings_book.delete(key=_code_key(payload.contact_id, payload.role))
     try:
         stored = json.loads(raw)
         valid = datetime.now(UTC).timestamp() < float(stored.get("expires_at", 0))
@@ -241,6 +366,8 @@ async def verify_login_code(
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
     return VerifyLoginCodeResponse(
         ok=True,
+        contact_id=account.contact_id,
+        role=account.role,
         tgid=account.tgid,
         display_name=account.name,
         admin=account.admin,
