@@ -48,6 +48,15 @@ logger = logging.getLogger("magi.api.onboarding")
 
 router = APIRouter(tags=["onboarding"])
 
+# A second, narrower router that exposes ONLY the password-set step
+# on the runtime. The runtime must serve this so the singleton webui
+# (which runs in control-plane mode and has no per-runtime
+# ``contacts_book``) can forward the wizard's first-admin write to the
+# runtime's local Bus. Mounting the full ``router`` on the runtime
+# would expose handlers like ``save-bot`` whose writes target
+# ``control_settings_book`` — a Book the runtime does not own.
+runtime_onboarding_router = APIRouter(tags=["onboarding-runtime"])
+
 
 # -- request / response schemas -----------------------------------------
 
@@ -312,13 +321,20 @@ async def set_admin_password_onboarding(
     abandoned the wizard and re-entered the password
     step), the first admin row is reused so the onboarding
     flow doesn't strand the original row's chat history.
+
+    Control-plane webui forwards to the runtime so the
+    password hash lands on the runtime's local
+    ``contacts_book`` (the webui's Bus is bound to the
+    MAGIS-shared store and would otherwise write the
+    hash to the wrong DB).
     """
     if control_store.enabled():
-        # Control-plane side is out of scope for this PR.
-        return SetAdminPasswordResponse(
-            ok=False,
-            error="password login is not supported by the control plane",
-        )
+        forwarded = await _forward_set_admin_password_to_runtime(bus, payload)
+        if forwarded is not None:
+            return forwarded
+        # No runtime reachable — fall through to local write
+        # so legacy / single-process control deployments
+        # without a runtime registry still complete.
 
     name = payload.name.strip()
     if not name:
@@ -344,6 +360,63 @@ async def set_admin_password_onboarding(
         extra={"contact_id": admin_contact_id, "name": name},
     )
     return SetAdminPasswordResponse(ok=True, admin_contact_id=admin_contact_id)
+
+
+# Expose the same handler on the runtime-only router so the runtime
+# can serve the forwarded call from the singleton webui.
+runtime_onboarding_router.add_api_route(
+    "/set-admin-password",
+    set_admin_password_onboarding,
+    methods=["POST"],
+    response_model=SetAdminPasswordResponse,
+)
+
+
+async def _forward_set_admin_password_to_runtime(
+    bus: Bus, payload: SetAdminPasswordRequest
+) -> SetAdminPasswordResponse | None:
+    """Forward ``/api/onboarding/set-admin-password`` to the runtime.
+
+    Returns ``None`` when no runtime is reachable (legacy
+    control deployments that run inline). Otherwise
+    returns the runtime's response.
+    """
+    runtimes = bus.runtime_state_book
+    if runtimes is None:
+        return None
+    runtime = next(
+        (r for r in runtimes.list_all() if r.base_url and r.port_released_at is None),
+        None,
+    )
+    if runtime is None or not runtime.base_url:
+        return None
+    import httpx
+
+    url = f"{runtime.base_url.rstrip('/')}/api/onboarding/set-admin-password"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            upstream = await client.post(url, json=payload.model_dump())
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "onboarding: runtime forward failed",
+            extra={"runtime_id": runtime.runtime_id, "url": url, "error": str(exc)},
+        )
+        return SetAdminPasswordResponse(
+            ok=False,
+            error=f"runtime unreachable: {exc}",
+        )
+    try:
+        data = upstream.json()
+    except ValueError:
+        return SetAdminPasswordResponse(
+            ok=False,
+            error=f"runtime returned non-JSON ({upstream.status_code})",
+        )
+    return SetAdminPasswordResponse(
+        ok=bool(data.get("ok")),
+        error=data.get("error"),
+        admin_contact_id=data.get("admin_contact_id"),
+    )
 
 
 @router.post("/complete", response_model=CompleteResponse)

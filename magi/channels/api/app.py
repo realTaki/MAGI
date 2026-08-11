@@ -157,6 +157,15 @@ def create_app(
         # are deliberately mounted below on private runtimes only.
         app.include_router(magi.router, prefix="/api")
         app.include_router(magis.router, prefix="/api")
+    # Always mount the narrow ``set-admin-password`` step on every
+    # process — the singleton webui (control-plane mode) forwards the
+    # wizard's first-admin write here so the hash lands on the
+    # runtime's local ``contacts_book``.  Mounting the full onboarding
+    # router on the runtime would expose handlers whose target Book is
+    # the webui-only ``control_settings_book``.
+    from magi.channels.api import onboarding as onboarding_api
+
+    app.include_router(onboarding_api.runtime_onboarding_router, prefix="/api/onboarding")
     from magi.channels.api import runtime_control
 
     app.include_router(runtime_control.router, prefix="/api")
