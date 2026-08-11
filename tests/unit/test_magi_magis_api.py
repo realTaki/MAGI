@@ -102,17 +102,17 @@ def test_membership_api_persists_public_collaboration_responsibility(bus: Simple
     assert updated.responsibility == "Owns frontend release validation."
 
 
-def test_magis_admin_resolves_telegram_id_to_contact_uid(bus: SimpleNamespace) -> None:
+def test_magis_admin_resolves_tgid_to_contact_uid(bus: SimpleNamespace) -> None:
     society, _, _ = _society(bus)
-    contact = bus.contacts_book.add(name="operator", display_name="Operator", telegram_id=4242)
+    contact = bus.contacts_book.add(name="operator", display_name="Operator", tgid=4242)
 
     result = magis.add_magis_admin(
-        society.id, magis.MAGISAdminCreate(telegram_id=4242), "admin", bus
+        society.id, magis.MAGISAdminCreate(tgid=4242), "admin", bus
     )
 
     stored = bus.magis_admins_book.list_for_magis(magis_id=society.id)
     assert stored[0].contact_id == contact.id
-    assert result.telegram_id == 4242
+    assert result.tgid == 4242
     assert result.display_name == "Operator"
 
 

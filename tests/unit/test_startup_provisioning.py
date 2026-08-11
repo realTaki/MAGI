@@ -62,7 +62,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0005_drop_legacy_local_a2a_jobs"
+            == "0006_rename_contacts_telegram_id_to_tgid"
         )
     with bus._magis_factory.engine.connect() as connection:
         assert (
@@ -116,8 +116,68 @@ def test_open_bus_upgrades_existing_local_contacts_with_password_hash(tmp_path: 
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0005_drop_legacy_local_a2a_jobs"
+            == "0006_rename_contacts_telegram_id_to_tgid"
         )
+
+
+def test_open_bus_renames_legacy_contacts_telegram_id_to_tgid(tmp_path: Path) -> None:
+    """``0006`` renames the column in place, preserving bound chat ids.
+
+    Guards two things at once: that an existing deployment's
+    ``contacts.telegram_id`` survives the rename with its data
+    (a ``RENAME COLUMN``, not a drop-and-add), and that the
+    guarded migration is safe to re-run — ``upgrade_schema``
+    executes on every BUS open, not just once.
+    """
+    state_dir = tmp_path / "memories"
+    state_dir.mkdir()
+    factory = EngineFactory(f"sqlite:///{state_dir / 'magi.db'}")
+    with factory.engine.begin() as connection:
+        connection.execute(
+            text("""
+            CREATE TABLE contacts (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(120) NOT NULL,
+                display_name VARCHAR(120),
+                role VARCHAR(16) NOT NULL,
+                telegram_id BIGINT,
+                admin BOOLEAN NOT NULL,
+                last_seen_at DATETIME NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                password_hash VARCHAR(255)
+            )
+        """)
+        )
+        connection.execute(
+            text("""
+            INSERT INTO contacts
+                (id, name, role, telegram_id, admin,
+                 last_seen_at, created_at, updated_at)
+            VALUES (1, 'Alice', 'assigned', 12345, 0,
+                    '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+        """)
+        )
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(
+            text(
+                "INSERT INTO alembic_version (version_num)"
+                " VALUES ('0005_drop_legacy_local_a2a_jobs')"
+            )
+        )
+
+    bus = open_bus(state_dir=str(state_dir))
+
+    columns = {
+        column["name"] for column in inspect(bus._local_factory.engine).get_columns("contacts")
+    }
+    assert "tgid" in columns
+    assert "telegram_id" not in columns
+    assert bus.contacts_book.get_by_telegram(tgid=12345) is not None
+
+    # Re-opening runs ``upgrade_schema`` again; the guard must make it a no-op.
+    reopened = open_bus(state_dir=str(state_dir))
+    assert reopened.contacts_book.get_by_telegram(tgid=12345) is not None
 
 
 def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(
@@ -232,7 +292,7 @@ def test_runtime_open_repairs_an_outdated_schema_before_exposing_books(tmp_path:
     with repaired._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0005_drop_legacy_local_a2a_jobs"
+            == "0006_rename_contacts_telegram_id_to_tgid"
         )
 
 

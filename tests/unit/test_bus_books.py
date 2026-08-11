@@ -339,7 +339,7 @@ def test_contact_book_full_lifecycle(factory):
     ``Contact`` — verified by the absence of any
     ``Contact.admin`` field on the DTO."""
     book = ContactBook(factory)
-    c = book.add(name="Alice", telegram_id=12345)
+    c = book.add(name="Alice", tgid=12345)
     assert isinstance(c, Contact)
     assert c.name == "Alice"
     # Contact retains its local role flag; MAGIS membership remains the
@@ -347,9 +347,9 @@ def test_contact_book_full_lifecycle(factory):
     assert c.admin is False
 
     found = book.get(contact_id=c.id)
-    assert found is not None and found.telegram_id == 12345
+    assert found is not None and found.tgid == 12345
 
-    tg = book.get_by_telegram(telegram_id=12345)
+    tg = book.get_by_telegram(tgid=12345)
     assert tg is not None and tg.id == c.id
 
 

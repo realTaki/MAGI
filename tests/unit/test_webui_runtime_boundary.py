@@ -40,7 +40,7 @@ def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> Non
         target_id=7,
         operator_id=42,
         operator_name="Operator",
-        telegram_id=12345,
+        tgid=12345,
     )
     assert verified_proxy_operator(_request(headers)) == (42, "Operator", 12345)
 
