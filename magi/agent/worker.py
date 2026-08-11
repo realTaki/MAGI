@@ -122,7 +122,7 @@ class AgentWorker(RuntimeWorker):
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
         self._active_conversations: set[str] = set()
-        self._in_flight: dict[str, asyncio.Event] = {}  # conv_id → cancel_event
+        self._in_flight: dict[str, asyncio.Event] = {}  # conversation_id → cancel_event
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
         # from the provisioned RuntimeSpec at boot
@@ -145,21 +145,21 @@ class AgentWorker(RuntimeWorker):
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
-            conv_id = getattr(job, "conversation_id", None) or ""
+            conversation_id = getattr(job, "conversation_id", None) or ""
 
             # steering — release back to board for _process to claim
-            if source == "chat" and conv_id and conv_id in self._active_conversations:
+            if source == "chat" and conversation_id and conversation_id in self._active_conversations:
                 await self.call(self.bus.agent_job_board.release, key=job.job_id)
                 continue
 
             # new run
             if source == "chat":
-                self._active_conversations.add(conv_id)
+                self._active_conversations.add(conversation_id)
             payload = getattr(job, "payload", None) or {}
             is_a2a = source != "chat"
             ctx = RunContext(
                 contact_id=(None if is_a2a else payload.get("contact_id")),
-                conversation_id=(conv_id or f"{source}:{job.job_id}"),
+                conversation_id=(conversation_id or f"{source}:{job.job_id}"),
                 channel=(source if is_a2a else payload.get("channel", "")),
                 caller_role=(None if is_a2a else payload.get("caller_role")),
                 messages=(
@@ -178,13 +178,13 @@ class AgentWorker(RuntimeWorker):
                 ctx.final_error = "magi.run_cancelled"
                 raise
             except Exception:
-                logger.exception("agent run failed conv=%s", conv_id)
+                logger.exception("agent run failed conv=%s", conversation_id)
                 ctx.final_error = "agent_crashed"
                 ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
                 await self._publish_delivery(ctx)
             finally:
-                if source == "chat" and conv_id:
-                    self._active_conversations.discard(conv_id)
+                if source == "chat" and conversation_id:
+                    self._active_conversations.discard(conversation_id)
                 succeeded = ctx.final_error is None
                 if source == "chat":
                     await self.call(

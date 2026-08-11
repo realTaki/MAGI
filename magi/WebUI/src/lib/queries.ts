@@ -347,8 +347,8 @@ export function useToggleMcpServer() {
 // -- auth / boot -----------------------------------------------------------
 
 export type MeRow = {
-  uid: number;
-  telegram_id: string;
+  contact_id: number;
+  telegram_id: string | null;
   display_name: string | null;
   // ``admin`` is sourced from the contact row (replaces the
   // pre-2024 ``is_super_admin`` boolean that was hardcoded
@@ -356,6 +356,12 @@ export type MeRow = {
   // it to render role-aware UI (e.g. hide operator-only
   // controls for non-admin sign-ins).
   admin: boolean;
+  assigned?: boolean;
+  // Populated by v3 sessions; ``undefined`` (or ``null``)
+  // for legacy cookies that didn't capture a MAGI target.
+  selected_magi_id?: number | null;
+  login_methods?: string[];
+  password_set?: boolean;
 };
 
 /** GET /api/auth/me — the boot identity check. */

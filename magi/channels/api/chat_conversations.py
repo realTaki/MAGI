@@ -252,19 +252,19 @@ def _resolve_contact_id(request: Request) -> int:
     the frontend's friendly message covers both
     endpoints.
     """
-    from magi.channels.api.auth import _verify_signed_contact_id
+    from magi.channels.api.auth import resolve_session
 
     raw = request.cookies.get("magi_session") or ""
     from magi.channels.api.dependencies import get_bus
 
-    contact_id = _verify_signed_contact_id(get_bus(request), raw)
-    if contact_id is None:
+    session = resolve_session(get_bus(request), raw)
+    if session is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
-    return contact_id
+    return int(session["contact_id"])
 
 
 def _admin_contact_id(request: Request) -> int:
