@@ -315,25 +315,29 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             if row is None:
                 return
             if connection_type is not _UNSET:
-                row.connection_type = connection_type
+                # ``cast`` for Pylance — the ``is not _UNSET`` check
+                # already guarantees the type, but the singleton class
+                # pattern confuses the type checker so the union isn't
+                # narrowed automatically.
+                row.connection_type = cast(str, connection_type)
             if command is not _UNSET:
-                row.command = command
+                row.command = cast("str | None", command)
             if args is not _UNSET:
                 row.args_json = json.dumps(args or [])
             if env is not _UNSET:
                 row.env_json = json.dumps(env or {})
             if url is not _UNSET:
-                row.url = url
+                row.url = cast("str | None", url)
             if headers is not _UNSET:
                 row.headers_json = json.dumps(headers or {})
             if enabled is not _UNSET:
-                row.enabled = enabled
+                row.enabled = cast(bool, enabled)
             if connect_timeout is not _UNSET:
-                row.connect_timeout = connect_timeout
+                row.connect_timeout = cast("float | None", connect_timeout)
             if execute_timeout is not _UNSET:
-                row.execute_timeout = execute_timeout
+                row.execute_timeout = cast("float | None", execute_timeout)
             if sse_read_timeout is not _UNSET:
-                row.sse_read_timeout = sse_read_timeout
+                row.sse_read_timeout = cast("float | None", sse_read_timeout)
             s.commit()
 
     def delete(self, *, server_id: int) -> bool:

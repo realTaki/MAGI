@@ -136,7 +136,7 @@ class ConversationNotFoundError(LookupError):
 class ChannelMismatchError(ValueError):
     """The conversation was created on a different channel than
     the one the caller is writing from (D.22 cross-channel
-    guard). Carries ``session_channel`` so the caller can
+    guard). Carries ``conversation_channel`` so the caller can
     surface which channel owns the conversation.
 
     Example: a WebUI ``POST /chat/send`` targeting a
@@ -144,12 +144,12 @@ class ChannelMismatchError(ValueError):
     to continue the conversation on the original channel.
     """
 
-    def __init__(self, session_channel: str) -> None:
+    def __init__(self, conversation_channel: str) -> None:
         super().__init__(
-            f"Conversation owned by channel {session_channel!r}; "
+            f"Conversation owned by channel {conversation_channel!r}; "
             "cross-channel writes are not allowed."
         )
-        self.session_channel = session_channel
+        self.conversation_channel = conversation_channel
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,7 +387,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             channel=channel,
         )
 
-    def create_task_session(
+    def create_task_conversation(
         self,
         *,
         contact_id: int,
@@ -592,7 +592,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             hasn't seen since compaction rolled it out.
 
         ``limit`` / ``offset`` are clamped by the caller — the route
-        handler in :mod:`magi.channels.api.chat_sessions` does it inline
+        handler in :mod:`magi.channels.api.chat_conversations` does it inline
         because ``Query(ge=…, le=…)`` interacts badly with
         ``from __future__ import annotations`` for some pydantic
         versions.

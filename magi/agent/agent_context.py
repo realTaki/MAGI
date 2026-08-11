@@ -28,7 +28,7 @@ def build_messages_from_session(
     *,
     bus: Bus,
 ) -> list[dict]:
-    """Load session history from sessions_book/messages_book."""
+    """Load conversation history from conversations_book/messages_book."""
     if not conversation_id or contact_id is None:
         return [{"role": "user", "content": new_user_text}]
 

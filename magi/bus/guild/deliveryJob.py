@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import ClassVar
 
 from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -70,7 +71,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
     # Delivery needs more headroom than the generic 3 — flaky
     # channels (Telegram rate limits, WebUI WS reconnects) often
     # fail 4–5 times before settling.
-    max_attempts: int = MAX_DELIVERY_ATTEMPTS
+    max_attempts: ClassVar[int] = MAX_DELIVERY_ATTEMPTS
 
     def publish(self, job: DeliveryJob) -> str:
         with self._session() as s:

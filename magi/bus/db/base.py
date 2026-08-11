@@ -4,7 +4,7 @@ bus 数据访问层：
 - 自己的 ``DeclarativeBase``（独立 ``MetaData``）
 - 自己的 ``EngineFactory``
 - 自己的 ORM 类（inline 在每个 Book/Guild 文件里）
-- 自己的 ``__tablename__``（如 ``chat_sessions``、``memory_entries`` 等）
+- 自己的 ``__tablename__``（如 ``chat_conversations``、``memory_entries`` 等）
 """
 
 from __future__ import annotations

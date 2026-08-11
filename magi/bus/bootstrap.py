@@ -90,10 +90,10 @@ class Bus:
     ``None``.
     """
 
-    # -- local: sessions_book (Books) ---------------------------------------------
-    # sessions_book is an instance of ConversationBook (SessionBook = alias).
+    # -- local: conversations_book (Books) -----------------------------------------
+    # conversations_book is an instance of ConversationBook.
 
-    sessions_book: ConversationBook  # ConversationBook
+    conversations_book: ConversationBook  # ConversationBook
     messages_book: MessageBook  # MessageBook
 
     # -- local: memory_book & contacts_book (Books) ------------------------------------
@@ -424,7 +424,7 @@ def _open_with_dirs(
 
     # ---- assemble ----------------------------------------------------------
     return Bus(
-        sessions_book=conversations_book,
+        conversations_book=conversations_book,
         messages_book=messages_book,
         memory_book=memory_book,
         contacts_book=contacts_book,
