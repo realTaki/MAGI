@@ -76,13 +76,6 @@ _PATH_RE = re.compile(
 # that produced the current tree; chasing their references
 # would defeat the historical-context purpose.
 _SKIP_DOCS = {
-    "docs/ROADMAP.md",
-    "docs/ARCHITECTURE_REVIEW_2026-08-10.md",
-    # ``id-naming-standard.md`` documents the rename history
-    # (e.g. ``sessionBook.py → conversationBook.py``) — its
-    # job is to record pre-rename references, so they're stale
-    # by design.
-    "docs/design/id-naming-standard.md",
     # ``business-flows.md`` explicitly notes
     # "旧的 ``magi.bus.BusStore`` / ``agent_turn_store`` /
     # ``magi.agent.step.run_agent_step`` / ``magic`` 表 等已删除"

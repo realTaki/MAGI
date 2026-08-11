@@ -159,7 +159,7 @@ Durable runtime rules (enforced by the architecture guard):
 | `magi/channels/worker_base.py` | `ChannelWorker` — shared outbound-delivery template |
 | `magi/channels/{tg,webui,tasks}/worker.py` | per-channel Worker implementations |
 | `magi/channels/api/app.py` | FastAPI app factory (Runtime, Control, standalone) |
-| `magi/bus/library/magis/responsibility.py` | `MagisMembershipBook.responsibility` + collaboration directory |
+| `magi/bus/library/magis/membershipBook.py` | `MagisMembershipBook.responsibility` + collaboration directory |
 | `magi/proactive/worker.py` | system-level proactive policies (last to start) |
 | `magi/connectors/` | long-lived external data sources + in-process event bus |
 
