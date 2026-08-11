@@ -28,9 +28,9 @@
 > 是 `bus.change_provider_config_job_board.publish(ChangeProviderConfigJob(...))`
 > （`publish()` 自包含：先落 settings_book 再建 job 行）。
 >
-> **Cookie**：v3 selected-MAGI session（`v3.<base64(payload)>.<sig>`，
-> payload 含 `v=3, magi_id, telegram_id, display_name, admin, assigned,
-> ts`）。v2 旧 cookie（payload 用 `magic_id`）在升级时强制失效。
+> **Cookie**：v4 selected-MAGI session（`v4.<base64(payload)>.<sig>`，
+> payload 含 `v=4, magi_id, tgid, display_name, admin, assigned,
+> ts`）。v3 旧 cookie（payload 用 `telegram_id`）在升级时强制失效。
 >
 > **实际入口**：
 >
@@ -45,10 +45,9 @@
 >
 > **命名约定**：ID 命名以 [terms.md](terms.md#canonical-id-names) 为准 ——
 > `magi_id` / `contact_id` / `conversation_id` / `job_id` / `tgid`。本文件里
-> 出现的历史名（`magic_id` / `uid` / `session_id` / `event_id`）只在描述已失效
-> 的 cookie、已删除的 meta key、已改名的列时出现，标注为历史。注意
-> `telegram_id` **不是**历史名：`tgid` 的重命名尚未落到代码，`contacts` 列名和
-> 多数参数名仍是 `telegram_id`，本文件按代码实际书写。
+> 出现的历史名（`magic_id` / `uid` / `session_id` / `event_id` /
+> `telegram_id`）只在描述已失效的 cookie、已删除的 meta key、已改名的列时
+> 出现，标注为历史。
 
 ---
 
@@ -217,7 +216,7 @@
 1. 提取 tgid = str(update.effective_chat.id)
 
 2. 身份解析 (`_resolve_contact(bus, tgid)`)
-   └─ contacts_book.get_by_telegram(telegram_id=int(tgid)) — 返回
+   └─ contacts_book.get_by_telegram(tgid=int(tgid)) — 返回
      `(contact_id, role, admin)` 三元组或 None
    └─ legacy `telegram.user.<tgid>.uid` meta key 已删除（`uid` 是历史名，
      现为 `contact_id`）
@@ -411,7 +410,7 @@ POST /verify-admin-code { tgid, code }
 ```
 POST /save-admin { tgids: list[str] }
   1. 校验每个 tgid 为数字
-  2. 逐条: resolve (getChat) → upsert Contact(telegram_id, role, admin=True)
+  2. 逐条: resolve (getChat) → upsert Contact(tgid, role, admin=True)
   3. 幂等
 ```
 
@@ -430,7 +429,7 @@ POST /save-admin { tgids: list[str] }
 ```
 1. POST /auth/send-login-code { contact_id }
    └─ 通过 delivery_job_board.publish(DeliveryJob(channel="tg",
-     destination=str(contact.telegram_id),
+     destination=str(contact.tgid),
      payload={"text": code_text, "contact_id": contact_id}))
      → 对应 channel worker claim loop → 原始 HTTP 发送 6 位码
    └─ 5 分钟 TTL / 60s 冷却（settings_book 持久化在 auth.login_code）
@@ -438,8 +437,8 @@ POST /save-admin { tgids: list[str] }
 
 2. POST /auth/verify-login-code { contact_id, code }
    └─ 匹配 → 设置 cookie
-     `_sign_selected_session(bus, magi_id, telegram_id, display_name,
-                              admin, assigned)` 返回 `v3.<body>.<sig>`
+     `_sign_selected_session(bus, magi_id, tgid, display_name,
+                              admin, assigned)` 返回 `v4.<body>.<sig>`
    └─ Cookie: HTTPOnly + SameSite=Lax + 14 天 TTL + HMAC-SHA256 签名
 ```
 
@@ -458,13 +457,14 @@ POST /save-admin { tgids: list[str] }
     base64(contact_id:ts:hmac[:16])
   → `_verify_signed_contact_id(token)` → contact_id (int)
 
-格式 B（当前 control-plane 默认；v3）:
-  `_sign_selected_session(bus, magi_id, telegram_id, display_name,
-                          admin, assigned)` → `v3.<base64(payload)>.<sig>`
-  payload: {v: 3, magi_id, telegram_id, display_name, admin, assigned, ts}
+格式 B（当前 control-plane 默认；v4）:
+  `_sign_selected_session(bus, magi_id, tgid, display_name,
+                          admin, assigned)` → `v4.<base64(payload)>.<sig>`
+  payload: {v: 4, magi_id, tgid, display_name, admin, assigned, ts}
   → `selected_session(token)` → payload dict
-  └─ cookie v2 → v3 升级时把历史 key "magic_id" 改成 "magi_id"，
-     部署时强制作废旧 cookie（version bump 2 → 3）
+  └─ cookie v2 → v3 升级时把历史 key "magic_id" 改成 "magi_id"；
+     v3 → v4 升级时把 "telegram_id" 改成 "tgid"。两次都在部署时
+     强制作废旧 cookie（version bump），而不是软兼容。
 
 _super_admins():
   1. 主路径: 读 contacts_book (admin=True) → contact_id 集合
@@ -475,12 +475,12 @@ _super_admins():
 **不可改的守卫**:
 
 - Cookie payload 主键是 `contact_id`（历史 `uid` 即 `Contact.id`），
-  **不是** tgid / telegram_id。
-- v3 cookie 必须包含 `magi_id`（不是 `magic_id`）— 浏览器不能跨 MAGI
+  **不是** tgid。
+- v4 cookie 必须包含 `magi_id`（不是 `magic_id`）— 浏览器不能跨 MAGI
   复用 cookie。
-- v3 cookie 必须包含 admin / assigned 标志 — 服务端不再次查表。
+- v4 cookie 必须包含 admin / assigned 标志 — 服务端不再次查表。
 - `_super_admins()` 的 ORM 读取失败必须回退到 legacy meta（极早期启动场景）。
-- 旧 cookie（pre-v3，payload 用 `magic_id`）在升级后失效，需重新登录。
+- 旧 cookie（pre-v4，payload 用 `magic_id` 或 `telegram_id`）在升级后失效，需重新登录。
 - 签名不防文件系统级攻击者（有 state_dir 访问权 = 已拥有 DB）。
 - `MAGI_CONTROL_SECRET` 存在时优先于 settings_book 来源（control plane
   共用 secret 派生签名密钥）。
@@ -550,7 +550,7 @@ format_contact_block（在 system prompt 中渲染）:
   └─ 仅渲染当前对话者 (per-chat)
   └─ 2KB 上限
   └─ WebUI 空 chat_id 跳过
-  └─ TG 路径: chat_id → Contact.telegram_id → Contact
+  └─ TG 路径: chat_id → Contact.tgid → Contact
   └─ 使用真实 display_name，不是 person_id FK
 ```
 
@@ -847,7 +847,7 @@ responsibility 字段:
 - [ ] LLM 凭证严格模式未被回退（get_provider 必须 strict mode）
 - [ ] LLM 凭证只从 `bus.settings_book` 读取，不从 Contact 表
 - [ ] Cookie 值仍为 `contact_id` (int)，非 tgid / magic_id
-- [ ] v3 selected-MAGI cookie 必须包含 `magi_id`（不是 `magic_id`）
+- [ ] v4 selected-MAGI cookie 必须包含 `magi_id`（不是 `magic_id`）
 - [ ] Onboarding 验证码一次性使用（任何路径都 state_delete）
 - [ ] TG adapter send 走原始 HTTP，不走 bot.send_message
 - [ ] Task runner 不绑定 TG 回调，只发 ChatJob 给 AgentWorker

@@ -21,19 +21,6 @@ Identifiers below follow the canonical names in
 
 ---
 
-## Naming follow-through
-
-The ID naming convention is settled and mostly applied. Two renames are
-agreed but not yet in the code; until they land, documentation follows
-what the code actually says.
-
-| Item | Status | Notes |
-|---|---|---|
-| `telegram_id` → `tgid` | **Next** | The `contacts.telegram_id` column plus the dominant parameter name across `magi/channels/api/`, `magi/channels/telegram/worker.py`, and `magi/bus/library/local/contactBook.py`. Needs a column rename migration alongside the code change. |
-| `conv_id` → `conversation_id` | **Next** | Local shorthand in `magi/agent/worker.py` only — no schema impact, no migration. |
-
----
-
 ## Channels and routing
 
 | Item | Status | Notes |

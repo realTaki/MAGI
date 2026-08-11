@@ -65,8 +65,5 @@ cookies. They are not valid in current code or documentation.
 | `tg_chat_id` | `chat_id` | code rename |
 | `event_id` | `job_id` | Alembic `0002_drop_run_id_and_rename_event_id` (`chat_jobs`) |
 | `run_id` (agent context) | removed | same revision; agents key off `conversation_id` |
-
-Two renames are agreed but **not yet applied to the code**: `telegram_id` →
-`tgid` (still the `contacts` column name and the dominant parameter name),
-and the local shorthand `conv_id` → `conversation_id` in
-`magi/agent/worker.py`. Document what the code actually says until they land.
+| `telegram_id` | `tgid` | Alembic `0006_rename_contacts_telegram_id_to_tgid` (`contacts`); code, API payloads and WebUI renamed with it. Signed-session cookie bumped v3 → v4; proxy header `X-MAGI-Proxy-Telegram-ID` → `X-MAGI-Proxy-Tgid` |
+| `conv_id` | `conversation_id` | code rename (`magi/agent/worker.py` local shorthand) |
