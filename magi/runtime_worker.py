@@ -24,9 +24,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -41,7 +42,7 @@ class RuntimeWorker(ABC):
     worker_name = "worker"
     worker_kind = "runtime"
 
-    def __init__(self, bus: "Bus", *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
         self._task: asyncio.Task[None] | None = None
@@ -86,12 +87,15 @@ class RuntimeWorker(ABC):
 
     async def on_start(self) -> bool | None:
         """Optional startup hook; return ``False`` to intentionally skip."""
+        return None
 
     async def on_stop_requested(self) -> None:
         """Optional signal step before the main loop is cancelled."""
+        return None
 
     async def on_stopped(self) -> None:
         """Optional cleanup after all owned tasks have stopped."""
+        return None
 
     @abstractmethod
     async def _run(self) -> None:
@@ -118,10 +122,10 @@ class RuntimeWorker(ABC):
         return task
 
     def polled(self) -> None:
-        self._last_poll_at = datetime.now(timezone.utc)
+        self._last_poll_at = datetime.now(UTC)
 
     def succeeded(self) -> None:
-        self._last_success_at = datetime.now(timezone.utc)
+        self._last_success_at = datetime.now(UTC)
         self._last_error = None
 
     def failed(self, exc: BaseException | str) -> None:

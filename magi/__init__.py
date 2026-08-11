@@ -38,8 +38,9 @@ all operator work goes through ADAM's web UI.
 # installed (the stdlib sqlite3 in CPython 3.12+ has FTS5
 # compiled in, so the chat-search FTS path still works).
 try:
-    import pysqlite3 as _pysqlite3  # type: ignore[import-not-found]
     import sys as _sys
+
+    import pysqlite3 as _pysqlite3  # type: ignore[import-not-found]
 
     _sys.modules["sqlite3"] = _pysqlite3
     _sys.modules["sqlite3.dbapi2"] = _pysqlite3.dbapi2  # SQLAlchemy sometimes probes this
