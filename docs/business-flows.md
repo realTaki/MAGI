@@ -12,6 +12,17 @@
 > / `magi.agent.step.run_agent_step` / `magic` 表 等已删除；文档里
 > 残留的旧符号仅作**行为锚点**参考，不是当前可调用路径。
 >
+> **A2A（同一 MAGIS 内 MAGI ↔ MAGI 协作）**：是 MAGIS 共享数据库上的
+> **持久 actor effect**，不是 channel，也不是 HTTP/webhook/外部签名
+> 协议。消息以 `magis_memberships.id` 作为 `magi_id` 写入
+> `a2a_request_job_board`（一次 request / 一次 response）和
+> `a2a_notify_job_board`（单向 fire-and-forget），
+> `AgentWorker.claim_next_turn()` 公平地与本地 `agent_job_board` 一并消费。
+> 旧的 `sendA2AJob` / `A2AWorker` /
+> `channels/a2a/{adapter,router,transport,protocol}.py` / 任何 `expect_reply`
+> / `reply_to` / HTTP 地址参数均已删除；`message_magi` 工具 schema 收敛为
+> `{magi_id, mode ∈ {notify, request}, text, deadline_seconds}`。
+>
 > **Provider 凭证**：来自 `bus.settings_book` 三个 key —
 > `provider.name` / `provider.api_key` / `provider.model`。写侧唯一入口
 > 是 `bus.change_provider_config_job_board.publish(ChangeProviderConfigJob(...))`
@@ -284,6 +295,7 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
 - TG `TelegramWorker._deliver_tg` **必须走原始 HTTP**（`send_text_raw`），不能用 `bot.send_message`
 - Channel worker 在 composition root 启动时一次性 `start()`（不再是 dispatcher 自注册 + 懒加载）
 - Domain 代码（tools/runner/webui api）绝不直接读 `delivery_address` 或调 channel worker
+- **A2A 不是 channel**：没有 `delivery_job_board` 行、没有 channel worker、没有 `channels/a2a/` 包。所有 A2A 出站都走 `magi/tools/comms/message_magi.py`（持久 actor effect），由 `AgentWorker` 直接落盘到 MAGIS 共享 boards。
 
 ---
 
@@ -668,7 +680,142 @@ LLM 调用方式:
 
 ---
 
-## 15. Hook 子系统（预留设计，尚未实现）
+## 15. A2A — 同一 MAGIS 内 MAGI ↔ MAGI 协作
+
+**入口**: `magi/tools/comms/message_magi.py`（出站 actor effect）+ `magi/agent/worker.py::AgentWorker._run`（入站 claim + 终态处理）
+
+### 协议：两类单向终态，而非开放式对话
+```
+A2A 消息模式（取代 expect_reply）:
+  - mode="notify"  : 发送事实/进度/提醒；不等待业务回答
+                     → 接收 Agent 处理完即 ack，**不**自动回复
+  - mode="request" : 发送一个需要一次回答的问题/委派
+                     → Agent 最终文本 compare-and-set 写入该请求
+                       的唯一 response，最多一次；response 不再携带
+                       request / expect_reply 语义
+```
+
+收到 `notify` 的 Agent 即使想联络发送者，也必须**主动调用** `message_magi`
+创建一条全新消息——不是对原消息的 reply。收到 `request` 的 Agent 由
+runtime（而非模型拼接 `reply_to`）完成原请求。超时、拒绝、失败、迟到
+response 都是持久状态；迟到 response 不会悄悄重新唤醒已经结束的发送方 run。
+
+### 出站：`message_magi` 工具（持久 actor effect）
+```
+入口: magi/tools/comms/message_magi.py::message_magi
+识别: AgentWorker 将其标记为 persistent actor effect，
+       **不**委托给 ToolsWorker 执行
+
+schema:
+  {
+    "magi_id": int,                # 必须来自协作目录；worker 再做
+                                  # 同 MAGIS + 非自身校验
+    "mode": "notify" | "request",
+    "text": str,
+    "deadline_seconds": int=120,   # 仅 request 有意义
+  }
+
+执行路径:
+  1. 校验 magi_id ∈ 协作目录（list_collaboration_directory 渲染列表）
+  2. 校验 source_magi_id / target_magi_id 属同一 MAGIS 且 ≠ 自己
+  3. notify → a2a_notify_job_board.publish(target_magi_id, ...)
+             → tool_result = {"persisted": True}（不进入等待集）
+  4. request → a2a_request_job_board.publish(target_magi_id, ...,
+              deadline_at)
+             → 加入 _gather_all 等待；唯一 response / 失败 /
+               deadline_seconds 任一触发后写入 tool_result
+  5. 失败 → ToolResult(is_error=True)，但已落库行不回滚
+     （re-deliver 由 receiver 重试语义处理）
+```
+
+### 入站：`AgentWorker.claim_next_turn()` 公平消费
+```
+入口: magi/agent/worker.py::AgentWorker._run
+  while not stopping:
+    claim_next_turn():
+      轮流从以下三类来源取下一条未过期、目标 = self._magi_id 的 job：
+        - agent_job_board（本地 chat）
+        - a2a_request_job_board（共享 MAGIS）
+        - a2a_notify_job_board（共享 MAGIS）
+      每类连续消费上限（例如 4 条）→ 防止一侧饥饿
+      优先取最早 available_at 的项
+
+A2A 入参 RunContext:
+  ctx.channel ∈ {"a2a.notify", "a2a.request"}
+                 # 不是公开 channel，是内部来源标识
+  ctx.source_magi_id = job.source_magi_id
+  ctx.request_id     = job.job_id            # 仅 request
+  ctx.mode           = job.mode
+  ctx.deadline_at    = job.deadline_at      # 仅 request
+  ctx.text           = job.text
+```
+
+### 终态处理（无 delivery）
+```
+A2A run 终态（_process 收尾）:
+  - 不写 delivery_job_board（普通最终回答不进任何人类 channel）
+  - mode == notify:
+      → ack() a2a_notify_job_board 行（compare-and-set 标记已消费）
+      → 写 ChatJobResult(success=True, status="completed")
+  - mode == request:
+      → compare-and-set 写 response_payload + response_status
+        ∈ {"responded", "rejected", "timed_out", "failed"}（一次）
+      → 写 ChatJobResult(success=True/False, status="completed"/"failed")
+      → **绝不**再生成 A2A reply；response 不是新入站消息
+```
+
+### 系统提示中的 MAGIS 协作目录
+```
+每 turn 注入（与 SOUL → Instructions → Memory → Contact →
+Daily note → Skills 六块并行渲染）:
+  ## MAGIS collaboration directory
+  - <self> [ADAM] eva-frontend  → "负责 WebUI 前端、React Query 与
+                                   构建验证；不执行数据库迁移"
+  - [EVA]  eva-backend          → "负责 API 设计与数据库迁移；
+                                   不直接接触前端"
+  - ...
+
+来源: MagisMembershipBook.list_collaboration_directory(magi_id=self._magi_id)
+  - 只返回同 MAGIS 成员
+  - 每条目含 magi_id / runtime_name / role_name / responsibility
+  - 永不暴露其他成员的私有 prompt / API key / 记忆 / 会话
+
+responsibility 字段:
+  - MagisMembership.responsibility (Text) — 公开、可编辑
+  - 由 MAGIS 操作者维护，**不是** LLM 自修改字段
+  - WebUI MAGIS membership 创建/更新模型同步增加该字段
+  - 变更无需重启 Agent 即可生效（每 turn 重读）
+```
+
+### 工具契约的破坏性变更
+```
+已删除:
+  - expect_reply: bool 参数（无法表达循环终止）
+  - 模型可控 reply_to 参数
+  - HTTP 地址 / adapter / router / transport / protocol 任何参数
+  - channels/a2a/{adapter,router,transport,protocol}.py
+  - sendA2AJob / A2AWorker 本地 SQLite 路径
+  - 在交付后立即把 sender 等待的 job 标成功的旧语义
+```
+
+**不可改的守卫**:
+
+- A2A **不能走 HTTP / webhook / 外部签名协议** — 是 MAGIS 共享数据库上的持久 job
+- A2A **不能作为 channel** — 没有 channel worker，没有 `delivery_job_board` 行
+- A2A boards 必须用 `Bus._magis_factory` 实例化；**绝不**写入任一 MAGI 的 local SQLite
+- `notify` 的 tool result 仅为 "persisted"，永不让模型进入等待集
+- `request` 一次只能写一次 response（compare-and-set），迟到 response 不复活已结束的发送方 run
+- `magi_id` 必须来自协作目录；worker 再做同 MAGIS + 非自身校验
+- 不允许向自己发送（同 MAGIS 但 magi_id == self._magi_id → 拒绝）
+- `claim_next_turn()` 必须轮流轮询三类 board + 设置连续消费上限
+- A2A 输入的 `RunContext.channel` 是 `a2a.notify` / `a2a.request`，不是公开 channel
+- 系统提示中的协作目录每 turn 重读；成员职责 / role 更新无需重启 Agent 生效
+- 系统提示向模型注入精确规则：不要对通知自动回复；对请求只面向请求内容答复一次；需要继续合作时显式调用 `message_magi` 新建消息
+- 运行时强制终态，提示词只帮助模型选择正确协作行为
+
+---
+
+## 16. Hook 子系统（预留设计，尚未实现）
 
 当前仓库**没有** `magi/bus/hooks/` 模块，也没有
 `hook_evaluations` / `hook_plugin_configs` 表或对应架构测试。不要把 Hook
@@ -701,3 +848,11 @@ LLM 调用方式:
 - [ ] Agent Worker 接收 `magi_id` 用于渲染 per-MAGI instruction block
 - [ ] ProactiveWorker 是 WorkerRegistry 最后启动的 Worker
 - [ ] Provider 配置变更只走 `change_provider_config_job_board`，不直接 `settings_book.set`
+- [ ] A2A 不再是 channel：没有 `delivery_job_board` 行 / channel worker / `channels/a2a/` 包
+- [ ] A2A boards（`a2a_request_job_board` / `a2a_notify_job_board`）用 `Bus._magis_factory` 实例化；不写入 MAGI local SQLite
+- [ ] `notify` 只 ack 不回复；`request` 只能写一次 response（compare-and-set）
+- [ ] `message_magi` schema 收敛为 `{magi_id, mode, text, deadline_seconds}`，不出现 `expect_reply` / `reply_to` / HTTP 地址参数
+- [ ] `AgentWorker.claim_next_turn()` 公平轮询 `agent_job_board` + 两个 A2A board，per-source 连续消费上限存在
+- [ ] A2A 入参 `RunContext.channel` 取 `a2a.notify` / `a2a.request`，普通最终回答不进 `delivery_job_board`
+- [ ] 协作目录每 turn 重读；`responsibility` / role 变更无需重启 Agent
+- [ ] 协作目录只返回同 MAGIS 成员；不暴露私有 prompt / API key / 记忆 / 会话

@@ -123,7 +123,7 @@ class ActionItemCompleteRequest(BaseModel):
 # recent history" and "ancient noise". The dashboard's
 # "最近完成" disclosure caps at this cut-off so very old
 # rows don't render. Operators wanting a longer history
-# can query ``/api/chat/sessions`` (D.6) for the full
+# can query ``/api/chat/conversations`` (D.6) for the full
 # session list.
 _COMPLETED_VISIBLE_DAYS = 7
 

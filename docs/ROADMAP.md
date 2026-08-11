@@ -16,6 +16,14 @@
 > Do **not** add new entries here; the post-refactor backlog lives
 > in the review document and in the issue tracker. New readers:
 > stop reading at the first line below the banner.
+>
+> **A2A migration (2026-08-10):** the original
+> `docs/design/a2a-implementation-plan.md` was folded into the
+> authoritative docs (see "Recent drops — A2A migration" below) and
+> the design file was deleted. A2A is no longer an HTTP /
+> `A2AAdapter` / `A2AWorker` / `sendA2AJob` path — it is the
+> MAGIS-internal persistent actor effect described in
+> [ARCHITECTURE.md](ARCHITECTURE.md#a2a--magis-collaboration).
 
 ---
 
@@ -953,6 +961,70 @@ domain code (tools, runner, webui api)  →  dispatcher  →  adapter (TG/Slack/
 **D.29 follow-up** (``magi_im_bindings`` table): moves `Contact.telegram_id`
 into a proper `(magi_id, channel, im_id)` table and drops the denormalised
 column. Deferred to the F1 three-table migration.
+
+### A2A migration — persistent actor effect (2026-08-10)
+
+The old A2A path (HTTP / `A2AAdapter` / `A2AWorker` /
+`channels/a2a/{adapter,router,transport,protocol}.py` /
+`sendA2AJob` / `expect_reply` flag) was rewritten as a **persistent
+MAGIS-shared communication surface** consumed by `AgentWorker` as a
+persistent actor effect. The detailed plan
+(`docs/design/a2a-implementation-plan.md`) was folded into
+[ARCHITECTURE.md](ARCHITECTURE.md) (A2A — MAGIS collaboration) and
+[docs/business-flows.md](business-flows.md) (§15), and the design file
+itself was deleted.
+
+- A2A boards `a2a_request_job_board` / `a2a_notify_job_board` live in
+  the MAGIS-shared database, instantiated through
+  `Bus._magis_factory` (no per-MAGI local SQLite writes). Sender and
+  receiver are addressed by `magis_memberships.id`.
+- `expect_reply: bool` was replaced by two terminal modes:
+  - `notify` — fire-and-forget; receiver `ack()`s, never auto-replies.
+  - `request` — exactly one response, compare-and-set, written by the
+    runtime (not the model). Late / duplicate responses do not revive a
+    terminated sender run.
+- `AgentWorker.claim_next_turn()` round-robins across `agent_job_board`
+  and the two A2A boards with per-source consecutive-consumption caps.
+  A2A input runs carry an internal-only `RunContext.channel`
+  (`a2a.notify` / `a2a.request`) and never publish to
+  `delivery_job_board`.
+- `message_magi` (in `magi/tools/comms/`) is the single persistent
+  actor-effect tool, with schema
+  `{magi_id, mode ∈ {notify, request}, text, deadline_seconds}`.
+  `AgentWorker` recognises it as a persistent effect — it is never
+  delegated to `ToolsWorker`.
+- `MagisMembershipBook` gained `responsibility: Text` (public,
+  editable, default `""`) plus
+  `update_responsibility(...)` /
+  `list_collaboration_directory(magi_id=...)`. The directory is
+  rendered into every system prompt as a compact "MAGIS collaboration
+  directory" block, scoped to the caller's MAGIS, and re-read on
+  every turn (no Agent restart on `responsibility` / role change).
+  WebUI membership create/update models carry `responsibility` too.
+- Removed: HTTP / `A2AAdapter` / `A2AWorker` /
+  `channels/a2a/{adapter,router,transport,protocol}.py` /
+  `sendA2AJob` local board, `expect_reply` /
+  `reply_to` / HTTP address parameters, "delivered ⇒ sender job
+  succeeds" pre-mature finalisation.
+
+Acceptance (mirrors the §8 verification list in the now-deleted
+plan):
+
+- One MAGI sees the name / role / `responsibility` of every
+  membership in its MAGIS, never another MAGIS, and never private
+  metadata.
+- `notify` is consumed exactly once by its target; the receiver's
+  ordinary final text does **not** spawn a second A2A message.
+- `request` admits exactly one response, surfaced to the sender as a
+  `tool_result` and usable in subsequent reasoning.
+- A receiver that genuinely needs to follow up must call
+  `message_magi` itself with a new `notify` / `request` — the two
+  sides never enter an unprompted reply loop.
+- Restart / duplicate effect / contested claim / lease expiry /
+  nonexistent target cannot cause duplicate business processing or
+  cross-MAGIS delivery.
+- No production code references the old HTTP A2A path; the BUS
+  import-boundary check passes with zero violations.
 
 ## Open questions for the user
 

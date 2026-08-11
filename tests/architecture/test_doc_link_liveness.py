@@ -89,10 +89,7 @@ _SKIP_DOCS = {
     # — its references to retired code are part of the
     # documentation.
     "docs/business-flows.md",
-    # ``unified-webui.md`` references ``magi.startup.kubernetes``
-    # which was removed when the WebUI process split out.
-    "docs/unified-webui.md",
-}
+    }
 
 
 def _iter_doc_files() -> list[Path]:
