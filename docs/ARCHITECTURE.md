@@ -19,7 +19,7 @@ user-facing documentation. They are the only supported names.
 | Process-local facade | `Bus` (frozen dataclass returned by `open_bus`) |
 | Composition-root entry | `open_bus(state_dir=…, magis_url=…)` |
 | Control-plane entry | `open_control_bus(control_dir=…, magis_url=…)` |
-| Durable CRUD / query API | **Book** (e.g. `sessions_book`, `messages_book`) |
+| Durable CRUD / query API | **Book** (e.g. `conversations_book`, `messages_book`) |
 | Durable `publish → claim → submit_result` API | **Job Board** (e.g. `agent_job_board`) |
 | Ephemeral notification aid | `stream_hub` (not a source of truth) |
 
@@ -27,6 +27,13 @@ There is no second bus, compatibility package, fallback singleton,
 dual-write path, or alternate BUS implementation. The retired
 `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are banned by
 `tests/architecture/test_import_boundaries.py`.
+
+Identifiers follow one name per concept — `magi_id`, `contact_id`,
+`conversation_id`, `job_id`, `tgid` — across ORM columns, DTO fields,
+parameters, and API payloads. The full table, including the retired names
+(`magic_id`, `uid`, `session_id`, `event_id`, agent-context `run_id`) that
+still appear in git history and old database dumps, is in
+[MAGI terms](terms.md#canonical-id-names).
 
 ## Runtime shape
 
@@ -126,9 +133,9 @@ Durable runtime rules (enforced by the architecture guard):
 3. LLM, tool, HTTP, and channel I/O happen outside database transactions.
 4. Worker completion is written back through the corresponding Job Board.
 5. A terminal committed result outranks a streamed delta.
-6. `/api/chat/send` is asynchronous: it returns `202 Accepted` with a `run_id`
-   (job id); clients consume progress and final state through the durable
-   run / SSE path.
+6. `/api/chat/send` is asynchronous: it returns `202 Accepted` with a
+   `job_id` (the `chat_jobs` natural key) and the `conversation_id`; clients
+   consume progress and final state through the durable job / SSE path.
 
 ## Important paths
 
@@ -211,7 +218,8 @@ file-backed reads.
 Bus (magi/bus/bootstrap.py)
 ├─ local (always present)
 │  ├─ Books
-│  │   sessions_book          ConversationBook + MessageBook
+│  │   conversations_book     ConversationBook
+│  │   messages_book          MessageBook
 │  │   memory_book            MemoryBook
 │  │   contacts_book          ContactBook
 │  │   contact_notes_book     ContactNoteBook
@@ -343,7 +351,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 
 ### `magi.channels` — ingress + egress
 
-- **Ingress** writes to `sessions_book` / `messages_book` and publishes a
+- **Ingress** writes to `conversations_book` / `messages_book` and publishes a
   `ChatJob` to `agent_job_board`. Telegram is a long-polling inbound worker
   (`python-telegram-bot` v21+ `Application.start_polling`); the WebUI
   ingress is the FastAPI route `POST /api/chat/send`. A2A is **not** an HTTP
@@ -355,7 +363,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
   `_deliver_<channel>` function.
 - The HTTP API factory (`create_runtime_app` / `create_control_app` /
   `create_app`) mounts the channel-agnostic feature routers (auth,
-  onboarding, chat sessions, contacts, memory, tasks, MCP, skills, …)
+  onboarding, chat conversations, contacts, memory, tasks, MCP, skills, …)
   plus the per-channel delivery surface.
 
 ## A2A — MAGIS collaboration
@@ -546,12 +554,9 @@ and `test_hook_envelope_purity.py`).
 
 ## Further reading
 
-- [MAGI terms](terms.md) — vocabulary.
+- [MAGI terms](terms.md) — vocabulary and the canonical ID names.
 - [Business flows](business-flows.md) — invariant behaviour and guard
   conditions for the chat loop, channels, tasks, onboarding, login, and
   tools.
 - [Production persistence](production-persistence.md) — storage
   boundaries from a deployment perspective.
-- [ID naming standard](design/id-naming-standard.md) — the migration
-  table for the `magic_id → magi_id` / `uid → contact_id` /
-  `session_id → conversation_id` rename.

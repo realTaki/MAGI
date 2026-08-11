@@ -81,7 +81,7 @@ def _build_tools() -> list[Tool]:
     from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
     from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
     from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
-    from magi.tools.memory.sessions.search_sessions import SearchSessionsTool
+    from magi.tools.memory.conversations.search_conversations import SearchConversationsTool
     from magi.tools.shell.kill import BashKillTool
     from magi.tools.shell.output import BashOutputTool
     from magi.tools.shell.run import BashRunTool

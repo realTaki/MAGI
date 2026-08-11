@@ -13,6 +13,6 @@ three subpackages, one per memory surface:
     about its operator.
   - :mod:`magi.tools.memory.contacts` — contact directory
     + contact notes + the per-day note file.
-  - :mod:`magi.tools.memory.sessions` — cross-session
+  - :mod:`magi.tools.memory.conversations` — cross-conversation
     search (turn history, role recall).
 """

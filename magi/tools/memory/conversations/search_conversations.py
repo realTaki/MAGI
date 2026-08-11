@@ -1,4 +1,4 @@
-"""``search_sessions`` tool — full-text search across the
+"""``search_conversations`` tool — full-text search across the
 operator's chat history, with N-turn context around each hit.
 
 Companion to ``/api/chat/search`` (D.18): same FTS5 index,
@@ -31,7 +31,7 @@ Output format
 One text block per hit, capped at 20 hits per call. Each
 block:
 
-  [hit N] session=<id>, title="...", ts=<ISO>
+  [hit N] conversation=<id>, title="...", ts=<ISO>
     --- context (N turns before + N turns after) ---
     [user @ ts] ...
     [assistant @ ts] ...
@@ -47,12 +47,12 @@ auto-compaction), the context slice falls back to the
 active tail and we annotate the hit with ``(archived)``
 plus the snippet — we don't have a clean way to find
 "neighbouring archived messages", and a compressed
-session by definition lost its turn-by-turn context. The
+conversation by definition lost its turn-by-turn context. The
 LLM gets a clear hint instead of misleading neighbours.
 
 Output cap: the same 8 KB ceiling the other tools use —
-a runaway context_n on a huge session can't blow up the
-next LLM call.
+a runaway context_n on a huge conversation can't blow up
+the next LLM call.
 
 Bus plumbing
 ------------
@@ -61,12 +61,12 @@ All business logic lives on the bus; this tool is
 just the LLM-facing text formatter:
 
 - :meth:`MessageBook.search` — the FTS5 query (contact_id-scoped).
-- :meth:`SessionBook.get_for_owner` — single cross-contact
-  safety gate (returns ``None`` for sessions that don't
+- :meth:`ConversationBook.get_for_owner` — single cross-contact
+  safety gate (returns ``None`` for conversations that don't
   belong to the caller).
 - :meth:`MessageBook.resolve_hit` — closes the gap between
   the FTS row and the rendered context slice (fetches the
-  session header, fetches the active+archived messages,
+  conversation header, fetches the active+archived messages,
   classifies archived vs active, slices ±N around the hit).
 
 Future ``/api/chat/search`` (frontend → HTTP API) will hit
@@ -91,11 +91,11 @@ _MAX_CONTEXT_N = 20
 _MAX_OUTPUT_BYTES = 8 * 1024
 
 
-class SearchSessionsTool(Tool):
+class SearchConversationsTool(Tool):
     """Search the operator's chat history; return hits with
     surrounding context."""
 
-    name = "search_sessions"
+    name = "search_conversations"
 
     # Visible only to ``admin`` and ``assigned``
     # operators — same gate as the WebUI dashboard and
@@ -115,8 +115,8 @@ class SearchSessionsTool(Tool):
         "when the user references something discussed earlier "
         '("remember when we…", "what was that…"), or '
         "when you need context that has scrolled out of the "
-        "current session's tail. Scope: the calling operator's "
-        "own history; other operators' sessions are not "
+        "current conversation's tail. Scope: the calling operator's "
+        "own history; other operators' conversations are not "
         "reachable."
     )
     input_schema = {
@@ -165,7 +165,7 @@ class SearchSessionsTool(Tool):
         q = kwargs.get("q")
         if not isinstance(q, str) or not q.strip():
             return ToolResult(
-                content=("search_sessions: ``q`` is required and must be a non-empty string"),
+                content=("search_conversations: ``q`` is required and must be a non-empty string"),
                 is_error=True,
             )
 
@@ -173,7 +173,7 @@ class SearchSessionsTool(Tool):
         if not isinstance(context_n, int):
             return ToolResult(
                 content=(
-                    f"search_sessions: ``context_n`` must be an "
+                    f"search_conversations: ``context_n`` must be an "
                     f"integer, got {type(context_n).__name__}"
                 ),
                 is_error=True,
@@ -184,14 +184,14 @@ class SearchSessionsTool(Tool):
         if not isinstance(limit, int):
             return ToolResult(
                 content=(
-                    f"search_sessions: ``limit`` must be an integer, got {type(limit).__name__}"
+                    f"search_conversations: ``limit`` must be an integer, got {type(limit).__name__}"
                 ),
                 is_error=True,
             )
         limit = max(1, min(limit, _MAX_HITS))
 
         # Scope: the calling operator's contact_id. Cross-
-        # platform: every session row whose ``contact_id``
+        # platform: every conversation row whose ``contact_id``
         # matches — webui conversations AND any TG / future
         # IM conversations handled by that operator all
         # match. Channel and per-channel delivery address
@@ -205,18 +205,18 @@ class SearchSessionsTool(Tool):
                 limit=limit,
             )
         except SearchUnavailable as e:
-            return ToolResult(content=f"search_sessions: {e}", is_error=True)
+            return ToolResult(content=f"search_conversations: {e}", is_error=True)
         except Exception as e:
             # FTS5 syntax error post-sanitisation shouldn't
             # happen, but defend with a clear message
             # instead of a 500.
             return ToolResult(
-                content=f"search_sessions: query rejected by FTS5: {e}",
+                content=f"search_conversations: query rejected by FTS5: {e}",
                 is_error=True,
             )
 
         if not hits:
-            return ToolResult(content=(f"search_sessions: no matches for q={q!r} (total={total})"))
+            return ToolResult(content=(f"search_conversations: no matches for q={q!r} (total={total})"))
 
         # Format each hit with its surrounding context.
         # Cap the running output at ``_MAX_OUTPUT_BYTES`` so
@@ -252,7 +252,7 @@ class SearchSessionsTool(Tool):
             bytes_used += block_bytes
 
         header = (
-            f"search_sessions: q={q!r}, {total} match(es) "
+            f"search_conversations: q={q!r}, {total} match(es) "
             f"scoped to contact_id={contact_id}; "
             f"returning {len(blocks)} of {len(hits)} hit(s) "
             f"with ±{context_n} message context each\n"
@@ -272,7 +272,7 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
     """Build the text block for one FTS5 hit: header +
     surrounding context.
 
-    Pure formatting — all cross-contact validation, session
+    Pure formatting — all cross-contact validation, conversation
     lookup, message fetch, active/archive classification,
     and context slicing live in
     :meth:`MessageBook.resolve_hit`. This function is just
@@ -287,18 +287,18 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
         conversations_book=bus.conversations_book,
     )
     if resolved is None:
-        # Hit's session doesn't belong to the caller (or
+        # Hit's conversation doesn't belong to the caller (or
         # the row was deleted between FTS and read). Emit
         # a generic placeholder rather than leak metadata.
         return (
-            f"[hit] session={hit.conversation_id}, ts={hit.ts}, "
+            f"[hit] conversation={hit.conversation_id}, ts={hit.ts}, "
             f"role={hit.role}, channel={hit.channel}, "
             f"delivery_address={hit.delivery_address} — "
-            f"session no longer accessible to caller"
+            f"conversation no longer accessible to caller"
         )
 
     header = (
-        f"[hit] session={resolved.conversation.conversation_id}, "
+        f"[hit] conversation={resolved.conversation.conversation_id}, "
         f"title={resolved.conversation.title!r}, ts={hit.ts}, "
         f"role={hit.role}, channel={hit.channel}, "
         f"delivery_address={hit.delivery_address}" + (" (archived)" if resolved.is_archived else "")
