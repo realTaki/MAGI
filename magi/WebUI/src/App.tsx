@@ -68,6 +68,7 @@ export default function App() {
     tgid: string;
     display_name: string | null;
     admin: boolean;
+    role: "admin" | "assigned";
   } | null>(null);
   // Manual override for the boot-routed view. Used by the
   // landing page's "Sign in" button (jumps to login even when
@@ -112,6 +113,7 @@ export default function App() {
         tgid: meQuery.data.tgid ?? "",
         display_name: meQuery.data.display_name,
         admin: meQuery.data.admin,
+        role: (meQuery.data.assigned ? "assigned" : "admin"),
       });
     } else {
       setSignedInUser(null);
@@ -165,7 +167,7 @@ export default function App() {
     content = (
       <LoginPage
         magiId={loginMagiId ?? 1}
-        onLoggedIn={async (tgid) => {
+        onLoggedIn={async (contactId, role) => {
           // The LoginPage's verify mutation
           // invalidated ``qk.me``; force a fresh read
           // so the dashboard can greet the user.
@@ -174,19 +176,21 @@ export default function App() {
           setSignedInUser(
             me
               ? {
-                  tgid: me.tgid ?? "",
+                  tgid: me.tgid ?? String(contactId),
                   display_name: me.display_name,
                   admin: me.admin,
+                  role,
                 }
               : {
                   // Fallback for the very first paint
                   // after ``onSuccess`` before the
                   // refetch settles — the LoginPage
-                  // passes the chosen tgid so
+                  // passes the chosen contact_id so
                   // the dashboard can greet by it.
-                  tgid: String(tgid),
+                  tgid: String(contactId),
                   display_name: null,
                   admin: false,
+                  role,
                 },
           );
           setViewOverride(null);

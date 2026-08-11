@@ -1,51 +1,52 @@
 /**
  * Sign-in flow — name dropdown + 6-digit code OR password.
  *
- * Two tabs, auto-selected from the user's
- * ``login_methods``:
+ * Two tabs, auto-selected from the picked account's
+ * ``has_password`` / ``has_tg_code`` fields returned by
+ * the picker:
  *
  *   - "Password" — for WebUI-only admins (no TG binding,
  *     or an admin who set a password for stronger auth).
  *   - "Verification code" — original TG-code flow.
  *
- *   1. GETs /api/auth/allowed-accounts → list of admin names+UIDs.
+ *   1. GETs /api/auth/targets/{magi_id}/accounts → list of
+ *      identities keyed by (contact_id, role). Each row
+ *      tells you the available login methods.
  *   2. User picks a name; the tabs render based on the
- *      picked account's login methods.
+ *      picked account's ``has_password`` / ``has_tg_code``.
  *   3a. Password tab: user types the password, hits
  *       "Sign in" → cookie set → dashboard.
  *   3b. Code tab: user clicks "Send code" → 6-digit code
  *       on bound TG chat → enters it → cookie set →
  *       dashboard.
  *
- * The two surfaces co-exist: an admin can have both
- * methods and switch between them on the fly. The 60s
- * cooldown on the password side is enforced server-side
- * and surfaced via ``retry_after`` so the button can
- * disable itself for the remaining window.
+ * The same contact can appear as both ``admin`` and
+ * ``assigned`` rows (e.g. "Taki (admin)" + "Taki (assigned)");
+ * the picker shows both so the operator picks which layer
+ * they want to log in as.
  *
- * Migrated to react-query: ``useLoginMethods`` is the
- * tab-deciding probe; the two POSTs go through
- * ``useSendLoginCode`` / ``useVerifyLoginCode`` (TG)
- * and ``useLoginPassword`` (password). The phase
- * machine stays in ``useState`` (UI flow, not data).
+ * The 60s cooldown on the password side is enforced
+ * server-side and surfaced via ``retry_after`` so the
+ * button can disable itself for the remaining window.
  */
 
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/index";
 import {
-  useLoginMethods,
   useLoginPassword,
   useSendTargetLoginCode,
   useTargetLoginAccounts,
   useVerifyTargetLoginCode,
+  type TargetLoginAccount,
 } from "../lib/queries";
 
 type Phase = "send" | "code" | "verifying" | "error";
 type Method = "password" | "tg_code";
+type Role = "admin" | "assigned";
 
 export default function LoginPage(props: {
   magiId: number;
-  onLoggedIn: (tgid: number) => void;
+  onLoggedIn: (contactId: number, role: Role) => void;
   onBack: () => void;
 }) {
   const t = useT();
@@ -54,7 +55,7 @@ export default function LoginPage(props: {
   const verifyMut = useVerifyTargetLoginCode(props.magiId);
   const loginPasswordMut = useLoginPassword();
 
-  const [selectedTelegramId, setSelectedTelegramId] = useState<number | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [phase, setPhase] = useState<Phase>("send");
@@ -62,35 +63,39 @@ export default function LoginPage(props: {
   const [activeMethod, setActiveMethod] = useState<Method>("tg_code");
   const [cooldownUntil, setCooldownUntil] = useState<number>(0);
 
-  // Probe the picked account's login methods so we know
-  // which tabs to render. ``useLoginMethods`` is keyed on
-  // the picked uid; switching uid triggers a refetch.
-  const methodsQuery = useLoginMethods(selectedTelegramId);
-  const methods = methodsQuery.data?.methods ?? [];
-  const hasPassword = methods.includes("password");
-  const hasTg = methods.includes("tg_code");
-
-  // Seed the default selection once the accounts list
-  // first resolves. Don't re-seed on every refetch —
-  // the operator may have picked a different uid in
-  // the meantime.
+  // Pick the first account the picker offers. The
+  // picker may list the same name twice (once per role),
+  // so we key by "(contact_id, role)" not by name.
   useEffect(() => {
     if (!accountsQuery.data) return;
-    if (selectedTelegramId !== null) return;
+    if (selectedKey !== null) return;
     const list = accountsQuery.data.accounts;
-    if (list.length > 0) setSelectedTelegramId(list[0].tgid);
-  }, [accountsQuery.data, selectedTelegramId]);
+    if (list.length > 0) {
+      setSelectedKey(_key(list[0].contact_id, list[0].role));
+    }
+  }, [accountsQuery.data, selectedKey]);
 
-  // When the picked uid's methods load, pick the first
-  // available one as the active tab. Order doesn't
-  // matter — both are equally valid.
+  const selectedAccount: TargetLoginAccount | null = (() => {
+    if (!selectedKey || !accountsQuery.data) return null;
+    return (
+      accountsQuery.data.accounts.find(
+        (a) => _key(a.contact_id, a.role) === selectedKey,
+      ) ?? null
+    );
+  })();
+
+  const hasPassword = selectedAccount?.has_password ?? false;
+  const hasTg = selectedAccount?.has_tg_code ?? false;
+
+  // When the picked account's methods resolve, pick the
+  // first available one as the active tab.
   useEffect(() => {
     if (hasPassword) {
       setActiveMethod("password");
     } else if (hasTg) {
       setActiveMethod("tg_code");
     }
-  }, [hasPassword, hasTg, selectedTelegramId]);
+  }, [hasPassword, hasTg, selectedKey]);
 
   // Reset transient form state when the user picks a
   // different account.
@@ -99,13 +104,16 @@ export default function LoginPage(props: {
     setPassword("");
     setPhase("send");
     setError(null);
-  }, [selectedTelegramId, activeMethod]);
+  }, [selectedKey, activeMethod]);
 
   async function handleSend() {
-    if (selectedTelegramId === null) return;
+    if (!selectedAccount) return;
     setError(null);
     try {
-      const data = await sendMut.mutateAsync(selectedTelegramId);
+      const data = await sendMut.mutateAsync({
+        contact_id: selectedAccount.contact_id,
+        role: selectedAccount.role,
+      });
       if (data.ok) {
         setPhase("code");
       } else {
@@ -120,16 +128,17 @@ export default function LoginPage(props: {
 
   async function handleVerify() {
     const c = code.trim();
-    if (selectedTelegramId === null || !c || c.length !== 6) return;
+    if (!selectedAccount || !c || c.length !== 6) return;
     setError(null);
     setPhase("verifying");
     try {
       const data = await verifyMut.mutateAsync({
-        tgid: selectedTelegramId,
+        contact_id: selectedAccount.contact_id,
+        role: selectedAccount.role,
         code: c,
       });
       if (data.ok) {
-        props.onLoggedIn(selectedTelegramId);
+        props.onLoggedIn(selectedAccount.contact_id, selectedAccount.role);
         return;
       }
       setError(data.error ?? "Verification failed");
@@ -141,16 +150,17 @@ export default function LoginPage(props: {
   }
 
   async function handlePasswordLogin() {
-    if (selectedTelegramId === null || !password) return;
+    if (!selectedAccount || !password) return;
     setError(null);
     try {
       const data = await loginPasswordMut.mutateAsync({
-        contact_id: selectedTelegramId,
+        contact_id: selectedAccount.contact_id,
+        role: selectedAccount.role,
         magi_id: props.magiId,
         password,
       });
       if (data.ok) {
-        props.onLoggedIn(selectedTelegramId);
+        props.onLoggedIn(selectedAccount.contact_id, selectedAccount.role);
         return;
       }
       setError(data.error ?? "Sign-in failed");
@@ -179,6 +189,16 @@ export default function LoginPage(props: {
   // both are present, render both; if only one, skip
   // the tab UI entirely and render that single method.
   const showTabs = hasPassword && hasTg;
+
+  // Display name carries the role suffix when the same
+  // contact appears under both scopes; otherwise the
+  // role is implied by the row.
+  const labelFor = (a: TargetLoginAccount): string => {
+    const sameNameExists = accounts
+      ? accounts.some((b) => b !== a && b.name === a.name)
+      : false;
+    return sameNameExists ? `${a.name} (${a.role})` : a.name;
+  };
 
   return (
     <main className="min-h flex flex-col px-6 py-12">
@@ -211,11 +231,8 @@ export default function LoginPage(props: {
                 </label>
                 <select
                   id="login-uid"
-                  value={selectedTelegramId ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setSelectedTelegramId(v === "" ? null : Number(v));
-                  }}
+                  value={selectedKey ?? ""}
+                  onChange={(e) => setSelectedKey(e.target.value || null)}
                   className="form-input w-full appearance-none text-base py-3 px-4"
                   style={{
                     backgroundImage:
@@ -226,8 +243,8 @@ export default function LoginPage(props: {
                   }}
                 >
                   {accounts.map((a) => (
-                    <option key={a.tgid} value={a.tgid}>
-                      {a.name}
+                    <option key={_key(a.contact_id, a.role)} value={_key(a.contact_id, a.role)}>
+                      {labelFor(a)}
                     </option>
                   ))}
                 </select>
@@ -298,7 +315,7 @@ export default function LoginPage(props: {
                     <button
                       type="button"
                       onClick={handleSend}
-                      disabled={selectedTelegramId === null || sending}
+                      disabled={!selectedAccount || sending}
                       className="btn btn-primary w-full mt-4 px-4 py-3"
                     >
                       {sending
@@ -312,7 +329,7 @@ export default function LoginPage(props: {
                         <label htmlFor="login-code" className="block text-sm font-medium text-sky-deep mb-2">
                           {t("login.codeLabel")}
                         </label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <input
                             id="login-code"
                             type="text"
@@ -366,4 +383,9 @@ export default function LoginPage(props: {
       </div>
     </main>
   );
+}
+
+
+function _key(contactId: number, role: Role): string {
+  return `${role}:${contactId}`;
 }

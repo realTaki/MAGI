@@ -400,7 +400,17 @@ export function useAvailableMagi() {
 }
 
 export type TargetLoginAccount = {
-  tgid: number; name: string; admin: boolean; assigned: boolean;
+  // Runtime-local contacts.id — primary key. Same contact
+  // can appear twice (once per role: admin + assigned) so
+  // the operator picks which layer they want to log in as.
+  contact_id: number;
+  role: "admin" | "assigned";
+  name: string;
+  admin: boolean;
+  assigned: boolean;
+  has_password: boolean;
+  has_tg_code: boolean;
+  tgid: number | null;
 };
 export function useTargetLoginAccounts(magiId: number | null) {
   return useQuery({
@@ -412,18 +422,21 @@ export function useTargetLoginAccounts(magiId: number | null) {
 
 export function useSendTargetLoginCode(magiId: number) {
   return useMutation({
-    mutationFn: (tgid: number) => apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
-      `/api/auth/targets/${magiId}/send-login-code`, { method: "POST", body: { tgid } },
-    ),
+    mutationFn: (vars: { contact_id: number; role: "admin" | "assigned" }) =>
+      apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
+        `/api/auth/targets/${magiId}/send-login-code`,
+        { method: "POST", body: vars },
+      ),
   });
 }
 
 export function useVerifyTargetLoginCode(magiId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { tgid: number; code: string }) => apiFetch<{ ok: boolean; error?: string }>(
-      `/api/auth/targets/${magiId}/verify-login-code`, { method: "POST", body: payload },
-    ),
+    mutationFn: (payload: { contact_id: number; role: "admin" | "assigned"; code: string }) =>
+      apiFetch<{ ok: boolean; error?: string }>(
+        `/api/auth/targets/${magiId}/verify-login-code`, { method: "POST", body: payload },
+      ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.me }); },
   });
 }
@@ -1042,13 +1055,15 @@ export function useLoginMethods(uid: number | null) {
 
 export function useLoginPassword() {
   return useMutation({
-    mutationFn: (vars: { contact_id: number; magi_id: number; password: string }) =>
+    mutationFn: (vars: {
+      contact_id: number;
+      role: "admin" | "assigned";
+      magi_id: number;
+      password: string;
+    }) =>
       apiFetch<{ ok: boolean; error?: string; retry_after?: number | null }>(
         "/api/auth/login-password",
-        {
-          method: "POST",
-          body: vars,
-        },
+        { method: "POST", body: vars },
       ),
   });
 }
