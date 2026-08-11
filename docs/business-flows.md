@@ -667,41 +667,17 @@ LLM 调用方式:
 
 ---
 
-## 15. Hook 子系统（BUS-centric）
+## 15. Hook 子系统（预留设计，尚未实现）
 
-**入口**: `magi/bus/hooks/`（HookEnvelope + HookDataScope + 11 钩子点）
+当前仓库**没有** `magi/bus/hooks/` 模块，也没有
+`hook_evaluations` / `hook_plugin_configs` 表或对应架构测试。不要把 Hook
+当作当前 runtime 的扩展点或依赖它编排业务流程。
 
-```
-Hook 点（v1）:
-  agent.input.pending
-  llm.request.prepared
-  llm.response.received
-  tool.call.pending
-  tool.result.received
-  a2a.invocation.pending
-  a2a.result.received
-  delivery.pending
-  run.transition.committed
-  operation.failed
-  operation.dead_lettered
+未来若引入 Hook，必须单独落地模块、持久化迁移和测试，并保持以下边界：
 
-钩子生命周期:
-  1. Hook 在 hook_plugin_configs 注册 + 声明所需 HookDataScope
-  2. BUS 触发时构造 frozen HookEnvelope（只含声明的 scopes）
-  3. Handler 拿到的是 Envelope — **绝不能**接收 Bus 引用
-  4. Tool worker gate on TOOL_CALL_PENDING；Agent step gate on LLM_REQUEST_PREPARED
-
-持久化:
-  └─ hook_evaluations + hook_plugin_configs 两张表（Alembic 0003 / 0004）
-  └─ 架构测试 test_hook_import_boundaries.py / test_hook_envelope_purity.py
-     强制边界
-```
-
-**不可改的守卫**:
-
-- Handler **绝不能**接收 `Bus` 引用 — Envelope 是唯一输入
-- Envelope 是 frozen（不可变），防止 handler 污染上游状态
-- 历史 `magi.plugins.bus` 已被移除；hooks 完全 BUS-centric
+- Handler 只接收冻结、JSON-safe 的事件 DTO，不接收 `Bus` 或 ORM/session 引用。
+- Hook 的外部 I/O 通过 durable Job Board 执行；不能放进 BUS transaction。
+- Hook 的声明 scope、授权和失败/重试策略必须有可执行的架构测试。
 
 ---
 
@@ -722,6 +698,5 @@ Hook 点（v1）:
 - [ ] 压缩失败不阻塞对话（maybe_compact 失败时吞掉）
 - [ ] system prompt 六块顺序不变：SOUL → Instructions → Memory → Contact → Daily note → Skills
 - [ ] Agent Worker 接收 `magi_id` 用于渲染 per-MAGI instruction block
-- [ ] Hook handlers 不持有 Bus 引用（仅 HookEnvelope 输入）
 - [ ] ProactiveWorker 是 WorkerRegistry 最后启动的 Worker
 - [ ] Provider 配置变更只走 `change_provider_config_job_board`，不直接 `settings_book.set`

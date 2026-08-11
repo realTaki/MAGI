@@ -96,14 +96,15 @@ WorkerRegistry (composition root)
  └─ proactive   — ProactiveWorker           (always)
 ```
 
-Channel workers are conditional: Telegram and TaskWorkers only start when
-`bus.settings_book["channels.enabled"]` lists the channel. WebUI/A2A/proactive
-are always present because the FastAPI app depends on them and the runtime
-always exposes the chat console + a peer-ingress surface.
+Channel workers are conditional: Telegram and TaskWorkers start only when
+`bus.settings_book["channels.enabled"]` lists the channel. WebUI and A2A are
+required runtime capabilities and are always added by the composition root
+(the persisted and fallback default is `["webui"]`). Proactive is a runtime
+worker, not a configured channel, and always starts.
 
 The shared lifecycle primitives (`start`/`stop`, `health()`, `call()` for
 blocking BUS calls, `spawn()` for owned child tasks) live in
-`magi.startup.worker.RuntimeWorker`.
+`magi.runtime_worker.RuntimeWorker`.
 
 ## Worker flow
 
