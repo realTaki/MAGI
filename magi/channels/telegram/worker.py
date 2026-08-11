@@ -154,7 +154,7 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
         cid_int = int(tgid)
     except (TypeError, ValueError):
         return None
-    contact = bus.contacts_book.get_by_telegram(telegram_id=cid_int)
+    contact = bus.contacts_book.get_by_telegram(tgid=cid_int)
     if contact is None:
         return None
     return (contact.id, contact.role, contact.admin)
@@ -188,9 +188,9 @@ async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
     except (TypeError, ValueError):
         cid_int = 0
     try:
-        if bus.contacts_book.get_by_telegram(telegram_id=cid_int) is None:
+        if bus.contacts_book.get_by_telegram(tgid=cid_int) is None:
             bus.contacts_book.add(
-                name=name, display_name=display_name, role="guest", telegram_id=cid_int
+                name=name, display_name=display_name, role="guest", tgid=cid_int
             )
     except Exception:
         pass
