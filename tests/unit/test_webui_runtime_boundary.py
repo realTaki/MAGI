@@ -144,3 +144,48 @@ def test_selected_session_allows_a_webui_only_operator_without_tgid() -> None:
     assert session is not None
     assert session["contact_id"] == 3
     assert session["tgid"] is None
+
+
+def test_login_methods_reports_password_for_a_contact_without_a_tgid() -> None:
+    """No TG binding must not read as "no way to sign in".
+
+    The onboarding wizard can set an admin password before
+    any bot token exists, so a password-only operator is a
+    normal state. An earlier control-plane branch keyed the
+    lookup off the Telegram chat id and never consulted the
+    password hash at all, which reported such an operator as
+    having no login methods.
+    """
+    from magi.channels.api.auth import _login_methods_for
+
+    bus = MagicMock()
+    bus.contacts_book.get.return_value = SimpleNamespace(id=3, tgid=None)
+    bus.contacts_book.get_password_hash.return_value = "argon2-hash"
+
+    methods, is_webui_only = _login_methods_for(bus, 3)
+
+    assert methods == ["password"]
+    assert is_webui_only is True
+
+
+def test_login_methods_reports_both_when_password_and_tg_are_available() -> None:
+    from magi.channels.api.auth import _login_methods_for
+
+    bus = MagicMock()
+    bus.contacts_book.get.return_value = SimpleNamespace(id=3, tgid=987654321)
+    bus.contacts_book.get_password_hash.return_value = "argon2-hash"
+
+    methods, is_webui_only = _login_methods_for(bus, 3)
+
+    assert methods == ["password", "tg_code"]
+    assert is_webui_only is False
+
+
+def test_login_methods_degrades_instead_of_raising_when_contacts_are_unreachable() -> None:
+    """Control-plane Bus has no ``contacts`` table — degrade, don't 500."""
+    from magi.channels.api.auth import _login_methods_for
+
+    bus = MagicMock()
+    bus.contacts_book.get.side_effect = RuntimeError("no such table: contacts")
+
+    assert _login_methods_for(bus, 3) == ([], True)

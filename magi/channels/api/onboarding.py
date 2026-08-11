@@ -160,36 +160,37 @@ class RestartResponse(BaseModel):
 
 
 class SetAdminPasswordRequest(BaseModel):
-    """WebUI-only onboarding step 2 input — **two** operators.
+    """WebUI-only onboarding step 2 input — **one** operator.
 
-    Initial onboarding creates two operator identities for
-    the first launch:
+    Initial onboarding registers a single person who
+    simultaneously serves both scopes:
 
-      * **Genesis admin** (``admin_*``) — recorded in
-        MAGIS-shared :class:`MagisAdminBook` so they can sign
-        in to every MAGI in the Genesis Society.
-      * **eva-000's assigned user** (``assigned_*``) — the
-        per-MAGI identity living in the runtime's local
-        SQLite as a :class:`Contact` with ``role='assigned'``;
-        signs in to ``eva-000`` only.
+      * **Genesis admin** — recorded in MAGIS-shared
+        :class:`MagisAdminBook` (``magis_admins.contact_id``)
+        so they can sign in to **every** MAGI in the
+        Genesis Society. This is a per-MAGIS concept.
+      * **eva-000's assigned user** — the per-MAGI identity
+        living in the runtime's local SQLite as a single
+        :class:`Contact` with ``role='assigned'``; signs in
+        to ``eva-000`` only. This is a per-MAGI concept.
 
-    If the same operator fills both forms with the same
-    name, two distinct contact rows are created so the
-    login picker can offer the choice between admin scope
-    and assigned scope (each granting a different cookie).
+    The two scopes live in **different tables** because they
+    belong to different layers — ``contacts`` is per-MAGI,
+    ``magis_admins`` is per-MAGIS — and the login picker
+    joins them by ``(contact_id, role)`` to expose both
+    scopes for the same operator under a single cookie
+    identity. We deliberately do NOT mint two ``Contact``
+    rows for one operator.
     """
 
-    admin_name: str = Field(min_length=1, max_length=120)
-    admin_password: str = Field(min_length=8, max_length=256)
-    assigned_name: str = Field(min_length=1, max_length=120)
-    assigned_password: str = Field(min_length=8, max_length=256)
+    operator_name: str = Field(min_length=1, max_length=120)
+    operator_password: str = Field(min_length=8, max_length=256)
 
 
 class SetAdminPasswordResponse(BaseModel):
     ok: bool
     error: str | None = None
-    admin_contact_id: int | None = None
-    assigned_contact_id: int | None = None
+    contact_id: int | None = None
 
 
 # -- endpoints ---------------------------------------------------------
@@ -319,45 +320,44 @@ async def set_admin_password_onboarding(
     payload: SetAdminPasswordRequest,
     bus: BusDep,
 ) -> SetAdminPasswordResponse:
-    """WebUI-only onboarding step 2: create the first two operators.
+    """WebUI-only onboarding step 2: register the first operator.
 
     The TG wizard's step 2 collects TG chat ids via
     :func:`save_admin`; this endpoint is the parallel flow
     for operators who picked "WebUI only" in step 1. The
-    wizard collects two pairs and the backend writes two
-    distinct :class:`Contact` rows in the runtime's local
-    SQLite plus a single ``magis_admins`` row in MAGIS:
+    wizard collects **one** name + password and the backend
+    registers a single operator across two scopes:
 
-      * **Genesis admin** (``admin_*``) — recorded in MAGIS
-        ``magis_admins`` so they can sign in to every MAGI
-        in the Genesis Society.
-      * **eva-000's assigned user** (``assigned_*``) — the
-        per-MAGI identity with ``role='assigned'``; signs in
-        to eva-000 only.
+      * **eva-000's assigned user** — written as a single
+        :class:`Contact` row in the runtime's local SQLite
+        with ``role='assigned'``. This is the per-MAGI
+        scope.
+      * **Genesis admin** — recorded by linking the same
+        ``contact_id`` into ``magis_admins`` on the
+        MAGIS-shared database. This is the per-MAGIS scope.
 
-    If the operator fills both forms with the same name
-    (e.g. "Taki"), two rows are still produced (the admin
-    row's ``name`` is suffixed " (admin)" when the assigned
-    row claims it) so the login picker can offer both
-    scopes without collapsing them.
+    The two scopes belong to **different layers** —
+    ``contacts`` is per-MAGI, ``magis_admins`` is per-MAGIS —
+    so they live in different tables. The login picker
+    joins them by ``(contact_id, role)`` to expose both
+    scopes for the same operator under one identity.
+    Re-entering the wizard is idempotent: an existing
+    contact row with the same name is reused and its
+    password hash is overwritten.
 
     Storage split:
 
-      * Runtime (per-MAGI SQLite) → upserts two Contacts
-        (``role='assigned'`` each, ``admin=True`` NOT set),
-        writes both password hashes.
+      * Runtime (per-MAGI SQLite) → upserts one :class:`Contact`
+        with ``role='assigned'`` and writes one password hash.
       * Webui (MAGIS DB) → registers one ``magis_admins``
-        row pointing at the admin's contact_id.
+        row pointing at the same ``contact_id``.
 
-    The runtime responds first with both contact ids; the
+    The runtime responds first with its contact id; the
     webui then writes the MAGIS-side ``magis_admins`` row.
     """
-    admin_name = payload.admin_name.strip()
-    assigned_name = payload.assigned_name.strip()
-    if not admin_name:
-        return SetAdminPasswordResponse(ok=False, error="admin_name is required")
-    if not assigned_name:
-        return SetAdminPasswordResponse(ok=False, error="assigned_name is required")
+    operator_name = payload.operator_name.strip()
+    if not operator_name:
+        return SetAdminPasswordResponse(ok=False, error="operator_name is required")
 
     if control_store.enabled():
         runtime_response = await _forward_set_admin_password_to_runtime(bus, payload)
@@ -368,66 +368,45 @@ async def set_admin_password_onboarding(
             )
         if not runtime_response.ok:
             return runtime_response
-        admin_cid = runtime_response.admin_contact_id
-        assigned_cid = runtime_response.assigned_contact_id
-        if admin_cid is None or assigned_cid is None:
+        contact_id = runtime_response.contact_id
+        if contact_id is None:
             return SetAdminPasswordResponse(
                 ok=False,
-                error="runtime did not return both contact ids",
+                error="runtime did not return a contact id",
             )
-        magis_id = _register_magis_admin(bus, contact_id=int(admin_cid))
+        magis_id = _register_magis_admin(bus, contact_id=int(contact_id))
         if magis_id is None:
             return SetAdminPasswordResponse(
                 ok=False,
                 error="Genesis MAGIS not initialised; cannot register admin",
             )
         logger.info(
-            "onboarding: admin + assigned set (webui)",
+            "onboarding: operator set (webui)",
             extra={
-                "admin_contact_id": admin_cid,
-                "assigned_contact_id": assigned_cid,
+                "contact_id": contact_id,
                 "magis_id": magis_id,
-                "admin_name": admin_name,
-                "assigned_name": assigned_name,
+                "operator_name": operator_name,
             },
         )
-        return SetAdminPasswordResponse(
-            ok=True,
-            admin_contact_id=admin_cid,
-            assigned_contact_id=assigned_cid,
-        )
+        return SetAdminPasswordResponse(ok=True, contact_id=contact_id)
 
     # Single-process / runtime path — no MAGIS DB to register against.
-    admin_cid = _upsert_local_contact(bus, admin_name, slot="admin")
-    assigned_cid = _upsert_local_contact(
-        bus,
-        assigned_name,
-        slot="assigned",
-        skip_existing_contact_id=admin_cid if admin_name == assigned_name else None,
-    )
+    contact_id = _upsert_local_contact(bus, operator_name)
     from magi.channels.api import password_utils
 
     try:
-        admin_hash = password_utils.hash_password(payload.admin_password)
-        assigned_hash = password_utils.hash_password(payload.assigned_password)
+        password_hash = password_utils.hash_password(payload.operator_password)
     except ValueError as exc:
         return SetAdminPasswordResponse(ok=False, error=str(exc))
-    bus.contacts_book.set_password_hash(contact_id=admin_cid, password_hash=admin_hash)
-    bus.contacts_book.set_password_hash(contact_id=assigned_cid, password_hash=assigned_hash)
+    bus.contacts_book.set_password_hash(contact_id=contact_id, password_hash=password_hash)
     logger.info(
-        "onboarding: admin + assigned set (runtime)",
+        "onboarding: operator set (runtime)",
         extra={
-            "admin_contact_id": admin_cid,
-            "assigned_contact_id": assigned_cid,
-            "admin_name": admin_name,
-            "assigned_name": assigned_name,
+            "contact_id": contact_id,
+            "operator_name": operator_name,
         },
     )
-    return SetAdminPasswordResponse(
-        ok=True,
-        admin_contact_id=admin_cid,
-        assigned_contact_id=assigned_cid,
-    )
+    return SetAdminPasswordResponse(ok=True, contact_id=contact_id)
 
 
 def _register_magis_admin(bus: Bus, *, contact_id: int) -> int | None:
@@ -457,31 +436,18 @@ def _register_magis_admin(bus: Bus, *, contact_id: int) -> int | None:
 def _upsert_local_contact(
     bus: Bus,
     name: str,
-    *,
-    slot: str = "assigned",
-    skip_existing_contact_id: int | None = None,
 ) -> int:
     """Create a Contact named ``name`` if absent, else reuse in place.
 
-    The wizard writes **two** Contact rows per onboarding —
-    one for Genesis admin scope, one for the runtime's
-    assigned scope — so the login picker can offer both
-    scopes (each granting a different cookie). When the
-    same operator supplies the same name in both slots,
-    we deliberately mint **two** distinct rows so the admin
-    and assigned scopes stay independent: the admin row's
-    ``name`` is suffixed ``" (admin)"`` so the unique-name
-    constraint is satisfied, and both rows reuse the same
-    display name the operator typed.
+    The wizard writes a **single** Contact row per operator:
+    the same person is both Genesis admin (registered later
+    in :class:`MagisAdminBook` for per-MAGIS scope) and the
+    runtime's assigned user (``role='assigned'`` for per-MAGI
+    scope). Reusing an existing row keeps the operation
+    idempotent so re-entering the wizard does not duplicate
+    the operator.
 
-    ``slot`` tells the helper which scope is being written
-    (``"admin"`` or ``"assigned"``). The admin slot always
-    lands on its own row when a collision is imminent; the
-    assigned slot reuses an existing row only if its id is
-    NOT the one just minted for the admin in the same
-    wizard call (``skip_existing_contact_id``).
-
-    ``admin=True`` is **not** set on either row — admin is
+    ``admin=True`` is **not** set on the new row — admin is
     a MAGIS-level concept and lives only in
     :class:`MagisAdminBook` (``magis_admins.contact_id``,
     opaque integer reference into this runtime's
@@ -489,21 +455,15 @@ def _upsert_local_contact(
     """
     contacts = bus.contacts_book
     for existing in contacts.list_all():
-        if existing.name == name and int(existing.id) != (skip_existing_contact_id or -1):
+        if existing.name == name:
             return int(existing.id)
-    base = name
-    if slot == "admin" and any(c.name == base for c in contacts.list_all()):
-        # Avoid colliding with the just-allocated assigned row
-        # by appending a slot suffix. display_name keeps the
-        # operator's chosen name; the row's `name` is unique.
-        base = f"{name} (admin)"
     try:
-        created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
+        created = contacts.add(name=name, role=ROLE_ASSIGNED, display_name=name)
     except ValueError:
         # Name collision with an existing row whose name differs
         # in case / whitespace — fall back to a unique rename.
-        base = f"{base}-onboarding"
-        created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
+        unique = f"{name}-onboarding"
+        created = contacts.add(name=unique, role=ROLE_ASSIGNED, display_name=name)
     return int(created.id)
 
 
@@ -560,8 +520,7 @@ async def _forward_set_admin_password_to_runtime(
     return SetAdminPasswordResponse(
         ok=bool(data.get("ok")),
         error=data.get("error"),
-        admin_contact_id=data.get("admin_contact_id"),
-        assigned_contact_id=data.get("assigned_contact_id"),
+        contact_id=data.get("contact_id"),
     )
 
 

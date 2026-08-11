@@ -1099,45 +1099,43 @@ def _delete_password_hash(bus: Bus, contact_id: int) -> bool:
 def _login_methods_for(bus: Bus, contact_id: int) -> tuple[list[str], bool]:
     """Return ``(methods, is_webui_only)`` for ``contact_id``.
 
-    Used by both the new ``GET /auth/login-methods`` route
-    and the onboarding wizard's "is setup complete?"
-    check. The two paths (single-MAGI vs control-plane)
-    disagree on the data source — control-plane looks the
-    admin up in ``magis_admins`` by the Telegram chat id
-    (the value the WebUI uses as the login ``contact_id`` on
-    that deployment mode); the single-MAGI path uses
-    Contact + its local password hash.
+    ``contact_id`` is always the runtime-local ``contacts.id``
+    — the same identity ``/me`` reads out of the session
+    cookie. Both available methods are reported: a contact
+    with a password but no TG binding is a first-class
+    operator (the onboarding wizard can set an admin
+    password before any bot is configured), so the absence
+    of a ``tgid`` must never read as "no way to sign in".
+
+    Not usable from the control plane. The singleton WebUI's
+    Bus is bound to the MAGIS store, which has no ``contacts``
+    table (``contacts`` is local scope) — every read here
+    raises there. An earlier control-plane branch looked the
+    operator up with ``get_by_telegram()``, treating this
+    argument as a TG chat id; it could not have worked for
+    that reason, and it also ignored passwords entirely.
+    The control-plane source of truth is the picker's
+    ``has_password`` / ``has_tg_code`` (see
+    ``/access/login-accounts``), which the runtime computes
+    against its own local store. The guard below keeps that
+    deployment mode degrading to "nothing to report" instead
+    of a 500.
     """
-    methods: list[str] = []
-    is_webui_only = True
-
-    if control_store.enabled():
-        # Control-plane mode: ``contact_id`` is the operator's
-        # Telegram chat id (the value the WebUI login
-        # page hands in). The MAGIS admin roster
-        # (``magis_admins``) is keyed by ``Contact.id``
-        # (FK), so the lookup chain is
-        # ``tgid → contacts.tgid → contact.id
-        #   → magis_admins.contact_id``. A bound admin always
-        # resolves and gets ``tg_code``; a missing row
-        # means "this Telegram account isn't a MAGIS
-        # admin here" and the login page falls back to
-        # the empty-state affordance.
-        contact = bus.contacts_book.get_by_telegram(tgid=contact_id)
-        if contact is not None and bus.magis_admins_book is not None:
-            if bus.magis_admins_book.is_admin_for(contact_id=contact.id):
-                return (["tg_code"], False)
+    try:
+        contact = bus.contacts_book.get(contact_id=contact_id)
+        if contact is None:
+            return ([], True)
+        methods: list[str] = []
+        if _password_hash(bus, contact_id):
+            methods.append("password")
+        is_webui_only = True
+        if contact.tgid is not None:
+            methods.append("tg_code")
+            is_webui_only = False
+        return (methods, is_webui_only)
+    except Exception:
+        logger.exception("login methods lookup failed for contact_id=%s", contact_id)
         return ([], True)
-
-    contact = bus.contacts_book.get(contact_id=contact_id)
-    if contact is None:
-        return ([], True)
-    if _password_hash(bus, contact_id):
-        methods.append("password")
-    if contact.tgid is not None:
-        methods.append("tg_code")
-        is_webui_only = False
-    return (methods, is_webui_only)
 
 
 @router.get("/login-methods", response_model=LoginMethodsResponse)
