@@ -9,7 +9,7 @@
   (MCP, skills) 写到 ``bus.tool_definitions_book``。
   外部子系统通过 :func:`magi.tools.registry.register_tools` 注入后，
   worker 自动检测并重发布。
-- **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 session，
+- **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 conversation，
   全走 :class:`RunToolJob` → :class:`RunToolResult`。
 - **并发执行**。通过 ``asyncio.Semaphore`` 控制并发槽位，
   默认值 2，通过 ``concurrency`` 构造参数覆盖。

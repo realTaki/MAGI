@@ -1,7 +1,7 @@
-"""Cross-session search tools — turn history, role recall.
+"""Cross-conversation search tools — turn history, role recall.
 
 One module per tool — see :mod:`magi.tools.registry` for
 the dispatcher that wires them up.
 
-  - :mod:`magi.tools.memory.sessions.search_sessions`
+  - :mod:`magi.tools.memory.conversations.search_conversations`
 """

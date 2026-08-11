@@ -1,4 +1,4 @@
-"""Auto-compaction for long chat sessions — bus only."""
+"""Auto-compaction for long chat conversations — bus only."""
 
 from __future__ import annotations
 

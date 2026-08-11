@@ -32,7 +32,7 @@ Admin gate: callers whose effective role-tag set
 ``ctx.bus.magis_admins_book.is_admin_for(contact_id=...)`` is
 truthy) doesn't intersect ``{"admin", "assigned"}``
 get ``is_error=True`` at the gate step. ``guest``
-callers have no MAGI-node session and aren't expected
+callers have no MAGI-node operator context and aren't expected
 to chat.
 
 Idempotent on ``name``: a second call with the same
@@ -77,8 +77,8 @@ class ScheduleTaskTool(Tool):
         "Create or update a recurring scheduled task. Requires "
         "admin or assigned-contact scope (i.e. the calling "
         "operator is signed in to this MAGI). Each fire is an "
-        "independent chat session; the conversation history "
-        "shows every cron-driven reply as its own session under "
+        "independent chat conversation; the conversation history "
+        "shows every cron-driven reply as its own conversation under "
         "the operator's chat history. The task fires on "
         "the operator's system-wide timezone (configured in "
         "Settings → 系统时区). Inputs: name (unique label "
@@ -106,7 +106,7 @@ class ScheduleTaskTool(Tool):
                 "description": (
                     "Natural-language instruction to run each fire. "
                     "The agent loop processes this as the user "
-                    "message of a fresh session."
+                    "message of a fresh conversation."
                 ),
             },
             "frequency": {
@@ -177,16 +177,16 @@ class ScheduleTaskTool(Tool):
                 "default": ChannelEnum.WEBUI,
                 "description": (
                     "Where the fired reply surfaces. 'webui' "
-                    "creates a chat session visible in the "
+                    "creates a chat conversation visible in the "
                     "operator's history list (each fire spawns "
-                    "a fresh session unless the LLM called this "
+                    "a fresh conversation unless the LLM called this "
                     "from inside an existing chat — then the "
                     "cron reply joins that chat). 'tg' "
                     "additionally lets the agent's send_message "
                     "tool push a reply to the operator's bound "
                     "TG chat (the runner looks up the existing "
-                    "TG session by delivery address + contact_id and "
-                    "reuses it; or uses the operator's bound "
+                    "TG conversation by delivery address + contact_id "
+                    "and reuses it; or uses the operator's bound "
                     "chat id when called from a non-TG chat)."
                 ),
             },
@@ -231,7 +231,7 @@ class ScheduleTaskTool(Tool):
         #     (append to the chat the LLM just wrote from)
         #   channel='webui' + cold call   → None (runner
         #     falls back; legacy / WebUI-default path stays
-        #     as "fresh session per fire")
+        #     as "fresh conversation per fire")
         #   channel='tg'    + LLM-in-TG  → ctx.delivery_address (the
         #     TG chat the LLM is responding to)
         #   channel='tg'    + cold call  → None (runner
@@ -241,12 +241,12 @@ class ScheduleTaskTool(Tool):
         # form is no longer a user-facing control, and a
         # ``delivery_to`` resolution: the IM endpoint
         # for the new task. Webui tasks don't push to
-        # anywhere external (the session is the visible
+        # anywhere external (the conversation is the visible
         # record; ``None`` is correct). TG tasks push
-        # to wherever the calling session's IM target
-        # lives — read it from the session row's
+        # to wherever the calling conversation's IM target
+        # lives — read it from the conversation row's
         # ``delivery_address`` column rather than carrying
-        # a per-channel id through ctx (the session is
+        # a per-channel id through ctx (the conversation is
         # the source of truth for IM addressing, and
         # the dispatcher is the only thing that interprets
         # the value).

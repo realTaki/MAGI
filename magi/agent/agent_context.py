@@ -21,7 +21,7 @@ class AgentContext:
     messages: list[dict]
 
 
-def build_messages_from_session(
+def build_messages_from_conversation(
     contact_id: int | None,
     conversation_id: str | None,
     new_user_text: str,
@@ -33,10 +33,10 @@ def build_messages_from_session(
         return [{"role": "user", "content": new_user_text}]
 
     try:
-        session = bus.conversations_book.get_for_owner(
+        conversation = bus.conversations_book.get_for_owner(
             contact_id=contact_id, conversation_id=conversation_id
         )
-        if session is None:
+        if conversation is None:
             return [{"role": "user", "content": new_user_text}]
         msgs = bus.messages_book.list_for_conversation(conversation_id=conversation_id)
         result = [
@@ -50,7 +50,7 @@ def build_messages_from_session(
             result.append({"role": "user", "content": new_user_text})
         return result
     except Exception:
-        logger.warning("build_messages_from_session failed, starting fresh", exc_info=True)
+        logger.warning("build_messages_from_conversation failed, starting fresh", exc_info=True)
         return [{"role": "user", "content": new_user_text}]
 
 
@@ -77,7 +77,7 @@ def build_context(
     return AgentContext(
         soul="",  # caller provides via build_system_prompt
         tool_schemas=tool_schemas,
-        messages=build_messages_from_session(contact_id, conversation_id, text, bus=bus),
+        messages=build_messages_from_conversation(contact_id, conversation_id, text, bus=bus),
     )
 
 
@@ -85,5 +85,5 @@ __all__ = [
     "AgentContext",
     "DEFAULT_MAX_TOKENS",
     "build_context",
-    "build_messages_from_session",
+    "build_messages_from_conversation",
 ]

@@ -96,7 +96,7 @@ def _build_tools() -> list[Tool]:
         WriteFileTool(),
         EditFileTool(),
         ListFilesTool(),
-        SearchSessionsTool(),
+        SearchConversationsTool(),
         SendMessageTool(),
         MessageMagiTool(),
         ScheduleTaskTool(),

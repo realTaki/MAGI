@@ -43,7 +43,12 @@
 > - 系统级主动策略 → `magi/proactive/worker.py::ProactiveWorker._run`
 > - 外部数据流 → `magi/connectors/`（按需启动，非默认 Worker）
 >
-> **命名约定**（详见 [design/id-naming-standard.md](design/id-naming-standard.md)）：本文件中 `contact_id` 对应历史 `uid`，`magi_id` 对应历史 `magic_id`，`tgid` 对应历史 `telegram_id`，`conversation_id` 对应历史 `session_id`。
+> **命名约定**：ID 命名以 [terms.md](terms.md#canonical-id-names) 为准 ——
+> `magi_id` / `contact_id` / `conversation_id` / `job_id` / `tgid`。本文件里
+> 出现的历史名（`magic_id` / `uid` / `session_id` / `event_id`）只在描述已失效
+> 的 cookie、已删除的 meta key、已改名的列时出现，标注为历史。注意
+> `telegram_id` **不是**历史名：`tgid` 的重命名尚未落到代码，`contacts` 列名和
+> 多数参数名仍是 `telegram_id`，本文件按代码实际书写。
 
 ---
 
@@ -119,7 +124,7 @@
 **不可改的守卫**:
 
 - `get_provider(bus=..., model=...)` 必须是 strict mode — MAGI 未配 provider/api_key → `LLMNotConfiguredError`，**绝不**回退到任何默认凭证；调用方 **绝不能**接受 provider/api_key 作为参数，必须依赖工厂从 `bus.settings_book` 读取。
-- session message store 读取失败必须吞掉（不崩溃主循环）
+- 对话消息 store 读取失败必须吞掉（不崩溃主循环）
 - tool result 必须在拼接新消息前安全截断（否则 Anthropic API 拒绝交错 tool 块）— 阈值 8000 字符
 - system prompt 六块顺序不可变：SOUL → Instructions → Memory → Contact → Daily note → Skills
 - cancel 不发送伪造 assistant reply（避免污染 transcript）
@@ -161,11 +166,11 @@
 
 ---
 
-## 3. Session / Conversation 生命周期与 D.22 通道守卫
+## 3. Conversation 生命周期与 D.22 通道守卫
 
 **入口**: `magi/bus/library/local/conversationBook.py::{ConversationBook, MessageBook}`
 
-### 创建会话
+### 创建对话
 ```
 1. validate contact_id — contact 有效性检查
 2. 生成新 conversation_id（Crockford-base32 ULID-like, 26 chars）
@@ -195,7 +200,7 @@
 **不可改的守卫**:
 
 - **D.22**: 写入必须检查 channel 匹配，读取不检查（同一用户可从 WebUI 浏览 TG 历史）
-- 空/旧 session 的 channel 不拒绝写入（兼容 pre-D.22 数据）
+- 空/旧 conversation 的 channel 不拒绝写入（兼容 pre-D.22 数据）
 - `delivery_address` 列对 domain 代码不透明 — 只有 channel worker 在 `_deliver_*` 里解释其值（TG = tgid 字符串；WebUI = ""；task = "<scheduled>"）
 - `conversation_id` 是 Crockford-base32 ULID-like（26 chars）；非此格式 → `ConversationPathError`（400，不重试）
 
@@ -214,7 +219,8 @@
 2. 身份解析 (`_resolve_contact(bus, tgid)`)
    └─ contacts_book.get_by_telegram(telegram_id=int(tgid)) — 返回
      `(contact_id, role, admin)` 三元组或 None
-   └─ legacy `telegram.user.<tgid>.uid` meta key 已删除
+   └─ legacy `telegram.user.<tgid>.uid` meta key 已删除（`uid` 是历史名，
+     现为 `contact_id`）
 
 3. 角色分发:
    ├─ admin=True OR role=="assigned" → 通过，走 agent loop
@@ -227,14 +233,14 @@
 
 4. 通过后:
    ├─ `conversation_id = _resolve_tg_session(bus, contact_id=..., tgid=...)` —
-     调 `bus.sessions_book.get_or_create_for_channel(contact_id=...,
+     调 `bus.conversations_book.get_or_create_for_channel(contact_id=...,
      channel="tg", delivery_address=tgid)`，一个 TG 对话一个持久 conversation
    ├─ `_append_user_message(bus, conversation_id, text)` — 落 user transcript
      （D.22 守卫在写入时执行）
    ├─ fire-and-forget `_send_read_receipt(update, bus)` — 发一个"已读"表情
    └─ `publish_chat(bus, text=..., channel="tg", contact_id=...,
      conversation_id=..., caller_role=role,
-     event_id=f"telegram:{tgid}:{message_id}", chat_id=tgid,
+     job_id=f"telegram:{tgid}:{message_id}", chat_id=tgid,
      tg_message_id=message_id)` — 投递到 agent_job_board
 ```
 
@@ -249,7 +255,7 @@
 - `guest` 软自动创建时 admin 必须为 False
 - admin 必须能和 assigned 一样聊天（不能退化为 v0 的 no-op）
 - 会话持久化（`messages_book.add`）必须在发布 `ChatJob` 到 `agent_job_board` 之前完成
-- `event_id` 形如 `telegram:<tgid>:<message_id>`，提供去重幂等性
+- `job_id` 形如 `telegram:<tgid>:<message_id>`，提供去重幂等性
 
 ---
 
@@ -332,7 +338,7 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
 4. _fire_task:
    ├─ tasks_book.record_run_start(task_id, trigger=fired_by) — 写 task_runs
    │  + tasks.last_run_at
-   ├─ 追加 contextual prompt 为 user 消息到 task 的 session
+   ├─ 追加 contextual prompt 为 user 消息到 task 的 conversation
    ├─ publish ChatJob(kind="task.triggered", payload={...}) → agent_job_board
    └─ AgentWorker._process → 完成后通过 delivery_job_board 投递回复
 5. 失败处理: tasks_book.record_run_end("failed") 持久化 consecutive_failures
@@ -342,12 +348,15 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
 ### 手动 / tool 触发 — `run_task_job_board`（唯一入口）
 ```
 入口: bus.run_task_job_board.publish(RunTaskJob(task_id, manual=True,
-                                                 fired_by, session_id, contact_id))
+                                                 fired_by, conversation_id,
+                                                 contact_id))
       ├─ WebUI "立即运行" 按钮: fired_by="api_manual_run"
       └─ schedule_task LLM tool 创建 one-shot 后回灌: fired_by="schedule_task_tool"
 
 TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_run_start
-→ ChatJob 投递 → AgentWorker 跑 → 完成后 _fire_task 写 run_id + tasks_book.record_run_end
+→ ChatJob 投递 → AgentWorker 跑 → 完成后收尾 task_runs 行
+（`task_runs.id` 是这次 run 的标识；Agent 侧没有 run 概念，steering 走
+`conversation_id`）
 
 历史路径（已删除，不可用）:
   - TaskChannel.dispatch — 已被 publish RunTaskJob 取代
@@ -356,7 +365,7 @@ TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_r
 
 **不可改的守卫**:
 
-- task session 的 channel 必须是 `"task"`（不是 tg/webui）
+- task conversation 的 channel 必须是 `"task"`（不是 tg/webui）
 - TaskWorker 通过 chat_job_board 发布任务消息，AgentWorker 消费；TaskWorker 不直接调用 Agent.run / 不绑定回调
 - 连续失败超阈值必须禁用任务（防止 API key 被无效任务烧光）
 - TaskWorker 的 cron 循环跑在主 event loop（与 FastAPI 共享），apscheduler 依赖已删除（tasksBook.py 明确 "no apscheduler dependency"）
@@ -408,7 +417,7 @@ POST /save-admin { tgids: list[str] }
 
 **不可改的守卫**:
 
-- verify-admin 走原始 HTTP（`send_text_raw`），**不能**经任何 channel worker claim loop — 此时尚无 Contact 行，uid→im_id 映射不存在，dispatcher / worker 路径都会失败
+- verify-admin 走原始 HTTP（`send_text_raw`），**不能**经任何 channel worker claim loop — 此时尚无 Contact 行，contact_id→im_id 映射不存在，dispatcher / worker 路径都会失败
 - 验证码必须先存后发，发送失败回滚删除
 - 验证码一次性使用：任何校验路径（成功/不匹配/过期）都必须 state_delete
 - save_admin 是唯一写入 admin Contact 的地方，必须幂等

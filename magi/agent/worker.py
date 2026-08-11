@@ -13,8 +13,8 @@
 
 本步骤已完成 Phase 2 子模块迁移，现已委托调用：
 - ``system_prompt.build_system_prompt(bus=...)``
-- ``agent_context.build_messages_from_session(bus=...)``
-- ``auto_title.request_session_title(bus=...)``
+- ``agent_context.build_messages_from_conversation(bus=...)``
+- ``auto_title.request_conversation_title(bus=...)``
 - ``token_usage.record_token_usage(bus=...)``
 """
 
@@ -121,7 +121,7 @@ class AgentWorker(RuntimeWorker):
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25, magi_id: int | None = None) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
-        self._active_sessions: set[str] = set()
+        self._active_conversations: set[str] = set()
         self._in_flight: dict[str, asyncio.Event] = {}  # conv_id → cancel_event
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
@@ -148,13 +148,13 @@ class AgentWorker(RuntimeWorker):
             conv_id = getattr(job, "conversation_id", None) or ""
 
             # steering — release back to board for _process to claim
-            if source == "chat" and conv_id and conv_id in self._active_sessions:
+            if source == "chat" and conv_id and conv_id in self._active_conversations:
                 await self.call(self.bus.agent_job_board.release, key=job.job_id)
                 continue
 
             # new run
             if source == "chat":
-                self._active_sessions.add(conv_id)
+                self._active_conversations.add(conv_id)
             payload = getattr(job, "payload", None) or {}
             is_a2a = source != "chat"
             ctx = RunContext(
@@ -184,7 +184,7 @@ class AgentWorker(RuntimeWorker):
                 await self._publish_delivery(ctx)
             finally:
                 if source == "chat" and conv_id:
-                    self._active_sessions.discard(conv_id)
+                    self._active_conversations.discard(conv_id)
                 succeeded = ctx.final_error is None
                 if source == "chat":
                     await self.call(
@@ -348,11 +348,11 @@ class AgentWorker(RuntimeWorker):
             return
         if not ctx.conversation_id or ctx.contact_id is None:
             return
-        from magi.agent.agent_context import build_messages_from_session
+        from magi.agent.agent_context import build_messages_from_conversation
 
         try:
             msgs = await self.call(
-                build_messages_from_session,
+                build_messages_from_conversation,
                 contact_id=ctx.contact_id,
                 conversation_id=ctx.conversation_id,
                 new_user_text="",
@@ -775,10 +775,10 @@ class AgentWorker(RuntimeWorker):
     def _maybe_title(self, ctx: RunContext) -> None:
         if not ctx.conversation_id or ctx.contact_id is None:
             return
-        from magi.agent.auto_title import request_session_title
+        from magi.agent.auto_title import request_conversation_title
 
         self.spawn(
-            request_session_title(ctx.contact_id, ctx.conversation_id, bus=self.bus),
+            request_conversation_title(ctx.contact_id, ctx.conversation_id, bus=self.bus),
             name=f"magi-title-{ctx.conversation_id}",
         )
 

@@ -11,20 +11,20 @@ push results to whichever channel the task targets.
 Cross-channel delivery (D.28)
 -----------------------------
 
-The push target is determined by the **session's channel**
+The push target is determined by the **conversation's channel**
 (``chat_conversations.channel``) and dispatched via the channel-
 owned delivery worker. The tool never reads the per-channel
 IM id itself — that's the adapter's job.
 
-  - WebUI session (``channel="webui"``) — the dispatcher
-    appends the message directly to the chat session store
+  - WebUI conversation (``channel="webui"``) — the dispatcher
+    appends the message directly to the chat conversation store
     so the operator sees it as a chat bubble in the WebUI
     scroll.
-  - TG session (``channel="tg"``) — the TG adapter
+  - TG conversation (``channel="tg"``) — the TG adapter
     resolves the user's bound chat id and pushes via the
     python-telegram-bot client.
-  - Scheduled task session (``channel="scheduled"``) —
-    the runner creates a session with the task's
+  - Scheduled task conversation (``channel="scheduled"``) —
+    the runner creates a conversation with the task's
     ``target_channel``; the dispatcher routes to the
     corresponding adapter.
   - Future channels (Slack, WeChat, etc.) — write an
@@ -83,8 +83,8 @@ class SendMessageTool(Tool):
         "ending the tool loop. Use sparingly — most "
         "communication should happen in the final reply. "
         "Cross-channel: works for WebUI, Telegram, and "
-        "scheduled-task sessions equally. The dispatcher "
-        "routes to the session's channel; the tool is "
+        "scheduled-task conversations equally. The dispatcher "
+        "routes to the conversation's channel; the tool is "
         "fully channel-agnostic."
     )
     input_schema = {
@@ -123,9 +123,9 @@ class SendMessageTool(Tool):
         if not ctx.conversation_id:
             return ToolResult(
                 content=(
-                    "send_message: no session context; "
+                    "send_message: no conversation context; "
                     "the LLM must be invoked from inside a "
-                    "session for side-channel push."
+                    "conversation for side-channel push."
                 ),
                 is_error=True,
             )
@@ -134,7 +134,7 @@ class SendMessageTool(Tool):
         # delivery intent; the channel-owned DeliveryWorker performs the
         # actual protocol I/O after the agent transition has committed.
         logger.info(
-            "send_message: enqueueing %d chars for session=%s channel=%s",
+            "send_message: enqueueing %d chars for conversation=%s channel=%s",
             len(text),
             ctx.conversation_id,
             ctx.channel,
@@ -142,23 +142,23 @@ class SendMessageTool(Tool):
         try:
             bus = ctx.bus
             # ``get_for_owner`` is the cross-contact-safe lookup:
-            # returns ``None`` when the session doesn't belong to
+            # returns ``None`` when the conversation doesn't belong to
             # ``ctx.contact_id`` even if a future caller ever forgets the
             # gate layer, defence-in-depth over the bare ``get``.
-            session = bus.conversations_book.get_for_owner(
+            conversation = bus.conversations_book.get_for_owner(
                 contact_id=int(ctx.contact_id),
                 conversation_id=ctx.conversation_id,
             )
-            if session is None:
+            if conversation is None:
                 raise KeyError(f"unknown conversation {ctx.conversation_id!r}")
             bus.delivery_job_board.publish(
                 DeliveryJob(
-                    channel=session.channel,
-                    destination=session.delivery_address or None,
+                    channel=conversation.channel,
+                    destination=conversation.delivery_address or None,
                     payload={
                         "text": text,
-                        "conversation_id": session.conversation_id,
-                        "contact_id": session.contact_id,
+                        "conversation_id": conversation.conversation_id,
+                        "contact_id": conversation.contact_id,
                     },
                 )
             )

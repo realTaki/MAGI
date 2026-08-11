@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.agent.auto_title")
 
 
-async def request_session_title(
+async def request_conversation_title(
     contact_id: int,
     conversation_id: str,
     *,
@@ -79,4 +79,4 @@ def _cleanse_title(raw: str) -> str:
     return lines[0][:80]
 
 
-__all__ = ["request_session_title"]
+__all__ = ["request_conversation_title"]
