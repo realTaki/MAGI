@@ -43,10 +43,7 @@ class CredentialsNudgeSpec:
 # shouldn't need to know the rest of the content.
 CREDENTIALS_NUDGE = CredentialsNudgeSpec(
     title="设置你的 LLM provider 和 API key",
-    description=(
-        "切到「Contacts」,找到自己的档案,"
-        "把 Provider 和 API Key 填上。"
-    ),
+    description=("切到「Contacts」,找到自己的档案,把 Provider 和 API Key 填上。"),
     target_url="/dashboard?tab=organization",
 )
 
@@ -98,7 +95,8 @@ def ensure_for_admin(
     )
     logger.info(
         "credentials_nudge: inserted for admin=%s (title=%r)",
-        admin_id, spec.title,
+        admin_id,
+        spec.title,
     )
     return True
 

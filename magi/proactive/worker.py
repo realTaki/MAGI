@@ -37,13 +37,14 @@ class ProactiveWorker(RuntimeWorker):
 
     def __init__(
         self,
-        bus: "Bus",
+        bus: Bus,
         *,
         magi_id: int | None = None,
         poll_seconds: float = 0.25,
     ) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self._magi_id = magi_id
+
     async def on_start(self) -> None:
         # 1. Bootstrap: Adam 检查 + admin credentials nudge
         await self._bootstrap()
@@ -93,9 +94,7 @@ class ProactiveWorker(RuntimeWorker):
             return
         admin_rows = magis_admins_book.list_for_magis(magis_id=magis_id)
         if not admin_rows:
-            logger.info(
-                "proactive worker: no admins for magis_id=%d, skipping", magis_id
-            )
+            logger.info("proactive worker: no admins for magis_id=%d, skipping", magis_id)
             return
 
         for entry in admin_rows:

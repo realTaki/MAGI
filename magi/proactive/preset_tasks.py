@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.proactive.preset_tasks")
 
 
-async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
+async def handle_seed_job(bus: Bus, job: SeedPresetTasksJob) -> None:
     """Claim + execute a SeedPresetTasksJob.
 
     从 prompt_book.task_presets() 读 YAML 预设，逐个转为
@@ -47,11 +47,7 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
             _submit_success(bus, job, inserted=0, skipped=0)
             return
 
-        contact_label = (
-            contact.display_name
-            or contact.name
-            or f"contact {contact.id}"
-        ).strip()
+        contact_label = (contact.display_name or contact.name or f"contact {contact.id}").strip()
         tz = _read_system_timezone(bus)
 
         inserted = 0
@@ -130,7 +126,7 @@ async def handle_seed_job(bus: "Bus", job: "SeedPresetTasksJob") -> None:
 # --- helpers -----------------------------------------------------------------
 
 
-def _load_presets(bus: "Bus") -> dict:
+def _load_presets(bus: Bus) -> dict:
     """Read bundled preset templates from prompt_book."""
     try:
         return bus.prompt_book.task_presets()
@@ -139,7 +135,7 @@ def _load_presets(bus: "Bus") -> dict:
         return {}
 
 
-def _read_system_timezone(bus: "Bus") -> str:
+def _read_system_timezone(bus: Bus) -> str:
     try:
         raw = bus.settings_book.get(key="system.timezone")
         if raw and isinstance(raw, str) and raw.strip():
@@ -150,13 +146,18 @@ def _read_system_timezone(bus: "Bus") -> str:
 
 
 def _submit_success(
-    bus: "Bus", job: "SeedPresetTasksJob",
-    *, inserted: int, skipped: int,
+    bus: Bus,
+    job: SeedPresetTasksJob,
+    *,
+    inserted: int,
+    skipped: int,
 ) -> None:
     try:
         result = SeedPresetTasksResult(
-            job_id=job.job_id, success=True,
-            inserted=inserted, skipped=skipped,
+            job_id=job.job_id,
+            success=True,
+            inserted=inserted,
+            skipped=skipped,
         )
         bus.seed_preset_tasks_job_board.submit_result(key=job.job_id, result=result)
     except Exception:
@@ -165,21 +166,28 @@ def _submit_success(
         # committed, and the lease will time out + base will mark the
         # row exhausted if we lose the result write.
         logger.exception(
-            "preset_tasks: failed to submit seed success for %s", job.job_id,
+            "preset_tasks: failed to submit seed success for %s",
+            job.job_id,
         )
 
 
 def _submit_failure(
-    bus: "Bus", job: "SeedPresetTasksJob", error: str,
+    bus: Bus,
+    job: SeedPresetTasksJob,
+    error: str,
 ) -> None:
     try:
         result = SeedPresetTasksResult(
-            job_id=job.job_id, success=False, error=error[:8000],
+            job_id=job.job_id,
+            success=False,
+            error=error[:8000],
         )
         bus.seed_preset_tasks_job_board.submit_result(
-            key=job.job_id, result=result,
+            key=job.job_id,
+            result=result,
         )
     except Exception:
         logger.exception(
-            "preset_tasks: failed to submit seed failure for %s", job.job_id,
+            "preset_tasks: failed to submit seed failure for %s",
+            job.job_id,
         )
