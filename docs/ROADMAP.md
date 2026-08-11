@@ -118,5 +118,3 @@ Decisions that block the **Open** items above.
 - [business-flows.md](business-flows.md) — behavioural invariants and
   guard conditions.
 - [terms.md](terms.md) — vocabulary and canonical ID names.
-- [production-persistence.md](production-persistence.md) — storage
-  boundaries from a deployment perspective.

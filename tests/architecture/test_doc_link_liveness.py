@@ -26,15 +26,15 @@ This test extracts three kinds of references from each
 Scope policy
 ------------
 
-- **Archived docs are skipped.** ``docs/ROADMAP.md`` is
-  explicitly marked ``> ⚠️ ARCHIVED — historical planning
-  document`` and references retired code paths by design.
-  Re- **catching the drift in such docs would defeat the
-  purpose of keeping them as historical context.**
-- **The architecture review doc is also skipped.** It
-  intentionally references the *previous* state of the code
-  (e.g. the old ``_verify_signed_uid`` that the review
-  flagged as broken) — that's its job.
+- **Only ``business-flows.md`` is skipped.** It explicitly notes
+  "旧的 ``magi.bus.BusStore`` / ``agent_turn_store`` /
+  ``magi.agent.step.run_agent_step`` / ``magic`` 表 等已删除"
+  — recording retired symbols as behavioural anchors is part of
+  what that document is for.
+- ``ROADMAP.md`` is **not** skipped. It used to be an archived
+  planning document full of retired paths; it is now a
+  forward-looking backlog whose references name live code, so
+  drift in it should fail the same way as anywhere else.
 
 Run with: ``pytest tests/architecture/test_doc_link_liveness.py``.
 """

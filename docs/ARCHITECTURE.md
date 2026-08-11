@@ -536,8 +536,7 @@ isolated local SQLite MAGIS.
 
 Schema changes are explicit BUS migrations; the runtime uses one schema
 and one implementation, without fallback reads, compatibility imports,
-or dual writes. See [Production Persistence](production-persistence.md)
-for the deployment-side view of the same boundary.
+or dual writes.
 
 ## Verification
 
@@ -558,5 +557,4 @@ and `test_hook_envelope_purity.py`).
 - [Business flows](business-flows.md) — invariant behaviour and guard
   conditions for the chat loop, channels, tasks, onboarding, login, and
   tools.
-- [Production persistence](production-persistence.md) — storage
-  boundaries from a deployment perspective.
+- [Roadmap](ROADMAP.md) — the forward-looking backlog.
