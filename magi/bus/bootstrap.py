@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from magi.bus.guild.runTaskJob import runTaskJobBoard
     from magi.bus.guild.runToolJob import runToolJobBoard
     from magi.bus.guild.seedPresetTasksJob import seedPresetTasksJobBoard
-    from magi.bus.guild.sendA2AJob import sendA2AJobBoard
+    from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import SkillsBook
     from magi.bus.library.local.actionItemBook import ActionItemBook
@@ -133,10 +133,14 @@ class Bus:
 
     llm_job_board: callLLMJobBoard  # callLLMJobBoard
 
-    # -- local: delivery & A2A (Job boards) ----------------------------------
+    # -- local: delivery (Job board) ------------------------------------------
 
     delivery_job_board: deliveryJobBoard  # deliveryJobBoard
-    a2a_job_board: sendA2AJobBoard  # sendA2AJobBoard
+
+    # -- MAGIS shared: durable A2A boards -------------------------------------
+
+    a2a_request_job_board: a2aRequestJobBoard | None
+    a2a_notify_job_board: a2aNotifyBoard | None
 
     # -- local: provider config (Job board) ----------------------------------
 
@@ -276,7 +280,8 @@ def _open_with_dirs(
         runTaskJobBoard,
         runToolJobBoard,
         seedPresetTasksJobBoard,
-        sendA2AJobBoard,
+        a2aNotifyBoard,
+        a2aRequestJobBoard,
     )
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import build_default_skills_book
@@ -380,7 +385,6 @@ def _open_with_dirs(
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
     delivery_job_board = deliveryJobBoard(local_factory)
-    a2a_job_board = sendA2AJobBoard(local_factory)
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
@@ -405,6 +409,8 @@ def _open_with_dirs(
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
         control_secrets_book = ControlSecretBook(magis_factory)
+        a2a_request_job_board = a2aRequestJobBoard(magis_factory)
+        a2a_notify_job_board = a2aNotifyBoard(magis_factory)
     else:
         magis_book = None
         magis_admins_book = None
@@ -413,6 +419,8 @@ def _open_with_dirs(
         runtime_state_book = None
         control_secrets_book = None
         control_settings_book = None
+        a2a_request_job_board = None
+        a2a_notify_job_board = None
 
     # ---- assemble ----------------------------------------------------------
     return Bus(
@@ -432,7 +440,8 @@ def _open_with_dirs(
         agent_job_board=agent_job_board,
         llm_job_board=llm_job_board,
         delivery_job_board=delivery_job_board,
-        a2a_job_board=a2a_job_board,
+        a2a_request_job_board=a2a_request_job_board,
+        a2a_notify_job_board=a2a_notify_job_board,
         change_provider_config_job_board=change_provider_config_job_board,
         seed_preset_tasks_job_board=seed_preset_tasks_job_board,
         run_task_job_board=run_task_job_board,

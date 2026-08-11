@@ -67,7 +67,10 @@ def _tables_for_scope(scope: str) -> list[Table]:
 
     tables: dict[str, Table] = {}
     for mapper in Base.registry.mappers:
-        is_magis_table = mapper.class_.__module__.startswith("magi.bus.library.magis.")
+        is_magis_table = (
+            mapper.class_.__module__.startswith("magi.bus.library.magis.")
+            or mapper.class_.__module__ == "magi.bus.guild.a2aJob"
+        )
         if (scope == MAGIS_SCOPE) == is_magis_table:
             # Every ORM class in MAGI is table-mapped (no joins / aliases
             # here), so ``mapper.local_table`` is always a ``Table`` at

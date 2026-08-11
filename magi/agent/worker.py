@@ -21,12 +21,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from magi.runtime_worker import RuntimeWorker
+from magi.bus.db.base import utcnow_naive
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -45,8 +48,9 @@ _DEFAULT_MAX_TOKENS = 1024
 _DEFAULT_TOOL_WAIT_SECONDS = 300.0
 _DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
 
-# A2A feature gate — Phase 2 切真 A2A 后改 False
-_A2A_ENABLED = False
+# A2A is a MAGIS-shared durable collaboration plane.  It is deliberately
+# not a human channel or an HTTP transport.
+_A2A_ENABLED = True
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +85,9 @@ class RunContext:
     final_reply: str = ""
     final_error: str | None = None
     cancelled: bool = False
+    a2a_kind: str | None = None
+    a2a_source_magi_id: int | None = None
+    a2a_job_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +98,8 @@ class RunContext:
 @dataclass
 class _SplitJobs:
     tool_jobs: list = field(default_factory=list)
-    a2a_jobs: list = field(default_factory=list)
+    a2a_request_jobs: list = field(default_factory=list)
+    a2a_notify_jobs: list = field(default_factory=list)
 
 
 @dataclass

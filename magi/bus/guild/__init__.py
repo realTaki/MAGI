@@ -1,7 +1,7 @@
 """bus.guild — 仅写。继承 BaseJobBoard，override publish 即可。
 
 Job 命名（publish → claim → submit_result）：动词打头
-（chatJob / sendA2AJobBoard / callLLMJobBoard / ...）。
+（chatJob / a2aRequestJobBoard / callLLMJobBoard / ...）。
 Book 命名：名词结尾（memoryBook / contactBook / ...）。
 """
 
@@ -21,6 +21,14 @@ from magi.bus.guild.changeProviderConfigJob import (
     changeProviderConfigJobBoard,
 )
 from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard, publish_chat
+from magi.bus.guild.a2aJob import (
+    A2ANotifyJob,
+    A2ANotifyResult,
+    A2ARequestJob,
+    A2ARequestResult,
+    a2aNotifyBoard,
+    a2aRequestJobBoard,
+)
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 from magi.bus.guild.mcpServerChangedJob import (
     VALID_KINDS as _MCP_CHANGED_KINDS,
@@ -37,7 +45,6 @@ from magi.bus.guild.seedPresetTasksJob import (
     SeedPresetTasksResult,
     seedPresetTasksJobBoard,
 )
-from magi.bus.guild.sendA2AJob import SendA2AJob, SendA2AResult, sendA2AJobBoard
 
 __all__ = [
     "BaseNotifyBoard",
@@ -59,9 +66,12 @@ __all__ = [
     "ChatJobResult",
     "chatJobBoard",
     "publish_chat",
-    "SendA2AJob",
-    "SendA2AResult",
-    "sendA2AJobBoard",
+    "A2ARequestJob",
+    "A2ARequestResult",
+    "a2aRequestJobBoard",
+    "A2ANotifyJob",
+    "A2ANotifyResult",
+    "a2aNotifyBoard",
     "ChangeProviderConfigJob",
     "ChangeProviderConfigResult",
     "changeProviderConfigJobBoard",
