@@ -42,7 +42,7 @@ def _format_daily_note_block(note) -> str:
     return f"## Daily note\n{body}" if body else ""
 
 
-def read_soul(*, bus: "Bus") -> str:
+def read_soul(*, bus: Bus) -> str:
     """Read the SOUL persona via ``bus.prompt_book``.
 
     The Book already resolves the correct SOUL source (workspace or
@@ -58,7 +58,7 @@ def build_system_prompt(
     *,
     contact_id: int,
     soul: str,
-    bus: "Bus",
+    bus: Bus,
     magi_id: int | None = None,
 ) -> str:
     """Assemble the full system prompt for one LLM turn.

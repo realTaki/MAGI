@@ -39,7 +39,7 @@ WORKDIR /app
 # Install Python deps (magi) from pyproject + uv.lock. We still do this
 # so the venv has a baseline magi install — the kind hostPath mount of
 # the checkout replaces it at runtime via PYTHONPATH.
-COPY pyproject.toml uv.lock* README.md alembic.ini ./
+COPY pyproject.toml uv.lock* README.md ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eva
 
@@ -59,14 +59,8 @@ ENV MAGI_RELOAD=1
 
 EXPOSE 42069
 
-# No ENTRYPOINT / CMD here on purpose. The dev entrypoint script
-# (start vite in background + exec magi) is bind-mounted from the
-# host at /usr/local/bin/entrypoint.sh via
-# docker-compose/docker-compose.dev.yml, so editing it doesn't
-# require an image rebuild. With nothing below, the image's CMD
-# is whatever the base python:3.12-slim
-# sets by default — which we override to ``["magi"]`` here:
-CMD ["magi"]
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD magi --check >/dev/null || exit 1
+# No ENTRYPOINT here on purpose. The dev entrypoint script (start Vite in the
+# background + exec the supplied MAGI command) is bind-mounted by the Kind
+# overlay. With no override, run one provisioned runtime in the foreground.
+# Role-specific Kubernetes probes own health checks for the dev containers.
+CMD ["magi", "node", "run", "--foreground"]

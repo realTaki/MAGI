@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from magi.bus.db.base import Base
 
+
 class EngineFactory:
     """根据 database_url 创建引擎，统一 SQLite 和 PG 的差异。
 
@@ -46,8 +47,7 @@ class EngineFactory:
             self._dialect = "postgresql"
         else:
             raise ValueError(
-                "BUS storage only supports SQLite or PostgreSQL URLs; "
-                f"got {drivername!r}"
+                f"BUS storage only supports SQLite or PostgreSQL URLs; got {drivername!r}"
             )
         self._engine = self._build_engine()
         self._session_factory = sessionmaker(

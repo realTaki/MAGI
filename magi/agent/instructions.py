@@ -34,7 +34,7 @@ def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str
     )
 
 
-def runtime_instruction_block(bus: "Bus", *, magi_id: int | None = None) -> str:
+def runtime_instruction_block(bus: Bus, *, magi_id: int | None = None) -> str:
     """Load this MAGI's instruction from MAGIS Books.
 
     ``magi_id`` is the runtime's own ``magis_memberships.id`` —
@@ -77,12 +77,14 @@ def runtime_instruction_block(bus: "Bus", *, magi_id: int | None = None) -> str:
             for entry in joined or []:
                 if not isinstance(entry, dict):
                     continue
-                memberships.append({
-                    "magis_name": entry.get("magis_name"),
-                    "team_instruction": entry.get("team_instruction"),
-                    "role_name": entry.get("role_name"),
-                    "role_instruction": entry.get("role_instruction"),
-                })
+                memberships.append(
+                    {
+                        "magis_name": entry.get("magis_name"),
+                        "team_instruction": entry.get("team_instruction"),
+                        "role_name": entry.get("role_name"),
+                        "role_instruction": entry.get("role_instruction"),
+                    }
+                )
 
         return _render(personal, memberships)
     except Exception:

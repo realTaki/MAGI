@@ -82,7 +82,5 @@ def downgrade() -> None:
     # follows indexes in both directions.
     if _has_table(conn, "a2a_jobs"):
         op.execute("ALTER TABLE a2a_jobs RENAME TO a2a_invocations")
-    if _has_table(conn, "a2a_invocations") and _has_column(
-        conn, "a2a_invocations", "job_id"
-    ):
+    if _has_table(conn, "a2a_invocations") and _has_column(conn, "a2a_invocations", "job_id"):
         op.execute("ALTER TABLE a2a_invocations RENAME COLUMN job_id TO invocation_id")

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -17,11 +15,13 @@ async def request_session_title(
     contact_id: int,
     conversation_id: str,
     *,
-    bus: "Bus",
+    bus: Bus,
 ) -> str | None:
     """Generate + persist a short chat title; return it."""
     try:
-        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
+        sess = bus.sessions_book.get_for_owner(
+            contact_id=contact_id, conversation_id=conversation_id
+        )
     except Exception:
         return None
     if sess is None or getattr(sess, "title", None) is not None:
@@ -43,7 +43,11 @@ async def request_session_title(
             {"role": "user", "content": getattr(first_user, "text", "")},
         ],
         max_tokens=20,
-        parameters={"contact_id": contact_id, "conversation_id": conversation_id, "phase": "auto_title"},
+        parameters={
+            "contact_id": contact_id,
+            "conversation_id": conversation_id,
+            "phase": "auto_title",
+        },
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=30.0)
@@ -56,7 +60,9 @@ async def request_session_title(
 
     try:
         fresh = bus.sessions_book.set_title_if_null(
-            contact_id=contact_id, conversation_id=conversation_id, title=cleaned,
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+            title=cleaned,
         )
     except Exception:
         return None
@@ -67,11 +73,7 @@ async def request_session_title(
 
 
 def _cleanse_title(raw: str) -> str:
-    lines = [
-        ln.strip().strip('"\'""''`')
-        for ln in raw.strip().splitlines()
-        if ln.strip()
-    ]
+    lines = [ln.strip().strip("\"'`") for ln in raw.strip().splitlines() if ln.strip()]
     if not lines:
         return ""
     return lines[0][:80]

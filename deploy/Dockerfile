@@ -37,7 +37,7 @@ WORKDIR /app
 # copied as a unit. uv finds pyproject at the project root and
 # installs deps into the venv. README.md is also copied because
 # pyproject declares it under [project] readme.
-COPY pyproject.toml uv.lock* README.md alembic.ini ./
+COPY pyproject.toml uv.lock* README.md ./
 COPY magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eva
 
@@ -51,7 +51,6 @@ RUN useradd --create-home --shell /bin/bash magi \
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY magi /app/magi
-COPY alembic.ini /app/alembic.ini
 # Prebuilt SPA is consumed only by ``magi webui``. It stays in the same image
 # as MAGI runtimes to keep installation and versioning to one artifact.
 COPY --from=web-builder /web/dist /app/magi/WebUI/dist
@@ -71,10 +70,8 @@ USER magi
 
 EXPOSE 42069
 
-# `magi --check` is role-aware (prints the resolved config for whichever
-# role this container is playing) and exits 0 — safe liveness probe for
-# both ADAM and EVA until role-specific probes land in C3+.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD magi --check >/dev/null || exit 1
-
-CMD ["magi"]
+# Kubernetes supplies a role-specific HTTP probe. A single image-level probe
+# cannot be correct for both runtime (42070) and control service (42069), so
+# do not mask that distinction with a CLI invocation. The default starts one
+# already-provisioned runtime; deployments may override it for init or WebUI.
+CMD ["magi", "node", "run", "--foreground"]

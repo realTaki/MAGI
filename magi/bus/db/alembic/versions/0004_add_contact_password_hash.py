@@ -16,7 +16,6 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-
 revision: str = "0004_add_contact_password_hash"
 down_revision: str | Sequence[str] | None = "0003_rename_a2a_invocation_id_and_table"
 branch_labels: str | Sequence[str] | None = None
@@ -24,10 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _has_column(column: str) -> bool:
-    return any(
-        item["name"] == column
-        for item in sa.inspect(op.get_bind()).get_columns("contacts")
-    )
+    return any(item["name"] == column for item in sa.inspect(op.get_bind()).get_columns("contacts"))
 
 
 def upgrade() -> None:

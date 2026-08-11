@@ -22,7 +22,7 @@ async def maybe_compact(
     conversation_id: str | None,
     messages: list[dict],
     *,
-    bus: "Bus",
+    bus: Bus,
 ) -> None:
     """Estimate token cost. If over threshold, run one compaction pass."""
     if not conversation_id:
@@ -37,7 +37,9 @@ async def maybe_compact(
         threshold_pct = int(pct_raw) if pct_raw else _DEFAULT_THRESHOLD_PCT
     except Exception:
         context_window, threshold_pct, keep = (
-            _DEFAULT_CONTEXT_WINDOW, _DEFAULT_THRESHOLD_PCT, _DEFAULT_COMPACTION_KEEP,
+            _DEFAULT_CONTEXT_WINDOW,
+            _DEFAULT_THRESHOLD_PCT,
+            _DEFAULT_COMPACTION_KEEP,
         )
 
     if len(messages) <= keep:
@@ -56,7 +58,9 @@ async def maybe_compact(
         return
 
     try:
-        sess = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
+        sess = bus.sessions_book.get_for_owner(
+            contact_id=contact_id, conversation_id=conversation_id
+        )
         if sess is None:
             return
         messages[:] = [
@@ -70,7 +74,7 @@ async def call_llm_for_summary(
     *,
     to_compress: list[dict],
     wait_seconds: float = 30.0,
-    bus: "Bus",
+    bus: Bus,
 ) -> str | None:
     """One LLM call to compress *to_compress* into a summary."""
     prompt_book = bus.prompt_book

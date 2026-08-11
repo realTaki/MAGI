@@ -26,20 +26,24 @@ def build_messages_from_session(
     conversation_id: str | None,
     new_user_text: str,
     *,
-    bus: "Bus",
+    bus: Bus,
 ) -> list[dict]:
     """Load session history from sessions_book/messages_book."""
     if not conversation_id or contact_id is None:
         return [{"role": "user", "content": new_user_text}]
 
     try:
-        session = bus.sessions_book.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
+        session = bus.sessions_book.get_for_owner(
+            contact_id=contact_id, conversation_id=conversation_id
+        )
         if session is None:
             return [{"role": "user", "content": new_user_text}]
         msgs = bus.messages_book.list_for_conversation(conversation_id=conversation_id)
         result = [
-            {"role": "user" if getattr(m, "role", "") in ("user", "system") else "assistant",
-             "content": getattr(m, "text", "")}
+            {
+                "role": "user" if getattr(m, "role", "") in ("user", "system") else "assistant",
+                "content": getattr(m, "text", ""),
+            }
             for m in msgs
         ]
         if not result or result[-1]["content"] != new_user_text:
@@ -57,8 +61,9 @@ def build_context(
     contact_id: int | None,
     conversation_id: str | None,
     caller_role: str | None,
-    bus: "Bus",
+    bus: Bus,
 ) -> AgentContext | None:
+    _ = channel
     try:
         schemas = bus.tool_definitions_book.list_enabled(caller_role=caller_role)
         tool_schemas = [

@@ -34,9 +34,10 @@ import os
 import tempfile
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Iterator
+from typing import Any, Final
 
 logger = logging.getLogger("magi.bus.db.file")
 
@@ -99,9 +100,7 @@ class Format(ABC):
         without an override raises :class:`FormatError`.
         """
         if self.is_binary:
-            raise FormatError(
-                f"{type(self).__name__} is binary; override load_bytes"
-            )
+            raise FormatError(f"{type(self).__name__} is binary; override load_bytes")
         return self.load(data.decode("utf-8"))
 
     def dump_bytes(self, value: Any) -> bytes:
@@ -111,9 +110,7 @@ class Format(ABC):
         Binary formats must override.
         """
         if self.is_binary:
-            raise FormatError(
-                f"{type(self).__name__} is binary; override dump_bytes"
-            )
+            raise FormatError(f"{type(self).__name__} is binary; override dump_bytes")
         return self.dump(value).encode("utf-8")
 
 
@@ -129,9 +126,7 @@ class TextFormat(Format):
 
     def dump(self, value: str) -> str:
         if not isinstance(value, str):
-            raise TypeError(
-                f"{self.extension} format expects str, got {type(value).__name__}"
-            )
+            raise TypeError(f"{self.extension} format expects str, got {type(value).__name__}")
         return value
 
 
@@ -145,12 +140,17 @@ class YamlFormat(Format):
 
     def load(self, text: str) -> Any:
         import yaml
+
         return yaml.safe_load(text)
 
     def dump(self, value: Any) -> str:
         import yaml
+
         return yaml.safe_dump(
-            value, allow_unicode=True, sort_keys=False, default_flow_style=False,
+            value,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
         )
 
 
@@ -331,21 +331,23 @@ class FileShelf:
             try:
                 raw = resolved.read_bytes()
             except OSError as exc:
-                raise FileNotFoundError(
-                    f"FileShelf: {name!r} vanished mid-read: {exc}"
-                ) from exc
+                raise FileNotFoundError(f"FileShelf: {name!r} vanished mid-read: {exc}") from exc
             if fmt.strip_on_read:
                 text = raw.decode("utf-8").strip()
             else:
                 text = raw.decode("utf-8")
             value = fmt.load(text)
             self._cache[name] = _Entry(
-                value=value, mtime_ns=version[0], size=version[1],
+                value=value,
+                mtime_ns=version[0],
+                size=version[1],
             )
 
         logger.debug(
             "FileShelf reloaded %s (mtime_ns=%d size=%d)",
-            resolved.name, version[0], version[1],
+            resolved.name,
+            version[0],
+            version[1],
         )
         return value
 
@@ -357,9 +359,7 @@ class FileShelf:
         """
         value = self.read(name)
         if not isinstance(value, str):
-            raise TypeError(
-                f"FileShelf: {name!r} decoded into {type(value).__name__}, not str"
-            )
+            raise TypeError(f"FileShelf: {name!r} decoded into {type(value).__name__}, not str")
         return value
 
     # ------------------------------------------------------------------
@@ -401,17 +401,19 @@ class FileShelf:
             try:
                 raw = resolved.read_bytes()
             except OSError as exc:
-                raise FileNotFoundError(
-                    f"FileShelf: {name!r} vanished mid-read: {exc}"
-                ) from exc
+                raise FileNotFoundError(f"FileShelf: {name!r} vanished mid-read: {exc}") from exc
             value = fmt.load_bytes(raw)
             self._cache[name] = _Entry(
-                value=value, mtime_ns=version[0], size=version[1],
+                value=value,
+                mtime_ns=version[0],
+                size=version[1],
             )
 
         logger.debug(
             "FileShelf reloaded (bytes) %s (mtime_ns=%d size=%d)",
-            resolved.name, version[0], version[1],
+            resolved.name,
+            version[0],
+            version[1],
         )
         return value
 
@@ -420,7 +422,11 @@ class FileShelf:
     # ------------------------------------------------------------------
 
     def write(
-        self, name: str, value: Any, *, suffix: str = ".md",
+        self,
+        name: str,
+        value: Any,
+        *,
+        suffix: str = ".md",
     ) -> Path:
         """Atomically write *value* to ``<root>/<name><suffix>``.
 
@@ -447,22 +453,27 @@ class FileShelf:
             raise
         except Exception as exc:
             raise FormatError(
-                f"FileShelf: cannot dump {type(value).__name__} "
-                f"as {fmt.extension!r}: {exc}"
+                f"FileShelf: cannot dump {type(value).__name__} as {fmt.extension!r}: {exc}"
             ) from exc
 
         self._atomic_write(resolved, text.encode("utf-8"), name)
         return resolved
 
     def write_text(
-        self, name: str, content: str, *, suffix: str = ".md",
+        self,
+        name: str,
+        content: str,
+        *,
+        suffix: str = ".md",
     ) -> Path:
         """Convenience: write *content* (str) — equivalent to
         :meth:`write` but with a static str type.  Mirrors :meth:`read_text`."""
         return self.write(name, content, suffix=suffix)
 
     def write_structured(
-        self, name: str, data: dict[str, Any] | list[Any],
+        self,
+        name: str,
+        data: dict[str, Any] | list[Any],
     ) -> Path:
         """Convenience: serialize *data* as YAML and :meth:`write`.
 
@@ -475,7 +486,11 @@ class FileShelf:
     # ------------------------------------------------------------------
 
     def write_bytes(
-        self, name: str, value: bytes, *, suffix: str = ".png",
+        self,
+        name: str,
+        value: bytes,
+        *,
+        suffix: str = ".png",
     ) -> Path:
         """Atomically write raw *bytes* via :meth:`Format.dump_bytes`.
 
@@ -497,9 +512,7 @@ class FileShelf:
         except FileShelfError:
             raise
         except Exception as exc:
-            raise FormatError(
-                f"FileShelf: cannot dump_bytes as {fmt.extension!r}: {exc}"
-            ) from exc
+            raise FormatError(f"FileShelf: cannot dump_bytes as {fmt.extension!r}: {exc}") from exc
 
         self._atomic_write(resolved, data, name)
         return resolved
@@ -657,8 +670,7 @@ class FileShelf:
                 return candidate
 
         raise FileNotFoundError(
-            f"FileShelf: {name!r} not found in {self._root} "
-            f"(tried suffixes: {', '.join(tried)})"
+            f"FileShelf: {name!r} not found in {self._root} (tried suffixes: {', '.join(tried)})"
         )
 
     def _format_for(self, resolved: Path) -> Format:
@@ -668,8 +680,7 @@ class FileShelf:
             return self._formats[ext]
         except KeyError as exc:
             raise FormatError(
-                f"no format registered for extension {ext!r} "
-                f"(known: {sorted(self._formats)!r})"
+                f"no format registered for extension {ext!r} (known: {sorted(self._formats)!r})"
             ) from exc
 
 

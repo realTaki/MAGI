@@ -12,9 +12,9 @@ spec:
         - name: magi
           image: magi:dev
           command: ["/usr/local/bin/entrypoint.sh"]
-          args: ["webui"]
+          args: ["webui", "run", "--foreground"]
           env:
-            - name: MAGI_PORT
+            - name: MAGI_WEBUI_PORT
               value: "8000"
             - name: MAGI_RELOAD
               value: "1"

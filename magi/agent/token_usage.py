@@ -15,7 +15,7 @@ def record_token_usage(
     provider: str,
     model: str | None,
     usage: dict,
-    bus: "Bus",
+    bus: Bus,
 ) -> None:
     """Insert one ``token_usage`` row for a successful LLM call."""
     if not hasattr(bus, "token_usage_book"):
