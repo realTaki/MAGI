@@ -31,9 +31,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 ROLE_ASSIGNED = "assigned"
 ROLE_GUEST = "guest"
@@ -124,12 +123,8 @@ class _ContactRow(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
@@ -147,9 +142,7 @@ class _ContactNoteRow(Base):
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="permanent"
-    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="permanent")
     note_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
@@ -170,9 +163,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
 
     def get_by_telegram(self, *, telegram_id: int) -> Contact | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_ContactRow).where(_ContactRow.telegram_id == telegram_id)
-            )
+            row = s.scalar(select(_ContactRow).where(_ContactRow.telegram_id == telegram_id))
             return self._row_to_dto(row) if row else None
 
     def get_password_hash(self, *, contact_id: int) -> str | None:
@@ -215,16 +206,24 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         if not contact_ids:
             return set()
         with self._session() as s:
-            return set(s.scalars(
-                select(_ContactRow.id).where(
-                    _ContactRow.id.in_(contact_ids),
-                    _ContactRow.password_hash.is_not(None),
+            return set(
+                s.scalars(
+                    select(_ContactRow.id).where(
+                        _ContactRow.id.in_(contact_ids),
+                        _ContactRow.password_hash.is_not(None),
+                    )
                 )
-            ))
+            )
 
-    def add(self, *, name: str, role: str = ROLE_GUEST,
-            display_name: str | None = None,
-            telegram_id: int | None = None, admin: bool = False) -> Contact:
+    def add(
+        self,
+        *,
+        name: str,
+        role: str = ROLE_GUEST,
+        display_name: str | None = None,
+        telegram_id: int | None = None,
+        admin: bool = False,
+    ) -> Contact:
         """Insert one contact row.
 
         Owns the write invariants: ``name`` non-empty,
@@ -239,22 +238,18 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         if not normalized:
             raise ValueError("name is required")
         if role not in ALL_ROLES:
-            raise ValueError(
-                f"role must be one of {sorted(ALL_ROLES)!r}, got {role!r}"
-            )
+            raise ValueError(f"role must be one of {sorted(ALL_ROLES)!r}, got {role!r}")
         normalized_display = (display_name or "").strip() or None
         with self._session() as s:
-            existing = s.scalar(
-                select(_ContactRow).where(_ContactRow.name == normalized)
-            )
+            existing = s.scalar(select(_ContactRow).where(_ContactRow.name == normalized))
             if existing is not None:
-                raise ValueError(
-                    f"contact name {normalized!r} already exists"
-                )
+                raise ValueError(f"contact name {normalized!r} already exists")
             row = _ContactRow(
-                name=normalized, role=role,
+                name=normalized,
+                role=role,
                 display_name=normalized_display,
-                telegram_id=telegram_id, admin=admin,
+                telegram_id=telegram_id,
+                admin=admin,
             )
             s.add(row)
             s.commit()
@@ -322,9 +317,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
 
     def list_all(self) -> list[Contact]:
         with self._session() as s:
-            rows = s.scalars(
-                select(_ContactRow).order_by(_ContactRow.id)
-            ).all()
+            rows = s.scalars(select(_ContactRow).order_by(_ContactRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
     def set_telegram_id(
@@ -343,9 +336,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         dependency.
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_ContactRow).where(_ContactRow.id == contact_id)
-            )
+            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
             if row is None:
                 return None
             row.telegram_id = telegram_id
@@ -368,20 +359,22 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """
         pattern = f"%{query.strip()}%"
         with self._session() as s:
-            name_rows = list(s.scalars(
-                select(_ContactRow)
-                .where(_ContactRow.name.ilike(pattern))
-                .order_by(_ContactRow.id)
-            ))
+            name_rows = list(
+                s.scalars(
+                    select(_ContactRow)
+                    .where(_ContactRow.name.ilike(pattern))
+                    .order_by(_ContactRow.id)
+                )
+            )
             seen = {row.id for row in name_rows}
-            matched_ids = set(s.scalars(
-                select(_ContactNoteRow.contact_id)
-                .where(_ContactNoteRow.note.ilike(pattern))
-                .distinct()
-            ))
-            for row in s.scalars(
-                select(_ContactRow).where(_ContactRow.id.in_(matched_ids))
-            ).all():
+            matched_ids = set(
+                s.scalars(
+                    select(_ContactNoteRow.contact_id)
+                    .where(_ContactNoteRow.note.ilike(pattern))
+                    .distinct()
+                )
+            )
+            for row in s.scalars(select(_ContactRow).where(_ContactRow.id.in_(matched_ids))).all():
                 if row.id not in seen:
                     name_rows.append(row)
                     seen.add(row.id)
@@ -395,9 +388,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """Return all contacts with ``admin=True``."""
         with self._session() as s:
             rows = s.scalars(
-                select(_ContactRow)
-                .where(_ContactRow.admin == True)
-                .order_by(_ContactRow.id)
+                select(_ContactRow).where(_ContactRow.admin).order_by(_ContactRow.id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
@@ -414,9 +405,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             raise ValueError("name is required")
         with self._session() as s:
             existing = s.scalars(
-                select(_ContactRow)
-                .where(_ContactRow.admin == True)
-                .order_by(_ContactRow.id)
+                select(_ContactRow).where(_ContactRow.admin).order_by(_ContactRow.id)
             ).first()
             if existing is not None:
                 existing.name = normalized
@@ -435,9 +424,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             s.refresh(row)
             return row.id
 
-    def replace_admin_set(
-        self, pairs: list[tuple[int, str | None]]
-    ) -> list[int]:
+    def replace_admin_set(self, pairs: list[tuple[int, str | None]]) -> list[int]:
         """Replace the admin contact set with *pairs*.
 
         Each element of *pairs* is ``(telegram_id, display_name)``.
@@ -450,19 +437,13 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         result_ids: list[int] = []
         with self._session() as s:
             # Demote existing admins not in the new set
-            old_admins = s.scalars(
-                select(_ContactRow).where(_ContactRow.admin == True)
-            ).all()
+            old_admins = s.scalars(select(_ContactRow).where(_ContactRow.admin)).all()
             for row in old_admins:
                 if row.telegram_id not in tg_ids:
                     row.admin = False
             # Upsert each new admin
             for tg_id, display_name in pairs:
-                row = s.scalar(
-                    select(_ContactRow).where(
-                        _ContactRow.telegram_id == tg_id
-                    )
-                )
+                row = s.scalar(select(_ContactRow).where(_ContactRow.telegram_id == tg_id))
                 if row is not None:
                     row.admin = True
                     if display_name:
@@ -500,8 +481,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             row = s.get(_ContactNoteRow, note_id)
             return self._row_to_dto(row) if row else None
 
-    def add(self, *, contact_id: int, note: str,
-            kind: str = "permanent") -> ContactNote:
+    def add(self, *, contact_id: int, note: str, kind: str = "permanent") -> ContactNote:
         """Insert one note row.
 
         Owns the write invariants: ``note`` non-empty
@@ -516,10 +496,12 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         content = (note or "").strip()
         if not content:
             raise ValueError("note is required")
-        content = content[: _NOTE_MAX_BYTES]
+        content = content[:_NOTE_MAX_BYTES]
         with self._session() as s:
             row = _ContactNoteRow(
-                contact_id=contact_id, note=content, kind=kind,
+                contact_id=contact_id,
+                note=content,
+                kind=kind,
             )
             s.add(row)
             s.commit()
@@ -539,7 +521,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         content = (note or "").strip()
         if not content:
             raise ValueError("note is required")
-        content = content[: _NOTE_MAX_BYTES]
+        content = content[:_NOTE_MAX_BYTES]
         with self._session() as s:
             row = s.get(_ContactNoteRow, note_id)
             if row is None:
@@ -569,15 +551,20 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         """Return today's daily-note row for *contact_id*, or ``None``."""
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         with self._session() as s:
-            row = s.scalar(select(_ContactNoteRow).where(
-                _ContactNoteRow.contact_id == contact_id,
-                _ContactNoteRow.kind == "daily",
-                _ContactNoteRow.note_date >= today,
-            ))
+            row = s.scalar(
+                select(_ContactNoteRow).where(
+                    _ContactNoteRow.contact_id == contact_id,
+                    _ContactNoteRow.kind == "daily",
+                    _ContactNoteRow.note_date >= today,
+                )
+            )
             return self._row_to_dto(row) if row else None
 
     def upsert_daily_note(
-        self, *, contact_id: int, body_delta: str,
+        self,
+        *,
+        contact_id: int,
+        body_delta: str,
         note_date: datetime | None = None,
     ) -> ContactNote:
         """Append a delta to today's daily note.
@@ -600,24 +587,28 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         content = (body_delta or "").strip()
         if not content:
             raise ValueError("body_delta is required")
-        content = content[: _NOTE_MAX_BYTES]
+        content = content[:_NOTE_MAX_BYTES]
         if note_date is None:
             now = datetime.utcnow()
             note_date = datetime(now.year, now.month, now.day)
         with self._session() as s:
-            row = s.scalar(select(_ContactNoteRow).where(
-                _ContactNoteRow.contact_id == contact_id,
-                _ContactNoteRow.kind == "daily",
-                _ContactNoteRow.note_date == note_date,
-            ))
+            row = s.scalar(
+                select(_ContactNoteRow).where(
+                    _ContactNoteRow.contact_id == contact_id,
+                    _ContactNoteRow.kind == "daily",
+                    _ContactNoteRow.note_date == note_date,
+                )
+            )
             if row is None:
                 row = _ContactNoteRow(
-                    contact_id=contact_id, note=content,
-                    kind="daily", note_date=note_date,
+                    contact_id=contact_id,
+                    note=content,
+                    kind="daily",
+                    note_date=note_date,
                 )
                 s.add(row)
             else:
-                row.note = (row.note + "\n" + content)[: _DAILY_NOTE_MAX_BYTES]
+                row.note = (row.note + "\n" + content)[:_DAILY_NOTE_MAX_BYTES]
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)

@@ -24,9 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
 
@@ -127,7 +126,8 @@ class _ActionItemRow(Base):
     # operator leaves the row as an orphan rather than wiping
     # action history. Re-binding is handled by the caller.
     contact_id: Mapped[int | None] = mapped_column(
-        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     # Optional longer text — surfaces under the title in the
@@ -137,7 +137,9 @@ class _ActionItemRow(Base):
     # In-app deep-link target for the row's "go to" button.
     target_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     priority: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=PRIORITY_NORMAL,
+        String(16),
+        nullable=False,
+        default=PRIORITY_NORMAL,
     )
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Provenance tag — "user" / "proactive". ``SOURCE_PROACTIVE``
@@ -145,15 +147,20 @@ class _ActionItemRow(Base):
     # to pass ``source=`` defaults to the safe side (system
     # actions are non-repudiable; user actions are auditable).
     source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SOURCE_PROACTIVE,
+        String(16),
+        nullable=False,
+        default=SOURCE_PROACTIVE,
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False,
+        DateTime,
+        default=utcnow_naive,
+        nullable=False,
     )
     # Null = still open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_by_contact_id: Mapped[int | None] = mapped_column(
-        ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
     )
     # Optional reason captured at complete-time.
     completion_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -161,8 +168,6 @@ class _ActionItemRow(Base):
     # the underlying action was performed, but is hidden from
     # the open list just the same.
     dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-
 
 
 # -- Book ----------------------------------------------------------------
@@ -191,9 +196,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
 
     def get(self, *, item_id: int) -> ActionItem | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_ActionItemRow).where(_ActionItemRow.id == item_id)
-            )
+            row = s.scalar(select(_ActionItemRow).where(_ActionItemRow.id == item_id))
             return self._row_to_dto(row) if row else None
 
     # Note: a ``has_open(contact_id, kind)`` exists-check that lived
@@ -238,8 +241,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             if source is not None:
                 if source not in ALL_SOURCES:
                     raise ValueError(
-                        f"source must be one of "
-                        f"{sorted(ALL_SOURCES)!r} or None, got {source!r}"
+                        f"source must be one of {sorted(ALL_SOURCES)!r} or None, got {source!r}"
                     )
                 stmt = stmt.where(_ActionItemRow.source == source)
             if not include_completed:
@@ -299,27 +301,21 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         if not title or not title.strip():
             raise ValueError("title must be a non-empty string")
         if len(title) > _TITLE_MAX:
-            raise ValueError(
-                f"title length {len(title)} exceeds maximum {_TITLE_MAX}"
-            )
+            raise ValueError(f"title length {len(title)} exceeds maximum {_TITLE_MAX}")
         if description is not None and len(description) > _DESCRIPTION_MAX:
             raise ValueError(
-                f"description length {len(description)} exceeds "
-                f"maximum {_DESCRIPTION_MAX}"
+                f"description length {len(description)} exceeds maximum {_DESCRIPTION_MAX}"
             )
         if target_url is not None and len(target_url) > _TARGET_URL_MAX:
             raise ValueError(
-                f"target_url length {len(target_url)} exceeds "
-                f"maximum {_TARGET_URL_MAX}"
+                f"target_url length {len(target_url)} exceeds maximum {_TARGET_URL_MAX}"
             )
         if priority not in ALL_PRIORITIES:
             raise ValueError(
                 f"priority must be one of {sorted(ALL_PRIORITIES)!r}, got {priority!r}"
             )
         if source not in ALL_SOURCES:
-            raise ValueError(
-                f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}"
-            )
+            raise ValueError(f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}")
         with self._session() as s:
             row = _ActionItemRow(
                 contact_id=contact_id,
@@ -367,8 +363,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         """
         if note is not None and len(note) > _COMPLETION_NOTE_MAX:
             raise ValueError(
-                f"completion_note length {len(note)} "
-                f"exceeds maximum {_COMPLETION_NOTE_MAX}"
+                f"completion_note length {len(note)} exceeds maximum {_COMPLETION_NOTE_MAX}"
             )
         with self._session() as s:
             row = s.get(_ActionItemRow, action_item_id)

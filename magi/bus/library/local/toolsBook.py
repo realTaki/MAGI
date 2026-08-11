@@ -27,9 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclasses --------------------------------------------------
 
@@ -131,7 +130,8 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
             if row is None:
                 row = _ToolCatalogStateRow(
-                    revision=revision, snapshot_hash=snapshot_hash,
+                    revision=revision,
+                    snapshot_hash=snapshot_hash,
                 )
                 s.add(row)
             else:
@@ -165,7 +165,10 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         )
 
     def _apply_definition(
-        self, dto: ToolDefinition, row: _ToolDefinitionRow, *,
+        self,
+        dto: ToolDefinition,
+        row: _ToolDefinitionRow,
+        *,
         update_source: bool,
     ) -> None:
         """Serialize semantic fields into storage columns on an ORM row.
@@ -180,8 +183,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         row.enabled = 1 if dto.enabled else 0
         row.revision = dto.revision
         row.allowed_roles_json = (
-            json.dumps(list(dto.allowed_roles), ensure_ascii=False)
-            if dto.allowed_roles else None
+            json.dumps(list(dto.allowed_roles), ensure_ascii=False) if dto.allowed_roles else None
         )
         if update_source:
             row.source = dto.source
@@ -189,7 +191,10 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
     # -- reads -----------------------------------------------------------
 
     def list_enabled(
-        self, *, caller_role: str | None = None, caller_admin: bool = False,
+        self,
+        *,
+        caller_role: str | None = None,
+        caller_admin: bool = False,
     ) -> list[ToolDefinition]:
         """All enabled rows as :class:`ToolDefinition` DTOs.
 
@@ -219,9 +224,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         (see :func:`magi.tools.worker._schema_hash`).
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name)
-            )
+            row = s.scalar(select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name))
             return self._row_to_dto(row) if row else None
 
     def list_schemas(
@@ -239,17 +242,22 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         for d in self.list_enabled():
             if not _role_allowed(d.allowed_roles, caller_role, caller_admin):
                 continue
-            out.append({
-                "name": d.name,
-                "description": d.description,
-                "input_schema": d.input_schema,
-            })
+            out.append(
+                {
+                    "name": d.name,
+                    "description": d.description,
+                    "input_schema": d.input_schema,
+                }
+            )
         return out
 
     # -- writes ----------------------------------------------------------
 
     def upsert_many(
-        self, *, definitions: list[ToolDefinition], source: str = "builtin",
+        self,
+        *,
+        definitions: list[ToolDefinition],
+        source: str = "builtin",
     ) -> None:
         """Bulk upsert definitions in a single transaction.
 

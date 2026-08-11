@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import (
     ForeignKey,
@@ -37,10 +38,9 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.library.base import BaseBook
 
 
 def _new_task_id() -> str:
@@ -198,23 +198,32 @@ class _TaskRow(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=SOURCE_USER,
+        String(16),
+        nullable=False,
+        default=SOURCE_USER,
     )
     target_channel: Mapped[str] = mapped_column(
-        "channel", String(16), nullable=False,
+        "channel",
+        String(16),
+        nullable=False,
     )
     enabled: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1,
+        Integer,
+        nullable=False,
+        default=1,
     )
 
     # --- schedule (cron XOR run_at, never both) ----------------------------
     cron: Mapped[str | None] = mapped_column(String(120), nullable=True)
     run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     tz: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="UTC",
+        String(64),
+        nullable=False,
+        default="UTC",
     )
     delivery_to: Mapped[str | None] = mapped_column(
-        String(128), nullable=True,
+        String(128),
+        nullable=True,
     )
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"),
@@ -223,17 +232,22 @@ class _TaskRow(Base):
 
     # --- proactive-only: stable preset key ---------------------------------
     key: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, unique=True,
+        String(64),
+        nullable=True,
+        unique=True,
     )
 
     # --- user-task ownership -----------------------------------------------
     contact_id: Mapped[int | None] = mapped_column(
-        ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=True,
+        ForeignKey("contacts.id", ondelete="RESTRICT"),
+        nullable=True,
     )
 
     # --- user-task runtime bookkeeping -------------------------------------
     consecutive_failures: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0,
+        Integer,
+        nullable=False,
+        default=0,
     )
     last_run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -258,9 +272,7 @@ class _TaskRunRow(Base):
     __tablename__ = "task_runs"
 
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    task_id: Mapped[str] = mapped_column(
-        ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False
-    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
     )
@@ -274,9 +286,7 @@ class _TaskRunRow(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    __table_args__ = (
-        Index("ix_task_runs_task_started", "task_id", "started_at"),
-    )
+    __table_args__ = (Index("ix_task_runs_task_started", "task_id", "started_at"),)
 
 
 # -- Books ---------------------------------------------------------------
@@ -431,15 +441,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             try:
                 canonical = validate_run_at(run_at_val)
             except ValueError as e:
-                raise ValueError(
-                    f"run_at is not a valid ISO 8601 timestamp: {e}"
-                ) from None
+                raise ValueError(f"run_at is not a valid ISO 8601 timestamp: {e}") from None
             try:
                 validate_run_at_future(canonical)
             except ValueError as e:
-                raise ValueError(
-                    f"run_at {canonical!r} is in the past: {e}"
-                ) from None
+                raise ValueError(f"run_at {canonical!r} is in the past: {e}") from None
             kwargs["run_at"] = canonical
         with self._session() as s:
             # ``id`` is a String PK (per the legacy ``task_<hex>`` shape
@@ -494,18 +500,26 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         fields.
         """
         allowed = {
-            "name", "prompt", "cron", "run_at", "delivery_to",
-            "target_channel", "enabled", "tz",
+            "name",
+            "prompt",
+            "cron",
+            "run_at",
+            "delivery_to",
+            "target_channel",
+            "enabled",
+            "tz",
         }
         unknown = set(changes) - allowed
         if unknown:
             raise ValueError(f"unsupported task fields: {sorted(unknown)!r}")
         with self._session() as s:
-            row = s.scalar(select(_TaskRow).where(
-                _TaskRow.id == task_id,
-                _TaskRow.contact_id == contact_id,
-                _TaskRow.source == SOURCE_USER,
-            ))
+            row = s.scalar(
+                select(_TaskRow).where(
+                    _TaskRow.id == task_id,
+                    _TaskRow.contact_id == contact_id,
+                    _TaskRow.source == SOURCE_USER,
+                )
+            )
             if row is None:
                 return None
             values = {
@@ -525,11 +539,13 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     def delete(self, *, task_id: str, contact_id: int) -> bool:
         """Delete an owned user task without exposing a persistence session."""
         with self._session() as s:
-            row = s.scalar(select(_TaskRow).where(
-                _TaskRow.id == task_id,
-                _TaskRow.contact_id == contact_id,
-                _TaskRow.source == SOURCE_USER,
-            ))
+            row = s.scalar(
+                select(_TaskRow).where(
+                    _TaskRow.id == task_id,
+                    _TaskRow.contact_id == contact_id,
+                    _TaskRow.source == SOURCE_USER,
+                )
+            )
             if row is None:
                 return False
             s.delete(row)
@@ -545,9 +561,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         :meth:`add` for the common case.
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_TaskRow).where(_TaskRow.name == name)
-            )
+            row = s.scalar(select(_TaskRow).where(_TaskRow.name == name))
             return self._row_to_dto(row) if row else None
 
     def upsert_by_name(
@@ -604,15 +618,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             try:
                 canonical_run_at = validate_run_at(run_at)
             except ValueError as e:
-                raise ValueError(
-                    f"run_at is not a valid ISO 8601 timestamp: {e}"
-                ) from None
+                raise ValueError(f"run_at is not a valid ISO 8601 timestamp: {e}") from None
             try:
                 validate_run_at_future(canonical_run_at)
             except ValueError as e:
-                raise ValueError(
-                    f"run_at {canonical_run_at!r} is in the past: {e}"
-                ) from None
+                raise ValueError(f"run_at {canonical_run_at!r} is in the past: {e}") from None
         elif cron is not None:
             # ``cron`` validation lives in :meth:`add` for
             # the insert branch; mirror it here for the
@@ -624,8 +634,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 raise ValueError(f"cron is not a valid expression: {e}") from None
         else:
             raise ValueError(
-                "exactly one of cron (recurring) or run_at "
-                "(one-shot) must be set; got both None"
+                "exactly one of cron (recurring) or run_at (one-shot) must be set; got both None"
             )
         # Length / enum invariants are enforced by
         # :meth:`add`; this primitive shares the same
@@ -636,13 +645,13 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         # trip SQLite's "transaction within a transaction"
         # guard.
         self._validate_write_invariants(
-            name=name, prompt=prompt, target_channel=target_channel,
+            name=name,
+            prompt=prompt,
+            target_channel=target_channel,
             source=SOURCE_USER,
         )
         with self._session() as s:
-            existing = s.scalar(
-                select(_TaskRow).where(_TaskRow.name == name)
-            )
+            existing = s.scalar(select(_TaskRow).where(_TaskRow.name == name))
             if existing is not None:
                 existing.prompt = prompt
                 existing.cron = cron
@@ -688,8 +697,12 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             return insert.id, False
 
     def _validate_write_invariants(
-        self, *, name: str, prompt: str,
-        target_channel: str | None, source: str,
+        self,
+        *,
+        name: str,
+        prompt: str,
+        target_channel: str | None,
+        source: str,
     ) -> None:
         """Length / enum checks shared by :meth:`add` and
         :meth:`upsert_by_name`. Lives in one place so a
@@ -706,16 +719,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         if not name or not str(name).strip():
             raise ValueError("name must be a non-empty string")
         if len(str(name)) > NAME_MAX:
-            raise ValueError(
-                f"name length {len(str(name))} exceeds maximum {NAME_MAX}"
-            )
+            raise ValueError(f"name length {len(str(name))} exceeds maximum {NAME_MAX}")
         if not prompt or not str(prompt).strip():
             raise ValueError("prompt must be a non-empty string")
         if len(str(prompt)) > PROMPT_MAX:
-            raise ValueError(
-                f"prompt length {len(str(prompt))} exceeds "
-                f"maximum {PROMPT_MAX}"
-            )
+            raise ValueError(f"prompt length {len(str(prompt))} exceeds maximum {PROMPT_MAX}")
         if target_channel is not None and target_channel not in set(ChannelEnum):
             raise ValueError(
                 f"target_channel must be one of "
@@ -723,15 +731,15 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 f"got {target_channel!r}"
             )
         if source not in ALL_SOURCES:
-            raise ValueError(
-                f"source must be one of {sorted(ALL_SOURCES)!r}, "
-                f"got {source!r}"
-            )
+            raise ValueError(f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}")
 
     # -- v2.0: worker-facing methods -------------------------------------
 
     def record_run_start(
-        self, *, task_id: str, trigger: str,
+        self,
+        *,
+        task_id: str,
+        trigger: str,
         id: str | None = None,
     ) -> TaskRun:
         """Insert a task_runs row, write task.last_run_at.
@@ -744,8 +752,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         started_at = utcnow_naive().isoformat()
         with self._session() as s:
             run_row = _TaskRunRow(
-                id=new_id, task_id=task_id, trigger=trigger,
-                started_at=started_at, status="running",
+                id=new_id,
+                task_id=task_id,
+                trigger=trigger,
+                started_at=started_at,
+                status="running",
             )
             s.add(run_row)
             task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
@@ -802,11 +813,16 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def complete(self, *, id: str, status: str,
-                 error: str | None = None,
-                 reply_excerpt: str | None = None,
-                 finished_at: str = "",
-                 latency_ms: int | None = None) -> None:
+    def complete(
+        self,
+        *,
+        id: str,
+        status: str,
+        error: str | None = None,
+        reply_excerpt: str | None = None,
+        finished_at: str = "",
+        latency_ms: int | None = None,
+    ) -> None:
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
             if row is None:
@@ -823,9 +839,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
 
         Used by TaskWorker on startup for crash recovery.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
-        ).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(seconds=older_than_seconds)).isoformat()
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRunRow).where(
@@ -872,7 +886,7 @@ def validate_cron(expr: str) -> None:
     croniter(expr.strip())
 
 
-def next_fire(expr: str, tz: str = "UTC") -> Optional[datetime]:
+def next_fire(expr: str, tz: str = "UTC") -> datetime | None:
     """Return the next fire time of ``expr`` in ``tz``.
 
     Returns ``None`` on bad input (the API / tool layer
@@ -891,7 +905,7 @@ def next_fire(expr: str, tz: str = "UTC") -> Optional[datetime]:
         zone = ZoneInfo(tz)
     except ZoneInfoNotFoundError:
         zone = ZoneInfo("UTC")
-    now = datetime.now(timezone.utc).astimezone(zone)
+    now = datetime.now(UTC).astimezone(zone)
     # croniter.get_next returns naive datetime in the expression's implied tz
     return croniter(expr, now).get_next(datetime)
 
@@ -924,13 +938,7 @@ def humanize_cron(expr: str) -> str:
 
     if minute == "0" and hour == "*" and dom == "*" and month == "*" and dow == "*":
         return "Every hour"
-    if (
-        dom == "*"
-        and month == "*"
-        and dow == "*"
-        and minute.isdigit()
-        and hour.isdigit()
-    ):
+    if dom == "*" and month == "*" and dow == "*" and minute.isdigit() and hour.isdigit():
         return f"Every day at {int(hour):02d}:{int(minute):02d}"
     if dom == "*" and month == "*":
         if dow == "mon-fri":
@@ -960,8 +968,8 @@ def preset_to_cron(
     *,
     hour: int = 0,
     minute: int = 0,
-    day_of_week: Optional[int] = None,
-    day_of_month: Optional[int] = None,
+    day_of_week: int | None = None,
+    day_of_month: int | None = None,
 ) -> str:
     """Render the LLM-facing structured form into a 5-field cron.
 
@@ -1049,15 +1057,11 @@ def validate_run_at(raw: str) -> str:
     try:
         parsed = datetime.fromisoformat(candidate)
     except ValueError as e:
-        raise ValueError(
-            f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}"
-        ) from None
+        raise ValueError(f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}") from None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     # UTC ``Z`` suffix, not ``+00:00`` — see docstring.
-    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
-    )
+    return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> str:
@@ -1080,9 +1084,9 @@ def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> s
     :class:`ValueError` with the parsed value + server "now".
     """
     parsed = datetime.fromisoformat(run_at_iso)
-    server_now = now or datetime.now(timezone.utc)
+    server_now = now or datetime.now(UTC)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     grace_seconds = 60
     if parsed <= server_now - timedelta(seconds=grace_seconds):
         raise ValueError(

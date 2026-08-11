@@ -25,9 +25,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
 
@@ -148,13 +147,16 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         """
         return MCPTimeout(
             connect_timeout=self._read_float(
-                self.get(key="mcp.connect_timeout"), connect_default,
+                self.get(key="mcp.connect_timeout"),
+                connect_default,
             ),
             execute_timeout=self._read_float(
-                self.get(key="mcp.execute_timeout"), execute_default,
+                self.get(key="mcp.execute_timeout"),
+                execute_default,
             ),
             sse_read_timeout=self._read_float(
-                self.get(key="mcp.sse_read_timeout"), sse_default,
+                self.get(key="mcp.sse_read_timeout"),
+                sse_default,
             ),
         )
 
@@ -168,14 +170,10 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             return default
 
     def show_daily_note(self) -> bool:
-        return self._read_bool(
-            self.get(key="system.show_daily_note"), default=True
-        )
+        return self._read_bool(self.get(key="system.show_daily_note"), default=True)
 
     def show_daily_note_prompt(self) -> bool:
-        return self._read_bool(
-            self.get(key="system.show_daily_note_prompt"), default=False
-        )
+        return self._read_bool(self.get(key="system.show_daily_note_prompt"), default=False)
 
     def system_timezone(self) -> str:
         """Return the configured system timezone, defaulting to ``"UTC"``."""
@@ -185,6 +183,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
 @dataclass(frozen=True, slots=True)
 class MCPTimeout:
     """The three MCP connection timeout knobs."""
+
     connect_timeout: float = 10.0
     execute_timeout: float = 60.0
     sse_read_timeout: float = 120.0

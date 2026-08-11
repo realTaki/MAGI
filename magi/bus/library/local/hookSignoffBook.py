@@ -14,16 +14,15 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    DateTime,
     JSON,
+    DateTime,
     String,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
 
@@ -52,13 +51,9 @@ class _HookSignoffRow(Base):
     subject_id: Mapped[str] = mapped_column(String(64), nullable=False)
     hook_point: Mapped[str] = mapped_column(String(64), nullable=False)
     plugin_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="pending"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -77,9 +72,7 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
 
     def get(self, *, signoff_id: int) -> HookSignoff | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_HookSignoffRow).where(_HookSignoffRow.id == signoff_id)
-            )
+            row = s.scalar(select(_HookSignoffRow).where(_HookSignoffRow.id == signoff_id))
             return self._row_to_dto(row) if row else None
 
     def list_pending(self) -> list[HookSignoff]:
@@ -90,5 +83,6 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
                 .order_by(_HookSignoffRow.created_at)
             ).all()
             return [self._row_to_dto(r) for r in rows]
+
 
 __all__ = ["HookSignoff", "HookSignoffBook", "_HookSignoffRow"]

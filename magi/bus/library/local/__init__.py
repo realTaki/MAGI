@@ -16,12 +16,18 @@ from magi.bus.library.local.actionItemBook import (
 )
 from magi.bus.library.local.contactBook import (
     ALL_ROLES,
+    ROLE_ASSIGNED,
+    ROLE_GUEST,
     Contact,
     ContactBook,
     ContactNote,
     ContactNoteBook,
-    ROLE_ASSIGNED,
-    ROLE_GUEST,
+)
+from magi.bus.library.local.conversationBook import (
+    Conversation,
+    ConversationBook,
+    Message,
+    MessageBook,
 )
 from magi.bus.library.local.hookSignoffBook import HookSignoff, HookSignoffBook
 from magi.bus.library.local.mcpServerBook import McpServer, McpServerBook
@@ -31,12 +37,6 @@ from magi.bus.library.local.memoryBook import (
     KIND_QUICK_NOTE,
     Memory,
     MemoryBook,
-)
-from magi.bus.library.local.conversationBook import (
-    Conversation,
-    ConversationBook,
-    Message,
-    MessageBook,
 )
 from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
 from magi.bus.library.local.tasksBook import (
@@ -49,13 +49,12 @@ from magi.bus.library.local.tasksBook import (
 )
 from magi.bus.library.local.tokenUsageBook import TokenUsage, TokenUsageBook
 from magi.bus.library.local.toolsBook import (
+    ToolCatalogSnapshot,
     ToolCatalogState,
     ToolCatalogStateBook,
-    ToolCatalogSnapshot,
     ToolDefinition,
     ToolDefinitionBook,
 )
-
 
 __all__ = [
     "ActionItem",

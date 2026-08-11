@@ -19,9 +19,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
 
@@ -56,12 +55,12 @@ class _TokenUsageRow(Base):
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     cost_usd: Mapped[float] = mapped_column(
-        Integer, nullable=False, default=0  # stored as micros (int) — see runner
+        Integer,
+        nullable=False,
+        default=0,  # stored as micros (int) — see runner
     )
     extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
 # -- Book ----------------------------------------------------------------
@@ -80,17 +79,28 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, contact_id: int, provider: str, model: str,
-            input_tokens: int, output_tokens: int,
-            llm_attempt_id: str | None = None,
-            cost_usd: float = 0.0,
-            extra: dict[str, Any] | None = None) -> TokenUsage:
+    def add(
+        self,
+        *,
+        contact_id: int,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        llm_attempt_id: str | None = None,
+        cost_usd: float = 0.0,
+        extra: dict[str, Any] | None = None,
+    ) -> TokenUsage:
         with self._session() as s:
             row = _TokenUsageRow(
-                contact_id=contact_id, llm_attempt_id=llm_attempt_id,
-                provider=provider, model=model,
-                input_tokens=input_tokens, output_tokens=output_tokens,
-                cost_usd=cost_usd, extra=extra,
+                contact_id=contact_id,
+                llm_attempt_id=llm_attempt_id,
+                provider=provider,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
+                extra=extra,
             )
             s.add(row)
             s.commit()

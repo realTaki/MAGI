@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Union, cast
+from typing import Any, cast
 
 from sqlalchemy import (
     JSON,
@@ -90,20 +90,32 @@ class _McpServerRow(Base):
     # STDIO
     command: Mapped[str | None] = mapped_column(String(256), nullable=True)
     args_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]", server_default="[]",
+        Text,
+        nullable=False,
+        default="[]",
+        server_default="[]",
     )
     env_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="{}", server_default="{}",
+        Text,
+        nullable=False,
+        default="{}",
+        server_default="{}",
     )
 
     # URL-based (sse / streamable_http)
     url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     headers_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="{}", server_default="{}",
+        Text,
+        nullable=False,
+        default="{}",
+        server_default="{}",
     )
 
     enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="1",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
     )
 
     # Per-server timeouts. ``None`` → worker uses
@@ -116,11 +128,15 @@ class _McpServerRow(Base):
     # through the dedicated columns. Kept as ``JSON`` to match
     # the ``mcp_server.McpServer`` schema naming.
     config: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict,
+        JSON,
+        nullable=False,
+        default=dict,
     )
 
     created_at: Mapped[DateTime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False,
+        DateTime,
+        default=utcnow_naive,
+        nullable=False,
     )
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime,
@@ -204,23 +220,17 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
 
     def get(self, *, server_id: int) -> McpServer | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_McpServerRow).where(_McpServerRow.id == server_id)
-            )
+            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
             return self._row_to_dto(row) if row else None
 
     def get_by_name(self, *, name: str) -> McpServer | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_McpServerRow).where(_McpServerRow.name == name)
-            )
+            row = s.scalar(select(_McpServerRow).where(_McpServerRow.name == name))
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[McpServer]:
         with self._session() as s:
-            rows = s.scalars(
-                select(_McpServerRow).order_by(_McpServerRow.name)
-            ).all()
+            rows = s.scalars(select(_McpServerRow).order_by(_McpServerRow.name)).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_enabled(self) -> list[McpServer]:
@@ -279,16 +289,16 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # ``connection_type`` and ``enabled`` are NOT NULL columns; the
         # ``_UnsetType`` sentinel is the only legal "leave alone" value.
         # Nullable columns also accept ``None`` to clear the value.
-        connection_type: Union[str, _UnsetType] = _UNSET,
-        command: Union[str, None, _UnsetType] = _UNSET,
-        args: Union[list[str], None, _UnsetType] = _UNSET,
-        env: Union[dict[str, str], None, _UnsetType] = _UNSET,
-        url: Union[str, None, _UnsetType] = _UNSET,
-        headers: Union[dict[str, str], None, _UnsetType] = _UNSET,
-        enabled: Union[bool, _UnsetType] = _UNSET,
-        connect_timeout: Union[float, None, _UnsetType] = _UNSET,
-        execute_timeout: Union[float, None, _UnsetType] = _UNSET,
-        sse_read_timeout: Union[float, None, _UnsetType] = _UNSET,
+        connection_type: str | _UnsetType = _UNSET,
+        command: str | None | _UnsetType = _UNSET,
+        args: list[str] | None | _UnsetType = _UNSET,
+        env: dict[str, str] | None | _UnsetType = _UNSET,
+        url: str | None | _UnsetType = _UNSET,
+        headers: dict[str, str] | None | _UnsetType = _UNSET,
+        enabled: bool | _UnsetType = _UNSET,
+        connect_timeout: float | None | _UnsetType = _UNSET,
+        execute_timeout: float | None | _UnsetType = _UNSET,
+        sse_read_timeout: float | None | _UnsetType = _UNSET,
     ) -> None:
         """In-place update of a row by numeric id.
 
@@ -301,38 +311,34 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         for full-row rewrites.
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_McpServerRow).where(_McpServerRow.id == server_id)
-            )
+            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
             if row is None:
                 return
             if connection_type is not _UNSET:
-                setattr(row, "connection_type", connection_type)
+                row.connection_type = connection_type
             if command is not _UNSET:
-                setattr(row, "command", command)
+                row.command = command
             if args is not _UNSET:
-                setattr(row, "args_json", json.dumps(args or []))
+                row.args_json = json.dumps(args or [])
             if env is not _UNSET:
-                setattr(row, "env_json", json.dumps(env or {}))
+                row.env_json = json.dumps(env or {})
             if url is not _UNSET:
-                setattr(row, "url", url)
+                row.url = url
             if headers is not _UNSET:
-                setattr(row, "headers_json", json.dumps(headers or {}))
+                row.headers_json = json.dumps(headers or {})
             if enabled is not _UNSET:
-                setattr(row, "enabled", enabled)
+                row.enabled = enabled
             if connect_timeout is not _UNSET:
-                setattr(row, "connect_timeout", connect_timeout)
+                row.connect_timeout = connect_timeout
             if execute_timeout is not _UNSET:
-                setattr(row, "execute_timeout", execute_timeout)
+                row.execute_timeout = execute_timeout
             if sse_read_timeout is not _UNSET:
-                setattr(row, "sse_read_timeout", sse_read_timeout)
+                row.sse_read_timeout = sse_read_timeout
             s.commit()
 
     def delete(self, *, server_id: int) -> bool:
         with self._session() as s:
-            row = s.scalar(
-                select(_McpServerRow).where(_McpServerRow.id == server_id)
-            )
+            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
             if row is None:
                 return False
             s.delete(row)
@@ -366,9 +372,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         tools already catch this in their error envelopes.
         """
         if connection_type not in ("stdio", "sse", "streamable_http"):
-            raise ValueError(
-                "connection_type must be one of: stdio, sse, streamable_http"
-            )
+            raise ValueError("connection_type must be one of: stdio, sse, streamable_http")
         if connection_type == "stdio" and not (command and command.strip()):
             raise ValueError("stdio servers require 'command'")
         if connection_type != "stdio" and not (url and url.strip()):
@@ -405,9 +409,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # ``connection_type``; stale fields would silently mask
         # transport errors).
         new_connection_type = (
-            connection_type
-            if connection_type is not None
-            else existing.connection_type
+            connection_type if connection_type is not None else existing.connection_type
         )
         self.update(
             server_id=existing.id,

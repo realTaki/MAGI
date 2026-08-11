@@ -11,9 +11,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 KIND_FACT = "fact"
 KIND_QUICK_NOTE = "quick_note"
@@ -78,9 +77,7 @@ class _MemoryRow(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
@@ -98,9 +95,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         if not isinstance(subject, str) or not subject.strip():
             raise ValueError("subject must be a non-empty string")
         if len(subject) > _SUBJECT_MAX:
-            raise ValueError(
-                f"subject length {len(subject)} exceeds maximum {_SUBJECT_MAX}"
-            )
+            raise ValueError(f"subject length {len(subject)} exceeds maximum {_SUBJECT_MAX}")
         return subject.strip()
 
     @staticmethod
@@ -108,9 +103,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         if not isinstance(body, str) or not body.strip():
             raise ValueError("body must be a non-empty string")
         if len(body) > _BODY_MAX:
-            raise ValueError(
-                f"body length {len(body)} exceeds maximum {_BODY_MAX}"
-            )
+            raise ValueError(f"body length {len(body)} exceeds maximum {_BODY_MAX}")
         return body.strip()
 
     @staticmethod
@@ -152,9 +145,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         subject = self._validate_subject(subject)
         body = self._validate_body(body)
         if kind not in ALL_KINDS:
-            raise ValueError(
-                f"kind must be one of {sorted(ALL_KINDS)!r}, got {kind!r}"
-            )
+            raise ValueError(f"kind must be one of {sorted(ALL_KINDS)!r}, got {kind!r}")
         self._validate_priority(priority)
 
         with self._session() as s:
@@ -237,6 +228,10 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
 
 __all__ = [
-    "Memory", "MemoryBook", "_MemoryRow",
-    "ALL_KINDS", "KIND_FACT", "KIND_QUICK_NOTE",
+    "Memory",
+    "MemoryBook",
+    "_MemoryRow",
+    "ALL_KINDS",
+    "KIND_FACT",
+    "KIND_QUICK_NOTE",
 ]

@@ -16,13 +16,14 @@ Schema for ``chat_conversations`` + ``chat_messages`` tables.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -32,9 +33,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclasses --------------------------------------------------
 
@@ -65,7 +65,6 @@ class Message:
     llm_attempt_id: str | None = None
 
 
-
 @dataclass(frozen=True, slots=True)
 class SearchHit:
     """One row of chat-history FTS5 search output.
@@ -86,7 +85,6 @@ class SearchHit:
     channel: str
     title: str | None = None
     delivery_address: str | None = None
-
 
 
 class SearchUnavailable(RuntimeError):
@@ -191,7 +189,6 @@ class ConversationSummary:
     title: str | None = None
 
 
-
 @dataclass(frozen=True, slots=True)
 class ResolvedHit:
     """A search hit after cross-contact validation + context fetch.
@@ -240,15 +237,11 @@ class _ConversationRow(Base):
     __tablename__ = "chat_conversations"
 
     conversation_id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    delivery_address: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    delivery_address: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     title: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    active_tail_count: Mapped[int] = mapped_column(
-        Integer, default=20, nullable=False
-    )
+    active_tail_count: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -269,16 +262,12 @@ class _MessageRow(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[str] = mapped_column(String(32), nullable=False)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(
-        JSON, nullable=True
-    )
+    content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
         Index("ix_chat_messages_conversation_archived", "conversation_id", "archived", "id"),
-        UniqueConstraint(
-            "conversation_id", "message_id", name="uq_chat_messages_conv_msg"
-        ),
+        UniqueConstraint("conversation_id", "message_id", name="uq_chat_messages_conv_msg"),
     )
 
 
@@ -339,13 +328,21 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, conversation_id: str, delivery_address: str, contact_id: int,
-            channel: str, title: str | None = None,
-            created_at: str | None = None, updated_at: str | None = None) -> Conversation:
-        import uuid
-        from datetime import datetime, timezone
+    def add(
+        self,
+        *,
+        conversation_id: str,
+        delivery_address: str,
+        contact_id: int,
+        channel: str,
+        title: str | None = None,
+        created_at: str | None = None,
+        updated_at: str | None = None,
+    ) -> Conversation:
+        from datetime import datetime
+
         if created_at is None:
-            created_at = datetime.now(timezone.utc).isoformat()
+            created_at = datetime.now(UTC).isoformat()
         if updated_at is None:
             updated_at = created_at
         with self._session() as s:
@@ -364,7 +361,11 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         return self._row_to_dto(row)
 
     def get_or_create_for_channel(
-        self, *, contact_id: int, channel: str, delivery_address: str = "",
+        self,
+        *,
+        contact_id: int,
+        channel: str,
+        delivery_address: str = "",
     ) -> Conversation:
         """Get the first conversation owned by *contact_id* on *channel*, or create one.
 
@@ -373,19 +374,26 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         The conversation_id is auto-generated.
         """
         import uuid
+
         conversations = self.list_for_owner(contact_id=contact_id)
         for c in conversations:
             if getattr(c, "channel", "") == channel:
                 return c
         cid = f"{channel}_{uuid.uuid4().hex[:16]}"
         return self.add(
-            conversation_id=cid, delivery_address=delivery_address,
-            contact_id=contact_id, channel=channel,
+            conversation_id=cid,
+            delivery_address=delivery_address,
+            contact_id=contact_id,
+            channel=channel,
         )
 
     def create_task_session(
-        self, *, contact_id: int, title: str,
-        delivery_address: str = "", channel: str = "webui",
+        self,
+        *,
+        contact_id: int,
+        title: str,
+        delivery_address: str = "",
+        channel: str = "webui",
     ) -> str:
         """Create a new conversation for a scheduled task.
 
@@ -393,10 +401,14 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         onto the Task row.
         """
         import uuid
+
         cid = f"task_{uuid.uuid4().hex[:16]}"
         self.add(
-            conversation_id=cid, delivery_address=delivery_address,
-            contact_id=contact_id, channel=channel, title=title,
+            conversation_id=cid,
+            delivery_address=delivery_address,
+            contact_id=contact_id,
+            channel=channel,
+            title=title,
         )
         return cid
 
@@ -421,7 +433,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         append group is all-or-nothing. Returns the list of
         persisted :class:`Message` rows in insertion order.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # D.22: verify conversation ownership and channel match.
         conversation = self.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
@@ -432,7 +444,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         if conversation.channel != channel:
             raise ChannelMismatchError(conversation.channel)
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self.touch(conversation_id=conversation_id, updated_at=now)
 
         message_book = MessageBook(self._factory)
@@ -472,9 +484,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         the rest of the Book surface raises, so callers don't need a
         special branch for "wrong owner".
         """
-        if self.get_for_owner(
-            contact_id=contact_id, conversation_id=conversation_id
-        ) is None:
+        if self.get_for_owner(contact_id=contact_id, conversation_id=conversation_id) is None:
             raise ConversationNotFoundError(conversation_id)
         message_book = MessageBook(self._factory)
         return message_book.list_for_conversation_page(
@@ -501,7 +511,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         conversation_id: str,
         title: str,
         bump_updated: bool = True,
-    ) -> "Conversation | None":
+    ) -> Conversation | None:
         """[claude, 2026-08-08] CAS-style title set — only writes if currently NULL.
 
         Required by :func:`magi.agent.auto_title.request_conversation_title`.
@@ -547,8 +557,9 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
             return self._row_to_dto(row) if row else None
 
-    def list_for_conversation(self, *, conversation_id: str,
-                              include_archived: bool = False) -> list[Message]:
+    def list_for_conversation(
+        self, *, conversation_id: str, include_archived: bool = False
+    ) -> list[Message]:
         with self._session() as s:
             stmt = select(_MessageRow).where(_MessageRow.conversation_id == conversation_id)
             if not include_archived:
@@ -589,48 +600,54 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         from sqlalchemy import func
 
         with self._session() as s:
-            base = select(_MessageRow).where(
-                _MessageRow.conversation_id == conversation_id
-            )
-            archived_filter = (
-                [] if include_archived else [_MessageRow.archived == 0]
-            )
+            base = select(_MessageRow).where(_MessageRow.conversation_id == conversation_id)
+            archived_filter = [] if include_archived else [_MessageRow.archived == 0]
 
             page_rows = s.scalars(
-                base.where(*archived_filter)
-                .order_by(_MessageRow.id)
-                .limit(limit)
-                .offset(offset)
+                base.where(*archived_filter).order_by(_MessageRow.id).limit(limit).offset(offset)
             ).all()
-            total_active = s.scalar(
-                select(func.count())
-                .select_from(_MessageRow)
-                .where(_MessageRow.conversation_id == conversation_id)
-                .where(_MessageRow.archived == 0)
-            ) or 0
-            total_all = s.scalar(
-                select(func.count())
-                .select_from(_MessageRow)
-                .where(_MessageRow.conversation_id == conversation_id)
-            ) or 0
+            total_active = (
+                s.scalar(
+                    select(func.count())
+                    .select_from(_MessageRow)
+                    .where(_MessageRow.conversation_id == conversation_id)
+                    .where(_MessageRow.archived == 0)
+                )
+                or 0
+            )
+            total_all = (
+                s.scalar(
+                    select(func.count())
+                    .select_from(_MessageRow)
+                    .where(_MessageRow.conversation_id == conversation_id)
+                )
+                or 0
+            )
         return (
             [self._row_to_dto(r) for r in page_rows],
             int(total_active),
             int(total_all),
         )
 
-
-    def add(self, *, conversation_id: str, role: str, text: str,
-            message_id: str | None = None, ts: str | None = None,
-            content_blocks: list[dict[str, Any]] | None = None,
-            llm_attempt_id: str | None = None) -> Message:
+    def add(
+        self,
+        *,
+        conversation_id: str,
+        role: str,
+        text: str,
+        message_id: str | None = None,
+        ts: str | None = None,
+        content_blocks: list[dict[str, Any]] | None = None,
+        llm_attempt_id: str | None = None,
+    ) -> Message:
         """Add one message row."""
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         if message_id is None:
             message_id = uuid.uuid4().hex
         if ts is None:
-            ts = datetime.now(timezone.utc).isoformat()
+            ts = datetime.now(UTC).isoformat()
         with self._session() as s:
             row = _MessageRow(
                 conversation_id=conversation_id,
@@ -715,15 +732,10 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         )
         with self._session() as s:
             available = s.execute(
-                text(
-                    "SELECT 1 FROM sqlite_master "
-                    "WHERE type='table' AND name='chat_messages_fts'"
-                )
+                text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_messages_fts'")
             ).first()
             if available is None:
-                raise SearchUnavailable(
-                    "Full-text search is not available in this SQLite build"
-                )
+                raise SearchUnavailable("Full-text search is not available in this SQLite build")
             total = s.execute(
                 text("SELECT COUNT(*) " + base),
                 {"match": match, "contact_id": contact_id},
@@ -764,7 +776,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         contact_id: int,
         hit: SearchHit,
         context_n: int,
-        conversations_book: "ConversationBook",
+        conversations_book: ConversationBook,
     ) -> ResolvedHit | None:
         """Resolve a search hit to its full context.
 
@@ -812,7 +824,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             context_n = 0
 
         conversation = conversations_book.get_for_owner(
-            contact_id=contact_id, conversation_id=hit.conversation_id,
+            contact_id=contact_id,
+            conversation_id=hit.conversation_id,
         )
         if conversation is None:
             return None
@@ -822,7 +835,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         # flips the flag, never reorders rows). The combined list
         # is sorted by row id which is monotonic per conversation.
         messages = self.list_for_conversation(
-            conversation_id=hit.conversation_id, include_archived=True,
+            conversation_id=hit.conversation_id,
+            include_archived=True,
         )
 
         # Find the hit's combined-list index.
@@ -841,8 +855,11 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             # render the same way (tool: ``(archived) snippet``;
             # API: ``{ archived: true, snippet: ... }``).
             return ResolvedHit(
-                conversation=conversation, hit=hit, is_archived=True,
-                messages_with_hit=[], hit_position=-1,
+                conversation=conversation,
+                hit=hit,
+                is_archived=True,
+                messages_with_hit=[],
+                hit_position=-1,
             )
 
         # Active: slice the **active subset** around the hit.
@@ -859,14 +876,19 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             # combined read and now (race with compaction).
             # Treat as archived for safety.
             return ResolvedHit(
-                conversation=conversation, hit=hit, is_archived=True,
-                messages_with_hit=[], hit_position=-1,
+                conversation=conversation,
+                hit=hit,
+                is_archived=True,
+                messages_with_hit=[],
+                hit_position=-1,
             )
 
         lo = max(0, active_idx - context_n)
         hi = min(len(active_msgs), active_idx + context_n + 1)
         return ResolvedHit(
-            conversation=conversation, hit=hit, is_archived=False,
+            conversation=conversation,
+            hit=hit,
+            is_archived=False,
             messages_with_hit=active_msgs[lo:hi],
             hit_position=active_idx - lo,
         )
@@ -912,8 +934,6 @@ def install_conversation_fts_schema(engine) -> None:
     with engine.begin() as conn:
         for stmt in _FTS5_DDL:
             conn.exec_driver_sql(stmt)
-
-
 
 
 __all__ = [
