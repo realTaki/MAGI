@@ -73,8 +73,19 @@ class MagisMembership:
     id: int
     magis_id: int
     role_id: int
+    responsibility: str = ""
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MagisCollaborationMember:
+    """Public collaborator card rendered into an Agent's MAGIS directory."""
+
+    magi_id: int
+    magi_name: str
+    role_name: str
+    responsibility: str
 
 
 # -- internal ORM --------------------------------------------------------
@@ -108,6 +119,7 @@ class _MagisMembershipRow(Base):
     role_id: Mapped[int] = mapped_column(
         ForeignKey("magis_roles.id", ondelete="RESTRICT"), nullable=False
     )
+    responsibility: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
@@ -246,6 +258,33 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
+    def list_collaboration_directory(self, *, magi_id: int) -> list[MagisCollaborationMember]:
+        """Return public collaboration cards for *magi_id*'s direct MAGIS."""
+        from magi.bus.library.magis.runtimeBook import _RuntimeRow
+
+        with self._session() as s:
+            own = s.scalar(
+                select(_MagisMembershipRow).where(_MagisMembershipRow.id == magi_id)
+            )
+            if own is None:
+                return []
+            rows = s.execute(
+                select(_MagisMembershipRow, _MagisRoleRow, _RuntimeRow)
+                .join(_MagisRoleRow, _MagisRoleRow.id == _MagisMembershipRow.role_id)
+                .outerjoin(_RuntimeRow, _RuntimeRow.runtime_id == _MagisMembershipRow.id)
+                .where(_MagisMembershipRow.magis_id == own.magis_id)
+                .order_by(_MagisMembershipRow.id)
+            ).all()
+            return [
+                MagisCollaborationMember(
+                    magi_id=membership.id,
+                    magi_name=(runtime.backend_ref if runtime is not None else f"MAGI #{membership.id}"),
+                    role_name=role.name,
+                    responsibility=membership.responsibility,
+                )
+                for membership, role, runtime in rows
+            ]
+
     def list_instruction_contexts(self) -> list[dict]:
         """Bulk version of :meth:`instruction_context` — joined ``membership × role × magis`` rows for every entry.
 
@@ -285,7 +324,9 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                 )
         return contexts
 
-    def add(self, *, magis_id: int, role_id: int) -> MagisMembership:
+    def add(
+        self, *, magis_id: int, role_id: int, responsibility: str = ""
+    ) -> MagisMembership:
         """Register a new MAGI under ``magis_id`` with ``role_id``.
 
         The MAGI's own identity is assigned by the DB and comes back
@@ -299,7 +340,11 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                 raise LookupError(f"role {role_id} not found")
             if role.magis_id != magis_id:
                 raise ValueError("role must belong to the target MAGIS")
-            row = _MagisMembershipRow(magis_id=magis_id, role_id=role_id)
+            row = _MagisMembershipRow(
+                magis_id=magis_id,
+                role_id=role_id,
+                responsibility=responsibility.strip(),
+            )
             s.add(row)
             s.commit()
             s.refresh(row)
@@ -331,6 +376,24 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             if role.magis_id != magis_id:
                 raise ValueError("role must belong to the target MAGIS")
             row.role_id = role_id
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
+    def update_responsibility(
+        self, *, magi_id: int, magis_id: int, responsibility: str
+    ) -> MagisMembership | None:
+        """Update the public collaboration responsibility of one MAGI."""
+        with self._session() as s:
+            row = s.scalar(
+                select(_MagisMembershipRow).where(
+                    _MagisMembershipRow.id == magi_id,
+                    _MagisMembershipRow.magis_id == magis_id,
+                )
+            )
+            if row is None:
+                return None
+            row.responsibility = responsibility.strip()
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)
@@ -397,6 +460,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 __all__ = [
     "MagisRole",
     "MagisMembership",
+    "MagisCollaborationMember",
     "MagisRoleBook",
     "MagisMembershipBook",
     "_MagisRoleRow",

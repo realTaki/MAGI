@@ -42,6 +42,32 @@ def _format_daily_note_block(note) -> str:
     return f"## Daily note\n{body}" if body else ""
 
 
+def _format_collaboration_directory(bus: Bus, *, magi_id: int | None) -> str:
+    """Render public peers for intentional, tool-mediated A2A collaboration."""
+    if magi_id is None or bus.memberships_book is None:
+        return ""
+    try:
+        members = bus.memberships_book.list_collaboration_directory(magi_id=magi_id)
+    except Exception:
+        logger.exception("collaboration directory lookup failed for magi_id=%s", magi_id)
+        return ""
+    if not members:
+        return ""
+    lines = [
+        "## MAGIS collaboration directory",
+        "Use message_magi only when a peer's public role and responsibility fit the work. "
+        "A notify does not expect a reply; a request receives at most one reply.",
+    ]
+    for member in members:
+        marker = " (you)" if member.magi_id == magi_id else ""
+        responsibility = member.responsibility.strip() or "No public responsibility provided."
+        lines.append(
+            f"- MAGI #{member.magi_id} {member.magi_name}{marker} — "
+            f"role: {member.role_name}; responsibility: {responsibility}"
+        )
+    return "\n".join(lines)
+
+
 def read_soul(*, bus: Bus) -> str:
     """Read the SOUL persona via ``bus.prompt_book``.
 
@@ -73,6 +99,10 @@ def build_system_prompt(
     instruction_block = runtime_instruction_block(bus, magi_id=magi_id)
     if instruction_block:
         parts.append(instruction_block)
+
+    directory_block = _format_collaboration_directory(bus, magi_id=magi_id)
+    if directory_block:
+        parts.append(directory_block)
 
     # 3. Memory
     try:

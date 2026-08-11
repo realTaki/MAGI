@@ -23,6 +23,7 @@ from magi.bus.library.magis.magisBook import (
 from magi.bus.library.magis.membershipBook import (
     DEFAULT_ROLE_INSTRUCTIONS,
     RESERVED_ROLE_NAMES,
+    MagisCollaborationMember,
     MagisMembership,
     MagisMembershipBook,
     MagisRole,
@@ -43,6 +44,7 @@ __all__ = [
     "ControlSetting",
     "ControlSettingBook",
     "DEFAULT_ROLE_INSTRUCTIONS",
+    "MagisCollaborationMember",
     "Magis",
     "MagisAdmin",
     "MagisAdminBook",

@@ -126,6 +126,7 @@ class MembershipOut(BaseModel):
     magi_name: str | None = None
     role_id: int
     role_name: str
+    responsibility: str
 
 
 class MembershipCreate(BaseModel):
@@ -139,10 +140,12 @@ class MembershipCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     role_id: int = Field(ge=1)
+    responsibility: str = Field(default="", max_length=12000)
 
 
 class MembershipUpdate(BaseModel):
-    role_id: int = Field(ge=1)
+    role_id: int | None = Field(default=None, ge=1)
+    responsibility: str | None = Field(default=None, max_length=12000)
 
 
 class MAGISAdminOut(BaseModel):
@@ -210,6 +213,7 @@ def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
         magi_name=None,
         role_id=view.role_id,
         role_name=role.name if role else "",
+        responsibility=view.responsibility,
     )
 
 
@@ -459,6 +463,7 @@ def create_membership(
         view = _memberships_book(bus).add(
             magis_id=magis_id,
             role_id=payload.role_id,
+            responsibility=payload.responsibility,
         )
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
@@ -476,9 +481,20 @@ def update_membership(
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        view = _memberships_book(bus).update_role(
-            magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id
-        )
+        if payload.role_id is not None:
+            view = _memberships_book(bus).update_role(
+                magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id
+            )
+        else:
+            view = _memberships_book(bus).get(magi_id=membership_id)
+            if view is not None and view.magis_id != magis_id:
+                view = None
+        if view is not None and payload.responsibility is not None:
+            view = _memberships_book(bus).update_responsibility(
+                magi_id=membership_id,
+                magis_id=magis_id,
+                responsibility=payload.responsibility,
+            )
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     if view is None:
