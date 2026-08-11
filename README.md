@@ -131,7 +131,7 @@ plus the shared-database and public workspace resources for a MAGIS when needed.
 - **EVA lifecycle control** — an ADAM can request EVA start, stop, and delete
   operations through the in-cluster orchestrator.
 - **Persistent operational memory** — conversation history, contact knowledge,
-  task state, and searchable stored memory survive across sessions.
+  task state, and searchable stored memory survive across conversations.
 - **Channels and tools** — WebUI is available now; Telegram, MCP servers,
   Skills, scheduled tasks, and built-in tools extend what a MAGI can do.
 - **Provider independence** — MAGI hold their own provider configuration
@@ -263,8 +263,7 @@ inputs (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_NAME`,
 `MAGIS_DATABASE_URL`, `MAGI_ID`) are
 the only contract Runtime sees; workspace paths are derived, never
 configured. See [the storage boundary](docs/ARCHITECTURE.md#storage-ownership)
-and [BUS runtime architecture](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md) for
-the exact split and contract.
+for the exact split and contract.
 
 ### One WebUI, one image
 
@@ -287,7 +286,7 @@ For the implementation-level view, see:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Business flows](docs/business-flows.md)
-- [Database and migration notes](docs/database-migrations.md)
+- [Terms and canonical ID names](docs/terms.md)
 - [Deployment overview](deploy/README.md)
 - [Roadmap](docs/ROADMAP.md)
 

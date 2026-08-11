@@ -109,7 +109,7 @@ PostgreSQL 与公共工作区资源。
 - **独立运行时**：ADAM 与每个 EVA 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
 - **组织管理**：WebUI 管理 MAGIS 树与 MAGI，包括 ADAM 指派和 EVA provider 配置。
 - **EVA 生命周期控制**：ADAM 可经由集群内 orchestrator 请求启动、停止与删除 EVA。
-- **持久化运行记忆**：会话历史、联系人知识、任务状态和可搜索记忆跨会话保留。
+- **持久化运行记忆**：对话历史、联系人知识、任务状态和可搜索记忆跨对话保留。
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
 - **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
 - **MAGIS 内 A2A 协作**：同一 MAGIS 的 MAGI 之间通过**持久 actor effect** 直接协作：
@@ -212,8 +212,7 @@ PVC 挂到容器根，`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导；每个 MAG
 PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。启动契约只有四个变量
 （`HOST_WORKSPACE_DIR`、`MAGI_NAME`、`MAGIS_DATABASE_URL`、`MAGI_ID`），
 workspace 路径由它们推导，调用方不传入。精确边界见
-[存储边界](docs/ARCHITECTURE.md#storage-ownership) 与
-[BUS 运行时架构](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md)。
+[存储边界](docs/ARCHITECTURE.md#storage-ownership)。
 
 ### 一个 WebUI、一个镜像
 
@@ -232,7 +231,7 @@ Bot 代发验证码。
 
 - [架构](docs/ARCHITECTURE.md)
 - [关键业务流程](docs/business-flows.md)
-- [数据库与迁移说明](docs/database-migrations.md)
+- [术语与 ID 命名规范](docs/terms.md)
 - [部署总览](deploy/README.md)
 - [路线图](docs/ROADMAP.md)
 
