@@ -120,18 +120,18 @@ class SkillMeta:
     license attribution) doesn't need a schema change.
     """
 
-    name: str
-    description: str
-    path: Path
-    version: str | None = None
-    license: str | None = None
+    name: str  # skill 名（与目录名一致）
+    description: str  # 一句话描述（暴露给 LLM）
+    path: Path  # SKILL.md 文件路径
+    version: str | None = None  # 来自 frontmatter 的版本号
+    license: str | None = None  # 来自 frontmatter 的 license
     # ``allowed-tools`` in the frontmatter is a YAML list (Anthropic
     # skill spec). We store as ``list[str]``; missing / non-list
     # frontmatter values become ``None`` so callers can use
     # ``is None`` as the "no restriction" check.
-    allowed_tools: list[str] | None = None
+    allowed_tools: list[str] | None = None  # 允许使用的工具列表
     # ``metadata`` is a free-form ``{key: value}`` map.
-    metadata: dict[str, str] | None = None
+    metadata: dict[str, str] | None = None  # 自定义元数据
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,9 +145,9 @@ class SkillBody:
     fields the other consumes.
     """
 
-    content: str
-    mtime: datetime
-    truncated: bool
+    content: str  # skill 正文（已去除 frontmatter、改写路径）
+    mtime: datetime  # 文件 mtime
+    truncated: bool  # True=正文超过大小上限被截断
 
 
 # ──────────────────────────────────────────────────────────────────────── #

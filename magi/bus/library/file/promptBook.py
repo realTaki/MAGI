@@ -55,9 +55,9 @@ class WorkspaceSoul:
     and the bundled fallback was returned instead.
     """
 
-    content: str
-    mtime: str | None  # ISO 8601 UTC with Z suffix, or None for fallback
-    is_fallback: bool
+    content: str  # SOUL.md 文本内容
+    mtime: str | None  # 文件 mtime（ISO 8601 UTC，fallback 时为 None）
+    is_fallback: bool  # True=使用了 bundled fallback
 
 
 class PromptBook(BaseFileBook):

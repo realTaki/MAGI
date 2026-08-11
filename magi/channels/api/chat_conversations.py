@@ -1,20 +1,20 @@
-"""CRUD endpoints for chat sessions.
+"""CRUD endpoints for chat conversations.
 
-A "session" is a single thread of messages between an
+A "conversation" is a single thread of messages between an
 operator (identified by their contact_id in the dashboard cookie)
-and the system LLM. Sessions are persisted as JSON files
-in the bus-owned SQLite session domain.
-and are per-user — admin A's session is invisible to admin B.
+and the system LLM. Conversations are persisted in
+the bus-owned SQLite conversation domain.
+and are per-user — admin A's conversation is invisible to admin B.
 
 Endpoints
 ---------
 
-- ``POST   /chat/sessions``              create empty session, return id
-- ``GET    /chat/sessions``              list current operator's sessions
-- ``GET    /chat/sessions/{session_id}``  load a single session (full messages)
-- ``DELETE /chat/sessions/{session_id}``  remove a session
+- ``POST   /chat/conversations``              create empty conversation, return id
+- ``GET    /chat/conversations``              list current operator's conversations
+- ``GET    /chat/conversations/{conversation_id}``  load a single conversation (full messages)
+- ``DELETE /chat/conversations/{conversation_id}``  remove a conversation
 
-The ``{session_id}`` route uses the URL as the only
+The ``{conversation_id}`` route uses the URL as the only
 identification: the cookie's contact_id already pins the caller.
 The per-channel delivery address stamped on the new row
 is resolved server-side via the channel dispatcher (D.28),
@@ -43,32 +43,32 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 
-logger = logging.getLogger("magi.api.chat_sessions")
+logger = logging.getLogger("magi.api.chat_conversations")
 
-router = APIRouter(tags=["chat_sessions"])
-
-
-SessionStore = Any
+router = APIRouter(tags=["chat_conversations"])
 
 
-def get_session_store(request: Request) -> SessionStore:
-    """FastAPI dependency — one bus session facade per request.
+ConversationStore = Any
+
+
+def get_conversation_store(request: Request) -> ConversationStore:
+    """FastAPI dependency — one bus conversation facade per request.
 
     We deliberately construct it lazily (per-request) rather
     than at module import: tests that override
     the path is resolved via ``magi.startup.paths.resolve_workspace_dir()``
     current value, not the value captured at import time.
     """
-    return get_bus(request).sessions_book
+    return get_bus(request).conversations_book
 
 
-SessionServiceDep = Annotated[SessionStore, Depends(get_session_store)]
+ConversationServiceDep = Annotated[ConversationStore, Depends(get_conversation_store)]
 
 
 # -- Pydantic response shapes ------------------------------------------------
 
 
-class SessionMessageOut(BaseModel):
+class ConversationMessageOut(BaseModel):
     message_id: str
     role: str
     ts: str
@@ -76,12 +76,12 @@ class SessionMessageOut(BaseModel):
 
 
 class ConversationMessagesPage(BaseModel):
-    """A single page of session messages (D.18+2 pagination).
+    """A single page of conversation messages (D.18+2 pagination).
 
-    Returned by ``GET /api/chat/sessions/{id}/messages``.
+    Returned by ``GET /api/chat/conversations/{id}/messages``.
 
     ``total_active`` is the count of *active* messages in
-    the session; ``total_all`` includes archive. The UI uses
+    the conversation; ``total_all`` includes archive. The UI uses
     ``loaded_count < total_active`` to decide whether to
     show the "加载更早消息" affordance.
 
@@ -93,16 +93,16 @@ class ConversationMessagesPage(BaseModel):
     stays at the scroll bottom.
     """
 
-    session_id: str
-    messages: list[SessionMessageOut]
+    conversation_id: str
+    messages: list[ConversationMessageOut]
     total_active: int
     total_all: int
     offset: int
     limit: int
 
 
-class SessionOut(BaseModel):
-    session_id: str
+class ConversationOut(BaseModel):
+    conversation_id: str
     delivery_address: str
     contact_id: int
     channel: str
@@ -112,35 +112,35 @@ class SessionOut(BaseModel):
     # "no title yet" — the sidebar falls back to ``preview``.
     title: str | None = None
     schema_version: int
-    messages: list[SessionMessageOut]
+    messages: list[ConversationMessageOut]
 
 
-class SessionSummaryOut(BaseModel):
-    session_id: str
+class ConversationSummaryOut(BaseModel):
+    conversation_id: str
     created_at: str
     created_by_contact_id: int
     updated_at: str
     message_count: int
     preview: str
-    # D.7: same field as ``Session.title`` — list-endpoint
+    # D.7: same field as ``Conversation.title`` — list-endpoint
     # projection.
     title: str | None = None
     channel: str = "webui"
 
 
-class SessionListOut(BaseModel):
-    items: list[SessionSummaryOut]
+class ConversationListOut(BaseModel):
+    items: list[ConversationSummaryOut]
     total: int
     limit: int
     offset: int
 
 
-class CreateSessionResponse(BaseModel):
-    session_id: str
+class CreateConversationResponse(BaseModel):
+    conversation_id: str
 
 
-class UpdateSessionRequest(BaseModel):
-    """Body for ``PATCH /api/chat/sessions/{session_id}``.
+class UpdateConversationRequest(BaseModel):
+    """Body for ``PATCH /api/chat/conversations/{conversation_id}``.
 
     Mirrors :class:`magi.channels.api.contacts.ContactUpdate`
     semantics (``model_fields_set``): a field's *absence*
@@ -154,12 +154,12 @@ class UpdateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=80)
 
 
-def _session_to_out(
+def _conversation_to_out(
     s: Conversation,
     *,
     messages: list[Message],
     schema_version: int = 1,
-) -> SessionOut:
+) -> ConversationOut:
     """Project a Conversation row + its messages into the API shape.
 
     ``schema_version`` defaults to ``1`` — there is no on-disk
@@ -167,8 +167,8 @@ def _session_to_out(
     API contract stable for clients that want to feature-detect
     future schema changes without parsing the row shape.
     """
-    return SessionOut(
-        session_id=s.conversation_id,
+    return ConversationOut(
+        conversation_id=s.conversation_id,
         delivery_address=s.delivery_address,
         contact_id=s.contact_id,
         channel=s.channel,
@@ -182,7 +182,7 @@ def _session_to_out(
         # D.7: thread the (optional) title through.
         title=s.title,
         messages=[
-            SessionMessageOut(
+            ConversationMessageOut(
                 message_id=m.message_id,
                 role=m.role,
                 ts=m.ts,
@@ -193,16 +193,16 @@ def _session_to_out(
     )
 
 
-def _summary_to_out(s: ConversationSummary, *, contact_id: int) -> SessionSummaryOut:
+def _summary_to_out(s: ConversationSummary, *, contact_id: int) -> ConversationSummaryOut:
     """Convert a ConversationSummary into the list-endpoint shape.
 
-    ``contact_id`` is the operator who owns this session
+    ``contact_id`` is the operator who owns this conversation
     today. We surface it explicitly so a future C7 view can
     label rows; v0 always sees the same value across rows
     for one admin.
     """
-    return SessionSummaryOut(
-        session_id=s.conversation_id,
+    return ConversationSummaryOut(
+        conversation_id=s.conversation_id,
         created_at=s.created_at,
         created_by_contact_id=contact_id,
         updated_at=s.updated_at,
@@ -229,7 +229,7 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
     the caller's ORM session here.
 
     Returns ``""`` when the operator has no binding on
-    the channel. ``SessionService.create`` accepts an
+    the channel. ``ConversationService.create`` accepts an
     empty address as "no outbound push", which is
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
@@ -246,7 +246,7 @@ def _resolve_contact_id(request: Request) -> int:
     int) — not a per-channel delivery address. This
     helper is the single place that translates "what's
     in the cookie" into "who is the caller" for the
-    rest of the chat_sessions router. Raises
+    rest of the chat_conversations router. Raises
     ``chat.unknown_sender`` 401 if the cookie is
     missing or unparseable — same code as chat.py so
     the frontend's friendly message covers both
@@ -291,22 +291,22 @@ def _admin_contact_id(request: Request) -> int:
 
 
 @router.post(
-    "/chat/sessions",
-    response_model=CreateSessionResponse,
+    "/chat/conversations",
+    response_model=CreateConversationResponse,
     status_code=201,
 )
-def create_session(
+def create_conversation(
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
-) -> CreateSessionResponse:
-    """Create a new empty session for the current operator.
+    service: ConversationServiceDep,
+) -> CreateConversationResponse:
+    """Create a new empty conversation for the current operator.
 
     The frontend typically doesn't call this directly — the
-    chat send endpoint auto-creates when no session_id is
+    chat send endpoint auto-creates when no conversation_id is
     provided. This endpoint exists for explicit lifecycle
     hooks (e.g. "new chat" that pre-reserves an id, or
-    C7-era tools that want to instantiate a session
+    C7-era tools that want to instantiate a conversation
     before the first message).
     """
     contact_id = _admin_contact_id(request)
@@ -317,34 +317,34 @@ def create_session(
     # dispatcher so this endpoint never reads
     # ``Contact.telegram_id`` directly. The store key,
     # however, is ``contact_id`` — see
-    # :meth:`SessionService.create`.
+    # :meth:`ConversationService.create`.
     delivery_address = _delivery_address_for_contact_id(request, contact_id)
     sess = service.create(
         contact_id,
         channel=Channel.WEBUI,
         delivery_address=delivery_address,
     )
-    return CreateSessionResponse(session_id=sess.conversation_id)
+    return CreateConversationResponse(conversation_id=sess.conversation_id)
 
 
 @router.get(
-    "/chat/sessions",
-    response_model=SessionListOut,
+    "/chat/conversations",
+    response_model=ConversationListOut,
 )
-def list_sessions(
+def list_conversations(
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    service: ConversationServiceDep,
     limit: int = 50,
     offset: int = 0,
-) -> SessionListOut:
-    """List current operator's sessions, newest first.
+) -> ConversationListOut:
+    """List current operator's conversations, newest first.
 
     ``limit`` is clamped to a sane range: the v0 cap is 200
     to bound the per-request work (the implementation
-    reads every session file under the chat's directory —
+    reads every conversation file under the chat's directory —
     fine for a single operator's tens-to-hundreds of
-    sessions, but a misbehaving client cannot push it
+    conversations, but a misbehaving client cannot push it
     further).
     """
     if limit < 1:
@@ -367,7 +367,7 @@ def list_sessions(
         limit=limit,
         offset=offset,
     )
-    return SessionListOut(
+    return ConversationListOut(
         items=[_summary_to_out(i, contact_id=contact_id) for i in items],
         total=total,
         limit=limit,
@@ -376,26 +376,26 @@ def list_sessions(
 
 
 @router.get(
-    "/chat/sessions/{session_id}",
-    response_model=SessionOut,
+    "/chat/conversations/{conversation_id}",
+    response_model=ConversationOut,
 )
-def get_session(
-    session_id: str,
+def get_conversation(
+    conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    service: ConversationServiceDep,
     bus: BusDep,
-) -> SessionOut:
-    """Load a single session — full transcript + metadata."""
+) -> ConversationOut:
+    """Load a single conversation — full transcript + metadata."""
     contact_id = _admin_contact_id(request)
     try:
-        sess = service.get(contact_id, session_id)
+        sess = service.get(contact_id, conversation_id)
     except ConversationPathError as e:
-        # Malformed session_id from the URL — it's a 400,
+        # Malformed conversation_id from the URL — it's a 400,
         # not a 404 (the id is invalid, not absent).
         logger.warning(
-            "session get rejected (bad session_id %r from contact %s): %s",
-            session_id,
+            "conversation get rejected (bad conversation_id %r from contact %s): %s",
+            conversation_id,
             contact_id,
             e,
         )
@@ -405,39 +405,39 @@ def get_session(
             detail=str(e),
         )
     except ConversationCorruptError as e:
-        logger.error("session file corrupt: %s", e)
+        logger.error("conversation file corrupt: %s", e)
         raise MagiHTTPException(  # noqa: B904
             status_code=500,
-            code="validation.session_corrupt",
-            detail="session file is malformed",
+            code="validation.conversation_corrupt",
+            detail="conversation file is malformed",
         )
     if sess is None:
         raise MagiHTTPException(
             status_code=404,
-            code="not_found.session",
-            detail=f"session {session_id} not found",
+            code="not_found.conversation",
+            detail=f"conversation {conversation_id} not found",
         )
     messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
-    return _session_to_out(sess, messages=messages)
+    return _conversation_to_out(sess, messages=messages)
 
 
-@router.delete("/chat/sessions/{session_id}", status_code=204)
-def delete_session(
-    session_id: str,
+@router.delete("/chat/conversations/{conversation_id}", status_code=204)
+def delete_conversation(
+    conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    service: ConversationServiceDep,
 ):
-    """Remove a session permanently.
+    """Remove a conversation permanently.
 
-    Idempotent: deleting a session that's already gone is
+    Idempotent: deleting a conversation that's already gone is
     a no-op, not an error. Otherwise an admin could DOS
     themselves by spamming DELETE on stale ids from a
-    older session list.
+    older conversation list.
     """
     contact_id = _admin_contact_id(request)
     try:
-        removed = service.delete(contact_id, session_id)
+        removed = service.delete(contact_id, conversation_id)
     except ConversationPathError as e:
         raise MagiHTTPException(  # noqa: B904
             status_code=400,
@@ -453,25 +453,25 @@ def delete_session(
 
 
 @router.patch(
-    "/chat/sessions/{session_id}",
-    response_model=SessionOut,
+    "/chat/conversations/{conversation_id}",
+    response_model=ConversationOut,
 )
-def update_session(
-    session_id: str,
-    payload: UpdateSessionRequest,
+def update_conversation(
+    conversation_id: str,
+    payload: UpdateConversationRequest,
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    service: ConversationServiceDep,
     bus: BusDep,
-) -> SessionOut:
-    """Rename a session (D.7).
+) -> ConversationOut:
+    """Rename a conversation (D.7).
 
     ``title`` semantics (mirrors the chat-send / ``model_fields_set``
     pattern used elsewhere in the codebase):
 
       - **absent from the body** — no-op. The response still
         returns the current state with whatever title the
-        session already has (so the front-end can use PATCH
+        conversation already has (so the front-end can use PATCH
         as a "give me the current state" idempotent read).
       - **explicit ``null``** — clear the title.
       - **explicit string** — set after trim + length-clamp
@@ -480,7 +480,7 @@ def update_session(
     Manual renames do **not** bump ``updated_at``: a rename is
     operator metadata and shouldn't reshuffle the sidebar.
     The auto-title worker takes the same ``rename`` path with
-    ``bump_updated=True`` because a freshly-titled session is
+    ``bump_updated=True`` because a freshly-titled conversation is
     content, not metadata.
     """
     contact_id = _admin_contact_id(request)
@@ -488,7 +488,7 @@ def update_session(
     if "title" in payload.model_fields_set:
         raw = payload.title
         # ``None`` and empty (whitespace-only or ``""``) both
-        # clear. ``SessionService.rename`` re-clamps to 80 as a
+        # clear. ``ConversationService.rename`` re-clamps to 80 as a
         # final defensive ceiling.
         if raw is None or raw.strip() == "":
             new_title: str | None = None
@@ -496,7 +496,7 @@ def update_session(
             new_title = raw
 
         try:
-            sess = service.rename(contact_id, session_id, new_title, bump_updated=False)
+            sess = service.rename(contact_id, conversation_id, new_title, bump_updated=False)
         except ConversationPathError as e:
             raise MagiHTTPException(  # noqa: B904
                 status_code=400,
@@ -505,30 +505,30 @@ def update_session(
             )
         except ConversationCorruptError as e:
             logger.error(
-                "rename failed: session file corrupt: %s",
+                "rename failed: conversation file corrupt: %s",
                 e,
-                extra={"session_id": session_id},
+                extra={"conversation_id": conversation_id},
             )
             raise MagiHTTPException(  # noqa: B904
                 status_code=500,
-                code="validation.session_corrupt",
-                detail="session file is malformed",
+                code="validation.conversation_corrupt",
+                detail="conversation file is malformed",
             )
         except ConversationNotFoundError:
             raise MagiHTTPException(  # noqa: B904
                 status_code=404,
-                code="not_found.session",
-                detail=f"session {session_id} not found",
+                code="not_found.conversation",
+                detail=f"conversation {conversation_id} not found",
             )
         messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
-        return _session_to_out(sess, messages=messages)
+        return _conversation_to_out(sess, messages=messages)
 
     # No-op path — return current state. Going through
     # ``store.get`` (rather than synthesizing) surfaces a
-    # 404 if the session vanished between the GET that
+    # 404 if the conversation vanished between the GET that
     # showed the row and this PATCH.
     try:
-        sess = service.get(contact_id, session_id)
+        sess = service.get(contact_id, conversation_id)
     except ConversationPathError as e:
         raise MagiHTTPException(  # noqa: B904
             status_code=400,
@@ -537,31 +537,31 @@ def update_session(
         )
     except ConversationCorruptError as e:
         logger.error(
-            "get failed: session file corrupt: %s",
+            "get failed: conversation file corrupt: %s",
             e,
-            extra={"session_id": session_id},
+            extra={"conversation_id": conversation_id},
         )
         raise MagiHTTPException(  # noqa: B904
             status_code=500,
-            code="validation.session_corrupt",
-            detail="session file is malformed",
+            code="validation.conversation_corrupt",
+            detail="conversation file is malformed",
         )
     if sess is None:
         raise MagiHTTPException(
             status_code=404,
-            code="not_found.session",
-            detail=f"session {session_id} not found",
+            code="not_found.conversation",
+            detail=f"conversation {conversation_id} not found",
         )
     messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
-    return _session_to_out(sess, messages=messages)
+    return _conversation_to_out(sess, messages=messages)
 
 
 # ────────────────────────────────────────────────────────────────── #
 # Pagination endpoint — D.18+2
 # ────────────────────────────────────────────────────────────────── #
 #
-# Long sessions shouldn't ship their entire transcript on
-# initial load. ``GET /api/chat/sessions/{id}/messages``
+# Long conversations shouldn't ship their entire transcript on
+# initial load. ``GET /api/chat/conversations/{id}/messages``
 # returns a single chronological page of the **active**
 # message tail, sized via ``limit`` (default 50, max 100)
 # and offset via ``offset`` (number of *newest* rows to
@@ -585,19 +585,19 @@ def update_session(
 
 
 @router.get(
-    "/chat/sessions/{session_id}/messages",
+    "/chat/conversations/{conversation_id}/messages",
     response_model=ConversationMessagesPage,
 )
-def get_session_messages(
-    session_id: str,
+def get_conversation_messages(
+    conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: SessionServiceDep,
+    service: ConversationServiceDep,
     limit: int = 50,
     offset: int = 0,
     include_archived: bool = False,
 ) -> ConversationMessagesPage:
-    """Tail-slice page of the session's active messages.
+    """Tail-slice page of the conversation's active messages.
 
     The route always orders by ``chat_messages.id ASC``
     (chronological insert order) and slices by ``limit``
@@ -621,7 +621,7 @@ def get_session_messages(
     try:
         msgs, total_active, total_all = service.get_messages_page(
             contact_id,
-            session_id,
+            conversation_id,
             limit=limit,
             offset=offset,
             include_archived=include_archived,
@@ -633,8 +633,8 @@ def get_session_messages(
         # other operators' conversations).
         raise MagiHTTPException(  # noqa: B904
             status_code=404,
-            code="not_found.session",
-            detail=f"session {session_id} not found",
+            code="not_found.conversation",
+            detail=f"conversation {conversation_id} not found",
         )
     except ConversationPathError as e:
         raise MagiHTTPException(  # noqa: B904
@@ -645,21 +645,21 @@ def get_session_messages(
 
     if not msgs and offset == 0:
         # No messages AND we asked for page 0 — likely the
-        # session doesn't exist (vs. an empty session).
+        # conversation doesn't exist (vs. an empty conversation).
         # Distinguishing the two cases: try ``store.get``
         # and 404 if it returns None.
-        sess = service.get(contact_id, session_id)
+        sess = service.get(contact_id, conversation_id)
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,
-                code="not_found.session",
-                detail=f"session {session_id} not found",
+                code="not_found.conversation",
+                detail=f"conversation {conversation_id} not found",
             )
 
     return ConversationMessagesPage(
-        session_id=session_id,
+        conversation_id=conversation_id,
         messages=[
-            SessionMessageOut(
+            ConversationMessageOut(
                 message_id=m.message_id,
                 role=m.role,
                 ts=m.ts,

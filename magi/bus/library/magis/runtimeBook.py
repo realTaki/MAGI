@@ -81,41 +81,41 @@ class RuntimeObservedState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Runtime:
-    runtime_id: int
-    backend_kind: str
-    desired_state: str
-    observed_state: str
-    backend_ref: str
-    workspace_dir: str
-    log_dir: str
-    audit_log_path: str
-    pid: int | None = None
-    base_url: str | None = None
-    port: int | None = None
-    spawned_at: datetime | None = None
-    stopped_at: datetime | None = None
-    updated_at: datetime | None = None
-    stale: bool = False
+    runtime_id: int  # 主键（同时是 per-MAGI 身份标识）
+    backend_kind: str  # 后端类型（local/k8s）
+    desired_state: str  # 期望状态（started/stopped）
+    observed_state: str  # 观察状态（started/stopped/crashed/...）
+    backend_ref: str  # 显示名/标签
+    workspace_dir: str  # 工作区目录
+    log_dir: str  # 日志目录
+    audit_log_path: str  # 审计日志路径
+    pid: int | None = None  # 进程 PID（local 模式）
+    base_url: str | None = None  # 访问基地址（local 模式）
+    port: int | None = None  # 当前占用的端口
+    spawned_at: datetime | None = None  # 启动时间
+    stopped_at: datetime | None = None  # 停止时间
+    updated_at: datetime | None = None  # 最近更新时间
+    stale: bool = False  # 是否被标记为过期
     # K8s-only fields (NULL in local mode).
-    deployment_name: str | None = None
-    namespace: str | None = None
-    image: str | None = None
-    extra: str | None = None
+    deployment_name: str | None = None  # K8s deployment 名
+    namespace: str | None = None  # K8s namespace
+    image: str | None = None  # K8s 镜像
+    extra: str | None = None  # 额外配置（JSON）
     # Sticky port allocation (NULL for an un-allocated runtime).
-    port_in_use_since: datetime | None = None
-    port_released_at: datetime | None = None
+    port_in_use_since: datetime | None = None  # 端口占用起始时间
+    port_released_at: datetime | None = None  # 端口释放时间
     # Workspace tombstone (NULL for live runtimes).
-    archive_path: str | None = None
-    archived_at: datetime | None = None
-    restored: bool = False
+    archive_path: str | None = None  # 工作区归档路径（软删除）
+    archived_at: datetime | None = None  # 归档时间
+    restored: bool = False  # 是否已被恢复
 
 
 @dataclass(frozen=True, slots=True)
 class ControlSecret:
-    name: str
-    secret_hash: bytes
-    salt: bytes
-    created_at: datetime
+    name: str  # secret 名称（PK）
+    secret_hash: bytes  # 哈希值
+    salt: bytes  # 哈希盐
+    created_at: datetime  # 创建时间
 
 
 # -- internal ORM --------------------------------------------------------

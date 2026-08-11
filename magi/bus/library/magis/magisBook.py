@@ -52,21 +52,21 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class Magis:
-    id: int
-    name: str
-    parent_id: int | None = None
-    adam_id: int | None = None
-    instruction: str = ""
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # MAGIS 主键
+    name: str  # MAGIS 唯一名
+    parent_id: int | None = None  # 父 MAGIS ID（根节点为 NULL）
+    adam_id: int | None = None  # ADAM MAGI 的身份 ID
+    instruction: str = ""  # MAGIS 默认指令
+    created_at: datetime | None = None  # 创建时间
+    updated_at: datetime | None = None  # 最近更新时间
 
 
 @dataclass(frozen=True, slots=True)
 class MagisAdmin:
-    id: int
-    contact_id: int
-    magis_id: int
-    created_at: datetime | None = None
+    id: int  # 主键
+    contact_id: int  # 被授权的联系人 ID
+    magis_id: int  # 授权作用的 MAGIS ID
+    created_at: datetime | None = None  # 授权时间
 
 
 # -- internal ORM --------------------------------------------------------

@@ -59,33 +59,33 @@ DEFAULT_ROLE_INSTRUCTIONS = {
 
 @dataclass(frozen=True, slots=True)
 class MagisRole:
-    id: int
-    magis_id: int
-    name: str
-    instruction: str = ""
-    is_reserved: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # 角色主键
+    magis_id: int  # 所属 MAGIS ID
+    name: str  # 角色名（ADAM/EVA/...）
+    instruction: str = ""  # 角色描述/职责说明
+    is_reserved: bool = False  # 是否为保留角色（ADAM/EVA）
+    created_at: datetime | None = None  # 创建时间
+    updated_at: datetime | None = None  # 最近更新时间
 
 
 @dataclass(frozen=True, slots=True)
 class MagisMembership:
-    id: int
-    magis_id: int
-    role_id: int
-    responsibility: str = ""
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # 主键（同时是 per-MAGI 身份标识）
+    magis_id: int  # 所属 MAGIS ID
+    role_id: int  # 绑定的角色 ID
+    responsibility: str = ""  # 协作职责说明（对外可见）
+    created_at: datetime | None = None  # 创建时间
+    updated_at: datetime | None = None  # 最近更新时间
 
 
 @dataclass(frozen=True, slots=True)
 class MagisCollaborationMember:
     """Public collaborator card rendered into an Agent's MAGIS directory."""
 
-    magi_id: int
-    magi_name: str
-    role_name: str
-    responsibility: str
+    magi_id: int  # MAGI 身份 ID
+    magi_name: str  # MAGI 显示名
+    role_name: str  # 角色名
+    responsibility: str  # 协作职责
 
 
 # -- internal ORM --------------------------------------------------------

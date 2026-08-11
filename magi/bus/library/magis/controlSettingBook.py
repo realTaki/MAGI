@@ -19,8 +19,8 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class ControlSetting:
-    key: str
-    value: str
+    key: str  # 配置键
+    value: str  # 配置值
 
 
 class _ControlSettingRow(Base):

@@ -206,16 +206,16 @@ def create_app(
     from magi.channels.api import chat
 
     app.include_router(chat.router, prefix="/api")
-    # Chat session CRUD — file-backed per-user conversation
-    # history (D.6). Each operator's sessions live under
+    # Chat conversation CRUD — per-user conversation
+    # history (D.6). Each operator's conversations live under
     # ``<workspace>/memories/<state>.db`` (D.18) and the
     # cookie pins the operator. Mounted right after ``chat``
     # so its URL prefix aligns with the chat namespace.
-    from magi.channels.api import chat_sessions
+    from magi.channels.api import chat_conversations
 
-    app.include_router(chat_sessions.router, prefix="/api")
-    # D.18 — full-text search across sessions. Same contact_id
-    # scope as ``chat_sessions``; the cookie-derived contact_id
+    app.include_router(chat_conversations.router, prefix="/api")
+    # D.18 — full-text search across conversations. Same contact_id
+    # scope as ``chat_conversations``; the cookie-derived contact_id
     # is enforced in the SQL join.
     from magi.channels.api import chat_search
 
