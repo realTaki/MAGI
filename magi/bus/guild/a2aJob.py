@@ -10,11 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, select
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
+from magi.bus.guild.base import BaseJobBoard, _read_result_from_job, _row_to_job, new_job_id
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -186,6 +186,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
 
     def claim_for_target(self, *, magi_id: int) -> A2ARequestJob | None:
         with self._session() as s:
+            self._expire_due(s, target_magi_id=magi_id)
             row = self._cas_claim(
                 s,
                 owner=f"a2a-request:{magi_id}:{id(self)}",
@@ -193,6 +194,53 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
             s.commit()
             return _row_to_job(row, A2ARequestJob) if row is not None else None
+
+    def submit_result(self, *, key: str, result: A2ARequestResult) -> None:
+        """Complete a request once, and never overwrite expiry/failure."""
+        with self._session() as s:
+            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
+            if row is None:
+                return
+            self._expire_due(s, target_magi_id=row.target_magi_id)
+            s.refresh(row)
+            if row.status != "processing":
+                s.commit()
+                return
+            self._submit(s, key=key, result=result)
+            s.commit()
+
+    def get_result(self, *, key: str) -> A2ARequestResult | None:
+        with self._session() as s:
+            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
+            if row is None:
+                return None
+            self._expire_due(s, target_magi_id=row.target_magi_id)
+            s.refresh(row)
+            if row.status not in {"completed", "failed"}:
+                s.commit()
+                return None
+            result = _read_result_from_job(row, A2ARequestResult, self.natural_key_attr)
+            s.commit()
+            return result
+
+    @staticmethod
+    def _expire_due(session, *, target_magi_id: int) -> None:
+        now = utcnow_naive()
+        session.execute(
+            update(_A2ARequestRow)
+            .where(
+                _A2ARequestRow.target_magi_id == target_magi_id,
+                _A2ARequestRow.deadline_at.is_not(None),
+                _A2ARequestRow.deadline_at <= now,
+                _A2ARequestRow.status.in_(("pending", "processing")),
+            )
+            .values(
+                status="failed",
+                error_code="a2a_timeout",
+                error="A2A request deadline elapsed",
+                completed_at=now,
+            )
+        )
 
 
 class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult]):
