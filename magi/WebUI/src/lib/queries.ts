@@ -364,6 +364,14 @@ export function useMe() {
     queryKey: qk.me,
     queryFn: () => apiFetch<MeRow>("/api/auth/me"),
     retry: false, // 401 must propagate to drive the routing decision
+    // Once /me has 401'd we know the browser has no session, and
+    // nothing about window focus changes that — the login flow
+    // invalidates ``qk.me`` explicitly on success. Without this
+    // guard the global ``refetchOnWindowFocus`` re-probes on every
+    // tab switch, so a logged-out operator accumulates one console
+    // 401 per focus event. Keep refetching once signed in, so a
+    // session that expires in the background is still noticed.
+    refetchOnWindowFocus: (query) => query.state.status !== "error",
   });
 }
 
