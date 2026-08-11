@@ -280,7 +280,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
             {browseItems.length > 0 && (
               <ul className="flex flex-col gap-3">
                 {browseItems.map((s) => (
-                  <SessionSummaryRow
+                  <ConversationSummaryRow
                     key={s.conversation_id}
                     summary={s}
                     onOpen={onOpen}
@@ -366,11 +366,11 @@ function SearchHitRow({
   );
 }
 
-function SessionSummaryRow({
+function ConversationSummaryRow({
   summary,
   onOpen,
 }: {
-  summary: SessionSummary;
+  summary: ConversationSummary;
   onOpen: (conversationId: string) => void;
 }) {
   const t = useT();

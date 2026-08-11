@@ -192,7 +192,7 @@ async def send_chat(
         )
 
     # D.24: the cookie's value IS the contact_id. The
-    # auth gate already proved it's a live admin session;
+    # auth gate already proved it's a live admin operator;
     # ``_resolve_caller_credentials`` re-checks the row
     # exists and surfaces the operator's role for the
     # agent-loop tool menu filter. LLM credentials are
@@ -344,7 +344,7 @@ async def send_chat(
 
     from magi.bus.guild.chatJob import publish_chat
 
-    # Stable producer-side idempotency: the inbound session-message
+    # Stable producer-side idempotency: the inbound message
     # id is what makes a network retry collapse to the same inbox row.
     chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
     job_id = publish_chat(

@@ -385,7 +385,7 @@ export default function ChatTab() {
   const historyQuery = useQuery({
     queryKey: qk.chatConversations(),
     queryFn: () =>
-      apiFetch<{ items: SessionSummary[]; total: number }>(
+      apiFetch<{ items: ConversationSummary[]; total: number }>(
         `/api/chat/conversations?limit=${historyLimit}&offset=0`,
       ),
     refetchOnWindowFocus: true,
@@ -400,7 +400,7 @@ export default function ChatTab() {
       setHistoryTotal(historyQuery.data.total);
       if (conversationId) {
         const active = historyQuery.data.items.find(
-          (x: SessionSummary) => x.conversation_id === conversationId,
+          (x: ConversationSummary) => x.conversation_id === conversationId,
         );
         if (active && active.title) {
           setActiveTitle(active.title);
