@@ -160,8 +160,17 @@ def _publish_runtime_config(config: StartupConfig) -> None:
         os.environ["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id is None:
         os.environ.pop("MAGI_ID", None)
+        os.environ.pop("MAGI_RUNTIME_ID", None)
     else:
         os.environ["MAGI_ID"] = config.magi_id
+        # The webui's proxy layer signs every request with
+        # ``MAGI_CONTROL_SECRET`` plus the target runtime id;
+        # the runtime verifies that ``X-MAGI-Proxy-Target``
+        # matches its own ``MAGI_RUNTIME_ID``. The single-
+        # machine install needs both. (K8s sets this on the
+        # pod via the deployment manifest; the local CLI
+        # path was missing it.)
+        os.environ["MAGI_RUNTIME_ID"] = config.magi_id
 
 
 def create_runtime_app_from_environment():

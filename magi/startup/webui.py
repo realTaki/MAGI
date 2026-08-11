@@ -247,6 +247,16 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
         config.host_workspace_dir, config.magis_name
     )
     env["MAGIS_NAME"] = config.magis_name
+    # The webui signs proxy requests to the runtime via
+    # ``MAGI_CONTROL_SECRET`` (HMAC over the request line +
+    # selected MAGI). The single-machine install provisions
+    # the secret at ``init_first_magi`` time; thread it into
+    # the detached webui's env so the proxy layer can sign.
+    secret_path = resolve_magis_control_dir(
+        config.host_workspace_dir, config.magis_name
+    ) / "control-secret"
+    if secret_path.exists():
+        env["MAGI_CONTROL_SECRET"] = secret_path.read_text(encoding="utf-8").strip()
     return env
 
 

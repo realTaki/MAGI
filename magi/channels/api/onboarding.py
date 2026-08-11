@@ -406,8 +406,13 @@ async def set_admin_password_onboarding(
         )
 
     # Single-process / runtime path — no MAGIS DB to register against.
-    admin_cid = _upsert_local_contact(bus, admin_name)
-    assigned_cid = _upsert_local_contact(bus, assigned_name)
+    admin_cid = _upsert_local_contact(bus, admin_name, slot="admin")
+    assigned_cid = _upsert_local_contact(
+        bus,
+        assigned_name,
+        slot="assigned",
+        skip_existing_contact_id=admin_cid if admin_name == assigned_name else None,
+    )
     from magi.channels.api import password_utils
 
     try:
@@ -457,7 +462,13 @@ def _register_magis_admin(bus: Bus, *, contact_id: int) -> int | None:
     return root.id
 
 
-def _upsert_local_contact(bus: Bus, name: str) -> int:
+def _upsert_local_contact(
+    bus: Bus,
+    name: str,
+    *,
+    slot: str = "assigned",
+    skip_existing_contact_id: int | None = None,
+) -> int:
     """Create a Contact named ``name`` if absent, else reuse in place.
 
     The new row carries ``role='assigned'`` and **does not** set
@@ -466,18 +477,29 @@ def _upsert_local_contact(bus: Bus, name: str) -> int:
     "person" identity; the wizard / auth layer joins them with
     ``magis_admins`` (webui) or reads the password hash directly
     (runtime login).
+
+    ``slot`` distinguishes wizard steps that may collide by name
+    ("Taki" appearing as both Genesis admin AND per-MAGI
+    assigned): the admin slot always lands on its own row by
+    suffixing when needed, the assigned slot reuses an existing
+    row only if its id is NOT the one just minted for the admin
+    in the same wizard call.
     """
     contacts = bus.contacts_book
     for existing in contacts.list_all():
-        if existing.name == name:
+        if existing.name == name and int(existing.id) != (skip_existing_contact_id or -1):
             return int(existing.id)
+    base = name
+    if slot == "admin" and any(c.name == base for c in contacts.list_all()):
+        # Avoid colliding with the just-allocated assigned row by
+        # appending a slot suffix. The display_name keeps the
+        # operator's chosen name; the row's `name` is unique.
+        base = f"{name} (admin)"
     try:
-        created = contacts.add(name=name, role=ROLE_ASSIGNED, display_name=name)
+        created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
     except ValueError:
-        # Name collision with an existing row whose name differs in
-        # case / whitespace — fall back to a unique rename.
-        unique = f"{name}-onboarding"
-        created = contacts.add(name=unique, role=ROLE_ASSIGNED, display_name=name)
+        base = f"{base}-onboarding"
+        created = contacts.add(name=base, role=ROLE_ASSIGNED, display_name=name)
     return int(created.id)
 
 
