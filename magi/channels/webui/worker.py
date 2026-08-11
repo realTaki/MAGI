@@ -9,22 +9,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
     from magi.bus.guild.deliveryJob import DeliveryJob
 
 logger = logging.getLogger("magi.channels.webui.worker")
 
 
 class WebUIWorker(ChannelWorker):
-    """WebUI 通道 Worker：认领 deliveryJob(channel=webui) → Session 追加。
-    """
+    """WebUI 通道 Worker：认领 deliveryJob(channel=webui) → Session 追加。"""
 
     channel_name = "webui"
 
@@ -40,12 +37,14 @@ class WebUIWorker(ChannelWorker):
         if not conversation_id or not isinstance(contact_id, int):
             raise ValueError("webui delivery missing conversation_id or contact_id")
 
-        await self.call(self.bus.messages_book.add,
+        await self.call(
+            self.bus.messages_book.add,
             conversation_id=conversation_id,
             role="assistant",
             text=text,
         )
         logger.debug(
             "WebUIWorker: appended message to conversation %s (contact_id=%s)",
-            conversation_id, contact_id,
+            conversation_id,
+            contact_id,
         )
