@@ -5,9 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAGI_ROOT = REPO_ROOT / "magi"
 
@@ -52,7 +49,9 @@ def test_domain_modules_do_not_reach_into_bus_storage() -> None:
             for module, lineno in _imports(path):
                 if module.startswith("magi.bus.db"):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
-    assert not offenders, "domain modules must use Bus facade, not storage:\n  " + "\n  ".join(offenders)
+    assert not offenders, "domain modules must use Bus facade, not storage:\n  " + "\n  ".join(
+        offenders
+    )
 
 
 def test_bus_does_not_import_domain_implementations() -> None:

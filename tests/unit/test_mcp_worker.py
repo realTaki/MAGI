@@ -34,7 +34,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from magi.mcp.worker import McpWorker
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.db.file import FileShelf
@@ -49,6 +48,7 @@ from magi.bus.library.local import (
 )
 from magi.bus.library.local.mcpServerBook import McpServer
 from magi.bus.library.local.toolsBook import ToolDefinitionBook
+from magi.mcp.worker import McpWorker
 from magi.tools import registry as tool_registry
 from magi.tools.mcp.add_mcp_server import AddMcpServerTool
 from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
@@ -72,9 +72,7 @@ class _StubConnection:
         self._tool_names = list(tool_names)
         self.connect = AsyncMock(return_value=True)
         self.disconnect = AsyncMock(return_value=None)
-        self.tools: list[Any] = [
-            _StubTool(server_name=name, tool_name=t) for t in tool_names
-        ]
+        self.tools: list[Any] = [_StubTool(server_name=name, tool_name=t) for t in tool_names]
 
 
 class _StubTool:
@@ -172,9 +170,7 @@ def _patch_worker_build(monkeypatch, connections: list[_StubConnection]) -> None
     def _factory(self: McpWorker, server: Any) -> _StubConnection:
         pending = queue.get(server.name, [])
         if not pending:
-            raise AssertionError(
-                f"unexpected server {server.name!r} in _build_connection"
-            )
+            raise AssertionError(f"unexpected server {server.name!r} in _build_connection")
         return pending.pop(0)
 
     monkeypatch.setattr(McpWorker, "_build_connection", _factory)
@@ -209,9 +205,7 @@ def _dto(
 
 
 def test_bootstrap_connects_enabled_rows_and_reinjects_tools(bus, monkeypatch):
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     gmail = _StubConnection("gmail", tool_names=["search", "send"])
     _patch_worker_build(monkeypatch, [gmail])
 
@@ -239,11 +233,10 @@ def test_bootstrap_with_no_servers_registers_empty_mcp(bus):
 
 
 def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
-    bus.mcp_servers_book.upsert(
-        name="slack", connection_type="streamable_http",
+        name="slack",
+        connection_type="streamable_http",
         url="https://mcp.example.com",
     )
     gmail = _StubConnection("gmail", tool_names=["search"])
@@ -256,9 +249,7 @@ def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
     asyncio.run(worker.start())
     try:
         # Only slack's tools land in the registry.
-        discovered_names = {
-            t.name for t in (tool_registry._injected.get("mcp") or [])
-        }
+        discovered_names = {t.name for t in (tool_registry._injected.get("mcp") or [])}
         assert discovered_names == {"slack__post"}
         # Worker's connection map matches.
         assert set(worker.connections_view().keys()) == {"slack"}
@@ -275,8 +266,12 @@ def test_manage_tools_are_builtin_not_injected():
     # Force the builtin cache to rebuild with the four MCP tools.
     tool_registry._tools_cache = None
     builtins = {t.name for t in tool_registry.get_tool.__globals__["_build_tools"]()}
-    assert {"add_mcp_server", "list_mcp_servers",
-            "update_mcp_server", "delete_mcp_server"} <= builtins
+    assert {
+        "add_mcp_server",
+        "list_mcp_servers",
+        "update_mcp_server",
+        "delete_mcp_server",
+    } <= builtins
     # And they're instantiable.
     assert AddMcpServerTool().name == "add_mcp_server"
     assert ListMcpServersTool().name == "list_mcp_servers"
@@ -294,19 +289,20 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
     _patch_worker_build(monkeypatch, [gmail])
 
     worker = McpWorker(bus=bus)
-    await worker.start()
+    # Bootstrap connections without spawning the claim loop: this test drives
+    # the claimed job through ``_handle_change`` explicitly.
+    await worker.on_start()
     # Bootstrap had no rows — Book is empty.
     assert bus.mcp_servers_book.get_by_name(name="gmail") is None
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="added", server_name="gmail",
+            kind="added",
+            server_name="gmail",
             server=_dto("gmail", command="mcp-gmail"),
         )
     )
-    claimed = await asyncio.to_thread(
-        bus.mcp_server_changed_job_board.claim
-    )
+    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -334,27 +330,29 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
     # connect call, and the queue's first entry would be
     # handed to the reload path — making the "old vs new"
     # assertion below meaningless.
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     old = _StubConnection("gmail", tool_names=["search"])
     new = _StubConnection("gmail", tool_names=["search", "send"])
     _patch_worker_build(monkeypatch, [old, new])
 
     worker = McpWorker(bus=bus)
-    await worker.start()
+    # Keep the durable claim under this test's control.
+    await worker.on_start()
     assert worker.connections_view()["gmail"] is old
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="updated", server_name="gmail",
-            server=_dto("gmail", connection_type="streamable_http",
-                        command=None, url="https://mcp.example.com"),
+            kind="updated",
+            server_name="gmail",
+            server=_dto(
+                "gmail",
+                connection_type="streamable_http",
+                command=None,
+                url="https://mcp.example.com",
+            ),
         )
     )
-    claimed = await asyncio.to_thread(
-        bus.mcp_server_changed_job_board.claim
-    )
+    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     await worker._handle_change(claimed)
 
     # Both connection stubs were used (old disconnect, new
@@ -380,27 +378,22 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_change_deleted_removes_book_row_and_connection(
-    bus, monkeypatch
-):
+async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkeypatch):
     """``kind="deleted"``: Worker deletes Book + disconnects."""
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     gmail = _StubConnection("gmail", tool_names=["search"])
     _patch_worker_build(monkeypatch, [gmail])
 
     worker = McpWorker(bus=bus)
-    await worker.start()
+    # Keep the durable claim under this test's control.
+    await worker.on_start()
     assert "gmail" in worker.connections_view()
     assert bus.mcp_servers_book.get_by_name(name="gmail") is not None
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(kind="deleted", server_name="gmail")
     )
-    claimed = await asyncio.to_thread(
-        bus.mcp_server_changed_job_board.claim
-    )
+    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -419,32 +412,28 @@ async def test_handle_change_deleted_removes_book_row_and_connection(
 
 
 @pytest.mark.asyncio
-async def test_handle_change_toggled_disables_and_disconnects(
-    bus, monkeypatch
-):
+async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
     """``kind="toggled"``: Worker flips ``enabled`` to False,
     then the reload path drops the live connection (the row is
     still in the Book, but ``enabled=False`` so the connection
     shouldn't re-form)."""
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     gmail = _StubConnection("gmail", tool_names=["search"])
     _patch_worker_build(monkeypatch, [gmail])
 
     worker = McpWorker(bus=bus)
-    await worker.start()
+    # Keep the durable claim under this test's control.
+    await worker.on_start()
     assert "gmail" in worker.connections_view()
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="toggled", server_name="gmail",
+            kind="toggled",
+            server_name="gmail",
             new_enabled=False,
         )
     )
-    claimed = await asyncio.to_thread(
-        bus.mcp_server_changed_job_board.claim
-    )
+    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     await worker._handle_change(claimed)
 
     # Worker updated the Book and dropped the connection.
@@ -466,7 +455,9 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
     """``kind="toggled"`` with ``new_enabled=True``: Worker
     flips the flag and (re)connects."""
     bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail",
+        name="gmail",
+        connection_type="stdio",
+        command="mcp-gmail",
         enabled=False,
     )
     # No bootstrap connection — enabled=False at startup.
@@ -474,18 +465,18 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
     _patch_worker_build(monkeypatch, [new])
 
     worker = McpWorker(bus=bus)
-    await worker.start()
+    # Keep the durable claim under this test's control.
+    await worker.on_start()
     assert "gmail" not in worker.connections_view()
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="toggled", server_name="gmail",
+            kind="toggled",
+            server_name="gmail",
             new_enabled=True,
         )
     )
-    claimed = await asyncio.to_thread(
-        bus.mcp_server_changed_job_board.claim
-    )
+    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     await worker._handle_change(claimed)
 
     row = bus.mcp_servers_book.get_by_name(name="gmail")
@@ -540,9 +531,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
     await worker.start()
     try:
         await worker._handle_change(leaked)
-        result = bus.mcp_server_changed_job_board.get_result(
-            key="job-bypass-1"
-        )
+        result = bus.mcp_server_changed_job_board.get_result(key="job-bypass-1")
         assert result is not None
         assert result.success is False
         assert result.error is not None
@@ -556,9 +545,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
 
 
 def test_start_stop_lifecycle_round_trip(bus):
-    bus.mcp_servers_book.upsert(
-        name="gmail", connection_type="stdio", command="mcp-gmail"
-    )
+    bus.mcp_servers_book.upsert(name="gmail", connection_type="stdio", command="mcp-gmail")
     worker = McpWorker(bus)
     asyncio.run(worker.start())
     try:

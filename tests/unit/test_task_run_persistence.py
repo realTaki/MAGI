@@ -6,6 +6,8 @@ and TaskRunBook.reap_stale.
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from magi.bus.db import EngineFactory
@@ -13,7 +15,6 @@ from magi.bus.library.local.tasksBook import (
     ChannelEnum,
     TaskBook,
     TaskRunBook,
-    SOURCE_USER,
 )
 
 
@@ -23,8 +24,9 @@ def factory():
     # ``EngineFactory.create_all`` lays down the whole schema —
     # otherwise the FKs on ``tasks`` (chat_sessions, contacts) are
     # left dangling and the INSERT below fails.
-    from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
     from magi.bus.library.local.contactBook import ContactBook  # noqa: F401
+    from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
+
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
     return f
@@ -48,6 +50,7 @@ def _seed_contact(factory, *, name="test-contact", role="assigned") -> int:
     is present whenever a test needs ``tasks.uid``.
     """
     from magi.bus.library.local.contactBook import ContactBook
+
     cbook = ContactBook(factory)
     existing = cbook.list_all()
     if existing:
@@ -56,11 +59,11 @@ def _seed_contact(factory, *, name="test-contact", role="assigned") -> int:
 
 
 def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     uid = _seed_contact(factory)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     # Use the TaskBook's add with valid schedule. ``conversation_id``
     # is None so we don't trip the FK to ``chat_sessions`` — the
     # session-creation flow is exercised by chat tests, not here.
@@ -79,9 +82,11 @@ def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
 
 class TestRecordRunStart:
     def test_creates_task_run_and_updates_last_run_at(self, task_book, task_run_book):
+        _ = task_run_book
         task = _make_test_task(task_book, task_book._factory, "task_rt1")
         run = task_book.record_run_start(
-            task_id=task.id, trigger="cron_tick",
+            task_id=task.id,
+            trigger="cron_tick",
         )
         assert run is not None
         assert run.task_id == task.id
@@ -96,29 +101,27 @@ class TestRecordRunStart:
     def test_run_id_can_be_provided(self, task_book):
         task = _make_test_task(task_book, task_book._factory, "task_rt2")
         run = task_book.record_run_start(
-            task_id=task.id, trigger="manual_run", id="my_run_42",
+            task_id=task.id,
+            trigger="manual_run",
+            id="my_run_42",
         )
         assert run.id == "my_run_42"
 
 
 class TestMarkRunAtConsumed:
     def test_sets_enabled_to_zero(self, task_book, factory):
-        from datetime import datetime, timezone
-
-        from magi.bus.library.local.contactBook import ContactBook
+        from datetime import datetime
 
         # Use the contact id minted by the factory, not a hardcoded 42.
         uid = _seed_contact(factory)
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         # ``datetime.now(timezone.utc).isoformat()`` already returns
         # the trailing ``+00:00`` form; append ``Z`` directly so we
         # don't end up with ``...ZZ`` (which ISO parsing rejects).
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
 
-        future_iso = (
-            _dt.now(_tz.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        )
+        future_iso = _dt.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         task = task_book.add(
             name="One-shot Task",
             prompt="Run once",
@@ -140,7 +143,7 @@ class TestMarkRunAtConsumed:
 
 class TestListAllEnabledForWorkers:
     def test_lists_enabled_user_tasks_across_uids(self, task_book, factory):
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from magi.bus.library.local.contactBook import ContactBook
 
@@ -152,7 +155,7 @@ class TestListAllEnabledForWorkers:
         contacts = cbook.list_all()
         uid_a, uid_b = contacts[0].id, contacts[1].id
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_book.add(
             name="User A Task",
             prompt="do stuff",
@@ -183,13 +186,11 @@ class TestListAllEnabledForWorkers:
         assert uid_b in uids
 
     def test_excludes_disabled_tasks(self, task_book, factory):
-        from datetime import datetime, timezone
-
-        from magi.bus.library.local.contactBook import ContactBook
+        from datetime import datetime
 
         uid = _seed_contact(factory)
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         t = task_book.add(
             name="Disabled Task",
             prompt="skip",
@@ -214,18 +215,15 @@ class TestReapStale:
         run = task_book.record_run_start(task_id=task.id, trigger="cron_tick")
 
         # Simulate stale by backdating started_at
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        stale_time = (
-            datetime.now(timezone.utc) - timedelta(seconds=600)
-        ).isoformat()
-        from magi.bus.library.local.tasksBook import _TaskRunRow
+        stale_time = (datetime.now(UTC) - timedelta(seconds=600)).isoformat()
         from sqlalchemy import select
 
+        from magi.bus.library.local.tasksBook import _TaskRunRow
+
         with task_run_book._session() as s:
-            row = s.scalar(
-                select(_TaskRunRow).where(_TaskRunRow.id == run.id)
-            )
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run.id))
             if row:
                 row.started_at = stale_time
                 s.commit()

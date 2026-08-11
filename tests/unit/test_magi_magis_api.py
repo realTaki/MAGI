@@ -82,9 +82,7 @@ def test_membership_api_rejects_retired_magi_id_and_cross_magis_role(bus: Simple
 
 def test_magis_admin_resolves_telegram_id_to_contact_uid(bus: SimpleNamespace) -> None:
     society, _, _ = _society(bus)
-    contact = bus.contacts_book.add(
-        name="operator", display_name="Operator", telegram_id=4242
-    )
+    contact = bus.contacts_book.add(name="operator", display_name="Operator", telegram_id=4242)
 
     result = magis.add_magis_admin(
         society.id, magis.MAGISAdminCreate(telegram_id=4242), "admin", bus
@@ -115,7 +113,10 @@ def test_magis_scope_is_derived_from_runtime_membership(bus: SimpleNamespace, mo
 def test_create_magis_seeds_reserved_roles(bus: SimpleNamespace) -> None:
     created = magis.create_magis(magis.MAGISCreate(name="Beta"), "admin", bus)
 
-    assert [role.name for role in bus.roles_book.list_for_magis(magis_id=created.id)] == ["ADAM", "EVA"]
+    assert [role.name for role in bus.roles_book.list_for_magis(magis_id=created.id)] == [
+        "ADAM",
+        "EVA",
+    ]
 
 
 def test_self_instruction_uses_the_runtime_bus(bus: SimpleNamespace, monkeypatch) -> None:
@@ -133,13 +134,18 @@ def test_self_instruction_uses_the_runtime_bus(bus: SimpleNamespace, monkeypatch
 
 def test_control_and_runtime_apps_mount_the_correct_magi_surfaces() -> None:
     control = create_app(
-        bus=SimpleNamespace(), include_spa=False,
-        include_control_routes=True, include_private_routes=False,
+        bus=SimpleNamespace(),
+        include_spa=False,
+        include_control_routes=True,
+        include_private_routes=False,
     )
     runtime = create_app(
-        bus=SimpleNamespace(), include_spa=False,
-        include_control_routes=False, include_private_routes=True,
+        bus=SimpleNamespace(),
+        include_spa=False,
+        include_control_routes=False,
+        include_private_routes=True,
     )
+
     def mounted_paths(app) -> set[str]:
         paths: set[str] = set()
         for route in app.routes:
@@ -165,8 +171,10 @@ def test_control_magi_route_uses_the_injected_bus(bus: SimpleNamespace) -> None:
         bus,
     )
     app = create_app(
-        bus=bus, include_spa=False,
-        include_control_routes=True, include_private_routes=False,
+        bus=bus,
+        include_spa=False,
+        include_control_routes=True,
+        include_private_routes=False,
     )
     app.dependency_overrides[magi.admin_gate] = lambda: "admin"
 

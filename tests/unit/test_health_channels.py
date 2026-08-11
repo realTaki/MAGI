@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.worker_base import ChannelWorker
 from magi.channels.api.health import health_channels
+from magi.channels.worker_base import ChannelWorker
 
 
 class _FakeHealthWorker(ChannelWorker):
     """Minimal worker for testing health() output."""
+
     channel_name = "test_ch"
 
     async def _run(self) -> None:
@@ -26,8 +26,8 @@ def test_health_returns_expected_keys():
     w = _FakeHealthWorker.__new__(_FakeHealthWorker)
     w.channel_name = "test_ch"
     w._task = None
-    w._last_poll_at = datetime(2026, 8, 8, 12, 0, 0, tzinfo=timezone.utc)
-    w._last_success_at = datetime(2026, 8, 8, 12, 5, 0, tzinfo=timezone.utc)
+    w._last_poll_at = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
+    w._last_success_at = datetime(2026, 8, 8, 12, 5, 0, tzinfo=UTC)
     w._last_error = None
     w._children = set()
     w._queue_depth = 3

@@ -22,7 +22,6 @@ from typing import Any
 import pytest
 
 from magi.bus import Bus, open_bus
-from magi.bus.provision import provision_node_storage
 from magi.bus.guild import (
     CallLLMJob,
     CallLLMResult,
@@ -33,11 +32,10 @@ from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
 )
+from magi.bus.provision import provision_node_storage
 from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.factory import get_provider
 from magi.providers.worker import ProvidersWorker
-
 
 _worker: ProvidersWorker | None = None
 
@@ -91,6 +89,7 @@ class FakeProvider(LLMProvider):
         max_tokens: int,
         tools: list[dict] | None = None,
     ) -> dict[str, Any]:
+        _ = system, max_tokens, tools
         self.call_count += 1
         last_content = self._last_user_text(messages)
         if self.fail_message and last_content.startswith("!raise"):
@@ -116,6 +115,7 @@ class FakeProvider(LLMProvider):
         max_tokens: int,
         tools: list[dict] | None = None,
     ) -> Any:
+        _ = system, max_tokens, tools
         # Default-stream shape (matches ``LLMProvider.stream`` base impl):
         # one ``text.delta`` per chunk of reply, then a single
         # ``usage.updated`` terminal.
@@ -179,7 +179,7 @@ def _install_fake(bus: Bus, fake: FakeProvider) -> None:
     import magi.providers
     import magi.providers.factory as _factory
 
-    def _fake_get(*, bus: "Bus", model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         return fake
 
     _factory.get_provider = _fake_get
@@ -193,7 +193,7 @@ def _install_counter(bus: Bus, fake: FakeProvider) -> dict[str, int]:
 
     state: dict[str, int] = {"calls": 0}
 
-    def _fake_get(*, bus: "Bus", model: str | None = None) -> LLMProvider:
+    def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         state["calls"] += 1
         return fake
 
@@ -354,9 +354,7 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: Bus):
     import magi.providers.factory as _factory
 
     def _raise_not_configured(*_a, **_k):
-        raise LLMNotConfiguredError(
-            "MAGI runtime has no LLM provider / API key configured"
-        )
+        raise LLMNotConfiguredError("MAGI runtime has no LLM provider / API key configured")
 
     _factory.get_provider = _raise_not_configured
     magi.providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
@@ -404,7 +402,9 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         state["provider"] = FakeProvider(reply="rebuilt-ok")
         bus.change_provider_config_job_board.publish(
             ChangeProviderConfigJob(
-                provider="openai", api_key="sk-test", model="fake-model-1",
+                provider="openai",
+                api_key="sk-test",
+                model="fake-model-1",
             )
         )
 
@@ -418,7 +418,9 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         )
         # The config-change job was drained (status advanced past pending).
         from sqlalchemy import select
+
         from magi.bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
+
         with bus._local_factory.session() as s:
             leftovers = s.scalar(
                 select(_ChangeProviderConfigRow.status).where(
@@ -488,6 +490,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
             max_tokens: int,
             tools: list[dict] | None = None,
         ) -> dict[str, Any]:
+            _ = system, messages, max_tokens, tools
             self.call_count += 1
             text = f"model={self.model}"
             return {
@@ -523,9 +526,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
         # 2. Publish a model-only ChangeProviderConfigJob — ``provider``
         #    and ``api_key`` are both None, so the worker must NOT
         #    rebuild the SDK client.
-        bus.change_provider_config_job_board.publish(
-            ChangeProviderConfigJob(model="fake-model-2")
-        )
+        bus.change_provider_config_job_board.publish(ChangeProviderConfigJob(model="fake-model-2"))
 
         # 3. Wait for the worker to drain the config job and swap
         #    ``provider.model`` in place.
@@ -586,7 +587,9 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
         # presence of ``provider`` is enough to force a rebuild.
         bus.change_provider_config_job_board.publish(
             ChangeProviderConfigJob(
-                provider="openai", api_key="sk-test", model="fake-model-1",
+                provider="openai",
+                api_key="sk-test",
+                model="fake-model-1",
             )
         )
 
@@ -594,7 +597,8 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline:
             r2 = await _wait_for_result(
-                bus, _enqueue_simple(bus, content="second"),
+                bus,
+                _enqueue_simple(bus, content="second"),
             )
             if r2 is not None and r2.response["text"] == "call#2":
                 break
@@ -620,6 +624,7 @@ async def test_worker_publishes_provider_options_to_settings_book(bus: Bus):
     await start_provider_worker(bus)
     try:
         import json
+
         raw = bus.settings_book.get(key="providers.options")
         assert raw is not None
         options = json.loads(raw)

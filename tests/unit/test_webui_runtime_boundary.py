@@ -6,9 +6,10 @@
 
 from __future__ import annotations
 
-from fastapi import Request
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+from fastapi import Request
 
 from magi.channels.api.app import create_runtime_app
 from magi.startup.workers import WorkerRegistry
@@ -48,9 +49,12 @@ def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> Non
 
 
 def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
-    app = create_runtime_app(context=SimpleNamespace(
-        bus=MagicMock(), workers=MagicMock(spec=WorkerRegistry),
-    ))
+    app = create_runtime_app(
+        context=SimpleNamespace(
+            bus=MagicMock(),
+            workers=MagicMock(spec=WorkerRegistry),
+        )
+    )
     paths = {route.path for route in app.routes if hasattr(route, "path")}
     # MAGIS management is target-scoped and therefore lives in the selected
     # runtime; browser login and the SPA remain control-plane only.
@@ -62,12 +66,18 @@ def test_apps_keep_explicit_bus_instances_isolated() -> None:
     from magi.channels.api.dependencies import get_bus
 
     first, second = MagicMock(), MagicMock()
-    first_app = create_runtime_app(context=SimpleNamespace(
-        bus=first, workers=MagicMock(spec=WorkerRegistry),
-    ))
-    second_app = create_runtime_app(context=SimpleNamespace(
-        bus=second, workers=MagicMock(spec=WorkerRegistry),
-    ))
+    first_app = create_runtime_app(
+        context=SimpleNamespace(
+            bus=first,
+            workers=MagicMock(spec=WorkerRegistry),
+        )
+    )
+    second_app = create_runtime_app(
+        context=SimpleNamespace(
+            bus=second,
+            workers=MagicMock(spec=WorkerRegistry),
+        )
+    )
 
     assert get_bus(Request({"type": "http", "app": first_app})) is first
     assert get_bus(Request({"type": "http", "app": second_app})) is second

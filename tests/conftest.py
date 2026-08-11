@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import pytest
 
-
 _PATCH_INSTALLED = False
 
 

@@ -90,10 +90,12 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     assert first is not None
 
     # Simulate lease expiry by manipulating leased_until
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
     from magi.bus.db.base import utcnow_naive
     from magi.bus.guild.runTaskJob import _RunTaskJobRow
-    from sqlalchemy import select
 
     with board._session() as s:
         row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid))
@@ -115,9 +117,11 @@ def test_max_attempts_exhausted(board):
     board._lease_seconds = 1
 
     from datetime import timedelta
+
+    from sqlalchemy import select
+
     from magi.bus.db.base import utcnow_naive
     from magi.bus.guild.runTaskJob import _RunTaskJobRow
-    from sqlalchemy import select
 
     for _ in range(MAX_ATTEMPTS + 1):
         claim = board.claim()
@@ -125,9 +129,7 @@ def test_max_attempts_exhausted(board):
             break
         # expire lease
         with board._session() as s:
-            row = s.scalar(
-                select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid)
-            )
+            row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid))
             if row:
                 row.leased_until = utcnow_naive() - timedelta(seconds=10)
                 s.commit()

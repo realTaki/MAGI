@@ -22,14 +22,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVIDERS_ROOT = REPO_ROOT / "magi" / "providers"
 
-_FORBIDDEN_PREFIXES = (
-    "magi.agent",
-)
+_FORBIDDEN_PREFIXES = ("magi.agent",)
 
 
 def _iter_python_files(root: Path):
-    for path in root.rglob("*.py"):
-        yield path
+    yield from root.rglob("*.py")
 
 
 def _imports_module(path: Path) -> list[tuple[str, int]]:
@@ -57,7 +54,7 @@ def _imports_module(path: Path) -> list[tuple[str, int]]:
             # as-is.
             if node.level:
                 # ``from .X import Y`` -> parent_pkg.X
-                rel = "." * node.level
+                "." * node.level
                 # Walk up from the file's package path.
                 pkg_parts = path.relative_to(REPO_ROOT).parent.parts
                 up = len(pkg_parts) - node.level + 1
@@ -79,16 +76,16 @@ def test_providers_does_not_import_agent() -> None:
                     violations.append(f"{rel}:{line}  imports  {module}")
                     break
     if violations:
-        lines = [
-            f"  {violations[i]}\n  ..." for i in range(0, len(violations), 1)
-        ]
-        msg = "\n".join([
-            f"Forbidden cross-package imports from magi.providers:",
-            *violations,
-            "",
-            "  The provider worker must NOT reach into magi.agent;",
-            "  agent-side concerns (system prompt, messages, tools) live",
-            "  in magi.agent._step_helpers and run *before* the job is",
-            "  enqueued onto the providers queue.",
-        ])
+        [f"  {violations[i]}\n  ..." for i in range(0, len(violations), 1)]
+        msg = "\n".join(
+            [
+                "Forbidden cross-package imports from magi.providers:",
+                *violations,
+                "",
+                "  The provider worker must NOT reach into magi.agent;",
+                "  agent-side concerns (system prompt, messages, tools) live",
+                "  in magi.agent._step_helpers and run *before* the job is",
+                "  enqueued onto the providers queue.",
+            ]
+        )
         pytest.fail(msg)

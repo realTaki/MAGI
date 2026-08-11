@@ -5,9 +5,8 @@ Tests TaskWorker.__init__, start/stop lifecycle, and cron fire logic.
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import MagicMock
-
-import pytest
 
 from magi.channels.tasks.worker import TaskWorker
 
@@ -32,8 +31,8 @@ def test_init_populates_required_attributes():
 
 def test_should_fire_cron_coalesce_equivalent():
     """_should_fire_cron fires at most once per missed cron window."""
-    from datetime import datetime, timezone
     from dataclasses import dataclass
+    from datetime import datetime
 
     @dataclass
     class FakeTask:
@@ -51,7 +50,7 @@ def test_should_fire_cron_coalesce_equivalent():
 
     w = TaskWorker(mock_bus)
     task = FakeTask()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # First time: should fire (no last_fire recorded)
     assert w._should_fire(task, now) is True

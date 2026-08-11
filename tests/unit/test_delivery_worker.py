@@ -18,18 +18,19 @@ from magi.bus.guild.deliveryJob import DeliveryJob, deliveryJobBoard
 @pytest.mark.asyncio
 async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     """_deliver_tg calls send_text_raw and submit_result(success=True)."""
-    from unittest.mock import AsyncMock
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
     board = deliveryJobBoard(f)
 
     # Publish a TG delivery job
-    jid = board.publish(DeliveryJob(
-        channel="tg",
-        destination="123456",
-        payload={"text": "hello"},
-    ))
+    jid = board.publish(
+        DeliveryJob(
+            channel="tg",
+            destination="123456",
+            payload={"text": "hello"},
+        )
+    )
 
     # Create a mock bus for the worker
     mock_bus = MagicMock()
@@ -44,7 +45,8 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
         sent.append((token, chat_id, text))
 
     monkeypatch.setattr(
-        "magi.channels.telegram.bot.send_text_raw", fake_send,
+        "magi.channels.telegram.bot.send_text_raw",
+        fake_send,
     )
 
     from magi.channels.telegram.worker import TelegramWorker
@@ -68,7 +70,8 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     board.submit_result(
         key=jid,
         result=__import__("magi.bus.guild.deliveryJob", fromlist=["DeliveryResult"]).DeliveryResult(
-            job_id=jid, success=True,
+            job_id=jid,
+            success=True,
         ),
     )
     result = board.get_result(key=jid)

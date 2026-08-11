@@ -305,10 +305,14 @@ async def test_chat_emits_tool_role_messages_for_tool_results(mock_openai):
     await provider.chat(
         system=None,
         messages=[
-            {"role": "user", "content": "", "content_blocks": [
-                {"type": "tool_result", "tool_use_id": "call-1", "content": "21C"},
-                {"type": "tool_result", "tool_use_id": "call-2", "content": "rainy"},
-            ]},
+            {
+                "role": "user",
+                "content": "",
+                "content_blocks": [
+                    {"type": "tool_result", "tool_use_id": "call-1", "content": "21C"},
+                    {"type": "tool_result", "tool_use_id": "call-2", "content": "rainy"},
+                ],
+            },
         ],
         max_tokens=16,
     )
@@ -331,7 +335,9 @@ async def test_chat_user_message_with_text_and_tool_results(mock_openai):
             {
                 "role": "user",
                 "content": "here are the results",
-                "content_blocks": [{"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}],
+                "content_blocks": [
+                    {"type": "tool_result", "tool_use_id": "call-1", "content": "ok"}
+                ],
             },
         ],
         max_tokens=16,
@@ -352,8 +358,12 @@ async def test_chat_parses_parallel_tool_calls(mock_openai):
         message=_make_message(
             content="",
             tool_calls=[
-                _make_tool_call(call_id="call-A", name="get_weather", arguments='{"city":"A"}', index=0),
-                _make_tool_call(call_id="call-B", name="get_time", arguments='{"zone":"B"}', index=1),
+                _make_tool_call(
+                    call_id="call-A", name="get_weather", arguments='{"city":"A"}', index=0
+                ),
+                _make_tool_call(
+                    call_id="call-B", name="get_time", arguments='{"zone":"B"}', index=1
+                ),
             ],
         ),
         finish_reason="tool_calls",
@@ -672,29 +682,43 @@ class _AsyncStreamIter:
 @pytest.mark.asyncio
 async def test_stream_emits_text_and_tool_deltas(mock_openai):
     async def _stream_chunks(**_kwargs):
-        return _AsyncStreamIter([
-            _make_chunk(delta={"content": "Hello, "}),
-            _make_chunk(delta={"content": "world!"}),
-            _make_chunk(
-                delta={"tool_calls": [
-                    _make_tool_call(call_id="call-1", name="get_weather", arguments='{"city"', index=0),
-                ]},
-            ),
-            _make_chunk(
-                delta={"tool_calls": [
-                    _make_tool_call(call_id="call-1", name="get_weather", arguments=':"BJ"}', index=0),
-                ]},
-            ),
-            _make_chunk(
-                finish_reason="tool_calls",
-                model="gpt-4o-mini",
-                usage=MagicMock(model_dump=MagicMock(return_value={
-                    "prompt_tokens": 5,
-                    "completion_tokens": 9,
-                    "total_tokens": 14,
-                })),
-            ),
-        ])
+        return _AsyncStreamIter(
+            [
+                _make_chunk(delta={"content": "Hello, "}),
+                _make_chunk(delta={"content": "world!"}),
+                _make_chunk(
+                    delta={
+                        "tool_calls": [
+                            _make_tool_call(
+                                call_id="call-1", name="get_weather", arguments='{"city"', index=0
+                            ),
+                        ]
+                    },
+                ),
+                _make_chunk(
+                    delta={
+                        "tool_calls": [
+                            _make_tool_call(
+                                call_id="call-1", name="get_weather", arguments=':"BJ"}', index=0
+                            ),
+                        ]
+                    },
+                ),
+                _make_chunk(
+                    finish_reason="tool_calls",
+                    model="gpt-4o-mini",
+                    usage=MagicMock(
+                        model_dump=MagicMock(
+                            return_value={
+                                "prompt_tokens": 5,
+                                "completion_tokens": 9,
+                                "total_tokens": 14,
+                            }
+                        )
+                    ),
+                ),
+            ]
+        )
 
     mock_openai.chat.completions.create.side_effect = _stream_chunks
     provider = OpenAIProvider(api_key="sk-test")
@@ -728,15 +752,32 @@ async def test_stream_emits_text_and_tool_deltas(mock_openai):
 @pytest.mark.asyncio
 async def test_stream_aggregates_parallel_tool_calls(mock_openai):
     async def _stream_chunks(**_kwargs):
-        return _AsyncStreamIter([
-            _make_chunk(delta={"tool_calls": [
-                _make_tool_call(call_id="call-A", name="get_weather", arguments='{"city":"A"}', index=0),
-            ]}),
-            _make_chunk(delta={"tool_calls": [
-                _make_tool_call(call_id="call-B", name="get_time", arguments='{"zone":"B"}', index=1),
-            ]}),
-            _make_chunk(finish_reason="tool_calls"),
-        ])
+        return _AsyncStreamIter(
+            [
+                _make_chunk(
+                    delta={
+                        "tool_calls": [
+                            _make_tool_call(
+                                call_id="call-A",
+                                name="get_weather",
+                                arguments='{"city":"A"}',
+                                index=0,
+                            ),
+                        ]
+                    }
+                ),
+                _make_chunk(
+                    delta={
+                        "tool_calls": [
+                            _make_tool_call(
+                                call_id="call-B", name="get_time", arguments='{"zone":"B"}', index=1
+                            ),
+                        ]
+                    }
+                ),
+                _make_chunk(finish_reason="tool_calls"),
+            ]
+        )
 
     mock_openai.chat.completions.create.side_effect = _stream_chunks
     provider = OpenAIProvider(api_key="sk-test")
@@ -759,11 +800,13 @@ async def test_stream_aggregates_parallel_tool_calls(mock_openai):
 @pytest.mark.asyncio
 async def test_stream_text_only_reply(mock_openai):
     async def _stream_chunks(**_kwargs):
-        return _AsyncStreamIter([
-            _make_chunk(delta={"content": "all"}),
-            _make_chunk(delta={"content": " good"}),
-            _make_chunk(finish_reason="stop"),
-        ])
+        return _AsyncStreamIter(
+            [
+                _make_chunk(delta={"content": "all"}),
+                _make_chunk(delta={"content": " good"}),
+                _make_chunk(finish_reason="stop"),
+            ]
+        )
 
     mock_openai.chat.completions.create.side_effect = _stream_chunks
     provider = OpenAIProvider(api_key="sk-test")
@@ -819,7 +862,9 @@ def _make_bus(*, name: str | None, api_key: str | None, model: str | None) -> Ma
         settings[PROVIDER_MODEL_KEY] = model
 
     bus.settings_book.get = MagicMock(side_effect=lambda *, key: settings.get(key))
-    bus.settings_book.set = MagicMock(side_effect=lambda *, key, value: settings.__setitem__(key, value))
+    bus.settings_book.set = MagicMock(
+        side_effect=lambda *, key, value: settings.__setitem__(key, value)
+    )
     return bus
 
 

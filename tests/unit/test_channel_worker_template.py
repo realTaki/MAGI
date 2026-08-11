@@ -21,12 +21,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.channels.worker_base import ChannelWorker
-from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult
 
 
 class _FakeChannelWorker(ChannelWorker):
     """Minimal concrete ChannelWorker for testing the base class template."""
+
     channel_name = "fake"
 
     async def _run(self) -> None:
@@ -44,10 +45,12 @@ def _claim_sequence(*values: object) -> MagicMock:
     consuming a finite iterable.
     """
     from itertools import chain, repeat
+
     seq = chain(iter(values), repeat(None))
 
     def _next(channel=None):
         return next(seq)
+
     return MagicMock(side_effect=_next)
 
 

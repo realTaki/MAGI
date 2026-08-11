@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -28,7 +27,6 @@ from magi.tools.memory.core_memory.add_memory import AddMemoryTool
 from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
 from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
 from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
-
 
 # -- minimal Bus surface -----------------------------------------------
 
@@ -77,16 +75,16 @@ def ctx(bus: _BusStub, tmp_path: Path) -> ToolContext:
     """ToolContext with the stub bus attached."""
     return ToolContext(
         workspace=str(tmp_path),
-        uid=1,
+        contact_id=1,
         channel="webui",
-        session_id="",
+        conversation_id="",
         bus=bus,  # type: ignore[arg-type]
     )
 
 
 @pytest.fixture
 def contact_id(bus: _BusStub) -> int:
-    """A contact row owned by ``ctx.uid`` (uid=1).
+    """A contact row owned by ``ctx.contact_id`` (contact_id=1).
 
     The tool layer enforces per-contact privacy via a
     ``get``+``row.uid`` check; we keep the test
@@ -105,12 +103,15 @@ async def test_add_memory_creates_row_and_returns_dto(
 ) -> None:
     tool = AddMemoryTool()
     result = await tool.run(
-        ctx, kind="fact", subject="contract", body="due 2026-09-30",
+        ctx,
+        kind="fact",
+        subject="contract",
+        body="due 2026-09-30",
     )
     assert isinstance(result, ToolResult)
     assert result.is_error is False
     payload = json.loads(result.content)
-    assert payload["created"]["uid"] == contact_id
+    assert payload["created"]["contact_id"] == contact_id
     assert payload["created"]["kind"] == "fact"
     assert payload["created"]["subject"] == "contract"
     assert payload["created"]["body"] == "due 2026-09-30"
@@ -120,7 +121,7 @@ async def test_add_memory_creates_row_and_returns_dto(
     assert "source" not in payload["created"]
 
     # The Book actually persisted the row.
-    rows = bus.memory_book.list_by_owner(uid=contact_id)
+    rows = bus.memory_book.list_by_owner(contact_id=contact_id)
     assert len(rows) == 1
     assert rows[0].subject == "contract"
 
@@ -148,19 +149,29 @@ async def test_add_memory_book_value_error_becomes_tool_error(
     tool = AddMemoryTool()
     # Empty subject.
     bad_subject = await tool.run(
-        ctx, kind="fact", subject="   ", body="ok",
+        ctx,
+        kind="fact",
+        subject="   ",
+        body="ok",
     )
     assert bad_subject.is_error is True
     assert "subject" in bad_subject.content
     # Unknown kind.
     bad_kind = await tool.run(
-        ctx, kind="weird", subject="ok", body="ok",
+        ctx,
+        kind="weird",
+        subject="ok",
+        body="ok",
     )
     assert bad_kind.is_error is True
     assert "kind" in bad_kind.content
     # Importance out of range.
     bad_pri = await tool.run(
-        ctx, kind="fact", subject="ok", body="ok", priority=99,
+        ctx,
+        kind="fact",
+        subject="ok",
+        body="ok",
+        priority=99,
     )
     assert bad_pri.is_error is True
     assert "priority" in bad_pri.content
@@ -171,12 +182,18 @@ async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
     """``@Tool.require_bus`` returns ``is_error=True`` when
     ``ctx.bus`` is missing."""
     ctx_no_bus = ToolContext(
-        workspace=str(tmp_path), uid=1, channel="webui",
-        session_id="", bus=None,
+        workspace=str(tmp_path),
+        contact_id=1,
+        channel="webui",
+        conversation_id="",
+        bus=None,
     )
     tool = AddMemoryTool()
     result = await tool.run(
-        ctx_no_bus, kind="fact", subject="x", body="y",
+        ctx_no_bus,
+        kind="fact",
+        subject="x",
+        body="y",
     )
     assert result.is_error is True
     assert "no bus" in result.content
@@ -190,8 +207,10 @@ async def test_complete_memory_marks_row_done(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="quick_note",
-        subject="ship", body="in flight",
+        contact_id=contact_id,
+        kind="quick_note",
+        subject="ship",
+        body="in flight",
     )
     tool = CompleteMemoryTool()
     result = await tool.run(ctx, memory_id=row.id)
@@ -230,12 +249,14 @@ async def test_complete_memory_blocks_cross_contact(
     close operator B's row, even if they ask for the
     id. The row is missing (not 'permission denied')
     so existence isn't leaked."""
-    # ``ctx.uid=1`` belongs to ``contact_id``; the row
+    # ``ctx.contact_id=1`` belongs to ``contact_id``; the row
     # belongs to a different contact.
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="quick_note",
-        subject="not yours", body="private",
+        contact_id=other_id,
+        kind="quick_note",
+        subject="not yours",
+        body="private",
     )
     tool = CompleteMemoryTool()
     result = await tool.run(ctx, memory_id=foreign.id)
@@ -266,8 +287,10 @@ async def test_delete_memory_removes_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="fact",
-        subject="x", body="y",
+        contact_id=contact_id,
+        kind="fact",
+        subject="x",
+        body="y",
     )
     tool = DeleteMemoryTool()
     result = await tool.run(ctx, memory_id=row.id)
@@ -297,8 +320,10 @@ async def test_delete_memory_blocks_cross_contact(
 ) -> None:
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="fact",
-        subject="not yours", body="private",
+        contact_id=other_id,
+        kind="fact",
+        subject="not yours",
+        body="private",
     )
     tool = DeleteMemoryTool()
     result = await tool.run(ctx, memory_id=foreign.id)
@@ -326,13 +351,18 @@ async def test_update_memory_patches_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.add(
-        uid=contact_id, kind="quick_note",
-        subject="orig", body="orig body", priority=2,
+        contact_id=contact_id,
+        kind="quick_note",
+        subject="orig",
+        body="orig body",
+        priority=2,
     )
     tool = UpdateMemoryTool()
     result = await tool.run(
-        ctx, memory_id=row.id,
-        subject="new", priority=5,
+        ctx,
+        memory_id=row.id,
+        subject="new",
+        priority=5,
     )
     assert result.is_error is False
     payload = json.loads(result.content)
@@ -355,12 +385,17 @@ async def test_update_memory_rejects_cross_contact(
 ) -> None:
     other_id = bus.contacts_book.add(name="other").id
     foreign = bus.memory_book.add(
-        uid=other_id, kind="fact",
-        subject="orig", body="private", priority=3,
+        contact_id=other_id,
+        kind="fact",
+        subject="orig",
+        body="private",
+        priority=3,
     )
     tool = UpdateMemoryTool()
     result = await tool.run(
-        ctx, memory_id=foreign.id, subject="hijack",
+        ctx,
+        memory_id=foreign.id,
+        subject="hijack",
     )
     assert result.is_error is True
     assert "not found or not owned" in result.content
@@ -379,28 +414,37 @@ async def test_update_memory_translates_value_error(
     out of range, body over the cap) must surface as
     LLM-facing ``ToolResult.err`` rather than crashing."""
     row = bus.memory_book.add(
-        uid=contact_id, kind="fact",
-        subject="ok", body="ok", priority=3,
+        contact_id=contact_id,
+        kind="fact",
+        subject="ok",
+        body="ok",
+        priority=3,
     )
     tool = UpdateMemoryTool()
 
     # Empty subject.
     bad_subj = await tool.run(
-        ctx, memory_id=row.id, subject="   ",
+        ctx,
+        memory_id=row.id,
+        subject="   ",
     )
     assert bad_subj.is_error is True
     assert "subject" in bad_subj.content
 
     # Importance out of range.
     bad_pri = await tool.run(
-        ctx, memory_id=row.id, priority=9,
+        ctx,
+        memory_id=row.id,
+        priority=9,
     )
     assert bad_pri.is_error is True
     assert "priority" in bad_pri.content
 
     # Body over the cap.
     too_big = await tool.run(
-        ctx, memory_id=row.id, body="x" * (8 * 1024 + 1),
+        ctx,
+        memory_id=row.id,
+        body="x" * (8 * 1024 + 1),
     )
     assert too_big.is_error is True
     assert "body" in too_big.content
@@ -412,7 +456,9 @@ async def test_update_memory_missing_id(
 ) -> None:
     tool = UpdateMemoryTool()
     result = await tool.run(
-        ctx, memory_id=99999, subject="x",
+        ctx,
+        memory_id=99999,
+        subject="x",
     )
     assert result.is_error is True
     assert "not found or not owned" in result.content

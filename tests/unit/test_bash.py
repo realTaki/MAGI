@@ -17,18 +17,17 @@ want to swap in a fake clock, but v0 doesn't need it.
 from __future__ import annotations
 
 import asyncio
-import os
 import platform
-from pathlib import Path
 
 import pytest
 
 from magi.tools.base import ToolContext, ToolResult
-from magi.tools.shell.run import BashRunTool
-from magi.tools.shell.output import BashOutputTool
 from magi.tools.shell.kill import BashKillTool
+from magi.tools.shell.output import BashOutputTool
+from magi.tools.shell.run import BashRunTool
 
 # -- fixtures --------------------------------------------------------------
+
 
 @pytest.fixture
 def workspace_ctx(tmp_path, monkeypatch):
@@ -40,9 +39,10 @@ def workspace_ctx(tmp_path, monkeypatch):
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "state"))
     return ToolContext(
         workspace=tmp_path,
-        uid=42,
+        contact_id=42,
         channel="webui",
     )
+
 
 def _run(tool: BashRunTool, ctx: ToolContext, **kwargs) -> ToolResult:
     """Helper to drive the async run() in tests.
@@ -51,11 +51,14 @@ def _run(tool: BashRunTool, ctx: ToolContext, **kwargs) -> ToolResult:
     """
     return asyncio.run(tool.run(ctx, **kwargs))
 
+
 def _output(tool: BashOutputTool, ctx: ToolContext, **kwargs) -> ToolResult:
     return asyncio.run(tool.run(ctx, **kwargs))
 
+
 def _kill(tool: BashKillTool, ctx: ToolContext, **kwargs) -> ToolResult:
     return asyncio.run(tool.run(ctx, **kwargs))
+
 
 # Skip the bash tests on Windows PowerShell — the test
 # commands here are POSIX-flavoured. The tool itself
@@ -68,6 +71,7 @@ pytestmark = pytest.mark.skipif(
 
 # -- BashRunTool: foreground ---------------------------------------------
 
+
 def test_run_foreground_returns_stdout(workspace_ctx):
     tool = BashRunTool()
     result = _run(tool, workspace_ctx, command="echo hello world")
@@ -75,11 +79,13 @@ def test_run_foreground_returns_stdout(workspace_ctx):
     assert "hello world" in result.content
     assert "[exit_code] 0" in result.content
 
+
 def test_run_foreground_marks_nonzero_exit_as_error(workspace_ctx):
     tool = BashRunTool()
     result = _run(tool, workspace_ctx, command="exit 7")
     assert result.is_error
     assert "[exit_code] 7" in result.content
+
 
 def test_run_foreground_separates_stderr(workspace_ctx):
     """stderr surfaces in the content with a [stderr]
@@ -88,7 +94,8 @@ def test_run_foreground_separates_stderr(workspace_ctx):
     """
     tool = BashRunTool()
     result = _run(
-        tool, workspace_ctx,
+        tool,
+        workspace_ctx,
         command="echo on-stdout; echo on-stderr 1>&2; exit 3",
     )
     assert result.is_error
@@ -96,6 +103,7 @@ def test_run_foreground_separates_stderr(workspace_ctx):
     assert "on-stderr" in result.content
     assert "[stderr]" in result.content
     assert "[exit_code] 3" in result.content
+
 
 def test_run_foreground_handles_no_output(workspace_ctx):
     """A successful command with no stdout/stderr still
@@ -108,6 +116,7 @@ def test_run_foreground_handles_no_output(workspace_ctx):
     assert "(no output)" in result.content
     assert "[exit_code] 0" in result.content
 
+
 def test_run_foreground_clamps_timeout_to_ceiling(workspace_ctx):
     """``timeout=10000`` should clamp to 600 (the
     documented max) — the underlying call would hang
@@ -116,7 +125,8 @@ def test_run_foreground_clamps_timeout_to_ceiling(workspace_ctx):
     """
     tool = BashRunTool()
     result = _run(
-        tool, workspace_ctx,
+        tool,
+        workspace_ctx,
         command="echo clamped",
         timeout=10000,
     )
@@ -127,6 +137,7 @@ def test_run_foreground_clamps_timeout_to_ceiling(workspace_ctx):
     # content is the expected echo.
     assert not result.is_error
     assert "clamped" in result.content
+
 
 def test_run_foreground_cwd_is_workspace(workspace_ctx):
     """The process is locked to the workspace — ``pwd``
@@ -139,6 +150,7 @@ def test_run_foreground_cwd_is_workspace(workspace_ctx):
     expected = str(workspace_ctx.workspace.resolve())
     assert expected in result.content
 
+
 def test_run_foreground_can_write_inside_workspace(workspace_ctx):
     """The LLM should be able to drop a file in the
     workspace (e.g. generate a config, write a test
@@ -146,9 +158,10 @@ def test_run_foreground_can_write_inside_workspace(workspace_ctx):
     relative paths land inside."""
     tool = BashRunTool()
     result = _run(
-        tool, workspace_ctx,
+        tool,
+        workspace_ctx,
         command='echo "from bash" > /tmp/dummy.txt 2>/dev/null; '
-                'echo "from bash" > out.txt && cat out.txt',
+        'echo "from bash" > out.txt && cat out.txt',
     )
     # The ``out.txt`` in cwd is what we care about —
     # it's inside the workspace.
@@ -156,13 +169,16 @@ def test_run_foreground_can_write_inside_workspace(workspace_ctx):
     assert "from bash" in result.content
     assert (workspace_ctx.workspace / "out.txt").exists()
 
+
 def test_run_foreground_empty_command_rejected(workspace_ctx):
     tool = BashRunTool()
     result = _run(tool, workspace_ctx, command="")
     assert result.is_error
     assert "required" in result.content.lower()
 
+
 # -- BashRunTool: background ----------------------------------------------
+
 
 def test_run_background_returns_bash_id(workspace_ctx):
     """A short backgrounded command returns a bash_id
@@ -176,6 +192,7 @@ def test_run_background_returns_bash_id(workspace_ctx):
     (the reaper, or another test's fixture) triggers
     ``BaseSubprocessTransport.__del__`` against a dead loop.
     """
+
     async def _start_and_reap() -> None:
         from magi.tools.shell._manager import shutdown_background_shells
 
@@ -189,11 +206,13 @@ def test_run_background_returns_bash_id(workspace_ctx):
         # bash_id is a short hex string in the result body.
         assert "Bash ID:" in result.content
         import re
+
         assert re.search(r"Bash ID:\s*\w+", result.content) is not None
 
         await shutdown_background_shells()
 
     asyncio.run(_start_and_reap())
+
 
 def test_run_background_full_lifecycle(workspace_ctx):
     """End-to-end: start a long-ish background process,
@@ -209,6 +228,7 @@ def test_run_background_full_lifecycle(workspace_ctx):
     subsequent ``process.wait()`` raises
     ``RuntimeError: attached to a different loop``.
     """
+
     async def _lifecycle() -> None:
         run_tool = BashRunTool()
         output_tool = BashOutputTool()
@@ -217,17 +237,12 @@ def test_run_background_full_lifecycle(workspace_ctx):
         # 1. Start in background.
         started = await run_tool.run(
             workspace_ctx,
-            command=(
-                "for i in 1 2 3; do "
-                "echo line-$i; "
-                "sleep 0.02; "
-                "done; "
-                "echo done"
-            ),
+            command=("for i in 1 2 3; do echo line-$i; sleep 0.02; done; echo done"),
             run_in_background=True,
         )
         assert not started.is_error
         import re
+
         bid = re.search(r"Bash ID:\s*(\w+)", started.content).group(1)
 
         # 2. Give the process + monitor task a moment
@@ -252,11 +267,13 @@ def test_run_background_full_lifecycle(workspace_ctx):
 
         # 5. Kill the (still-running) background shell.
         from magi.tools.shell._manager import _BackgroundShellManager
+
         await kill_tool.run(workspace_ctx, bash_id=bid)
         # The id is gone from the registry.
         assert _BackgroundShellManager.get(bid) is None
 
     asyncio.run(_lifecycle())
+
 
 def test_run_background_filter_narrows_output(workspace_ctx):
     """``filter_str`` is a regex; only matching lines
@@ -269,6 +286,7 @@ def test_run_background_filter_narrows_output(workspace_ctx):
     :func:`test_run_background_full_lifecycle` —
     see its docstring.
     """
+
     async def _filter_flow() -> None:
         run_tool = BashRunTool()
         output_tool = BashOutputTool()
@@ -279,6 +297,7 @@ def test_run_background_filter_narrows_output(workspace_ctx):
             run_in_background=True,
         )
         import re
+
         bid = re.search(r"Bash ID:\s*(\w+)", started.content).group(1)
         await asyncio.sleep(0.1)
 
@@ -296,6 +315,7 @@ def test_run_background_filter_narrows_output(workspace_ctx):
         assert "INFO: bye" not in filtered.content
 
     asyncio.run(_filter_flow())
+
 
 def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
     """A short command that exits before the monitor's first
@@ -317,6 +337,7 @@ def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
     the monitor, which pins the race open instead of hoping to
     hit it.
     """
+
     async def _already_exited() -> None:
         from magi.tools.shell._manager import _BackgroundShellManager
 
@@ -350,7 +371,9 @@ def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
 
     asyncio.run(_already_exited())
 
+
 # -- lifecycle: retention, buffer cap, shutdown ---------------------------
+
 
 @pytest.fixture
 def clean_registry():
@@ -367,6 +390,7 @@ def clean_registry():
     yield M
     M._shells.clear()
     M._monitor_tasks.clear()
+
 
 def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
     """Completed shells don't accumulate forever.
@@ -390,8 +414,10 @@ def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
                 stderr=asyncio.subprocess.STDOUT,
             )
             M.add(
-                bash_id=f"burst{i:03d}", command="echo hi",
-                process=proc, start_time=0.0,
+                bash_id=f"burst{i:03d}",
+                command="echo hi",
+                process=proc,
+                start_time=0.0,
             )
             await M.start_monitor(bash_id=f"burst{i:03d}")
         # Let every monitor observe EOF and mark its shell terminal.
@@ -408,8 +434,10 @@ def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
             stderr=asyncio.subprocess.STDOUT,
         )
         M.add(
-            bash_id="trigger", command="sleep 5",
-            process=proc, start_time=0.0,
+            bash_id="trigger",
+            command="sleep 5",
+            process=proc,
+            start_time=0.0,
         )
         terminal = [s for s in M._shells.values() if s.is_terminal]
         assert len(terminal) <= m._MAX_COMPLETED_RETAINED
@@ -418,6 +446,7 @@ def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
         await M.shutdown()
 
     asyncio.run(_burst())
+
 
 def test_terminal_shells_are_reaped_by_age(workspace_ctx, clean_registry):
     """The TTL bound: a shell that ended long ago is dropped even
@@ -454,6 +483,7 @@ def test_terminal_shells_are_reaped_by_age(workspace_ctx, clean_registry):
 
     asyncio.run(_aged())
 
+
 def test_output_buffer_is_bounded_and_reports_drops(workspace_ctx, clean_registry):
     """A chatty process can't pin unbounded memory, and the LLM is
     told when output was dropped.
@@ -474,7 +504,10 @@ def test_output_buffer_is_bounded_and_reports_drops(workspace_ctx, clean_registr
             stderr=asyncio.subprocess.STDOUT,
         )
         shell = M.add(
-            bash_id="chatty", command="seq", process=proc, start_time=0.0,
+            bash_id="chatty",
+            command="seq",
+            process=proc,
+            start_time=0.0,
         )
         await M.start_monitor(bash_id="chatty")
         for _ in range(120):
@@ -495,6 +528,7 @@ def test_output_buffer_is_bounded_and_reports_drops(workspace_ctx, clean_registr
         await M.shutdown()
 
     asyncio.run(_chatty())
+
 
 def test_shutdown_terminates_live_background_shells(workspace_ctx, clean_registry):
     """``shutdown_background_shells`` is what keeps a MAGI exit from
@@ -529,7 +563,9 @@ def test_shutdown_terminates_live_background_shells(workspace_ctx, clean_registr
 
     asyncio.run(_shutdown())
 
+
 # -- BashOutputTool: error paths ------------------------------------------
+
 
 def test_output_missing_bash_id_returns_error(workspace_ctx):
     tool = BashOutputTool()
@@ -537,12 +573,15 @@ def test_output_missing_bash_id_returns_error(workspace_ctx):
     assert result.is_error
     assert "not found" in result.content
 
+
 def test_output_empty_bash_id_rejected(workspace_ctx):
     tool = BashOutputTool()
     result = _output(tool, workspace_ctx, bash_id="")
     assert result.is_error
 
+
 # -- BashKillTool: error paths + idempotency ------------------------------
+
 
 def test_kill_unknown_id_is_idempotent_noop(workspace_ctx):
     """Killing a never-existed id is a successful no-op
@@ -554,13 +593,14 @@ def test_kill_unknown_id_is_idempotent_noop(workspace_ctx):
     # not-found; we do too, but the content explains
     # it's idempotent so the LLM can ignore on
     # retry. (Either way, no zombie process leaks.)
-    assert "not found" in result.content.lower() or \
-        "idempotent" in result.content.lower()
+    assert "not found" in result.content.lower() or "idempotent" in result.content.lower()
+
 
 def test_kill_empty_bash_id_rejected(workspace_ctx):
     tool = BashKillTool()
     result = _kill(tool, workspace_ctx, bash_id="")
     assert result.is_error
+
 
 def test_kill_terminates_a_running_background_process(workspace_ctx):
     """Start a long-running background, kill it,
@@ -569,8 +609,10 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
 
     Same single-loop dance as
     :func:`test_run_background_full_lifecycle`."""
+
     async def _kill_flow() -> None:
         from magi.tools.shell._manager import _BackgroundShellManager
+
         run_tool = BashRunTool()
         kill_tool = BashKillTool()
 
@@ -581,14 +623,12 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
         )
         assert not started.is_error
         import re
+
         bid = re.search(r"Bash ID:\s*(\w+)", started.content).group(1)
 
         # Kill it.
         killed = await kill_tool.run(workspace_ctx, bash_id=bid)
-        assert (
-            not killed.is_error
-            or "idempotent" in killed.content.lower()
-        )
+        assert not killed.is_error or "idempotent" in killed.content.lower()
 
         # The id is gone from the registry — a
         # follow-up BashOutputTool call would report
@@ -597,7 +637,9 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
 
     asyncio.run(_kill_flow())
 
+
 # -- workspace lock ------------------------------------------------------
+
 
 def test_run_initial_cwd_is_workspace(workspace_ctx):
     """The subprocess's **initial** cwd is the workspace
@@ -615,7 +657,9 @@ def test_run_initial_cwd_is_workspace(workspace_ctx):
     expected = str(workspace_ctx.workspace.resolve())
     assert expected in result.content
 
+
 # -- registry integration ------------------------------------------------
+
 
 def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     """Sanity: all three tools are dispatchable by name.

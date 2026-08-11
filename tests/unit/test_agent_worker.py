@@ -13,13 +13,10 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import uuid
 from dataclasses import dataclass
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Minimal fakes (no runtime import needed)
@@ -29,6 +26,7 @@ import pytest
 @dataclass
 class _FakeSession:
     """Mimics Session DTO."""
+
     session_id: str = "sess-1"
     uid: int = 42
     delivery_address: str = "tg:123"
@@ -37,6 +35,7 @@ class _FakeSession:
 @dataclass
 class _FakeMsg:
     """Mimics Message DTO."""
+
     role: str = "user"
     text: str = "hello"
 
@@ -161,6 +160,7 @@ def _make_bus(**overrides) -> Mock:
 # Test 1: single turn, no tools → delivery published, ChatJobResult success
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_single_turn_no_tools_delivers():
     from magi.agent.worker import AgentWorker, RunContext
@@ -169,8 +169,10 @@ async def test_single_turn_no_tools_delivers():
     bus.llm_job_board.get_result.return_value = _fake_llm(text="Hello!")
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
     ctx.messages = []
 
@@ -189,6 +191,7 @@ async def test_single_turn_no_tools_delivers():
 # Test 2: LLM returns tool_use → second LLM call → delivery
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_tool_loop_completes():
     from magi.agent.worker import AgentWorker, RunContext
@@ -196,20 +199,28 @@ async def test_tool_loop_completes():
 
     bus = _make_bus()
 
-    llm1 = _fake_llm(text="Checking...", tool_uses=[
-        {"name": "search", "id": "tc-1", "input": {"q": "test"}},
-    ])
+    llm1 = _fake_llm(
+        text="Checking...",
+        tool_uses=[
+            {"name": "search", "id": "tc-1", "input": {"q": "test"}},
+        ],
+    )
     llm2 = _fake_llm(text="Found it.")
     bus.llm_job_board.get_result.side_effect = [llm1, llm2]
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1", success=True, content="result",
-        is_error=False, tool_call_id="tc-1",
+        job_id="tj-1",
+        success=True,
+        content="result",
+        is_error=False,
+        tool_call_id="tc-1",
     )
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
     ctx.messages = []
 
@@ -225,6 +236,7 @@ async def test_tool_loop_completes():
 # Test 3: steering via claim_for_conversation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_steering_injected():
     from magi.agent.worker import AgentWorker, RunContext
@@ -233,26 +245,35 @@ async def test_steering_injected():
 
     bus = _make_bus()
 
-    llm1 = _fake_llm(text="Checking...", tool_uses=[
-        {"name": "search", "id": "tc-1", "input": {}},
-    ])
+    llm1 = _fake_llm(
+        text="Checking...",
+        tool_uses=[
+            {"name": "search", "id": "tc-1", "input": {}},
+        ],
+    )
     llm2 = _fake_llm(text="Answer with steering context.")
     bus.llm_job_board.get_result.side_effect = [llm1, llm2]
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1", success=True, content="result",
-        is_error=False, tool_call_id="tc-1",
+        job_id="tj-1",
+        success=True,
+        content="result",
+        is_error=False,
+        tool_call_id="tc-1",
     )
 
     steer_job = ChatJob(
-        event_id="steer-1", conversation_id="conv-1",
-        payload={"uid": 42, "text": "Also check this please."},
+        job_id="steer-1",
+        conversation_id="conv-1",
+        payload={"contact_id": 42, "text": "Also check this please."},
     )
     bus.agent_job_board.claim_for_conversation.side_effect = [steer_job, None, None]
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
     ctx.messages = []
 
@@ -260,22 +281,21 @@ async def test_steering_injected():
     await worker._process(ctx)
 
     # steering text should appear in messages
-    steering_found = any(
-        "Also check this" in str(m.get("content", ""))
-        for m in ctx.messages
-    )
+    steering_found = any("Also check this" in str(m.get("content", "")) for m in ctx.messages)
     assert steering_found
     # steering ChatJob was consumed (submitted as ChatJobResult)
     from magi.bus.guild.chatJob import ChatJobResult
+
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
-        result=ChatJobResult(event_id="steer-1", success=True, status="completed"),
+        result=ChatJobResult(job_id="steer-1", success=True, status="completed"),
     )
 
 
 # ---------------------------------------------------------------------------
 # Test 4: cancel via cancel_event
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_cancel_interrupts():
@@ -284,8 +304,10 @@ async def test_cancel_interrupts():
     bus = _make_bus()
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
     ctx.messages = []
     ctx.cancel_event.set()  # simulate cancel
@@ -302,6 +324,7 @@ async def test_cancel_interrupts():
 # Test 5: system_prompt delegation (integration-style)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_system_prompt_delegates():
     from magi.agent.worker import AgentWorker, RunContext
@@ -316,8 +339,10 @@ async def test_system_prompt_delegates():
     bus.skills_book.list.return_value = []
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
 
     worker = AgentWorker(bus=bus)
@@ -331,6 +356,7 @@ async def test_system_prompt_delegates():
 # Test 6: token usage recorded
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_token_usage_recorded():
     from magi.agent.worker import AgentWorker, RunContext
@@ -338,8 +364,10 @@ async def test_token_usage_recorded():
     bus = _make_bus()
     worker = AgentWorker(bus=bus)
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
     )
 
     result = _fake_llm(
@@ -358,7 +386,7 @@ async def test_token_usage_recorded():
     # ``except``). These assertions catch the next refactor of this
     # boundary.
     call_kwargs = bus.token_usage_book.add.call_args.kwargs
-    assert call_kwargs["uid"] == 42
+    assert call_kwargs["contact_id"] == 42
     assert call_kwargs["provider"] == "claude"
     assert call_kwargs["model"] == "claude:sonnet"
     assert call_kwargs["input_tokens"] == 100
@@ -375,8 +403,11 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
 
     bus = _make_bus()
     job = SimpleNamespace(
-        event_id="shutdown-job", run_id="run-1", conversation_id="conv-1",
-        kind="channel.message.received", payload={},
+        job_id="shutdown-job",
+        run_id="run-1",
+        conversation_id="conv-1",
+        kind="channel.message.received",
+        payload={},
     )
     claimed = False
 
@@ -409,6 +440,7 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
 # Test 7: max iterations exceeded
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_max_iterations_exceeded():
     from magi.agent.worker import AgentWorker, RunContext
@@ -416,19 +448,27 @@ async def test_max_iterations_exceeded():
 
     bus = _make_bus()
 
-    llm = _fake_llm(text="loop", tool_uses=[
-        {"name": "search", "id": "tc-1", "input": {}},
-    ])
+    llm = _fake_llm(
+        text="loop",
+        tool_uses=[
+            {"name": "search", "id": "tc-1", "input": {}},
+        ],
+    )
     # always returns a tool_use → never terminates naturally
     bus.llm_job_board.get_result.return_value = llm
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1", success=True, content="r",
-        is_error=False, tool_call_id="tc-1",
+        job_id="tj-1",
+        success=True,
+        content="r",
+        is_error=False,
+        tool_call_id="tc-1",
     )
 
     ctx = RunContext(
-        uid=42, session_id="sess-1", channel="tg",
-        caller_role=None, conversation_id="conv-1",
+        contact_id=42,
+        channel="tg",
+        caller_role=None,
+        conversation_id="conv-1",
         max_iterations=2,
     )
     ctx.messages = []

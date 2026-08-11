@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -44,12 +43,16 @@ def _reset_buses():
 
 def test_connector_event_key_is_stable():
     a = ConnectorEvent(
-        connector="calendar", kind=ConnectorEventKind.CREATED,
-        id="ev-1", payload={"x": 1},
+        connector="calendar",
+        kind=ConnectorEventKind.CREATED,
+        id="ev-1",
+        payload={"x": 1},
     )
     b = ConnectorEvent(
-        connector="calendar", kind=ConnectorEventKind.CREATED,
-        id="ev-1", payload={"x": 999},
+        connector="calendar",
+        kind=ConnectorEventKind.CREATED,
+        id="ev-1",
+        payload={"x": 999},
     )
     assert a.key() == b.key() == ("calendar", "ev-1")
 
@@ -71,12 +74,16 @@ def test_eventbus_publish_fanout():
         received.append(ev)
 
     bus.subscribe(ConnectorEventKind.CREATED.value, handler)
-    asyncio.run(bus.publish(
-        ConnectorEvent(
-            connector="cal", kind=ConnectorEventKind.CREATED,
-            id="1", payload={},
-        ),
-    ))
+    asyncio.run(
+        bus.publish(
+            ConnectorEvent(
+                connector="cal",
+                kind=ConnectorEventKind.CREATED,
+                id="1",
+                payload={},
+            ),
+        )
+    )
     asyncio.run(asyncio.sleep(0))  # let scheduled tasks drain
     assert len(received) == 1
 
@@ -94,8 +101,10 @@ def test_eventbus_dedup_within_window():
         for _ in range(3):
             await bus.publish(
                 ConnectorEvent(
-                    connector="cal", kind=ConnectorEventKind.CREATED,
-                    id="same", payload={},
+                    connector="cal",
+                    kind=ConnectorEventKind.CREATED,
+                    id="same",
+                    payload={},
                 ),
             )
 
@@ -129,8 +138,10 @@ def test_handler_exceptions_do_not_break_bus():
     async def go():
         await bus.publish(
             ConnectorEvent(
-                connector="x", kind=ConnectorEventKind.CREATED,
-                id="1", payload={},
+                connector="x",
+                kind=ConnectorEventKind.CREATED,
+                id="1",
+                payload={},
             ),
         )
 
@@ -166,10 +177,12 @@ def test_load_connectors_skips_disabled():
     register_connector_factory("calendar", lambda c: CalendarConnector(c))
 
     async def go():
-        return await load_connectors([
-            ConnectorConfig(name="calendar", instance_id="on", enabled=True),
-            ConnectorConfig(name="calendar", instance_id="off", enabled=False),
-        ])
+        return await load_connectors(
+            [
+                ConnectorConfig(name="calendar", instance_id="on", enabled=True),
+                ConnectorConfig(name="calendar", instance_id="off", enabled=False),
+            ]
+        )
 
     loaded = asyncio.run(go())
     # ``enabled=False`` rows are filtered inside load_connectors
@@ -180,9 +193,11 @@ def test_load_connectors_skips_disabled():
 
 def test_load_connectors_skips_unknown_factory():
     async def go():
-        return await load_connectors([
-            ConnectorConfig(name="nonexistent", instance_id="x", enabled=True),
-        ])
+        return await load_connectors(
+            [
+                ConnectorConfig(name="nonexistent", instance_id="x", enabled=True),
+            ]
+        )
 
     loaded = asyncio.run(go())
     assert loaded == []
@@ -192,13 +207,17 @@ def test_load_connectors_replaces_existing():
     register_connector_factory("calendar", lambda c: CalendarConnector(c))
 
     async def go():
-        await load_connectors([
-            ConnectorConfig(name="calendar", instance_id="dup", enabled=True),
-        ])
+        await load_connectors(
+            [
+                ConnectorConfig(name="calendar", instance_id="dup", enabled=True),
+            ]
+        )
         first = get_connector("calendar", "dup")
-        await load_connectors([
-            ConnectorConfig(name="calendar", instance_id="dup", enabled=True),
-        ])
+        await load_connectors(
+            [
+                ConnectorConfig(name="calendar", instance_id="dup", enabled=True),
+            ]
+        )
         second = get_connector("calendar", "dup")
         return first, second
 
@@ -213,10 +232,12 @@ def test_unload_all_disconnects_everything():
     register_connector_factory("calendar", lambda c: CalendarConnector(c))
 
     async def go():
-        await load_connectors([
-            ConnectorConfig(name="calendar", instance_id="a", enabled=True),
-            ConnectorConfig(name="calendar", instance_id="b", enabled=True),
-        ])
+        await load_connectors(
+            [
+                ConnectorConfig(name="calendar", instance_id="a", enabled=True),
+                ConnectorConfig(name="calendar", instance_id="b", enabled=True),
+            ]
+        )
         await unload_all()
         return list_connectors()
 
@@ -229,12 +250,14 @@ def test_unload_all_disconnects_everything():
 def test_calendar_install_registers_factory():
     install_calendar_connector()  # idempotent
     from magi.connectors.registry import get_factory
+
     assert get_factory("calendar") is not None
 
 
 def test_calendar_fetch_requires_iso_window(tmp_path: Path):
     cfg = ConnectorConfig(
-        name="calendar", instance_id="t",
+        name="calendar",
+        instance_id="t",
         enabled=True,
         settings={"source": "ical", "path": str(tmp_path / "x.ics")},
     )
@@ -260,14 +283,20 @@ def test_calendar_fetch_ical(tmp_path: Path):
     p.write_text(ical)
 
     cfg = ConnectorConfig(
-        name="calendar", instance_id="t", enabled=True,
+        name="calendar",
+        instance_id="t",
+        enabled=True,
         settings={"source": "ical", "path": str(p)},
     )
     c = CalendarConnector(cfg)
-    result = asyncio.run(c.fetch({
-        "from": "2026-06-01T00:00:00+00:00",
-        "to": "2026-06-02T00:00:00+00:00",
-    }))
+    result = asyncio.run(
+        c.fetch(
+            {
+                "from": "2026-06-01T00:00:00+00:00",
+                "to": "2026-06-02T00:00:00+00:00",
+            }
+        )
+    )
     assert len(result["events"]) == 1
     ev = result["events"][0]
     assert ev["id"] == "ev-1"
@@ -277,7 +306,9 @@ def test_calendar_fetch_ical(tmp_path: Path):
 
 def test_calendar_probe_rejects_missing_ical(tmp_path: Path):
     cfg = ConnectorConfig(
-        name="calendar", instance_id="t", enabled=True,
+        name="calendar",
+        instance_id="t",
+        enabled=True,
         settings={"source": "ical", "path": str(tmp_path / "missing.ics")},
     )
     c = CalendarConnector(cfg)
@@ -287,7 +318,9 @@ def test_calendar_probe_rejects_missing_ical(tmp_path: Path):
 
 def test_calendar_probe_rejects_unknown_source():
     cfg = ConnectorConfig(
-        name="calendar", instance_id="t", enabled=True,
+        name="calendar",
+        instance_id="t",
+        enabled=True,
         settings={"source": "bogus"},
     )
     c = CalendarConnector(cfg)

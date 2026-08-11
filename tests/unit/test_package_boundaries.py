@@ -73,16 +73,34 @@ def _collect_forbidden_imports(py_path: Path, forbidden: tuple[str, ...]) -> lis
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            offenders.extend((alias.name, node.lineno) for alias in node.names if matches(alias.name))
+            offenders.extend(
+                (alias.name, node.lineno) for alias in node.names if matches(alias.name)
+            )
         elif isinstance(node, ast.ImportFrom):
             if node.module and matches(node.module):
                 offenders.append((node.module, node.lineno))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "__import__":
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "__import__"
+        ):
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
                 if matches(node.args[0].value):
                     offenders.append((node.args[0].value, node.lineno))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "import_module":
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "import_module"
+        ):
+            if (
+                node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
                 if matches(node.args[0].value):
                     offenders.append((node.args[0].value, node.lineno))
     return offenders
@@ -98,7 +116,9 @@ def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
         )
         for module, lineno in _collect_forbidden_imports(path, forbidden):
             offenders.append(f"{relative}:{lineno} imports {module!r}")
-    assert not offenders, "Runtime paths must cross domains through BUS:\n  " + "\n  ".join(offenders)
+    assert not offenders, "Runtime paths must cross domains through BUS:\n  " + "\n  ".join(
+        offenders
+    )
 
 
 def test_agent_module_does_not_import_api() -> None:
@@ -113,8 +133,7 @@ def test_agent_module_does_not_import_api() -> None:
     assert not offenders, (
         "magi/agent/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(a neutral BUS contract or magi.agent helper):\n  "
-        + "\n  ".join(offenders)
+        "(a neutral BUS contract or magi.agent helper):\n  " + "\n  ".join(offenders)
     )
 
 
@@ -130,8 +149,7 @@ def test_tools_module_does_not_import_api() -> None:
     assert not offenders, (
         "magi/tools/ imports from magi.channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(a neutral BUS contract or magi.agent helper):\n  "
-        + "\n  ".join(offenders)
+        "(a neutral BUS contract or magi.agent helper):\n  " + "\n  ".join(offenders)
     )
 
 

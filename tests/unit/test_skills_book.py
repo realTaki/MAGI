@@ -13,21 +13,20 @@ the ``test_default_factory_*`` tests; everything else constructs a
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from magi.bus.db.file import FileShelf
 from magi.bus.library.file.skillsBook import (
+    _BODY_MAX_BYTES,
     SkillBody,
     SkillMeta,
     SkillNotFound,
     SkillsBook,
-    _BODY_MAX_BYTES,
     build_default_skills_book,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────── #
 # Fixtures
@@ -83,7 +82,8 @@ def build_book(two_roots: tuple[Path, Path]):
 
     def _build() -> SkillsBook:
         return SkillsBook(
-            FileShelf(bundle_root), FileShelf(operator_root),
+            FileShelf(bundle_root),
+            FileShelf(operator_root),
         )
 
     return _build
@@ -118,12 +118,16 @@ def test_operator_overrides_bundle_silently(two_roots, build_book):
     """Same-name skills: operator wins, no warning needed."""
     bundle_root, operator_root = two_roots
     _write_skill(
-        bundle_root, "shared",
-        description="from bundle", version="1.0",
+        bundle_root,
+        "shared",
+        description="from bundle",
+        version="1.0",
     )
     _write_skill(
-        operator_root, "shared",
-        description="from operator (overridden)", version="2.0",
+        operator_root,
+        "shared",
+        description="from operator (overridden)",
+        version="2.0",
     )
     book = build_book()
 
@@ -198,16 +202,17 @@ def test_typed_frontmatter_fields_are_coerced(two_roots, build_book):
     on)."""
     bundle_root, _ = two_roots
     _write_skill(
-        bundle_root, "rich",
+        bundle_root,
+        "rich",
         description="a skill with optional fields",
         extra_frontmatter=(
             'license: "Apache-2.0"\n'
-            'allowed-tools:\n'
-            '  - bash\n'
-            '  - read_file\n'
-            'metadata:\n'
-            '  domain: ops\n'
-            '  owner: alice\n'
+            "allowed-tools:\n"
+            "  - bash\n"
+            "  - read_file\n"
+            "metadata:\n"
+            "  domain: ops\n"
+            "  owner: alice\n"
         ),
     )
     book = build_book()
@@ -238,7 +243,8 @@ def test_description_is_truncated(two_roots, build_book):
 def test_read_body_strips_frontmatter(two_roots, build_book):
     bundle_root, _ = two_roots
     _write_skill(
-        bundle_root, "strip",
+        bundle_root,
+        "strip",
         description="strip me",
         body="this is the body",
     )
@@ -262,7 +268,8 @@ def test_read_body_prepends_root_dir_line(two_roots, build_book):
 
 
 def test_read_body_returns_skillbody_with_mtime_and_truncated_false(
-    two_roots, build_book,
+    two_roots,
+    build_book,
 ):
     bundle_root, _ = two_roots
     _write_skill(bundle_root, "small", description="small", body="hi\n")
@@ -272,7 +279,7 @@ def test_read_body_returns_skillbody_with_mtime_and_truncated_false(
     assert body.truncated is False
     # mtime is UTC-aware datetime.
     assert isinstance(body.mtime, datetime)
-    assert body.mtime.tzinfo == timezone.utc
+    assert body.mtime.tzinfo == UTC
 
 
 def test_read_body_unknown_name_raises(build_book):
@@ -322,7 +329,7 @@ def test_read_body_truncates_utf8_safely(two_roots, build_book):
     # byte short of the cap, only 1 byte of the first "中" would
     # be inside the cut — the rewind walks back, so none of the
     # trailing runes survive.
-    assert not raw.endswith("中中中中中".encode("utf-8"))
+    assert not raw.endswith("中中中中中".encode())
     # Truncation marker is appended.
     assert b"truncated at 32768 bytes" in raw
 
@@ -340,8 +347,7 @@ def test_read_body_rewrites_existing_scripts_path(two_roots, build_book):
     scripts.mkdir()
     (scripts / "foo.py").write_text("# hello\n", encoding="utf-8")
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: rewrite\ndescription: rewrite me\n---\n\n"
-        "Run scripts/foo.py for the example.\n",
+        "---\nname: rewrite\ndescription: rewrite me\n---\n\nRun scripts/foo.py for the example.\n",
         encoding="utf-8",
     )
     book = build_book()
@@ -352,7 +358,8 @@ def test_read_body_rewrites_existing_scripts_path(two_roots, build_book):
 
 
 def test_read_body_adds_read_file_hint_on_prose_references(
-    two_roots, build_book,
+    two_roots,
+    build_book,
 ):
     """Pattern 2 — prose references like ``see foo.md`` — adds the
     ``(use read_file to access)`` hint so the LLM knows how to fetch
@@ -361,11 +368,11 @@ def test_read_body_adds_read_file_hint_on_prose_references(
     skill_dir = bundle_root / "prose"
     skill_dir.mkdir()
     (skill_dir / "reference.md").write_text(
-        "# ref\n", encoding="utf-8",
+        "# ref\n",
+        encoding="utf-8",
     )
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: prose\ndescription: prose refs\n---\n\n"
-        "see reference.md for details.\n",
+        "---\nname: prose\ndescription: prose refs\n---\n\nsee reference.md for details.\n",
         encoding="utf-8",
     )
     book = build_book()
@@ -382,8 +389,7 @@ def test_read_body_leaves_nonexistent_paths_alone(two_roots, build_book):
     skill_dir = bundle_root / "noexist"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: noexist\ndescription: nope\n---\n\n"
-        "See scripts/never_written.py for details.\n",
+        "---\nname: noexist\ndescription: nope\n---\n\nSee scripts/never_written.py for details.\n",
         encoding="utf-8",
     )
     book = build_book()
@@ -399,8 +405,7 @@ def test_read_body_marks_truncation(two_roots, build_book):
     skill_dir = bundle_root / "huge"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: huge\ndescription: huge\n---\n\n"
-        + ("x" * (_BODY_MAX_BYTES + 100)) + "\n",
+        "---\nname: huge\ndescription: huge\n---\n\n" + ("x" * (_BODY_MAX_BYTES + 100)) + "\n",
         encoding="utf-8",
     )
     book = build_book()
@@ -439,6 +444,7 @@ def test_hot_reload_picks_up_removed_skill_dir(two_roots, build_book):
     assert book.exists("doomed") is True
 
     import shutil
+
     shutil.rmtree(bundle_root / "doomed")
 
     assert book.exists("doomed") is False
@@ -458,6 +464,7 @@ def test_hot_reload_picks_up_edited_skill_md(two_roots, build_book):
     # atomic via tmp+rename on most platforms and definitely bumps
     # mtime — fingerprint catches it.
     import time
+
     time.sleep(0.01)  # ensure mtime delta on coarse-resolution FS
     skill_path = bundle_root / "editable" / "SKILL.md"
     skill_path.write_text(
@@ -484,7 +491,8 @@ def test_hot_reload_picks_up_operator_override_of_bundle(two_roots, build_book):
 
 
 def test_hot_reload_is_idempotent_when_nothing_changed(
-    two_roots, build_book,
+    two_roots,
+    build_book,
 ):
     """A read that triggers no change is a no-op — same registry
     object is returned (no churn). Implementation detail: the fast

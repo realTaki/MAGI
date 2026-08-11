@@ -25,13 +25,12 @@ from __future__ import annotations
 
 import pytest
 
+from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.tasks import (
     TaskIn,
     TaskOut,
     _schedule,
 )
-from magi.channels.api.errors import MagiHTTPException
-
 
 # -- model-level: once + run_at field shape ---------------------------------
 
@@ -84,9 +83,7 @@ def test_once_without_run_at_is_rejected_by_route_check() -> None:
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.run_at_required_for_once",
-                detail=(
-                    "run_at is required when frequency='once'."
-                ),
+                detail=("run_at is required when frequency='once'."),
             )
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "validation.run_at_required_for_once"
@@ -106,10 +103,7 @@ def test_cron_frequency_with_run_at_is_rejected_by_route_check() -> None:
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.run_at_only_for_once",
-                detail=(
-                    f"run_at is set; frequency must be 'once', "
-                    f"got {payload.frequency!r}."
-                ),
+                detail=(f"run_at is set; frequency must be 'once', got {payload.frequency!r}."),
             )
     assert "frequency must be 'once'" in exc_info.value.detail
 

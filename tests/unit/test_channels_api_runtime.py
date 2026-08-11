@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from magi.channels import Channel
 from magi.channels.api.channels import list_channels
 
 
@@ -24,4 +25,8 @@ async def test_channel_list_keeps_unimplemented_channels_stopped() -> None:
     assert by_name["wechat"].running is False
     assert by_name["lark"].running is False
     assert by_name["teams"].running is False
-    assert {call.args[0] for call in registry.is_running.call_args_list} == {"tg", "webui"}
+    assert {call.args[0] for call in registry.is_running.call_args_list} == {
+        Channel.TG,
+        Channel.WEBUI,
+        Channel.A2A,
+    }

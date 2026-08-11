@@ -35,8 +35,13 @@ def board(factory):
 def _gmail_dto() -> McpServer:
     """Minimal :class:`McpServer` DTO for ``added`` / ``updated`` jobs."""
     return McpServer(
-        id=0, name="gmail", connection_type="stdio",
-        command="mcp-gmail", env={}, headers={}, enabled=True,
+        id=0,
+        name="gmail",
+        connection_type="stdio",
+        command="mcp-gmail",
+        env={},
+        headers={},
+        enabled=True,
     )
 
 
@@ -73,9 +78,7 @@ def test_job_validation_requires_new_enabled_for_toggled():
 
 def test_publish_assigns_job_id_and_persists(board, factory):
     job_id = board.publish(
-        McpServerChangedJob(
-            kind="added", server_name="gmail", server=_gmail_dto()
-        )
+        McpServerChangedJob(kind="added", server_name="gmail", server=_gmail_dto())
     )
     assert isinstance(job_id, str) and job_id
     # The row landed in the table.
@@ -84,11 +87,7 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     from magi.bus.guild.mcpServerChangedJob import _McpServerChangedRow
 
     with factory.session() as s:
-        row = s.scalar(
-            select(_McpServerChangedRow).where(
-                _McpServerChangedRow.job_id == job_id
-            )
-        )
+        row = s.scalar(select(_McpServerChangedRow).where(_McpServerChangedRow.job_id == job_id))
     assert row is not None
     assert row.status == "pending"
     assert row.kind == "added"
@@ -103,8 +102,10 @@ def test_publish_respects_caller_supplied_job_id(board):
     custom = "job-abc-123"
     job_id = board.publish(
         McpServerChangedJob(
-            kind="updated", server_name="gmail",
-            server=_gmail_dto(), job_id=custom,
+            kind="updated",
+            server_name="gmail",
+            server=_gmail_dto(),
+            job_id=custom,
         )
     )
     assert job_id == custom
@@ -117,7 +118,9 @@ def test_claim_returns_none_when_empty(board):
 def test_claim_then_submit_result_round_trip(board):
     job_id = board.publish(
         McpServerChangedJob(
-            kind="toggled", server_name="gmail", new_enabled=False,
+            kind="toggled",
+            server_name="gmail",
+            new_enabled=False,
         )
     )
     claimed = board.claim()
@@ -129,9 +132,7 @@ def test_claim_then_submit_result_round_trip(board):
 
     board.submit_result(
         key=job_id,
-        result=McpServerChangedResult(
-            job_id=job_id, success=True, error=None
-        ),
+        result=McpServerChangedResult(job_id=job_id, success=True, error=None),
     )
     result = board.get_result(key=job_id)
     assert result is not None
@@ -143,9 +144,7 @@ def test_claim_round_trips_added_payload_into_dto(board):
     """``claim()`` materialises ``server_payload`` back into a
     :class:`McpServer` so the Worker sees a fully populated DTO."""
     job_id = board.publish(
-        McpServerChangedJob(
-            kind="added", server_name="gmail", server=_gmail_dto()
-        )
+        McpServerChangedJob(kind="added", server_name="gmail", server=_gmail_dto())
     )
     claimed = board.claim()
     assert claimed is not None
@@ -158,15 +157,11 @@ def test_claim_round_trips_added_payload_into_dto(board):
 
 
 def test_submit_result_records_error(board):
-    job_id = board.publish(
-        McpServerChangedJob(kind="deleted", server_name="gmail")
-    )
+    job_id = board.publish(McpServerChangedJob(kind="deleted", server_name="gmail"))
     board.claim()
     board.submit_result(
         key=job_id,
-        result=McpServerChangedResult(
-            job_id=job_id, success=False, error="boom"
-        ),
+        result=McpServerChangedResult(job_id=job_id, success=False, error="boom"),
     )
     result = board.get_result(key=job_id)
     assert result is not None

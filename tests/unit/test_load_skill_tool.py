@@ -17,11 +17,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from magi.bus.library.file.skillsBook import SkillsBook
 from magi.bus.db.file import FileShelf
+from magi.bus.library.file.skillsBook import SkillsBook
 from magi.tools.base import ToolContext
 from magi.tools.skills.load_skill import LoadSkillTool
-
 
 # ──────────────────────────────────────────────────────────────────────── #
 # Fixtures + helpers
@@ -61,7 +60,7 @@ def build_ctx(two_roots: tuple[Path, Path]):
         # only ever touches ``bus.skills_book`` so we don't need any
         # of them.
         fake_bus = SimpleNamespace(skills_book=book)
-        return ToolContext(workspace="", uid=1, channel="test", bus=fake_bus)
+        return ToolContext(workspace="", contact_id=1, channel="test", bus=fake_bus)
 
     return _build
 
@@ -77,12 +76,16 @@ def tool() -> LoadSkillTool:
 
 
 async def test_load_skill_returns_body_content(
-    tool: LoadSkillTool, build_ctx, two_roots,
+    tool: LoadSkillTool,
+    build_ctx,
+    two_roots,
 ):
     bundle_root, _ = two_roots
     _make_skill(
-        bundle_root, "alpha",
-        description="alpha skill", body="alpha body line\n",
+        bundle_root,
+        "alpha",
+        description="alpha skill",
+        body="alpha body line\n",
     )
     ctx = build_ctx()
     result = await tool.run(ctx, name="alpha")
@@ -93,7 +96,9 @@ async def test_load_skill_returns_body_content(
 
 
 async def test_load_skill_includes_root_dir_line(
-    tool: LoadSkillTool, build_ctx, two_roots,
+    tool: LoadSkillTool,
+    build_ctx,
+    two_roots,
 ):
     bundle_root, _ = two_roots
     skill_dir = bundle_root / "rooty"
@@ -110,7 +115,8 @@ async def test_load_skill_includes_root_dir_line(
 
 
 async def test_load_skill_unknown_name_returns_friendly_message(
-    tool: LoadSkillTool, build_ctx,
+    tool: LoadSkillTool,
+    build_ctx,
 ):
     """A missing skill is *not* an error — the LLM might guess and
     we want it to pivot gracefully (``is_error=False``)."""
@@ -121,7 +127,8 @@ async def test_load_skill_unknown_name_returns_friendly_message(
 
 
 async def test_load_skill_empty_name_is_error(
-    tool: LoadSkillTool, build_ctx,
+    tool: LoadSkillTool,
+    build_ctx,
 ):
     ctx = build_ctx()
     result = await tool.run(ctx, name="")
@@ -130,7 +137,8 @@ async def test_load_skill_empty_name_is_error(
 
 
 async def test_load_skill_path_traversal_is_error(
-    tool: LoadSkillTool, build_ctx,
+    tool: LoadSkillTool,
+    build_ctx,
 ):
     """The name regex blocks ``..`` and slashes — a malicious
     LLM-emitted name is rejected at the regex, not at a later
@@ -147,7 +155,7 @@ async def test_load_skill_no_bus_returns_require_bus_error():
     ``ctx.bus is None`` — see :class:`magi.tools.base.Tool`'s
     decorator."""
     tool = LoadSkillTool()
-    ctx = ToolContext(workspace="", uid=1, channel="test", bus=None)
+    ctx = ToolContext(workspace="", contact_id=1, channel="test", bus=None)
     result = await tool.run(ctx, name="anything")
     assert result.is_error is True
     assert "tool context has no bus" in result.content

@@ -10,9 +10,11 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.library.local import (
+    ALL_SOURCES,
+    SOURCE_PROACTIVE,
+    SOURCE_USER,
     ActionItem,
     ActionItemBook,
-    ALL_SOURCES,
     Channel,
     ChannelEnum,
     Contact,
@@ -29,8 +31,6 @@ from magi.bus.library.local import (
     MessageBook,
     Setting,
     SettingBook,
-    SOURCE_PROACTIVE,
-    SOURCE_USER,
     Task,
     TaskBook,
     TaskRun,
@@ -54,8 +54,9 @@ def factory():
 @pytest.fixture
 def contact_id(factory):
     """Create a contact row, return its id.  Tests that need a contact
-    FK can use this fixture to get a valid uid."""
+    FK can use this fixture to get a valid contact_id."""
     from magi.bus.library.local.contactBook import ContactBook
+
     c = ContactBook(factory).add(name="Fixture")
     return c.id
 
@@ -88,9 +89,9 @@ def test_setting_book_list_and_delete(factory):
 
 def test_memory_book_add_and_get(factory, contact_id):
     book = MemoryBook(factory)
-    m = book.add(uid=contact_id, kind="fact", subject="alice", body="likes cats")
+    m = book.add(contact_id=contact_id, kind="fact", subject="alice", body="likes cats")
     assert isinstance(m, Memory)
-    assert m.uid == contact_id
+    assert m.contact_id == contact_id
     assert m.body == "likes cats"
     found = book.get(memory_id=m.id)
     assert found is not None and found.body == "likes cats"
@@ -98,13 +99,14 @@ def test_memory_book_add_and_get(factory, contact_id):
 
 def test_memory_book_list_by_owner(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
+
     book = MemoryBook(factory)
     cbook = ContactBook(factory)
     other_id = cbook.add(name="Other").id
-    book.add(uid=contact_id, kind="fact", subject="a", body="x")
-    book.add(uid=other_id, kind="fact", subject="b", body="y")
-    assert len(book.list_by_owner(uid=contact_id)) == 1
-    assert len(book.list_by_owner(uid=other_id)) == 1
+    book.add(contact_id=contact_id, kind="fact", subject="a", body="x")
+    book.add(contact_id=other_id, kind="fact", subject="b", body="y")
+    assert len(book.list_by_owner(contact_id=contact_id)) == 1
+    assert len(book.list_by_owner(contact_id=other_id)) == 1
 
 
 def test_memory_book_full_lifecycle(factory, contact_id):
@@ -122,9 +124,10 @@ def test_memory_book_full_lifecycle(factory, contact_id):
         ``api/memory.py`` wire contract
     """
     from datetime import datetime
+
     book = MemoryBook(factory)
     created = book.add(
-        uid=contact_id,
+        contact_id=contact_id,
         kind="quick_note",
         subject="ship the deal",
         body="waiting on legal",
@@ -172,8 +175,10 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     assert book.delete(memory_id=99999) is False
     # Real row still works.
     m = book.add(
-        uid=contact_id, kind="fact",
-        subject="x", body="y",
+        contact_id=contact_id,
+        kind="fact",
+        subject="x",
+        body="y",
     )
     assert book.delete(memory_id=m.id) is True
     assert book.get(memory_id=m.id) is None
@@ -191,49 +196,63 @@ def test_memory_book_add_invariants(factory, contact_id):
 
     # Empty / whitespace-only subject is rejected.
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.add(uid=contact_id, kind="fact", subject="", body="x")
+        book.add(contact_id=contact_id, kind="fact", subject="", body="x")
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.add(uid=contact_id, kind="fact", subject="   ", body="x")
+        book.add(contact_id=contact_id, kind="fact", subject="   ", body="x")
 
     # Subject over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="subject length"):
-        book.add(uid=contact_id, kind="fact", subject="x" * 201, body="y")
+        book.add(contact_id=contact_id, kind="fact", subject="x" * 201, body="y")
 
     # Empty body is rejected.
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.add(uid=contact_id, kind="fact", subject="ok", body="")
+        book.add(contact_id=contact_id, kind="fact", subject="ok", body="")
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.add(uid=contact_id, kind="fact", subject="ok", body="   ")
+        book.add(contact_id=contact_id, kind="fact", subject="ok", body="   ")
 
     # Body over 8 KiB is rejected.
     with pytest.raises(ValueError, match="body length"):
         book.add(
-            uid=contact_id, kind="fact",
-            subject="ok", body="x" * (8 * 1024 + 1),
+            contact_id=contact_id,
+            kind="fact",
+            subject="ok",
+            body="x" * (8 * 1024 + 1),
         )
 
     # ``kind`` must be in ALL_KINDS.
     with pytest.raises(ValueError, match="kind must be one of"):
         book.add(
-            uid=contact_id, kind="weird", subject="ok", body="ok",
+            contact_id=contact_id,
+            kind="weird",
+            subject="ok",
+            body="ok",
         )
 
     # ``priority`` outside 1..5 is rejected.
     with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="fact",
-            subject="ok", body="ok", priority=0,
+            contact_id=contact_id,
+            kind="fact",
+            subject="ok",
+            body="ok",
+            priority=0,
         )
     with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="fact",
-            subject="ok", body="ok", priority=6,
+            contact_id=contact_id,
+            kind="fact",
+            subject="ok",
+            body="ok",
+            priority=6,
         )
     # Non-int is rejected.
     with pytest.raises(ValueError, match="priority must be 1..5"):
         book.add(
-            uid=contact_id, kind="fact",
-            subject="ok", body="ok", priority="3",
+            contact_id=contact_id,
+            kind="fact",
+            subject="ok",
+            body="ok",
+            priority="3",
         )
 
 
@@ -244,8 +263,11 @@ def test_memory_book_update_invariants(factory, contact_id):
 
     book = MemoryBook(factory)
     row = book.add(
-        uid=contact_id, kind="fact",
-        subject="ok", body="ok", priority=3,
+        contact_id=contact_id,
+        kind="fact",
+        subject="ok",
+        body="ok",
+        priority=3,
     )
 
     # Empty subject via update is rejected.
@@ -276,10 +298,12 @@ def test_memory_book_update_invariants(factory, contact_id):
 def test_memory_book_complete_missing_id_raises_lookup(factory):
     """``complete`` raises :class:`LookupError` for a
     missing id instead of silently no-oping. The ``complete_memory``
-    tool catches it via the ``get``+``uid`` pre-check,
+    tool catches it via the ``get``+``contact_id`` pre-check,
     so the LookupError is the second-line defence."""
     import pytest
+
     from magi.bus.db import EngineFactory
+
     fresh = EngineFactory("sqlite:///:memory:")
     fresh.create_all()
     book = MemoryBook(fresh)
@@ -293,8 +317,11 @@ def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
     field round-trips through unchanged."""
     book = MemoryBook(factory)
     row = book.add(
-        uid=contact_id, kind="quick_note",
-        subject="orig", body="orig body", priority=2,
+        contact_id=contact_id,
+        kind="quick_note",
+        subject="orig",
+        body="orig body",
+        priority=2,
     )
     after = book.update(memory_id=row.id, priority=5)
     assert after.subject == "orig"
@@ -442,7 +469,8 @@ def test_mcp_server_book_upsert_and_delete_by_name(factory):
 def test_mcp_server_book_toggle(factory):
     book = McpServerBook(factory)
     book.upsert(
-        name="gmail", connection_type="stdio",
+        name="gmail",
+        connection_type="stdio",
         command="mcp-gmail",
     )
     flipped = book.toggle(name="gmail")
@@ -477,7 +505,8 @@ def test_mcp_server_book_dto_json_columns(factory):
     """
     book = McpServerBook(factory)
     book.upsert(
-        name="gmail", connection_type="streamable_http",
+        name="gmail",
+        connection_type="streamable_http",
         url="https://mcp.example.com",
         args=["--flag=1", "positional"],
         env={"TOKEN": "secret"},
@@ -501,7 +530,7 @@ def test_action_item_book(factory, contact_id):
     lives on ``completed_at is None`` vs ``is not None``.
     """
     book = ActionItemBook(factory)
-    item = book.add(uid=contact_id, title="x", description="y")
+    item = book.add(contact_id=contact_id, title="x", description="y")
     assert isinstance(item, ActionItem)
     assert item.completed_at is None  # "open" == not yet completed
     completed = book.complete(action_item_id=item.id)
@@ -517,31 +546,31 @@ def test_action_item_book_complete(factory, contact_id):
 
     Authorization ("is the caller allowed to close this
     row?") lives one layer up at the tool — ``get`` then
-    ``row.uid == caller`` then ``complete``. The Book
+    ``row.contact_id == caller`` then ``complete``. The Book
     stays a thin writer, so this test only covers:
 
-    * happy path stamps ``completed_at`` / ``completed_by_uid``
+    * happy path stamps ``completed_at`` / ``completed_by_contact_id``
       / ``completion_note``
     * idempotency on re-call (no overwrite of ``completed_at``
       or ``completion_note``)
     * missing ``action_item_id`` returns ``None``
     """
     book = ActionItemBook(factory)
-    item = book.add(uid=contact_id, title="x", description="y")
+    item = book.add(contact_id=contact_id, title="x", description="y")
 
     # Missing row → None (no exception).
     assert book.complete(action_item_id=99999) is None
 
-    # Right path: completes, stamps completed_by_uid + note.
+    # Right path: completes, stamps completed_by_contact_id + note.
     completed = book.complete(
         action_item_id=item.id,
         note="done!",
-        completed_by_uid=contact_id,
+        completed_by_contact_id=contact_id,
     )
     assert completed is not None
     assert completed.id == item.id
     assert completed.completed_at is not None
-    assert completed.completed_by_uid == contact_id
+    assert completed.completed_by_contact_id == contact_id
     assert completed.completion_note == "done!"
     first_completed_at = completed.completed_at
 
@@ -550,7 +579,7 @@ def test_action_item_book_complete(factory, contact_id):
     again = book.complete(
         action_item_id=item.id,
         note="updated note that must NOT overwrite",
-        completed_by_uid=contact_id,
+        completed_by_contact_id=contact_id,
     )
     assert again is not None
     assert again.completed_at == first_completed_at
@@ -559,7 +588,7 @@ def test_action_item_book_complete(factory, contact_id):
 
 def test_action_item_book_complete_no_owner_check(factory, contact_id):
     """Cross-row write is the Book's job to permit — the
-    tool layer refuses it via the ``get``+``uid`` check
+    tool layer refuses it via the ``get``+``contact_id`` check
     before reaching this primitive. This test pins the
     current behaviour so any future "add auth here" drift
     is a deliberate, visible change.
@@ -569,18 +598,18 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     book = ActionItemBook(factory)
     other_id = ContactBook(factory).add(name="Other").id
     # Operator A's row, but we let the caller drive the close.
-    item = book.add(uid=contact_id, title="x", description="y")
+    item = book.add(contact_id=contact_id, title="x", description="y")
 
     # Any caller with the id can complete; the tool's
-    # ``get``+``row.uid`` check is what blocks this in
+    # ``get``+``row.contact_id`` check is what blocks this in
     # production. The Book is intentionally permissive.
     closed = book.complete(
         action_item_id=item.id,
-        completed_by_uid=other_id,
+        completed_by_contact_id=other_id,
         note="closed on someone else's behalf — auth was external",
     )
     assert closed is not None
-    assert closed.completed_by_uid == other_id
+    assert closed.completed_by_contact_id == other_id
     assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
@@ -596,37 +625,37 @@ def test_action_item_book_add_invariants(factory, contact_id):
 
     # Empty / whitespace-only title is rejected.
     with pytest.raises(ValueError, match="title must be a non-empty"):
-        book.add(uid=contact_id, title="")
+        book.add(contact_id=contact_id, title="")
     with pytest.raises(ValueError, match="title must be a non-empty"):
-        book.add(uid=contact_id, title="   ")
+        book.add(contact_id=contact_id, title="   ")
 
     # Title over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="title length"):
-        book.add(uid=contact_id, title="x" * 201)
+        book.add(contact_id=contact_id, title="x" * 201)
 
     # Description over 1000 chars is rejected.
     with pytest.raises(ValueError, match="description length"):
-        book.add(uid=contact_id, title="ok", description="d" * 1001)
+        book.add(contact_id=contact_id, title="ok", description="d" * 1001)
 
     # target_url over 500 chars is rejected.
     with pytest.raises(ValueError, match="target_url length"):
-        book.add(uid=contact_id, title="ok", target_url="u" * 501)
+        book.add(contact_id=contact_id, title="ok", target_url="u" * 501)
 
     # priority must be in ALL_PRIORITIES.
     with pytest.raises(ValueError, match="priority must be one of"):
-        book.add(uid=contact_id, title="ok", priority="urgent")
+        book.add(contact_id=contact_id, title="ok", priority="urgent")
     # priority "normal" (default) and "high" both pass.
-    a = book.add(uid=contact_id, title="a", priority="normal")
+    a = book.add(contact_id=contact_id, title="a", priority="normal")
     assert a.priority == "normal"
-    b = book.add(uid=contact_id, title="b", priority="high")
+    b = book.add(contact_id=contact_id, title="b", priority="high")
     assert b.priority == "high"
 
     # source must be in ALL_SOURCES.
     with pytest.raises(ValueError, match="source must be one of"):
-        book.add(uid=contact_id, title="ok", source="system")
-    c = book.add(uid=contact_id, title="c", source="user")
+        book.add(contact_id=contact_id, title="ok", source="system")
+    c = book.add(contact_id=contact_id, title="c", source="user")
     assert c.source == "user"
-    d = book.add(uid=contact_id, title="d", source="proactive")
+    d = book.add(contact_id=contact_id, title="d", source="proactive")
     assert d.source == "proactive"
 
 
@@ -634,23 +663,23 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
     """``complete`` enforces ``completion_note`` ≤500 chars
     regardless of who calls it (tool, API, future agent)."""
     book = ActionItemBook(factory)
-    item = book.add(uid=contact_id, title="x")
+    item = book.add(contact_id=contact_id, title="x")
 
     # Note at exactly the cap is fine.
     ok = book.complete(
         action_item_id=item.id,
         note="n" * 500,
-        completed_by_uid=contact_id,
+        completed_by_contact_id=contact_id,
     )
     assert ok is not None
 
     # Note one over the cap raises.
-    item2 = book.add(uid=contact_id, title="y")
+    item2 = book.add(contact_id=contact_id, title="y")
     with pytest.raises(ValueError, match="completion_note length"):
         book.complete(
             action_item_id=item2.id,
             note="n" * 501,
-            completed_by_uid=contact_id,
+            completed_by_contact_id=contact_id,
         )
 
 
@@ -659,17 +688,25 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
 
 def test_token_usage_book(factory, contact_id):
     book = TokenUsageBook(factory)
-    book.add(uid=contact_id, provider="openai", model="gpt-4",
-             input_tokens=10, output_tokens=20)
-    book.add(uid=contact_id, provider="openai", model="gpt-4",
-             input_tokens=5, output_tokens=10)
-    in_total, out_total = book.sum_for_run(run_id="r1")  # 0 rows for r1
-    assert in_total == 0
-    book.add(uid=contact_id, provider="openai", model="gpt-4", run_id="r1",
-             input_tokens=100, output_tokens=200)
-    in_total, out_total = book.sum_for_run(run_id="r1")
-    assert in_total == 100
-    assert out_total == 200
+    book.add(
+        contact_id=contact_id, provider="openai", model="gpt-4", input_tokens=10, output_tokens=20
+    )
+    book.add(
+        contact_id=contact_id, provider="openai", model="gpt-4", input_tokens=5, output_tokens=10
+    )
+    book.add(
+        contact_id=contact_id,
+        provider="openai",
+        model="gpt-4",
+        llm_attempt_id="attempt-1",
+        input_tokens=100,
+        output_tokens=200,
+    )
+    rows = book.list_for_owner(contact_id=contact_id)
+    assert len(rows) == 3
+    attempt = next(row for row in rows if row.llm_attempt_id == "attempt-1")
+    assert attempt.input_tokens == 100
+    assert attempt.output_tokens == 200
 
 
 # -- ToolCatalogStateBook + ToolDefinitionBook -------------------------
@@ -688,7 +725,9 @@ def test_tool_catalog_replace_snapshot(factory):
 def test_tool_definition_upsert(factory):
     book = ToolDefinitionBook(factory)
     d = ToolDefinition(
-        name="echo", source="builtin", description="echoes",
+        name="echo",
+        source="builtin",
+        description="echoes",
         input_schema={"x": 1},
     )
     book.upsert_many(definitions=[d], source="builtin")
@@ -699,7 +738,9 @@ def test_tool_definition_upsert(factory):
 
     # upsert again — should update in place
     d2 = ToolDefinition(
-        name="echo", source="builtin", description="echoes v2",
+        name="echo",
+        source="builtin",
+        description="echoes v2",
         input_schema={"x": 2},
     )
     book.upsert_many(definitions=[d2], source="builtin")
@@ -730,7 +771,7 @@ def test_task_book_lifecycle(factory, contact_id):
     # Preset row: source=SOURCE_PROACTIVE, cron string
     # (caller converted the LLM-facing structured form
     # via ``preset_to_cron`` before reaching the Book),
-    # no uid.
+    # no contact_id.
     preset = tbook.add(
         id="p1",
         name="Daily-preset",
@@ -745,7 +786,7 @@ def test_task_book_lifecycle(factory, contact_id):
     assert isinstance(preset, Task)
     assert preset.source == SOURCE_PROACTIVE
     assert preset.key == "daily"
-    assert preset.uid is None
+    assert preset.contact_id is None
     assert preset.cron == "0 9 * * *"
     assert preset.run_at is None
 
@@ -760,7 +801,7 @@ def test_task_book_lifecycle(factory, contact_id):
         name="MyTask",
         prompt="do",
         cron="0 9 * * *",
-        uid=contact_id,
+        contact_id=contact_id,
         target_channel="webui",
         source=SOURCE_USER,
         created_at="2026-08-05T00:00:00Z",
@@ -768,47 +809,51 @@ def test_task_book_lifecycle(factory, contact_id):
     )
     assert isinstance(t, Task)
     assert t.source == SOURCE_USER
-    assert t.uid == contact_id
+    assert t.contact_id == contact_id
 
-    # list_by_user: only SOURCE_USER rows owned by uid.
-    owned = tbook.list_by_user(uid=contact_id)
+    # list_by_user: only SOURCE_USER rows owned by contact_id.
+    owned = tbook.list_by_user(contact_id=contact_id)
     assert len(owned) == 1
     assert owned[0].id == "t1"
 
-    # list_proactive_tasks: uid-scoped; system preset
-    # (uid IS NULL) visible to every uid.
-    presets = tbook.list_proactive_tasks(uid=contact_id)
+    # list_proactive_tasks: contact_id-scoped; system preset
+    # (contact_id IS NULL) visible to every contact_id.
+    presets = tbook.list_proactive_tasks(contact_id=contact_id)
     assert len(presets) == 1
     assert presets[0].id == "p1"
     assert presets[0].source == SOURCE_PROACTIVE
 
-    # list_enabled: per-user only — same uid.
-    enabled = tbook.list_enabled(uid=contact_id)
+    # list_enabled: per-user only — same contact_id.
+    enabled = tbook.list_enabled(contact_id=contact_id)
     assert len(enabled) == 1
     assert enabled[0].id == "t1"
 
-    # disable is owner-scoped: other uid returns False.
+    # disable is owner-scoped: other contact_id returns False.
     other_id = contact_id + 999
-    assert tbook.disable(task_id="t1", uid=other_id) is False
+    assert tbook.disable(task_id="t1", contact_id=other_id) is False
     assert tbook.get(task_id="t1").enabled == 1  # unchanged
-    # right uid flips it; row is now disabled.
-    assert tbook.disable(task_id="t1", uid=contact_id) is True
+    # right contact_id flips it; row is now disabled.
+    assert tbook.disable(task_id="t1", contact_id=contact_id) is True
     assert tbook.get(task_id="t1").enabled == 0
     # post-disable, list_enabled no longer surfaces it.
-    assert tbook.list_enabled(uid=contact_id) == []
+    assert tbook.list_enabled(contact_id=contact_id) == []
 
     # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
     r = rbook.add(
-        id="r1", task_id="t1", trigger="manual",
-        started_at="2026-08-05T09:00:00Z", status="running",
+        id="r1",
+        task_id="t1",
+        trigger="manual",
+        started_at="2026-08-05T09:00:00Z",
+        status="running",
     )
     assert isinstance(r, TaskRun)
     rbook.complete(
-        run_id="r1", status="success",
+        id="r1",
+        status="success",
         finished_at="2026-08-05T09:01:00Z",
     )
-    assert rbook.get(run_id="r1").status == "success"
+    assert rbook.get(id="r1").status == "success"
 
 
 def test_task_book_add_rejects_unknown_source(factory):
@@ -824,7 +869,7 @@ def test_task_book_add_rejects_unknown_source(factory):
             name="bad",
             prompt="x",
             cron="0 0 * * *",
-            uid=1,
+            contact_id=1,
             target_channel="webui",
             source="system-external-thing",
         )
@@ -848,41 +893,90 @@ def test_task_book_add_invariants(factory, contact_id):
 
     # ``name`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="name must be a non-empty"):
-        book.add(id="t1", name="", prompt="p", cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t1",
+            name="",
+            prompt="p",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
     with pytest.raises(ValueError, match="name must be a non-empty"):
-        book.add(id="t2", name="   ", prompt="p", cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t2",
+            name="   ",
+            prompt="p",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
 
     # ``name`` over the column cap is rejected.
     with pytest.raises(ValueError, match="name length"):
-        book.add(id="t3", name="n" * 121, prompt="p", cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t3",
+            name="n" * 121,
+            prompt="p",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
 
     # ``prompt`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
-        book.add(id="t4", name="ok", prompt="", cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t4",
+            name="ok",
+            prompt="",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
-        book.add(id="t5", name="ok", prompt="   ", cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t5",
+            name="ok",
+            prompt="   ",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
 
     # ``prompt`` over the cap is rejected.
     with pytest.raises(ValueError, match="prompt length"):
-        book.add(id="t6", name="ok", prompt="p" * 8001, cron="0 0 * * *",
-                 uid=contact_id, target_channel="webui",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t6",
+            name="ok",
+            prompt="p" * 8001,
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="webui",
+            created_at="x",
+            updated_at="x",
+        )
 
     # ``target_channel`` outside the closed enum is rejected.
     with pytest.raises(ValueError, match="target_channel must be one of"):
-        book.add(id="t7", name="ok", prompt="p", cron="0 0 * * *",
-                 uid=contact_id, target_channel="web",
-                 created_at="x", updated_at="x")
+        book.add(
+            id="t7",
+            name="ok",
+            prompt="p",
+            cron="0 0 * * *",
+            contact_id=contact_id,
+            target_channel="web",
+            created_at="x",
+            updated_at="x",
+        )
 
     # All closed-set values pass.
     for ch in ("webui", "tg", "a2a", "scheduled"):
@@ -891,7 +985,7 @@ def test_task_book_add_invariants(factory, contact_id):
             name=f"task-{ch}",
             prompt="p",
             cron="0 0 * * *",
-            uid=contact_id,
+            contact_id=contact_id,
             target_channel=ch,
             created_at="x",
             updated_at="x",
@@ -904,7 +998,7 @@ def test_task_book_add_invariants(factory, contact_id):
         name="ok-name",
         prompt="ok-prompt",
         cron="0 9 * * *",
-        uid=contact_id,
+        contact_id=contact_id,
         target_channel="webui",
         created_at="x",
         updated_at="x",
@@ -947,9 +1041,10 @@ def test_task_book_schedule_xor(factory, contact_id):
             prompt="p",
             cron="0 9 * * *",
             run_at="2026-12-31T00:00:00Z",
-            uid=contact_id,
+            contact_id=contact_id,
             target_channel="webui",
-            created_at="x", updated_at="x",
+            created_at="x",
+            updated_at="x",
         )
 
     # Neither set — rejected.
@@ -958,9 +1053,10 @@ def test_task_book_schedule_xor(factory, contact_id):
             id="neither",
             name="neither",
             prompt="p",
-            uid=contact_id,
+            contact_id=contact_id,
             target_channel="webui",
-            created_at="x", updated_at="x",
+            created_at="x",
+            updated_at="x",
         )
 
     # run_at alone — accepted (one-shot).
@@ -969,9 +1065,10 @@ def test_task_book_schedule_xor(factory, contact_id):
         name="once",
         prompt="p",
         run_at="2026-12-31T00:00:00Z",
-        uid=contact_id,
+        contact_id=contact_id,
         target_channel="webui",
-        created_at="x", updated_at="x",
+        created_at="x",
+        updated_at="x",
     )
     assert once.run_at == "2026-12-31T00:00:00Z"
     assert once.cron is None
@@ -989,23 +1086,24 @@ def test_task_book_rejects_invalid_cron(factory, contact_id):
             name="badcron",
             prompt="p",
             cron="not a cron",
-            uid=contact_id,
+            contact_id=contact_id,
             target_channel="webui",
-            created_at="x", updated_at="x",
+            created_at="x",
+            updated_at="x",
         )
 
 
 def test_task_book_list_proactive_uid_scoped(factory, contact_id):
-    """``list_proactive_tasks(uid=...)`` is privacy-safe:
-    system presets (``uid IS NULL``) visible to every uid;
-    user-private presets (``uid == X``) only to X.
+    """``list_proactive_tasks(contact_id=...)`` is privacy-safe:
+    system presets (``contact_id IS NULL``) visible to every contact_id;
+    user-private presets (``contact_id == X``) only to X.
     """
     from magi.bus.library.local.contactBook import ContactBook
 
     book = TaskBook(factory)
     other_id = ContactBook(factory).add(name="Other").id
 
-    # System preset (uid=None): visible to both uids.
+    # System preset (contact_id=None): visible to both uids.
     book.add(
         id="sys-preset",
         name="system",
@@ -1014,7 +1112,8 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         key="sys",
         target_channel="webui",
         source=SOURCE_PROACTIVE,
-        created_at="x", updated_at="x",
+        created_at="x",
+        updated_at="x",
     )
     # User-private preset for contact_id only.
     book.add(
@@ -1023,18 +1122,19 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         prompt="p",
         cron="0 10 * * *",
         key="priv",
-        uid=contact_id,
+        contact_id=contact_id,
         target_channel="webui",
         source=SOURCE_PROACTIVE,
-        created_at="x", updated_at="x",
+        created_at="x",
+        updated_at="x",
     )
 
     # contact_id sees BOTH (system + own private).
-    own = book.list_proactive_tasks(uid=contact_id)
+    own = book.list_proactive_tasks(contact_id=contact_id)
     assert {t.id for t in own} == {"sys-preset", "priv-preset"}
 
     # other_id sees only the system preset.
-    other = book.list_proactive_tasks(uid=other_id)
+    other = book.list_proactive_tasks(contact_id=other_id)
     assert {t.id for t in other} == {"sys-preset"}
 
 
@@ -1068,6 +1168,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     # seed the row first so the task insert doesn't trip
     # SQLite's FK guard.
     from magi.bus.library.local.conversationBook import ConversationBook
+
     ConversationBook(factory).add(
         conversation_id="01ABC",
         delivery_address="webui:dashboard",

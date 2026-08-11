@@ -47,10 +47,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
-
 from magi.tools.base import Tool, ToolContext, ToolResult
-
 
 # -- stubs ---------------------------------------------------------------
 
@@ -76,8 +73,8 @@ class _StubMagisAdminsBook:
     def __init__(self, admin_uids: set[int]):
         self._admin_uids = admin_uids
 
-    def is_admin_for(self, *, uid: int) -> bool:
-        return uid in self._admin_uids
+    def is_admin_for(self, *, contact_id: int) -> bool:
+        return contact_id in self._admin_uids
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,16 +92,16 @@ class _DemoTool(Tool):
     description = ""
     input_schema: dict = {}
 
-    async def run(self, ctx, **kwargs):
+    async def run(self, _ctx, **_kwargs):
         return ToolResult(content="ok")
 
 
-def _ctx(uid, *, bus: _StubBus | None = None) -> ToolContext:
+def _ctx(contact_id, *, bus: _StubBus | None = None) -> ToolContext:
     """Build a ToolContext, defaulting ``bus=None`` so tests
     can drive the "no bus" branch without ceremony."""
     return ToolContext(
         workspace="",
-        uid=uid,  # type: ignore[arg-type]
+        contact_id=contact_id,  # type: ignore[arg-type]
         channel="webui",
         bus=bus,
     )
@@ -115,9 +112,7 @@ def _bus_with(
     admin_uids: set[int] | None = None,
 ) -> _StubBus:
     return _StubBus(
-        contacts_book=_StubContactsBook(
-            {uid: _StubContact(role=role) for uid, role in contacts}
-        ),
+        contacts_book=_StubContactsBook({uid: _StubContact(role=role) for uid, role in contacts}),
         magis_admins_book=_StubMagisAdminsBook(admin_uids or set()),
     )
 
@@ -162,7 +157,7 @@ def test_admin_tag_admits_via_magis_only():
         description = ""
         input_schema: dict = {}
 
-        async def run(self, ctx, **kwargs):
+        async def run(self, _ctx, **_kwargs):
             return ToolResult(content="ok")
 
     tool = _AdminOnlyTool()
@@ -189,7 +184,7 @@ def test_assigned_and_admin_both_match():
         description = ""
         input_schema: dict = {}
 
-        async def run(self, ctx, **kwargs):
+        async def run(self, _ctx, **_kwargs):
             return ToolResult(content="ok")
 
     tool = _AdminOrAssignedTool()
@@ -220,7 +215,7 @@ def test_admin_only_rejects_assigned_only():
         description = ""
         input_schema: dict = {}
 
-        async def run(self, ctx, **kwargs):
+        async def run(self, _ctx, **_kwargs):
             return ToolResult(content="ok")
 
     tool = _AdminOnlyTool()
@@ -293,7 +288,7 @@ def test_empty_allowed_roles_admits_everyone():
         description = ""
         input_schema: dict = {}
 
-        async def run(self, ctx, **kwargs):
+        async def run(self, _ctx, **_kwargs):
             return ToolResult(content="ok")
 
     tool = _OpenTool()

@@ -50,8 +50,7 @@ def test_agent_init_does_not_re_export_legacy_symbols() -> None:
     init_path = REPO_ROOT / "magi" / "agent" / "__init__.py"
     tree = ast.parse(init_path.read_text())
     has_lazy_attr = any(
-        isinstance(node, ast.FunctionDef) and node.name == "__getattr__"
-        for node in ast.walk(tree)
+        isinstance(node, ast.FunctionDef) and node.name == "__getattr__" for node in ast.walk(tree)
     )
     assert not has_lazy_attr, (
         f"{init_path} defines a __getattr__; that was the Phase-2 "
@@ -72,7 +71,7 @@ def test_handle_message_not_importable_from_magi_agent() -> None:
         # ``__getattr__`` surfaces as ``ImportError``.
         importlib = __import__("importlib")
         try:
-            importlib.import_module("magi.agent").handle_message
+            _ = importlib.import_module("magi.agent").handle_message
         except AttributeError as exc:
             # Python's import machinery maps ``__getattr__``
             # AttributeError to ``ImportError`` in some
@@ -105,6 +104,5 @@ def test_handle_message_not_in_legacy_agent_loop_path() -> None:
                 offenders.append(f"{rel}: imports from {mod!r}")
     assert not offenders, (
         "magi/agent/ imports from magi.agent.loop; the legacy "
-        "loop module is supposed to be gone:\n  "
-        + "\n  ".join(offenders)
+        "loop module is supposed to be gone:\n  " + "\n  ".join(offenders)
     )
