@@ -68,9 +68,7 @@ class _A2AJobRow(Base):
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
@@ -81,9 +79,7 @@ class _A2AJobRow(Base):
 # -- Queue ----------------------------------------------------------------
 
 
-class sendA2AJobBoard(
-    BaseJobBoard[_A2AJobRow, SendA2AJob, SendA2AResult]
-):
+class sendA2AJobBoard(BaseJobBoard[_A2AJobRow, SendA2AJob, SendA2AResult]):
     """Queue (write + claim + submit_result) for peer-MAGI calls."""
 
     job_model = _A2AJobRow
@@ -91,7 +87,7 @@ class sendA2AJobBoard(
     result_cls = SendA2AResult
     natural_key_attr = "job_id"
 
-    def _insert_pending(self, session, job: SendA2AJob, **kwargs) -> _A2AJobRow:
+    def _insert_pending(self, session, job: SendA2AJob, **_kwargs) -> _A2AJobRow:
         job_id = job.job_id or new_job_id()
         row = _A2AJobRow(
             job_id=job_id,

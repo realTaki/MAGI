@@ -9,11 +9,20 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, and_, or_, select, update
+from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJobBoard, _row_to_job
+
+#: Maximum delivery attempts before a row is marked failed.
+#: Distinct from :data:`BaseJobBoard.MAX_ATTEMPTS` (which gates
+#: the generic per-process retry ceiling at 3) — delivery needs
+#: more headroom for channel-side rate limits and reconnect
+#: loops. Shared between :meth:`_mark_exhausted` and
+#: :meth:`_cas_claim` (via the ``is_reclaim`` /
+#: ``MAX_ATTEMPTS`` import below).
+MAX_DELIVERY_ATTEMPTS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +67,10 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
     job_model = _DeliveryJobRow
     job_cls = DeliveryJob
     result_cls = DeliveryResult
+    # Delivery needs more headroom than the generic 3 — flaky
+    # channels (Telegram rate limits, WebUI WS reconnects) often
+    # fail 4–5 times before settling.
+    max_attempts: int = MAX_DELIVERY_ATTEMPTS
 
     def publish(self, job: DeliveryJob) -> str:
         with self._session() as s:
@@ -82,86 +95,14 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
         channel worker now reads only its own row slice; no
         claim/release churn, no cross-worker race.
         """
-        from datetime import timedelta
-
-        MAX_ATTEMPTS_CANDIDATES = 10
-        MAX_ATTEMPTS = 10
-        owner = f"delivery:{channel}:{id(self)}"
-        now = utcnow_naive()
-        lease_until = now + timedelta(seconds=self._lease_seconds)
         with self._session() as s:
-            for _ in range(MAX_ATTEMPTS_CANDIDATES):
-                # Find oldest pending / lease-expired row for this channel.
-                candidate = s.scalar(
-                    select(_DeliveryJobRow)
-                    .where(
-                        _DeliveryJobRow.channel == channel,
-                        or_(
-                            _DeliveryJobRow.status == "pending",
-                            and_(
-                                _DeliveryJobRow.status == "processing",
-                                _DeliveryJobRow.leased_until < now,
-                            ),
-                        ),
-                    )
-                    .order_by(_DeliveryJobRow.created_at, _DeliveryJobRow.id)
-                    .limit(1)
-                )
-                if candidate is None:
-                    return None
-                # MAX_ATTEMPTS exhaustion — mark failed, move on.
-                if candidate.status == "processing" and candidate.attempts >= MAX_ATTEMPTS:
-                    exhausted = DeliveryResult(
-                        job_id=candidate.job_id, success=False,
-                        error=f"job exhausted after {candidate.attempts} attempt(s)",
-                    )
-                    s.execute(
-                        update(_DeliveryJobRow)
-                        .where(_DeliveryJobRow.id == candidate.id)
-                        .values(
-                            status="failed",
-                            completed_at=now,
-                            result={"success": False, "error": exhausted.error},
-                        )
-                    )
-                    s.commit()
-                    continue
-                is_reclaim = candidate.status == "processing"
-                # Atomic CAS UPDATE on the same row + channel + invariants.
-                result = s.execute(
-                    update(_DeliveryJobRow)
-                    .where(
-                        _DeliveryJobRow.id == candidate.id,
-                        _DeliveryJobRow.channel == channel,
-                        or_(
-                            _DeliveryJobRow.status == "pending",
-                            and_(
-                                _DeliveryJobRow.status == "processing",
-                                _DeliveryJobRow.leased_until < now,
-                            ),
-                        ),
-                    )
-                    .values(
-                        status="processing",
-                        leased_by=owner,
-                        leased_until=lease_until,
-                        attempts=candidate.attempts + 1,
-                        started_at=now if not is_reclaim else candidate.started_at,
-                    )
-                )
-                if getattr(result, "rowcount", 0) == 1:
-                    s.commit()
-                    fresh = s.get(_DeliveryJobRow, candidate.id)
-                    if fresh is None:
-                        return None
-                    return DeliveryJob(
-                        channel=fresh.channel,
-                        payload=fresh.payload,
-                        destination=fresh.destination,
-                        job_id=fresh.job_id,
-                    )
-                # Lost the race — try next.
-                s.rollback()
-                now = utcnow_naive()
-                lease_until = now + timedelta(seconds=self._lease_seconds)
-            return None
+            row = self._cas_claim(
+                s,
+                owner=f"delivery:{channel}:{id(self)}",
+                extra_where=[_DeliveryJobRow.channel == channel],
+            )
+            s.commit()
+            if row is None:
+                return None
+            fresh = s.get(_DeliveryJobRow, row.id)
+            return _row_to_job(fresh, self.job_cls) if fresh else None

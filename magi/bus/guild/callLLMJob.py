@@ -17,6 +17,7 @@ from magi.bus.guild.base import BaseJobBoard
 
 # -- public dataclasses ----------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class CallLLMJob:
     """一次 LLM 推理请求。
@@ -44,16 +45,17 @@ class CallLLMResult:
 
     job_id: str
     success: bool
-    response: dict | None = None       # {text, thinking, tool_uses, raw_blocks}
+    response: dict | None = None  # {text, thinking, tool_uses, raw_blocks}
     finish_reason: str | None = None
     token_usage: dict | None = None
-    model: str = ""                     # provider 实际使用的模型
-    stream_key: str = ""                # bus.stream_hub 的管道句柄
+    model: str = ""  # provider 实际使用的模型
+    stream_key: str = ""  # bus.stream_hub 的管道句柄
     error: str | None = None
-    error_code: str = ""                # 稳定错误码，如 "LLMAuthError"
+    error_code: str = ""  # 稳定错误码，如 "LLMAuthError"
 
 
 # -- internal ORM ----------------------------------------------------------
+
 
 class _LLMJobRow(Base):
     __tablename__ = "llm_jobs"
@@ -86,6 +88,7 @@ class _LLMJobRow(Base):
 
 
 # -- Queue -----------------------------------------------------------------
+
 
 class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
     job_model = _LLMJobRow

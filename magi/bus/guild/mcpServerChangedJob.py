@@ -87,15 +87,11 @@ class McpServerChangedJob:
 
     def __post_init__(self) -> None:
         if self.kind not in VALID_KINDS:
-            raise ValueError(
-                f"invalid kind {self.kind!r}; expected one of {sorted(VALID_KINDS)}"
-            )
+            raise ValueError(f"invalid kind {self.kind!r}; expected one of {sorted(VALID_KINDS)}")
         if not self.server_name:
             raise ValueError("server_name is required")
         if self.kind in ("added", "updated") and self.server is None:
-            raise ValueError(
-                f"kind={self.kind!r} requires a McpServer payload"
-            )
+            raise ValueError(f"kind={self.kind!r} requires a McpServer payload")
         if self.kind == "toggled" and self.new_enabled is None:
             raise ValueError("kind='toggled' requires new_enabled flag")
 
@@ -137,7 +133,8 @@ class _McpServerChangedRow(Base):
     #: one column per field so the row layout stays decoupled
     #: from the DTO schema.
     server_payload: Mapped[dict[str, Any] | None] = mapped_column(
-        JSON, nullable=True,
+        JSON,
+        nullable=True,
     )
 
     #: New ``enabled`` flag value for ``kind="toggled"``; ``None``
@@ -250,11 +247,7 @@ class mcpServerChangedJobBoard(
             s.commit()
             if row is None:
                 return None
-            server = (
-                _load_server(row.server_payload)
-                if row.server_payload is not None
-                else None
-            )
+            server = _load_server(row.server_payload) if row.server_payload is not None else None
             return McpServerChangedJob(
                 kind=row.kind,
                 server_name=row.server_name,

@@ -167,5 +167,6 @@ class changeProviderConfigJobBoard(
             sb.set(key=PROVIDER_MODEL_KEY, value=job.model)
         logger.info(
             "changeProviderConfig: wrote provider=%r model=%r to settings_book",
-            job.provider, job.model,
+            job.provider,
+            job.model,
         )

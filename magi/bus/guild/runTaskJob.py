@@ -56,7 +56,8 @@ class _RunTaskJobRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result: Mapped[dict | None] = mapped_column(
-        type_=__import__("sqlalchemy").JSON, nullable=True,
+        type_=__import__("sqlalchemy").JSON,
+        nullable=True,
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -66,7 +67,9 @@ class _RunTaskJobRow(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive,
+        DateTime,
+        default=utcnow_naive,
+        onupdate=utcnow_naive,
     )
 
 
