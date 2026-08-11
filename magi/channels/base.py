@@ -1,8 +1,8 @@
 """Channel interface — implemented by every channel adapter.
 
-Concrete channels (Telegram, A2A, Scheduled) live in their own
+Concrete channels (Telegram, Scheduled) live in their own
 subpackages under :mod:`magi.channels`; the shared FastAPI surface
-(operator browser, A2A peer ingress, runtime API) lives in
+(operator browser, runtime API) lives in
 ``channels/api/``. They share this contract so the runtime can treat
 the channel adapters interchangeably.
 """
