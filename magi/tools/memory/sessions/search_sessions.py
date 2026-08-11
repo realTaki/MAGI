@@ -113,7 +113,7 @@ class SearchSessionsTool(Tool):
         "messages so the model sees what was actually said "
         "around the hit (not just the matching token). Use "
         "when the user references something discussed earlier "
-        "(\"remember when we…\", \"what was that…\"), or "
+        '("remember when we…", "what was that…"), or '
         "when you need context that has scrolled out of the "
         "current session's tail. Scope: the calling operator's "
         "own history; other operators' sessions are not "
@@ -128,7 +128,7 @@ class SearchSessionsTool(Tool):
                     "Search query. Whitespace-separated tokens "
                     "are matched as substrings; CJK runs of 3+ "
                     "characters work (the FTS5 index uses "
-                    "trigram tokenisation). Operators ``\"``, "
+                    'trigram tokenisation). Operators ``"``, '
                     "``*``, ``AND``/``OR``/``NOT`` etc. are "
                     "escaped by the backend — you don't need "
                     "to sanitise the input yourself."
@@ -147,10 +147,7 @@ class SearchSessionsTool(Tool):
             },
             "limit": {
                 "type": "integer",
-                "description": (
-                    "Max number of hits to return. Defaults to "
-                    "10; capped at 20."
-                ),
+                "description": ("Max number of hits to return. Defaults to 10; capped at 20."),
                 "minimum": 1,
                 "maximum": _MAX_HITS,
             },
@@ -168,10 +165,7 @@ class SearchSessionsTool(Tool):
         q = kwargs.get("q")
         if not isinstance(q, str) or not q.strip():
             return ToolResult(
-                content=(
-                    "search_sessions: ``q`` is required and must "
-                    "be a non-empty string"
-                ),
+                content=("search_sessions: ``q`` is required and must be a non-empty string"),
                 is_error=True,
             )
 
@@ -190,8 +184,7 @@ class SearchSessionsTool(Tool):
         if not isinstance(limit, int):
             return ToolResult(
                 content=(
-                    f"search_sessions: ``limit`` must be an "
-                    f"integer, got {type(limit).__name__}"
+                    f"search_sessions: ``limit`` must be an integer, got {type(limit).__name__}"
                 ),
                 is_error=True,
             )
@@ -207,7 +200,9 @@ class SearchSessionsTool(Tool):
 
         try:
             hits, total = ctx.bus.messages_book.search(
-                contact_id=contact_id, q=q, limit=limit,
+                contact_id=contact_id,
+                q=q,
+                limit=limit,
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_sessions: {e}", is_error=True)
@@ -221,12 +216,7 @@ class SearchSessionsTool(Tool):
             )
 
         if not hits:
-            return ToolResult(
-                content=(
-                    f"search_sessions: no matches for q={q!r} "
-                    f"(total={total})"
-                )
-            )
+            return ToolResult(content=(f"search_sessions: no matches for q={q!r} (total={total})"))
 
         # Format each hit with its surrounding context.
         # Cap the running output at ``_MAX_OUTPUT_BYTES`` so
@@ -243,9 +233,10 @@ class SearchSessionsTool(Tool):
         # 0``. The footer only makes sense once truncation has
         # actually fired.
         truncated_at: int | None = None
-        for i, hit in enumerate(hits, start=1):
+        for _i, hit in enumerate(hits, start=1):
             block = _format_hit_block(
-                hit, context_n,
+                hit,
+                context_n,
                 ctx.bus,
                 contact_id,
             )
@@ -290,7 +281,9 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
     formatter over the same ``ResolvedHit`` envelope.
     """
     resolved = bus.messages_book.resolve_hit(
-        contact_id=contact_id, hit=hit, context_n=context_n,
+        contact_id=contact_id,
+        hit=hit,
+        context_n=context_n,
         sessions_book=bus.sessions_book,
     )
     if resolved is None:
@@ -308,8 +301,7 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
         f"[hit] session={resolved.conversation.conversation_id}, "
         f"title={resolved.conversation.title!r}, ts={hit.ts}, "
         f"role={hit.role}, channel={hit.channel}, "
-        f"delivery_address={hit.delivery_address}"
-        + (" (archived)" if resolved.is_archived else "")
+        f"delivery_address={hit.delivery_address}" + (" (archived)" if resolved.is_archived else "")
     )
 
     if not resolved.messages_with_hit:
@@ -321,10 +313,6 @@ def _format_hit_block(hit: SearchHit, context_n: int, bus, contact_id: int) -> s
     for j, m in enumerate(resolved.messages_with_hit):
         marker = "  >>" if j == resolved.hit_position else "    "
         text = m.text if j != resolved.hit_position else hit.snippet
-        context_lines.append(
-            f"{marker} [{m.role} @ {m.ts}] {text}"
-        )
+        context_lines.append(f"{marker} [{m.role} @ {m.ts}] {text}")
     context = "\n".join(context_lines)
-    return (
-        f"{header}\n--- context (idx {resolved.hit_position}) ---\n{context}"
-    )
+    return f"{header}\n--- context (idx {resolved.hit_position}) ---\n{context}"

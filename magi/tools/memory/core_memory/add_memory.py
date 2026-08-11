@@ -123,9 +123,7 @@ class AddMemoryTool(Tool):
         # ``is_error=True`` to the LLM.
         missing = [k for k in ("kind", "subject", "body") if not kwargs.get(k)]
         if missing:
-            return ToolResult.err(
-                f"add_memory requires fields: {', '.join(missing)}"
-            )
+            return ToolResult.err(f"add_memory requires fields: {', '.join(missing)}")
         if ctx.bus is None:
             return ToolResult.err("bus not available")
         try:
@@ -140,6 +138,9 @@ class AddMemoryTool(Tool):
             return ToolResult.err(f"add_memory failed: {e}")
         logger.info(
             "add_memory: row %s created for contact=%s kind=%r subject=%r",
-            view.id, ctx.contact_id, view.kind, view.subject,
+            view.id,
+            ctx.contact_id,
+            view.kind,
+            view.subject,
         )
         return ToolResult.ok({"created": view.to_dict()})

@@ -50,8 +50,7 @@ class SearchContactsTool(Tool):
             "query": {
                 "type": "string",
                 "description": (
-                    "Search string (matches name or note "
-                    "text, case-insensitive substring)."
+                    "Search string (matches name or note text, case-insensitive substring)."
                 ),
             },
             "limit": {
@@ -59,9 +58,7 @@ class SearchContactsTool(Tool):
                 "minimum": 1,
                 "maximum": 100,
                 "default": 20,
-                "description": (
-                    "Max contacts to return. Default 20."
-                ),
+                "description": ("Max contacts to return. Default 20."),
             },
             "notes_per_contact": {
                 "type": "integer",
@@ -83,14 +80,13 @@ class SearchContactsTool(Tool):
         assert ctx.bus is not None, "require_bus should have caught this"
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
-            return ToolResult.err(
-                "query is required (non-empty string)"
-            )
+            return ToolResult.err("query is required (non-empty string)")
         limit = int(kwargs.get("limit") or 20)
         notes_per_contact = int(kwargs.get("notes_per_contact") or 5)
 
         contacts = ctx.bus.contacts_book.search(
-            query=query, limit=limit,
+            query=query,
+            limit=limit,
         )
 
         results: list[dict] = []
@@ -110,10 +106,14 @@ class SearchContactsTool(Tool):
 
         logger.info(
             "search_contacts: query=%r limit=%s returned=%s",
-            query, limit, len(results),
+            query,
+            limit,
+            len(results),
         )
-        return ToolResult.ok({
-            "query": query,
-            "count": len(results),
-            "contacts": results,
-        })
+        return ToolResult.ok(
+            {
+                "query": query,
+                "count": len(results),
+                "contacts": results,
+            }
+        )

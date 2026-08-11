@@ -56,15 +56,14 @@ class DeleteContactNoteTool(Tool):
         assert ctx.bus is not None, "require_bus should have caught this"
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
-            return ToolResult.err(
-                f"note_id must be int, got {type(note_id).__name__}"
-            )
+            return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
 
         existed = ctx.bus.contact_notes_book.delete_note(
             note_id=note_id,
         )
         logger.info(
             "delete_contact_note: note=%s existed=%s",
-            note_id, existed,
+            note_id,
+            existed,
         )
         return ToolResult.ok({"note_id": note_id, "existed": existed})

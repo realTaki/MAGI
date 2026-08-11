@@ -57,8 +57,7 @@ class AddContactTool(Tool):
             "name": {
                 "type": "string",
                 "description": (
-                    "Contact name (required, ≤120 chars, "
-                    "unique across the directory)."
+                    "Contact name (required, ≤120 chars, unique across the directory)."
                 ),
             },
             "display_name": {
@@ -129,7 +128,8 @@ class AddContactTool(Tool):
             # doesn't have to thread two tool results.
             try:
                 note = ctx.bus.contact_notes_book.add(
-                    contact_id=contact.id, note=str(initial_note),
+                    contact_id=contact.id,
+                    note=str(initial_note),
                 )
             except ValueError as e:
                 # Contact row was created — surface the
@@ -138,24 +138,28 @@ class AddContactTool(Tool):
                 # the LLM can decide whether to retry the
                 # note write.
                 logger.warning(
-                    "add_contact: contact %s created but "
-                    "initial note rejected: %s",
-                    contact.id, e,
+                    "add_contact: contact %s created but initial note rejected: %s",
+                    contact.id,
+                    e,
                 )
-                return ToolResult.ok({
-                    "created": contact.to_dict(),
-                    "initial_note": None,
-                    "initial_note_error": str(e),
-                })
+                return ToolResult.ok(
+                    {
+                        "created": contact.to_dict(),
+                        "initial_note": None,
+                        "initial_note_error": str(e),
+                    }
+                )
             logger.info(
-                "add_contact: contact=%s created with "
-                "initial note=%s",
-                contact.id, note.id,
+                "add_contact: contact=%s created with initial note=%s",
+                contact.id,
+                note.id,
             )
-            return ToolResult.ok({
-                "created": contact.to_dict(),
-                "initial_note": note.to_dict(),
-            })
+            return ToolResult.ok(
+                {
+                    "created": contact.to_dict(),
+                    "initial_note": note.to_dict(),
+                }
+            )
 
         logger.info("add_contact: contact=%s created", contact.id)
         return ToolResult.ok({"created": contact.to_dict()})

@@ -56,8 +56,7 @@ class AddContactNoteTool(Tool):
             "note": {
                 "type": "string",
                 "description": (
-                    "One short fact. ≤8 KB; the Book "
-                    "clamps whitespace and rejects empty."
+                    "One short fact. ≤8 KB; the Book clamps whitespace and rejects empty."
                 ),
             },
         },
@@ -70,13 +69,9 @@ class AddContactNoteTool(Tool):
         contact_id = kwargs.get("contact_id")
         note = kwargs.get("note")
         if not isinstance(contact_id, int):
-            return ToolResult.err(
-                f"contact_id must be int, got {type(contact_id).__name__}"
-            )
+            return ToolResult.err(f"contact_id must be int, got {type(contact_id).__name__}")
         if not isinstance(note, str) or not note.strip():
-            return ToolResult.err(
-                "note is required (non-empty string)"
-            )
+            return ToolResult.err("note is required (non-empty string)")
         if ctx.bus is None:
             return ToolResult.err("bus not available")
 
@@ -92,7 +87,8 @@ class AddContactNoteTool(Tool):
 
         try:
             row = ctx.bus.contact_notes_book.add(
-                contact_id=contact_id, note=note,
+                contact_id=contact_id,
+                note=note,
             )
         except ValueError as e:
             # ``contact_notes_book.add`` owns the
@@ -102,6 +98,7 @@ class AddContactNoteTool(Tool):
 
         logger.info(
             "add_contact_note: note=%s appended to contact=%s",
-            row.id, contact_id,
+            row.id,
+            contact_id,
         )
         return ToolResult.ok({"created": row.to_dict()})

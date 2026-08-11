@@ -92,9 +92,7 @@ class UpdateDailyNoteTool(Tool):
         assert ctx.bus is not None  # guaranteed by @Tool.require_bus
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
-            return ToolResult.err(
-                "body_delta is required (non-empty string)"
-            )
+            return ToolResult.err("body_delta is required (non-empty string)")
         # Default to the operator's own contact_id — the LLM
         # never specifies a different contact_id here (no
         # override on input_schema). Future cross-contact
@@ -102,9 +100,7 @@ class UpdateDailyNoteTool(Tool):
         # ``update_daily_note_for`` shape.
         contact_id = ctx.contact_id
         if contact_id is None or contact_id == 0:
-            return ToolResult.err(
-                "no contact_id on the calling context"
-            )
+            return ToolResult.err("no contact_id on the calling context")
 
         note_date: datetime | None = None
         raw_date = kwargs.get("note_date")
@@ -112,9 +108,7 @@ class UpdateDailyNoteTool(Tool):
             try:
                 note_date = datetime.strptime(raw_date, "%Y-%m-%d")
             except ValueError:
-                return ToolResult.err(
-                    f"note_date must be YYYY-MM-DD, got {raw_date!r}"
-                )
+                return ToolResult.err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
         try:
             row = ctx.bus.contact_notes_book.upsert_daily_note(
@@ -132,6 +126,7 @@ class UpdateDailyNoteTool(Tool):
 
         logger.info(
             "update_daily_note: contact=%s appended to row=%s",
-            contact_id, row.id,
+            contact_id,
+            row.id,
         )
         return ToolResult.ok({"updated": row.to_dict()})

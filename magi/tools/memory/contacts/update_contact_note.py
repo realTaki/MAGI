@@ -56,8 +56,7 @@ class UpdateContactNoteTool(Tool):
             "note": {
                 "type": "string",
                 "description": (
-                    "Replacement text. ≤8 KB; the Book "
-                    "clamps whitespace and rejects empty."
+                    "Replacement text. ≤8 KB; the Book clamps whitespace and rejects empty."
                 ),
             },
         },
@@ -70,17 +69,14 @@ class UpdateContactNoteTool(Tool):
         note_id = kwargs.get("note_id")
         note = kwargs.get("note")
         if not isinstance(note_id, int):
-            return ToolResult.err(
-                f"note_id must be int, got {type(note_id).__name__}"
-            )
+            return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
         if not isinstance(note, str) or not note.strip():
-            return ToolResult.err(
-                "note is required (non-empty string)"
-            )
+            return ToolResult.err("note is required (non-empty string)")
 
         try:
             row = ctx.bus.contact_notes_book.update_note(
-                note_id=note_id, note=note,
+                note_id=note_id,
+                note=note,
             )
         except LookupError as e:
             # ``contact_notes_book.update_note`` raises
@@ -96,6 +92,7 @@ class UpdateContactNoteTool(Tool):
             return ToolResult.err(str(e))
 
         logger.info(
-            "update_contact_note: note=%s updated", row.id,
+            "update_contact_note: note=%s updated",
+            row.id,
         )
         return ToolResult.ok({"updated": row.to_dict()})
