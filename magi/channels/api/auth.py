@@ -948,6 +948,44 @@ async def logout(response: Response) -> Response:
     return Response(status_code=204)
 
 
+async def _login_methods_via_runtime(
+    bus: Bus, magi_id: int, contact_id: int
+) -> list[str] | None:
+    """Control-plane: ask the runtime which methods ``contact_id`` has.
+
+    The singleton WebUI cannot answer this itself — ``contacts``
+    and the password hashes live in the runtime's local store,
+    not in the MAGIS store its Bus is bound to. The runtime
+    already computes both flags for the login picker, so this
+    reuses ``/access/login-accounts`` rather than adding a
+    second source of truth that could drift from it.
+
+    Returns ``None`` when the runtime is unreachable or does not
+    know the contact, so the caller can fall back to reporting
+    nothing rather than claiming the operator has no password.
+    """
+    try:
+        result = await _target_access(bus, magi_id, "GET", "/api/access/login-accounts")
+    except Exception:
+        logger.exception("me: login-methods lookup failed for contact_id=%s", contact_id)
+        return None
+    accounts = result.get("accounts")
+    if not isinstance(accounts, list):
+        return None
+    for row in accounts:
+        # The same contact appears once per role (admin +
+        # assigned); both rows carry identical credential
+        # flags, so the first match is enough.
+        if isinstance(row, dict) and row.get("contact_id") == contact_id:
+            methods: list[str] = []
+            if row.get("has_password"):
+                methods.append("password")
+            if row.get("has_tg_code"):
+                methods.append("tg_code")
+            return methods
+    return None
+
+
 @router.get("/me", response_model=MeResponse)
 async def me(
     bus: BusDep,
@@ -961,11 +999,38 @@ async def me(
     not the chat id the user typed on the login page.
     The ``tgid`` field in the response is the
     bound TG chat id, looked up from the same row.
+
+    Two data sources, one per deployment mode. A single-MAGI
+    runtime reads its own ``contacts``. The control plane
+    cannot: its Bus is bound to the MAGIS store, which has no
+    ``contacts`` table, so it asks the selected runtime instead
+    — otherwise ``login_methods`` / ``password_set`` come back
+    empty and the Settings → Security card tells an operator who
+    does have a password that they have none.
     """
     session = resolve_session(bus, magi_session)
     if session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     contact_id = int(session["contact_id"])
+    selected_magi_id = int(session["magi_id"]) if session.get("magi_id") else None
+
+    if control_store.enabled():
+        methods = (
+            await _login_methods_via_runtime(bus, selected_magi_id, contact_id)
+            if selected_magi_id
+            else None
+        ) or []
+        return MeResponse(
+            contact_id=contact_id,
+            tgid=session.get("tgid"),
+            display_name=session.get("display_name"),
+            admin=bool(session.get("admin")),
+            assigned=bool(session.get("assigned")),
+            selected_magi_id=selected_magi_id,
+            login_methods=methods,
+            password_set="password" in methods,
+        )
+
     # Re-read the row to surface login_methods +
     # password_set for the Settings → Security card.
     # If the row has since been deleted (admin removed
@@ -979,7 +1044,7 @@ async def me(
                 display_name=session.get("display_name"),
                 admin=bool(session.get("admin")),
                 assigned=bool(session.get("assigned")),
-                selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
+                selected_magi_id=selected_magi_id,
             )
         methods, _is_webui_only = _login_methods_for(bus, contact_id)
         return MeResponse(
@@ -988,7 +1053,7 @@ async def me(
             display_name=contact.name,
             admin=bool(contact.admin),
             assigned=bool(session.get("assigned")),
-            selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
+            selected_magi_id=selected_magi_id,
             login_methods=methods,
             password_set="password" in methods,
         )
@@ -1004,7 +1069,7 @@ async def me(
             display_name=session.get("display_name"),
             admin=bool(session.get("admin")),
             assigned=bool(session.get("assigned")),
-            selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
+            selected_magi_id=selected_magi_id,
         )
 
 
