@@ -94,6 +94,9 @@ export default {
     webuiOnlySaving: "保存中…",
     webuiOnlySaved: "保存しました ✓",
     webuiOnlySaveFailed: "保存に失敗しました",
+    step3OperatorLabel: "オペレーター",
+    step3OperatorScopesLabel: "ログインスコープ",
+    step3OperatorScopesDesc: "Genesis 管理者 + この MAGI の被サービス利用者",
     completedNoCredentials: "ログイン方式（WebUI のみ / Telegram 併用）を少なくとも 1 つ選んでから完了してください。",
   },
   login: {

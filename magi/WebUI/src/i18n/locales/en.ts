@@ -94,6 +94,9 @@ export default {
     webuiOnlySaving: "Saving…",
     webuiOnlySaved: "Saved ✓",
     webuiOnlySaveFailed: "Save failed",
+    step3OperatorLabel: "Operator",
+    step3OperatorScopesLabel: "Sign-in scopes",
+    step3OperatorScopesDesc: "Genesis admin + this MAGI's assigned user",
     completedNoCredentials: "Pick a sign-in method (WebUI-only or Telegram) before completing setup.",
   },
   login: {

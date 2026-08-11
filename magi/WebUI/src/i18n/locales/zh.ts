@@ -94,6 +94,9 @@ export default {
     webuiOnlySaving: "保存中…",
     webuiOnlySaved: "已保存 ✓",
     webuiOnlySaveFailed: "保存失败",
+    step3OperatorLabel: "操作员",
+    step3OperatorScopesLabel: "登录身份",
+    step3OperatorScopesDesc: "Genesis 管理员 + 当前 MAGI 的被服务用户",
     completedNoCredentials: "请至少选择一种登录方式（仅 WebUI 或带 Telegram）后再完成设置。",
   },
   login: {
