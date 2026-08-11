@@ -54,7 +54,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     magis_tables = set(inspect(bus._magis_factory.engine).get_table_names())
     assert {"settings", "chat_jobs", "contacts"} <= local_tables
     assert "magis" not in local_tables
-    assert {"magis", "runtime_state"} <= magis_tables
+    assert {"magis", "runtime_state", "a2a_request_jobs", "a2a_notify_jobs"} <= magis_tables
     assert "settings" not in magis_tables
     assert "auth_credentials" not in magis_tables
     assert "magi_schema_revisions" not in local_tables
@@ -62,12 +62,12 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0004_add_contact_password_hash"
+            == "0005_drop_legacy_local_a2a_jobs"
         )
     with bus._magis_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0001_magis_baseline"
+            == "0003_add_a2a_job_boards"
         )
 
 
@@ -116,7 +116,7 @@ def test_open_bus_upgrades_existing_local_contacts_with_password_hash(tmp_path: 
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0004_add_contact_password_hash"
+            == "0005_drop_legacy_local_a2a_jobs"
         )
 
 
@@ -232,7 +232,7 @@ def test_runtime_open_repairs_an_outdated_schema_before_exposing_books(tmp_path:
     with repaired._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0004_add_contact_password_hash"
+            == "0005_drop_legacy_local_a2a_jobs"
         )
 
 

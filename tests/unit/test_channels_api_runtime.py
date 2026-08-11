@@ -28,5 +28,4 @@ async def test_channel_list_keeps_unimplemented_channels_stopped() -> None:
     assert {call.args[0] for call in registry.is_running.call_args_list} == {
         Channel.TG,
         Channel.WEBUI,
-        Channel.A2A,
     }

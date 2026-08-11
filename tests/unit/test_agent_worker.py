@@ -107,9 +107,8 @@ def _make_bus(**overrides) -> Mock:
     bus.tool_job_board.publish = Mock(return_value="tool-job-1")
     bus.tool_job_board.get_result = Mock(return_value=None)
 
-    bus.a2a_job_board = Mock()
-    bus.a2a_job_board.publish = Mock(return_value="a2a-job-1")
-    bus.a2a_job_board.get_result = Mock(return_value=None)
+    bus.a2a_request_job_board = None
+    bus.a2a_notify_job_board = None
 
     bus.delivery_job_board = Mock()
     bus.delivery_job_board.publish = Mock()
