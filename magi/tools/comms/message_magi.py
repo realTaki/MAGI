@@ -1,4 +1,4 @@
-"""Schema-only actor effect for general MAGI-to-MAGI communication."""
+"""Schema-only actor effect for durable MAGIS-internal A2A communication."""
 
 from __future__ import annotations
 
@@ -10,26 +10,37 @@ from magi.tools.base import Tool, ToolContext, ToolResult
 class MessageMagiTool(Tool):
     """Ask another MAGI a question or send it a one-way message.
 
-    The AgentWorker persists this effect with the transition by
-    publishing a :class:`magi.bus.guild.sendA2AJob.SendA2AJob`
-    onto ``bus.a2a_job_board`` (``a2a_jobs`` table). It must
-    never be executed by ToolWorker, otherwise an A2A write could
-    escape the actor's transactional outbox.
+    The AgentWorker persists this effect to a shared MAGIS request or notify
+    board.  It must never be executed by ToolWorker: it is an actor effect,
+    not a local executable tool.
     """
 
     name = "message_magi"
-    description = "Send a general message to another MAGI. Set expect_reply only when a later answer is required."
+    description = (
+        "Send a durable message to another MAGI in this MAGIS. "
+        "Use notify for one-way information and request for one required answer."
+    )
     input_schema = {
         "type": "object",
         "properties": {
             "magi_id": {
                 "type": "integer",
-                "description": "Target MAGI id (``magis_memberships.id``).",
+                "description": "Target MAGI id from the MAGIS collaboration directory.",
             },
             "text": {"type": "string", "description": "Message to the peer MAGI."},
-            "expect_reply": {"type": "boolean", "default": False},
+            "mode": {
+                "type": "string",
+                "enum": ["notify", "request"],
+                "description": "notify never expects a reply; request receives one response.",
+            },
+            "deadline_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600,
+                "default": 120,
+            },
         },
-        "required": ["magi_id", "text"],
+        "required": ["magi_id", "text", "mode"],
     }
 
     async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
