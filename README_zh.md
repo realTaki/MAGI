@@ -8,12 +8,12 @@
 
 > **MAGI 是面向持久化、模块化、可治理智能体社会的运行时。**
 >
-> MAGIS（MAGI Society）不是一次性的群聊或任务流水线，而是由独立 MAGI
-> 组成的长期组织。每个 MAGI 都有自己的运行时、工作区、记忆、工具、模型提供方凭证，
+> MAGIS（MAGI Society）是由独立 MAGI 组成的持久组织。每个 MAGI 都有自己的运行时、
+> 工作区、记忆、工具、模型提供方凭证，
 > 以及在 Society 中的角色。它们在 Society 中协作，通过独立管理的 MAGI Runtime
 > 执行工作，保留经验，并在不放弃边界、问责与操作者控制的前提下，逐步成长为持久的群体智能。
 
-MAGI 要回答的不只是「怎样把一个任务分配给多个 Agent」，而是：
+MAGI 关注的核心问题是：
 
 **怎样让一群 AI Agent 拥有身份、连续性和组织结构，能够随时间共同进步，
 同时让这种自主性始终可观察、有边界、可治理？**
@@ -48,12 +48,12 @@ MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰�
 - **治理必须始终存在。** 身份、权限、隔离、可观察性、资源边界与问责，会随着 Agent
   自主性增强而变得更加重要。
 
-长期目标不是做一个更复杂的 Workflow Controller，而是构建一种基础设施，让自主智能体能够
+长期目标是构建一种基础设施，让自主智能体能够
 **在明确、可检查的约束内自由协作**。
 
 ## 走向可治理的群体智能
 
-最终目标不是一个反复委派 Prompt 的静态层级，而是让一个 MAGIS 因为真实存在过而变得更好，
+最终目标是让一个 MAGIS 因为真实存在过而变得更好，
 同时始终保持可观察、可约束、可治理：
 
 - MAGI 从工作结果、失败和观察中学习；
@@ -62,10 +62,11 @@ MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰�
 - Society 可以共享知识、互相协作，而不把成员简化为无状态 API 调用；
 - 操作者始终能够检查组织、记忆、工具、资源边界，以及改变组织时使用的权限。
 
-> **实现状态：**持久记忆、Skills、MAGIS/MAGI 模型、隔离的 EVA 生命周期管理，
-> 以及受限控制面的基础已经存在。跨 MAGI 的自主学习、能力评估、自主组织重构、
-> 协议驱动的协作、更丰富的策略执行，以及 Society 间知识交换都是正在推进的设计目标，
-> **目前并非全部已经实现**。
+> **实现状态：**持久记忆、Skills、MAGIS/MAGI 模型、隔离的 EVA 生命周期管理、
+> 受限控制面、以及同一 MAGIS 内 MAGI 之间的 **A2A 持久 actor effect** 协作
+> （`notify` / `request` 两类单向终态 + MAGIS 协作目录 + `message_magi` 工具）
+> 都已经存在。跨 MAGI 的自主学习、能力评估、自主组织重构、更丰富的策略执行、
+> 以及 Society 间知识交换都是正在推进的设计目标，**目前并非全部已经实现**。
 
 ## MAGI 模型
 
@@ -91,6 +92,11 @@ MAGIS：Engineering
    ├── EVA / MAGI                      独立运行时 + 工作区
    ├── EVA / MAGI                      独立运行时 + 工作区
    └── 子 MAGIS：Research              自己的 ADAM 与 MAGI
+
+MAGIS 共享数据库（同一 Society 内 MAGI 之间）：
+   a2a_request_job_board   ─┐
+   a2a_notify_job_board    ─┴─► AgentWorker（目标 magi_id）持久 actor effect
+                              message_magi {magi_id, mode, text, deadline_seconds}
 ```
 
 ADAM 是协调者，而不是不受限制的宿主机管理员。它不会获得宿主机 Docker socket
@@ -106,6 +112,13 @@ PostgreSQL 与公共工作区资源。
 - **持久化运行记忆**：会话历史、联系人知识、任务状态和可搜索记忆跨会话保留。
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
 - **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
+- **MAGIS 内 A2A 协作**：同一 MAGIS 的 MAGI 之间通过**持久 actor effect** 直接协作：
+  消息落在 MAGIS 共享数据库的两张 job board 上（`a2a_request_job_board`
+  一次 request / 一次 response，`a2a_notify_job_board` 单向持久通知），
+  由目标 MAGI 的 `AgentWorker` 直接消费；不经过 HTTP / webhook / 外部签名协议。
+  工具契约收敛为 `message_magi({magi_id, mode ∈ {notify, request}, text, deadline_seconds})`。
+  每个 MAGI 的 `responsibility`（职责说明）与同 MAGIS 成员目录会随每轮
+  system prompt 渲染给 LLM，让模型在选择协作对象时能直接看到边界与专长。
 
 ## 快速开始
 
@@ -218,7 +231,6 @@ Bot 代发验证码。
 深入实现请阅读：
 
 - [架构](docs/ARCHITECTURE.md)
-- [统一 WebUI 与 Runtime API](docs/unified-webui.md)
 - [关键业务流程](docs/business-flows.md)
 - [数据库与迁移说明](docs/database-migrations.md)
 - [部署总览](deploy/README.md)

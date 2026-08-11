@@ -8,9 +8,9 @@
 
 > **MAGI is a runtime for persistent, modular, governable agent societies.**
 >
-> A MAGIS is not a one-off group chat or a task pipeline. It is a **MAGI Society**:
-> an organization of independent MAGI, each with its own runtime, workspace,
-> memory, tools, provider credentials, and role in the Society.
+> A MAGIS is a **MAGI Society** — a persistent organization of independent MAGI.
+> Each MAGI has its own runtime, workspace, memory, tools, provider credentials,
+> and role in the Society.
 > They coordinate through the Society, execute through independently managed
 > MAGI runtimes, retain what they learn, and grow into a durable collective
 > intelligence without giving up boundaries, accountability, or operator control.
@@ -56,15 +56,13 @@ That leads to three principles:
   resource boundaries, and accountability become more important as agents gain
   more autonomy.
 
-The long-term goal is not to build a better workflow controller. It is to build
-the infrastructure in which autonomous intelligences can collaborate freely
-**within explicit, inspectable constraints**.
+The long-term goal is to build the infrastructure in which autonomous
+intelligences can collaborate freely **within explicit, inspectable constraints**.
 
 ## Toward governed collective intelligence
 
-The end state is not a static hierarchy that repeatedly delegates prompts. A
-MAGIS should become better because it has existed — while remaining inspectable
-and governable:
+A MAGIS should become better because it has existed — while remaining
+inspectable and governable:
 
 - MAGI learn from the outcomes, failures, and observations of their work.
 - Useful procedures become reusable Skills rather than disappearing into an
@@ -77,11 +75,15 @@ and governable:
   its resource boundaries, and the authority used to change it.
 
 > **Implementation status:** durable memory, Skills, Society/MAGI modeling,
-> isolated EVA lifecycle management, and restricted control-plane boundaries
+> isolated EVA lifecycle management, restricted control-plane boundaries,
+> and **same-MAGIS MAGI↔MAGI collaboration via a persistent actor effect**
+> (two terminal modes — `notify` / `request` — backed by shared
+> `a2a_request_job_board` / `a2a_notify_job_board` job boards, the
+> `message_magi` tool, and a per-turn MAGIS collaboration directory)
 > are the foundation available today. Autonomous cross-MAGI learning,
 > capability assessment, self-directed organizational restructuring,
-> protocol-mediated coordination, richer policy enforcement, and inter-Society
-> knowledge exchange are active design goals; they are **not all implemented yet**.
+> richer policy enforcement, and inter-Society knowledge exchange are
+> active design goals; they are **not all implemented yet**.
 
 ## The MAGI model
 
@@ -107,6 +109,11 @@ MAGIS: Engineering
    ├── EVA / MAGI                       independent runtime + workspace
    ├── EVA / MAGI                       independent runtime + workspace
    └── child MAGIS: Research            its own ADAM and MAGI
+
+MAGIS-shared database (intra-Society MAGI↔MAGI):
+   a2a_request_job_board   ─┐
+   a2a_notify_job_board    ─┴─► AgentWorker (target magi_id) persistent actor effect
+                              message_magi {magi_id, mode, text, deadline_seconds}
 ```
 
 ADAM is a coordinator, not an unrestricted host administrator. It is not
@@ -129,6 +136,17 @@ plus the shared-database and public workspace resources for a MAGIS when needed.
   Skills, scheduled tasks, and built-in tools extend what a MAGI can do.
 - **Provider independence** — MAGI hold their own provider configuration
   and API credentials rather than sharing one global model account.
+- **Same-MAGIS A2A collaboration** — MAGI of the same Society collaborate
+  through a **persistent actor effect**: messages land on two job boards
+  in the MAGIS-shared database (`a2a_request_job_board` for one-shot
+  request / one response, `a2a_notify_job_board` for durable one-way
+  notifications) and are claimed directly by the target MAGI's
+  `AgentWorker` — never via HTTP, webhooks, or external signature
+  protocols. The tool contract collapses to
+  `message_magi({magi_id, mode ∈ {notify, request}, text, deadline_seconds})`.
+  Each MAGI's `responsibility` (scope statement) and the rest of its
+  MAGIS's directory are rendered into every system prompt, so the model
+  sees boundaries and specialisations before it picks a collaborator.
 
 ## Quick start
 
@@ -244,9 +262,9 @@ provisions one database per MAGIS in a shared PostgreSQL service. The startup
 inputs (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_NAME`,
 `MAGIS_DATABASE_URL`, `MAGI_ID`) are
 the only contract Runtime sees; workspace paths are derived, never
-configured. See [the storage boundary](docs/magi-magis-storage.md) and
-[BUS runtime architecture](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md) for the
-exact split and contract.
+configured. See [the storage boundary](docs/ARCHITECTURE.md#storage-ownership)
+and [BUS runtime architecture](docs/MAGI_BUS_CENTRIC_ARCHITECTURE.md) for
+the exact split and contract.
 
 ### One WebUI, one image
 
@@ -268,7 +286,6 @@ its direct MAGIS ADAM Bot provides the one-time bootstrap fallback.
 For the implementation-level view, see:
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Unified WebUI and Runtime API](docs/unified-webui.md)
 - [Business flows](docs/business-flows.md)
 - [Database and migration notes](docs/database-migrations.md)
 - [Deployment overview](deploy/README.md)
