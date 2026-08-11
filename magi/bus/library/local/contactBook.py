@@ -69,7 +69,7 @@ class Contact:
     name: str  # 联系人唯一名
     display_name: str | None = None  # 显示名
     role: str = ROLE_GUEST  # 角色（assigned/guest）
-    telegram_id: int | None = None  # 绑定的 Telegram chat id
+    tgid: int | None = None  # 绑定的 Telegram chat id
     admin: bool = False  # 预留标志（实际权限由 MAGIS 的 magis_admins 表管理）
     last_seen_at: datetime | None = None  # 最近活跃时间
     created_at: datetime | None = None  # 创建时间
@@ -121,7 +121,7 @@ class _ContactRow(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
-    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
@@ -161,9 +161,9 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
             return self._row_to_dto(row) if row else None
 
-    def get_by_telegram(self, *, telegram_id: int) -> Contact | None:
+    def get_by_telegram(self, *, tgid: int) -> Contact | None:
         with self._session() as s:
-            row = s.scalar(select(_ContactRow).where(_ContactRow.telegram_id == telegram_id))
+            row = s.scalar(select(_ContactRow).where(_ContactRow.tgid == tgid))
             return self._row_to_dto(row) if row else None
 
     def get_password_hash(self, *, contact_id: int) -> str | None:
@@ -221,7 +221,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         name: str,
         role: str = ROLE_GUEST,
         display_name: str | None = None,
-        telegram_id: int | None = None,
+        tgid: int | None = None,
         admin: bool = False,
     ) -> Contact:
         """Insert one contact row.
@@ -248,7 +248,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 name=normalized,
                 role=role,
                 display_name=normalized_display,
-                telegram_id=telegram_id,
+                tgid=tgid,
                 admin=admin,
             )
             s.add(row)
@@ -264,9 +264,9 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         display_name: str | None = None,
         role: str | None = None,
         admin: bool | None = None,
-        telegram_id: int | None = None,
+        tgid: int | None = None,
         set_display_name: bool = False,
-        set_telegram_id: bool = False,
+        set_tgid: bool = False,
     ) -> Contact | None:
         """Update one contact and return its DTO.
 
@@ -300,17 +300,17 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 row.role = role
             if admin is not None:
                 row.admin = admin
-            if set_telegram_id:
-                if telegram_id is not None:
+            if set_tgid:
+                if tgid is not None:
                     duplicate = s.scalar(
                         select(_ContactRow).where(
-                            _ContactRow.telegram_id == telegram_id,
+                            _ContactRow.tgid == tgid,
                             _ContactRow.id != contact_id,
                         )
                     )
                     if duplicate is not None:
-                        raise ValueError("telegram_id already bound")
-                row.telegram_id = telegram_id
+                        raise ValueError("tgid already bound")
+                row.tgid = tgid
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)
@@ -320,15 +320,15 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             rows = s.scalars(select(_ContactRow).order_by(_ContactRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def set_telegram_id(
+    def set_tgid(
         self,
         *,
         contact_id: int,
-        telegram_id: int | None,
+        tgid: int | None,
     ) -> Contact | None:
         """[claude, 2026-08-08] Bind / unbind a Telegram chat id on a contact.
 
-        ``telegram_id=None`` clears the binding. Returns the updated
+        ``tgid=None`` clears the binding. Returns the updated
         :class:`Contact` or ``None`` if no row matches.
 
         Required by ``magi/channels/telegram/adapter.py`` and
@@ -339,7 +339,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
             if row is None:
                 return None
-            row.telegram_id = telegram_id
+            row.tgid = tgid
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)
@@ -427,7 +427,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
     def replace_admin_set(self, pairs: list[tuple[int, str | None]]) -> list[int]:
         """Replace the admin contact set with *pairs*.
 
-        Each element of *pairs* is ``(telegram_id, display_name)``.
+        Each element of *pairs* is ``(tgid, display_name)``.
         Contacts whose bound TG chat is in *pairs* are upserted
         with ``admin=True``; existing admins not in *pairs* have
         ``admin`` cleared. Returns the list of resulting admin
@@ -439,11 +439,11 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             # Demote existing admins not in the new set
             old_admins = s.scalars(select(_ContactRow).where(_ContactRow.admin)).all()
             for row in old_admins:
-                if row.telegram_id not in tg_ids:
+                if row.tgid not in tg_ids:
                     row.admin = False
             # Upsert each new admin
             for tg_id, display_name in pairs:
-                row = s.scalar(select(_ContactRow).where(_ContactRow.telegram_id == tg_id))
+                row = s.scalar(select(_ContactRow).where(_ContactRow.tgid == tg_id))
                 if row is not None:
                     row.admin = True
                     if display_name:
@@ -453,7 +453,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                         name=display_name or f"Admin {tg_id}",
                         display_name=display_name,
                         role=ROLE_ASSIGNED,
-                        telegram_id=tg_id,
+                        tgid=tg_id,
                         admin=True,
                     )
                     s.add(row)
