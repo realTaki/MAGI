@@ -155,17 +155,13 @@ class AddMcpServerTool(Tool):
 
         conn_type = (kwargs.get("connection_type") or "").strip().lower()
         if conn_type not in ("stdio", "sse", "streamable_http"):
-            return ToolResult.err(
-                "connection_type must be one of: stdio, sse, streamable_http"
-            )
+            return ToolResult.err("connection_type must be one of: stdio, sse, streamable_http")
 
         if conn_type == "stdio" and not kwargs.get("command"):
             return ToolResult.err("stdio servers require 'command'")
 
         if conn_type != "stdio" and not kwargs.get("url"):
-            return ToolResult.err(
-                f"{conn_type} servers require 'url'"
-            )
+            return ToolResult.err(f"{conn_type} servers require 'url'")
 
         enabled = kwargs.get("enabled", True)
         if not isinstance(enabled, bool):
@@ -207,26 +203,22 @@ class AddMcpServerTool(Tool):
                 "list_mcp_servers to verify the new state."
             )
         if not result.success:
-            return ToolResult.err(
-                result.error or "MCP worker failed to apply the change"
-            )
+            return ToolResult.err(result.error or "MCP worker failed to apply the change")
 
         # Read the row back so the LLM sees the real autoincrement
         # id / timestamps / any default fills.
         row = ctx.bus.mcp_servers_book.get_by_name(name=name)
         if row is None:
             return ToolResult.err(
-                "worker reported success but the row is missing; "
-                "this should not happen"
+                "worker reported success but the row is missing; this should not happen"
             )
-        return ToolResult.ok({
-            "status": "created",
-            "server": serialize_mcp_server(row),
-            "hint": (
-                "Server saved and connected. Verify with "
-                "list_mcp_servers."
-            ),
-        })
+        return ToolResult.ok(
+            {
+                "status": "created",
+                "server": serialize_mcp_server(row),
+                "hint": ("Server saved and connected. Verify with list_mcp_servers."),
+            }
+        )
 
 
 __all__ = ["AddMcpServerTool"]

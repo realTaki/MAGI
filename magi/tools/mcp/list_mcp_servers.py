@@ -39,15 +39,19 @@ class ListMcpServersTool(Tool):
         rows = ctx.bus.mcp_servers_book.list_all()
 
         if not rows:
-            return ToolResult.ok({
-                "servers": [],
-                "hint": "No MCP servers configured yet.",
-            })
+            return ToolResult.ok(
+                {
+                    "servers": [],
+                    "hint": "No MCP servers configured yet.",
+                }
+            )
 
-        return ToolResult.ok({
-            "servers": [serialize_mcp_server(r) for r in rows],
-            "count": len(rows),
-        })
+        return ToolResult.ok(
+            {
+                "servers": [serialize_mcp_server(r) for r in rows],
+                "count": len(rows),
+            }
+        )
 
 
 __all__ = ["ListMcpServersTool"]

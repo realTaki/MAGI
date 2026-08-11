@@ -99,10 +99,7 @@ class UpdateMcpServerTool(Tool):
             },
             "command": {
                 "type": "string",
-                "description": (
-                    "Required for stdio. Executable name/path "
-                    "(e.g. 'uvx', 'npx')."
-                ),
+                "description": ("Required for stdio. Executable name/path (e.g. 'uvx', 'npx')."),
             },
             "args": {
                 "type": "array",
@@ -128,8 +125,7 @@ class UpdateMcpServerTool(Tool):
             "headers": {
                 "type": "object",
                 "description": (
-                    "HTTP headers for sse/streamable_http "
-                    "servers. A blank value clears the key."
+                    "HTTP headers for sse/streamable_http servers. A blank value clears the key."
                 ),
             },
             "connect_timeout": {
@@ -157,9 +153,7 @@ class UpdateMcpServerTool(Tool):
 
         conn_type = (kwargs.get("connection_type") or "").strip().lower()
         if conn_type and conn_type not in ("stdio", "sse", "streamable_http"):
-            return ToolResult.err(
-                "connection_type must be one of: stdio, sse, streamable_http"
-            )
+            return ToolResult.err("connection_type must be one of: stdio, sse, streamable_http")
 
         # Conditional validation: only run when the field
         # was supplied. The operator might be patching a
@@ -173,8 +167,7 @@ class UpdateMcpServerTool(Tool):
         current = ctx.bus.mcp_servers_book.get_by_name(name=name)
         if current is None:
             return ToolResult.err(
-                f"server '{name}' does not exist. "
-                f"Create it with add_mcp_server first."
+                f"server '{name}' does not exist. Create it with add_mcp_server first."
             )
 
         new_server = _merge(current, kwargs)
@@ -183,22 +176,35 @@ class UpdateMcpServerTool(Tool):
         # other field change is "updated". The Worker treats
         # both the same (re-read + reconnect), but the audit
         # trail is friendlier with the finer-grained label.
-        changed = {k for k in (
-            "connection_type", "command", "args", "url",
-            "enabled", "env", "headers",
-            "connect_timeout", "execute_timeout", "sse_read_timeout",
-        ) if k in kwargs}
+        changed = {
+            k
+            for k in (
+                "connection_type",
+                "command",
+                "args",
+                "url",
+                "enabled",
+                "env",
+                "headers",
+                "connect_timeout",
+                "execute_timeout",
+                "sse_read_timeout",
+            )
+            if k in kwargs
+        }
         if changed == {"enabled"}:
             job_id = ctx.bus.mcp_server_changed_job_board.publish(
                 McpServerChangedJob(
-                    kind="toggled", server_name=name,
+                    kind="toggled",
+                    server_name=name,
                     new_enabled=new_server.enabled,
                 )
             )
         else:
             job_id = ctx.bus.mcp_server_changed_job_board.publish(
                 McpServerChangedJob(
-                    kind="updated", server_name=name,
+                    kind="updated",
+                    server_name=name,
                     server=new_server,
                 )
             )
@@ -212,24 +218,20 @@ class UpdateMcpServerTool(Tool):
                 "timeout; list_mcp_servers to verify the new state."
             )
         if not result.success:
-            return ToolResult.err(
-                result.error or "MCP worker failed to apply the update"
-            )
+            return ToolResult.err(result.error or "MCP worker failed to apply the update")
 
         row = ctx.bus.mcp_servers_book.get_by_name(name=name)
         if row is None:
             return ToolResult.err(
-                "worker reported success but the row is missing; "
-                "this should not happen"
+                "worker reported success but the row is missing; this should not happen"
             )
-        return ToolResult.ok({
-            "status": "updated",
-            "server": serialize_mcp_server(row),
-            "hint": (
-                "Server updated and reloaded. The new "
-                "configuration is live."
-            ),
-        })
+        return ToolResult.ok(
+            {
+                "status": "updated",
+                "server": serialize_mcp_server(row),
+                "hint": ("Server updated and reloaded. The new configuration is live."),
+            }
+        )
 
 
 __all__ = ["UpdateMcpServerTool"]

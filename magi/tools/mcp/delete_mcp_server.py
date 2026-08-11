@@ -54,10 +54,12 @@ class DeleteMcpServerTool(Tool):
         # duplicate deletes, but we want the "not_found" envelope
         # to skip the worker round-trip when nothing would change.
         if ctx.bus.mcp_servers_book.get_by_name(name=name) is None:
-            return ToolResult.ok({
-                "status": "not_found",
-                "hint": f"No server named '{name}' — nothing to delete.",
-            })
+            return ToolResult.ok(
+                {
+                    "status": "not_found",
+                    "hint": f"No server named '{name}' — nothing to delete.",
+                }
+            )
 
         job_id = ctx.bus.mcp_server_changed_job_board.publish(
             McpServerChangedJob(kind="deleted", server_name=name)
@@ -72,18 +74,15 @@ class DeleteMcpServerTool(Tool):
                 "timeout; list_mcp_servers to verify the new state."
             )
         if not result.success:
-            return ToolResult.err(
-                result.error or "MCP worker failed to delete the server"
-            )
+            return ToolResult.err(result.error or "MCP worker failed to delete the server")
 
-        return ToolResult.ok({
-            "status": "deleted",
-            "name": name,
-            "hint": (
-                "Server removed and disconnected. The tools it "
-                "surfaced are gone."
-            ),
-        })
+        return ToolResult.ok(
+            {
+                "status": "deleted",
+                "name": name,
+                "hint": ("Server removed and disconnected. The tools it surfaced are gone."),
+            }
+        )
 
 
 __all__ = ["DeleteMcpServerTool"]
