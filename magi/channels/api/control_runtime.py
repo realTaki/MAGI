@@ -16,7 +16,7 @@ async def _post(path: str, payload: dict[str, object]) -> None:
         target_id=1,
         operator_id=0,
         operator_name="WebUI bootstrap",
-        telegram_id=None,
+        tgid=None,
     )
     base = os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -35,5 +35,5 @@ async def bootstrap_telegram(token: str, username: str) -> None:
     await _post("/api/control/telegram/bootstrap", {"token": token, "username": username})
 
 
-async def send_telegram(telegram_id: int, text: str) -> None:
-    await _post("/api/control/telegram/send", {"telegram_id": telegram_id, "text": text})
+async def send_telegram(tgid: int, text: str) -> None:
+    await _post("/api/control/telegram/send", {"tgid": tgid, "text": text})

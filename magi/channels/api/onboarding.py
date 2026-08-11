@@ -162,21 +162,37 @@ class RestartResponse(BaseModel):
 class SetAdminPasswordRequest(BaseModel):
     """WebUI-only onboarding step 2 input.
 
-    The wizard collects a name + password for the
-    operator's first admin row. The endpoint upserts the
-    :class:`Contact` row with ``admin=True`` and writes a
-    password hash on that local :class:`Contact` so the
-    operator can sign in without a Telegram binding.
+    The wizard collects **two** operator identities for the
+    first launch:
+
+      * ``admin_*`` — the Genesis-level admin. Lives in
+        :class:`MagisAdminBook` (MAGIS DB) so the same
+        person can sign in to every MAGI in the Genesis
+        Society.
+      * ``assigned_*`` — the person served by ``eva-000``
+        (the runtime being onboarded). Their :class:`Contact`
+        carries ``role='assigned'`` in the runtime's local
+        SQLite so they can sign in to eva-000 only.
+
+    Both rows carry a password hash on the runtime's local
+    SQLite so login works without a Telegram binding.
+    ``admin=True`` is **not** set on either row — admin is
+    a MAGIS-level concept and is recorded only in
+    :class:`MagisAdminBook` (``magis_admins.contact_id``,
+    opaque integer reference).
     """
 
-    name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=8, max_length=256)
+    admin_name: str = Field(min_length=1, max_length=120)
+    admin_password: str = Field(min_length=8, max_length=256)
+    assigned_name: str = Field(min_length=1, max_length=120)
+    assigned_password: str = Field(min_length=8, max_length=256)
 
 
 class SetAdminPasswordResponse(BaseModel):
     ok: bool
     error: str | None = None
     admin_contact_id: int | None = None
+    assigned_contact_id: int | None = None
 
 
 # -- endpoints ---------------------------------------------------------
@@ -231,8 +247,8 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
     try:
         admin_rows = bus.contacts_book.list_admins()
         for admin in admin_rows:
-            if admin.telegram_id is not None:
-                admins.append(str(admin.telegram_id))
+            if admin.tgid is not None:
+                admins.append(str(admin.tgid))
         # ``login_methods`` summarises the wizard's
         # owner (the first admin row). The wizard
         # only ever sets up one admin's credentials
@@ -243,10 +259,10 @@ async def get_status(bus: BusDep) -> OnboardingStatus:
             has_password = bus.contacts_book.get_password_hash(contact_id=first.id) is not None
             if has_password:
                 login_methods.append("password")
-            if first.telegram_id is not None:
+            if first.tgid is not None:
                 login_methods.append("tg_code")
             chosen_mode = (
-                "with_tg" if first.telegram_id else ("webui_only" if has_password else None)
+                "with_tg" if first.tgid else ("webui_only" if has_password else None)
             )
     except Exception:
         # If the table is unreachable (very early boot) the
@@ -306,118 +322,139 @@ async def set_admin_password_onboarding(
     payload: SetAdminPasswordRequest,
     bus: BusDep,
 ) -> SetAdminPasswordResponse:
-    """WebUI-only onboarding step 2: create the first admin.
+    """WebUI-only onboarding step 2: create the first two operators.
 
     The TG wizard's step 2 collects TG chat ids via
-    :func:`save_admin`; this endpoint is the parallel
-    flow for operators who picked "WebUI only" in step 1.
-    It writes the admin binding into the MAGIS-shared
-    :class:`MagisAdminBook` (admin is a MAGIS-level concept;
-    ``Contact.admin`` is a legacy placeholder and is **not**
-    set here), and stores the password hash on the runtime's
-    local ``Contact`` row so the wizard's password login can
-    succeed.
+    :func:`save_admin`; this endpoint is the parallel flow for
+    operators who picked "WebUI only" in step 1. Two
+    identities land on the same wizard:
+
+      * **Genesis admin** (``admin_name`` / ``admin_password``)
+        — recorded in MAGIS-shared :class:`MagisAdminBook` so
+        they can sign in to **every** MAGI in the Genesis
+        Society. Their ``contact_id`` is an opaque integer
+        reference into the runtime's local ``contacts`` table.
+      * **eva-000's assigned user**
+        (``assigned_name`` / ``assigned_password``) — a
+        per-MAGI identity living only in the runtime's local
+        SQLite as a ``Contact`` row with
+        ``role='assigned'``. They can sign in to eva-000
+        only.
+
+    Both rows live in the **runtime's local SQLite** (the
+    runtime owns ``contacts`` and ``contacts.password_hash``)
+    and **neither** sets ``Contact.admin=True`` — admin is a
+    MAGIS-level concept and lives in ``magis_admins``.
 
     Storage split:
 
-      * Webui (control-plane mode) → upserts a Contact in the
-        MAGIS DB and registers a MagisAdmin row pointing to
-        that Contact's id.
-      * Runtime (forwarded) → upserts the same Contact name
-        in its local SQLite, then writes the password hash.
+      * Runtime (per-MAGI SQLite) → upserts two ``Contact``
+        rows, each with ``role='assigned'``, writes a
+        password hash on each.
+      * Webui (MAGIS DB) → registers a ``magis_admins`` row
+        for the admin contact only; the assigned contact
+        stays runtime-local.
 
-    If a previous admin row exists (an operator who
-    abandoned the wizard and re-entered the password
-    step), the first admin row is reused so the onboarding
-    flow doesn't strand the original row's chat history.
+    The runtime responds first with both contact ids; the
+    webui then writes the MAGIS-side ``magis_admins`` row.
+    Re-entering the wizard is idempotent — both sides
+    reuse previous rows so chat history survives.
     """
-    name = payload.name.strip()
-    if not name:
-        return SetAdminPasswordResponse(ok=False, error="name is required")
+    admin_name = payload.admin_name.strip()
+    assigned_name = payload.assigned_name.strip()
+    if not admin_name:
+        return SetAdminPasswordResponse(ok=False, error="admin_name is required")
+    if not assigned_name:
+        return SetAdminPasswordResponse(ok=False, error="assigned_name is required")
 
+    if control_store.enabled():
+        runtime_response = await _forward_set_admin_password_to_runtime(bus, payload)
+        if runtime_response is None:
+            return SetAdminPasswordResponse(
+                ok=False,
+                error="runtime unreachable; cannot set admin password",
+            )
+        if not runtime_response.ok:
+            return runtime_response
+        admin_cid = runtime_response.admin_contact_id
+        assigned_cid = runtime_response.assigned_contact_id
+        if admin_cid is None or assigned_cid is None:
+            return SetAdminPasswordResponse(
+                ok=False,
+                error="runtime did not return both contact ids",
+            )
+        magis_id = _register_magis_admin(bus, contact_id=int(admin_cid))
+        if magis_id is None:
+            return SetAdminPasswordResponse(
+                ok=False,
+                error="Genesis MAGIS not initialised; cannot register admin",
+            )
+        logger.info(
+            "onboarding: admin + assigned set (webui)",
+            extra={
+                "admin_contact_id": admin_cid,
+                "assigned_contact_id": assigned_cid,
+                "magis_id": magis_id,
+                "admin_name": admin_name,
+                "assigned_name": assigned_name,
+            },
+        )
+        return SetAdminPasswordResponse(
+            ok=True,
+            admin_contact_id=admin_cid,
+            assigned_contact_id=assigned_cid,
+        )
+
+    # Single-process / runtime path — no MAGIS DB to register against.
+    admin_cid = _upsert_local_contact(bus, admin_name)
+    assigned_cid = _upsert_local_contact(bus, assigned_name)
     from magi.channels.api import password_utils
 
     try:
-        new_hash = password_utils.hash_password(payload.password)
+        admin_hash = password_utils.hash_password(payload.admin_password)
+        assigned_hash = password_utils.hash_password(payload.assigned_password)
     except ValueError as exc:
         return SetAdminPasswordResponse(ok=False, error=str(exc))
-
-    webui_admin_contact_id: int | None = None
-    if control_store.enabled():
-        webui_admin_contact_id = _register_webui_admin(bus, name)
-
-    runtime_response = await _forward_set_admin_password_to_runtime(bus, payload)
-    if runtime_response is not None:
-        if not runtime_response.ok:
-            return runtime_response
-        # Surface the MAGIS-DB contact id when the webui wrote one,
-        # otherwise fall back to the runtime-local id returned by the
-        # runtime (helpful for legacy / single-process control deploys).
-        return SetAdminPasswordResponse(
-            ok=True,
-            admin_contact_id=(
-                webui_admin_contact_id
-                if webui_admin_contact_id is not None
-                else runtime_response.admin_contact_id
-            ),
-        )
-
-    # No runtime reachable — fall through to a local-only write so
-    # legacy / single-process control deployments still complete.
-    if not control_store.enabled():
-        local_contact_id = _upsert_local_contact(bus, name)
-        bus.contacts_book.set_password_hash(
-            contact_id=local_contact_id,
-            password_hash=new_hash,
-        )
-        return SetAdminPasswordResponse(ok=True, admin_contact_id=local_contact_id)
-
-    # Webui mode without a runtime — register the admin in MAGIS DB
-    # but no runtime exists to set the password hash. Surface what we
-    # have so the wizard can advance; login will fail until a runtime
-    # is brought online.
+    bus.contacts_book.set_password_hash(contact_id=admin_cid, password_hash=admin_hash)
+    bus.contacts_book.set_password_hash(contact_id=assigned_cid, password_hash=assigned_hash)
+    logger.info(
+        "onboarding: admin + assigned set (runtime)",
+        extra={
+            "admin_contact_id": admin_cid,
+            "assigned_contact_id": assigned_cid,
+            "admin_name": admin_name,
+            "assigned_name": assigned_name,
+        },
+    )
     return SetAdminPasswordResponse(
         ok=True,
-        admin_contact_id=webui_admin_contact_id,
+        admin_contact_id=admin_cid,
+        assigned_contact_id=assigned_cid,
     )
 
 
-def _register_webui_admin(bus: Bus, name: str) -> int | None:
-    """Register the operator as an admin of the root MAGIS.
+def _register_magis_admin(bus: Bus, *, contact_id: int) -> int | None:
+    """Register ``contact_id`` as an admin of the root MAGIS.
 
-    Idempotent: a re-entered wizard reuses the existing
-    MagisAdmin row + first Contact row.
+    Returns the root MAGIS id on success, ``None`` when the
+    MAGIS Books are not available. Idempotent: a re-entered
+    wizard reuses the existing MagisAdmin row.
     """
-    if bus.magis_book is None or bus.magis_admins_book is None or bus.contacts_book is None:
+    if bus.magis_book is None or bus.magis_admins_book is None:
         logger.warning("onboarding: webui admin skipped — MAGIS books unavailable")
         return None
     root = bus.magis_book.get_root()
     if root is None:
         logger.warning("onboarding: webui admin skipped — Genesis MAGIS not initialised")
         return None
-
-    existing_admins = bus.magis_admins_book.list_for_magis(magis_id=root.id)
-    if existing_admins:
-        # Reuse the first admin's Contact row so a re-entered wizard
-        # does not strand chat history.
-        contact = bus.contacts_book.get(contact_id=existing_admins[0].contact_id)
-        if contact is None:
-            logger.warning(
-                "onboarding: webui admin missing contact for existing MagisAdmin",
-                extra={"contact_id": existing_admins[0].contact_id},
-            )
-            return None
-        if contact.name != name:
-            bus.contacts_book.update(contact_id=contact.id, name=name, display_name=name)
-        return contact.id
-
-    contact = _upsert_local_contact(bus, name)
-    bus.magis_admins_book.add(contact_id=contact, magis_id=root.id)
+    if bus.magis_admins_book.is_admin_for(contact_id=contact_id):
+        return root.id
+    bus.magis_admins_book.add(contact_id=contact_id, magis_id=root.id)
     logger.info(
         "onboarding: webui MagisAdmin registered",
-        extra={"contact_id": contact, "magis_id": root.id, "name": name},
+        extra={"contact_id": contact_id, "magis_id": root.id},
     )
-    return contact
+    return root.id
 
 
 def _upsert_local_contact(bus: Bus, name: str) -> int:
@@ -498,6 +535,7 @@ async def _forward_set_admin_password_to_runtime(
         ok=bool(data.get("ok")),
         error=data.get("error"),
         admin_contact_id=data.get("admin_contact_id"),
+        assigned_contact_id=data.get("assigned_contact_id"),
     )
 
 
@@ -587,8 +625,8 @@ async def complete_onboarding(bus: BusDep) -> CompleteResponse:
         has_password = any(
             bus.contacts_book.get_password_hash(contact_id=admin.id) is not None for admin in admins
         )
-        # ``has_tg`` = any admin has a telegram_id.
-        has_tg = any(admin.telegram_id for admin in admins)
+        # ``has_tg`` = any admin has a tgid.
+        has_tg = any(admin.tgid for admin in admins)
         if not has_tg and not has_password:
             return CompleteResponse(
                 ok=False,
@@ -1056,10 +1094,10 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
         # bound chat is no longer in the set are demoted on both sides so
         # the "replace the admin set" semantics carry over.
         try:
-            telegram_ids = sorted({int(value.strip()) for value in payload.tgids if value.strip()})
+            tgids = sorted({int(value.strip()) for value in payload.tgids if value.strip()})
         except ValueError:
             return SaveAdminResponse(ok=False, error="tgid must be numeric")
-        if not telegram_ids:
+        if not tgids:
             return SaveAdminResponse(ok=False, error="At least one tgid required")
         root = bus.magis_book.get_root() if bus.magis_book else None
         if root is None or bus.magis_admins_book is None or bus.contacts_book is None:
@@ -1067,21 +1105,21 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
 
         # 1. Demote existing admins whose bound chat is no longer in the set.
         for existing in bus.magis_admins_book.list_for_magis(magis_id=root.id):
-            if existing.contact_id in telegram_ids:
+            if existing.contact_id in tgids:
                 continue
             bus.magis_admins_book.remove(contact_id=existing.contact_id, magis_id=root.id)
             contact = bus.contacts_book.get(contact_id=existing.contact_id)
-            if contact is not None and contact.telegram_id not in telegram_ids:
+            if contact is not None and contact.tgid not in tgids:
                 bus.contacts_book.update(contact_id=existing.contact_id, admin=False)
 
         # 2. Upsert a Contact per telegram id and link it into magis_admins.
-        for tg_id in telegram_ids:
-            contact = bus.contacts_book.get_by_telegram(telegram_id=tg_id)
+        for tg_id in tgids:
+            contact = bus.contacts_book.get_by_telegram(tgid=tg_id)
             if contact is None:
                 contact = bus.contacts_book.add(
                     name=f"tg-{tg_id}",
                     display_name=f"tg-{tg_id}",
-                    telegram_id=tg_id,
+                    tgid=tg_id,
                     role=ROLE_ASSIGNED,
                     admin=True,
                 )
@@ -1089,7 +1127,7 @@ async def save_admin(payload: SaveAdminRequest, bus: BusDep) -> SaveAdminRespons
                 bus.contacts_book.update(contact_id=contact.id, admin=True)
             if not bus.magis_admins_book.is_admin_for(contact_id=contact.id):
                 bus.magis_admins_book.add(contact_id=contact.id, magis_id=root.id)
-        return SaveAdminResponse(ok=True, count=len(telegram_ids))
+        return SaveAdminResponse(ok=True, count=len(tgids))
 
     cleaned = sorted({c.strip() for c in payload.tgids if c.strip()})
     if not cleaned:

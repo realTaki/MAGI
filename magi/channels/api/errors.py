@@ -18,7 +18,7 @@ Codes are dotted, lower-snake:
 
   - ``auth.not_signed_in``        : no / stale session cookie
   - ``validation.name_required``  : POST body missing required field
-  - ``conflict.telegram_id_already_bound``  : 409 on a duplicate id
+  - ``conflict.tgid_already_bound``  : 409 on a duplicate id
   - ...
 
 The namespace is open-ended — new codes can be added

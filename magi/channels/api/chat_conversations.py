@@ -18,7 +18,7 @@ The ``{conversation_id}`` route uses the URL as the only
 identification: the cookie's contact_id already pins the caller.
 The per-channel delivery address stamped on the new row
 is resolved server-side via the channel dispatcher (D.28),
-so the endpoint never reads ``Contact.telegram_id``
+so the endpoint never reads ``Contact.tgid``
 directly.
 """
 
@@ -224,7 +224,7 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
 
     D.28: the channel dispatcher owns the
     ``contact_id → im_id`` mapping. This endpoint never reads
-    ``Contact.telegram_id`` directly — the dispatcher
+    ``Contact.tgid`` directly — the dispatcher
     opens its own session, so we also avoid touching
     the caller's ORM session here.
 
@@ -235,7 +235,7 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
     to a chat (the channel is the WebUI itself, not TG).
     """
     contact = get_bus(request).contacts_book.get(contact_id=contact_id)
-    return str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
+    return str(contact.tgid) if contact and contact.tgid is not None else ""
 
 
 def _resolve_contact_id(request: Request) -> int:
@@ -315,7 +315,7 @@ def create_conversation(
     # column (renamed from the legacy per-channel chat-id
     # column in D.28). We resolve it via the channel
     # dispatcher so this endpoint never reads
-    # ``Contact.telegram_id`` directly. The store key,
+    # ``Contact.tgid`` directly. The store key,
     # however, is ``contact_id`` — see
     # :meth:`ConversationService.create`.
     delivery_address = _delivery_address_for_contact_id(request, contact_id)

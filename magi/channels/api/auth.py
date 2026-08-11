@@ -17,11 +17,11 @@ Authorization model (D.24):
   channel. The login input (``contact_id``) is a per-person
   identity; the cookie output is also the contact_id. The
   per-channel delivery address (TG chat id for admins
-  who bound one) is read from ``Contact.telegram_id``.
+  who bound one) is read from ``Contact.tgid``.
   A contact can be bound to multiple channels — the cookie identity stays stable
   across all of them. ``/me`` resolves the cookie's
   contact id to the row and reports both ``contact_id`` and
-  ``telegram_id`` (the latter may be ``None`` for admins
+  ``tgid`` (the latter may be ``None`` for admins
   who never bound a TG bot).
 
   Reads (list / get conversations) are scoped by ``contact_id``
@@ -133,7 +133,7 @@ def _sign_selected_session(
     bus: Bus,
     *,
     magi_id: int,
-    telegram_id: int,
+    tgid: int,
     display_name: str | None,
     admin: bool,
     assigned: bool,
@@ -149,11 +149,16 @@ def _sign_selected_session(
     column name pre-rename). It is now ``"magi_id"``; the cookie version
     was bumped 2 → 3 to invalidate every existing signed v2 cookie at
     deploy time rather than risk a soft-mismatch.
+
+    The same treatment applies to ``"telegram_id"`` → ``"tgid"``: the
+    version was bumped 3 → 4 so every v3 cookie is rejected outright at
+    deploy time. Operators are signed out once; the alternative is a
+    payload whose key silently no longer matches what the reader expects.
     """
     payload = {
-        "v": 3,
+        "v": 4,
         "magi_id": magi_id,
-        "telegram_id": telegram_id,
+        "tgid": tgid,
         "display_name": display_name,
         "admin": admin,
         "assigned": assigned,
@@ -161,12 +166,12 @@ def _sign_selected_session(
     }
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     signature = hmac.new(_signing_key(bus), raw, hashlib.sha256).hexdigest()[:24]
-    return "v3." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
+    return "v4." + urlsafe_b64encode(raw).decode().rstrip("=") + "." + signature
 
 
 def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     """Return the selected-MAGI browser session, if valid and unexpired."""
-    if not token or not token.startswith("v3."):
+    if not token or not token.startswith("v4."):
         return None
     try:
         _version, body, signature = token.split(".", 2)
@@ -176,9 +181,9 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
             return None
         payload = json.loads(raw)
         if (
-            payload.get("v") != 3
+            payload.get("v") != 4
             or not isinstance(payload.get("magi_id"), int)
-            or not isinstance(payload.get("telegram_id"), int)
+            or not isinstance(payload.get("tgid"), int)
         ):
             return None
         if datetime.now(UTC).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
@@ -196,11 +201,11 @@ def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     ``/me``, ``admin_gate``, ``set-password``,
     ``change-password``, ``chat.search`` and
     ``chat.conversations`` can consume without branching on
-    v3 vs legacy. Returns ``None`` when the cookie is
+    v4 vs legacy. Returns ``None`` when the cookie is
     missing, malformed, expired, or points at a row that is
     no longer an admin.
 
-    v3 cookies are the only kind issued by fresh login
+    v4 cookies are the only kind issued by fresh login
     flows (verify-login-code, login-password, target verify);
     legacy cookies persist only until their TTL elapses.
     Both shapes are accepted here for a soft deprecation
@@ -210,9 +215,9 @@ def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     if selected is not None:
         try:
             return {
-                "contact_id": int(selected["telegram_id"]),
+                "contact_id": int(selected["tgid"]),
                 "magi_id": int(selected["magi_id"]),
-                "telegram_id": int(selected["telegram_id"]),
+                "tgid": int(selected["tgid"]),
                 "display_name": (
                     selected.get("display_name")
                     if isinstance(selected.get("display_name"), str)
@@ -220,7 +225,7 @@ def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
                 ),
                 "admin": bool(selected.get("admin")),
                 "assigned": bool(selected.get("assigned")),
-                "source": "v3",
+                "source": "v4",
             }
         except (KeyError, TypeError, ValueError):
             return None
@@ -238,7 +243,7 @@ def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
         # one via the assigned-rows table rather than
         # trust this value.
         "magi_id": 0,
-        "telegram_id": int(contact.telegram_id) if contact is not None and contact.telegram_id is not None else None,
+        "tgid": int(contact.tgid) if contact is not None and contact.tgid is not None else None,
         "display_name": contact.display_name if contact is not None else None,
         "admin": bool(contact.admin) if contact is not None else False,
         "assigned": False,
@@ -328,14 +333,14 @@ class MeResponse(BaseModel):
     channel identity), not the per-channel delivery
     address. The response surfaces the contact identity
     so the frontend can display it directly; the
-    ``telegram_id`` is the bound TG chat id (may be
+    ``tgid`` is the bound TG chat id (may be
     ``None`` for admins who never bound a TG bot) and
     is exposed for any future "send to my TG"
     affordance.
     """
 
     contact_id: int
-    telegram_id: int | None = None
+    tgid: int | None = None
     display_name: str | None = None
     admin: bool = True  # sourced from the contact row; pre-2024 was a hardcoded True
     assigned: bool = False
@@ -351,7 +356,7 @@ class MeResponse(BaseModel):
     # D.24: the cookie is keyed by ``contact_id``, not
     # the per-channel delivery address. The response
     # surfaces the contact identity so the frontend
-    # can display it directly; the ``telegram_id`` is
+    # can display it directly; the ``tgid`` is
     # the bound TG chat id (may be ``None`` for admins
     # who never bound a TG bot) and is exposed for any
     # future "send to my TG" affordance.
@@ -432,7 +437,7 @@ class AvailableMAGIResponse(BaseModel):
 
 
 class TargetLoginRequest(BaseModel):
-    telegram_id: int
+    tgid: int
 
 
 class TargetVerifyRequest(TargetLoginRequest):
@@ -463,7 +468,7 @@ async def _target_access(
         target_id=magi_id,
         operator_id=0,
         operator_name="WebUI login",
-        telegram_id=None,
+        tgid=None,
     )
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -532,8 +537,8 @@ async def target_verify_login_code(
         return VerifyLoginCodeResponse(
             ok=False, error=str(result.get("error") or "Code does not match")
         )
-    telegram_id = result.get("telegram_id")
-    if not isinstance(telegram_id, int):
+    tgid = result.get("tgid")
+    if not isinstance(tgid, int):
         raise MagiHTTPException(
             502, "access.target_invalid_identity", "Selected MAGI returned an invalid identity"
         )
@@ -544,7 +549,7 @@ async def target_verify_login_code(
         value=_sign_selected_session(
             bus,
             magi_id=magi_id,
-            telegram_id=telegram_id,
+            tgid=tgid,
             display_name=display_name,
             admin=bool(result.get("admin")),
             assigned=bool(result.get("assigned")),
@@ -563,14 +568,14 @@ async def list_allowed_accounts(bus: BusDep) -> AllowedLoginAccountsResponse:
 
     UID is the row's identity; the dropdown's primary key is
     the UID, not the IM chat id. We still include
-    ``telegram_id`` in the response so the frontend can show
+    ``tgid`` in the response so the frontend can show
     a contact as e.g. "EVA-000 (Telegram: 9999001)"
     — useful when two contacts share a display name — but
     the wire-protocol ask for the verification code takes the
     UID, not a chat id.
 
     Filter: admin rows that have at least one bound IM
-    (today: ``telegram_id IS NOT NULL``). An admin who never
+    (today: ``tgid IS NOT NULL``). An admin who never
     bound a TG chat can't receive the verification code
     so they have no login affordance; the row is dropped
     rather than greyed out so the dropdown stays small.
@@ -613,14 +618,14 @@ async def list_allowed_accounts(bus: BusDep) -> AllowedLoginAccountsResponse:
     if admin_contact_ids:
         for contact_id in admin_contact_ids:
             contact = bus.contacts_book.get(contact_id=contact_id)
-            if contact is None or contact.telegram_id is None:
+            if contact is None or contact.tgid is None:
                 continue
             candidates[contact.id] = (
-                contact.telegram_id,
+                contact.tgid,
                 contact.display_name or contact.name,
             )
 
-    for contact_id, (_telegram_id_int, fallback_name) in sorted(candidates.items()):
+    for contact_id, (_tgid_int, fallback_name) in sorted(candidates.items()):
         accounts.append(
             AllowedLoginAccount(
                 contact_id=contact_id,
@@ -632,10 +637,10 @@ async def list_allowed_accounts(bus: BusDep) -> AllowedLoginAccountsResponse:
     # exist yet, so this list is always empty. The query is
     # sketched in the comment so C1.1 / C6 can drop it in.
     #
-    #   SELECT e.contact_id, e.telegram_id, e.name
+    #   SELECT e.contact_id, e.tgid, e.name
     #   FROM contacts e
     #   JOIN evas v ON v.contact_id = e.id
-    #   WHERE e.telegram_id IS NOT NULL
+    #   WHERE e.tgid IS NOT NULL
     #     AND v.status != 'shutting_down'
     #     AND NOT EXISTS (
     #       SELECT 1 FROM contacts a
@@ -688,7 +693,7 @@ async def send_login_code(
     # Resolve it before recording a login code, so an unbound operator cannot
     # accumulate credentials that were never delivered.
     contact = bus.contacts_book.get(contact_id=contact_id)
-    if contact is None or contact.telegram_id is None:
+    if contact is None or contact.tgid is None:
         return SendLoginCodeResponse(
             ok=False,
             error="This account has no IM channel configured; "
@@ -729,7 +734,7 @@ async def send_login_code(
         bus.delivery_job_board.publish(
             DeliveryJob(
                 channel="tg",
-                destination=str(contact.telegram_id),
+                destination=str(contact.tgid),
                 payload={"text": code_text, "contact_id": contact_id},
             )
         )
@@ -786,7 +791,7 @@ async def verify_login_code(
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
     # Look up the contact so we can stamp display_name +
-    # admin + telegram_id into the v3 cookie payload.
+    # admin + tgid into the v3 cookie payload.
     # The ``contact_id`` here is the cross-channel
     # identity (Contact PK), so ``get(contact_id=)``
     # returns the row directly.
@@ -810,7 +815,7 @@ async def verify_login_code(
         value=_sign_selected_session(
             bus,
             magi_id=payload.magi_id,
-            telegram_id=int(contact_row.telegram_id) if contact_row.telegram_id is not None else contact_id,
+            tgid=int(contact_row.tgid) if contact_row.tgid is not None else contact_id,
             display_name=contact_row.display_name,
             admin=bool(contact_row.admin),
             # TG-code login alone doesn't bind the operator
@@ -851,7 +856,7 @@ async def me(
     row in ``contacts`` with role='admin'. D.24 — the
     cookie is the contact_id (cross-channel identity),
     not the chat id the user typed on the login page.
-    The ``telegram_id`` field in the response is the
+    The ``tgid`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
     session = resolve_session(bus, magi_session)
@@ -867,7 +872,7 @@ async def me(
         if contact is None:
             return MeResponse(
                 contact_id=contact_id,
-                telegram_id=session.get("telegram_id"),
+                tgid=session.get("tgid"),
                 display_name=session.get("display_name"),
                 admin=bool(session.get("admin")),
                 assigned=bool(session.get("assigned")),
@@ -876,7 +881,7 @@ async def me(
         methods, _is_webui_only = _login_methods_for(bus, contact_id)
         return MeResponse(
             contact_id=contact.id,
-            telegram_id=contact.telegram_id,
+            tgid=contact.tgid,
             display_name=contact.name,
             admin=bool(contact.admin),
             assigned=bool(session.get("assigned")),
@@ -892,7 +897,7 @@ async def me(
         logger.exception("me: contact lookup failed for contact_id=%s", contact_id)
         return MeResponse(
             contact_id=contact_id,
-            telegram_id=session.get("telegram_id"),
+            tgid=session.get("tgid"),
             display_name=session.get("display_name"),
             admin=bool(session.get("admin")),
             assigned=bool(session.get("assigned")),
@@ -925,7 +930,7 @@ class LoginMethodsResponse(BaseModel):
     contact_id: int
     methods: list[str] = []
     # True when the user has a Contact row with no
-    # telegram_id — i.e. they're a WebUI-only operator.
+    # tgid — i.e. they're a WebUI-only operator.
     is_webui_only: bool = False
 
 
@@ -1004,13 +1009,13 @@ def _login_methods_for(bus: Bus, contact_id: int) -> tuple[list[str], bool]:
         # page hands in). The MAGIS admin roster
         # (``magis_admins``) is keyed by ``Contact.id``
         # (FK), so the lookup chain is
-        # ``telegram_id → contacts.telegram_id → contact.id
+        # ``tgid → contacts.tgid → contact.id
         #   → magis_admins.contact_id``. A bound admin always
         # resolves and gets ``tg_code``; a missing row
         # means "this Telegram account isn't a MAGIS
         # admin here" and the login page falls back to
         # the empty-state affordance.
-        contact = bus.contacts_book.get_by_telegram(telegram_id=contact_id)
+        contact = bus.contacts_book.get_by_telegram(tgid=contact_id)
         if contact is not None and bus.magis_admins_book is not None:
             if bus.magis_admins_book.is_admin_for(contact_id=contact.id):
                 return (["tg_code"], False)
@@ -1021,7 +1026,7 @@ def _login_methods_for(bus: Bus, contact_id: int) -> tuple[list[str], bool]:
         return ([], True)
     if _password_hash(bus, contact_id):
         methods.append("password")
-    if contact.telegram_id is not None:
+    if contact.tgid is not None:
         methods.append("tg_code")
         is_webui_only = False
     return (methods, is_webui_only)
@@ -1127,7 +1132,7 @@ async def login_password(
         value=_sign_selected_session(
             bus,
             magi_id=payload.magi_id,
-            telegram_id=int(contact_row.telegram_id) if contact_row.telegram_id is not None else payload.contact_id,
+            tgid=int(contact_row.tgid) if contact_row.tgid is not None else payload.contact_id,
             display_name=contact_row.display_name,
             admin=bool(contact_row.admin),
             # Password login alone doesn't bind the operator

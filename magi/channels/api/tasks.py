@@ -136,13 +136,13 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
     contact_id = _owner(request, _admin)
     cron, run_at = _schedule(payload)
     contact = bus.contacts_book.get(contact_id=contact_id)
-    if payload.target_channel == Channel.TG and (contact is None or contact.telegram_id is None):
+    if payload.target_channel == Channel.TG and (contact is None or contact.tgid is None):
         raise MagiHTTPException(
             400, "tasks.telegram_not_bound", "Telegram is not bound for this contact"
         )
     delivery_to = payload.delivery_to
     if delivery_to is None and payload.target_channel == Channel.TG:
-        delivery_to = str(contact.telegram_id)
+        delivery_to = str(contact.tgid)
     conversation_id = f"task_{uuid.uuid4().hex}"
     bus.conversations_book.add(
         conversation_id=conversation_id,

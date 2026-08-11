@@ -29,7 +29,7 @@ class TelegramBootstrap(BaseModel):
 
 
 class TelegramSend(BaseModel):
-    telegram_id: int
+    tgid: int
     text: str = Field(min_length=1, max_length=4000)
 
 
@@ -77,7 +77,7 @@ async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bo
             status_code=409, code="telegram.not_configured", detail="Telegram is not configured"
         )
     try:
-        await tg_bot.send_text_raw(token, payload.telegram_id, payload.text)
+        await tg_bot.send_text_raw(token, payload.tgid, payload.text)
     except RuntimeError as exc:
         raise MagiHTTPException(
             status_code=502, code="telegram.send_failed", detail=str(exc)

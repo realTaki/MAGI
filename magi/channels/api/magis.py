@@ -151,12 +151,12 @@ class MembershipUpdate(BaseModel):
 class MAGISAdminOut(BaseModel):
     id: int
     magis_id: int
-    telegram_id: int
+    tgid: int
     display_name: str | None = None
 
 
 class MAGISAdminCreate(BaseModel):
-    telegram_id: int
+    tgid: int
     display_name: str | None = Field(default=None, max_length=120)
 
 
@@ -222,7 +222,7 @@ def _admin_out(bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
     return MAGISAdminOut(
         id=view.id,
         magis_id=view.magis_id,
-        telegram_id=contact.telegram_id if contact and contact.telegram_id is not None else 0,
+        tgid=contact.tgid if contact and contact.tgid is not None else 0,
         display_name=(contact.display_name or contact.name) if contact else None,
     )
 
@@ -544,7 +544,7 @@ def add_magis_admin(
 ) -> MAGISAdminOut:
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
-    contact = bus.contacts_book.get_by_telegram(telegram_id=payload.telegram_id)
+    contact = bus.contacts_book.get_by_telegram(tgid=payload.tgid)
     if contact is None:
         raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
     try:

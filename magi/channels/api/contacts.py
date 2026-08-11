@@ -71,7 +71,7 @@ class ContactOut(BaseModel):
     # be ``role='assigned'`` (the person MAGI serves) AND
     # ``admin=True`` (the operator) at the same time.
     admin: bool = False
-    telegram_id: int | None = None
+    tgid: int | None = None
     notes: str = ""
     notes_count: int = 0
     last_seen_at: str = ""
@@ -108,7 +108,7 @@ class ContactCreate(BaseModel):
     # with ``role='admin'``; the split keeps the two
     # concerns independent.
     admin: bool = False
-    telegram_id: int | None = None
+    tgid: int | None = None
 
 
 class ContactUpdate(BaseModel):
@@ -122,7 +122,7 @@ class ContactUpdate(BaseModel):
     # ``False`` is a meaningful value (we want to be able
     # to revoke admin).
     admin: bool | None = None
-    telegram_id: int | None = None
+    tgid: int | None = None
 
 
 def _serialize(
@@ -146,7 +146,7 @@ def _serialize(
         display_name=view.display_name,
         role=view.role,
         admin=view.admin,
-        telegram_id=view.telegram_id,
+        tgid=view.tgid,
         notes="",
         notes_count=notes_count,
         last_seen_at=view.last_seen_at,
@@ -165,7 +165,7 @@ def _login_methods_for(view: Any) -> list[str]:
     through the auth module. Side-effect free.
     """
     methods: list[str] = []
-    if view.telegram_id is not None:
+    if view.tgid is not None:
         methods.append("tg_code")
     # password_set is queried separately by the bulk
     # helper below — we let the caller pass the
@@ -189,7 +189,7 @@ def _bulk_login_methods(
     out: dict[int, list[str]] = {}
     for v in views:
         methods: list[str] = []
-        if v.telegram_id is not None:
+        if v.tgid is not None:
             methods.append("tg_code")
         if v.id in password_contact_ids:
             methods.append("password")
@@ -323,20 +323,20 @@ def create_contact(
             code="conflict.assigned_user_exists",
             detail="This MAGI already has an assigned user",
         )
-    if payload.telegram_id is not None and bus.contacts_book.get_by_telegram(
-        telegram_id=payload.telegram_id
+    if payload.tgid is not None and bus.contacts_book.get_by_telegram(
+        tgid=payload.tgid
     ):
         raise MagiHTTPException(
             status_code=409,
-            code="conflict.telegram_id_already_bound",
-            detail=f"telegram_id {payload.telegram_id} is already bound",
+            code="conflict.tgid_already_bound",
+            detail=f"tgid {payload.tgid} is already bound",
         )
     view = bus.contacts_book.add(
         name=name,
         display_name=payload.display_name,
         role=payload.role,
         admin=payload.admin,
-        telegram_id=payload.telegram_id,
+        tgid=payload.tgid,
     )
 
     # Preset seed hook — fires only when the contact was
@@ -494,19 +494,19 @@ def update_contact(
     if "admin" in payload.model_fields_set and payload.admin is not None:
         new_admin = bool(payload.admin)
 
-    new_telegram_id: int | None = None
-    if "telegram_id" in payload.model_fields_set:
-        new_tg = payload.telegram_id
+    new_tgid: int | None = None
+    if "tgid" in payload.model_fields_set:
+        new_tg = payload.tgid
         bound = (
-            bus.contacts_book.get_by_telegram(telegram_id=new_tg) if new_tg is not None else None
+            bus.contacts_book.get_by_telegram(tgid=new_tg) if new_tg is not None else None
         )
         if bound is not None and bound.id != contact_id:
             raise MagiHTTPException(
                 status_code=409,
-                code="conflict.telegram_id_already_bound",
-                detail=f"telegram_id {new_tg} is already bound",
+                code="conflict.tgid_already_bound",
+                detail=f"tgid {new_tg} is already bound",
             )
-        new_telegram_id = new_tg
+        new_tgid = new_tg
 
     view = bus.contacts_book.update(
         contact_id=contact_id,
@@ -514,9 +514,9 @@ def update_contact(
         display_name=new_display_name,
         role=new_role,
         admin=new_admin,
-        telegram_id=new_telegram_id,
+        tgid=new_tgid,
         set_display_name="display_name" in payload.model_fields_set,
-        set_telegram_id="telegram_id" in payload.model_fields_set,
+        set_tgid="tgid" in payload.model_fields_set,
     )
     if view is None:
         raise MagiHTTPException(

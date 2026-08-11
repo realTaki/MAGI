@@ -271,12 +271,12 @@ async def send_chat(
         # The value comes from the channel dispatcher
         # (D.28 centralised the contact_id → IM-id mapping in
         # the adapter registry, so this file no longer
-        # reads ``Contact.telegram_id`` directly). An
+        # reads ``Contact.tgid`` directly). An
         # empty string when the operator has no TG
         # binding (still legal — WebUI rows don't push
         # anywhere).
         contact = bus.contacts_book.get(contact_id=contact_id)
-        tg_im_id = str(contact.telegram_id) if contact and contact.telegram_id is not None else ""
+        tg_im_id = str(contact.tgid) if contact and contact.tgid is not None else ""
         sess = store.add(
             conversation_id=new_conversation_id(),
             contact_id=contact_id,

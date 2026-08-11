@@ -35,7 +35,7 @@ _CODE_PREFIX = "auth.target_login_code"
 
 
 class LoginAccount(BaseModel):
-    telegram_id: int
+    tgid: int
     name: str
     admin: bool
     assigned: bool
@@ -48,7 +48,7 @@ class LoginAccountsResponse(BaseModel):
 
 
 class LoginCodeRequest(BaseModel):
-    telegram_id: int
+    tgid: int
 
 
 class LoginCodeResponse(BaseModel):
@@ -64,7 +64,7 @@ class VerifyLoginCodeRequest(LoginCodeRequest):
 
 class VerifyLoginCodeResponse(BaseModel):
     ok: bool
-    telegram_id: int | None = None
+    tgid: int | None = None
     display_name: str | None = None
     admin: bool = False
     assigned: bool = False
@@ -108,20 +108,20 @@ def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
         bus.magis_admins_book.list_for_magis(magis_id=magis_id) if bus.magis_admins_book else []
     ):
         result[admin.contact_id] = LoginAccount(
-            telegram_id=admin.contact_id,
+            tgid=admin.contact_id,
             name=f"Admin {admin.contact_id}",
             admin=True,
             assigned=False,
         )
     for contact in (row for row in bus.contacts_book.list_all() if row.role == "assigned"):
-        tg = contact.telegram_id
+        tg = contact.tgid
         if tg is None:
             continue
         existing = result.get(tg)
         display = contact.display_name or contact.name or ""
         if existing is None:
             result[tg] = LoginAccount(
-                telegram_id=tg,
+                tgid=tg,
                 name=display,
                 admin=False,
                 assigned=True,
@@ -133,19 +133,19 @@ def _accounts(bus: Bus, magis_id: int) -> dict[int, LoginAccount]:
     return result
 
 
-def _code_key(telegram_id: int) -> str:
-    return f"{_CODE_PREFIX}.{telegram_id}"
+def _code_key(tgid: int) -> str:
+    return f"{_CODE_PREFIX}.{tgid}"
 
 
 def _new_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-async def _send_code(bus: Bus, magi_id: int, magis_id: int, telegram_id: int, text: str) -> str:
+async def _send_code(bus: Bus, magi_id: int, magis_id: int, tgid: int, text: str) -> str:
     _ = magi_id, magis_id
     bot_token = bus.settings_book.get(key="telegram.bot_token")
     if bot_token:
-        await tg_bot.send_text_raw(bot_token, telegram_id, text)
+        await tg_bot.send_text_raw(bot_token, tgid, text)
         return "self"
 
     raise MagiHTTPException(409, "access.no_delivery_bot", "This MAGI has no Bot configured")
@@ -159,7 +159,7 @@ async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse
         magi_id=magi_id,
         magis_id=magis_id,
         accounts=sorted(
-            _accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.telegram_id)
+            _accounts(bus, magis_id).values(), key=lambda row: (row.name.lower(), row.tgid)
         ),
     )
 
@@ -170,11 +170,11 @@ async def send_login_code(
 ) -> LoginCodeResponse:
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
-    account = _accounts(bus, magis_id).get(payload.telegram_id)
+    account = _accounts(bus, magis_id).get(payload.tgid)
     if account is None:
         # Do not turn this into a principal-enumeration endpoint.
         return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS)
-    previous_raw = bus.settings_book.get(key=_code_key(payload.telegram_id))
+    previous_raw = bus.settings_book.get(key=_code_key(payload.tgid))
     if previous_raw:
         try:
             previous = json.loads(previous_raw)
@@ -189,7 +189,7 @@ async def send_login_code(
     code = _new_code()
     now = datetime.now(UTC)
     bus.settings_book.set(
-        key=_code_key(payload.telegram_id),
+        key=_code_key(payload.tgid),
         value=json.dumps(
             {
                 "code": code,
@@ -203,11 +203,11 @@ async def send_login_code(
             bus,
             magi_id,
             magis_id,
-            payload.telegram_id,
+            payload.tgid,
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
-        bus.settings_book.delete(key=_code_key(payload.telegram_id))
+        bus.settings_book.delete(key=_code_key(payload.tgid))
         if isinstance(exc, MagiHTTPException):
             raise
         raise MagiHTTPException(
@@ -222,13 +222,13 @@ async def verify_login_code(
 ) -> VerifyLoginCodeResponse:
     _require_webui(request)
     _magi_id, magis_id = _direct_magis(bus)
-    account = _accounts(bus, magis_id).get(payload.telegram_id)
+    account = _accounts(bus, magis_id).get(payload.tgid)
     if account is None:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
-    raw = bus.settings_book.get(key=_code_key(payload.telegram_id))
+    raw = bus.settings_book.get(key=_code_key(payload.tgid))
     if not raw:
         return VerifyLoginCodeResponse(ok=False, error="No code was sent — request a new one.")
-    bus.settings_book.delete(key=_code_key(payload.telegram_id))
+    bus.settings_book.delete(key=_code_key(payload.tgid))
     try:
         stored = json.loads(raw)
         valid = datetime.now(UTC).timestamp() < float(stored.get("expires_at", 0))
@@ -241,7 +241,7 @@ async def verify_login_code(
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
     return VerifyLoginCodeResponse(
         ok=True,
-        telegram_id=account.telegram_id,
+        tgid=account.tgid,
         display_name=account.name,
         admin=account.admin,
         assigned=account.assigned,

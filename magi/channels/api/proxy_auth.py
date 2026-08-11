@@ -43,7 +43,7 @@ def build_proxy_headers(
     target_id: int,
     operator_id: int,
     operator_name: str,
-    telegram_id: int | None,
+    tgid: int | None,
     admin: bool = True,
     assigned: bool = False,
 ) -> dict[str, str]:
@@ -68,8 +68,8 @@ def build_proxy_headers(
         "X-MAGI-Proxy-Scope": scope,
         "X-MAGI-Proxy-Signature": signature,
     }
-    if telegram_id is not None:
-        headers["X-MAGI-Proxy-Telegram-ID"] = str(telegram_id)
+    if tgid is not None:
+        headers["X-MAGI-Proxy-Tgid"] = str(tgid)
     return headers
 
 
@@ -109,15 +109,22 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
     ).hexdigest()
     if not hmac.compare_digest(signature, expected):
         return None
-    telegram_raw = request.headers.get("X-MAGI-Proxy-Telegram-ID")
+    # Accept the pre-rename spelling too: the header is optional and is
+    # not covered by the HMAC, so during a rolling update a control-plane
+    # pod still on the old build would otherwise silently drop the tgid
+    # rather than fail loudly. Safe to delete once every pod is past this
+    # release.
+    telegram_raw = request.headers.get("X-MAGI-Proxy-Tgid") or request.headers.get(
+        "X-MAGI-Proxy-Telegram-ID"
+    )
     try:
-        telegram_id = int(telegram_raw) if telegram_raw else None
+        tgid = int(telegram_raw) if telegram_raw else None
     except ValueError:
         return None
     return (
         operator_id,
         request.headers.get("X-MAGI-Proxy-Operator-Name", "WebUI operator"),
-        telegram_id,
+        tgid,
     )
 
 
@@ -140,7 +147,7 @@ def ensure_runtime_operator(request: Request) -> int | None:
     identity = verified_proxy_operator(request)
     if identity is None:
         return None
-    operator_id, name, telegram_id = identity
+    operator_id, name, tgid = identity
     scope = verified_proxy_scope(request)
     if scope is None:
         return None
@@ -151,7 +158,7 @@ def ensure_runtime_operator(request: Request) -> int | None:
     return get_bus(request).contacts_book.ensure_runtime_operator(
         operator_id=operator_id,
         name=name,
-        telegram_id=telegram_id,
+        tgid=tgid,
         is_admin=is_admin,
         is_assigned=is_assigned,
     )

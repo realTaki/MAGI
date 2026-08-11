@@ -82,9 +82,9 @@ async def proxy_runtime(
             method=request.method,
             path_and_query=runtime_path,
             target_id=magi_id,
-            operator_id=int(browser_session["telegram_id"]),
-            operator_name=named_display_name or f"User {browser_session['telegram_id']}",
-            telegram_id=int(browser_session["telegram_id"]),
+            operator_id=int(browser_session["tgid"]),
+            operator_name=named_display_name or f"User {browser_session['tgid']}",
+            tgid=int(browser_session["tgid"]),
             admin=bool(browser_session.get("admin")),
             assigned=bool(browser_session.get("assigned")),
         )
