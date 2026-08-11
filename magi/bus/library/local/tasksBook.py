@@ -75,7 +75,6 @@ class ChannelEnum(StrEnum):
     WEBUI = "webui"
     """WebUI chat console — operator's dashboard history."""
 
-    A2A = "a2a"
     """Agent-to-Agent channel — MAGI peer exchange."""
 
     SCHEDULED = "scheduled"
