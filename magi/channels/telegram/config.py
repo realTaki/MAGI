@@ -32,11 +32,11 @@ DEFAULT_DONE_REACTION_EMOJI = "🏆"
 _VALID_EMOJI: frozenset[str] = frozenset(v for v, _ in REACTION_CHOICES)
 
 
-def _settings(bus: "Bus"):
+def _settings(bus: Bus):
     return bus.settings_book
 
 
-def get_read_reaction_emoji(bus: "Bus") -> str:
+def get_read_reaction_emoji(bus: Bus) -> str:
     raw = _settings(bus).get(key=_READ_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
@@ -45,11 +45,11 @@ def get_read_reaction_emoji(bus: "Bus") -> str:
     return raw
 
 
-def set_read_reaction_emoji(bus: "Bus", emoji: str) -> None:
+def set_read_reaction_emoji(bus: Bus, emoji: str) -> None:
     _settings(bus).set(key=_READ_META_KEY, value=emoji)
 
 
-def get_done_reaction_emoji(bus: "Bus") -> str:
+def get_done_reaction_emoji(bus: Bus) -> str:
     raw = _settings(bus).get(key=_DONE_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
@@ -58,5 +58,5 @@ def get_done_reaction_emoji(bus: "Bus") -> str:
     return raw
 
 
-def set_done_reaction_emoji(bus: "Bus", emoji: str) -> None:
+def set_done_reaction_emoji(bus: Bus, emoji: str) -> None:
     _settings(bus).set(key=_DONE_META_KEY, value=emoji)

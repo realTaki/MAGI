@@ -83,7 +83,9 @@ async def send_text_raw(bot_token: str, chat_id: int, text: str) -> None:
             body = exc.read().decode("utf-8", errors="replace")
             logger.warning(
                 "TG sendMessage HTTP %s chat=%s body=%r",
-                exc.code, chat_id, body[:200],
+                exc.code,
+                chat_id,
+                body[:200],
             )
             raise
         logger.debug("TG sendMessage OK chat=%s body_len=%d", chat_id, len(body))
