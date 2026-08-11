@@ -77,6 +77,12 @@ export default function App() {
   // a known next view without waiting for the next boot.
   const [viewOverride, setViewOverride] = useState<"onboarding" | "login" | null>(null);
   const [loginMagiId, setLoginMagiId] = useState<number | null>(null);
+  // Set when /api/onboarding/complete fails (typically a tunnel
+  // / upstream 504 in dev, but any error path leaves the user
+  // stranded on Step 3). Held here so a background refetch of
+  // /status doesn't clear it; reset on the next Continue click
+  // or by leaving the wizard view.
+  const [onboardingCompleteError, setOnboardingCompleteError] = useState<string | null>(null);
 
   // When the user lands on the dashboard via the cookie
   // (returning user), pre-populate the Settings tab's bot
@@ -201,10 +207,23 @@ export default function App() {
   } else if (view === "onboarding") {
     content = (
       <OnboardingPage
+        completeError={onboardingCompleteError}
         onComplete={async (data) => {
           setOnboardingData(data);
-          await completeMut.mutateAsync();
-          setViewOverride("login");
+          setOnboardingCompleteError(null);
+          try {
+            await completeMut.mutateAsync();
+            setViewOverride("login");
+          } catch (err) {
+            // Don't let the rejection bubble — the wizard's
+            // "Continue" handler doesn't await, so an
+            // unhandled throw would silently strand the
+            // operator on Step 3. Surface it in the wizard
+            // instead.
+            setOnboardingCompleteError(
+              err instanceof Error ? err.message : String(err),
+            );
+          }
         }}
       />
     );

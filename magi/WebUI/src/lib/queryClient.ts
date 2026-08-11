@@ -83,9 +83,22 @@ export async function apiFetch<T>(
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({})) as { detail?: unknown; code?: string; message?: string };
-    const msg = typeof err.detail === "string" ? err.detail
-      : typeof err.message === "string" ? `${err.code ?? r.status}: ${err.message}`
-      : JSON.stringify(err.detail ?? err.message ?? `HTTP ${r.status}`);
+    // Always lead with ``HTTP <status>`` so console errors are
+    // grep-able by status code, regardless of whether the
+    // backend sent a string ``detail``/``message`` body, a
+    // structured object, or no body at all. ``.status`` is
+    // preserved on the Error for programmatic consumers.
+    let detail: string | undefined;
+    if (typeof err.detail === "string") {
+      detail = err.detail;
+    } else if (typeof err.message === "string") {
+      detail = err.code ? `${err.code}: ${err.message}` : err.message;
+    } else if (err.detail !== undefined) {
+      detail = JSON.stringify(err.detail);
+    } else if (err.message !== undefined) {
+      detail = JSON.stringify(err.message);
+    }
+    const msg = detail ? `HTTP ${r.status}: ${detail}` : `HTTP ${r.status}`;
     throw Object.assign(new Error(msg), { status: r.status });
   }
   return r.json() as T;

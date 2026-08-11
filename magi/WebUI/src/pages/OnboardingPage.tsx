@@ -31,6 +31,10 @@ type Mode = "with_tg" | "webui_only";
 
 export default function OnboardingPage(props: {
   onComplete: (data: OnboardingData) => void;
+  /** Surfaced on Step 3 when ``/api/onboarding/complete`` fails.
+   *  App.tsx owns the state and is expected to catch internally;
+   *  this prop is the read-only view of it. */
+  completeError?: string | null;
 }) {
   const statusQuery = useOnboardingStatus();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -96,7 +100,33 @@ export default function OnboardingPage(props: {
               />
             )}
             {step === 3 && completedData && (
-              <Step3View data={completedData} onBack={() => setStep(2)} onContinue={() => props.onComplete(completedData)} />
+              <>
+                {props.completeError && (
+                  <p className="form-error mb-4" role="alert">
+                    ✗ {props.completeError}
+                  </p>
+                )}
+                <Step3View
+                  data={completedData}
+                  onBack={() => setStep(2)}
+                  onContinue={async () => {
+                    // Defense-in-depth: App.tsx owns the error
+                    // state and catches internally, so this
+                    // normally resolves. If a future refactor
+                    // drops that try/catch, swallow here so the
+                    // click handler doesn't emit an unhandled
+                    // rejection (which is what produced the
+                    // "Uncaught (in promise) HTTP 504" entries
+                    // in the console).
+                    try {
+                      await props.onComplete(completedData);
+                    } catch (err) {
+                      // eslint-disable-next-line no-console
+                      console.error("Onboarding onComplete threw", err);
+                    }
+                  }}
+                />
+              </>
             )}
           </Card>
         </div>
