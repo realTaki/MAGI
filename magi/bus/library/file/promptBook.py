@@ -37,7 +37,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -84,8 +84,7 @@ class PromptBook(BaseFileBook):
     def _soul_path(self) -> Path:
         if self._workspace_dir is None:
             raise RuntimeError(
-                "PromptBook has no workspace_dir; "
-                "workspace SOUL operations are unavailable"
+                "PromptBook has no workspace_dir; workspace SOUL operations are unavailable"
             )
         return self._workspace_dir / self._SOUL_FILENAME
 
@@ -100,7 +99,7 @@ class PromptBook(BaseFileBook):
         try:
             content = path.read_text(encoding="utf-8").strip()
             mtime = (
-                datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
                 .isoformat()
                 .replace("+00:00", "Z")
             )
@@ -137,7 +136,7 @@ class PromptBook(BaseFileBook):
             except FileNotFoundError:
                 pass
             raise
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
         return mtime.isoformat().replace("+00:00", "Z")
 
     # -- persona (bundled, from FileShelf) ---------------------------------
@@ -214,15 +213,11 @@ class PromptBook(BaseFileBook):
         """
         data = self._shelf.read("bot_replies")
         if not isinstance(data, dict):
-            raise ValueError(
-                f"bot_replies.yaml must be a mapping; got {type(data).__name__}"
-            )
+            raise ValueError(f"bot_replies.yaml must be a mapping; got {type(data).__name__}")
         out: dict[str, str] = {}
         for key, value in data.items():
             if not isinstance(value, str):
-                raise ValueError(
-                    f"bot_replies.yaml key {key!r} is not a string template"
-                )
+                raise ValueError(f"bot_replies.yaml key {key!r} is not a string template")
             out[key] = value
         return out
 
@@ -249,20 +244,14 @@ class PromptBook(BaseFileBook):
             data = self._shelf.read(name)
             if not isinstance(data, dict):
                 raise ValueError(
-                    f"task preset file {name!r} must be a mapping; "
-                    f"got {type(data).__name__}"
+                    f"task preset file {name!r} must be a mapping; got {type(data).__name__}"
                 )
             presets_list = data.get("presets")
             if not isinstance(presets_list, list):
-                raise ValueError(
-                    f"task preset file {name!r} missing 'presets' list"
-                )
+                raise ValueError(f"task preset file {name!r} missing 'presets' list")
             for preset in presets_list:
                 if not isinstance(preset, dict) or "key" not in preset:
-                    raise ValueError(
-                        f"task preset file {name!r} contains entry "
-                        f"without 'key'"
-                    )
+                    raise ValueError(f"task preset file {name!r} contains entry without 'key'")
                 out[preset["key"]] = preset
         return out
 
@@ -272,9 +261,7 @@ class PromptBook(BaseFileBook):
         """Read and decode any YAML/JSON prompt by *name*."""
         data = self._shelf.read(name)
         if not isinstance(data, (dict, list)):
-            raise TypeError(
-                f"Expected dict or list for {name!r}, got {type(data).__name__}"
-            )
+            raise TypeError(f"Expected dict or list for {name!r}, got {type(data).__name__}")
         return data
 
     def list(self) -> list[str]:

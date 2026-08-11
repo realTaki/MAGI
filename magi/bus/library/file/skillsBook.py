@@ -76,9 +76,9 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from magi.bus.db.file import FileShelf
 
@@ -123,15 +123,15 @@ class SkillMeta:
     name: str
     description: str
     path: Path
-    version: Optional[str] = None
-    license: Optional[str] = None
+    version: str | None = None
+    license: str | None = None
     # ``allowed-tools`` in the frontmatter is a YAML list (Anthropic
     # skill spec). We store as ``list[str]``; missing / non-list
     # frontmatter values become ``None`` so callers can use
     # ``is None`` as the "no restriction" check.
-    allowed_tools: Optional[list[str]] = None
+    allowed_tools: list[str] | None = None
     # ``metadata`` is a free-form ``{key: value}`` map.
-    metadata: Optional[dict[str, str]] = None
+    metadata: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,17 +210,13 @@ def _parse_frontmatter(raw: str) -> tuple[dict, str, dict]:
             continue
         key, _, value = line.partition(":")
         value = value.strip()
-        if (
-            len(value) >= 2
-            and value[0] == value[-1]
-            and value[0] in ("'", '"')
-        ):
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
         fm[key.strip()] = value
     return fm, body, typed
 
 
-def _skill_name_from_dir(skill_dir: Path) -> Optional[str]:
+def _skill_name_from_dir(skill_dir: Path) -> str | None:
     """Validate the directory name is a usable skill name.
 
     Returns ``None`` for invalid names so callers can log + skip
@@ -229,7 +225,9 @@ def _skill_name_from_dir(skill_dir: Path) -> Optional[str]:
     name = skill_dir.name
     if not _NAME_RE.match(name):
         logger.warning(
-            "skills: %s has invalid name %r, skipping", skill_dir, name,
+            "skills: %s has invalid name %r, skipping",
+            skill_dir,
+            name,
         )
         return None
     return name
@@ -243,7 +241,7 @@ def _truncate_description(text: str) -> str:
     return text
 
 
-def _coerce_str_list(value: Any) -> Optional[list[str]]:
+def _coerce_str_list(value: Any) -> list[str] | None:
     """Coerce a frontmatter ``allowed-tools`` value to ``list[str]`` or ``None``.
 
     - ``None`` (key absent) → ``None``
@@ -258,7 +256,7 @@ def _coerce_str_list(value: Any) -> Optional[list[str]]:
     return None
 
 
-def _coerce_str_dict(value: Any) -> Optional[dict[str, str]]:
+def _coerce_str_dict(value: Any) -> dict[str, str] | None:
     """Coerce a frontmatter ``metadata`` value to ``dict[str, str]`` or ``None``."""
     if value is None:
         return None
@@ -270,8 +268,6 @@ def _coerce_str_dict(value: Any) -> Optional[dict[str, str]]:
 # ──────────────────────────────────────────────────────────────────────── #
 # Body path processing — Progressive Disclosure Level 3
 # ──────────────────────────────────────────────────────────────────────── #
-
-
 
 
 def _skill_root_dir_line(skill_dir: Path) -> str:
@@ -315,12 +311,13 @@ def _process_skill_paths(
     files when the skill body mentions a file the deployer didn't
     ship.
     """
+
     # Pattern 1: directory-based relative paths
     # (``scripts/`` / ``references/`` / ``assets/``). The optional
     # non-capturing prefix group captures the command-style "python "
     # or " `", so a leading ``python scripts/foo.py`` becomes
     # ``python /abs/path/scripts/foo.py`` (prefix preserved).
-    def _replace_dir_path(match: "re.Match[str]") -> str:
+    def _replace_dir_path(match: re.Match[str]) -> str:
         prefix = match.group(1) or ""
         rel = match.group(2)
         abs_path = skill_dir / rel
@@ -334,25 +331,22 @@ def _process_skill_paths(
     # whitespace + backtick (inline-code form). ``\s``` is two
     # characters: whitespace then literal backtick.
     pattern_dirs = (
-        r"(?:(python\s+|\s`))?"          # optional "python " or " `"
+        r"(?:(python\s+|\s`))?"  # optional "python " or " `"
         r"((?:scripts|references|assets)/"  # one of the 3 dirs
-        r"[^\s`)\]]+)"                    # the rest of the path
+        r"[^\s`)\]]+)"  # the rest of the path
     )
     body = re.sub(pattern_dirs, _replace_dir_path, body)
 
     # Pattern 2: prose references like "see reference.md" / "read
     # forms.md". Suffix is the trailing punctuation / whitespace we
     # want to preserve.
-    def _replace_doc_path(match: "re.Match[str]") -> str:
+    def _replace_doc_path(match: re.Match[str]) -> str:
         prefix_word = match.group(1)
         filename = match.group(2)
         suffix = match.group(3) or ""
         abs_path = skill_dir / filename
         if abs_path.exists():
-            return (
-                f"{prefix_word}`{abs_path}` "
-                f"(use read_file to access){suffix}"
-            )
+            return f"{prefix_word}`{abs_path}` (use read_file to access){suffix}"
         return match.group(0)
 
     pattern_docs = (
@@ -366,7 +360,7 @@ def _process_skill_paths(
     # ``[text](relpath)``, with optional ``./`` prefix. Cap the path
     # segment at 200 chars to avoid runaway backtracking on weird
     # content.
-    def _replace_md_link(match: "re.Match[str]") -> str:
+    def _replace_md_link(match: re.Match[str]) -> str:
         link_text = match.group(1)
         rel = match.group(2)
         # Strip leading ``./`` for the resolve.
@@ -441,7 +435,7 @@ class SkillsBook:
         """
         return sorted(self._fresh_registry().values(), key=lambda s: s.name)
 
-    def get(self, name: str) -> Optional[SkillMeta]:
+    def get(self, name: str) -> SkillMeta | None:
         """Return the :class:`SkillMeta` for *name*, or ``None``.
 
         Hot-reloads the registry first.
@@ -481,9 +475,7 @@ class SkillsBook:
             raw = skill_path.read_bytes()
             st = skill_path.stat()
         except OSError as exc:
-            raise SkillBookError(
-                f"failed to read skill body for {name!r}: {exc}"
-            ) from exc
+            raise SkillBookError(f"failed to read skill body for {name!r}: {exc}") from exc
 
         truncated = False
         truncated_marker = ""
@@ -521,7 +513,7 @@ class SkillsBook:
         text = _process_skill_paths(text, skill_path.parent)
         content = _skill_root_dir_line(skill_path.parent) + text + truncated_marker
 
-        mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+        mtime = datetime.fromtimestamp(st.st_mtime, tz=UTC)
         return SkillBody(content=content, mtime=mtime, truncated=truncated)
 
     # ─── internal ─────────────────────────────────────────────────────
@@ -543,7 +535,9 @@ class SkillsBook:
         operator_count = len(self._registry) - operator_count_before
         logger.info(
             "skills: %d loaded (%d from bundle, %d from operator)",
-            len(self._registry), bundle_count, operator_count,
+            len(self._registry),
+            bundle_count,
+            operator_count,
         )
 
     def _fresh_registry(self) -> dict[str, SkillMeta]:
@@ -560,10 +554,7 @@ class SkillsBook:
         bundle_fp = self._root_fingerprint(self._bundle)
         operator_fp = self._root_fingerprint(self._operator)
         with self._lock:
-            if (
-                self._bundle_fp != bundle_fp
-                or self._operator_fp != operator_fp
-            ):
+            if self._bundle_fp != bundle_fp or self._operator_fp != operator_fp:
                 self._scan()
                 self._bundle_fp = bundle_fp
                 self._operator_fp = operator_fp
@@ -609,13 +600,16 @@ class SkillsBook:
             level = logger.info if source == "operator" else logger.warning
             level(
                 "skills: %s root %s does not exist; no skills from %s",
-                source, root, source,
+                source,
+                root,
+                source,
             )
             return 0
         if not root.is_dir():
             logger.warning(
                 "skills: %s root %s is not a directory; skipping",
-                source, root,
+                source,
+                root,
             )
             return 0
         before = len(self._registry)
@@ -624,7 +618,9 @@ class SkillsBook:
         loaded = len(self._registry) - before
         logger.info(
             "skills: %d loaded from %s root %s",
-            loaded, source, root,
+            loaded,
+            source,
+            root,
         )
         return loaded
 
@@ -643,7 +639,8 @@ class SkillsBook:
         skill_path = skill_dir / _SKILL_FILENAME
         if not skill_path.is_file():
             logger.debug(
-                "skills: %s has no SKILL.md; skipping", skill_dir,
+                "skills: %s has no SKILL.md; skipping",
+                skill_dir,
             )
             return
         try:
@@ -651,7 +648,8 @@ class SkillsBook:
         except OSError as exc:
             logger.warning(
                 "skills: failed to read %s: %s; skipping",
-                skill_path, exc,
+                skill_path,
+                exc,
             )
             return
         fm, _body, typed = _parse_frontmatter(raw)
@@ -662,9 +660,10 @@ class SkillsBook:
         declared_name = fm.get("name", "").strip()
         if declared_name and declared_name != dir_name:
             logger.warning(
-                "skills: %s declares name=%r but dir is %r; "
-                "using the directory name",
-                skill_path, declared_name, dir_name,
+                "skills: %s declares name=%r but dir is %r; using the directory name",
+                skill_path,
+                declared_name,
+                dir_name,
             )
         name = dir_name
         description_raw = fm.get("description", "").strip()
@@ -672,7 +671,8 @@ class SkillsBook:
             # An empty description wastes the system-prompt slot —
             # skip the skill rather than register it with a placeholder.
             logger.warning(
-                "skills: %s has no description; skipping", skill_path,
+                "skills: %s has no description; skipping",
+                skill_path,
             )
             return
         description = _truncate_description(description_raw)
@@ -690,13 +690,16 @@ class SkillsBook:
             if source == "operator" and existing.path.is_relative_to(self._bundle.root):
                 logger.debug(
                     "skills: operator %s overrides bundle %s for name %r",
-                    skill_path, existing.path, name,
+                    skill_path,
+                    existing.path,
+                    name,
                 )
             else:
                 logger.warning(
-                    "skills: duplicate name %r — overwriting previous "
-                    "definition at %s with %s",
-                    name, existing.path, skill_path,
+                    "skills: duplicate name %r — overwriting previous definition at %s with %s",
+                    name,
+                    existing.path,
+                    skill_path,
                 )
         self._registry[name] = SkillMeta(
             name=name,
@@ -733,6 +736,7 @@ def _resolve_bundle_skills_dir() -> Path:
     """
     try:
         import magi
+
         candidate = Path(magi.__file__).resolve().parent / "skills"
         if candidate.is_dir():
             return candidate

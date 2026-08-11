@@ -26,7 +26,7 @@ Concrete subclasses add typed accessors:
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 from magi.bus.db.file import FileShelf
 
