@@ -1,0 +1,14 @@
+title: MAGI
+description: A runtime for persistent, modular, governable agent societies.
+markdown: kramdown
+permalink: pretty
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

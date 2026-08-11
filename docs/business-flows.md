@@ -1,3 +1,10 @@
+---
+title: 关键业务流程
+description: MAGI 核心业务逻辑的行为不变式和关键守卫条件。
+lang: zh-CN
+permalink: /business-flows/
+---
+
 # MAGI 关键业务流程
 
 > 本文档记录核心业务逻辑的**行为不变式**和关键守卫条件。
@@ -43,7 +50,7 @@
 > - 系统级主动策略 → `magi/proactive/worker.py::ProactiveWorker._run`
 > - 外部数据流 → `magi/connectors/`（按需启动，非默认 Worker）
 >
-> **命名约定**：ID 命名以 [terms.md](terms.md#canonical-id-names) 为准 ——
+> **命名约定**：ID 命名以 [Terms]({{ '/terms/#canonical-id-names' | relative_url }}) 为准 ——
 > `magi_id` / `contact_id` / `conversation_id` / `job_id` / `tgid`。本文件里
 > 出现的历史名（`magic_id` / `uid` / `session_id` / `event_id` /
 > `telegram_id`）只在描述已失效的 cookie、已删除的 meta key、已改名的列时

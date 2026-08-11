@@ -1,3 +1,9 @@
+---
+title: Architecture
+description: The authoritative architecture for the MAGI runtime.
+permalink: /architecture/
+---
+
 # MAGI Architecture
 
 The current MAGI runtime is organised around one durable boundary — **BUS**
@@ -33,7 +39,7 @@ Identifiers follow one name per concept — `magi_id`, `contact_id`,
 parameters, and API payloads. The full table, including the retired names
 (`magic_id`, `uid`, `session_id`, `event_id`, agent-context `run_id`) that
 still appear in git history and old database dumps, is in
-[MAGI terms](terms.md#canonical-id-names).
+[MAGI terms]({{ '/terms/#canonical-id-names' | relative_url }}).
 
 ## Runtime shape
 
@@ -553,8 +559,8 @@ and `test_hook_envelope_purity.py`).
 
 ## Further reading
 
-- [MAGI terms](terms.md) — vocabulary and the canonical ID names.
-- [Business flows](business-flows.md) — invariant behaviour and guard
+- [MAGI terms]({{ '/terms/' | relative_url }}) — vocabulary and the canonical ID names.
+- [Business flows]({{ '/business-flows/' | relative_url }}) — invariant behaviour and guard
   conditions for the chat loop, channels, tasks, onboarding, login, and
   tools.
-- [Roadmap](ROADMAP.md) — the forward-looking backlog.
+- [Roadmap]({{ '/roadmap/' | relative_url }}) — the forward-looking backlog.

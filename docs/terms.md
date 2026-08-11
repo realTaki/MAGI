@@ -1,3 +1,9 @@
+---
+title: Terms
+description: Shared vocabulary and canonical identifier names for MAGI.
+permalink: /terms/
+---
+
 # MAGI Terms
 
 | Term | Meaning |

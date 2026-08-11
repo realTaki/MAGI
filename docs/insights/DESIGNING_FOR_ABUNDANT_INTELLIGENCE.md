@@ -1,3 +1,9 @@
+---
+title: Designing for Abundant Intelligence
+description: Why we should not build the future around today's LLM limitations.
+permalink: /insights/designing-for-abundant-intelligence/
+---
+
 # Designing for Abundant Intelligence: Why We Should Not Build the Future Around Today’s LLM Limitations
 
 ## English

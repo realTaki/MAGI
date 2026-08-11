@@ -1,12 +1,18 @@
+---
+title: Roadmap
+description: Forward-looking work and open decisions for MAGI.
+permalink: /roadmap/
+---
+
 # MAGI — Roadmap
 
 Forward-looking backlog only. Everything that has shipped is described by
-[ARCHITECTURE.md](ARCHITECTURE.md) (the runtime as it is today) and
-[business-flows.md](business-flows.md) (the invariants that must hold);
+[Architecture]({{ '/architecture/' | relative_url }}) (the runtime as it is today) and
+[business flows]({{ '/business-flows/' | relative_url }}) (the invariants that must hold);
 the history of how it got there lives in the commit log, not here.
 
 Identifiers below follow the canonical names in
-[terms.md](terms.md#canonical-id-names) — `magi_id`, `contact_id`,
+[terms]({{ '/terms/#canonical-id-names' | relative_url }}) — `magi_id`, `contact_id`,
 `conversation_id`, `job_id`, `tgid`.
 
 > **Conventions**
@@ -100,8 +106,8 @@ Decisions that block the **Open** items above.
 
 ## Related docs
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — the current runtime: BUS boundary,
+- [Architecture]({{ '/architecture/' | relative_url }}) — the current runtime: BUS boundary,
   workers, storage ownership.
-- [business-flows.md](business-flows.md) — behavioural invariants and
+- [Business flows]({{ '/business-flows/' | relative_url }}) — behavioural invariants and
   guard conditions.
-- [terms.md](terms.md) — vocabulary and canonical ID names.
+- [Terms]({{ '/terms/' | relative_url }}) — vocabulary and canonical ID names.
