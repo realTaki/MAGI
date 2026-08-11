@@ -50,10 +50,20 @@ def _is_admin_contact_id(bus, contact_id: int) -> bool:
 
 
 def _resolve_contact_id(bus, raw: str | None) -> int | None:
-    """Verify the signed session cookie, return contact_id or None."""
-    from magi.channels.api.auth import _verify_signed_contact_id
+    """Verify the signed session cookie, return contact_id or None.
 
-    return _verify_signed_contact_id(bus, raw or "")
+    Reads the v3 ``_sign_selected_session`` cookie first and
+    falls back to the legacy ``_sign_contact_id`` cookie
+    during the deprecation window. Returns ``None`` if the
+    cookie is missing, malformed, expired, or its contact
+    is no longer an admin.
+    """
+    from magi.channels.api.auth import resolve_session
+
+    session = resolve_session(bus, raw)
+    if session is None:
+        return None
+    return int(session["contact_id"])
 
 
 def admin_gate(request: Request) -> str:

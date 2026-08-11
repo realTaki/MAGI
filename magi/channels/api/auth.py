@@ -188,6 +188,64 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
         return None
 
 
+def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
+    """Return a unified session payload for either cookie version.
+
+    Reads from the request cookie (whatever version it is)
+    and returns a single dict shape that downstream
+    ``/me``, ``admin_gate``, ``set-password``,
+    ``change-password``, ``chat.search`` and
+    ``chat.conversations`` can consume without branching on
+    v3 vs legacy. Returns ``None`` when the cookie is
+    missing, malformed, expired, or points at a row that is
+    no longer an admin.
+
+    v3 cookies are the only kind issued by fresh login
+    flows (verify-login-code, login-password, target verify);
+    legacy cookies persist only until their TTL elapses.
+    Both shapes are accepted here for a soft deprecation
+    window.
+    """
+    selected = selected_session(bus, token)
+    if selected is not None:
+        try:
+            return {
+                "contact_id": int(selected["telegram_id"]),
+                "magi_id": int(selected["magi_id"]),
+                "telegram_id": int(selected["telegram_id"]),
+                "display_name": (
+                    selected.get("display_name")
+                    if isinstance(selected.get("display_name"), str)
+                    else None
+                ),
+                "admin": bool(selected.get("admin")),
+                "assigned": bool(selected.get("assigned")),
+                "source": "v3",
+            }
+        except (KeyError, TypeError, ValueError):
+            return None
+    contact_id = _verify_signed_contact_id(bus, token or "")
+    if contact_id is None or contact_id not in _super_admins(bus):
+        return None
+    try:
+        contact = bus.contacts_book.get(contact_id=contact_id)
+    except Exception:
+        contact = None
+    return {
+        "contact_id": contact_id,
+        # ``0`` means "legacy cookie didn't capture this";
+        # callers that need the runtime target should pick
+        # one via the assigned-rows table rather than
+        # trust this value.
+        "magi_id": 0,
+        "telegram_id": int(contact.telegram_id) if contact is not None and contact.telegram_id is not None else None,
+        "display_name": contact.display_name if contact is not None else None,
+        "admin": bool(contact.admin) if contact is not None else False,
+        "assigned": False,
+        "source": "legacy",
+    }
+
+
 def _super_admins(bus: Bus) -> set[int]:
     """Read the WebUI-admin allowlist as a set of contact ids.
 
@@ -251,6 +309,11 @@ class SendLoginCodeResponse(BaseModel):
 class VerifyLoginCodeRequest(BaseModel):
     contact_id: int
     code: str = Field(min_length=6, max_length=6)
+    # The MAGI the operator picked on LandingPage — written
+    # into the v3 session cookie so /me and the runtime proxy
+    # know which MAGI this session is bound to without a
+    # second round-trip.
+    magi_id: int = 0
 
 
 class VerifyLoginCodeResponse(BaseModel):
@@ -722,15 +785,40 @@ async def verify_login_code(
     if str(stored.get("code", "")) != code:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
 
-    # Sign in: set the session cookie. Cookie value is
-    # the UID; the HTTPOnly flag keeps it client-side
-    # inaccessible; the ``/me`` endpoint and every
-    # AdminGate lookup resolve it back to a live
-    # ``Contact`` row to gate access. C8 will replace
-    # this with a signed token + a real session table.
+    # Look up the contact so we can stamp display_name +
+    # admin + telegram_id into the v3 cookie payload.
+    # The ``contact_id`` here is the cross-channel
+    # identity (Contact PK), so ``get(contact_id=)``
+    # returns the row directly.
+    contact_row = bus.contacts_book.get(contact_id=contact_id)
+    if contact_row is None:
+        # The cookie row was deleted between send and
+        # verify. Treat as auth failure rather than
+        # crashing the login flow.
+        return VerifyLoginCodeResponse(
+            ok=False, error="contact not found"
+        )
+
+    # Sign in: set the v3 session cookie so /me and
+    # the runtime proxy both recognise the session in
+    # control-plane mode. The legacy ``_sign_contact_id``
+    # cookie is no longer issued by any login endpoint —
+    # legacy cookies still validate via ``resolve_session``
+    # for in-flight transitions only.
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_contact_id(bus, contact_id),
+        value=_sign_selected_session(
+            bus,
+            magi_id=payload.magi_id,
+            telegram_id=int(contact_row.telegram_id) if contact_row.telegram_id is not None else contact_id,
+            display_name=contact_row.display_name,
+            admin=bool(contact_row.admin),
+            # TG-code login alone doesn't bind the operator
+            # to a specific runtime; the runtime proxy
+            # consults the assigned-row table to decide
+            # which MAGI to forward to.
+            assigned=False,
+        ),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
@@ -739,7 +827,7 @@ async def verify_login_code(
     )
     logger.info(
         "user signed in",
-        extra={"contact_id": contact_id},
+        extra={"contact_id": contact_id, "magi_id": payload.magi_id},
     )
     return VerifyLoginCodeResponse(ok=True)
 
@@ -766,40 +854,24 @@ async def me(
     The ``telegram_id`` field in the response is the
     bound TG chat id, looked up from the same row.
     """
-    selected = selected_session(bus, magi_session)
-    if selected is not None:
-        telegram_id_value = int(selected["telegram_id"])
-        magi_id_value = int(selected["magi_id"])
-        raw_display_name = selected.get("display_name")
-        display_name = raw_display_name if isinstance(raw_display_name, str) else None
-        return MeResponse(
-            contact_id=telegram_id_value,
-            telegram_id=telegram_id_value,
-            display_name=display_name,
-            admin=bool(selected.get("admin")),
-            assigned=bool(selected.get("assigned")),
-            selected_magi_id=magi_id_value,
-        )
-    contact_id = _verify_signed_contact_id(bus, magi_session or "")
-    if contact_id is None or contact_id not in _super_admins(bus):
+    session = resolve_session(bus, magi_session)
+    if session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    if control_store.enabled():
-        raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
-    # We already proved the cookie is a valid admin
-    # contact_id; re-read the row to surface the
-    # telegram_id + display name. If the row has since
-    # been deleted (admin removed mid-session), we fall
-    # back to None — the cookie is still good for this
-    # request, just no metadata to enrich the response
-    # with.
+    contact_id = int(session["contact_id"])
+    # Re-read the row to surface login_methods +
+    # password_set for the Settings → Security card.
+    # If the row has since been deleted (admin removed
+    # mid-session), fall back to cookie-stamped fields.
     try:
         contact = bus.contacts_book.get(contact_id=contact_id)
         if contact is None:
             return MeResponse(
                 contact_id=contact_id,
-                telegram_id=None,
-                display_name=None,
-                admin=False,
+                telegram_id=session.get("telegram_id"),
+                display_name=session.get("display_name"),
+                admin=bool(session.get("admin")),
+                assigned=bool(session.get("assigned")),
+                selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
             )
         methods, _is_webui_only = _login_methods_for(bus, contact_id)
         return MeResponse(
@@ -807,6 +879,8 @@ async def me(
             telegram_id=contact.telegram_id,
             display_name=contact.name,
             admin=bool(contact.admin),
+            assigned=bool(session.get("assigned")),
+            selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
             login_methods=methods,
             password_set="password" in methods,
         )
@@ -818,9 +892,11 @@ async def me(
         logger.exception("me: contact lookup failed for contact_id=%s", contact_id)
         return MeResponse(
             contact_id=contact_id,
-            telegram_id=None,
-            display_name=None,
-            admin=False,
+            telegram_id=session.get("telegram_id"),
+            display_name=session.get("display_name"),
+            admin=bool(session.get("admin")),
+            assigned=bool(session.get("assigned")),
+            selected_magi_id=int(session["magi_id"]) if session.get("magi_id") else None,
         )
 
 
@@ -856,6 +932,9 @@ class LoginMethodsResponse(BaseModel):
 class LoginPasswordRequest(BaseModel):
     contact_id: int
     password: str
+    # The MAGI the operator picked on LandingPage — written
+    # into the v3 session cookie (see ``_sign_selected_session``).
+    magi_id: int = 0
 
 
 class LoginPasswordResponse(BaseModel):
@@ -1037,15 +1116,33 @@ async def login_password(
         )
 
     password_utils.clear_attempt(bus, payload.contact_id)
+    contact_row = bus.contacts_book.get(contact_id=payload.contact_id)
+    if contact_row is None:
+        # Contact deleted between admin-list check and
+        # password verify — treat as auth failure rather
+        # than crashing the login flow.
+        return LoginPasswordResponse(ok=False, error="contact not found")
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
-        value=_sign_contact_id(bus, payload.contact_id),
+        value=_sign_selected_session(
+            bus,
+            magi_id=payload.magi_id,
+            telegram_id=int(contact_row.telegram_id) if contact_row.telegram_id is not None else payload.contact_id,
+            display_name=contact_row.display_name,
+            admin=bool(contact_row.admin),
+            # Password login alone doesn't bind the operator
+            # to a specific runtime; same as TG-code.
+            assigned=False,
+        ),
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
         path="/",
     )
-    logger.info("user signed in via password", extra={"contact_id": payload.contact_id})
+    logger.info(
+        "user signed in via password",
+        extra={"contact_id": payload.contact_id, "magi_id": payload.magi_id},
+    )
     return LoginPasswordResponse(ok=True)
 
 
@@ -1088,12 +1185,13 @@ async def set_password(
     if not payload.contact_id or not isinstance(payload.contact_id, int):
         return SetPasswordResponse(ok=False, error="invalid contact_id")
 
-    caller_contact_id = _verify_signed_contact_id(
+    caller_session = resolve_session(
         bus,
-        request.cookies.get(SESSION_COOKIE_NAME) or "",
+        request.cookies.get(SESSION_COOKIE_NAME),
     )
-    if caller_contact_id is None:
+    if caller_session is None:
         return SetPasswordResponse(ok=False, error="not signed in")
+    caller_contact_id = int(caller_session["contact_id"])
 
     if caller_contact_id != payload.contact_id:
         # Admin override — AdminGate already proved the
@@ -1148,12 +1246,13 @@ async def change_password(
     bus = get_bus(request)
     from magi.channels.api import password_utils
 
-    caller_contact_id = _verify_signed_contact_id(
+    caller_session = resolve_session(
         bus,
-        request.cookies.get(SESSION_COOKIE_NAME) or "",
+        request.cookies.get(SESSION_COOKIE_NAME),
     )
-    if caller_contact_id is None:
+    if caller_session is None:
         return SetPasswordResponse(ok=False, error="not signed in")
+    caller_contact_id = int(caller_session["contact_id"])
     try:
         new_hash = password_utils.hash_password(payload.new_password)
     except ValueError as exc:

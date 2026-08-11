@@ -311,31 +311,26 @@ async def set_admin_password_onboarding(
     The TG wizard's step 2 collects TG chat ids via
     :func:`save_admin`; this endpoint is the parallel
     flow for operators who picked "WebUI only" in step 1.
-    It upserts a ``Contact`` row with ``admin=True`` and
-    ``role='assigned'`` (the operator is the person
-    being served, which is the single-MAGI default) and
-    writes a password hash on that local contact. There is no
-    telegram_id — the row is a WebUI-only admin.
+    It writes the admin binding into the MAGIS-shared
+    :class:`MagisAdminBook` (admin is a MAGIS-level concept;
+    ``Contact.admin`` is a legacy placeholder and is **not**
+    set here), and stores the password hash on the runtime's
+    local ``Contact`` row so the wizard's password login can
+    succeed.
+
+    Storage split:
+
+      * Webui (control-plane mode) → upserts a Contact in the
+        MAGIS DB and registers a MagisAdmin row pointing to
+        that Contact's id.
+      * Runtime (forwarded) → upserts the same Contact name
+        in its local SQLite, then writes the password hash.
 
     If a previous admin row exists (an operator who
     abandoned the wizard and re-entered the password
     step), the first admin row is reused so the onboarding
     flow doesn't strand the original row's chat history.
-
-    Control-plane webui forwards to the runtime so the
-    password hash lands on the runtime's local
-    ``contacts_book`` (the webui's Bus is bound to the
-    MAGIS-shared store and would otherwise write the
-    hash to the wrong DB).
     """
-    if control_store.enabled():
-        forwarded = await _forward_set_admin_password_to_runtime(bus, payload)
-        if forwarded is not None:
-            return forwarded
-        # No runtime reachable — fall through to local write
-        # so legacy / single-process control deployments
-        # without a runtime registry still complete.
-
     name = payload.name.strip()
     if not name:
         return SetAdminPasswordResponse(ok=False, error="name is required")
@@ -347,19 +342,106 @@ async def set_admin_password_onboarding(
     except ValueError as exc:
         return SetAdminPasswordResponse(ok=False, error=str(exc))
 
-    # Upsert the first admin Contact row (create on first call, rename on
-    # subsequent calls so chat history survives a re-entered wizard).
-    admin_contact_id = bus.contacts_book.upsert_first_admin(name=name)
-    bus.contacts_book.set_password_hash(
-        contact_id=admin_contact_id,
-        password_hash=new_hash,
+    webui_admin_contact_id: int | None = None
+    if control_store.enabled():
+        webui_admin_contact_id = _register_webui_admin(bus, name)
+
+    runtime_response = await _forward_set_admin_password_to_runtime(bus, payload)
+    if runtime_response is not None:
+        if not runtime_response.ok:
+            return runtime_response
+        # Surface the MAGIS-DB contact id when the webui wrote one,
+        # otherwise fall back to the runtime-local id returned by the
+        # runtime (helpful for legacy / single-process control deploys).
+        return SetAdminPasswordResponse(
+            ok=True,
+            admin_contact_id=(
+                webui_admin_contact_id
+                if webui_admin_contact_id is not None
+                else runtime_response.admin_contact_id
+            ),
+        )
+
+    # No runtime reachable — fall through to a local-only write so
+    # legacy / single-process control deployments still complete.
+    if not control_store.enabled():
+        local_contact_id = _upsert_local_contact(bus, name)
+        bus.contacts_book.set_password_hash(
+            contact_id=local_contact_id,
+            password_hash=new_hash,
+        )
+        return SetAdminPasswordResponse(ok=True, admin_contact_id=local_contact_id)
+
+    # Webui mode without a runtime — register the admin in MAGIS DB
+    # but no runtime exists to set the password hash. Surface what we
+    # have so the wizard can advance; login will fail until a runtime
+    # is brought online.
+    return SetAdminPasswordResponse(
+        ok=True,
+        admin_contact_id=webui_admin_contact_id,
     )
 
+
+def _register_webui_admin(bus: Bus, name: str) -> int | None:
+    """Register the operator as an admin of the root MAGIS.
+
+    Idempotent: a re-entered wizard reuses the existing
+    MagisAdmin row + first Contact row.
+    """
+    if bus.magis_book is None or bus.magis_admins_book is None or bus.contacts_book is None:
+        logger.warning("onboarding: webui admin skipped — MAGIS books unavailable")
+        return None
+    root = bus.magis_book.get_root()
+    if root is None:
+        logger.warning("onboarding: webui admin skipped — Genesis MAGIS not initialised")
+        return None
+
+    existing_admins = bus.magis_admins_book.list_for_magis(magis_id=root.id)
+    if existing_admins:
+        # Reuse the first admin's Contact row so a re-entered wizard
+        # does not strand chat history.
+        contact = bus.contacts_book.get(contact_id=existing_admins[0].contact_id)
+        if contact is None:
+            logger.warning(
+                "onboarding: webui admin missing contact for existing MagisAdmin",
+                extra={"contact_id": existing_admins[0].contact_id},
+            )
+            return None
+        if contact.name != name:
+            bus.contacts_book.update(contact_id=contact.id, name=name, display_name=name)
+        return contact.id
+
+    contact = _upsert_local_contact(bus, name)
+    bus.magis_admins_book.add(contact_id=contact, magis_id=root.id)
     logger.info(
-        "onboarding: admin password set",
-        extra={"contact_id": admin_contact_id, "name": name},
+        "onboarding: webui MagisAdmin registered",
+        extra={"contact_id": contact, "magis_id": root.id, "name": name},
     )
-    return SetAdminPasswordResponse(ok=True, admin_contact_id=admin_contact_id)
+    return contact
+
+
+def _upsert_local_contact(bus: Bus, name: str) -> int:
+    """Create a Contact named ``name`` if absent, else reuse in place.
+
+    The new row carries ``role='assigned'`` and **does not** set
+    ``admin=True`` — admin is a MAGIS-level concept and lives in
+    :class:`MagisAdminBook`. Contact rows created here are only the
+    "person" identity; the wizard / auth layer joins them with
+    ``magis_admins`` (webui) or reads the password hash directly
+    (runtime login).
+    """
+    contacts = bus.contacts_book
+    for existing in contacts.list_all():
+        if existing.name == name:
+            return int(existing.id)
+    try:
+        created = contacts.add(name=name, role=ROLE_ASSIGNED, display_name=name)
+    except ValueError:
+        # Name collision with an existing row whose name differs in
+        # case / whitespace — fall back to a unique rename.
+        unique = f"{name}-onboarding"
+        created = contacts.add(name=unique, role=ROLE_ASSIGNED, display_name=name)
+    return int(created.id)
 
 
 # Expose the same handler on the runtime-only router so the runtime

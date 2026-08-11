@@ -203,16 +203,17 @@ async def send_chat(
     # (D.28) below — WebUI doesn't need it for send / read
     # but we stamp it on the conversation row for cross-channel
     # tooling.
-    from magi.channels.api.auth import _verify_signed_contact_id
+    from magi.channels.api.auth import resolve_session
 
     cookie_raw = request.cookies.get("magi_session", "")
-    cookie_contact_id = _verify_signed_contact_id(bus, cookie_raw)
-    if cookie_contact_id is None:
+    session = resolve_session(bus, cookie_raw)
+    if session is None:
         raise MagiHTTPException(
             status_code=401,
             code="chat.unknown_sender",
             detail="no signed-in contact",
         )
+    cookie_contact_id = int(session["contact_id"])
     contact_id, contact_role = _resolve_caller_credentials(bus, cookie_contact_id)
     # D.24: per-channel delivery address stamped on the
     # conversation row's ``delivery_address`` column (renamed
