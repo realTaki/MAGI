@@ -158,17 +158,13 @@ def sign_request(
     """
     secret = _shared_secret()
     if secret is None:
-        raise RuntimeError(
-            "MAGI_CONTROL_SECRET is not set; cannot sign a2a request"
-        )
+        raise RuntimeError("MAGI_CONTROL_SECRET is not set; cannot sign a2a request")
 
     if timestamp is None:
         timestamp = int(time.time())
     payload_digest = hashlib.sha256(body).hexdigest()
-    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode("utf-8")
-    signature = hmac.new(secret, signed, hashlib.sha256).hexdigest()[
-        :SIGNATURE_LENGTH
-    ]
+    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode()
+    signature = hmac.new(secret, signed, hashlib.sha256).hexdigest()[:SIGNATURE_LENGTH]
     return {
         "X-MAGI-Id": str(magi_id),
         "X-MAGI-Timestamp": str(timestamp),
@@ -203,9 +199,7 @@ def verify_signature(
     """
     secret = _shared_secret()
     if secret is None:
-        logger.warning(
-            "MAGI_CONTROL_SECRET unset; rejecting a2a request"
-        )
+        logger.warning("MAGI_CONTROL_SECRET unset; rejecting a2a request")
         return False
 
     if len(signature) != SIGNATURE_LENGTH:
@@ -217,10 +211,8 @@ def verify_signature(
         return False
 
     payload_digest = hashlib.sha256(body).hexdigest()
-    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode("utf-8")
-    expected = hmac.new(secret, signed, hashlib.sha256).hexdigest()[
-        :SIGNATURE_LENGTH
-    ]
+    signed = f"{magi_id}:{timestamp}:{payload_digest}".encode()
+    expected = hmac.new(secret, signed, hashlib.sha256).hexdigest()[:SIGNATURE_LENGTH]
     return hmac.compare_digest(expected, signature)
 
 

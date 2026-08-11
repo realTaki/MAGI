@@ -12,8 +12,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from magi.channels.api.dependencies import get_bus
-
 router = APIRouter(tags=["a2a"])
 
 

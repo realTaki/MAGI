@@ -57,7 +57,7 @@ class A2AAdapter:
 
     name: str = Channel.A2A
 
-    def __init__(self, bus: "Bus") -> None:
+    def __init__(self, bus: Bus) -> None:
         self.bus = bus
 
     async def send(self, contact_id: int, text: str) -> None:
@@ -72,11 +72,14 @@ class A2AAdapter:
             raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
 
         from magi.bus.guild.deliveryJob import DeliveryJob
-        self.bus.delivery_job_board.publish(DeliveryJob(
-            channel=Channel.A2A,
-            destination=str(contact_id),
-            payload={"text": text, "reply_to": None},
-        ))
+
+        self.bus.delivery_job_board.publish(
+            DeliveryJob(
+                channel=Channel.A2A,
+                destination=str(contact_id),
+                payload={"text": text, "reply_to": None},
+            )
+        )
 
     def lookup_im_id(self, contact_id: int) -> str | None:
         """Return the peer's cluster DNS name, or ``None``.

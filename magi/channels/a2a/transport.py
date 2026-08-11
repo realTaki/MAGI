@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -13,7 +13,9 @@ from magi.channels.a2a.adapter import A2AAdapter
 from magi.channels.a2a.protocol import sign_request
 
 
-async def send_a2a_delivery(bus, target_magi_id: int, event_id: str, payload: dict[str, Any]) -> None:
+async def send_a2a_delivery(
+    bus, target_magi_id: int, event_id: str, payload: dict[str, Any]
+) -> None:
     runtime_id = os.environ.get("MAGI_RUNTIME_ID", "")
     if not runtime_id.isdigit():
         raise RuntimeError("MAGI_RUNTIME_ID is required for A2A delivery")
@@ -24,14 +26,21 @@ async def send_a2a_delivery(bus, target_magi_id: int, event_id: str, payload: di
         "event_id": event_id,
         "from_magi_id": int(runtime_id),
         "text": str(payload.get("text") or ""),
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "reply_to": payload.get("reply_to"),
         "kind": str(payload.get("a2a_kind") or "request"),
         "correlation_id": payload.get("correlation_id"),
     }
     encoded = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    headers = {"content-type": "application/json", **sign_request(magi_id=int(runtime_id), body=encoded)}
+    headers = {
+        "content-type": "application/json",
+        **sign_request(magi_id=int(runtime_id), body=encoded),
+    }
     async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(f"http://{destination}/a2a/inbox", content=encoded, headers=headers)
+        response = await client.post(
+            f"http://{destination}/a2a/inbox", content=encoded, headers=headers
+        )
     if response.status_code != 202:
-        raise RuntimeError(f"A2A peer rejected delivery: {response.status_code} {response.text[:300]}")
+        raise RuntimeError(
+            f"A2A peer rejected delivery: {response.status_code} {response.text[:300]}"
+        )
