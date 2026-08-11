@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import abstractmethod
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Awaitable, Callable, ClassVar
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, ClassVar
 
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult
+    from magi.bus.guild.deliveryJob import DeliveryJob
 
 logger = logging.getLogger("magi.channels.worker")
 _backpressure_last_warn: dict[str, float] = {}
@@ -41,7 +42,9 @@ class ChannelWorker(RuntimeWorker):
     async def _run(self) -> None: ...
 
     async def _claim_delivery_loop(
-        self, deliver_fn: Callable[[DeliveryJob], Awaitable[None]], channel_label: str,
+        self,
+        deliver_fn: Callable[[DeliveryJob], Awaitable[None]],
+        channel_label: str,
     ) -> None:
         """Channel-scoped delivery claim loop.
 
@@ -52,6 +55,7 @@ class ChannelWorker(RuntimeWorker):
         and amplified duplicate-delivery risk under restart.
         """
         from magi.bus.guild.deliveryJob import DeliveryResult
+
         max_depth = await self._read_max_queue_depth()
         while not self._stopping:
             depth = await self._read_queue_depth(channel_label)
@@ -78,7 +82,8 @@ class ChannelWorker(RuntimeWorker):
             if getattr(job, "channel", "") != channel_label:
                 logger.warning(
                     "channels[%s]: claim_for_channel returned a row with channel=%r; releasing",
-                    channel_label, getattr(job, "channel", None),
+                    channel_label,
+                    getattr(job, "channel", None),
                 )
                 try:
                     await self.call(self.bus.delivery_job_board.release, key=job.job_id)
@@ -88,24 +93,32 @@ class ChannelWorker(RuntimeWorker):
             self.polled()
             try:
                 await deliver_fn(job)
-                await self.call(self.bus.delivery_job_board.submit_result,
-                    key=job.job_id, result=DeliveryResult(job_id=job.job_id, success=True))
+                await self.call(
+                    self.bus.delivery_job_board.submit_result,
+                    key=job.job_id,
+                    result=DeliveryResult(job_id=job.job_id, success=True),
+                )
                 self.succeeded()
             except Exception as exc:
                 self.failed(exc)
                 logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
-                await self.call(self.bus.delivery_job_board.submit_result,
-                    key=job.job_id, result=DeliveryResult(job_id=job.job_id, success=False, error=str(exc)[:1024]))
+                await self.call(
+                    self.bus.delivery_job_board.submit_result,
+                    key=job.job_id,
+                    result=DeliveryResult(job_id=job.job_id, success=False, error=str(exc)[:1024]),
+                )
 
     async def _read_max_queue_depth(self) -> int:
         raw = await self.call(self.bus.settings_book.get, key="channels.delivery.max_queue_depth")
-        if raw and str(raw).isdigit(): return int(raw)
+        if raw and str(raw).isdigit():
+            return int(raw)
         return 1000
 
     async def _read_queue_depth(self, channel_label: str) -> int:
         try:
             self._queue_depth = await self.call(
-                self.bus.delivery_job_board.pending_count, channel=channel_label,
+                self.bus.delivery_job_board.pending_count,
+                channel=channel_label,
             )
         except Exception:
             self._queue_depth = 0
@@ -116,7 +129,7 @@ class ChannelWorker(RuntimeWorker):
 
     def _log_backpressure_throttle(self, channel_label: str, depth: int) -> None:
         global _backpressure_last_warn
-        now = datetime.now(timezone.utc).timestamp()
+        now = datetime.now(UTC).timestamp()
         last = _backpressure_last_warn.get(channel_label, 0)
         if now - last >= 60:
             _backpressure_last_warn[channel_label] = now

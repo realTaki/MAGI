@@ -20,13 +20,8 @@ here as the common channel vocabulary.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from magi.channels.worker_base import ChannelWorker
 from magi.bus.library.local.tasksBook import Channel
-
-if TYPE_CHECKING:
-    from magi.bus import Bus
+from magi.channels.worker_base import ChannelWorker
 
 __all__ = [
     "base",
