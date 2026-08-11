@@ -145,7 +145,8 @@ export default function LoginPage(props: {
     setError(null);
     try {
       const data = await loginPasswordMut.mutateAsync({
-        uid: selectedTelegramId,
+        contact_id: selectedTelegramId,
+        magi_id: props.magiId,
         password,
       });
       if (data.ok) {

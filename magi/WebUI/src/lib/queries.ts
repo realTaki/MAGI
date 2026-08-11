@@ -579,10 +579,10 @@ export function useSaveAdmin() {
 
 export function useSendLoginCode() {
   return useMutation({
-    mutationFn: (uid: number) =>
+    mutationFn: (vars: { contact_id: number }) =>
       apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
         "/api/auth/send-login-code",
-        { method: "POST", body: { uid } },
+        { method: "POST", body: vars },
       ),
   });
 }
@@ -590,10 +590,10 @@ export function useSendLoginCode() {
 export function useVerifyLoginCode() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { uid: number; code: string }) =>
+    mutationFn: (vars: { contact_id: number; magi_id: number; code: string }) =>
       apiFetch<{ ok: boolean; error?: string }>(
         "/api/auth/verify-login-code",
-        { method: "POST", body: payload },
+        { method: "POST", body: vars },
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.me });
@@ -1017,7 +1017,7 @@ export function useLoginMethods(uid: number | null) {
     queryKey: ["auth", "login-methods", uid] as const,
     queryFn: () =>
       apiFetch<LoginMethodsResponse>(
-        `/api/auth/login-methods?uid=${uid ?? 0}`,
+        `/api/auth/login-methods?contact_id=${uid ?? 0}`,
       ),
     enabled: uid != null && uid > 0,
   });
@@ -1025,12 +1025,12 @@ export function useLoginMethods(uid: number | null) {
 
 export function useLoginPassword() {
   return useMutation({
-    mutationFn: (vars: { uid: number; password: string }) =>
+    mutationFn: (vars: { contact_id: number; magi_id: number; password: string }) =>
       apiFetch<{ ok: boolean; error?: string; retry_after?: number | null }>(
         "/api/auth/login-password",
         {
           method: "POST",
-          body: JSON.stringify(vars),
+          body: vars,
         },
       ),
   });

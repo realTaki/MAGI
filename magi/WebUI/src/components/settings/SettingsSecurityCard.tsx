@@ -22,28 +22,24 @@
  */
 
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
 import { useT } from "../../i18n/index";
 import { apiFetch, qk } from "../../lib/queryClient";
-
-interface MeResponse {
-  uid: number;
-  admin: boolean;
-  login_methods?: string[];
-  password_set?: boolean;
-}
+import { useMe } from "../../lib/queries";
 
 export function SettingsSecurityCard() {
   const t = useT();
   const qc = useQueryClient();
 
-  const meQuery = useQuery({
-    queryKey: qk.me,
-    queryFn: () => apiFetch<MeResponse>("/api/auth/me"),
-  });
+  // Share the boot ``qk.me`` cache with ``useMe`` so
+  // the Settings card doesn't double-probe /me on
+  // mount. The hook enforces ``retry: false`` and
+  // the no-refetch-on-error rule introduced for the
+  // boot probe.
+  const meQuery = useMe();
 
   const [editing, setEditing] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
@@ -70,17 +66,17 @@ export function SettingsSecurityCard() {
     setError(null);
     setOk(null);
     try {
-      const uid = meQuery.data?.uid;
-      if (!uid) throw new Error("uid not loaded");
+      const contactId = meQuery.data?.contact_id;
+      if (!contactId) throw new Error("contact_id not loaded");
       const path = passwordSet
         ? "/api/auth/change-password"
         : "/api/auth/set-password";
       const body = passwordSet
         ? { old_password: oldPassword, new_password: newPassword }
-        : { uid, password: newPassword };
+        : { contact_id: contactId, password: newPassword };
       const res = await apiFetch<{ ok: boolean; error?: string }>(path, {
         method: "POST",
-        body: JSON.stringify(body),
+        body,
       });
       if (res.ok) {
         setOk(t("security.saved"));
@@ -104,9 +100,9 @@ export function SettingsSecurityCard() {
     setBusy(true);
     setError(null);
     try {
-      const uid = meQuery.data?.uid;
-      if (!uid) throw new Error("uid not loaded");
-      await apiFetch(`/api/auth/credentials/password/${uid}`, {
+      const contactId = meQuery.data?.contact_id;
+      if (!contactId) throw new Error("contact_id not loaded");
+      await apiFetch(`/api/auth/credentials/password/${contactId}`, {
         method: "DELETE",
       });
       qc.invalidateQueries({ queryKey: qk.me });

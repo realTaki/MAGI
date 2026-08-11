@@ -15,6 +15,7 @@ import {
   useMe,
   useOnboardingStatus,
   useRestartOnboarding,
+  type MeRow,
 } from "./lib/queries";
 
 /**
@@ -101,8 +102,14 @@ export default function App() {
   // ``meQuery.data`` is undefined and the user is null.
   useEffect(() => {
     if (meQuery.data) {
+      // ``telegram_id`` is ``string | null`` — v3
+      // sessions expose ``contact_id`` (the cross-
+      // channel identity) and surface ``telegram_id``
+      // only when the operator has bound a TG bot.
+      // We fall back to ``""`` so the dashboard's
+      // signedInUser state stays a string.
       setSignedInUser({
-        telegram_id: meQuery.data.telegram_id,
+        telegram_id: meQuery.data.telegram_id ?? "",
         display_name: meQuery.data.display_name,
         admin: meQuery.data.admin,
       });
@@ -158,22 +165,29 @@ export default function App() {
     content = (
       <LoginPage
         magiId={loginMagiId ?? 1}
-        onLoggedIn={async (uid) => {
+        onLoggedIn={async (telegramId) => {
           // The LoginPage's verify mutation
           // invalidated ``qk.me``; force a fresh read
           // so the dashboard can greet the user.
           await qc.invalidateQueries({ queryKey: ["me"] });
-          const me = qc.getQueryData<{
-            telegram_id: string;
-            display_name: string | null;
-            admin: boolean;
-          }>(["me"]);
+          const me = qc.getQueryData<MeRow>(["me"]);
           setSignedInUser(
-            me ?? {
-              telegram_id: String(uid),
-              display_name: null,
-              admin: false,
-            },
+            me
+              ? {
+                  telegram_id: me.telegram_id ?? "",
+                  display_name: me.display_name,
+                  admin: me.admin,
+                }
+              : {
+                  // Fallback for the very first paint
+                  // after ``onSuccess`` before the
+                  // refetch settles — the LoginPage
+                  // passes the chosen telegram_id so
+                  // the dashboard can greet by it.
+                  telegram_id: String(telegramId),
+                  display_name: null,
+                  admin: false,
+                },
           );
           setViewOverride(null);
         }}
