@@ -5,6 +5,14 @@ Job 命名（publish → claim → submit_result）：动词打头
 Book 命名：名词结尾（memoryBook / contactBook / ...）。
 """
 
+from magi.bus.guild.a2aJob import (
+    A2ANotifyJob,
+    A2ANotifyResult,
+    A2ARequestJob,
+    A2ARequestResult,
+    a2aNotifyBoard,
+    a2aRequestJobBoard,
+)
 from magi.bus.guild.base import (
     DEFAULT_LEASE_SECONDS,
     MAX_ATTEMPTS,
@@ -21,14 +29,6 @@ from magi.bus.guild.changeProviderConfigJob import (
     changeProviderConfigJobBoard,
 )
 from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard, publish_chat
-from magi.bus.guild.a2aJob import (
-    A2ANotifyJob,
-    A2ANotifyResult,
-    A2ARequestJob,
-    A2ARequestResult,
-    a2aNotifyBoard,
-    a2aRequestJobBoard,
-)
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 from magi.bus.guild.mcpServerChangedJob import (
     VALID_KINDS as _MCP_CHANGED_KINDS,

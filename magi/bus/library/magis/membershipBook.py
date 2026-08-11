@@ -278,7 +278,11 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             return [
                 MagisCollaborationMember(
                     magi_id=membership.id,
-                    magi_name=(runtime.backend_ref if runtime is not None else f"MAGI #{membership.id}"),
+                    magi_name=(
+                        (runtime.backend_ref or f"MAGI #{membership.id}")
+                        if runtime is not None
+                        else f"MAGI #{membership.id}"
+                    ),
                     role_name=role.name,
                     responsibility=membership.responsibility,
                 )
