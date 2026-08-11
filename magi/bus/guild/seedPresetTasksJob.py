@@ -24,11 +24,11 @@ class SeedPresetTasksJob:
     (``"contact_created"`` / ``"contact_promoted"``)。
     """
 
-    job_id: str = ""
-    contact_id: int = 0
-    trigger: str = ""
-    status: str = "pending"
-    attempts: int = 0
+    job_id: str = ""  # 发布时自动生成的 job_id
+    contact_id: int = 0  # 目标联系人 ID
+    trigger: str = ""  # 触发来源（contact_created/contact_promoted）
+    status: str = "pending"  # job 当前状态
+    attempts: int = 0  # 已重试次数
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,14 +39,14 @@ class SeedPresetTasksResult:
     的 preset 数（含仅跳过和 planner 标记跳过两类）。
     """
 
-    job_id: str
-    success: bool
-    inserted: int = 0
-    skipped: int = 0
-    error: str | None = None
+    job_id: str  # 对应 SeedPresetTasksJob 的 job_id
+    success: bool  # 播种是否成功
+    inserted: int = 0  # 实际插入的 Task 行数
+    skipped: int = 0  # 跳过的 preset 数
+    error: str | None = None  # 失败时的错误描述
 
     # lease / retry bookkeeping (written back by BaseJobBoard)
-    attempts: int = 0
+    attempts: int = 0  # 已重试次数（由 BaseJobBoard 回写）
 
 
 class _SeedPresetTasksJobRow(Base):

@@ -20,44 +20,44 @@ from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestJob:
-    job_id: str = ""
-    source_magi_id: int = 0
-    target_magi_id: int = 0
-    tool_call_id: str = ""
-    conversation_id: str | None = None
-    correlation_id: str | None = None
-    text: str = ""
-    payload: dict | None = None
-    deadline_at: datetime | None = None
+    job_id: str = ""  # 发布时自动生成的 job_id
+    source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
+    target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
+    tool_call_id: str = ""  # 关联的 tool_call_id
+    conversation_id: str | None = None  # 可选的会话 ID 透传
+    correlation_id: str | None = None  # 跨系统追踪 ID
+    text: str = ""  # 请求正文
+    payload: dict | None = None  # 额外的 JSON 结构化负载
+    deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestResult:
-    job_id: str = ""
-    success: bool = False
-    content: str = ""
-    error_code: str = ""
-    error: str | None = None
-    tool_call_id: str = ""
+    job_id: str = ""  # 对应 A2ARequestJob 的 job_id
+    success: bool = False  # 请求是否被成功处理
+    content: str = ""  # 目标 MAGI 回传的响应文本
+    error_code: str = ""  # 稳定错误码（如 a2a_timeout）
+    error: str | None = None  # 失败时的错误文案
+    tool_call_id: str = ""  # 回传的 tool_call_id
 
 
 @dataclass(frozen=True, slots=True)
 class A2ANotifyJob:
-    job_id: str = ""
-    source_magi_id: int = 0
-    target_magi_id: int = 0
-    conversation_id: str | None = None
-    correlation_id: str | None = None
-    text: str = ""
-    payload: dict | None = None
+    job_id: str = ""  # 发布时自动生成的 job_id
+    source_magi_id: int = 0  # 发送方 MAGI 身份
+    target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
+    conversation_id: str | None = None  # 可选的会话 ID 透传
+    correlation_id: str | None = None  # 跨系统追踪 ID
+    text: str = ""  # 通知正文
+    payload: dict | None = None  # 额外的 JSON 结构化负载
 
 
 @dataclass(frozen=True, slots=True)
 class A2ANotifyResult:
-    job_id: str = ""
-    success: bool = False
-    error_code: str = ""
-    error: str | None = None
+    job_id: str = ""  # 对应 A2ANotifyJob 的 job_id
+    success: bool = False  # 投递是否成功
+    error_code: str = ""  # 稳定错误码
+    error: str | None = None  # 失败时的错误文案
 
 
 class _A2ARequestRow(Base):

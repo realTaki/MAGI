@@ -58,17 +58,17 @@ class ChangeProviderConfigJob:
     写入 ``settings_book``，调用方只管构造。
     """
 
-    provider: str | None = None
-    api_key: str | None = None
-    model: str | None = None
-    job_id: str = ""
+    provider: str | None = None  # 目标 LLM provider 名（None=不变更）
+    api_key: str | None = None  # 新 API key（None=不变更）
+    model: str | None = None  # 目标模型名（None=不变更）
+    job_id: str = ""  # 发布时自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
 class ChangeProviderConfigResult:
-    job_id: str
-    success: bool
-    error: str | None = None
+    job_id: str  # 对应 ChangeProviderConfigJob 的 job_id
+    success: bool  # provider 配置是否应用成功
+    error: str | None = None  # 失败时的错误描述
 
 
 # ── internal ORM ───────────────────────────────────────────────────────────

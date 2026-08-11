@@ -27,26 +27,24 @@ from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
 class ChatJob:
     """Snapshot of a turn request (publisher input)."""
 
-    job_id: str = ""
-    conversation_id: str | None = None
-    correlation_id: str | None = None
-    kind: str = "chat"
-    payload: dict[str, Any] | None = None
-    inbox_event_id: str | None = None
-    available_at: datetime | None = None
-    received_seq: int = 0
+    job_id: str = ""  # 发布时自动生成的 job_id
+    conversation_id: str | None = None  # 目标 chat 会话 ID
+    correlation_id: str | None = None  # 跨系统追踪 ID
+    payload: dict[str, Any] | None = None  # turn 输入（text/channel/contact_id/...）
+    available_at: datetime | None = None  # 最早可被 claim 的时间
+    received_seq: int = 0  # 会话内的接收序号（用于保持 turn 顺序）
 
 
 @dataclass(frozen=True, slots=True)
 class ChatJobResult:
     """Final state of a turn."""
 
-    job_id: str = ""
-    success: bool = False
-    status: str = "failed"
-    result: dict[str, Any] | None = None
-    error_code: str | None = None
-    error_detail: str | None = None
+    job_id: str = ""  # 对应 ChatJob 的 job_id
+    success: bool = False  # turn 是否成功完成
+    status: str = "failed"  # 终态（completed/failed）
+    result: dict[str, Any] | None = None  # 结构化结果
+    error_code: str | None = None  # 稳定错误码
+    error_detail: str | None = None  # 失败时的详细错误描述
 
 
 class _ChatJobRow(Base):
@@ -57,8 +55,6 @@ class _ChatJobRow(Base):
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    inbox_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    kind: Mapped[str] = mapped_column(String(32), nullable=False)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -89,8 +85,6 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             job_id=job_id,
             conversation_id=job.conversation_id,
             correlation_id=job.correlation_id,
-            inbox_event_id=job.inbox_event_id,
-            kind=job.kind or "chat",
             payload=job.payload,
             received_seq=job.received_seq,
             status="pending",
@@ -140,7 +134,6 @@ def publish_chat(
     channel: str,
     contact_id: int,
     conversation_id: str,
-    kind: str = "chat",
     caller_role: str | None = None,
     job_id: str | None = None,
     correlation_id: str | None = None,
@@ -176,7 +169,6 @@ def publish_chat(
         job_id=str(job_id),
         conversation_id=conversation_id,
         correlation_id=correlation_id,
-        kind=kind,
         payload=payload,
     )
     bus.agent_job_board.publish(job)

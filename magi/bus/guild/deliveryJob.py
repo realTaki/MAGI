@@ -27,17 +27,17 @@ MAX_DELIVERY_ATTEMPTS = 10
 
 @dataclass(frozen=True, slots=True)
 class DeliveryJob:
-    channel: str
-    payload: dict
-    destination: str | None = None
-    job_id: str = ""
+    channel: str  # 投递渠道（tg/webui/...）
+    payload: dict  # 投递内容（按渠道 schema）
+    destination: str | None = None  # 目标地址（chat_id 等）
+    job_id: str = ""  # 自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
 class DeliveryResult:
-    job_id: str
-    success: bool
-    error: str | None = None
+    job_id: str  # 对应 DeliveryJob 的 job_id
+    success: bool  # 投递是否成功
+    error: str | None = None  # 失败时的错误描述
 
 
 class _DeliveryJobRow(Base):
