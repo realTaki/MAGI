@@ -33,9 +33,9 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class Setting:
-    key: str
-    value: str
-    updated_at: datetime | None = None
+    key: str  # 配置键
+    value: str  # 配置值（字符串）
+    updated_at: datetime | None = None  # 最近更新时间
 
 
 # -- internal ORM --------------------------------------------------------
@@ -184,9 +184,9 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
 class MCPTimeout:
     """The three MCP connection timeout knobs."""
 
-    connect_timeout: float = 10.0
-    execute_timeout: float = 60.0
-    sse_read_timeout: float = 120.0
+    connect_timeout: float = 10.0  # 建立连接的超时（秒）
+    execute_timeout: float = 60.0  # 工具调用执行的超时（秒）
+    sse_read_timeout: float = 120.0  # SSE 流读取的超时（秒）
 
 
 __all__ = ["Setting", "SettingBook", "MCPTimeout", "_SettingRow"]  # noqa: E501

@@ -33,15 +33,15 @@ _BODY_MAX = 8 * 1024
 
 @dataclass(frozen=True, slots=True)
 class Memory:
-    id: int
-    contact_id: int
-    kind: str
-    subject: str
-    body: str
-    priority: int = 3
-    completed_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # 主键（自增）
+    contact_id: int  # 所属联系人 ID
+    kind: str  # 记忆类型（fact/quick_note）
+    subject: str  # 简短标题
+    body: str  # 完整内容
+    priority: int = 3  # 优先级（1..5，越大越重要）
+    completed_at: datetime | None = None  # 完成时间（None=未完成）
+    created_at: datetime | None = None  # 创建时间
+    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.

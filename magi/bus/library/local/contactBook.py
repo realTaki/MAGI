@@ -65,15 +65,15 @@ class Contact:
     :meth:`magi.tools.base.Tool.gate`.
     """
 
-    id: int
-    name: str
-    display_name: str | None = None
-    role: str = ROLE_GUEST
-    telegram_id: int | None = None
-    admin: bool = False
-    last_seen_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # 主键（自增）
+    name: str  # 联系人唯一名
+    display_name: str | None = None  # 显示名
+    role: str = ROLE_GUEST  # 角色（assigned/guest）
+    telegram_id: int | None = None  # 绑定的 Telegram chat id
+    admin: bool = False  # 预留标志（实际权限由 MAGIS 的 magis_admins 表管理）
+    last_seen_at: datetime | None = None  # 最近活跃时间
+    created_at: datetime | None = None  # 创建时间
+    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
@@ -92,12 +92,12 @@ class Contact:
 
 @dataclass(frozen=True, slots=True)
 class ContactNote:
-    id: int
-    contact_id: int
-    note: str
-    kind: str = "permanent"
-    note_date: datetime | None = None
-    updated_at: datetime | None = None
+    id: int  # 主键（自增）
+    contact_id: int  # 所属联系人 ID
+    note: str  # 笔记正文
+    kind: str = "permanent"  # 笔记类型（permanent/daily）
+    note_date: datetime | None = None  # 日记所属日期
+    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.

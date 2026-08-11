@@ -27,16 +27,16 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class TokenUsage:
-    id: int
-    contact_id: int
-    llm_attempt_id: str | None
-    provider: str
-    model: str
-    input_tokens: int
-    output_tokens: int
-    cost_usd: float
-    extra: dict[str, Any] | None = None
-    created_at: datetime | None = None
+    id: int  # 主键（自增）
+    contact_id: int  # 发起调用的联系人 ID
+    llm_attempt_id: str | None  # 关联的 LLM 调用 ID
+    provider: str  # LLM 提供方
+    model: str  # 使用的模型
+    input_tokens: int  # 输入 token 数
+    output_tokens: int  # 输出 token 数
+    cost_usd: float  # 费用（以微美元为单位存储在 int 列）
+    extra: dict[str, Any] | None = None  # 额外上下文（缓存命中率等）
+    created_at: datetime | None = None  # 记录创建时间
 
 
 # -- internal ORM --------------------------------------------------------

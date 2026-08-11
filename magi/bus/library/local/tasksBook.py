@@ -138,49 +138,49 @@ class Task:
     structured form — there's one schedule, not two.
     """
 
-    id: str
-    name: str
-    prompt: str
-    source: str
-    target_channel: str
-    enabled: int = 1
+    id: str  # 任务主键（task_<hex>）
+    name: str  # 任务唯一名
+    prompt: str  # 触发后执行的 prompt
+    source: str  # 来源（user/proactive）
+    target_channel: str  # 投递渠道（tg/webui/...）
+    enabled: int = 1  # 1=启用，0=禁用
 
     # --- schedule (cron XOR run_at, never both) ---------------------------
-    cron: str | None = None
-    run_at: str | None = None
-    tz: str = "UTC"
-    delivery_to: str | None = None
-    conversation_id: str | None = None
+    cron: str | None = None  # 周期表达式（5 字段）
+    run_at: str | None = None  # 一次性触发时间（ISO 8601）
+    tz: str = "UTC"  # 时区
+    delivery_to: str | None = None  # 投递目标地址
+    conversation_id: str | None = None  # 关联的会话 ID
 
     # --- proactive-only: stable preset key -------------------------------
-    key: str | None = None
+    key: str | None = None  # preset 稳定键
 
     # --- user-task ownership ----------------------------------------------
-    contact_id: int | None = None
+    contact_id: int | None = None  # 所属联系人
 
     # --- user-task runtime bookkeeping ------------------------------------
-    consecutive_failures: int = 0
-    last_run_at: str | None = None
-    last_status: str | None = None
-    last_error: str | None = None
-    created_at: str = ""
-    updated_at: str = ""
+    consecutive_failures: int = 0  # 连续失败次数
+    last_run_at: str | None = None  # 最近一次触发时间
+    last_status: str | None = None  # 最近一次状态
+    last_error: str | None = None  # 最近一次的错误信息
+    created_at: str = ""  # 创建时间
+    updated_at: str = ""  # 最近更新时间
 
 
 @dataclass(frozen=True, slots=True)
 class TaskRun:
-    id: str
-    task_id: str
-    trigger: str
-    started_at: str
-    finished_at: str | None = None
-    latency_ms: int | None = None
-    status: str = "running"
-    error: str | None = None
-    reply_excerpt: str | None = None
-    input_tokens: int = 0
-    output_tokens: int = 0
-    conversation_id: str | None = None
+    id: str  # 运行记录主键
+    task_id: str  # 所属任务 ID
+    trigger: str  # 触发来源（cron_tick/run_at_consume/...）
+    started_at: str  # 开始时间
+    finished_at: str | None = None  # 结束时间
+    latency_ms: int | None = None  # 总耗时（毫秒）
+    status: str = "running"  # 运行状态（running/completed/failed）
+    error: str | None = None  # 错误信息
+    reply_excerpt: str | None = None  # 回复摘要
+    input_tokens: int = 0  # 输入 token 数
+    output_tokens: int = 0  # 输出 token 数
+    conversation_id: str | None = None  # 关联的会话 ID
 
 
 # -- internal ORM --------------------------------------------------------

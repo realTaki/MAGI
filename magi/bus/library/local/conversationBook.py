@@ -41,28 +41,28 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class Conversation:
-    conversation_id: str
-    delivery_address: str
-    contact_id: int
-    channel: str
-    title: str | None = None
-    active_tail_count: int = 20
-    last_compaction_at: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    conversation_id: str  # 会话主键（Crockford ULID 字符串）
+    delivery_address: str  # 渠道内的目标地址（如 tg chat_id）
+    contact_id: int  # 会话所属联系人 ID
+    channel: str  # 来源渠道（tg/webui/...）
+    title: str | None = None  # 会话标题（auto-titled 或用户设置）
+    active_tail_count: int = 20  # active 消息窗口大小
+    last_compaction_at: str | None = None  # 上次自动压缩的 ISO 时间
+    created_at: str | None = None  # 创建时间
+    updated_at: str | None = None  # 最近活动时间
 
 
 @dataclass(frozen=True, slots=True)
 class Message:
-    id: int
-    conversation_id: str
-    message_id: str
-    role: str
-    text: str
-    ts: str
-    archived: int = 0
-    content_blocks: list[dict[str, Any]] | None = None
-    llm_attempt_id: str | None = None
+    id: int  # 主键（自增）
+    conversation_id: str  # 所属会话 ID
+    message_id: str  # 生产方幂等键（ULID）
+    role: str  # 消息角色（user/assistant/system/tool）
+    text: str  # 消息正文
+    ts: str  # 消息时间戳（ISO 8601）
+    archived: int = 0  # 1=被自动压缩归档
+    content_blocks: list[dict[str, Any]] | None = None  # 富内容块（tool_use 等）
+    llm_attempt_id: str | None = None  # 关联的 LLM 调用 ID（用于去重）
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,15 +76,15 @@ class SearchHit:
     :class:`Message` / :class:`Conversation` row.
     """
 
-    conversation_id: str
-    message_id: str
-    role: str
-    ts: str
-    snippet: str
-    score: float
-    channel: str
-    title: str | None = None
-    delivery_address: str | None = None
+    conversation_id: str  # 命中消息所属会话 ID
+    message_id: str  # 命中消息的 message_id
+    role: str  # 命中消息的角色
+    ts: str  # 命中消息的时间戳
+    snippet: str  # 含 <mark> 高亮的片段
+    score: float  # bm25 评分（越低越相关）
+    channel: str  # 命中消息的渠道
+    title: str | None = None  # 所属会话的标题
+    delivery_address: str | None = None  # 所属会话的目标地址
 
 
 class SearchUnavailable(RuntimeError):
@@ -161,10 +161,10 @@ class ConversationMessage:
     message_id for producer-side idempotency.
     """
 
-    role: str
-    text: str
-    ts: str
-    message_id: str
+    role: str  # 消息角色（user/assistant/system/tool）
+    text: str  # 消息正文
+    ts: str  # 消息时间戳（ISO 8601）
+    message_id: str  # 生产方幂等键
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,13 +180,13 @@ class ConversationSummary:
     a row.
     """
 
-    conversation_id: str
-    channel: str
-    created_at: str
-    updated_at: str
-    message_count: int
-    preview: str
-    title: str | None = None
+    conversation_id: str  # 会话 ID
+    channel: str  # 渠道
+    created_at: str  # 创建时间
+    updated_at: str  # 最近活动时间
+    message_count: int  # 消息总数（active）
+    preview: str  # 最新一条消息预览
+    title: str | None = None  # 会话标题
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,11 +223,11 @@ class ResolvedHit:
     text).
     """
 
-    conversation: Conversation
-    hit: SearchHit
-    is_archived: bool
-    messages_with_hit: list[Message]
-    hit_position: int
+    conversation: Conversation  # 命中所属的会话头
+    hit: SearchHit  # 原始 FTS 命中行
+    is_archived: bool  # True=命中已归档消息
+    messages_with_hit: list[Message]  # 命中周围的活动消息切片
+    hit_position: int  # 命中所处位置（-1 表示无上下文）
 
 
 # -- internal ORM --------------------------------------------------------

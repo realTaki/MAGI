@@ -85,19 +85,19 @@ class ActionItem:
     and LLM tool both consume.
     """
 
-    id: int
-    contact_id: int
-    title: str
-    description: str | None = None
-    target_url: str | None = None
-    priority: str = PRIORITY_NORMAL
-    due_date: datetime | None = None
-    source: str = SOURCE_PROACTIVE
-    created_at: datetime | None = None
-    completed_at: datetime | None = None
-    completed_by_contact_id: int | None = None
-    completion_note: str | None = None
-    dismissed: bool = False
+    id: int  # 主键（自增）
+    contact_id: int  # 所属联系人 ID
+    title: str  # 待办标题
+    description: str | None = None  # 详细描述
+    target_url: str | None = None  # 跳转目标 URL
+    priority: str = PRIORITY_NORMAL  # 优先级（normal/high）
+    due_date: datetime | None = None  # 截止日期
+    source: str = SOURCE_PROACTIVE  # 来源（user/proactive）
+    created_at: datetime | None = None  # 创建时间
+    completed_at: datetime | None = None  # 完成时间（None=未完成）
+    completed_by_contact_id: int | None = None  # 完成者联系人 ID
+    completion_note: str | None = None  # 完成备注
+    dismissed: bool = False  # 是否已被 dismiss（隐藏但未完成）
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.

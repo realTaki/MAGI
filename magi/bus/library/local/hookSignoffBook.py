@@ -29,15 +29,15 @@ from magi.bus.library.base import BaseBook
 
 @dataclass(frozen=True, slots=True)
 class HookSignoff:
-    id: int
-    subject_type: str
-    subject_id: str
-    hook_point: str
-    plugin_id: str
-    status: str = "pending"
-    payload: dict[str, Any] | None = None
-    created_at: datetime | None = None
-    dispatched_at: datetime | None = None
+    id: int  # 主键（自增）
+    subject_type: str  # 触发 hook 的对象类型
+    subject_id: str  # 触发 hook 的对象 ID
+    hook_point: str  # hook 触发点名称
+    plugin_id: str  # 接收 signoff 的插件 ID
+    status: str = "pending"  # 状态（pending/done/failed）
+    payload: dict[str, Any] | None = None  # 附加负载
+    created_at: datetime | None = None  # 创建时间
+    dispatched_at: datetime | None = None  # 派发时间
 
 
 # -- internal ORM --------------------------------------------------------

@@ -37,9 +37,9 @@ from magi.bus.library.base import BaseBook
 class ToolCatalogState:
     """Singleton catalog-state row DTO."""
 
-    id: int
-    revision: int
-    snapshot_hash: str
+    id: int  # 单例行主键
+    revision: int  # catalog 单调递增版本号
+    snapshot_hash: str  # 当前快照的指纹哈希
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,24 +53,24 @@ class ToolDefinition:
     and ``allowed_roles`` (→ ``allowed_roles_json``).
     """
 
-    name: str
-    source: str
-    description: str
-    input_schema: dict[str, Any]
-    allowed_roles: tuple[str, ...] = ()
-    enabled: bool = True
-    implementation_version: str | None = None
-    schema_hash: str = ""
-    revision: int = 0
+    name: str  # 工具唯一名
+    source: str  # 工具来源（builtin/mcp/manual）
+    description: str  # 工具描述（暴露给 LLM）
+    input_schema: dict[str, Any]  # 入参 JSON schema
+    allowed_roles: tuple[str, ...] = ()  # 允许调用此工具的角色
+    enabled: bool = True  # 是否启用
+    implementation_version: str | None = None  # 实现版本
+    schema_hash: str = ""  # 输入 schema 指纹
+    revision: int = 0  # 所属 catalog 版本号
 
 
 @dataclass(frozen=True, slots=True)
 class ToolCatalogSnapshot:
     """Observable state after an atomic catalog replacement."""
 
-    revision: int
-    snapshot_hash: str
-    definitions: tuple[ToolDefinition, ...]
+    revision: int  # 快照版本号
+    snapshot_hash: str  # 快照内容指纹
+    definitions: tuple[ToolDefinition, ...]  # 包含的全部工具定义
 
 
 # -- internal ORM --------------------------------------------------------

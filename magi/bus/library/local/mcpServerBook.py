@@ -49,26 +49,26 @@ class McpServer:
     the secret values masked at the API layer.
     """
 
-    id: int
-    name: str
-    connection_type: str
-    command: str | None = None
-    args: tuple[str, ...] = ()
-    url: str | None = None
-    env: dict[str, str] = field(default_factory=dict)
-    headers: dict[str, str] = field(default_factory=dict)
-    enabled: bool = True
-    connect_timeout: float | None = None
-    execute_timeout: float | None = None
-    sse_read_timeout: float | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
+    id: int  # 自增主键
+    name: str  # 操作员面向的唯一名（PK）
+    connection_type: str  # 连接类型（stdio/sse/streamable_http）
+    command: str | None = None  # stdio 启动命令
+    args: tuple[str, ...] = ()  # stdio 启动参数
+    url: str | None = None  # URL 类型连接的端点
+    env: dict[str, str] = field(default_factory=dict)  # stdio 进程环境变量
+    headers: dict[str, str] = field(default_factory=dict)  # HTTP 自定义请求头
+    enabled: bool = True  # 是否启用（worker 会据此决定是否连接）
+    connect_timeout: float | None = None  # 连接超时（None=使用全局默认值）
+    execute_timeout: float | None = None  # 工具调用执行超时
+    sse_read_timeout: float | None = None  # SSE 流读取超时
+    created_at: str | None = None  # 创建时间（ISO 8601）
+    updated_at: str | None = None  # 最近更新时间（ISO 8601）
 
     # Preserved on the row but not exposed on the DTO: the
     # ``config`` JSON blob is reserved for future read-only
     # callers that want a single denormalised payload. New
     # writes always go through the dedicated columns.
-    config: dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)  # 预留的 JSON 配置块（未来只读）
 
 
 # -- internal ORM --------------------------------------------------------
