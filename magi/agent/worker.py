@@ -148,7 +148,11 @@ class AgentWorker(RuntimeWorker):
             conversation_id = getattr(job, "conversation_id", None) or ""
 
             # steering — release back to board for _process to claim
-            if source == "chat" and conversation_id and conversation_id in self._active_conversations:
+            if (
+                source == "chat"
+                and conversation_id
+                and conversation_id in self._active_conversations
+            ):
                 await self.call(self.bus.agent_job_board.release, key=job.job_id)
                 continue
 
@@ -818,9 +822,9 @@ class AgentWorker(RuntimeWorker):
     # -- cancel --------------------------------------------------------------
 
     def _broadcast_cancel(self, conversation_id: str) -> None:
-        for conv_id, event in self._in_flight.items():
-            if conv_id == conversation_id:
-                event.set()
+        event = self._in_flight.get(conversation_id)
+        if event is not None:
+            event.set()
 
     # -- settings helpers ----------------------------------------------------
 
