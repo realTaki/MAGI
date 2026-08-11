@@ -196,7 +196,7 @@ def selected_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
             payload.get("v") != 4
             or not isinstance(payload.get("magi_id"), int)
             or not isinstance(payload.get("contact_id"), int)
-            or not (tgid is None or isinstance(tgid, bool) is False and isinstance(tgid, int))
+            or (tgid is not None and not isinstance(tgid, int))
         ):
             return None
         if datetime.now(UTC).timestamp() - int(payload.get("ts", 0)) > SESSION_TTL_SECONDS:
@@ -228,9 +228,9 @@ def resolve_session(bus: Bus, token: str | None) -> dict[str, Any] | None:
     if selected is not None:
         try:
             return {
-                "contact_id": int(selected["tgid"]),
+                "contact_id": int(selected["contact_id"]),
                 "magi_id": int(selected["magi_id"]),
-                "tgid": int(selected["tgid"]),
+                "tgid": int(selected["tgid"]) if selected.get("tgid") is not None else None,
                 "display_name": (
                     selected.get("display_name")
                     if isinstance(selected.get("display_name"), str)
