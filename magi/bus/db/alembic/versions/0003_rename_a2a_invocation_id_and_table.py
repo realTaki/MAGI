@@ -4,10 +4,9 @@ Revision ID: 0003_rename_a2a_invocation_id_and_table
 Revises: 0002_drop_run_id_and_rename_event_id
 Create Date: 2026-08-10 00:00:00
 
-Companion to the :class:`~magi.bus.guild.sendA2AJob.SendA2AJob`
-rename in :mod:`magi.bus.guild.sendA2AJob`.  Brings the A2A
-queue's natural-key column (``invocation_id`` → ``job_id``) and
-storage table (``a2a_invocations`` → ``a2a_jobs``) in line with
+Historical migration for the retired local HTTP A2A outbox. It brought the
+queue's natural-key column (``invocation_id`` → ``job_id``) and storage table
+(``a2a_invocations`` → ``a2a_jobs``) in line with
 ``chat_jobs.job_id`` and ``run_task_jobs.job_id`` so every Job
 subclass reads as ``<table>_job_id``.
 
@@ -33,8 +32,6 @@ Notes
 
 - The renamed column keeps ``UNIQUE NOT NULL`` — same shape as
   ``chat_jobs.job_id`` and ``run_task_jobs.job_id``.
-- ``SendA2AResult.job_id`` in the Python dataclass is the same name
-  as ``SendA2AJob.job_id``; only the storage spelling changed.
 - Downgrade reverses both renames (also guarded).
 """
 
