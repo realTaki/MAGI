@@ -63,17 +63,12 @@ class AddActionItemTool(Tool):
         "properties": {
             "title": {
                 "type": "string",
-                "description": (
-                    "What to do, ≤200 chars. The "
-                    "operator-visible label."
-                ),
+                "description": ("What to do, ≤200 chars. The operator-visible label."),
             },
             "description": {
                 "type": "string",
                 "description": (
-                    "Optional detail, ≤1000 chars. "
-                    "Surfaces under the title in the "
-                    "dashboard."
+                    "Optional detail, ≤1000 chars. Surfaces under the title in the dashboard."
                 ),
             },
             "priority": {
@@ -170,8 +165,7 @@ class AddActionItemTool(Tool):
                     due_date = datetime.strptime(raw, "%Y-%m-%d")
                 except ValueError:
                     return ToolResult.err(
-                        f"due_date must be a valid date "
-                        f"(YYYY-MM-DD), got {raw!r}"
+                        f"due_date must be a valid date (YYYY-MM-DD), got {raw!r}"
                     )
 
         try:
@@ -196,8 +190,10 @@ class AddActionItemTool(Tool):
             return ToolResult.err(str(e))
 
         logger.info(
-            "add_action_item: item %s created for contact=%s "
-            "title=%r source=%r",
-            item.id, ctx.contact_id, title, source,
+            "add_action_item: item %s created for contact=%s title=%r source=%r",
+            item.id,
+            ctx.contact_id,
+            title,
+            source,
         )
         return ToolResult.ok({"created": item.to_dict()})

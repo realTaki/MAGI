@@ -1,4 +1,3 @@
-
 """Internal helper for resolving a tool-supplied path
 safely against the workspace root.
 
@@ -78,8 +77,8 @@ def safe_resolve(
         # docstring).
         try:
             st = candidate.stat()
-        except FileNotFoundError:
-            raise ValueError(f"path does not exist: {requested!r}")
+        except FileNotFoundError as exc:
+            raise ValueError(f"path does not exist: {requested!r}") from exc
         if stat.S_ISDIR(st.st_mode):
             raise ValueError(f"path is a directory, not a file: {requested!r}")
 

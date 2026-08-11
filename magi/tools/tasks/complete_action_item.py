@@ -99,8 +99,7 @@ class CompleteActionItemTool(Tool):
         existing = ctx.bus.action_items_book.get(item_id=item_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
-                f"action item {item_id} not found or "
-                f"not owned by the calling operator"
+                f"action item {item_id} not found or not owned by the calling operator"
             )
         try:
             row = ctx.bus.action_items_book.complete(

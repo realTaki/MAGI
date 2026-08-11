@@ -48,13 +48,13 @@ import asyncio
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from magi.bus.library.local import ToolDefinition
 from magi.bus.guild.runToolJob import RunToolResult
+from magi.bus.library.local import ToolDefinition
+from magi.runtime_worker import RuntimeWorker
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
-from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -82,7 +82,7 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _schema_hash(definition: "ToolDefinition") -> str:
+def _schema_hash(definition: ToolDefinition) -> str:
     """sha256 of canonical JSON over the LLM-visible fields.
 
     The hash is what the worker compares against the
@@ -90,21 +90,23 @@ def _schema_hash(definition: "ToolDefinition") -> str:
     means the agent's menu was stale when it enqueued the call.
     """
     return hashlib.sha256(
-        _canonical_json({
-            "name": definition.name,
-            "source": definition.source,
-            "description": definition.description,
-            "input_schema": definition.input_schema,
-            "allowed_roles": list(definition.allowed_roles),
-            "implementation_version": definition.implementation_version,
-        }).encode()
+        _canonical_json(
+            {
+                "name": definition.name,
+                "source": definition.source,
+                "description": definition.description,
+                "input_schema": definition.input_schema,
+                "allowed_roles": list(definition.allowed_roles),
+                "implementation_version": definition.implementation_version,
+            }
+        ).encode()
     ).hexdigest()
 
 
 def _build_definitions_from_tools(
-    tools: list["Tool"],
+    tools: list[Tool],
     source: str,
-) -> list["ToolDefinition"]:
+) -> list[ToolDefinition]:
     """Build :class:`ToolDefinition` rows from concrete tool instances.
 
     Used by :meth:`ToolsWorker._publish_full_catalog` for both
@@ -124,9 +126,13 @@ def _build_definitions_from_tools(
         # Inline the hash so the worker doesn't have to recompute
         # on every claim.
         d = ToolDefinition(
-            name=d.name, source=d.source, description=d.description,
-            input_schema=d.input_schema, allowed_roles=d.allowed_roles,
-            enabled=d.enabled, implementation_version=d.implementation_version,
+            name=d.name,
+            source=d.source,
+            description=d.description,
+            input_schema=d.input_schema,
+            allowed_roles=d.allowed_roles,
+            enabled=d.enabled,
+            implementation_version=d.implementation_version,
             schema_hash=_schema_hash(d),
         )
         definitions.append(d)
@@ -153,7 +159,7 @@ class ToolsWorker(RuntimeWorker):
 
     def __init__(
         self,
-        bus: "Bus",
+        bus: Bus,
         *,
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
@@ -206,9 +212,7 @@ class ToolsWorker(RuntimeWorker):
 
             await shutdown_background_shells()
         except Exception:
-            logger.exception(
-                "tools worker: background-shell shutdown failed"
-            )
+            logger.exception("tools worker: background-shell shutdown failed")
 
     async def _run(self) -> None:
         while not self._stopping:
@@ -238,7 +242,7 @@ class ToolsWorker(RuntimeWorker):
             self._inflight.add(task)
             task.add_done_callback(self._inflight.discard)
 
-    async def _invoke_safe(self, job: "RunToolJob") -> None:
+    async def _invoke_safe(self, job: RunToolJob) -> None:
         """Wrapper that guarantees ``_slots.release()``.
 
         Even if :meth:`_execute` raises an unexpected exception
@@ -274,18 +278,23 @@ class ToolsWorker(RuntimeWorker):
 
         # 1. Builtin tools — always present.
         builtin_defs = _build_definitions_from_tools(
-            _build_tools(), source="builtin",
+            _build_tools(),
+            source="builtin",
         )
-        await self.call(self.bus.tool_definitions_book.upsert_many,
-            definitions=builtin_defs, source="builtin",
+        await self.call(
+            self.bus.tool_definitions_book.upsert_many,
+            definitions=builtin_defs,
+            source="builtin",
         )
 
         # 2. Injected tools — one upsert per source.
         total = len(builtin_defs)
         for source, tools in list_injected().items():
             defs = _build_definitions_from_tools(tools, source=source)
-            await self.call(self.bus.tool_definitions_book.upsert_many,
-                definitions=defs, source=source,
+            await self.call(
+                self.bus.tool_definitions_book.upsert_many,
+                definitions=defs,
+                source=source,
             )
             total += len(defs)
 
@@ -303,20 +312,24 @@ class ToolsWorker(RuntimeWorker):
                 hash_by_name[d.name] = d.schema_hash
         hash_input = sorted(
             (
-                r.source, r.name, hash_by_name.get(r.name, ""),
-                int(r.enabled), next_revision,
+                r.source,
+                r.name,
+                hash_by_name.get(r.name, ""),
+                int(r.enabled),
+                next_revision,
             )
             for r in enabled_rows
         )
-        snapshot_hash = hashlib.sha256(
-            _canonical_json(hash_input).encode()
-        ).hexdigest()
-        await self.call(self.bus.tool_catalog_book.replace_snapshot,
-            revision=next_revision, snapshot_hash=snapshot_hash,
+        snapshot_hash = hashlib.sha256(_canonical_json(hash_input).encode()).hexdigest()
+        await self.call(
+            self.bus.tool_catalog_book.replace_snapshot,
+            revision=next_revision,
+            snapshot_hash=snapshot_hash,
         )
         logger.info(
             "tools worker: published %d tool(s) (catalog revision=%d)",
-            total, next_revision,
+            total,
+            next_revision,
         )
 
     def _on_injected_tools_changed(self) -> None:
@@ -340,7 +353,7 @@ class ToolsWorker(RuntimeWorker):
 
     # ----- per-job execution --------------------------------------------
 
-    async def _execute(self, job: "RunToolJob") -> None:
+    async def _execute(self, job: RunToolJob) -> None:
         ctx_data = dict(job.payload.get("context") or {})
 
         # 1. Catalog revision check — did the menu move between
@@ -368,7 +381,8 @@ class ToolsWorker(RuntimeWorker):
         #    :func:`_schema_hash` on it directly. ``schema_hash`` is
         #    not a stored column — recomputing is the contract.
         if job.schema_hash:
-            definition = await self.call(self.bus.tool_definitions_book.get_by_name,
+            definition = await self.call(
+                self.bus.tool_definitions_book.get_by_name,
                 name=job.tool_name,
             )
             if definition is None:
@@ -445,14 +459,15 @@ class ToolsWorker(RuntimeWorker):
         # 5. Submit the result. BaseJobBoard handles attempts ≥
         #    MAX_ATTEMPTS automatically; we don't call retry()
         #    ourselves.
-        await self.call(self.bus.tool_job_board.submit_result,
+        await self.call(
+            self.bus.tool_job_board.submit_result,
             key=job.job_id,
             result=_to_result(job, result),
         )
 
     async def _submit_failure(
         self,
-        job: "RunToolJob",
+        job: RunToolJob,
         *,
         content: str,
         error_code: str,
@@ -462,7 +477,8 @@ class ToolsWorker(RuntimeWorker):
         blip.  Mirrors
         :meth:`ProvidersWorker._safe_submit_failure`."""
         try:
-            await self.call(self.bus.tool_job_board.submit_result,
+            await self.call(
+                self.bus.tool_job_board.submit_result,
                 key=job.job_id,
                 result=RunToolResult(
                     job_id=job.job_id,
@@ -484,7 +500,7 @@ class ToolsWorker(RuntimeWorker):
 # -- helpers --------------------------------------------------------------
 
 
-def _to_result(job: "RunToolJob", result: ToolResult) -> "RunToolResult":
+def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
     """Map :class:`ToolResult` → :class:`RunToolResult`.
 
     ``content`` is truncated to 8 KB to fit the column.

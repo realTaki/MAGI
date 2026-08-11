@@ -15,7 +15,6 @@ from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.shell._manager import _BackgroundShellManager
 
 
-
 class BashOutputTool(Tool):
     """Retrieve new output from a background shell."""
 
@@ -63,7 +62,7 @@ class BashOutputTool(Tool):
                     "Optional regex. Only matching lines are "
                     "returned; non-matching lines are "
                     "consumed. Invalid regex is treated as "
-                    "\"no filter\"."
+                    '"no filter".'
                 ),
             },
         },
@@ -75,6 +74,7 @@ class BashOutputTool(Tool):
         ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
+        _ = ctx
         bash_id = (kwargs.get("bash_id") or "").strip()
         if not bash_id:
             return ToolResult(content="bash_id is required", is_error=True)
@@ -84,10 +84,7 @@ class BashOutputTool(Tool):
         if shell is None:
             available = _BackgroundShellManager.list_ids()
             return ToolResult(
-                content=(
-                    f"Shell not found: {bash_id}. "
-                    f"Available: {available or 'none'}."
-                ),
+                content=(f"Shell not found: {bash_id}. Available: {available or 'none'}."),
                 is_error=True,
             )
 
@@ -95,19 +92,11 @@ class BashOutputTool(Tool):
         stdout = "\n".join(new_lines)
         # Surface status so the LLM knows whether to
         # expect more output or finish polling.
-        exit_str = (
-            f" exit={shell.exit_code}"
-            if shell.exit_code is not None
-            else ""
-        )
+        exit_str = f" exit={shell.exit_code}" if shell.exit_code is not None else ""
         # A chatty process can overrun the per-shell buffer. Say so
         # explicitly — a silent hole in the output would read as
         # "the process printed nothing there".
-        dropped_str = (
-            f" dropped={shell.dropped_lines}"
-            if shell.dropped_lines
-            else ""
-        )
+        dropped_str = f" dropped={shell.dropped_lines}" if shell.dropped_lines else ""
         suffix = f"[status] {shell.status}{exit_str}{dropped_str}"
 
         if not stdout:

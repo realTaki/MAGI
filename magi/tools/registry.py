@@ -1,4 +1,3 @@
-
 """Tool registry — the in-process map of *executable* Tool
 instances the tools worker dispatches to.
 
@@ -180,7 +179,8 @@ def register_tools(source: str, tools: list[Tool]) -> None:
     _injected[source] = list(tools)
     logger.info(
         "tools registry: source %r registered %d tool(s)",
-        source, len(tools),
+        source,
+        len(tools),
     )
     _fire_listeners()
 
@@ -214,7 +214,8 @@ def _fire_listeners() -> None:
             cb()
         except Exception:
             logger.exception(
-                "tools registry: listener %r failed", cb,
+                "tools registry: listener %r failed",
+                cb,
             )
 
 

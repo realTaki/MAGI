@@ -81,14 +81,18 @@ class ListActionItemsTool(Tool):
         )
         logger.info(
             "list_action_item: contact=%s include_completed=%s returned=%s",
-            ct_id, include_completed, len(rows),
+            ct_id,
+            include_completed,
+            len(rows),
         )
         # ``ToolResult.ok`` handles JSON serialisation
         # (indent=2, ensure_ascii=False) and the 8 KB
         # truncation marker for free — same shape
         # ``add_action_item`` / ``complete_action_item``
         # use, no need to roll our own here.
-        return ToolResult.ok({
-            "items": [row.to_dict() for row in rows],
-            "total": len(rows),
-        })
+        return ToolResult.ok(
+            {
+                "items": [row.to_dict() for row in rows],
+                "total": len(rows),
+            }
+        )

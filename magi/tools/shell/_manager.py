@@ -70,9 +70,7 @@ _MAX_COMPLETED_RETAINED = 32
 
 # Terminal statuses — a shell in one of these has no live
 # subprocess behind it and is eligible for reaping.
-_TERMINAL_STATUSES = frozenset(
-    {"completed", "failed", "terminated", "error"}
-)
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "terminated", "error"})
 
 
 @dataclass
@@ -85,7 +83,7 @@ class _BackgroundShell:
 
     bash_id: str
     command: str
-    process: "asyncio.subprocess.Process"
+    process: asyncio.subprocess.Process
     start_time: float
     output_lines: list[str] = field(default_factory=list)
     last_read_index: int = 0
@@ -124,7 +122,7 @@ class _BackgroundShell:
         poll, optionally filtered. Advances the read
         index so a follow-up call returns only
         *newer* output."""
-        new_lines = self.output_lines[self.last_read_index:]
+        new_lines = self.output_lines[self.last_read_index :]
         self.last_read_index = len(self.output_lines)
         if filter_pattern:
             try:
@@ -155,7 +153,7 @@ class _BackgroundShell:
             self.process.terminate()
             try:
                 await asyncio.wait_for(self.process.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Process refused SIGTERM — SIGKILL it.
                 self.process.kill()
                 # Reap so the OS doesn't keep a zombie around.
@@ -202,7 +200,7 @@ class _BackgroundShellManager:
         *,
         bash_id: str,
         command: str,
-        process: "asyncio.subprocess.Process",
+        process: asyncio.subprocess.Process,
         start_time: float,
     ) -> _BackgroundShell:
         """Register a new background shell and return it.
@@ -242,18 +240,11 @@ class _BackgroundShellManager:
         Running shells are never touched: they own a live
         subprocess and a monitor task.
         """
-        terminal = [
-            (s.ended_at or 0.0, bid)
-            for bid, s in cls._shells.items()
-            if s.is_terminal
-        ]
+        terminal = [(s.ended_at or 0.0, bid) for bid, s in cls._shells.items() if s.is_terminal]
         if not terminal:
             return
         now = time.monotonic()
-        doomed = {
-            bid for ended, bid in terminal
-            if now - ended > _COMPLETED_TTL_SECONDS
-        }
+        doomed = {bid for ended, bid in terminal if now - ended > _COMPLETED_TTL_SECONDS}
         survivors = sorted(
             (t for t in terminal if t[1] not in doomed),
             key=lambda t: t[0],
@@ -265,8 +256,8 @@ class _BackgroundShellManager:
             cls._shells.pop(bid, None)
         if doomed:
             logger.debug(
-                "background-shell registry: reaped %d terminal "
-                "shell(s)", len(doomed),
+                "background-shell registry: reaped %d terminal shell(s)",
+                len(doomed),
             )
 
     @classmethod
@@ -306,18 +297,13 @@ class _BackgroundShellManager:
                     if process.stdout is None:
                         break
                     try:
-                        line = await asyncio.wait_for(
-                            process.stdout.readline(), timeout=0.1
-                        )
-                    except asyncio.TimeoutError:
+                        line = await asyncio.wait_for(process.stdout.readline(), timeout=0.1)
+                    except TimeoutError:
                         await asyncio.sleep(0.05)
                         continue
                     if not line:
                         break
-                    shell.add_output(
-                        line.decode("utf-8", errors="replace")
-                            .rstrip("\n")
-                    )
+                    shell.add_output(line.decode("utf-8", errors="replace").rstrip("\n"))
                 # Reap the exit code.
                 try:
                     returncode = await process.wait()
@@ -391,8 +377,8 @@ class _BackgroundShellManager:
                 continue
             except Exception:
                 logger.exception(
-                    "background-shell shutdown: failed to "
-                    "terminate %s", bash_id,
+                    "background-shell shutdown: failed to terminate %s",
+                    bash_id,
                 )
         # Anything left is a shell whose terminate() raised; drop the
         # bookkeeping regardless so a restarted worker starts clean.

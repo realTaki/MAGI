@@ -1,4 +1,3 @@
-
 """``schedule_task`` tool — LLM-callable task creation.
 
 Public surface: the LLM can call this from any conversation
@@ -47,14 +46,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import select
-
 from magi.bus.library.local.tasksBook import (
+    ChannelEnum,
     preset_to_cron,
 )
-from magi.bus.library.local.tasksBook import ChannelEnum
 from magi.tools.base import Tool, ToolContext, ToolResult
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger("magi.tools.tasks.schedule")
 
@@ -119,7 +115,7 @@ class ScheduleTaskTool(Tool):
                 "description": (
                     "Preset cadence. The first four values "
                     "translate into a 5-field cron string "
-                    "via the matching moment fields. ``\"once\"`` "
+                    'via the matching moment fields. ``"once"`` '
                     "is a one-shot task that fires at the "
                     "``run_at`` timestamp and never again; "
                     "moment fields are ignored."
@@ -160,9 +156,7 @@ class ScheduleTaskTool(Tool):
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 31,
-                "description": (
-                    "Only used when frequency='monthly'. 1..31."
-                ),
+                "description": ("Only used when frequency='monthly'. 1..31."),
             },
             "run_at": {
                 "type": "string",
@@ -174,7 +168,7 @@ class ScheduleTaskTool(Tool):
                     "interpreted as UTC. apscheduler fires once "
                     "at this instant, then the task never "
                     "re-fires (no further cron). Example: "
-                    "``\"2026-08-01T15:30:00+08:00\"``."
+                    '``"2026-08-01T15:30:00+08:00"``.'
                 ),
             },
             "channel": {

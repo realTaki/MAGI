@@ -25,11 +25,10 @@ from typing import Any
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.shell._manager import (
     _BASH_ID_LEN,
-    _BackgroundShellManager,
     _FOREGROUND_TIMEOUT_DEFAULT,
     _FOREGROUND_TIMEOUT_MAX,
+    _BackgroundShellManager,
 )
-
 
 logger = logging.getLogger("magi.tools.shell.run")
 
@@ -55,9 +54,9 @@ class BashRunTool(Tool):
         if self.is_windows:
             examples_block = (
                 "Tips:\n"
-                "  - Quote file paths with spaces: cd \"My Documents\"\n"
+                '  - Quote file paths with spaces: cd "My Documents"\n'
                 "  - Chain dependent commands with semicolon: "
-                "git add . ; git commit -m \"msg\"\n"
+                'git add . ; git commit -m "msg"\n'
                 "  - Use absolute paths instead of cd when possible\n"
                 "  - For background commands, monitor with bash_output "
                 "and terminate with bash_kill\n\n"
@@ -70,9 +69,9 @@ class BashRunTool(Tool):
         else:
             examples_block = (
                 "Tips:\n"
-                "  - Quote file paths with spaces: cd \"My Documents\"\n"
+                '  - Quote file paths with spaces: cd "My Documents"\n'
                 "  - Chain dependent commands with &&: "
-                "git add . && git commit -m \"msg\"\n"
+                'git add . && git commit -m "msg"\n'
                 "  - Use absolute paths instead of cd when possible\n"
                 "  - For background commands, monitor with bash_output "
                 "and terminate with bash_kill\n\n"
@@ -99,8 +98,7 @@ class BashRunTool(Tool):
             "  - run_in_background (optional): set true for long-running "
             "commands (servers, mongod, etc.). Returns a bash_id "
             "immediately; poll with bash_output, terminate with "
-            "bash_kill.\n\n"
-            + examples_block
+            "bash_kill.\n\n" + examples_block
         )
 
     @property
@@ -199,7 +197,10 @@ class BashRunTool(Tool):
         bash_id = uuid.uuid4().hex[:_BASH_ID_LEN]
         if self.is_windows:
             process = await asyncio.create_subprocess_exec(
-                "powershell.exe", "-NoProfile", "-Command", command,
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=cwd,
@@ -238,7 +239,10 @@ class BashRunTool(Tool):
     ) -> ToolResult:
         if self.is_windows:
             process = await asyncio.create_subprocess_exec(
-                "powershell.exe", "-NoProfile", "-Command", command,
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
@@ -253,13 +257,14 @@ class BashRunTool(Tool):
 
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=timeout,
+                process.communicate(),
+                timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             process.kill()
             try:
                 await asyncio.wait_for(process.wait(), timeout=2)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             return ToolResult(
                 content=(

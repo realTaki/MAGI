@@ -85,7 +85,7 @@ class ToolContext:
     contact_id: int
     channel: str
     conversation_id: str = ""
-    bus: "Bus | None" = None
+    bus: Bus | None = None
 
 
 #: Truncation budget for :meth:`ToolResult.ok`. Mirrors the worker's
@@ -115,7 +115,7 @@ class ToolResult:
     is_error: bool = False
 
     @classmethod
-    def ok(cls, payload: Any) -> "ToolResult":
+    def ok(cls, payload: Any) -> ToolResult:
         """Success carrying a JSON-serialised ``payload``.
 
         ``payload`` is rendered with ``indent=2`` and
@@ -130,7 +130,7 @@ class ToolResult:
         return cls(content=body, is_error=False)
 
     @classmethod
-    def err(cls, msg: str) -> "ToolResult":
+    def err(cls, msg: str) -> ToolResult:
         """Expected failure carrying an operator-readable ``msg``.
 
         Not for bugs — those raise and the worker translates them
@@ -229,6 +229,7 @@ class Tool(ABC):
         letting inference do the talking on the wrapper
         side keeps both ends of the override aligned.
         """
+
         @functools.wraps(method)
         async def wrapper(
             self: Any,
@@ -237,10 +238,7 @@ class Tool(ABC):
         ) -> ToolResult:
             if ctx.bus is None:
                 return ToolResult(
-                    content=(
-                        "tool context has no bus; the caller "
-                        "side has not migrated to bus"
-                    ),
+                    content=("tool context has no bus; the caller side has not migrated to bus"),
                     is_error=True,
                 )
             return await method(self, ctx, **kwargs)
