@@ -493,18 +493,43 @@ setting.
 
 | Scope | Location | Book(s) |
 | --- | --- | --- |
-| **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books |
-| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
+| **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books (conversations, messages, memory, contacts, settings, tasks, tool catalog state, durable local job boards, delivery state) |
+| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books (society tree, admins, memberships, roles, runtime-control records, singleton WebUI control settings) **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
 | **File-backed** | `magi/prompts/`, `<workspace>/skills/` | `PromptBook`, `SkillsBook` |
 
 `magi.bus` owns the engine factories, table registration, and file-backed
-shelves for both scopes. No other package opens either database directly.
-SQLite MAGIS stores are isolated by `MAGIS_NAME`; PostgreSQL deployments use
-one service with one distinct database per MAGIS. BUS provisioning creates
-only the tables owned by the selected scope.
+shelves for both scopes. No other package opens either database directly
+(architecture guard `test_import_boundaries.py`). The runtime never uses a
+MAGI's private SQLite as a substitute for shared MAGIS state —
+`open_bus` raises `ValueError` when the local and MAGIS URLs coincide,
+so a single database cannot accidentally serve both scopes.
+
+`MAGIS_NAME` is a lowercase slug (`[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?`,
+enforced by `magi.startup.paths._magis_storage_name`) that defaults to
+`genesis`. When `MAGIS_DATABASE_URL` is unset, the bootstrap selects
+`<host>/MAGI_Societies/<slug>/magis.db` for that slug; SQLite URLs
+therefore identify a per-MAGIS file. When `MAGIS_DATABASE_URL` is set, it
+is authoritative — PostgreSQL URLs identify a distinct database (e.g.
+`magis_42`) on a shared service. The BUS does not infer or silently reuse
+another MAGIS's URL.
+
+Schema materialisation is scoped: `synchronise_schema(local_factory,
+scope=LOCAL_SCOPE)` creates local Books and durable local job boards only
+in the MAGI-private store, while `synchronise_schema(magis_factory,
+scope=MAGIS_SCOPE)` creates `library.magis` Books and the A2A boards only
+in the MAGIS store. Two distinct DSNs therefore cannot accidentally
+receive each other's tables.
+
+MAGIS rows never carry SQL foreign keys into local tables. MAGIS-level
+records (admins, credentials, memberships) keep their contact association
+as an opaque identity value that the BUS / API layer validates, so the
+same schema is valid against both a remote PostgreSQL MAGIS and an
+isolated local SQLite MAGIS.
+
 Schema changes are explicit BUS migrations; the runtime uses one schema
-and one implementation, without fallback reads, compatibility imports, or
-dual writes. See [MAGI and MAGIS Storage](magi-magis-storage.md).
+and one implementation, without fallback reads, compatibility imports,
+or dual writes. See [Production Persistence](production-persistence.md)
+for the deployment-side view of the same boundary.
 
 ## Verification
 
@@ -522,13 +547,11 @@ and `test_hook_envelope_purity.py`).
 ## Further reading
 
 - [MAGI terms](terms.md) — vocabulary.
-- [Unified WebUI and Runtime API](unified-webui.md) — browser-facing
-  WebUI ↔ Runtime proxy contract.
 - [Business flows](business-flows.md) — invariant behaviour and guard
   conditions for the chat loop, channels, tasks, onboarding, login, and
   tools.
-- [MAGI and MAGIS storage](magi-magis-storage.md) — storage
-  boundaries.
+- [Production persistence](production-persistence.md) — storage
+  boundaries from a deployment perspective.
 - [ID naming standard](design/id-naming-standard.md) — the migration
   table for the `magic_id → magi_id` / `uid → contact_id` /
   `session_id → conversation_id` rename.
