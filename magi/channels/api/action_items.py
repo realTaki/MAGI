@@ -124,7 +124,7 @@ class ActionItemCompleteRequest(BaseModel):
 # "最近完成" disclosure caps at this cut-off so very old
 # rows don't render. Operators wanting a longer history
 # can query ``/api/chat/conversations`` (D.6) for the full
-# session list.
+# conversation list.
 _COMPLETED_VISIBLE_DAYS = 7
 
 

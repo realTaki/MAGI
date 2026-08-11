@@ -254,7 +254,7 @@
 - `guest` 角色必须被拒绝（不属于此 MAGI 服务范围，等待管理员提升）
 - `guest` 软自动创建时 admin 必须为 False
 - admin 必须能和 assigned 一样聊天（不能退化为 v0 的 no-op）
-- 会话持久化（`messages_book.add`）必须在发布 `ChatJob` 到 `agent_job_board` 之前完成
+- 对话持久化（`messages_book.add`）必须在发布 `ChatJob` 到 `agent_job_board` 之前完成
 - `job_id` 形如 `telegram:<tgid>:<message_id>`，提供去重幂等性
 
 ---
@@ -787,7 +787,7 @@ Daily note → Skills 六块并行渲染）:
 来源: MagisMembershipBook.list_collaboration_directory(magi_id=self._magi_id)
   - 只返回同 MAGIS 成员
   - 每条目含 magi_id / runtime_name / role_name / responsibility
-  - 永不暴露其他成员的私有 prompt / API key / 记忆 / 会话
+  - 永不暴露其他成员的私有 prompt / API key / 记忆 / 对话内容
 
 responsibility 字段:
   - MagisMembership.responsibility (Text) — 公开、可编辑
@@ -864,4 +864,4 @@ responsibility 字段:
 - [ ] `AgentWorker.claim_next_turn()` 公平轮询 `agent_job_board` + 两个 A2A board，per-source 连续消费上限存在
 - [ ] A2A 入参 `RunContext.channel` 取 `a2a.notify` / `a2a.request`，普通最终回答不进 `delivery_job_board`
 - [ ] 协作目录每 turn 重读；`responsibility` / role 变更无需重启 Agent
-- [ ] 协作目录只返回同 MAGIS 成员；不暴露私有 prompt / API key / 记忆 / 会话
+- [ ] 协作目录只返回同 MAGIS 成员；不暴露私有 prompt / API key / 记忆 / 对话内容
