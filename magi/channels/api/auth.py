@@ -129,6 +129,25 @@ def _verify_signed_contact_id(bus: Bus, token: str) -> int | None:
         return None
 
 
+def _as_optional_int(value: object) -> int | None:
+    """Coerce a cross-service JSON field to ``int | None``.
+
+    Cookie payload fields are type-checked on the way back in
+    (:func:`selected_session`), so a value that signs cleanly
+    but fails that check produces a 401 that re-logging-in
+    cannot clear — every attempt mints the same unusable
+    cookie. Anything that isn't plainly an integer becomes
+    ``None``, which is a legitimate value for ``tgid``.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.lstrip("-").isdigit():
+        return int(value)
+    return None
+
+
 def _sign_selected_session(
     bus: Bus,
     *,
@@ -1253,13 +1272,19 @@ async def _login_password_via_runtime(
             ok=False,
             error=str(upstream.get("error") or "Sign-in failed"),
         )
+    # ``upstream`` is another service's JSON, so coerce rather
+    # than trust: a non-int tgid would sign cleanly and then
+    # fail ``selected_session``'s type check on every request,
+    # locking the operator into a 401 that re-logging-in cannot
+    # clear (each attempt mints the same unusable cookie).
+    raw_tgid = upstream.get("tgid")
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=_sign_selected_session(
             bus,
             magi_id=magi_id,
             contact_id=int(upstream.get("contact_id") or payload.contact_id),
-            tgid=upstream.get("tgid"),
+            tgid=_as_optional_int(raw_tgid),
             display_name=upstream.get("display_name"),
             admin=bool(upstream.get("admin")),
             assigned=bool(upstream.get("assigned")),

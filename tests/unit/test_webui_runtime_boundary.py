@@ -189,3 +189,80 @@ def test_login_methods_degrades_instead_of_raising_when_contacts_are_unreachable
     bus.contacts_book.get.side_effect = RuntimeError("no such table: contacts")
 
     assert _login_methods_for(bus, 3) == ([], True)
+
+
+def test_me_reads_login_methods_from_the_runtime_in_control_plane_mode(monkeypatch) -> None:
+    """The control plane must not report a password-holder as having none.
+
+    Its Bus is bound to the MAGIS store, which has no
+    ``contacts`` table, so the local lookup cannot answer
+    this. Before the fix ``/me`` fell through to the
+    defensive branch and returned ``login_methods=[]``,
+    which made the Settings → Security card offer "set a
+    password" to an operator who already had one.
+    """
+    import asyncio
+
+    from magi.channels.api import auth as auth_mod
+
+    monkeypatch.setenv("MAGIS_DATABASE_URL", "postgresql://control/magis")
+
+    async def fake_target_access(bus, magi_id, method, path, payload=None):
+        assert (method, path) == ("GET", "/api/access/login-accounts")
+        return {
+            "accounts": [
+                {"contact_id": 9, "has_password": False, "has_tg_code": True},
+                {"contact_id": 3, "has_password": True, "has_tg_code": False},
+            ]
+        }
+
+    monkeypatch.setattr(auth_mod, "_target_access", fake_target_access)
+    monkeypatch.setattr(
+        auth_mod,
+        "resolve_session",
+        lambda _bus, _token: {
+            "contact_id": 3,
+            "magi_id": 7,
+            "tgid": None,
+            "display_name": "WebUI operator",
+            "admin": True,
+            "assigned": False,
+        },
+    )
+
+    result = asyncio.run(auth_mod.me(bus=MagicMock(), magi_session="v4.stub"))
+
+    assert result.contact_id == 3
+    assert result.login_methods == ["password"]
+    assert result.password_set is True
+
+
+def test_me_degrades_when_the_runtime_cannot_answer(monkeypatch) -> None:
+    """An unreachable runtime must not 500 ``/me``."""
+    import asyncio
+
+    from magi.channels.api import auth as auth_mod
+
+    monkeypatch.setenv("MAGIS_DATABASE_URL", "postgresql://control/magis")
+
+    async def unreachable(bus, magi_id, method, path, payload=None):
+        raise RuntimeError("runtime unavailable")
+
+    monkeypatch.setattr(auth_mod, "_target_access", unreachable)
+    monkeypatch.setattr(
+        auth_mod,
+        "resolve_session",
+        lambda _bus, _token: {
+            "contact_id": 3,
+            "magi_id": 7,
+            "tgid": None,
+            "display_name": "WebUI operator",
+            "admin": True,
+            "assigned": False,
+        },
+    )
+
+    result = asyncio.run(auth_mod.me(bus=MagicMock(), magi_session="v4.stub"))
+
+    assert result.contact_id == 3
+    assert result.login_methods == []
