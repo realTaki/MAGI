@@ -41,30 +41,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SAEnum,
     Integer,
     LargeBinary,
     String,
     Text,
     select,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.library.base import BaseBook
 
 
-class RuntimeDesiredState(str, PyEnum):
+class RuntimeDesiredState(StrEnum):
     STARTED = "started"
     STOPPED = "stopped"
 
 
-class RuntimeObservedState(str, PyEnum):
+class RuntimeObservedState(StrEnum):
     STARTING = "starting"
     STARTED = "started"
     STOPPING = "stopping"
@@ -125,11 +127,13 @@ class _RuntimeRow(Base):
     runtime_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     backend_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     desired_state: Mapped[RuntimeDesiredState] = mapped_column(
-        SAEnum(RuntimeDesiredState), nullable=False,
+        SAEnum(RuntimeDesiredState),
+        nullable=False,
         default=RuntimeDesiredState.STOPPED,
     )
     observed_state: Mapped[RuntimeObservedState] = mapped_column(
-        SAEnum(RuntimeObservedState), nullable=False,
+        SAEnum(RuntimeObservedState),
+        nullable=False,
         default=RuntimeObservedState.UNKNOWN,
     )
     pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -175,16 +179,12 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
 
     def get(self, *, runtime_id: int) -> Runtime | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[Runtime]:
         with self._session() as s:
-            rows = s.scalars(
-                select(_RuntimeRow).order_by(_RuntimeRow.runtime_id)
-            ).all()
+            rows = s.scalars(select(_RuntimeRow).order_by(_RuntimeRow.runtime_id)).all()
             return [self._row_to_dto(r) for r in rows]
 
     def upsert(
@@ -220,17 +220,22 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 row = _RuntimeRow(
-                    runtime_id=runtime_id, backend_kind=backend_kind,
-                    backend_ref=backend_ref, workspace_dir=workspace_dir,
-                    log_dir=log_dir, audit_log_path=audit_log_path,
-                    port=port, base_url=base_url,
-                    deployment_name=deployment_name, namespace=namespace,
-                    image=image, extra=extra, updated_at=now,
+                    runtime_id=runtime_id,
+                    backend_kind=backend_kind,
+                    backend_ref=backend_ref,
+                    workspace_dir=workspace_dir,
+                    log_dir=log_dir,
+                    audit_log_path=audit_log_path,
+                    port=port,
+                    base_url=base_url,
+                    deployment_name=deployment_name,
+                    namespace=namespace,
+                    image=image,
+                    extra=extra,
+                    updated_at=now,
                     port_in_use_since=now if (allocate_port and port is not None) else None,
                 )
                 s.add(row)
@@ -266,9 +271,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         if not value:
             raise ValueError("runtime name is required")
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             row.backend_ref = value
@@ -288,9 +291,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         stopped.
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             row.desired_state = desired_state
@@ -322,9 +323,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             row.observed_state = observed_state
@@ -352,9 +351,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             if row.port_in_use_since is None:
@@ -375,9 +372,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             if row.port_in_use_since is None:
@@ -409,9 +404,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """Record a workspace tombstone for a soft-deleted runtime."""
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             row.archive_path = archive_path
@@ -426,9 +419,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
         """Mark an archived workspace as restored."""
         now = utcnow_naive()
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return None
             row.restored = True
@@ -440,9 +431,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
     def remove(self, *, runtime_id: int) -> bool:
         """Remove a control record after its runtime has been deprovisioned."""
         with self._session() as s:
-            row = s.scalar(
-                select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id)
-            )
+            row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             if row is None:
                 return False
             s.delete(row)
@@ -459,9 +448,7 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
 
     def get(self, *, name: str) -> ControlSecret | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_ControlSecretRow).where(_ControlSecretRow.name == name)
-            )
+            row = s.scalar(select(_ControlSecretRow).where(_ControlSecretRow.name == name))
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[ControlSecret]:

@@ -22,11 +22,11 @@ from magi.bus.library.magis.magisBook import (
 )
 from magi.bus.library.magis.membershipBook import (
     DEFAULT_ROLE_INSTRUCTIONS,
+    RESERVED_ROLE_NAMES,
     MagisMembership,
     MagisMembershipBook,
     MagisRole,
     MagisRoleBook,
-    RESERVED_ROLE_NAMES,
 )
 from magi.bus.library.magis.runtimeBook import (
     ControlSecret,
@@ -36,7 +36,6 @@ from magi.bus.library.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
-
 
 __all__ = [
     "ControlSecret",

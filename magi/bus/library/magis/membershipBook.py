@@ -43,10 +43,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.library.base import BaseBook
 from magi.bus.library.local.settingBook import SettingBook
-
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
 DEFAULT_ROLE_INSTRUCTIONS = {
@@ -91,16 +90,12 @@ class _MagisRoleRow(Base):
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_reserved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
 
-    __table_args__ = (
-        UniqueConstraint("magis_id", "name", name="uq_magis_roles_magis_name"),
-    )
+    __table_args__ = (UniqueConstraint("magis_id", "name", name="uq_magis_roles_magis_name"),)
 
 
 class _MagisMembershipRow(Base):
@@ -113,9 +108,7 @@ class _MagisMembershipRow(Base):
     role_id: Mapped[int] = mapped_column(
         ForeignKey("magis_roles.id", ondelete="RESTRICT"), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
@@ -130,9 +123,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
 
     def get(self, *, role_id: int) -> MagisRole | None:
         with self._session() as s:
-            row = s.scalar(
-                select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
-            )
+            row = s.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == role_id))
             return self._row_to_dto(row) if row else None
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisRole]:
@@ -154,41 +145,59 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
             )
             return self._row_to_dto(row) if row else None
 
-    def add(self, *, magis_id: int, name: str,
-            instruction: str = "", is_reserved: bool = False) -> MagisRole:
+    def add(
+        self, *, magis_id: int, name: str, instruction: str = "", is_reserved: bool = False
+    ) -> MagisRole:
         with self._session() as s:
             row = _MagisRoleRow(
-                magis_id=magis_id, name=name,
-                instruction=instruction, is_reserved=is_reserved,
+                magis_id=magis_id,
+                name=name,
+                instruction=instruction,
+                is_reserved=is_reserved,
             )
             s.add(row)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def update(self, *, role_id: int, magis_id: int, name: str | None = None,
-               instruction: str | None = None) -> MagisRole | None:
+    def update(
+        self,
+        *,
+        role_id: int,
+        magis_id: int,
+        name: str | None = None,
+        instruction: str | None = None,
+    ) -> MagisRole | None:
         with self._session() as s:
-            row = s.scalar(select(_MagisRoleRow).where(
-                _MagisRoleRow.id == role_id, _MagisRoleRow.magis_id == magis_id,
-            ))
+            row = s.scalar(
+                select(_MagisRoleRow).where(
+                    _MagisRoleRow.id == role_id,
+                    _MagisRoleRow.magis_id == magis_id,
+                )
+            )
             if row is None:
                 return None
             if name is not None:
                 row.name = name
             if instruction is not None:
                 row.instruction = instruction
-            s.commit(); s.refresh(row)
+            s.commit()
+            s.refresh(row)
             return self._row_to_dto(row)
 
     def delete(self, *, role_id: int, magis_id: int) -> bool:
         with self._session() as s:
-            row = s.scalar(select(_MagisRoleRow).where(
-                _MagisRoleRow.id == role_id, _MagisRoleRow.magis_id == magis_id,
-            ))
+            row = s.scalar(
+                select(_MagisRoleRow).where(
+                    _MagisRoleRow.id == role_id,
+                    _MagisRoleRow.magis_id == magis_id,
+                )
+            )
             if row is None:
                 return False
-            s.delete(row); s.commit(); return True
+            s.delete(row)
+            s.commit()
+            return True
 
 
 class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
@@ -215,9 +224,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         go through :meth:`instruction_context` per ``magi_id``.
         """
         with self._session() as s:
-            rows = s.scalars(
-                select(_MagisMembershipRow).order_by(_MagisMembershipRow.id)
-            ).all()
+            rows = s.scalars(select(_MagisMembershipRow).order_by(_MagisMembershipRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
     def get(self, *, magi_id: int) -> MagisMembership | None:
@@ -228,18 +235,14 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         ``magic`` table was retired).
         """
         with self._session() as s:
-            row = s.scalar(
-                select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.id == magi_id)
-            )
+            row = s.scalar(select(_MagisMembershipRow).where(_MagisMembershipRow.id == magi_id))
             return self._row_to_dto(row) if row else None
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisMembership]:
         """All MAGIs registered under a given parent MAGIS."""
         with self._session() as s:
             rows = s.scalars(
-                select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.magis_id == magis_id)
+                select(_MagisMembershipRow).where(_MagisMembershipRow.magis_id == magis_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
@@ -272,16 +275,14 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                 .order_by(_MagisMembershipRow.id)
             ).all()
             for _membership_row, role_row, magis_row in rows:
-                contexts.append({
-                    "magis_name": str(getattr(magis_row, "name", "") or ""),
-                    "team_instruction": str(
-                        getattr(magis_row, "instruction", "") or ""
-                    ),
-                    "role_name": str(getattr(role_row, "name", "") or ""),
-                    "role_instruction": str(
-                        getattr(role_row, "instruction", "") or ""
-                    ),
-                })
+                contexts.append(
+                    {
+                        "magis_name": str(getattr(magis_row, "name", "") or ""),
+                        "team_instruction": str(getattr(magis_row, "instruction", "") or ""),
+                        "role_name": str(getattr(role_row, "name", "") or ""),
+                        "role_instruction": str(getattr(role_row, "instruction", "") or ""),
+                    }
+                )
         return contexts
 
     def add(self, *, magis_id: int, role_id: int) -> MagisMembership:
@@ -293,9 +294,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         ``runtime_state.runtime_id``).
         """
         with self._session() as s:
-            role = s.scalar(
-                select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
-            )
+            role = s.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == role_id))
             if role is None:
                 raise LookupError(f"role {role_id} not found")
             if role.magis_id != magis_id:
@@ -309,10 +308,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     def remove(self, *, magi_id: int) -> bool:
         """Unregister a MAGI by its per-MAGI identity."""
         with self._session() as s:
-            row = s.scalar(
-                select(_MagisMembershipRow)
-                .where(_MagisMembershipRow.id == magi_id)
-            )
+            row = s.scalar(select(_MagisMembershipRow).where(_MagisMembershipRow.id == magi_id))
             if row is None:
                 return False
             s.delete(row)
@@ -321,21 +317,22 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 
     def update_role(self, *, magi_id: int, magis_id: int, role_id: int) -> MagisMembership | None:
         with self._session() as s:
-            row = s.scalar(select(_MagisMembershipRow).where(
-                _MagisMembershipRow.id == magi_id,
-                _MagisMembershipRow.magis_id == magis_id,
-            ))
+            row = s.scalar(
+                select(_MagisMembershipRow).where(
+                    _MagisMembershipRow.id == magi_id,
+                    _MagisMembershipRow.magis_id == magis_id,
+                )
+            )
             if row is None:
                 return None
-            role = s.scalar(
-                select(_MagisRoleRow).where(_MagisRoleRow.id == role_id)
-            )
+            role = s.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == role_id))
             if role is None:
                 raise LookupError(f"role {role_id} not found")
             if role.magis_id != magis_id:
                 raise ValueError("role must belong to the target MAGIS")
             row.role_id = role_id
-            s.commit(); s.refresh(row)
+            s.commit()
+            s.refresh(row)
             return self._row_to_dto(row)
 
     # -- agent-worker-bus.md §6 helper --------------------------------
@@ -385,16 +382,14 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             ).first()
             if row is not None:
                 _, role_row, magis_row = row
-                memberships.append({
-                    "magis_name": str(getattr(magis_row, "name", "") or ""),
-                    "team_instruction": str(
-                        getattr(magis_row, "instruction", "") or ""
-                    ),
-                    "role_name": str(getattr(role_row, "name", "") or ""),
-                    "role_instruction": str(
-                        getattr(role_row, "instruction", "") or ""
-                    ),
-                })
+                memberships.append(
+                    {
+                        "magis_name": str(getattr(magis_row, "name", "") or ""),
+                        "team_instruction": str(getattr(magis_row, "instruction", "") or ""),
+                        "role_name": str(getattr(role_row, "name", "") or ""),
+                        "role_instruction": str(getattr(role_row, "instruction", "") or ""),
+                    }
+                )
 
         return personal, memberships
 

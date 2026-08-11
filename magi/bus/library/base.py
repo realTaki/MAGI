@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime, timezone
-from typing import Generic, TypeVar
+from datetime import UTC, datetime
+from typing import TypeVar
 
 from magi.bus.db.base import Base
 from magi.bus.db.engine import EngineFactory
@@ -41,10 +41,10 @@ def to_iso(value: datetime | str | None) -> str | None:
         return value
     if value.tzinfo is None:
         return value.isoformat() + "Z"
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-class BaseBook(Generic[RowT, DtoT]):
+class BaseBook[RowT: Base, DtoT]:
     """子类设置 model_cls / dto_cls，自动处理 Session 和映射。"""
 
     model_cls: type[RowT]
@@ -66,4 +66,3 @@ class BaseBook(Generic[RowT, DtoT]):
                 else:
                     kwargs[f.name] = val
         return self.dto_cls(**kwargs)
-

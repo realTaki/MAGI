@@ -44,9 +44,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook
 from magi.bus.db.base import Base, utcnow_naive
-
+from magi.bus.library.base import BaseBook
 
 # -- public dataclasses --------------------------------------------------
 
@@ -85,9 +84,7 @@ class _MagisRow(Base):
         ForeignKey("magis_memberships.id", ondelete="SET NULL"), nullable=True
     )
     instruction: Mapped[str] = mapped_column(default="", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
@@ -105,9 +102,7 @@ class _MagisAdminRow(Base):
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
 # -- Books ---------------------------------------------------------------
@@ -130,9 +125,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
     def get_root(self) -> Magis | None:
         with self._session() as s:
             row = s.scalar(
-                select(_MagisRow)
-                .where(_MagisRow.parent_id.is_(None))
-                .order_by(_MagisRow.id)
+                select(_MagisRow).where(_MagisRow.parent_id.is_(None)).order_by(_MagisRow.id)
             )
             return self._row_to_dto(row) if row else None
 
@@ -141,11 +134,19 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, name: str, parent_id: int | None = None,
-            adam_id: int | None = None, instruction: str = "") -> Magis:
+    def add(
+        self,
+        *,
+        name: str,
+        parent_id: int | None = None,
+        adam_id: int | None = None,
+        instruction: str = "",
+    ) -> Magis:
         with self._session() as s:
             row = _MagisRow(
-                name=name, parent_id=parent_id, adam_id=adam_id,
+                name=name,
+                parent_id=parent_id,
+                adam_id=adam_id,
                 instruction=instruction,
             )
             s.add(row)
@@ -161,9 +162,15 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             row.adam_id = adam_id
             s.commit()
 
-    def update(self, *, magis_id: int, name: str | None = None,
-               parent_id: int | None = None, instruction: str | None = None,
-               set_parent_id: bool = False) -> Magis | None:
+    def update(
+        self,
+        *,
+        magis_id: int,
+        name: str | None = None,
+        parent_id: int | None = None,
+        instruction: str | None = None,
+        set_parent_id: bool = False,
+    ) -> Magis | None:
         """Update one MAGIS row and return a DTO, never an ORM row."""
         with self._session() as s:
             row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
@@ -196,16 +203,14 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
     def list_for_magis(self, *, magis_id: int) -> list[MagisAdmin]:
         with self._session() as s:
             rows = s.scalars(
-                select(_MagisAdminRow)
-                .where(_MagisAdminRow.magis_id == magis_id)
+                select(_MagisAdminRow).where(_MagisAdminRow.magis_id == magis_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
     def list_for_contact(self, *, contact_id: int) -> list[MagisAdmin]:
         with self._session() as s:
             rows = s.scalars(
-                select(_MagisAdminRow)
-                .where(_MagisAdminRow.contact_id == contact_id)
+                select(_MagisAdminRow).where(_MagisAdminRow.contact_id == contact_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
@@ -223,11 +228,14 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         are orthogonal — see :class:`Contact` docstring.
         """
         with self._session() as s:
-            return s.scalar(
-                select(_MagisAdminRow.id)
-                .where(_MagisAdminRow.contact_id == contact_id)
-                .limit(1)
-            ) is not None
+            return (
+                s.scalar(
+                    select(_MagisAdminRow.id)
+                    .where(_MagisAdminRow.contact_id == contact_id)
+                    .limit(1)
+                )
+                is not None
+            )
 
     def add(self, *, contact_id: int, magis_id: int) -> MagisAdmin:
         with self._session() as s:
@@ -253,10 +261,12 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
 
     def remove_by_id(self, *, admin_id: int, magis_id: int) -> bool:
         with self._session() as s:
-            row = s.scalar(select(_MagisAdminRow).where(
-                _MagisAdminRow.id == admin_id,
-                _MagisAdminRow.magis_id == magis_id,
-            ))
+            row = s.scalar(
+                select(_MagisAdminRow).where(
+                    _MagisAdminRow.id == admin_id,
+                    _MagisAdminRow.magis_id == magis_id,
+                )
+            )
             if row is None:
                 return False
             s.delete(row)

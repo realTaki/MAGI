@@ -61,7 +61,9 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
 
     def list_all(self) -> list[ControlSetting]:
         with self._session() as session:
-            rows = session.scalars(select(_ControlSettingRow).order_by(_ControlSettingRow.key)).all()
+            rows = session.scalars(
+                select(_ControlSettingRow).order_by(_ControlSettingRow.key)
+            ).all()
             return [self._row_to_dto(row) for row in rows]
 
 
