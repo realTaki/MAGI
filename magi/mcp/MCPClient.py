@@ -148,7 +148,7 @@ class MCPTool(Tool):
         self._session = session
         self._execute_timeout = execute_timeout
 
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
+    async def run(self, _ctx: ToolContext, **kwargs: Any) -> ToolResult:
         """Forward the call to the MCP server.
 
         ``ctx`` is the project-local :class:`ToolContext`. The
@@ -157,9 +157,7 @@ class MCPTool(Tool):
         """
         try:
             async with asyncio.timeout(self._execute_timeout):
-                result = await self._session.call_tool(
-                    self._server_tool_name, arguments=kwargs
-                )
+                result = await self._session.call_tool(self._server_tool_name, arguments=kwargs)
         except TimeoutError:
             server = self.name.split("__", 1)[0]
             return ToolResult(
@@ -254,13 +252,21 @@ class MCPServerConnection:
     tools: list[MCPTool] = field(default_factory=list)
 
     def _connect_timeout(self, defaults: MCPTimeoutConfig) -> float:
-        return self.connect_timeout if self.connect_timeout is not None else defaults.connect_timeout
+        return (
+            self.connect_timeout if self.connect_timeout is not None else defaults.connect_timeout
+        )
 
     def _execute_timeout(self, defaults: MCPTimeoutConfig) -> float:
-        return self.execute_timeout if self.execute_timeout is not None else defaults.execute_timeout
+        return (
+            self.execute_timeout if self.execute_timeout is not None else defaults.execute_timeout
+        )
 
     def _sse_read_timeout(self, defaults: MCPTimeoutConfig) -> float:
-        return self.sse_read_timeout if self.sse_read_timeout is not None else defaults.sse_read_timeout
+        return (
+            self.sse_read_timeout
+            if self.sse_read_timeout is not None
+            else defaults.sse_read_timeout
+        )
 
     async def connect(self, defaults: MCPTimeoutConfig) -> bool:
         """Open the connection, list tools, wrap each as :class:`MCPTool`.
@@ -282,8 +288,7 @@ class MCPServerConnection:
             from mcp import ClientSession
         except ImportError:
             logger.warning(
-                "mcp package not installed; skipping server %r "
-                "(install with `uv pip install mcp`)",
+                "mcp package not installed; skipping server %r (install with `uv pip install mcp`)",
                 self.name,
             )
             return False
@@ -329,9 +334,7 @@ class MCPServerConnection:
             )
             return True
         except TimeoutError:
-            logger.error(
-                "MCP server %r: connect timed out after %.1fs", self.name, ct
-            )
+            logger.error("MCP server %r: connect timed out after %.1fs", self.name, ct)
             await self._safe_close()
             return False
         except Exception as e:  # noqa: BLE001 — surface all failure modes
@@ -355,9 +358,7 @@ class MCPServerConnection:
         fresh :class:`~contextlib.AsyncExitStack` before calling
         this method — see :meth:`connect`.
         """
-        assert self.exit_stack is not None, (
-            "exit_stack must be set before calling _open_streams"
-        )
+        assert self.exit_stack is not None, "exit_stack must be set before calling _open_streams"
         if self.connection_type == "stdio":
             from mcp import StdioServerParameters
             from mcp.client.stdio import stdio_client

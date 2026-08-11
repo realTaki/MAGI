@@ -70,13 +70,13 @@ from magi.bus.guild import (
     McpServerChangedJob,
     McpServerChangedResult,
 )
-from magi.tools.registry import register_tools
 from magi.runtime_worker import RuntimeWorker
+from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
-    from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
     from magi.bus import Bus
     from magi.bus.library.local.mcpServerBook import McpServer
+    from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
 
 logger = logging.getLogger("magi.mcp.worker")
 
@@ -93,6 +93,7 @@ _DEFAULT_SSE_READ_TIMEOUT = 120.0
 #: ``poll_seconds`` is much smaller, so this is mostly a safety
 #: belt against a wedged DB / Worker.
 _DEFAULT_TOOL_WAIT_TIMEOUT = 5.0
+
 
 class McpWorker(RuntimeWorker):
     """Consumer that owns every MCP server connection in a MAGI process.
@@ -139,9 +140,7 @@ class McpWorker(RuntimeWorker):
     async def _run(self) -> None:
         while not self._stopping:
             try:
-                job = await self.call(
-                    self.bus.mcp_server_changed_job_board.claim
-                )
+                job = await self.call(self.bus.mcp_server_changed_job_board.claim)
             except Exception:
                 logger.exception("mcp worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
@@ -217,9 +216,7 @@ class McpWorker(RuntimeWorker):
                 success = True
             elif job.kind in ("added", "updated"):
                 if job.server is None:  # __post_init__ should have caught this
-                    raise ValueError(
-                        f"kind={job.kind!r} requires server payload"
-                    )
+                    raise ValueError(f"kind={job.kind!r} requires server payload")
                 await self.call(self._write_server, job.server)
                 await self._reload_server_from_dto(job.server)
                 success = True
@@ -240,7 +237,8 @@ class McpWorker(RuntimeWorker):
             error = str(exc)
 
         try:
-            await self.call(self.bus.mcp_server_changed_job_board.submit_result,
+            await self.call(
+                self.bus.mcp_server_changed_job_board.submit_result,
                 key=job.job_id,
                 result=McpServerChangedResult(
                     job_id=job.job_id,
@@ -249,9 +247,7 @@ class McpWorker(RuntimeWorker):
                 ),
             )
         except Exception:
-            logger.exception(
-                "mcp worker: failed to submit result for %s", job.job_id
-            )
+            logger.exception("mcp worker: failed to submit result for %s", job.job_id)
 
     async def _remove_server(self, name: str) -> None:
         existing = self._connections.pop(name, None)
@@ -275,9 +271,7 @@ class McpWorker(RuntimeWorker):
         try:
             row = await self.call(self.bus.mcp_servers_book.get_by_name, name=name)
         except Exception:
-            logger.exception(
-                "mcp worker: mcp_servers_book.get_by_name failed for %r", name
-            )
+            logger.exception("mcp worker: mcp_servers_book.get_by_name failed for %r", name)
             row = None
         if row is None:
             self._reinject_tools()
@@ -424,9 +418,7 @@ class McpWorker(RuntimeWorker):
         observes the dirty flag on its next iteration and
         republishes the catalog.
         """
-        all_tools: list[Any] = [
-            tool for conn in self._connections.values() for tool in conn.tools
-        ]
+        all_tools: list[Any] = [tool for conn in self._connections.values() for tool in conn.tools]
         register_tools("mcp", all_tools)
 
     # -- read-only view (for tests / future diagnostics) -----------------

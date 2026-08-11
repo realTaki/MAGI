@@ -132,9 +132,7 @@ def list_shared_servers() -> list[dict[str, Any]]:
     decides to adopt. Returns ``[]`` when the parent
     MAGIS has no shared servers.
     """
-    raise NotImplementedError(
-        "magi.mcp.sharing.list_shared_servers: scaffold only"
-    )
+    raise NotImplementedError("magi.mcp.sharing.list_shared_servers: scaffold only")
 
 
 def adopt_shared_server(shared_name: str) -> dict[str, Any]:
@@ -145,9 +143,7 @@ def adopt_shared_server(shared_name: str) -> dict[str, Any]:
     grant that survives a relaunch, distinct from the
     "broadcast" mode (which lands later).
     """
-    raise NotImplementedError(
-        "magi.mcp.sharing.adopt_shared_server: scaffold only"
-    )
+    raise NotImplementedError("magi.mcp.sharing.adopt_shared_server: scaffold only")
 
 
 def revoke_shared_server(shared_name: str) -> dict[str, Any]:
@@ -160,9 +156,7 @@ def revoke_shared_server(shared_name: str) -> dict[str, Any]:
     still in place — revocation is for "I want this
     off right now", not for "I never want this".
     """
-    raise NotImplementedError(
-        "magi.mcp.sharing.revoke_shared_server: scaffold only"
-    )
+    raise NotImplementedError("magi.mcp.sharing.revoke_shared_server: scaffold only")
 
 
 __all__ = [
