@@ -14,14 +14,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.startup.workers")
 
-#: Channel workers that must always run, regardless of the
-#: configured ``enabled_channels`` list. WebUI powers the operator
-#: dashboard and chat console; A2A is the MAGI peer exchange. Both
-#: are part of the runtime's base capability — disabling them
-#: would silently break the control plane (WebUI) or inter-agent
-#: routing (A2A). The list uses :data:`Channel` enum values so
-#: renames stay in sync.
-_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI.value, Channel.A2A.value})
+#: WebUI powers the operator dashboard and cannot be disabled. A2A is not a
+#: channel worker; AgentWorker consumes its MAGIS-shared boards directly.
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI.value})
 
 
 class WorkerRegistry:
@@ -35,7 +30,6 @@ class WorkerRegistry:
         magi_id: int | None = None,
     ) -> None:
         from magi.agent.worker import AgentWorker
-        from magi.channels.a2a.worker import A2AWorker
         from magi.channels.tasks.worker import TaskWorker
         from magi.channels.telegram.worker import TelegramWorker
         from magi.channels.webui.worker import WebUIWorker
@@ -64,7 +58,6 @@ class WorkerRegistry:
             "task": TaskWorker(bus),
             "tg": TelegramWorker(bus),
             "webui": WebUIWorker(bus),
-            "a2a": A2AWorker(bus),
             "proactive": ProactiveWorker(bus, magi_id=magi_id),
         }
         self._started: list[RuntimeWorker] = []
@@ -93,7 +86,7 @@ class WorkerRegistry:
         try:
             for name in ("providers", "tools", "mcp", "agent"):
                 await self.start_worker(name)
-            for name in ("task", "tg", "webui", "a2a"):
+            for name in ("task", "tg", "webui"):
                 aliases = {"task": {"task", "scheduled"}, "tg": {"tg", "telegram"}}
                 if self._enabled_channels & aliases.get(name, {name}):
                     await self.start_worker(name)
