@@ -42,15 +42,11 @@ def seed_conversation(factory, contact_id):
     """Create a conversation row, return ``(sbook, mbook, conversation_id)``."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    cid = "c1"
-    sbook.add(
-        conversation_id=cid,
+    cid = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
-    )
+    ).conversation_id
     return sbook, mbook, cid
 
 

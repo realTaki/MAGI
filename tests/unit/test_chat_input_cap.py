@@ -54,16 +54,11 @@ def seed_conversation(factory, contact_id):
     from magi.bus.library.local import ConversationBook
 
     sbook = ConversationBook(factory)
-    cid = "c1"
-    sbook.add(
-        conversation_id=cid,
+    return sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
-    )
-    return cid
+    ).conversation_id
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +68,7 @@ def seed_conversation(factory, contact_id):
 
 def test_messages_book_add_noop_under_cap(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
-    m = mbook.add(conversation_id="c1", message_id="m1", role="user", text="hi")
+    m = mbook.add(conversation_id=seed_conversation, message_id="m1", role="user", text="hi")
     assert m.text == "hi"
 
 
@@ -82,7 +77,7 @@ def test_messages_book_add_truncates_over_cap(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
     huge = "x" * 20_000
     m = mbook.add(
-        conversation_id="c1", message_id="m1", role="user", text=huge
+        conversation_id=seed_conversation, message_id="m1", role="user", text=huge
     )
     assert m.text is not None
     assert len(m.text) == 8_000  # default cap
@@ -93,7 +88,7 @@ def test_messages_book_add_honors_lowered_cap(factory, seed_conversation):
     settings_book.get.return_value = "2000"  # within clamp range
     mbook = MessageBook(factory, settings_book=settings_book)
     m = mbook.add(
-        conversation_id="c1", message_id="m1", role="user", text="y" * 5_000
+        conversation_id=seed_conversation, message_id="m1", role="user", text="y" * 5_000
     )
     assert m.text is not None
     assert len(m.text) == 2_000
@@ -106,22 +101,20 @@ def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
     works because the row stored is already capped.
     """
     sbook = ConversationBook(factory, settings_book=None)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     mbook = MessageBook(factory, settings_book=None)
     mbook.add(
-        conversation_id="c1",
+        conversation_id=cid,
         message_id="m_huge",
         role="user",
         text="x" * 50_000,
     )
-    rows = mbook.list_for_conversation(conversation_id="c1")
+    rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 1
     assert len(rows[0].text) == 8_000
 
@@ -181,14 +174,12 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
     """
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -198,15 +189,15 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
         text=huge,
         channel="tg",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
     )
-    job = board.claim_for_conversation(conversation_id="c1")
+    job = board.claim_for_conversation(conversation_id=cid)
     # ChatJob is typed — no payload dict, no truncation flag. The
     # raw text travels through the row, intact.
     assert job.text == huge
     assert job.channel == "tg"
     # But messages_book row IS truncated (cap lives there).
-    rows = mbook.list_for_conversation(conversation_id="c1")
+    rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows[0].text) == 8_000
 
 
@@ -217,14 +208,12 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     """
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory,
         messages_book=mbook,
@@ -235,17 +224,17 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
         text="hello world",
         channel="tg",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
     )
     assert jid
 
-    job = board.claim_for_conversation(conversation_id="c1")
+    job = board.claim_for_conversation(conversation_id=cid)
     assert job is not None
     assert job.text == "hello world"
     assert job.channel == "tg"
     assert job.contact_id == contact_id
 
-    rows = mbook.list_for_conversation(conversation_id="c1")
+    rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 1
     assert rows[0].text == "hello world"
     assert rows[0].role == "user"
@@ -255,14 +244,12 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
     """Same message_id on retry → same chat_messages row (producer-side idempotency)."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -272,18 +259,18 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
         text="retry me",
         channel="tg",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
         message_id=fixed_id,
     )
     board.publish_chat(
         text="retry me",
         channel="tg",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
         message_id=fixed_id,
     )
 
-    rows = mbook.list_for_conversation(conversation_id="c1")
+    rows = mbook.list_for_conversation(conversation_id=cid)
     # Unique constraint on (conversation_id, message_id) collapses
     # the retry into a single row.
     assert len(rows) == 1
@@ -293,14 +280,12 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     """D.22: conversation created on TG, caller publishes as webui → ChannelMismatchError."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -312,13 +297,13 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
             text="cross-channel write",
             channel="webui",
             contact_id=contact_id,
-            conversation_id="c1",
+            conversation_id=cid,
         )
     assert exc.value.conversation_channel == "tg"
 
     # No chatJob, no message row — the guard fires before either write.
-    assert board.claim_for_conversation(conversation_id="c1") is None
-    rows = mbook.list_for_conversation(conversation_id="c1")
+    assert board.claim_for_conversation(conversation_id=cid) is None
+    rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 0
 
 
@@ -326,14 +311,12 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
     """D.22: same channel → no error, both writes happen."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -342,24 +325,22 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
         text="normal",
         channel="tg",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
     )
     assert jid
-    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+    assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
 
 
 def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
     """Task path: no contact_id → D.22 guard skipped."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=1,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -368,34 +349,32 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
         text="task fire",
         channel="task",
         contact_id=None,
-        conversation_id="c1",
+        conversation_id=cid,
     )
     assert jid
-    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+    assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
 
 
 def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id):
     """Backward-compat: board constructed without conversations_book → no D.22 check."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(factory, messages_book=mbook)  # no conversations_book
 
     jid = board.publish_chat(
         text="no-d22",
         channel="webui",
         contact_id=contact_id,
-        conversation_id="c1",
+        conversation_id=cid,
     )
     assert jid
-    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+    assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -411,19 +390,17 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     from magi.bus.guild.chatJob import ChatJob
 
     sbook = ConversationBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
     board = chatJobBoard(factory, conversations_book=sbook)
 
     job = ChatJob(
         job_id="steer-1",
-        conversation_id="c1",
+        conversation_id=cid,
         text="x",
         channel="webui",
         contact_id=contact_id,

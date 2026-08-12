@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
-from typing import TypeVar
+from typing import TypeVar, overload
 
 from magi.bus.db.base import Base
 from magi.bus.db.engine import EngineFactory
@@ -16,6 +16,22 @@ RowT = TypeVar("RowT", bound=Base)
 DtoT = TypeVar("DtoT")
 
 
+# ``to_iso`` is called from two very different contexts:
+#
+# - ``_row_to_dto`` passes a ``datetime`` and wants back ``str`` so it can
+#   write the field directly onto the DTO dataclass.
+# - ``TaskOut``/``TaskRunOut`` (the API wire form) wants the same string,
+#   but Pylance can't narrow ``datetime | str | None -> str | None`` down
+#   to ``str`` at the call site, so the build-time signature reports
+#   ``reportArgumentType`` against the ``str`` field. The overloads below
+#   let the type checker infer the exact return shape per input shape
+#   without forcing every caller to add ``# type: ignore`` or ``cast``.
+@overload
+def to_iso(value: datetime) -> str: ...
+@overload
+def to_iso(value: str) -> str: ...
+@overload
+def to_iso(value: None) -> None: ...
 def to_iso(value: datetime | str | None) -> str | None:
     """ISO-8601 UTC string with an explicit trailing ``Z``.
 

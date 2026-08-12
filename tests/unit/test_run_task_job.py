@@ -26,8 +26,6 @@ def test_publish_returns_job_id(board):
     job = RunTaskJob(
         task_id="task_abc",
         manual=True,
-        conversation_id="conv_001",
-        contact_id=42,
     )
     jid = board.publish(job)
     assert isinstance(jid, str)

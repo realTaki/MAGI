@@ -404,7 +404,7 @@ def test_conversation_and_message(factory):
         ts="2026-08-05T00:00:01Z",
     )
     assert isinstance(m, Message)
-    msgs = mbook.list_for_conversation(conversation_id="01ABC")
+    msgs = mbook.list_for_conversation(conversation_id=s.conversation_id)
     assert len(msgs) == 1
     assert msgs[0].text == "hi"
 
