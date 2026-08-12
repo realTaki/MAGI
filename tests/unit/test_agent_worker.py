@@ -18,6 +18,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from magi.bus.guild.base import JobStatus
+
 # ---------------------------------------------------------------------------
 # Minimal fakes (no runtime import needed)
 # ---------------------------------------------------------------------------
@@ -73,7 +75,7 @@ class _FakeToolDef:
 @dataclass
 class _FakeLLMResult:
     job_id: str = "llm-1"
-    success: bool = True
+    status: JobStatus = JobStatus.COMPLETED
     response: dict | None = None
     error: str | None = None
     error_code: str = ""
@@ -209,7 +211,7 @@ async def test_tool_loop_completes():
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
         job_id="tj-1",
-        success=True,
+        status=JobStatus.COMPLETED,
         content="result",
         is_error=False,
         tool_call_id="tc-1",
@@ -255,7 +257,7 @@ async def test_steering_injected():
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
         job_id="tj-1",
-        success=True,
+        status=JobStatus.COMPLETED,
         content="result",
         is_error=False,
         tool_call_id="tc-1",
@@ -264,7 +266,8 @@ async def test_steering_injected():
     steer_job = ChatJob(
         job_id="steer-1",
         conversation_id="conv-1",
-        payload={"contact_id": 42, "text": "Also check this please."},
+        contact_id=42,
+        text="Also check this please.",
     )
     bus.agent_job_board.claim_for_conversation.side_effect = [steer_job, None, None]
 
@@ -287,7 +290,7 @@ async def test_steering_injected():
 
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
-        result=ChatJobResult(job_id="steer-1", success=True),
+        result=ChatJobResult(job_id="steer-1", status=JobStatus.COMPLETED),
     )
 
 
@@ -430,7 +433,7 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
     await worker.stop()
 
     result = bus.agent_job_board.submit_result.call_args.kwargs["result"]
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert result.error_code == "magi.run_cancelled"
 
 
@@ -456,7 +459,7 @@ async def test_max_iterations_exceeded():
     bus.llm_job_board.get_result.return_value = llm
     bus.tool_job_board.get_result.return_value = RunToolResult(
         job_id="tj-1",
-        success=True,
+        status=JobStatus.COMPLETED,
         content="r",
         is_error=False,
         tool_call_id="tc-1",

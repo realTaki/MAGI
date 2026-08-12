@@ -12,7 +12,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from magi.bus.db import EngineFactory
-from magi.bus.guild.deliveryJob import DeliveryJob, deliveryJobBoard
+from magi.bus.guild.base import JobStatus
+from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 
 
 @pytest.mark.asyncio
@@ -69,14 +70,14 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     # Verify result
     board.submit_result(
         key=jid,
-        result=__import__("magi.bus.guild.deliveryJob", fromlist=["DeliveryResult"]).DeliveryResult(
+        result=DeliveryResult(
             job_id=jid,
-            success=True,
+            status=JobStatus.COMPLETED,
         ),
     )
     result = board.get_result(key=jid)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
 
 @pytest.mark.asyncio

@@ -36,8 +36,10 @@ from pathlib import Path
 import pytest
 
 from magi.bus.db import EngineFactory
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.deliveryJob import (
     DeliveryJob,
+    DeliveryResult,
     deliveryJobBoard,
 )
 from magi.bus.guild.runTaskJob import (
@@ -107,7 +109,7 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
             from magi.bus.guild.runTaskJob import RunTaskResult
 
             board.submit_result(
-                key=job.job_id, result=RunTaskResult(job_id=job.job_id, success=True)
+                key=job.job_id, result=RunTaskResult(job_id=job.job_id, status=JobStatus.COMPLETED)
             )
         with lock:
             claimed_per_thread.append(own)
@@ -156,7 +158,7 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
             own.add(job.job_id)
             board.submit_result(
                 key=job.job_id,
-                result=type("R", (), {"job_id": job.job_id, "success": True, "error": None})(),
+                result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
         with lock:
             sink.append(own)

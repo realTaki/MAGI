@@ -46,6 +46,7 @@ from magi.agent.tokens import (
     estimate_messages_tokens,
     estimate_string_tokens,
 )
+from magi.bus.guild.base import JobStatus
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -283,7 +284,7 @@ async def call_llm_for_summary(
     if result is None:
         logger.warning("compact: provider job timed out")
         return None
-    if not result.success:
+    if result.status != JobStatus.COMPLETED:
         logger.warning("compact: provider job failed: %s", getattr(result, "error", "?"))
         return None
     resp = getattr(result, "response", None) or {}

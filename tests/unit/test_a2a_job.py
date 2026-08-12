@@ -11,6 +11,7 @@ import pytest
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import EngineFactory
 from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.a2aJob import (
     A2AErrorCode,
     A2ANotifyJob,
@@ -72,20 +73,20 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
         key=job_id,
         result=A2ARequestResult(
             job_id=job_id,
-            success=True,
+            status=JobStatus.COMPLETED,
             content="The plan builds cleanly.",
         ),
     )
     result = requests.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
     assert result.content == "The plan builds cleanly."
     assert result.error_code is None
 
     # A terminal request can never be overwritten by another response.
     requests.submit_result(
         key=job_id,
-        result=A2ARequestResult(job_id=job_id, success=True, content="different"),
+        result=A2ARequestResult(job_id=job_id, status=JobStatus.COMPLETED, content="different"),
     )
     assert requests.get_result(key=job_id).content == "The plan builds cleanly."
 
@@ -104,8 +105,8 @@ def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> 
     claimed = notifies.claim_for_target(magi_id=target.id)
     assert claimed is not None
     assert claimed.job_id == job_id
-    notifies.submit_result(key=job_id, result=A2ANotifyResult(job_id=job_id, success=True))
-    assert notifies.get_result(key=job_id).success is True
+    notifies.submit_result(key=job_id, result=A2ANotifyResult(job_id=job_id, status=JobStatus.COMPLETED))
+    assert notifies.get_result(key=job_id).status == JobStatus.COMPLETED
     assert notifies.get_result(key=job_id).error_code is None
 
 
@@ -144,7 +145,7 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
     assert requests.claim_for_target(magi_id=target.id) is None
     result = requests.get_result(key=expired_id)
     assert result is not None
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert result.error_code == "a2a_timeout"
     # Round-trip through the String(64) column must come back as the enum,
     # not a plain str — that's the whole point of the StrEnum migration.
@@ -292,7 +293,7 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
     await worker._run()
 
     result = request_board.submit_result.call_args.kwargs["result"]
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
     assert result.content == "One answer."
     delivery_board.publish.assert_not_called()
 
@@ -335,6 +336,6 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
 
     result = requests.get_result(key=request_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
     assert result.content == "Collaboration completed."
     delivery_board.publish.assert_not_called()

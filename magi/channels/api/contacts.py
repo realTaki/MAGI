@@ -22,7 +22,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob, SeedPresetTrigger
+from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
 from magi.bus.library.local import Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
@@ -273,7 +273,6 @@ def create_contact(
             bus.seed_preset_tasks_job_board.publish(
                 SeedPresetTasksJob(
                     contact_id=view.id,
-                    trigger=SeedPresetTrigger.CONTACT_CREATED,
                 ),
             )
         except Exception as exc:
@@ -459,14 +458,12 @@ def update_contact(
     #
     # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob 到
     # bus.seed_preset_tasks_job_board，由 ProactiveWorker
-    # 异步消费。trigger 标记 "contact_promoted"。当前同步
-    # 调用将在 Worker 就绪 + 验证稳定后移除。
+    # 异步消费。当前同步调用将在 Worker 就绪 + 验证稳定后移除。
     if newly_assigned:
         try:
             bus.seed_preset_tasks_job_board.publish(
                 SeedPresetTasksJob(
                     contact_id=view.id,
-                    trigger=SeedPresetTrigger.CONTACT_PROMOTED,
                 ),
             )
         except Exception as exc:

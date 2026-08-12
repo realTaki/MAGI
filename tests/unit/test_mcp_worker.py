@@ -37,6 +37,7 @@ import pytest
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.db.file import FileShelf
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild import (
     MCPKind,
     McpServerChangedJob,
@@ -318,7 +319,7 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
 
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
     with suppress(Exception):
         await worker.stop()
@@ -373,7 +374,7 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
 
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
     with suppress(Exception):
         await worker.stop()
@@ -407,7 +408,7 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
 
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
     with suppress(Exception):
         await worker.stop()
@@ -446,7 +447,7 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
 
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
     with suppress(Exception):
         await worker.stop()
@@ -488,7 +489,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 
     result = bus.mcp_server_changed_job_board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
     with suppress(Exception):
         await worker.stop()
@@ -513,7 +514,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
         s.add(
             _McpServerChangedRow(
                 job_id="job-bypass-1",
-                status="pending",
+                status=JobStatus.PENDING,
                 kind="rotated",
                 server_name="gmail",
             )
@@ -535,7 +536,7 @@ async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
         await worker._handle_change(leaked)
         result = bus.mcp_server_changed_job_board.get_result(key="job-bypass-1")
         assert result is not None
-        assert result.success is False
+        assert result.status == JobStatus.FAILED
         assert result.error is not None
         assert "unknown change kind" in result.error
     finally:

@@ -71,6 +71,7 @@ from magi.bus.guild import (
     McpServerChangedJob,
     McpServerChangedResult,
 )
+from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.registry import register_tools
 
@@ -243,7 +244,7 @@ class McpWorker(RuntimeWorker):
                 key=job.job_id,
                 result=McpServerChangedResult(
                     job_id=job.job_id,
-                    success=success,
+                    status=JobStatus.COMPLETED if success else JobStatus.FAILED,
                     error=error,
                 ),
             )

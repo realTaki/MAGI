@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.deliveryJob import DeliveryJob
 from magi.channels.worker_base import ChannelWorker
 
@@ -89,7 +90,7 @@ async def test_successful_delivery_calls_submit_result_with_success():
     w.bus.delivery_job_board.submit_result.assert_called()
     call_args = w.bus.delivery_job_board.submit_result.call_args
     result = call_args.kwargs["result"]
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
 
 
 @pytest.mark.asyncio
@@ -121,7 +122,7 @@ async def test_failed_delivery_calls_submit_result_with_failure():
 
     w.bus.delivery_job_board.submit_result.assert_called()
     result = w.bus.delivery_job_board.submit_result.call_args.kwargs["result"]
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert "TG API timeout" in str(result.error)
 
 

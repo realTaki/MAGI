@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from magi.bus.guild.base import JobStatus
+
 if TYPE_CHECKING:
     from magi.bus import Bus
 
@@ -50,7 +52,7 @@ async def request_conversation_title(
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=30.0)
-    if result is None or not result.success:
+    if result is None or result.status != JobStatus.COMPLETED:
         return None
     resp = getattr(result, "response", None) or {}
     cleaned = _cleanse_title(resp.get("text") or "")

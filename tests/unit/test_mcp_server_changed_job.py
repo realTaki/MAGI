@@ -18,6 +18,7 @@ from magi.bus.guild import (
     McpServerChangedResult,
     mcpServerChangedJobBoard,
 )
+from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import McpServer
 
 
@@ -90,7 +91,7 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     with factory.session() as s:
         row = s.scalar(select(_McpServerChangedRow).where(_McpServerChangedRow.job_id == job_id))
     assert row is not None
-    assert row.status == "pending"
+    assert row.status == JobStatus.PENDING
     assert row.kind == "added"
     assert row.server_name == "gmail"
     # Payload survives the publish round-trip.
@@ -133,11 +134,11 @@ def test_claim_then_submit_result_round_trip(board):
 
     board.submit_result(
         key=job_id,
-        result=McpServerChangedResult(job_id=job_id, success=True, error=None),
+        result=McpServerChangedResult(job_id=job_id, status=JobStatus.COMPLETED, error=None),
     )
     result = board.get_result(key=job_id)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
     assert result.error is None
 
 
@@ -162,11 +163,11 @@ def test_submit_result_records_error(board):
     board.claim()
     board.submit_result(
         key=job_id,
-        result=McpServerChangedResult(job_id=job_id, success=False, error="boom"),
+        result=McpServerChangedResult(job_id=job_id, status=JobStatus.FAILED, error="boom"),
     )
     result = board.get_result(key=job_id)
     assert result is not None
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert result.error == "boom"
 
 

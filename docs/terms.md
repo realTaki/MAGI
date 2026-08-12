@@ -69,7 +69,7 @@ cookies. They are not valid in current code or documentation.
 | `uid` | `contact_id` | 7 tables renamed (`chat_conversations`, `chat_messages`, `tasks`, `memory_entries`, `token_usage`, `action_items`, `hook_signoffs`) |
 | `session_id` | `conversation_id` | table `chat_sessions` → `chat_conversations`; `sessionBook.py` → `conversationBook.py` |
 | `tg_chat_id` | `chat_id` | code rename |
-| `event_id` | `job_id` | Alembic `0002_drop_run_id_and_rename_event_id` (`chat_jobs`) |
+| `event_id` | `job_id` | Alembic initial schema (`chat_jobs`); historical chain predates the 2026.08 collapse |
 | `run_id` (agent context) | removed | same revision; agents key off `conversation_id` |
-| `telegram_id` | `tgid` | Alembic `0006_rename_contacts_telegram_id_to_tgid` (`contacts`); code, API payloads and WebUI renamed with it. Signed-session cookie bumped v3 → v4; proxy header `X-MAGI-Proxy-Telegram-ID` → `X-MAGI-Proxy-Tgid` |
+| `telegram_id` | `tgid` | Alembic initial schema (`contacts`); code, API payloads and WebUI renamed with it. Signed-session cookie bumped v3 → v4; proxy header `X-MAGI-Proxy-Telegram-ID` → `X-MAGI-Proxy-Tgid` |
 | `conv_id` | `conversation_id` | code rename (`magi/agent/worker.py` local shorthand) |

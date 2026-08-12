@@ -27,6 +27,7 @@ from magi.bus.guild import (
     CallLLMResult,
     ChangeProviderConfigJob,
 )
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
@@ -245,7 +246,7 @@ async def test_publish_then_complete_round_trip(bus: Bus):
         job_id = _enqueue_simple(bus, content="hello")
         result = await _wait_for_result(bus, job_id)
         assert result is not None, "worker did not settle the job in time"
-        assert result.success is True
+        assert result.status == JobStatus.COMPLETED
         assert result.response is not None
         assert result.response["text"] == "hi from provider"
         assert result.model == "fake-model-1"
@@ -265,7 +266,7 @@ async def test_provider_not_configured_envelopes_failure(bus: Bus):
         job_id = _enqueue_simple(bus, content="!notconfigured")
         result = await _wait_for_result(bus, job_id)
         assert result is not None
-        assert result.success is False
+        assert result.status == JobStatus.FAILED
         # The worker special-cases :class:`LLMNotConfiguredError` and
         # surfaces it as the stable ``magi.llm_credentials_required``
         # operator-facing code (so admin UX doesn't depend on the
@@ -287,7 +288,7 @@ async def test_provider_crashed_envelopes_generic_failure(bus: Bus):
         job_id = _enqueue_simple(bus, content="!raise:anything")
         result = await _wait_for_result(bus, job_id)
         assert result is not None
-        assert result.success is False
+        assert result.status == JobStatus.FAILED
         assert result.error_code == "LLMError"
     finally:
         await stop_provider_worker()
@@ -304,7 +305,7 @@ async def test_concurrency_limit_serialises_two_jobs(bus: Bus):
         ids = [_enqueue_simple(bus, content=f"hello {i}") for i in range(2)]
         for jid in ids:
             result = await _wait_for_result(bus, jid, timeout=10.0)
-            assert result is not None and result.success is True, result
+            assert result is not None and result.status == JobStatus.COMPLETED, result
             assert result.response["text"] == "ok"
     finally:
         await stop_provider_worker()
@@ -339,7 +340,7 @@ async def test_worker_caches_provider_across_jobs(bus: Bus):
         ids = [_enqueue_simple(bus) for _ in range(3)]
         for jid in ids:
             result = await _wait_for_result(bus, jid)
-            assert result is not None and result.success is True
+            assert result is not None and result.status == JobStatus.COMPLETED
         assert state["calls"] == 1, (
             f"expected one cached provider, got {state['calls']} get_provider calls"
         )
@@ -364,7 +365,7 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: Bus):
         job_id = _enqueue_simple(bus)
         result = await _wait_for_result(bus, job_id)
         assert result is not None
-        assert result.success is False
+        assert result.status == JobStatus.FAILED
         assert result.error_code == "magi.llm_credentials_required"
         assert "MAGI" in (result.error or "")
     finally:
@@ -393,7 +394,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         jid1 = _enqueue_simple(bus, content="first")
         r1 = await _wait_for_result(bus, jid1)
         assert r1 is not None
-        assert r1.success is False
+        assert r1.status == JobStatus.FAILED
         assert r1.error_code == "magi.llm_credentials_required"
 
         # 2. Publish a ChangeProviderConfigJob — the board writes
@@ -411,7 +412,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         # 3. Next job should now use the rebuilt provider.
         jid2 = _enqueue_simple(bus, content="second")
         r2 = await _wait_for_result(bus, jid2)
-        assert r2 is not None and r2.success is True, r2
+        assert r2 is not None and r2.status == JobStatus.COMPLETED, r2
         assert r2.response["text"] == "rebuilt-ok"
         assert calls["n"] >= 2, (
             f"expected at least 2 get_provider calls (start + rebuild), got {calls['n']}"
@@ -424,7 +425,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         with bus._local_factory.session() as s:
             leftovers = s.scalar(
                 select(_ChangeProviderConfigRow.status).where(
-                    _ChangeProviderConfigRow.status.in_(["pending", "processing"])
+                    _ChangeProviderConfigRow.status.in_([JobStatus.PENDING, JobStatus.PROCESSING])
                 )
             )
         assert leftovers is None, "config-change job was not drained"
@@ -453,7 +454,7 @@ async def test_worker_rebuilds_only_when_control_signal_present(bus: Bus):
         for expected in ("call#1", "call#1"):
             jid = _enqueue_simple(bus)
             r = await _wait_for_result(bus, jid)
-            assert r is not None and r.success is True
+            assert r is not None and r.status == JobStatus.COMPLETED
             assert r.response["text"] == expected
         # Only one build across both jobs.
         assert calls["n"] == 1
@@ -517,7 +518,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
     try:
         # 1. First job warms the cache with the initial model.
         r1 = await _wait_for_result(bus, _enqueue_simple(bus, content="first"))
-        assert r1 is not None and r1.success is True, r1
+        assert r1 is not None and r1.status == JobStatus.COMPLETED, r1
         assert r1.response["text"] == "model=fake-model-1"
         assert calls["n"] == 1
         assert worker._provider is not None
@@ -541,7 +542,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
 
         # 4. Next LLM job must observe the new model without rebuild.
         r2 = await _wait_for_result(bus, _enqueue_simple(bus, content="second"))
-        assert r2 is not None and r2.success is True, r2
+        assert r2 is not None and r2.status == JobStatus.COMPLETED, r2
         assert r2.response["text"] == "model=fake-model-2", (
             f"model-only change should propagate in place; got {r2.response['text']!r}"
         )
@@ -579,7 +580,7 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
     try:
         # Baseline: first job warms the cache.
         r1 = await _wait_for_result(bus, _enqueue_simple(bus, content="first"))
-        assert r1 is not None and r1.success is True
+        assert r1 is not None and r1.status == JobStatus.COMPLETED
         assert r1.response["text"] == "call#1"
         assert calls["n"] == 1
 
@@ -655,7 +656,7 @@ async def test_streaming_job_publishes_deltas_and_terminal(bus: Bus):
             )
         )
         result = await _wait_for_result(bus, job_id)
-        assert result is not None and result.success is True
+        assert result is not None and result.status == JobStatus.COMPLETED
         assert result.response["text"] == "hello there"
         # ``stream_key`` is non-empty in streaming mode — the consumer
         # can pull incremental deltas from ``bus.stream_hub.get(key)``.

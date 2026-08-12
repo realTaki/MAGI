@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar
 
+from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -96,7 +97,7 @@ class ChannelWorker(RuntimeWorker):
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
                     key=job.job_id,
-                    result=DeliveryResult(job_id=job.job_id, success=True),
+                    result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
                 )
                 self.succeeded()
             except Exception as exc:
@@ -105,7 +106,7 @@ class ChannelWorker(RuntimeWorker):
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
                     key=job.job_id,
-                    result=DeliveryResult(job_id=job.job_id, success=False, error=str(exc)[:1024]),
+                    result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
                 )
 
     async def _read_max_queue_depth(self) -> int:

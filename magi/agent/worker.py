@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -200,7 +201,7 @@ class AgentWorker(RuntimeWorker):
                         key=job.job_id,
                         result=ChatJobResult(
                             job_id=job.job_id,
-                            success=succeeded,
+                            status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                             result=None,
                             error_code=ctx.final_error,
                         ),
@@ -226,7 +227,7 @@ class AgentWorker(RuntimeWorker):
                             key=job.job_id,
                             result=A2ARequestResult(
                                 job_id=job.job_id,
-                                success=succeeded,
+                                status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                                 content=ctx.final_reply,
                                 error_code=board_code,
                                 error=ctx.final_error,
@@ -246,7 +247,7 @@ class AgentWorker(RuntimeWorker):
                             key=job.job_id,
                             result=A2ANotifyResult(
                                 job_id=job.job_id,
-                                success=succeeded,
+                                status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                                 error_code=None,
                                 error=ctx.final_error,
                             ),
@@ -319,7 +320,7 @@ class AgentWorker(RuntimeWorker):
                     ctx.final_error = "llm_timeout"
                     await self._publish_delivery(ctx)
                     return
-                if not result.success:
+                if result.status != JobStatus.COMPLETED:
                     ctx.final_reply = "抱歉，回复生成失败，请稍后再试。"
                     ctx.final_error = (
                         getattr(result, "error", None)
@@ -696,7 +697,7 @@ class AgentWorker(RuntimeWorker):
                         key=steer.job_id,
                         result=ChatJobResult(
                             job_id=steer.job_id,
-                            success=True,
+                            status=JobStatus.COMPLETED,
                         ),
                     )
 
@@ -731,7 +732,7 @@ class AgentWorker(RuntimeWorker):
         for tc_id, job_id in tool_timeout.items():
             tool_results[tc_id] = RunToolResult(
                 job_id=job_id,
-                success=False,
+                status=JobStatus.FAILED,
                 content="tool execution timed out",
                 is_error=True,
                 tool_call_id=tc_id,
@@ -742,7 +743,7 @@ class AgentWorker(RuntimeWorker):
         for tc_id, job_id in a2a_timeout.items():
             a2a_results[tc_id] = A2ARequestResult(
                 job_id=job_id,
-                success=False,
+                status=JobStatus.FAILED,
                 error_code=A2AErrorCode.TIMEOUT,
                 error="A2A request timed out",
             )
@@ -898,7 +899,7 @@ async def wait_for_agent_run(bus: Bus, job_id: str, *, timeout_seconds: float = 
     result = await bus.agent_job_board.wait_for_result(key=job_id, timeout=timeout_seconds)
     if result is None:
         raise AgentRunTimedOut(f"agent run {job_id} timed out")
-    if not result.success:
+    if result.status != JobStatus.COMPLETED:
         raise AgentRunFailed(error_code=result.error_code or "failed")
     return {"success": True, "error_code": result.error_code, "result": result.result}
 

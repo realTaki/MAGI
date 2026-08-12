@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from croniter import croniter as _croniter
 
+from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -126,7 +127,7 @@ class TaskWorker(RuntimeWorker):
                 await self.call(
                     self.bus.run_task_job_board.submit_result,
                     key=rj.job_id,
-                    result=RunTaskResult(rj.job_id, False, error="task not found"),
+                    result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error="task not found"),
                 )
                 return
             await self._fire_task(
@@ -138,13 +139,13 @@ class TaskWorker(RuntimeWorker):
             await self.call(
                 self.bus.run_task_job_board.submit_result,
                 key=rj.job_id,
-                result=RunTaskResult(rj.job_id, True),
+                result=RunTaskResult(job_id=rj.job_id, status=JobStatus.COMPLETED),
             )
         except Exception as exc:
             await self.call(
                 self.bus.run_task_job_board.submit_result,
                 key=rj.job_id,
-                result=RunTaskResult(rj.job_id, False, error=str(exc)[:1024]),
+                result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
             )
 
     async def _rehydrate(self) -> None:

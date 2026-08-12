@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksResult
 from magi.bus.library.local import Role
 from magi.bus.library.local.tasksBook import (
@@ -156,7 +157,7 @@ def _submit_success(
     try:
         result = SeedPresetTasksResult(
             job_id=job.job_id,
-            success=True,
+            status=JobStatus.COMPLETED,
             inserted=inserted,
             skipped=skipped,
         )
@@ -180,7 +181,7 @@ def _submit_failure(
     try:
         result = SeedPresetTasksResult(
             job_id=job.job_id,
-            success=False,
+            status=JobStatus.FAILED,
             error=error[:8000],
         )
         bus.seed_preset_tasks_job_board.submit_result(

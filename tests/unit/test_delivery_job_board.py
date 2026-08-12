@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from magi.bus.db import EngineFactory
 from magi.bus.db.base import utcnow_naive
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJobBoard
 
 
@@ -68,5 +69,5 @@ def test_channel_claim_exhaustion_uses_shared_retry_policy(
     assert board.claim_for_channel(channel="webui") is None
     result = board.get_result(key=job_id)
     assert result is not None
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert result.error == f"job exhausted after {board.max_attempts} attempt(s)"

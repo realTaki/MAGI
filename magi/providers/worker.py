@@ -48,6 +48,7 @@ from magi.bus.guild import (
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
 )
+from magi.bus.guild.base import JobStatus
 from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.runtime_worker import RuntimeWorker
@@ -194,11 +195,11 @@ class ProvidersWorker(RuntimeWorker):
             await self.call(self._rebuild_provider)
 
         if self._provider is not None:
-            result = ChangeProviderConfigResult(job_id=job.job_id, success=True)
+            result = ChangeProviderConfigResult(job_id=job.job_id, status=JobStatus.COMPLETED)
         else:
             result = ChangeProviderConfigResult(
                 job_id=job.job_id,
-                success=False,
+                status=JobStatus.FAILED,
                 error=str(self._provider_error) if self._provider_error else "unknown",
             )
         try:
@@ -396,7 +397,7 @@ class ProvidersWorker(RuntimeWorker):
 
         result = CallLLMResult(
             job_id=job.job_id,
-            success=True,
+            status=JobStatus.COMPLETED,
             response={
                 "text": result_dict.get("text") or "(empty reply)",
                 "thinking": result_dict.get("thinking"),
@@ -512,7 +513,7 @@ class ProvidersWorker(RuntimeWorker):
         the worker loop never crashes on a transient DB blip."""
         result = CallLLMResult(
             job_id=job.job_id,
-            success=False,
+            status=JobStatus.FAILED,
             error=error_detail,
             error_code=error_code,
         )

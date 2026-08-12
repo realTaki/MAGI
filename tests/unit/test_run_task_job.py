@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from magi.bus.db import EngineFactory
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.runTaskJob import (
     RunTaskJob,
     RunTaskResult,
@@ -56,11 +57,11 @@ def test_submit_result_success(board):
 
     board.submit_result(
         key=jid,
-        result=RunTaskResult(job_id=jid, success=True),
+        result=RunTaskResult(job_id=jid, status=JobStatus.COMPLETED),
     )
     result = board.get_result(key=jid)
     assert result is not None
-    assert result.success is True
+    assert result.status == JobStatus.COMPLETED
     assert result.error is None
 
 
@@ -72,11 +73,11 @@ def test_submit_result_failure(board):
 
     board.submit_result(
         key=jid,
-        result=RunTaskResult(job_id=jid, success=False, error="task not found"),
+        result=RunTaskResult(job_id=jid, status=JobStatus.FAILED, error="task not found"),
     )
     result = board.get_result(key=jid)
     assert result is not None
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
     assert result.error == "task not found"
 
 
@@ -139,4 +140,4 @@ def test_max_attempts_exhausted(board):
 
     result = board.get_result(key=jid)
     assert result is not None
-    assert result.success is False
+    assert result.status == JobStatus.FAILED
