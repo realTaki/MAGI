@@ -22,8 +22,8 @@ def board(tmp_path) -> deliveryJobBoard:
 
 
 def test_claim_for_channel_never_claims_another_channel(board: deliveryJobBoard) -> None:
-    tg_job_id = board.publish(DeliveryJob(channel="tg", payload={"text": "tg"}))
-    webui_job_id = board.publish(DeliveryJob(channel="webui", payload={"text": "webui"}))
+    tg_job_id = board.publish(DeliveryJob(channel="tg", text="tg"))
+    webui_job_id = board.publish(DeliveryJob(channel="webui", text="webui"))
 
     webui_claim = board.claim_for_channel(channel="webui")
     assert webui_claim is not None
@@ -37,7 +37,7 @@ def test_claim_for_channel_never_claims_another_channel(board: deliveryJobBoard)
 
 
 def test_concurrent_channel_consumers_claim_a_job_once(board: deliveryJobBoard) -> None:
-    board.publish(DeliveryJob(channel="webui", payload={"text": "once"}))
+    board.publish(DeliveryJob(channel="webui", text="once"))
     other_consumer = deliveryJobBoard(board._factory)
     barrier = Barrier(2)
 
@@ -54,7 +54,7 @@ def test_concurrent_channel_consumers_claim_a_job_once(board: deliveryJobBoard) 
 def test_channel_claim_exhaustion_uses_shared_retry_policy(
     board: deliveryJobBoard,
 ) -> None:
-    job_id = board.publish(DeliveryJob(channel="webui", payload={"text": "retry"}))
+    job_id = board.publish(DeliveryJob(channel="webui", text="retry"))
 
     for _ in range(board.max_attempts):
         claim = board.claim_for_channel(channel="webui")

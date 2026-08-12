@@ -67,6 +67,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from magi.bus.guild import (
+    MCPKind,
     McpServerChangedJob,
     McpServerChangedResult,
 )
@@ -210,19 +211,19 @@ class McpWorker(RuntimeWorker):
         success = False
         error: str | None = None
         try:
-            if job.kind == "deleted":
+            if job.kind == MCPKind.DELETED:
                 await self.call(self.bus.mcp_servers_book.delete_by_name, name=name)
                 await self._remove_server(name)
                 success = True
-            elif job.kind in ("added", "updated"):
+            elif job.kind in (MCPKind.ADDED, MCPKind.UPDATED):
                 if job.server is None:  # __post_init__ should have caught this
                     raise ValueError(f"kind={job.kind!r} requires server payload")
                 await self.call(self._write_server, job.server)
                 await self._reload_server_from_dto(job.server)
                 success = True
-            elif job.kind == "toggled":
+            elif job.kind == MCPKind.TOGGLED:
                 if job.new_enabled is None:  # __post_init__ should have caught this
-                    raise ValueError("kind='toggled' requires new_enabled flag")
+                    raise ValueError("kind=MCPKind.TOGGLED requires new_enabled flag")
                 await self.call(self._set_enabled, name=name, enabled=job.new_enabled)
                 await self._reload_server(name)
                 success = True

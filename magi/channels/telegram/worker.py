@@ -139,7 +139,7 @@ class TelegramWorker(ChannelWorker):
         if not bot_token:
             raise RuntimeError("Telegram delivery: no bot_token")
         chat_id = int(job.destination) if job.destination else 0
-        text = str(job.payload.get("text") or "")
+        text = job.text
         if not chat_id or not text:
             raise ValueError("TG delivery missing destination or text")
         from magi.channels.telegram.bot import send_text_raw

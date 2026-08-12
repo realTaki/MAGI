@@ -30,9 +30,9 @@ class WebUIWorker(ChannelWorker):
 
     async def _deliver_webui(self, job: DeliveryJob) -> None:
         """将 delivery 内容追加到 Session 消息。"""
-        conversation_id = str(job.payload.get("conversation_id") or "")
-        contact_id = job.payload.get("contact_id")
-        text = str(job.payload.get("text") or "")
+        conversation_id = job.conversation_id or ""
+        contact_id = job.contact_id
+        text = job.text
 
         if not conversation_id or not isinstance(contact_id, int):
             raise ValueError("webui delivery missing conversation_id or contact_id")

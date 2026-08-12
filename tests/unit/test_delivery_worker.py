@@ -28,7 +28,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
         DeliveryJob(
             channel="tg",
             destination="123456",
-            payload={"text": "hello"},
+            text="hello",
         )
     )
 
@@ -89,7 +89,7 @@ async def test_telegram_worker_fails_without_token():
     job = DeliveryJob(
         channel="tg",
         destination="123",
-        payload={"text": "hi"},
+        text="hi",
         job_id="j1",
     )
 

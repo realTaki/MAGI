@@ -64,7 +64,7 @@ def _seed_delivery(f, *, channel: str, count: int) -> list[str]:
     """Insert N pending DeliveryJobs for *channel*; return job_ids."""
     board = deliveryJobBoard(f)
     ids = [
-        board.publish(DeliveryJob(channel=channel, payload={"i": i}, destination="x"))
+        board.publish(DeliveryJob(channel=channel, text=f"#{i}", destination="x"))
         for i in range(count)
     ]
     return ids

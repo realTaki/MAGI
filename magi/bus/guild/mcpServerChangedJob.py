@@ -23,11 +23,11 @@ registry**，并 submit :class:`McpServerChangedResult`。
   reload 在同一个事务边界里 — 要么都成功要么都回滚 — LLM 工具
   与 operator 之间的状态永远一致。
 - **payload 携带**：
-  - ``kind="added"`` / ``kind="updated"`` 必须带完整的
+  - :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED` 必须带完整的
     :class:`~magi.bus.library.local.mcpServerBook.McpServer`
     payload（存为 JSON 列）。
-  - ``kind="toggled"`` 必须带 ``new_enabled: bool``。
-  - ``kind="deleted"`` 只需 ``server_name``。
+  - :attr:`MCPKind.TOGGLED` 必须带 ``new_enabled: bool``。
+  - :attr:`MCPKind.DELETED` 只需 ``server_name``。
 - **结果回执**：通过 ``submit_result(McpServerChangedResult)`` 落库
   status / completed_at / error；调用方按
   :meth:`BaseJobBoard.get_result` 轮询，或
@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String
@@ -53,47 +54,77 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.bus.guild.mcpServerChangedJob")
 
 
+# -- public enum ---------------------------------------------------------
+
+
+class MCPKind(StrEnum):
+    """Change-kind discriminator stored on :class:`McpServerChangedJob.kind`.
+
+    * ``MCPKind.ADDED``   — new server registered; the worker
+      ``book.upsert(server)`` and connects.
+    * ``MCPKind.UPDATED`` — server DTO changed; the worker
+      ``book.upsert(server)`` and reconnects.
+    * ``MCPKind.DELETED`` — server removed; the worker
+      ``book.delete_by_name`` and disconnects.
+    * ``MCPKind.TOGGLED`` — single ``enabled`` flag flip; the
+      worker ``book.update(server_id, enabled=...)`` and reloads.
+
+    ``StrEnum`` rather than bare string constants so typos are
+    caught at lookup time instead of silently comparing False:
+    every member is still a ``str``
+    (``MCPKind.ADDED == "added"``), so ORM columns, JSON
+    serialisation, ``==`` / ``!=`` against string literals and
+    existing rows keep working unchanged. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind` /
+    :class:`magi.bus.library.local.memoryBook.MemoryKind`.
+    See ``docs/insights/ENUM_MIGRATION_INVENTORY.md`` §2.
+    """
+
+    ADDED = "added"
+    UPDATED = "updated"
+    DELETED = "deleted"
+    TOGGLED = "toggled"
+
+
 # -- public dataclasses --------------------------------------------------
-
-
-#: Allowed ``kind`` values. ``toggled`` maps to a single flag flip
-#: in the worker; the other three carry the same "reload this
-#: server" semantics so the worker uses a single code path.
-VALID_KINDS: frozenset[str] = frozenset({"added", "updated", "deleted", "toggled"})
 
 
 @dataclass(frozen=True, slots=True)
 class McpServerChangedJob:
     """一次 MCP 服务器配置变更事件。
 
-    ``kind`` 取自 :data:`VALID_KINDS`；``server_name`` 是操作
+    ``kind`` 取自 :class:`MCPKind`；``server_name`` 是操作
     目标的主键（与 ``mcp_servers.name`` 对齐）。
 
     Payload shape by ``kind``:
 
-    - ``"added"`` / ``"updated"``: ``server`` must carry the full
-      :class:`McpServer` DTO; the worker upserts the row from it.
-    - ``"toggled"``: ``new_enabled`` must be set; the worker flips
-      the row's ``enabled`` flag.
-    - ``"deleted"``: only ``server_name`` is needed; the worker
-      deletes the row.
+    - :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED`: ``server``
+      must carry the full :class:`McpServer` DTO; the worker
+      upserts the row from it.
+    - :attr:`MCPKind.TOGGLED`: ``new_enabled`` must be set; the
+      worker flips the row's ``enabled`` flag.
+    - :attr:`MCPKind.DELETED`: only ``server_name`` is needed;
+      the worker deletes the row.
     """
 
-    kind: str  # 变更类型（added/updated/toggled/deleted，取自 VALID_KINDS）
+    kind: MCPKind  # 变更类型（added/updated/toggled/deleted，取自 MCPKind）
     server_name: str  # 目标 MCP server 的主键（与 mcp_servers.name 对齐）
-    server: McpServer | None = None  # 完整 DTO（kind in {added,updated} 时必填；存为 JSON 列）
-    new_enabled: bool | None = None  # 新的 enabled 标志（kind="toggled" 时必填）
+    server: McpServer | None = None  # 完整 DTO（kind in {ADDED,UPDATED} 时必填；存为 JSON 列）
+    new_enabled: bool | None = None  # 新的 enabled 标志（kind=TOGGLED 时必填）
     job_id: str = ""  # 发布时自动生成的 job_id
 
     def __post_init__(self) -> None:
-        if self.kind not in VALID_KINDS:
-            raise ValueError(f"invalid kind {self.kind!r}; expected one of {sorted(VALID_KINDS)}")
+        if self.kind not in MCPKind:
+            raise ValueError(
+                f"invalid kind {self.kind!r}; expected one of "
+                f"{sorted(k.value for k in MCPKind)!r}"
+            )
         if not self.server_name:
             raise ValueError("server_name is required")
-        if self.kind in ("added", "updated") and self.server is None:
+        if self.kind in (MCPKind.ADDED, MCPKind.UPDATED) and self.server is None:
             raise ValueError(f"kind={self.kind!r} requires a McpServer payload")
-        if self.kind == "toggled" and self.new_enabled is None:
-            raise ValueError("kind='toggled' requires new_enabled flag")
+        if self.kind == MCPKind.TOGGLED and self.new_enabled is None:
+            raise ValueError("kind=MCPKind.TOGGLED requires new_enabled flag")
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,17 +159,17 @@ class _McpServerChangedRow(Base):
     )
 
     #: JSON-serialised :class:`McpServer` DTO. Populated for
-    #: ``kind="added"`` / ``kind="updated"``; ``None`` for the
-    #: other kinds. Stored as a single JSON column rather than
-    #: one column per field so the row layout stays decoupled
-    #: from the DTO schema.
+    #: :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED`; ``None``
+    #: for the other kinds. Stored as a single JSON column
+    #: rather than one column per field so the row layout stays
+    #: decoupled from the DTO schema.
     server_payload: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         nullable=True,
     )
 
-    #: New ``enabled`` flag value for ``kind="toggled"``; ``None``
-    #: for the other kinds.
+    #: New ``enabled`` flag value for :attr:`MCPKind.TOGGLED`;
+    #: ``None`` for the other kinds.
     new_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
@@ -258,8 +289,8 @@ class mcpServerChangedJobBoard(
 
 
 __all__ = [
+    "MCPKind",
     "McpServerChangedJob",
     "McpServerChangedResult",
-    "VALID_KINDS",
     "mcpServerChangedJobBoard",
 ]

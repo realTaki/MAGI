@@ -169,7 +169,16 @@ def test_submit_result_records_error(board):
     assert result.error == "boom"
 
 
-def test_valid_kinds_constant_matches_documented_set():
-    from magi.bus.guild.mcpServerChangedJob import VALID_KINDS
+def test_mcp_kind_enum_matches_documented_set():
+    """Locks the four :class:`MCPKind` members; adding a fifth
+    without a docstring / payload-shape update will fail here."""
+    from magi.bus.guild.mcpServerChangedJob import MCPKind
 
-    assert VALID_KINDS == frozenset({"added", "updated", "deleted", "toggled"})
+    assert {k.value for k in MCPKind} == {"added", "updated", "deleted", "toggled"}
+    # StrEnum contract: members compare equal to their string value
+    # so ORM rows, JSON serialisation, and `==` against literals
+    # keep working unchanged.
+    assert MCPKind.ADDED == "added"
+    assert MCPKind.UPDATED == "updated"
+    assert MCPKind.DELETED == "deleted"
+    assert MCPKind.TOGGLED == "toggled"
