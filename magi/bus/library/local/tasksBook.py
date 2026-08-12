@@ -101,26 +101,26 @@ class TaskSource(StrEnum):
     PROACTIVE = "proactive"
 
 
-# Runtime status of the most recent execution attempt, surfaced
-# on the user task row so the dashboard doesn't have to join the
-# ``task_runs`` table for the "✓ 成功 / ✗ 失败" cell. Vocabulary
-# matches the WebUI's existing checks (see
-# ``TaskListPane.tsx`` — ``"success"`` / ``"failed"``); the
-# ``TaskRun.status`` field tracks a finer-grained
-# running/completed/failed set. Kept as a separate enum rather
-# than shared with ``TaskRun.status`` so the two vocabularies
-# can diverge without a cross-Book refactor.
-class TaskLastStatus(StrEnum):
-    """Closed set of values for ``Task.last_status``.
+# Runtime status of a task execution attempt. Shared by
+# :attr:`TaskRun.status` (per-run ledger) AND
+# :attr:`Task.last_status` (denormalised onto the parent task so
+# the dashboard doesn't have to join the ``task_runs`` table for
+# the "✓ 成功 / ✗ 失败" cell). One enum, one vocabulary — a
+# split here would let a row's ``last_status`` and the matching
+# ``task_runs`` row drift into inconsistent values, which the
+# WebUI can't render coherently. Vocabulary matches the WebUI's
+# existing checks (``TaskListPane.tsx``).
+class TaskRunStatus(StrEnum):
+    """Closed set of values for ``TaskRun.status`` + ``Task.last_status``.
 
-    Stored loose at the DB (``String(16)``), normalised to this
-    enum at the Book boundary — same convention as
-    :class:`TaskSource` and :class:`ChannelEnum`.
+    Stored loose at the DB (``String(16)`` on both columns), normalised
+    to this enum at the Book boundary — same "loose at DB, strict
+    at Book" convention as :class:`TaskSource` and :class:`ChannelEnum`.
     """
 
+    RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
-    RUNNING = "running"
 
 
 # Column-length invariants. Mirror the ORM column
@@ -183,7 +183,7 @@ class Task:
     # --- user-task runtime bookkeeping ------------------------------------
     consecutive_failures: int = 0  # 连续失败次数
     last_run_at: str | None = None  # 最近一次触发时间
-    last_status: TaskLastStatus | None = None  # 最近一次状态
+    last_status: TaskRunStatus | None = None  # 最近一次状态
     last_error: str | None = None  # 最近一次的错误信息
     created_at: str = ""  # 创建时间
     updated_at: str = ""  # 最近更新时间
@@ -193,11 +193,11 @@ class Task:
 class TaskRun:
     id: str  # 运行记录主键
     task_id: str  # 所属任务 ID
-    trigger: str  # 触发来源（cron_tick/run_at_consume/...）
+    manual: bool  # 是否用户/工具主动触发（True=API/UI/tool；False=cron/run_at）
     started_at: str  # 开始时间
     finished_at: str | None = None  # 结束时间
     latency_ms: int | None = None  # 总耗时（毫秒）
-    status: str = "running"  # 运行状态（running/completed/failed）
+    status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
     error: str | None = None  # 错误信息
     reply_excerpt: str | None = None  # 回复摘要
     conversation_id: str | None = None  # 关联的会话 ID
@@ -263,9 +263,10 @@ class _TaskRow(Base):
     )
     last_run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # ``String(16)`` — not enum-enforced at the DB layer so legacy
-    # rows survive; the Book normalises to :class:`TaskLastStatus`
+    # rows survive; the Book normalises to :class:`TaskRunStatus`
     # on read (same "loose at DB, strict at Book" pattern as
-    # ``source`` / ``target_channel``).
+    # ``source`` / ``target_channel``). Shared vocabulary with
+    # ``TaskRunRow.status`` below.
     last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -292,11 +293,11 @@ class _TaskRunRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
     )
-    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    manual: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[str] = mapped_column(String(32), nullable=False)
     finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # TaskRunStatus.value (loose at DB)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -337,8 +338,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         return TaskSource(value)
 
     @staticmethod
-    def _coerce_last_status(value: object) -> TaskLastStatus | None:
-        """Map an ORM ``last_status`` value (str OR enum) to :class:`TaskLastStatus`.
+    def _coerce_last_status(value: object) -> TaskRunStatus | None:
+        """Map an ORM ``last_status`` value (str OR enum) to :class:`TaskRunStatus`.
 
         Mirrors :meth:`_coerce_source` — the column is ``String(16)``
         and not enum-enforced at the DB layer, so historical rows
@@ -351,9 +352,9 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         """
         if value is None:
             return None
-        if isinstance(value, TaskLastStatus):
+        if isinstance(value, TaskRunStatus):
             return value
-        return TaskLastStatus(value)
+        return TaskRunStatus(value)
 
     def _row_to_dto(self, row: _TaskRow) -> Task:
         kwargs: dict = {}
@@ -813,14 +814,15 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         self,
         *,
         task_id: str,
-        trigger: str,
+        manual: bool,
         id: str | None = None,
     ) -> TaskRun:
         """Insert a task_runs row, write task.last_run_at.
 
-        trigger ∈ closed set:
-          'cron_tick' | 'run_at_consume' | 'manual_run' |
-          'api_manual_run' | 'schedule_task_tool'
+        ``manual=True`` 表示用户/工具主动触发（API / UI / tool）；
+        ``False`` 表示 task 模块按自身规则（cron / run_at）触发。
+        与 :class:`~magi.bus.guild.runTaskJob.RunTaskJob.manual`
+        同构。
         """
         new_id = id or uuid.uuid4().hex
         started_at = utcnow_naive().isoformat()
@@ -828,9 +830,9 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             run_row = _TaskRunRow(
                 id=new_id,
                 task_id=task_id,
-                trigger=trigger,
+                manual=int(manual),
                 started_at=started_at,
-                status="running",
+                status=TaskRunStatus.RUNNING.value,
             )
             s.add(run_row)
             task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
@@ -874,6 +876,48 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
     dto_cls = TaskRun
 
+    @staticmethod
+    def _coerce_status(value: object) -> TaskRunStatus:
+        """Map an ORM ``status`` value (str OR enum) to :class:`TaskRunStatus`.
+
+        Same "loose at DB, strict at Book" pattern as
+        :meth:`TaskBook._coerce_source` and
+        :meth:`TaskBook._coerce_last_status`. The column is
+        ``String(16)`` and not enum-enforced at the DB layer, so
+        historical rows may already be a bare string. Unknown
+        strings raise :class:`ValueError` so a typo in a future
+        writer surfaces loudly instead of round-tripping as a
+        bare string the WebUI can't classify.
+        """
+        if isinstance(value, TaskRunStatus):
+            return value
+        return TaskRunStatus(value)
+
+    def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
+        """Override :meth:`BaseBook._row_to_dto` to coerce ``status``.
+
+        Mirrors the per-field coercion pattern in
+        :meth:`TaskBook._row_to_dto` — the ORM column is plain
+        ``str`` so we re-shape it into the :class:`TaskRunStatus`
+        enum at the boundary.
+        """
+        kwargs: dict = {}
+        for f in dataclasses.fields(self.dto_cls):
+            if hasattr(row, f.name):
+                val = getattr(row, f.name)
+                if isinstance(val, datetime):
+                    kwargs[f.name] = to_iso(val)
+                elif f.name == "status":
+                    kwargs[f.name] = self._coerce_status(val)
+                elif f.name == "manual":
+                    # ORM column is ``Integer`` (0/1) — coerce to ``bool``
+                    # so the dataclass field type matches the actual
+                    # representation downstream consumers see.
+                    kwargs[f.name] = bool(val)
+                else:
+                    kwargs[f.name] = val
+        return self.dto_cls(**kwargs)
+
     def get(self, *, id: str) -> TaskRun | None:
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
@@ -891,17 +935,27 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         self,
         *,
         id: str,
-        status: str,
+        status: TaskRunStatus | str,
         error: str | None = None,
         reply_excerpt: str | None = None,
         finished_at: str = "",
         latency_ms: int | None = None,
     ) -> None:
+        """Mark a run as finished with a terminal ``status``.
+
+        ``status`` accepts either a :class:`TaskRunStatus` enum
+        (preferred — :data:`TaskRunStatus.SUCCESS` /
+        :data:`TaskRunStatus.FAILED`) or the equivalent bare
+        string. Strings are coerced through :meth:`_coerce_status`
+        so a typo (``"succes"``) raises :class:`ValueError`
+        immediately rather than persisting silently.
+        """
+        normalised = self._coerce_status(status)
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
             if row is None:
                 return
-            row.status = status
+            row.status = normalised.value
             row.error = error
             row.reply_excerpt = reply_excerpt
             row.finished_at = finished_at
@@ -909,7 +963,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             s.commit()
 
     def reap_stale(self, *, older_than_seconds: int = 300) -> int:
-        """Flip stuck 'running' rows to 'failed'. Returns count.
+        """Flip stuck ``RUNNING`` rows to ``FAILED``. Returns count.
 
         Used by TaskWorker on startup for crash recovery.
         """
@@ -917,12 +971,12 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRunRow).where(
-                    _TaskRunRow.status == "running",
+                    _TaskRunRow.status == TaskRunStatus.RUNNING.value,
                     _TaskRunRow.started_at < cutoff,
                 )
             ).all()
             for row in rows:
-                row.status = "failed"
+                row.status = TaskRunStatus.FAILED.value
                 row.error = "abandoned by previous worker"
                 row.finished_at = utcnow_naive().isoformat()
             s.commit()
@@ -1177,9 +1231,9 @@ __all__ = [
     "CronFrequency",
     "Task",
     "TaskBook",
-    "TaskLastStatus",
     "TaskRun",
     "TaskRunBook",
+    "TaskRunStatus",
     "TaskSource",
     "humanize_cron",
     "next_fire",

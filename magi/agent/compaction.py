@@ -7,15 +7,25 @@ rows' ``archived`` flag via :meth:`MessageBook.archive`. The keep-tail
 messages stay as raw active rows so the LLM always sees the most
 recent turns in full.
 
+Decision: **token-budget driven**, not length-driven. The trigger is
+``summary_tokens + history_tokens > threshold_pct of context_window``.
+When that fires we keep up to ``keep_recent`` most-recent active
+messages; if even those don't fit the post-compaction budget (e.g. the
+recent turns are themselves very large), we drop from the **front of
+the tail** until summary + tail fits, with a hard floor of 1 (always
+keep at least the most recent turn so the LLM has something to anchor
+on).
+
 Skipped when:
   - conversation_id is missing
-  - len(messages) <= keep_recent
   - total tokens (summary + history) under threshold_pct of context_window
 
 Settings keys (must match ``magi.channels.api.system_settings`` so the
 frontend "compact" panel actually controls behaviour):
-  - ``system.compact_keep_recent`` — number of recent active messages
-    to keep verbatim after compaction (default 20, range 5–100)
+  - ``system.compact_keep_recent`` — target number of recent active
+    messages to keep verbatim after compaction (default 20, range
+    5–100). Soft target: if N alone is still over budget, the tail
+    shrinks.
   - ``system.compact_context_window`` — model context window in tokens
     (default 100_000, range 16k–200k)
   - ``system.compact_threshold_pct`` — % of the window that triggers
@@ -125,9 +135,6 @@ async def maybe_compact(
             _DEFAULT_KEEP_RECENT,
         )
 
-    if len(message_dtos) <= keep:
-        return None
-
     sess = bus.conversations_book.get_for_owner(
         contact_id=contact_id, conversation_id=conversation_id
     )
@@ -141,8 +148,44 @@ async def maybe_compact(
     if summary_tokens + history_tokens <= threshold:
         return None
 
-    tail = message_dtos[-keep:]
-    to_archive = message_dtos[:-keep]
+    # Adaptive tail: start with the last `keep` messages; if even
+    # summary + that slice is over the threshold (e.g. the recent
+    # turns are themselves very large), drop from the **front of the
+    # tail** until it fits. Hard floor of 1 — always keep the most
+    # recent turn so the LLM has something to anchor on. The
+    # summary text itself is in `prior_summary` so the LLM doesn't
+    # lose older context; we just stop carrying raw tail past the
+    # budget.
+    candidate_tail = list(message_dtos[-keep:])
+
+    def _post_compact_tokens(candidate: list["Message"]) -> int:
+        return summary_tokens + estimate_messages_tokens(
+            [_dto_to_dict(m) for m in candidate]
+        )
+
+    while len(candidate_tail) > 1 and _post_compact_tokens(candidate_tail) > threshold:
+        candidate_tail.pop(0)
+
+    if (
+        len(candidate_tail) == 1
+        and _post_compact_tokens(candidate_tail) > threshold
+    ):
+        # Even summary + 1 message is over budget. We still keep the
+        # 1 — it's the most recent turn and the LLM needs it to know
+        # what's being asked. Log so operators can spot runaway
+        # conversations.
+        logger.warning(
+            "compact: post-compact budget still over (conversation=%s "
+            "summary_tokens=%d summary_len=%d keep=1 needed=%d threshold=%d)",
+            conversation_id,
+            summary_tokens,
+            len(prior_summary or ""),
+            _post_compact_tokens(candidate_tail),
+            threshold,
+        )
+
+    tail = candidate_tail
+    to_archive = message_dtos[: len(message_dtos) - len(tail)]
 
     user_content = _format_user_content(prior_summary=prior_summary, to_archive=to_archive)
     new_summary = await call_llm_for_summary(

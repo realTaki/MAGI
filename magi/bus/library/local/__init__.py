@@ -37,9 +37,9 @@ from magi.bus.library.local.tasksBook import (
     ChannelEnum,
     Task,
     TaskBook,
-    TaskLastStatus,
     TaskRun,
     TaskRunBook,
+    TaskRunStatus,
     TaskSource,
 )
 from magi.bus.library.local.tokenUsageBook import TokenUsage, TokenUsageBook
@@ -80,9 +80,9 @@ __all__ = [
     "SettingBook",
     "Task",
     "TaskBook",
-    "TaskLastStatus",
     "TaskRun",
     "TaskRunBook",
+    "TaskRunStatus",
     "TaskSource",
     "TokenUsage",
     "TokenUsageBook",
