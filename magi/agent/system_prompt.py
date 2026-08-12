@@ -135,7 +135,28 @@ def build_system_prompt(
     if daily_block:
         parts.append(daily_block)
 
-    # 6. Skills
+    # 6. Open high-priority action items.  ActionItem remains local and is
+    # scoped by the current Contact id, including a MAGIS admin's local
+    # projection; never leak another user's reminder history into this prompt.
+    try:
+        action_items = [
+            item
+            for item in bus.action_items_book.list_actions(
+                owner_contact_id=contact_id,
+                include_completed=False,
+            )
+            if item.priority == "high"
+        ]
+        if action_items:
+            lines = ["## Open high-priority action items"]
+            for item in action_items[:10]:
+                detail = f" — {item.description}" if item.description else ""
+                lines.append(f"- {item.title}{detail}")
+            parts.append("\n".join(lines))
+    except Exception:
+        logger.exception("high-priority action item block load failed")
+
+    # 7. Skills
     skills_book = getattr(bus, "skills_book", None)
     if skills_book is not None:
         try:

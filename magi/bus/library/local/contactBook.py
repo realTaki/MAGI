@@ -172,6 +172,39 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             )
             return self._row_to_dto(row) if row else None
 
+    def ensure_magis_admin_projection(
+        self, *, magis_admin_id: int, display_name: str | None
+    ) -> Contact:
+        """Return this MAGI's Contact projection for a shared admin identity.
+
+        The deterministic internal name never claims an unrelated local user
+        named ``admin``.  ``magis_admin_id`` is unique, so concurrent callers
+        converge on the same projection rather than creating authority data
+        in the local store.
+        """
+        with self._session() as s:
+            existing = s.scalar(
+                select(_ContactRow).where(_ContactRow.magis_admin_id == magis_admin_id)
+            )
+            if existing is not None:
+                return self._row_to_dto(existing)
+            base_name = f"magis-admin-{magis_admin_id}"
+            candidate = base_name
+            suffix = 1
+            while s.scalar(select(_ContactRow.id).where(_ContactRow.name == candidate)) is not None:
+                candidate = f"{base_name}-projection-{suffix}"
+                suffix += 1
+            row = _ContactRow(
+                name=candidate,
+                display_name=(display_name or "").strip() or None,
+                role=ROLE_GUEST,
+                magis_admin_id=magis_admin_id,
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+            return self._row_to_dto(row)
+
     def add(
         self,
         *,

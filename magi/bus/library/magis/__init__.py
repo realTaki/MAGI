@@ -15,6 +15,10 @@ LOCAL :class:`SettingBook` — see :attr:`SettingBook.KNOWN_KEYS`.
 
 from magi.bus.library.magis.controlSettingBook import ControlSetting, ControlSettingBook
 from magi.bus.library.magis.magisBook import (
+    AUTH_MODE_DISABLED,
+    AUTH_MODE_IM_2FA_ENABLED,
+    AUTH_MODE_LOCAL_NO_2FA,
+    AUTH_MODE_RECOVERY_LOCAL_NO_2FA,
     Magis,
     MagisAdmin,
     MagisAdminBook,
@@ -43,6 +47,10 @@ __all__ = [
     "ControlSecretBook",
     "ControlSetting",
     "ControlSettingBook",
+    "AUTH_MODE_DISABLED",
+    "AUTH_MODE_IM_2FA_ENABLED",
+    "AUTH_MODE_LOCAL_NO_2FA",
+    "AUTH_MODE_RECOVERY_LOCAL_NO_2FA",
     "DEFAULT_ROLE_INSTRUCTIONS",
     "MagisCollaborationMember",
     "Magis",
