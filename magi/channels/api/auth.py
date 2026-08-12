@@ -57,7 +57,7 @@ from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import CONTROL_TIMEOUT
+from magi.channels.api.runtime_http import CONTROL_TIMEOUT, RELAY_TIMEOUT
 
 logger = logging.getLogger("magi.api.auth")
 
@@ -478,13 +478,23 @@ class TargetVerifyRequest(TargetLoginRequest):
 
 
 async def _target_access(
-    bus: Bus, magi_id: int, method: str, path: str, payload: dict[str, object] | None = None
+    bus: Bus,
+    magi_id: int,
+    method: str,
+    path: str,
+    payload: dict[str, object] | None = None,
+    timeout: httpx.Timeout = CONTROL_TIMEOUT,
 ) -> dict[str, Any]:
     """Call a target runtime before a browser identity exists.
 
     This is still authenticated service-to-service: ``operator_id=0`` marks
     the narrow pre-login capability, and the signature remains bound to the
     selected runtime id and exact path.
+
+    ``timeout`` defaults to the tight control budget because most paths here
+    are local reads and a scrypt verify (~100 ms). Callers whose target hands
+    off to a third party must pass :data:`RELAY_TIMEOUT` instead — see
+    :func:`target_send_login_code`.
     """
     try:
         runtime = bus.runtime_state_book.get(runtime_id=magi_id) if bus.runtime_state_book else None
@@ -504,7 +514,7 @@ async def _target_access(
         tgid=None,
     )
     try:
-        async with httpx.AsyncClient(timeout=CONTROL_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(method, base + path, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         raise MagiHTTPException(
@@ -646,8 +656,18 @@ def _merge_login_accounts(
 async def target_send_login_code(
     magi_id: int, payload: TargetLoginRequest, bus: BusDep
 ) -> dict[str, object]:
+    # The runtime's handler ends in ``tg_bot.send_text_raw``, i.e. an
+    # outbound call to api.telegram.org under its own 10-second socket
+    # timeout. The tight control budget would expire while that is still
+    # in flight and tell the operator the code failed to send when it is
+    # about to arrive.
     return await _target_access(
-        bus, magi_id, "POST", "/api/access/send-login-code", payload.model_dump()
+        bus,
+        magi_id,
+        "POST",
+        "/api/access/send-login-code",
+        payload.model_dump(),
+        timeout=RELAY_TIMEOUT,
     )
 
 

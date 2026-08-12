@@ -45,6 +45,23 @@ import httpx
 # beyond that means the far side is restarting, not thinking.
 CONTROL_TIMEOUT = httpx.Timeout(connect=2.0, read=10.0, write=10.0, pool=2.0)
 
+# Control-plane legs whose far side wraps a *third-party* call. These need a
+# read budget strictly larger than the inner one, or the outer timeout fires
+# while the inner request is still legitimately in flight and we report a
+# failure for work that is about to succeed.
+#
+# The inner budget here is Telegram: every helper in
+# :mod:`magi.channels.telegram.bot` calls ``urllib.request.urlopen(...,
+# timeout=10)``. That ten seconds is a *socket* timeout — it applies per
+# operation (connect, then each read), not to the request as a whole — so a
+# slow-but-alive api.telegram.org can legitimately keep the runtime busy for
+# appreciably longer than ten seconds before its own timeout fires. Thirty
+# seconds restores the headroom the flat ``timeout=30.0`` used to provide,
+# while keeping the short ``connect`` that makes a genuinely dead runtime
+# fail fast.
+RELAY_TIMEOUT = httpx.Timeout(connect=2.0, read=30.0, write=10.0, pool=2.0)
+
+
 # The generic browser-facing proxy. ``read`` stays at the historical 60
 # seconds because the path set includes endpoints that legitimately
 # block on third parties (MCP tool discovery). Fast failure for the
@@ -90,5 +107,6 @@ __all__ = [
     "CONTROL_TIMEOUT",
     "LIVENESS_TIMEOUT",
     "PROXY_TIMEOUT",
+    "RELAY_TIMEOUT",
     "runtime_is_live",
 ]

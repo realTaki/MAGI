@@ -20,6 +20,8 @@ successfully and then waits forever.
 from __future__ import annotations
 
 import asyncio
+import pathlib
+import re
 import socket
 import threading
 from contextlib import closing, contextmanager
@@ -35,6 +37,7 @@ from magi.channels.api.runtime_http import (
     CONTROL_TIMEOUT,
     LIVENESS_TIMEOUT,
     PROXY_TIMEOUT,
+    RELAY_TIMEOUT,
     runtime_is_live,
 )
 
@@ -109,6 +112,61 @@ def test_the_generic_proxy_keeps_a_read_budget_for_third_party_calls() -> None:
     assert PROXY_TIMEOUT.read is not None and PROXY_TIMEOUT.read >= 60.0
 
 
+# -- nested budgets ----------------------------------------------------
+#
+# A control-plane leg whose far side calls a third party must outlast that
+# third party's own budget. Get this backwards and the outer timeout fires
+# while the inner request is still in flight, so the operator is told the
+# work failed at the exact moment it was about to succeed. These tests read
+# the inner budgets out of the real source rather than restating them, so
+# raising Telegram's socket timeout without raising RELAY_TIMEOUT fails
+# here instead of in production.
+
+
+def _telegram_socket_timeout() -> float:
+    """The ``urlopen(..., timeout=N)`` budget in the Telegram helpers."""
+    source = pathlib.Path("magi/channels/telegram/bot.py").read_text(encoding="utf-8")
+    timeouts = {float(m) for m in re.findall(r"urlopen\([^)]*timeout=(\d+(?:\.\d+)?)", source)}
+    assert timeouts, "expected urlopen(..., timeout=N) in the Telegram helpers"
+    return max(timeouts)
+
+
+def test_relay_budget_outlasts_telegrams_own_timeout() -> None:
+    """``RELAY_TIMEOUT`` wraps runtime handlers that end in
+    ``tg_bot.send_text_raw``. Telegram's ten seconds is a *socket* timeout —
+    per operation, not per request — so the outer budget needs real headroom
+    over it, not parity."""
+    inner = _telegram_socket_timeout()
+    assert RELAY_TIMEOUT.read is not None
+    assert RELAY_TIMEOUT.read >= inner * 2, (
+        f"RELAY_TIMEOUT.read={RELAY_TIMEOUT.read} leaves no headroom over "
+        f"Telegram's {inner}s socket timeout"
+    )
+
+
+def test_the_tight_control_budget_would_not_survive_a_telegram_hop() -> None:
+    """Pins *why* the relay budget exists as a separate constant: the
+    control budget is deliberately too small to wrap a Telegram call, so any
+    future call site that routes one through ``CONTROL_TIMEOUT`` is a bug."""
+    assert CONTROL_TIMEOUT.read is not None
+    assert CONTROL_TIMEOUT.read <= _telegram_socket_timeout()
+
+
+def test_telegram_backed_call_sites_use_the_relay_budget() -> None:
+    """The two legs that reach api.telegram.org must not be on the tight
+    control budget. Checked against the source so a future edit that swaps
+    the constant back is caught here."""
+    control_runtime = pathlib.Path("magi/channels/api/control_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert "AsyncClient(timeout=RELAY_TIMEOUT)" in control_runtime
+    assert "CONTROL_TIMEOUT" not in control_runtime
+
+    auth = pathlib.Path("magi/channels/api/auth.py").read_text(encoding="utf-8")
+    send_login_code = auth[auth.index("async def target_send_login_code") :][:900]
+    assert "timeout=RELAY_TIMEOUT" in send_login_code
+
+
 # -- liveness probe ----------------------------------------------------
 
 
@@ -170,18 +228,18 @@ async def test_proxy_answers_503_instead_of_stalling_on_a_restart(monkeypatch) -
     supervisor produces an immediate, labelled 503 — not a minute of
     silence that an ingress reports as an unattributable 504."""
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
-    monkeypatch.setattr(runtime_proxy, "get_bus", lambda request: MagicMock())
+    monkeypatch.setattr(runtime_proxy, "get_bus", lambda _request: MagicMock())
 
     from magi.channels.api import auth as auth_mod
 
     monkeypatch.setattr(
         auth_mod,
         "selected_session",
-        lambda bus, cookie: {"magi_id": 1, "tgid": 42, "admin": True, "assigned": False},
+        lambda _bus, _cookie: {"magi_id": 1, "tgid": 42, "admin": True, "assigned": False},
     )
 
     with _deaf_listener() as base_url:
-        monkeypatch.setattr(runtime_proxy, "_runtime_url", lambda bus, magi_id: base_url)
+        monkeypatch.setattr(runtime_proxy, "_runtime_url", lambda _bus, _magi_id: base_url)
         started = asyncio.get_running_loop().time()
         with pytest.raises(MagiHTTPException) as caught:
             await runtime_proxy.proxy_runtime(1, "contacts", _browser_request())

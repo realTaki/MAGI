@@ -7,7 +7,7 @@ import os
 import httpx
 
 from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import CONTROL_TIMEOUT
+from magi.channels.api.runtime_http import RELAY_TIMEOUT
 
 
 async def _post(path: str, payload: dict[str, object]) -> None:
@@ -20,7 +20,11 @@ async def _post(path: str, payload: dict[str, object]) -> None:
         tgid=None,
     )
     base = os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
-    async with httpx.AsyncClient(timeout=CONTROL_TIMEOUT) as client:
+    # Both endpoints this helper reaches (``/control/telegram/bootstrap``,
+    # ``/control/telegram/send``) hand off to api.telegram.org on the far
+    # side, so the read budget has to clear Telegram's own — see
+    # :data:`RELAY_TIMEOUT`.
+    async with httpx.AsyncClient(timeout=RELAY_TIMEOUT) as client:
         response = await client.post(base + path, json=payload, headers=headers)
     if response.is_error:
         try:
