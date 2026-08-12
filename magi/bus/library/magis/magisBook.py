@@ -41,11 +41,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.library.base import BaseBook
+
+AUTH_MODE_LOCAL_NO_2FA = "local_no_2fa"
+AUTH_MODE_IM_2FA_ENABLED = "im_2fa_enabled"
+AUTH_MODE_RECOVERY_LOCAL_NO_2FA = "recovery_local_no_2fa"
+AUTH_MODE_DISABLED = "disabled"
+ALL_ADMIN_AUTH_MODES = frozenset(
+    {
+        AUTH_MODE_LOCAL_NO_2FA,
+        AUTH_MODE_IM_2FA_ENABLED,
+        AUTH_MODE_RECOVERY_LOCAL_NO_2FA,
+        AUTH_MODE_DISABLED,
+    }
+)
 
 # -- public dataclasses --------------------------------------------------
 
@@ -67,7 +80,7 @@ class MagisAdmin:
     magis_id: int  # 授权作用的 MAGIS ID
     name: str  # 管理员显示名
     tgid: int | None = None  # 已绑定 Telegram 验证地址
-    auth_mode: str = "local_no_2fa"
+    auth_mode: str = AUTH_MODE_LOCAL_NO_2FA
     created_at: datetime | None = None  # 授权时间
 
 
@@ -100,8 +113,10 @@ class _MagisAdminRow(Base):
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    tgid: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    auth_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="local_no_2fa")
+    tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    auth_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=AUTH_MODE_LOCAL_NO_2FA
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
@@ -228,14 +243,23 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         magis_id: int,
         name: str,
         tgid: int | None = None,
-        auth_mode: str = "local_no_2fa",
+        auth_mode: str = AUTH_MODE_LOCAL_NO_2FA,
     ) -> MagisAdmin:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("admin name is required")
-        if auth_mode not in {"local_no_2fa", "im_2fa_enabled", "recovery_local_no_2fa", "disabled"}:
+        if auth_mode not in ALL_ADMIN_AUTH_MODES:
             raise ValueError("invalid admin auth_mode")
         with self._session() as s:
+            if tgid is not None:
+                duplicate = s.scalar(
+                    select(_MagisAdminRow).where(
+                        _MagisAdminRow.magis_id == magis_id,
+                        _MagisAdminRow.tgid == tgid,
+                    )
+                )
+                if duplicate is not None:
+                    raise ValueError("tgid already bound to a MAGIS admin")
             row = _MagisAdminRow(
                 magis_id=magis_id,
                 name=normalized_name,
@@ -248,7 +272,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
         return self._row_to_dto(row)
 
     def set_auth_mode(self, *, admin_id: int, auth_mode: str) -> MagisAdmin:
-        if auth_mode not in {"local_no_2fa", "im_2fa_enabled", "recovery_local_no_2fa", "disabled"}:
+        if auth_mode not in ALL_ADMIN_AUTH_MODES:
             raise ValueError("invalid admin auth_mode")
         with self._session() as s:
             row = s.get(_MagisAdminRow, admin_id)
@@ -264,8 +288,17 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             row = s.get(_MagisAdminRow, admin_id)
             if row is None:
                 raise LookupError(f"MAGIS admin {admin_id!r} not found")
+            duplicate = s.scalar(
+                select(_MagisAdminRow).where(
+                    _MagisAdminRow.magis_id == row.magis_id,
+                    _MagisAdminRow.tgid == tgid,
+                    _MagisAdminRow.id != admin_id,
+                )
+            )
+            if duplicate is not None:
+                raise ValueError("tgid already bound to a MAGIS admin")
             row.tgid = tgid
-            row.auth_mode = "im_2fa_enabled"
+            row.auth_mode = AUTH_MODE_IM_2FA_ENABLED
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
@@ -285,4 +318,16 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             return True
 
 
-__all__ = ["Magis", "MagisAdmin", "MagisBook", "MagisAdminBook", "_MagisRow", "_MagisAdminRow"]
+__all__ = [
+    "ALL_ADMIN_AUTH_MODES",
+    "AUTH_MODE_DISABLED",
+    "AUTH_MODE_IM_2FA_ENABLED",
+    "AUTH_MODE_LOCAL_NO_2FA",
+    "AUTH_MODE_RECOVERY_LOCAL_NO_2FA",
+    "Magis",
+    "MagisAdmin",
+    "MagisBook",
+    "MagisAdminBook",
+    "_MagisRow",
+    "_MagisAdminRow",
+]
