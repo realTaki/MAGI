@@ -79,10 +79,6 @@ class Role(StrEnum):
     GUEST = "guest"
 
 
-ALL_NOTE_KINDS: frozenset[str] = frozenset(k.value for k in NoteKind)
-ALL_ROLES: frozenset[Role] = frozenset(Role)
-
-
 # Column-length invariants — mirror the ORM column
 # declarations (``String(120)`` / ``Text``) and the
 # per-row ``contact_notes`` size cap. The Book enforces them
@@ -254,7 +250,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """Stamp ``last_seen_at`` for a contact.
 
         Cheap, idempotent activity signal — called by the
-        channel→agent publish path (:func:`magi.bus.guild.chatJob.publish_chat`)
+        channel→agent publish path (:meth:`magi.bus.guild.chatJob.chatJobBoard.publish`)
         so :meth:`search`'s recency ordering reflects real
         inbound traffic. A no-op when ``contact_id`` is
         ``None`` (e.g. a cron task without a bound contact)
@@ -283,7 +279,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """Insert one contact row.
 
         Owns the write invariants: ``name`` non-empty,
-        ``role`` in :data:`ALL_ROLES`. Raises
+        ``role`` in :class:`Role`. Raises
         :class:`ValueError` if ``name`` collides with an
         existing row — the directory treats names as
         unique. ``display_name`` is normalised (whitespace
@@ -293,8 +289,10 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         normalized = (name or "").strip()
         if not normalized:
             raise ValueError("name is required")
-        if role not in ALL_ROLES:
-            raise ValueError(f"role must be one of {sorted(ALL_ROLES)!r}, got {role!r}")
+        if role not in Role:
+            raise ValueError(
+                f"role must be one of {sorted(r.value for r in Role)!r}, got {role!r}"
+            )
         normalized_display = (display_name or "").strip() or None
         with self._session() as s:
             existing = s.scalar(select(_ContactRow).where(_ContactRow.name == normalized))
@@ -350,8 +348,10 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             if set_display_name:
                 row.display_name = (display_name or "").strip() or None
             if role is not None:
-                if role not in ALL_ROLES:
-                    raise ValueError(f"role must be one of {sorted(ALL_ROLES)!r}")
+                if role not in Role:
+                    raise ValueError(
+                        f"role must be one of {sorted(r.value for r in Role)!r}"
+                    )
                 row.role = role
             if set_tgid:
                 if tgid is not None:
@@ -467,7 +467,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         Owns the write invariants: ``note`` non-empty
         after strip, content clamped to
         :data:`_NOTE_MAX_BYTES` (8 KB), ``kind`` in
-        :data:`ALL_NOTE_KINDS`. Raises :class:`ValueError`
+        :class:`NoteKind`. Raises :class:`ValueError`
         if the parent contact id does not resolve — callers
         should pre-check via :meth:`ContactBook.get` when
         they want a friendlier error, but a foreign-key
@@ -477,9 +477,10 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         content = (note or "").strip()
         if not content:
             raise ValueError("note is required")
-        if kind not in ALL_NOTE_KINDS:
+        if kind not in NoteKind:
             raise ValueError(
-                f"kind must be one of {sorted(ALL_NOTE_KINDS)!r}, got {kind!r}"
+                f"kind must be one of "
+                f"{sorted(k.value for k in NoteKind)!r}, got {kind!r}"
             )
         content = content[:_NOTE_MAX_BYTES]
         with self._session() as s:
@@ -600,7 +601,6 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
 
 
 __all__ = [
-    "ALL_NOTE_KINDS",
     "Contact",
     "ContactNote",
     "ContactBook",
@@ -609,5 +609,4 @@ __all__ = [
     "_ContactNoteRow",
     "NoteKind",
     "Role",
-    "ALL_ROLES",
 ]

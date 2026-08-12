@@ -3,7 +3,7 @@
 Two tables:
 - ``tasks``     — one row per task DEFINITION (user-created OR
                   preset template). The ``source`` field
-                  (SOURCE_USER | SOURCE_PROACTIVE) tells them
+                  (TaskSource.USER | TaskSource.PROACTIVE) tells them
                   apart; both shapes share a single ORM row.
 - ``task_runs`` — one row per execution attempt.
 
@@ -20,6 +20,7 @@ parallel to the ``action_items`` refactor).
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -40,7 +41,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, to_iso
 
 
 def _new_task_id() -> str:
@@ -93,9 +94,12 @@ Channel = ChannelEnum
 # vs bundled preset). Mirrors the ``action_items`` precedent:
 # the unified table collapses the old "user task" / "task
 # preset" distinction into one ``source`` discriminator.
-SOURCE_USER = "user"
-SOURCE_PROACTIVE = "proactive"
-ALL_SOURCES = frozenset({SOURCE_USER, SOURCE_PROACTIVE})
+class TaskSource(StrEnum):
+    """Closed set of task provenance values."""
+
+    USER = "user"
+    PROACTIVE = "proactive"
+
 
 # Column-length invariants. Mirror the ORM column
 # declarations (``String(120)`` / ``Text``). The Book
@@ -115,11 +119,11 @@ class Task:
 
     The ``source`` field discriminates:
 
-    - ``SOURCE_USER`` — rows created by the ``schedule_task`` tool
+    - ``TaskSource.USER`` — rows created by the ``schedule_task`` tool
       (or seeded via dashboard). Have an owning ``contact_id`` and
       runtime bookkeeping (``last_run_at`` / ``last_status`` /
       ``consecutive_failures``).
-    - ``SOURCE_PROACTIVE`` — preset templates bundled from
+    - ``TaskSource.PROACTIVE`` — preset templates bundled from
       ``prompts/task_presets/``. Have a stable ``key``; no
       owning ``contact_id``.
 
@@ -141,7 +145,7 @@ class Task:
     id: str  # 任务主键（task_<hex>）
     name: str  # 任务唯一名
     prompt: str  # 触发后执行的 prompt
-    source: str  # 来源（user/proactive）
+    source: TaskSource  # 来源（user/proactive）
     target_channel: str  # 投递渠道（tg/webui/...）
     enabled: int = 1  # 1=启用，0=禁用
 
@@ -178,8 +182,6 @@ class TaskRun:
     status: str = "running"  # 运行状态（running/completed/failed）
     error: str | None = None  # 错误信息
     reply_excerpt: str | None = None  # 回复摘要
-    input_tokens: int = 0  # 输入 token 数
-    output_tokens: int = 0  # 输出 token 数
     conversation_id: str | None = None  # 关联的会话 ID
 
 
@@ -199,7 +201,7 @@ class _TaskRow(Base):
     source: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        default=SOURCE_USER,
+        default=TaskSource.USER,
     )
     target_channel: Mapped[str] = mapped_column(
         "channel",
@@ -282,8 +284,6 @@ class _TaskRunRow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     __table_args__ = (Index("ix_task_runs_task_started", "task_id", "started_at"),)
 
@@ -295,15 +295,44 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     """CRUD for the unified ``tasks`` table.
 
     ``source`` discriminates user-created tasks
-    (:data:`SOURCE_USER`) from preset templates
-    (:data:`SOURCE_PROACTIVE`); the row shape is the same. The
+    (:attr:`TaskSource.USER`) from preset templates
+    (:attr:`TaskSource.PROACTIVE`); the row shape is the same. The
     Book refuses ``add()`` calls whose ``source`` isn't in
-    :data:`ALL_SOURCES` — same convention as
+    :class:`TaskSource` — same convention as
     :class:`~magi.bus.library.local.actionItemBook`.
     """
 
     model_cls = _TaskRow
     dto_cls = Task
+
+    @staticmethod
+    def _coerce_source(value: object) -> TaskSource:
+        """Map an ORM-source value (raw string OR enum) to :class:`TaskSource`.
+
+        The ``source`` column is ``String(16)`` and the DB layer is not
+        enum-enforced — historical rows may already be a bare string,
+        so we accept both shapes and normalise to the enum. Unknown
+        values are passed through unchanged so :class:`Task` keeps
+        the same string shape the existing code expects, matching
+        the action-item book's "loose at the DB, strict at the Book"
+        pattern.
+        """
+        if isinstance(value, TaskSource):
+            return value
+        return TaskSource(value)
+
+    def _row_to_dto(self, row: _TaskRow) -> Task:
+        kwargs: dict = {}
+        for f in dataclasses.fields(self.dto_cls):
+            if hasattr(row, f.name):
+                val = getattr(row, f.name)
+                if isinstance(val, datetime):
+                    kwargs[f.name] = to_iso(val)
+                elif f.name == "source":
+                    kwargs[f.name] = self._coerce_source(val)
+                else:
+                    kwargs[f.name] = val
+        return self.dto_cls(**kwargs)
 
     def get(self, *, task_id: str) -> Task | None:
         with self._session() as s:
@@ -313,7 +342,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     def list_by_user(self, *, contact_id: int) -> list[Task]:
         """User-defined tasks owned by ``contact_id``.
 
-        Preset rows (source=SOURCE_PROACTIVE) are excluded —
+        Preset rows (source=TaskSource.PROACTIVE) are excluded —
         they have no owning contact_id and live on
         :meth:`list_proactive_tasks`.
         """
@@ -321,7 +350,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             rows = s.scalars(
                 select(_TaskRow).where(
                     _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == SOURCE_USER,
+                    _TaskRow.source == TaskSource.USER,
                 )
             ).all()
             return [self._row_to_dto(r) for r in rows]
@@ -340,7 +369,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRow).where(
-                    _TaskRow.source == SOURCE_PROACTIVE,
+                    _TaskRow.source == TaskSource.PROACTIVE,
                     _TaskRow.enabled == 1,
                     or_(
                         _TaskRow.contact_id.is_(None),
@@ -360,20 +389,20 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             rows = s.scalars(
                 select(_TaskRow).where(
                     _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == SOURCE_USER,
+                    _TaskRow.source == TaskSource.USER,
                     _TaskRow.enabled == 1,
                 )
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, source: str = SOURCE_USER, **kwargs) -> Task:
+    def add(self, *, source: TaskSource = TaskSource.USER, **kwargs) -> Task:
         """Insert one task row.
 
         Owns the write invariants applicable to *any* task:
         ``name`` non-empty + ≤120 chars, ``prompt`` non-empty
         + ≤8000 chars, ``target_channel`` in the closed
         :class:`ChannelEnum` set, ``source`` in
-        :data:`ALL_SOURCES`, schedule is exactly one of
+        :class:`TaskSource`, schedule is exactly one of
         ``cron`` (validated via apscheduler) or ``run_at``
         (validated as ISO 8601 + canonicalised + must be
         in the future). Every caller — chat-driven tool,
@@ -382,9 +411,9 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         or schedule parsing.
 
         Callers pass ``source=`` explicitly: chat-driven tools
-        pass :data:`SOURCE_USER`, preset bundlers pass
-        :data:`SOURCE_PROACTIVE`. The default
-        (:data:`SOURCE_USER`) is the safe side: a writer that
+        pass :attr:`TaskSource.USER`, preset bundlers pass
+        :attr:`TaskSource.PROACTIVE`. The default
+        (:attr:`TaskSource.USER`) is the safe side: a writer that
         forgets to tag is treated as a user task, which can be
         edited by its owner.
 
@@ -453,7 +482,10 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             # does.
             if "id" not in kwargs or not kwargs["id"]:
                 kwargs["id"] = _new_task_id()
-            row = _TaskRow(source=source, **kwargs)
+            row = _TaskRow(
+                source=source.value if isinstance(source, TaskSource) else source,
+                **kwargs,
+            )
             s.add(row)
             s.commit()
             s.refresh(row)
@@ -471,7 +503,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         just flipped); ``False`` when the row is missing
         OR the row is owned by a different contact_id.
 
-        Proactive templates (``source=SOURCE_PROACTIVE``)
+        Proactive templates (``source=TaskSource.PROACTIVE``)
         have no owning contact_id and aren't covered by this
         primitive — disable them via direct DB update or a
         system-internal helper. The dispatcher / admin
@@ -516,7 +548,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 select(_TaskRow).where(
                     _TaskRow.id == task_id,
                     _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == SOURCE_USER,
+                    _TaskRow.source == TaskSource.USER,
                 )
             )
             if row is None:
@@ -526,7 +558,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 "prompt": changes.get("prompt", row.prompt),
                 "target_channel": changes.get("target_channel", row.target_channel),
             }
-            self._validate_write_invariants(source=SOURCE_USER, **values)
+            self._validate_write_invariants(source=TaskSource.USER, **values)
             for key, value in changes.items():
                 setattr(row, key, value)
             if (row.cron is None) == (row.run_at is None):
@@ -542,7 +574,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 select(_TaskRow).where(
                     _TaskRow.id == task_id,
                     _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == SOURCE_USER,
+                    _TaskRow.source == TaskSource.USER,
                 )
             )
             if row is None:
@@ -647,7 +679,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             name=name,
             prompt=prompt,
             target_channel=target_channel,
-            source=SOURCE_USER,
+            source=TaskSource.USER,
         )
         with self._session() as s:
             existing = s.scalar(select(_TaskRow).where(_TaskRow.name == name))
@@ -686,7 +718,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 target_channel=target_channel,
                 contact_id=contact_id,
                 enabled=enabled,
-                source=SOURCE_USER,
+                source=TaskSource.USER,
                 created_at=now,
                 updated_at=now,
             )
@@ -701,7 +733,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         name: str,
         prompt: str,
         target_channel: str | None,
-        source: str,
+        source: TaskSource | str,
     ) -> None:
         """Length / enum checks shared by :meth:`add` and
         :meth:`upsert_by_name`. Lives in one place so a
@@ -729,8 +761,15 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 f"{sorted(c.value for c in ChannelEnum)!r}, "
                 f"got {target_channel!r}"
             )
-        if source not in ALL_SOURCES:
-            raise ValueError(f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}")
+        if isinstance(source, TaskSource):
+            source_value = source.value
+        else:
+            source_value = source
+        if source_value not in TaskSource:
+            raise ValueError(
+                f"source must be one of "
+                f"{sorted(s.value for s in TaskSource)!r}, got {source_value!r}"
+            )
 
     # -- v2.0: worker-facing methods -------------------------------------
 
@@ -789,7 +828,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             rows = s.scalars(
                 select(_TaskRow).where(
                     _TaskRow.enabled == 1,
-                    _TaskRow.source == SOURCE_USER,
+                    _TaskRow.source == TaskSource.USER,
                 )
             ).all()
             return [self._row_to_dto(r) for r in rows]
@@ -1097,16 +1136,14 @@ def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> s
 
 
 __all__ = [
-    "ALL_SOURCES",
     "Channel",
     "ChannelEnum",
     "CronFrequency",
-    "SOURCE_PROACTIVE",
-    "SOURCE_USER",
     "Task",
     "TaskBook",
     "TaskRun",
     "TaskRunBook",
+    "TaskSource",
     "humanize_cron",
     "next_fire",
     "preset_to_cron",

@@ -51,8 +51,6 @@ class ActionSource(StrEnum):
     PROACTIVE = "proactive"
 
 
-ALL_SOURCES: frozenset[str] = frozenset(s.value for s in ActionSource)
-
 # Priority enum — the LLM tool's UI mentions "normal" and
 # "high" only; other values are reserved for system paths.
 #
@@ -60,13 +58,13 @@ ALL_SOURCES: frozenset[str] = frozenset(s.value for s in ActionSource)
 # at import/lookup time instead of silently comparing False:
 # every member is still a ``str`` (``ActionPriority.HIGH ==
 # "high"``), so ORM columns, JSON serialisation and existing
-# rows keep working unchanged.
+# rows keep working unchanged. Membership checks use
+# ``x in ActionSource`` (Python 3.12+ ``StrEnum`` supports
+# ``in`` against string values directly), so no separate
+# ``ALL_*`` frozenset is needed.
 class ActionPriority(StrEnum):
     NORMAL = "normal"
     HIGH = "high"
-
-
-ALL_PRIORITIES: frozenset[str] = frozenset(p.value for p in ActionPriority)
 
 # Default visibility window for completed rows when the caller
 # asks for ``include_completed=True``. Mirrors the dashboard's
@@ -247,9 +245,11 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                 _ActionItemRow.contact_id == owner_contact_id,
             )
             if source is not None:
-                if source not in ALL_SOURCES:
+                if source not in ActionSource:
                     raise ValueError(
-                        f"source must be one of {sorted(ALL_SOURCES)!r} or None, got {source!r}"
+                        f"source must be one of "
+                        f"{sorted(s.value for s in ActionSource)!r} "
+                        f"or None, got {source!r}"
                     )
                 stmt = stmt.where(_ActionItemRow.source == source)
             if not include_completed:
@@ -288,8 +288,8 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
 
         Owns all write invariants: title non-empty + ≤200
         chars, description ≤1000, target_url ≤500, ``priority``
-        in :data:`ALL_PRIORITIES`, ``source`` in
-        :data:`ALL_SOURCES`. Every caller — chat-driven
+        in :class:`ActionPriority`, ``source`` in
+        :class:`ActionSource`. Every caller — chat-driven
         tool, dashboard API, proactive policy, future agent
         loop — gets the same validation without each path
         re-implementing length checks.
@@ -318,12 +318,16 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             raise ValueError(
                 f"target_url length {len(target_url)} exceeds maximum {_TARGET_URL_MAX}"
             )
-        if priority not in ALL_PRIORITIES:
+        if priority not in ActionPriority:
             raise ValueError(
-                f"priority must be one of {sorted(ALL_PRIORITIES)!r}, got {priority!r}"
+                f"priority must be one of "
+                f"{sorted(p.value for p in ActionPriority)!r}, got {priority!r}"
             )
-        if source not in ALL_SOURCES:
-            raise ValueError(f"source must be one of {sorted(ALL_SOURCES)!r}, got {source!r}")
+        if source not in ActionSource:
+            raise ValueError(
+                f"source must be one of "
+                f"{sorted(s.value for s in ActionSource)!r}, got {source!r}"
+            )
         with self._session() as s:
             row = _ActionItemRow(
                 contact_id=contact_id,
@@ -390,7 +394,5 @@ __all__ = [
     "ActionItemBook",
     "ActionPriority",
     "ActionSource",
-    "ALL_PRIORITIES",
-    "ALL_SOURCES",
     "_ActionItemRow",
 ]

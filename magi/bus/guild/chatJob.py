@@ -4,20 +4,30 @@ Backed by the ``chat_jobs`` table.  A publish inserts a new row;
 a claim picks up the oldest pending row, updates its ``status`` and
 lease fields, and returns the job snapshot.  Submitting the result
 moves the row's ``status`` to ``completed``/``failed``.
+
+As a side effect of enqueue, :meth:`chatJobBoard.publish` also
+stamps ``contacts.last_seen_at`` so the directory's recency
+ordering (:meth:`ContactBook.search`) reflects real inbound
+traffic — every code path that enqueues a turn, including
+direct :meth:`publish` callers, picks this up automatically.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
+
+if TYPE_CHECKING:
+    from magi.bus.library.local.contactBook import ContactBook
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +92,19 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
     result_cls = ChatJobResult
     natural_key_attr = "job_id"
 
+    def __init__(
+        self,
+        factory,  # type: ignore[no-untyped-def]
+        *,
+        contact_book: ContactBook | None = None,
+        lease_seconds: int = 300,
+    ) -> None:
+        super().__init__(factory, lease_seconds=lease_seconds)
+        # ``contact_book`` is optional so unit tests can build a board
+        # without the local contacts store; in that case the
+        # ``last_seen_at`` stamp is silently skipped.
+        self._contact_book = contact_book
+
     def _insert_pending(self, session, job: ChatJob, **_kwargs) -> _ChatJobRow:
         job_id = job.job_id or new_job_id()
         row = _ChatJobRow(
@@ -97,11 +120,100 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         return row
 
     def publish(self, job: ChatJob) -> str:
-        """发布 agent turn 请求，返回 job_id。"""
+        """Enqueue one agent turn and stamp ``last_seen_at`` for the contact.
+
+        The DB insert runs first; only after the ChatJob row is
+        durable do we update the contacts table. The activity
+        stamp is best-effort — a failure is logged and swallowed
+        so a transient ``contact_book`` outage cannot block an
+        inbound turn. Reading ``contact_id`` from ``job.payload``
+        (rather than a separate argument) means any caller of
+        ``publish`` — :meth:`publish_chat`, future internal
+        steering republishes, dead-code agent producers — gets
+        the stamp uniformly.
+        """
         with self._session() as s:
             row = self._insert_pending(s, job)
             s.commit()
-            return row.job_id
+            job_id = row.job_id
+        self._stamp_last_seen(job)
+        return job_id
+
+    def publish_chat(
+        self,
+        *,
+        text: str,
+        channel: str,
+        contact_id: int | None,
+        conversation_id: str,
+        caller_role: str | None = None,
+        job_id: str | None = None,
+        correlation_id: str | None = None,
+        **extras: Any,
+    ) -> str:
+        """Channel→agent convenience: build a ChatJob from channel args and enqueue.
+
+        All channel workers share the same core payload keys
+        (``text`` / ``channel`` / ``contact_id`` /
+        ``conversation_id`` / ``caller_role``). Channel-specific
+        extras (``chat_id`` / ``task_id`` / ``fired_by`` / ...)
+        are forwarded as additional payload keys via ``**extras``.
+
+        ``job_id`` and ``correlation_id`` are for callers that
+        need stable idempotency keys (e.g. WebUI). When
+        ``job_id`` is omitted the format is
+        ``"{channel}:{uuid16}"``.
+
+        ``contact_id`` is ``int | None`` because
+        :class:`magi.bus.library.local.tasksBook.Task`-driven
+        publishes can fire for a task with no bound contact; in
+        that case the ChatJob is still enqueued but
+        ``last_seen_at`` is left alone (no contact to stamp).
+
+        Returns the *job_id* of the published job.
+        """
+        resolved_job_id = job_id or f"{channel}:{uuid.uuid4().hex[:16]}"
+        payload: dict[str, Any] = {
+            "text": text,
+            "channel": channel,
+            "contact_id": contact_id,
+            "conversation_id": conversation_id,
+        }
+        if caller_role is not None:
+            payload["caller_role"] = caller_role
+        payload.update(extras)
+        job = ChatJob(
+            job_id=str(resolved_job_id),
+            conversation_id=conversation_id,
+            correlation_id=correlation_id,
+            payload=payload,
+        )
+        return self.publish(job)
+
+    def _stamp_last_seen(self, job: ChatJob) -> None:
+        """Best-effort ``last_seen_at`` update keyed on ``job.payload['contact_id']``.
+
+        No-op when the board was constructed without a
+        ``contact_book`` (test mode) or when the payload lacks a
+        ``contact_id`` key (e.g. an internal agent-side
+        republish). Runs in its own transaction, isolated from
+        the chatJob insert that already committed.
+        """
+        if self._contact_book is None:
+            return
+        contact_id_raw = (job.payload or {}).get("contact_id")
+        try:
+            contact_id = int(contact_id_raw) if contact_id_raw is not None else None
+        except (TypeError, ValueError):
+            contact_id = None
+        if contact_id is None:
+            return
+        try:
+            self._contact_book.touch(contact_id=contact_id)
+        except Exception:
+            logger.exception(
+                "chatJobBoard.publish: contact_book.touch failed for contact_id=%r", contact_id
+            )
 
     def claim_for_conversation(self, *, conversation_id: str) -> ChatJob | None:
         """CAS-claim a ChatJob scoped to one conversation.
@@ -130,66 +242,9 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             return None
 
 
-def publish_chat(
-    bus,  # type: ignore[no-untyped-def]
-    *,
-    text: str,
-    channel: str,
-    contact_id: int,
-    conversation_id: str,
-    caller_role: str | None = None,
-    job_id: str | None = None,
-    correlation_id: str | None = None,
-    **extras: Any,
-) -> str:
-    """Publish a ChatJob with the common channel→agent payload pattern.
-
-    All channel workers share the same core payload keys (text,
-    channel, contact_id, conversation_id, caller_role).  Channel-specific extras
-    (chat_id, task_id, fired_by, etc.) are forwarded as additional
-    payload keys via **extras.
-
-    *job_id*, *conversation_id*, and *correlation_id* are for callers
-    that need stable idempotency keys (e.g. WebUI).
-
-    Returns the *job_id* of the published job.
-    """
-    import uuid
-
-    if job_id is None:
-        job_id = f"{channel}:{uuid.uuid4().hex[:16]}"
-    payload: dict[str, Any] = {
-        "text": text,
-        "channel": channel,
-        "contact_id": contact_id,
-        "conversation_id": conversation_id,
-    }
-    if caller_role is not None:
-        payload["caller_role"] = caller_role
-    payload.update(extras)
-
-    job = ChatJob(
-        job_id=str(job_id),
-        conversation_id=conversation_id,
-        correlation_id=correlation_id,
-        payload=payload,
-    )
-    bus.agent_job_board.publish(job)
-    # Best-effort activity stamp. ``contact_book.touch`` is
-    # idempotent (no-op on unknown / ``None`` contact_id) and
-    # runs in its own transaction, so a failure here must not
-    # block the inbound turn that we just successfully queued.
-    try:
-        bus.contact_book.touch(contact_id=contact_id)
-    except Exception:
-        logger.exception("publish_chat: contact_book.touch failed for contact_id=%r", contact_id)
-    return str(job_id)
-
-
 __all__ = [
     "ChatJob",
     "ChatJobResult",
     "chatJobBoard",
-    "publish_chat",
     "_ChatJobRow",
 ]

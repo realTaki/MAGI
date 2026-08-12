@@ -42,8 +42,6 @@ class MemoryKind(StrEnum):
     QUICK_NOTE = "quick_note"
 
 
-ALL_MEMORY_KINDS: frozenset[str] = frozenset(k.value for k in MemoryKind)
-
 # Column-length invariants. Mirror the ORM column
 # declarations (``String(200)`` / ``Text``) and the
 # 8 KiB body cap the old service enforced. The Book
@@ -164,14 +162,17 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
         Raises :class:`ValueError` on invariant violation
         (subject / body non-empty, length caps, ``kind``
-        in :data:`ALL_MEMORY_KINDS`, ``priority`` 1..5).
+        in :class:`MemoryKind`, ``priority`` 1..5).
         The tool worker / dashboard API catch and surface
         as ``is_error=True`` / 4xx.
         """
         subject = self._validate_subject(subject)
         body = self._validate_body(body)
-        if kind not in ALL_MEMORY_KINDS:
-            raise ValueError(f"kind must be one of {sorted(ALL_MEMORY_KINDS)!r}, got {kind!r}")
+        if kind not in MemoryKind:
+            raise ValueError(
+                f"kind must be one of "
+                f"{sorted(k.value for k in MemoryKind)!r}, got {kind!r}"
+            )
         self._validate_priority(priority)
 
         with self._session() as s:
@@ -254,7 +255,6 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
 
 __all__ = [
-    "ALL_MEMORY_KINDS",
     "Memory",
     "MemoryBook",
     "MemoryKind",

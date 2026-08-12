@@ -109,8 +109,8 @@ class Bus:
     # -- local: tasks_book (Books) --------------------------------------------
     #
     # ``tasks_book`` owns BOTH user-created tasks
-    # (``Task.source == SOURCE_USER``) and preset templates
-    # (``Task.source == SOURCE_PROACTIVE``); the old separate
+    # (``Task.source == TaskSource.USER``) and preset templates
+    # (``Task.source == TaskSource.PROACTIVE``); the old separate
     # ``task_presets_book`` field has been folded into this
     # single Book (parallel to the ``action_items`` refactor).
 
@@ -381,7 +381,7 @@ def _open_with_dirs(
     stream_hub = StreamHub()
 
     # ---- local job boards ---------------------------------------------------
-    agent_job_board = chatJobBoard(local_factory)
+    agent_job_board = chatJobBoard(local_factory, contact_book=contacts_book)
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
     delivery_job_board = deliveryJobBoard(local_factory)
