@@ -88,23 +88,26 @@ async def test_maybe_compact_archives_and_persists_summary(
     sbook, mbook, cid = seed_conversation
 
     # Seed 30 active messages with enough text to breach threshold.
-    # Default keep_tail=8, default context_window=200_000, default pct=80.
-    # 30 messages of 1000 chars each = ~7500 tokens — well under threshold
-    # by default. We need to force threshold breach by lowering pct
-    # through settings_book.
+    # Force keep_recent=8 + minimum context_window/threshold so the
+    # numbers in the asserts hold (1 summary + 8 tail = 9 entries,
+    # 22 archived, 8 still active) and the threshold is reachable
+    # by ~30k chars of text. With min context_window=16000 and
+    # min threshold_pct=50 → threshold = 8000 tokens; 30 × 1200 chars
+    # = 9000 text tokens + 30 × 4 overhead = 9120 tokens ✓.
     for i in range(30):
         mbook.add(
             conversation_id=cid,
             message_id=f"m{i:03d}",
             role="user" if i % 2 == 0 else "assistant",
-            text="x" * 1000,
+            text="x" * 1200,
             ts=f"2026-08-05T00:00:{i:02d}Z",
         )
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    # Force the threshold to be very low so the test reliably triggers.
     bus.settings_book.get.side_effect = lambda key: {
-        "compaction.threshold_pct": 1,  # 1% of 200k = 2000 tokens
+        "system.compact_keep_recent": 8,
+        "system.compact_context_window": 16_000,
+        "system.compact_threshold_pct": 50,
     }.get(key)
     stub = _stub_summary(monkeypatch, return_value="NEW SUMMARY")
 
@@ -151,13 +154,15 @@ async def test_maybe_compact_uses_prior_summary(monkeypatch, seed_conversation, 
             conversation_id=cid,
             message_id=f"m{i:03d}",
             role="user",
-            text="x" * 1000,
+            text="x" * 1200,
             ts=f"2026-08-05T00:00:{i:02d}Z",
         )
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
-        "compaction.threshold_pct": 1,
+        "system.compact_keep_recent": 8,
+        "system.compact_context_window": 16_000,
+        "system.compact_threshold_pct": 50,
     }.get(key)
     stub = _stub_summary(monkeypatch, return_value="NEW")
 
@@ -247,7 +252,7 @@ async def test_maybe_compact_returns_none_on_summary_failure(
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
-        "compaction.threshold_pct": 1,
+        "system.compact_threshold_pct": 1,
     }.get(key)
     _stub_summary(monkeypatch, return_value=None)
 

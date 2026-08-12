@@ -110,10 +110,10 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
             if row is None:
                 return
             if getattr(row, "status", None) == "processing":
-                row.status = "pending"
-                row.leased_by = None
-                row.leased_until = None
-                row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # 不消耗重试次数
+                row.status = "pending"  # type: ignore[reportAttributeAccessIssue]
+                row.leased_by = None  # type: ignore[reportAttributeAccessIssue]
+                row.leased_until = None  # type: ignore[reportAttributeAccessIssue]
+                row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # type: ignore[reportAttributeAccessIssue]  # 不消耗重试次数
             s.commit()
 
     async def wait_for_result(
@@ -167,10 +167,10 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
             stmt = (
                 select(func.count())
                 .select_from(self.job_model)
-                .where(self.job_model.status == "pending")
+                .where(self.job_model.status == "pending")  # type: ignore[reportAttributeAccessIssue]
             )
             if channel is not None and hasattr(self.job_model, "channel"):
-                stmt = stmt.where(self.job_model.channel == channel)
+                stmt = stmt.where(self.job_model.channel == channel)  # type: ignore[reportAttributeAccessIssue]
             return int(s.scalar(stmt) or 0)
 
     # -- 内部 --------------------------------------------------------------
@@ -254,14 +254,14 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
             # another worker grabbed it first; retry with the next
             # candidate.
             invariant = or_(
-                self.job_model.status == "pending",
+                self.job_model.status == "pending",  # type: ignore[reportAttributeAccessIssue]
                 and_(
-                    self.job_model.status == "processing",
-                    self.job_model.leased_until < now,
+                    self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
                 ),
             )
             where_clauses: list[ColumnElement[bool]] = [
-                self.job_model.id == candidate.id,
+                self.job_model.id == candidate.id,  # type: ignore[reportAttributeAccessIssue]
                 invariant,
             ]
             if extra_where:
@@ -279,7 +279,7 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
             if getattr(result, "rowcount", 0) == 1:
                 # Reload the fresh row so the caller sees the
                 # post-UPDATE values (leased_until, attempts, …).
-                fresh = session.get(self.job_model, candidate.id)
+                fresh = session.get(self.job_model, candidate.id)  # type: ignore[reportAttributeAccessIssue]
                 return fresh
             # Lost the race — try the next candidate.
             session.rollback()
@@ -306,10 +306,10 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
         """
         where_clauses: list[ColumnElement[bool]] = [
             or_(
-                self.job_model.status == "pending",
+                self.job_model.status == "pending",  # type: ignore[reportAttributeAccessIssue]
                 and_(
-                    self.job_model.status == "processing",
-                    self.job_model.leased_until < now,
+                    self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
                 ),
             ),
         ]
@@ -319,8 +319,8 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
             select(self.job_model)
             .where(*where_clauses)
             .order_by(
-                self.job_model.created_at,
-                self.job_model.id,
+                self.job_model.created_at,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.id,  # type: ignore[reportAttributeAccessIssue]
             )
             .limit(1)
         )
@@ -344,15 +344,15 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
         values: dict[str, object] = {"status": "failed"}
         if hasattr(self.job_model, "completed_at"):
             values["completed_at"] = now
-        for field in dataclasses.fields(self.result_cls):
+        for field in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
             if field.name != "success" and hasattr(self.job_model, field.name):
                 values[field.name] = getattr(result, field.name)
 
         where_clauses: list[ColumnElement[bool]] = [
-            self.job_model.id == candidate.id,
-            self.job_model.status == "processing",
-            self.job_model.attempts >= self.max_attempts,
-            self.job_model.leased_until < now,
+            self.job_model.id == candidate.id,  # type: ignore[reportAttributeAccessIssue]
+            self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+            self.job_model.attempts >= self.max_attempts,  # type: ignore[reportAttributeAccessIssue]
+            self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
         ]
         if extra_where:
             where_clauses.extend(extra_where)
@@ -368,9 +368,9 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
         if row is None:
             return
         now = utcnow_naive()
-        row.status = "completed" if result.success else "failed"
+        row.status = "completed" if result.success else "failed"  # type: ignore[reportAttributeAccessIssue]
         if hasattr(row, "completed_at"):
-            row.completed_at = now
+            row.completed_at = now  # type: ignore[reportAttributeAccessIssue]
         _write_result_to_job(row, result, self.result_cls)
 
     def _get_result(self, session: Session, *, key: str) -> ResultT | None:
@@ -388,7 +388,7 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
         if val is not None:
             return str(val)
         if hasattr(row, "id"):
-            return str(row.id)
+            return str(row.id)  # type: ignore[reportAttributeAccessIssue]
         return ""
 
     # -- 耗尽处理 ----------------------------------------------------------

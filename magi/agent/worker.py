@@ -365,6 +365,30 @@ class AgentWorker(RuntimeWorker):
             ctx.messages = list(msgs)  # already list[dict]
         except Exception:
             logger.warning("load_history failed, starting fresh", exc_info=True)
+            return
+
+        # Auto-compaction: if history (with summary) crosses the
+        # threshold, fold old messages into the cumulative summary,
+        # archive them, and replace ctx.messages with the new dict list.
+        # Awaited (not fire-and-forget) because the result feeds back
+        # into ctx.messages. Compaction is rare so the await cost is OK.
+        try:
+            from magi.agent.compaction import maybe_compact
+
+            dtos = self.bus.messages_book.list_for_conversation(
+                conversation_id=ctx.conversation_id, include_archived=False
+            )
+            compacted: list[dict] | None = await self.call(
+                maybe_compact,
+                contact_id=ctx.contact_id,
+                conversation_id=ctx.conversation_id,
+                message_dtos=dtos,
+                bus=self.bus,
+            )
+            if compacted is not None:
+                ctx.messages = compacted
+        except Exception:
+            logger.warning("maybe_compact failed, continuing with loaded history", exc_info=True)
 
     async def _build_llm_job(self, ctx: RunContext) -> Any:
         """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""

@@ -9,8 +9,17 @@ recent turns in full.
 
 Skipped when:
   - conversation_id is missing
-  - len(messages) <= keep_tail
+  - len(messages) <= keep_recent
   - total tokens (summary + history) under threshold_pct of context_window
+
+Settings keys (must match ``magi.channels.api.system_settings`` so the
+frontend "compact" panel actually controls behaviour):
+  - ``system.compact_keep_recent`` — number of recent active messages
+    to keep verbatim after compaction (default 20, range 5–100)
+  - ``system.compact_context_window`` — model context window in tokens
+    (default 100_000, range 16k–200k)
+  - ``system.compact_threshold_pct`` — % of the window that triggers
+    compaction (default 80, range 50–95)
 
 On LLM failure or persistence failure we return ``None`` so the caller
 falls back to the dict list it already has — the turn must not fail
@@ -34,9 +43,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.agent.compaction")
 
-_DEFAULT_COMPACTION_KEEP = 8
-_DEFAULT_CONTEXT_WINDOW = 200_000
+# Defaults + bounds mirror magi.channels.api.system_settings so the code
+# path stays in lockstep with the API/UI surface.
+_DEFAULT_KEEP_RECENT = 20
+_MIN_KEEP_RECENT = 5
+_MAX_KEEP_RECENT = 100
+
+_DEFAULT_CONTEXT_WINDOW = 100_000
+_MIN_CONTEXT_WINDOW = 16_000
+_MAX_CONTEXT_WINDOW = 200_000
+
 _DEFAULT_THRESHOLD_PCT = 80
+_MIN_THRESHOLD_PCT = 50
+_MAX_THRESHOLD_PCT = 95
 
 # Cap on the joined "prior summary + to-archive" payload sent to the LLM.
 # Past this, retry with truncated summary; still too long → skip + log.
@@ -50,6 +69,17 @@ def _dto_to_dict(m: "Message") -> dict:
     """Mirror ``build_messages_from_conversation``'s role mapping."""
     role = m.role if m.role in ("user", "system") else "assistant"
     return {"role": role, "content": m.text}
+
+
+def _clamp_int(raw: str | None, default: int, minimum: int, maximum: int) -> int:
+    """Parse + clamp a settings value. Garbage / missing → default."""
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, value))
 
 
 def _format_user_content(*, prior_summary: str | None, to_archive: list["Message"]) -> str:
@@ -78,17 +108,21 @@ async def maybe_compact(
         return None
 
     try:
-        keep_raw = bus.settings_book.get(key="compaction.keep_tail")
-        keep = int(keep_raw) if keep_raw else _DEFAULT_COMPACTION_KEEP
-        window_raw = bus.settings_book.get(key="compaction.context_window")
-        context_window = int(window_raw) if window_raw else _DEFAULT_CONTEXT_WINDOW
-        pct_raw = bus.settings_book.get(key="compaction.threshold_pct")
-        threshold_pct = int(pct_raw) if pct_raw else _DEFAULT_THRESHOLD_PCT
+        keep_raw = bus.settings_book.get(key="system.compact_keep_recent")
+        keep = _clamp_int(keep_raw, _DEFAULT_KEEP_RECENT, _MIN_KEEP_RECENT, _MAX_KEEP_RECENT)
+        window_raw = bus.settings_book.get(key="system.compact_context_window")
+        context_window = _clamp_int(
+            window_raw, _DEFAULT_CONTEXT_WINDOW, _MIN_CONTEXT_WINDOW, _MAX_CONTEXT_WINDOW
+        )
+        pct_raw = bus.settings_book.get(key="system.compact_threshold_pct")
+        threshold_pct = _clamp_int(
+            pct_raw, _DEFAULT_THRESHOLD_PCT, _MIN_THRESHOLD_PCT, _MAX_THRESHOLD_PCT
+        )
     except Exception:
         context_window, threshold_pct, keep = (
             _DEFAULT_CONTEXT_WINDOW,
             _DEFAULT_THRESHOLD_PCT,
-            _DEFAULT_COMPACTION_KEEP,
+            _DEFAULT_KEEP_RECENT,
         )
 
     if len(message_dtos) <= keep:
