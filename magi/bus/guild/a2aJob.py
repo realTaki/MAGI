@@ -14,7 +14,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, selec
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _read_result_from_job, _row_to_job, new_job_id
+from magi.bus.guild.base import BaseJobBoard, _read_result_from_job, _row_to_job
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -27,21 +27,14 @@ class A2ARequestJob:
     能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at``
     到达后 worker 通过 ``a2aRequestJobBoard._expire_due`` 自动写
     ``status="failed"`` + ``error_code="a2a_timeout"``。
-
-    ``source_channel`` / ``source_conversation_id`` 显式声明：分别记录
-    发送方的 channel (webui / tg / a2a.* 等) 以及发送方会话 ID，让
-    target 处理时无需打开 JSON dict 也能拿到调用上下文。
     """
 
     job_id: str = ""  # 发布时自动生成的 job_id
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
-    tool_call_id: str = ""  # 关联的 tool_call_id
     conversation_id: str | None = None  # 可选的会话 ID 透传
     correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 请求正文
-    source_channel: str = ""  # 发送方所在 channel（webui / tg / a2a.* 等）
-    source_conversation_id: str | None = None  # 发送方会话 ID 透传
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
 
@@ -52,8 +45,6 @@ class A2ARequestResult:
     ``success=True`` 表示 target 接受了请求并填了 ``content``
     回传响应；``success=False`` 时 ``error_code`` 是稳定错误
     码（``a2a_timeout`` / 业务码），``error`` 是给人看的文案。
-    ``tool_call_id`` 与原 job 对齐，方便 caller 把回执拼回
-    LLM tool_use / tool_result。
     """
 
     job_id: str = ""  # 对应 A2ARequestJob 的 job_id
@@ -61,7 +52,6 @@ class A2ARequestResult:
     content: str = ""  # 目标 MAGI 回传的响应文本
     error_code: str = ""  # 稳定错误码（如 a2a_timeout）
     error: str | None = None  # 失败时的错误文案
-    tool_call_id: str = ""  # 回传的 tool_call_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,10 +63,6 @@ class A2ANotifyJob:
     ``claim_for_target``，没有 :meth:`BaseJobBoard.get_result` —
     投递结果只写到 ``status`` / ``error_code``，调用方按业务需
     要轮询而非常规 result 路径。
-
-    ``source_channel`` / ``source_conversation_id`` 显式声明：分别记录
-    发送方的 channel (webui / tg / a2a.* 等) 以及发送方会话 ID，让
-    target 处理时无需打开 JSON dict 也能拿到调用上下文。
     """
 
     job_id: str = ""  # 发布时自动生成的 job_id
@@ -85,8 +71,6 @@ class A2ANotifyJob:
     conversation_id: str | None = None  # 可选的会话 ID 透传
     correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 通知正文
-    source_channel: str = ""  # 发送方所在 channel（webui / tg / a2a.* 等）
-    source_conversation_id: str | None = None  # 发送方会话 ID 透传
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,12 +103,9 @@ class _A2ARequestRow(Base):
     target_magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
-    tool_call_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="")
-    source_conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -160,8 +141,6 @@ class _A2ANotifyRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    source_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="")
-    source_conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     error_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -210,7 +189,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
             )
-            job_id = job.job_id or new_job_id()
+            job_id = job.job_id or self.new_job_id()
             existing = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if existing is not None:
                 s.commit()
@@ -219,12 +198,9 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 job_id=job_id,
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
-                tool_call_id=job.tool_call_id,
                 conversation_id=job.conversation_id,
                 correlation_id=job.correlation_id,
                 text=job.text,
-                source_channel=job.source_channel,
-                source_conversation_id=job.source_conversation_id,
                 deadline_at=job.deadline_at,
             )
             s.add(row)
@@ -306,7 +282,7 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
             )
-            job_id = job.job_id or new_job_id()
+            job_id = job.job_id or self.new_job_id()
             existing = s.scalar(select(_A2ANotifyRow).where(_A2ANotifyRow.job_id == job_id))
             if existing is not None:
                 s.commit()
@@ -318,8 +294,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 conversation_id=job.conversation_id,
                 correlation_id=job.correlation_id,
                 text=job.text,
-                source_channel=job.source_channel,
-                source_conversation_id=job.source_conversation_id,
             )
             s.add(row)
             s.commit()
