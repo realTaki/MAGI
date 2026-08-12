@@ -24,7 +24,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
+from magi.bus.guild.base import BaseJobBoard
 
 if TYPE_CHECKING:
     from magi.bus.library.local.contactBook import ContactBook
@@ -172,7 +172,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         self._conversations_book = conversations_book
 
     def _insert_pending(self, session, job: ChatJob, **_kwargs) -> _ChatJobRow:
-        job_id = job.job_id or new_job_id()
+        job_id = job.job_id or self.new_job_id()
         row = _ChatJobRow(
             job_id=job_id,
             conversation_id=job.conversation_id,
@@ -389,7 +389,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             self._contact_book.touch(contact_id=job.contact_id)
         except Exception:
             logger.exception(
-                "chatJobBoard.publish: contact_book.touch failed for contact_id=%r", contact_id
+                "chatJobBoard.publish: contact_book.touch failed for contact_id=%r", job.contact_id
             )
 
     def claim_for_conversation(self, *, conversation_id: str) -> ChatJob | None:
@@ -415,7 +415,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             s.commit()
             if row is None:
                 return None
-            return _row_to_job(row, ChatJob)
+            return self._map_row(row, ChatJob)
 
 
 __all__ = [

@@ -14,7 +14,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _row_to_job
+from magi.bus.guild.base import BaseJobBoard
 
 #: Maximum delivery attempts before a row is marked failed.
 #: Distinct from :data:`magi.bus.guild.base.MAX_ATTEMPTS` (which
@@ -140,13 +140,13 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
             if row is None:
                 return None
             fresh = s.get(_DeliveryJobRow, row.id)
-            return _row_to_job(fresh, self.job_cls) if fresh else None
+            return self._map_row(fresh, self.job_cls) if fresh else None
 
     def claim(self) -> DeliveryJob | None:
         """Generic (no channel scope) claim — falls through to the base.
 
         No bridge needed: every :class:`DeliveryJob` field is its own
         column on :class:`_DeliveryJobRow`, so the generic
-        :func:`_row_to_job` name-match mapping works directly.
+        :meth:`BaseJobBoard._map_row` name-match mapping works directly.
         """
         return super().claim()

@@ -46,7 +46,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, new_job_id
+from magi.bus.guild.base import BaseJobBoard
 
 if TYPE_CHECKING:
     from magi.bus.library.local.mcpServerBook import McpServer
@@ -243,7 +243,7 @@ class mcpServerChangedJobBoard(
         Serialises ``job.server`` (if any) to the ``server_payload``
         JSON column and copies ``new_enabled`` across verbatim.
         """
-        job_id = job.job_id or new_job_id()
+        job_id = job.job_id or self.new_job_id()
         server_payload = _dump_server(job.server) if job.server is not None else None
         with self._session() as s:
             row = _McpServerChangedRow(

@@ -32,7 +32,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, new_job_id
+from magi.bus.guild.base import BaseJobBoard
 
 if TYPE_CHECKING:
     from magi.bus.library.local.settingBook import SettingBook
@@ -139,7 +139,7 @@ class changeProviderConfigJobBoard(
         #    between a full SDK rebuild (provider / api_key set) and
         #    an in-place model swap (only model set); the legacy
         #    ``payload`` is kept for audit only.
-        job_id = job.job_id or new_job_id()
+        job_id = job.job_id or self.new_job_id()
         with self._session() as s:
             row = _ChangeProviderConfigRow(
                 job_id=job_id,
