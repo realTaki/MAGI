@@ -37,6 +37,7 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
+from magi.bus.library.local import Role
 from magi.bus.library.local.conversationBook import (
     ChannelMismatchError,
     ConversationMessage,
@@ -119,7 +120,7 @@ def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
             detail="no Contact row bound to this cookie",
         )
 
-    return contact.id, contact.role or "guest"
+    return contact.id, contact.role or Role.GUEST
 
 
 class ChatSendRequest(BaseModel):

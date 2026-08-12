@@ -1104,6 +1104,70 @@ def test_channel_enum_values():
     assert ALL_SOURCES == frozenset({SOURCE_USER, SOURCE_PROACTIVE})
 
 
+def test_task_source_enum_values():
+    """Pin the :class:`TaskSource` enum values and verify
+    the type contract survives a round-trip through the ORM.
+
+    The DTO field ``Task.source`` is annotated :class:`TaskSource`
+    so the LLM tool and dashboard can use ``isinstance`` checks;
+    the DB column stays ``String(16)`` for back-compat. The
+    Book's ``_row_to_dto`` coerces the raw string back into the
+    enum, so callers see enum members on read AND on write.
+    """
+    from magi.bus.library.local.tasksBook import TaskSource
+
+    assert TaskSource.USER == "user"
+    assert TaskSource.PROACTIVE == "proactive"
+    # ``StrEnum`` keeps string equality with the raw value.
+    assert TaskSource.USER == "user"
+    assert TaskSource.PROACTIVE == "proactive"
+    # ``SOURCE_USER`` / ``SOURCE_PROACTIVE`` are the historical
+    # back-compat aliases pointing at the same enum members.
+    assert SOURCE_USER is TaskSource.USER
+    assert SOURCE_PROACTIVE is TaskSource.PROACTIVE
+    # Writing via the enum and reading back yields the enum.
+    from magi.bus.db import EngineFactory as _EF
+    from magi.bus.library.local.contactBook import ContactBook
+
+    ef = _EF("sqlite:///:memory:")
+    ef.create_all()
+    cbook = ContactBook(ef)
+    cid = cbook.add(name="fixture").id
+    book = TaskBook(ef)
+    row = book.add(
+        id="src-enum",
+        name="src-enum",
+        prompt="p",
+        cron="0 0 * * *",
+        contact_id=cid,
+        target_channel="webui",
+        source=TaskSource.PROACTIVE,
+        created_at="x",
+        updated_at="x",
+    )
+    assert isinstance(row.source, TaskSource)
+    assert row.source is TaskSource.PROACTIVE
+    # Round-trip via ``get`` keeps the enum.
+    fetched = book.get(task_id="src-enum")
+    assert fetched is not None
+    assert isinstance(fetched.source, TaskSource)
+    assert fetched.source is TaskSource.PROACTIVE
+    # Raw string form (legacy callers) is also accepted via the
+    # back-compat alias and returns the same enum.
+    raw = book.add(
+        id="src-raw",
+        name="src-raw",
+        prompt="p",
+        cron="0 0 * * *",
+        contact_id=cid,
+        target_channel="webui",
+        source=SOURCE_USER,
+        created_at="x",
+        updated_at="x",
+    )
+    assert raw.source is TaskSource.USER
+
+
 def test_task_book_schedule_xor(factory, contact_id):
     """Schedule is ONE shape: ``cron`` (recurring) XOR
     ``run_at`` (one-shot). Setting both, or neither, raises

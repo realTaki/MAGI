@@ -28,7 +28,7 @@ from magi.bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigResult,
     changeProviderConfigJobBoard,
 )
-from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard, publish_chat
+from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 from magi.bus.guild.mcpServerChangedJob import (
     VALID_KINDS as _MCP_CHANGED_KINDS,
@@ -65,7 +65,6 @@ __all__ = [
     "ChatJob",
     "ChatJobResult",
     "chatJobBoard",
-    "publish_chat",
     "A2ARequestJob",
     "A2ARequestResult",
     "a2aRequestJobBoard",

@@ -5,23 +5,18 @@ File names match the Book classes: ``<domain>Book.py``.
 """
 
 from magi.bus.library.local.actionItemBook import (
-    ALL_PRIORITIES,
-    ALL_SOURCES,
     ActionItem,
     ActionItemBook,
     ActionPriority,
     ActionSource,
 )
 from magi.bus.library.local.contactBook import (
-    ALL_NOTE_KINDS,
-    ALL_ROLES,
-    ROLE_ASSIGNED,
-    ROLE_GUEST,
     Contact,
     ContactBook,
     ContactNote,
     ContactNoteBook,
     NoteKind,
+    Role,
 )
 from magi.bus.library.local.conversationBook import (
     Conversation,
@@ -32,22 +27,19 @@ from magi.bus.library.local.conversationBook import (
 from magi.bus.library.local.hookSignoffBook import HookSignoff, HookSignoffBook
 from magi.bus.library.local.mcpServerBook import McpServer, McpServerBook
 from magi.bus.library.local.memoryBook import (
-    ALL_KINDS,
-    KIND_FACT,
-    KIND_QUICK_NOTE,
     Memory,
     MemoryBook,
+    MemoryKind,
 )
 from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
 from magi.bus.library.local.tasksBook import (
-    SOURCE_PROACTIVE,
-    SOURCE_USER,
     Channel,
     ChannelEnum,
     Task,
     TaskBook,
     TaskRun,
     TaskRunBook,
+    TaskSource,
 )
 from magi.bus.library.local.tokenUsageBook import TokenUsage, TokenUsageBook
 from magi.bus.library.local.toolsBook import (
@@ -63,41 +55,33 @@ __all__ = [
     "ActionItemBook",
     "ActionPriority",
     "ActionSource",
-    "ALL_KINDS",
-    "ALL_NOTE_KINDS",
-    "ALL_PRIORITIES",
-    "ALL_SOURCES",
     "Channel",
     "ChannelEnum",
-    "ALL_ROLES",
     "Contact",
     "ContactBook",
     "ContactNote",
     "ContactNoteBook",
     "HookSignoff",
     "HookSignoffBook",
-    "KIND_FACT",
-    "KIND_QUICK_NOTE",
     "McpServer",
     "McpServerBook",
     "Memory",
     "MemoryBook",
+    "MemoryKind",
     "Message",
     "MessageBook",
     "NoteKind",
-    "ROLE_ASSIGNED",
-    "ROLE_GUEST",
+    "Role",
     "Conversation",
     "ConversationBook",
     "MCPTimeout",
     "Setting",
     "SettingBook",
-    "SOURCE_PROACTIVE",
-    "SOURCE_USER",
     "Task",
     "TaskBook",
     "TaskRun",
     "TaskRunBook",
+    "TaskSource",
     "TokenUsage",
     "TokenUsageBook",
     "ToolCatalogState",
