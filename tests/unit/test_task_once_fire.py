@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from magi.bus.library.local.contactBook import Role
 from magi.bus.library.local.tasksBook import (
     validate_run_at,
     validate_run_at_future,
@@ -106,7 +107,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
 
     # ``tasks.contact_id`` → ``contacts.id`` is a RESTRICT FK; seed a
     # contact so the INSERT below doesn't trip it.
-    contact_id = ContactBook(f).add(name="test-contact", role="assigned").id
+    contact_id = ContactBook(f).add(name="test-contact", role=Role.ASSIGNED).id
 
     future = (datetime.now(dt.UTC) + timedelta(hours=1)).isoformat()
     now = datetime.now(dt.UTC).isoformat()

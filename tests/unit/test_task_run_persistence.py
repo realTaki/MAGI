@@ -11,6 +11,7 @@ from datetime import UTC
 import pytest
 
 from magi.bus.db import EngineFactory
+from magi.bus.library.local.contactBook import Role
 from magi.bus.library.local.tasksBook import (
     ChannelEnum,
     TaskBook,
@@ -42,7 +43,7 @@ def task_run_book(factory):
     return TaskRunBook(factory)
 
 
-def _seed_contact(factory, *, name="test-contact", role="assigned") -> int:
+def _seed_contact(factory, *, name="test-contact", role: Role = Role.ASSIGNED) -> int:
     """Ensure exactly one contact row exists; return its ``id``.
 
     Each test gets a fresh in-memory SQLite so contacts added in one
@@ -150,8 +151,8 @@ class TestListAllEnabledForWorkers:
         # Two contacts so the test can assert both uids appear in
         # the worker-visible list.
         cbook = ContactBook(factory)
-        cbook.add(name="contact-A", role="assigned")
-        cbook.add(name="contact-B", role="assigned")
+        cbook.add(name="contact-A", role=Role.ASSIGNED)
+        cbook.add(name="contact-B", role=Role.ASSIGNED)
         contacts = cbook.list_all()
         uid_a, uid_b = contacts[0].id, contacts[1].id
 

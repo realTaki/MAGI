@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from magi.bus.library.local import Role
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
@@ -103,7 +104,7 @@ class TelegramWorker(ChannelWorker):
             await _send_stranger_reply(update, tgid, self.bus)
             return
         contact_id, role = contact
-        if role != "assigned":
+        if role != Role.ASSIGNED:
             await update.effective_message.reply_text(f"TG ID: {tgid}. Ask your admin for access.")
             return
         if not text.strip():
@@ -112,11 +113,9 @@ class TelegramWorker(ChannelWorker):
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         _append_user_message(self.bus, conversation_id, text)
         asyncio.create_task(_send_read_receipt(update, self.bus))
-        from magi.bus.guild.chatJob import publish_chat
 
         try:
-            publish_chat(
-                self.bus,
+            self.bus.agent_job_board.publish_chat(
                 text=text,
                 channel="tg",
                 contact_id=contact_id,
@@ -194,7 +193,7 @@ async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
     try:
         if bus.contacts_book.get_by_telegram(tgid=cid_int) is None:
             bus.contacts_book.add(
-                name=name, display_name=display_name, role="guest", tgid=cid_int
+                name=name, display_name=display_name, role=Role.GUEST, tgid=cid_int
             )
     except Exception:
         pass

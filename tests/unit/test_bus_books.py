@@ -10,9 +10,6 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.library.local import (
-    ALL_SOURCES,
-    SOURCE_PROACTIVE,
-    SOURCE_USER,
     ActionItem,
     ActionItemBook,
     ActionPriority,
@@ -31,12 +28,14 @@ from magi.bus.library.local import (
     MemoryBook,
     Message,
     MessageBook,
+    Role,
     Setting,
     SettingBook,
     Task,
     TaskBook,
     TaskRun,
     TaskRunBook,
+    TaskSource,
     TokenUsageBook,
     ToolCatalogState,
     ToolCatalogStateBook,
@@ -358,7 +357,7 @@ def test_contact_book_keeps_magis_admin_projection_local(factory):
     book = ContactBook(factory)
     projection = book.ensure_magis_admin_projection(magis_admin_id=42, display_name="Admin")
 
-    assert projection.role == "guest"
+    assert projection.role == Role.GUEST
     assert projection.magis_admin_id == 42
     assert book.ensure_magis_admin_projection(magis_admin_id=42, display_name="Changed").id == projection.id
     assert "password_hash" not in projection.to_dict()
@@ -731,7 +730,7 @@ def test_action_item_book_add_invariants(factory, contact_id):
     b = book.add(contact_id=contact_id, title="b", priority="high")
     assert b.priority == "high"
 
-    # source must be in ALL_SOURCES.
+    # source must be in TaskSource.
     with pytest.raises(ValueError, match="source must be one of"):
         book.add(contact_id=contact_id, title="ok", source="system")
     c = book.add(contact_id=contact_id, title="c", source=ActionSource.USER)
@@ -834,8 +833,8 @@ def test_tool_definition_upsert(factory):
 
 def test_task_book_lifecycle(factory, contact_id):
     """One ``TaskBook`` carries BOTH user tasks
-    (``source=SOURCE_USER``) and preset templates
-    (``source=SOURCE_PROACTIVE``) on the same table. The
+    (``source=TaskSource.USER``) and preset templates
+    (``source=TaskSource.PROACTIVE``) on the same table. The
     Book deliberately keeps no per-row ``preset_id`` /
     ``preset_key`` linkage — the dashboard / LLM tool pair
     templates and user tasks by overlap (name / cron /
@@ -847,7 +846,7 @@ def test_task_book_lifecycle(factory, contact_id):
     """
     tbook = TaskBook(factory)
 
-    # Preset row: source=SOURCE_PROACTIVE, cron string
+    # Preset row: source=TaskSource.PROACTIVE, cron string
     # (caller converted the LLM-facing structured form
     # via ``preset_to_cron`` before reaching the Book),
     # no contact_id.
@@ -858,18 +857,18 @@ def test_task_book_lifecycle(factory, contact_id):
         key="daily",
         cron="0 9 * * *",
         target_channel="webui",
-        source=SOURCE_PROACTIVE,
+        source=TaskSource.PROACTIVE,
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
     assert isinstance(preset, Task)
-    assert preset.source == SOURCE_PROACTIVE
+    assert preset.source == TaskSource.PROACTIVE
     assert preset.key == "daily"
     assert preset.contact_id is None
     assert preset.cron == "0 9 * * *"
     assert preset.run_at is None
 
-    # User task row: source=SOURCE_USER, cron string,
+    # User task row: source=TaskSource.USER, cron string,
     # owned by a contact. No ``preset_id`` / ``preset_key``
     # linkage — the relationship between a user task and
     # the proactive template that inspired it lives in the
@@ -882,15 +881,15 @@ def test_task_book_lifecycle(factory, contact_id):
         cron="0 9 * * *",
         contact_id=contact_id,
         target_channel="webui",
-        source=SOURCE_USER,
+        source=TaskSource.USER,
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
     assert isinstance(t, Task)
-    assert t.source == SOURCE_USER
+    assert t.source == TaskSource.USER
     assert t.contact_id == contact_id
 
-    # list_by_user: only SOURCE_USER rows owned by contact_id.
+    # list_by_user: only TaskSource.USER rows owned by contact_id.
     owned = tbook.list_by_user(contact_id=contact_id)
     assert len(owned) == 1
     assert owned[0].id == "t1"
@@ -900,7 +899,7 @@ def test_task_book_lifecycle(factory, contact_id):
     presets = tbook.list_proactive_tasks(contact_id=contact_id)
     assert len(presets) == 1
     assert presets[0].id == "p1"
-    assert presets[0].source == SOURCE_PROACTIVE
+    assert presets[0].source == TaskSource.PROACTIVE
 
     # list_enabled: per-user only — same contact_id.
     enabled = tbook.list_enabled(contact_id=contact_id)
@@ -936,7 +935,7 @@ def test_task_book_lifecycle(factory, contact_id):
 
 
 def test_task_book_add_rejects_unknown_source(factory):
-    """``source`` must be in ``ALL_SOURCES``. Mirrors the
+    """``source`` must be in :class:`TaskSource`. Mirrors the
     ``actionItemBook.add`` precedent — keeps the closed-set
     discipline even though the DB column is a loose
     ``String(16)``.
@@ -962,7 +961,7 @@ def test_task_book_add_invariants(factory, contact_id):
     * ``name`` non-empty + ≤120 chars (mirrors ``String(120)``)
     * ``prompt`` non-empty + ≤8000 chars
     * ``target_channel`` in the closed :class:`ChannelEnum`
-    * ``source`` in :data:`ALL_SOURCES`
+    * ``source`` in :attr:`TaskSource`
 
     Each violation raises ``ValueError`` for the caller to
     translate (``ToolResult.err`` for the LLM tool, 4xx for
@@ -1098,10 +1097,6 @@ def test_channel_enum_values():
     # bus shape so adapter / agent modules can migrate
     # independently).
     assert Channel is ChannelEnum
-    # ``ALL_SOURCES`` is the closed set the Book validates
-    # against; the action_item and task books share the
-    # same constants.
-    assert ALL_SOURCES == frozenset({SOURCE_USER, SOURCE_PROACTIVE})
 
 
 def test_task_source_enum_values():
@@ -1121,10 +1116,6 @@ def test_task_source_enum_values():
     # ``StrEnum`` keeps string equality with the raw value.
     assert TaskSource.USER == "user"
     assert TaskSource.PROACTIVE == "proactive"
-    # ``SOURCE_USER`` / ``SOURCE_PROACTIVE`` are the historical
-    # back-compat aliases pointing at the same enum members.
-    assert SOURCE_USER is TaskSource.USER
-    assert SOURCE_PROACTIVE is TaskSource.PROACTIVE
     # Writing via the enum and reading back yields the enum.
     from magi.bus.db import EngineFactory as _EF
     from magi.bus.library.local.contactBook import ContactBook
@@ -1161,7 +1152,67 @@ def test_task_source_enum_values():
         cron="0 0 * * *",
         contact_id=cid,
         target_channel="webui",
-        source=SOURCE_USER,
+        source=TaskSource.USER,
+        created_at="x",
+        updated_at="x",
+    )
+    assert raw.source is TaskSource.USER
+
+
+def test_task_source_enum_values():
+    """Pin the :class:`TaskSource` enum values and verify
+    the type contract survives a round-trip through the ORM.
+
+    The DTO field ``Task.source`` is annotated :class:`TaskSource`
+    so the LLM tool and dashboard can use ``isinstance`` checks;
+    the DB column stays ``String(16)`` for back-compat. The
+    Book's ``_row_to_dto`` coerces the raw string back into the
+    enum, so callers see enum members on read AND on write.
+    """
+    from magi.bus.library.local.tasksBook import TaskSource
+
+    assert TaskSource.USER == "user"
+    assert TaskSource.PROACTIVE == "proactive"
+    # ``StrEnum`` keeps string equality with the raw value.
+    assert TaskSource.USER == "user"
+    assert TaskSource.PROACTIVE == "proactive"
+    # Writing via the enum and reading back yields the enum.
+    from magi.bus.db import EngineFactory as _EF
+    from magi.bus.library.local.contactBook import ContactBook
+
+    ef = _EF("sqlite:///:memory:")
+    ef.create_all()
+    cbook = ContactBook(ef)
+    cid = cbook.add(name="fixture").id
+    book = TaskBook(ef)
+    row = book.add(
+        id="src-enum",
+        name="src-enum",
+        prompt="p",
+        cron="0 0 * * *",
+        contact_id=cid,
+        target_channel="webui",
+        source=TaskSource.PROACTIVE,
+        created_at="x",
+        updated_at="x",
+    )
+    assert isinstance(row.source, TaskSource)
+    assert row.source is TaskSource.PROACTIVE
+    # Round-trip via ``get`` keeps the enum.
+    fetched = book.get(task_id="src-enum")
+    assert fetched is not None
+    assert isinstance(fetched.source, TaskSource)
+    assert fetched.source is TaskSource.PROACTIVE
+    # Raw string form (legacy callers) is also accepted via the
+    # back-compat alias and returns the same enum.
+    raw = book.add(
+        id="src-raw",
+        name="src-raw",
+        prompt="p",
+        cron="0 0 * * *",
+        contact_id=cid,
+        target_channel="webui",
+        source=TaskSource.USER,
         created_at="x",
         updated_at="x",
     )
@@ -1253,7 +1304,7 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         cron="0 9 * * *",
         key="sys",
         target_channel="webui",
-        source=SOURCE_PROACTIVE,
+        source=TaskSource.PROACTIVE,
         created_at="x",
         updated_at="x",
     )
@@ -1266,7 +1317,7 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         key="priv",
         contact_id=contact_id,
         target_channel="webui",
-        source=SOURCE_PROACTIVE,
+        source=TaskSource.PROACTIVE,
         created_at="x",
         updated_at="x",
     )

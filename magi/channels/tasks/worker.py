@@ -88,8 +88,6 @@ class TaskWorker(RuntimeWorker):
         conversation_id: str | None = None,
         contact_id: int | None = None,
     ) -> None:
-        from magi.bus.guild.chatJob import publish_chat
-
         task_id = task.id
         effective_contact_id = contact_id or task.contact_id
         effective_conversation = conversation_id or task.conversation_id
@@ -116,8 +114,7 @@ class TaskWorker(RuntimeWorker):
             except Exception:
                 pass
         await self.call(
-            publish_chat,
-            self.bus,
+            self.bus.agent_job_board.publish_chat,
             text=contextual_prompt,
             channel="task",
             contact_id=effective_contact_id,

@@ -2,7 +2,7 @@
 
 Reads bundled YAML presets from
 :meth:`~magi.bus.library.file.promptBook.PromptBook.task_presets`,
-converts each into a Task row with ``source=SOURCE_PROACTIVE``, and
+converts each into a Task row with ``source=TaskSource.PROACTIVE``, and
 inserts idempotently (skip when a task with the same name + contact_id
 already exists).
 """
@@ -13,8 +13,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksResult
+from magi.bus.library.local import Role
 from magi.bus.library.local.tasksBook import (
-    SOURCE_PROACTIVE,
+    TaskSource,
     preset_to_cron,
     validate_run_at,
 )
@@ -30,7 +31,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTasksJob) -> None:
     """Claim + execute a SeedPresetTasksJob.
 
     从 prompt_book.task_presets() 读 YAML 预设，逐个转为
-    per-user Task 行插入 tasks_book（SOURCE_PROACTIVE）。
+    per-user Task 行插入 tasks_book（TaskSource.PROACTIVE）。
     """
     try:
         contact = bus.contacts_book.get(contact_id=job.contact_id)
@@ -38,7 +39,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTasksJob) -> None:
             _submit_failure(bus, job, f"contact {job.contact_id} not found")
             return
 
-        if contact.role != "assigned":
+        if contact.role != Role.ASSIGNED:
             _submit_success(bus, job, inserted=0, skipped=0)
             return
 
@@ -104,7 +105,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTasksJob) -> None:
                     target_channel=str(preset.get("channel") or "webui"),
                     contact_id=job.contact_id,
                     tz=tz,
-                    source=SOURCE_PROACTIVE,
+                    source=TaskSource.PROACTIVE,
                     enabled=1,
                 )
                 if cron_val:
