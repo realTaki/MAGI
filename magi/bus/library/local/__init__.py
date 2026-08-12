@@ -13,6 +13,7 @@ from magi.bus.library.local.actionItemBook import (
     ActionSource,
 )
 from magi.bus.library.local.contactBook import (
+    ALL_NOTE_KINDS,
     ALL_ROLES,
     ROLE_ASSIGNED,
     ROLE_GUEST,
@@ -20,6 +21,7 @@ from magi.bus.library.local.contactBook import (
     ContactBook,
     ContactNote,
     ContactNoteBook,
+    NoteKind,
 )
 from magi.bus.library.local.conversationBook import (
     Conversation,
@@ -62,6 +64,7 @@ __all__ = [
     "ActionPriority",
     "ActionSource",
     "ALL_KINDS",
+    "ALL_NOTE_KINDS",
     "ALL_PRIORITIES",
     "ALL_SOURCES",
     "Channel",
@@ -81,6 +84,7 @@ __all__ = [
     "MemoryBook",
     "Message",
     "MessageBook",
+    "NoteKind",
     "ROLE_ASSIGNED",
     "ROLE_GUEST",
     "Conversation",

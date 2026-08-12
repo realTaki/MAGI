@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
@@ -27,6 +28,7 @@ from sqlalchemy import (
     String,
     Text,
     select,
+    update,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,6 +38,30 @@ from magi.bus.library.base import BaseBook
 ROLE_ASSIGNED = "assigned"
 ROLE_GUEST = "guest"
 ALL_ROLES = frozenset({ROLE_ASSIGNED, ROLE_GUEST})
+
+
+class NoteKind(StrEnum):
+    """Note-kind discriminator stored on ``ContactNote.kind``.
+
+    ``PERMANENT`` is the long-lived-facts default — every note
+    inserted via :meth:`ContactNoteBook.add` lands here unless
+    the caller opts in. ``DAILY`` is one row per
+    ``(contact_id, note_date)`` stamped at UTC midnight; only
+    :meth:`ContactNoteBook.upsert_daily_note` writes it.
+
+    ``StrEnum`` rather than bare constants so typos are caught
+    at lookup time instead of silently comparing False: every
+    member is still a ``str`` (``NoteKind.DAILY == "daily"``),
+    so ORM columns, ``asdict`` serialisation and existing rows
+    keep working unchanged. Mirrors
+    :class:`magi.bus.library.local.actionItemBook.ActionSource`.
+    """
+
+    PERMANENT = "permanent"
+    DAILY = "daily"
+
+
+ALL_NOTE_KINDS: frozenset[str] = frozenset(k.value for k in NoteKind)
 
 
 # Column-length invariants — mirror the ORM column
@@ -97,7 +123,7 @@ class ContactNote:
     id: int  # 主键（自增）
     contact_id: int  # 所属联系人 ID
     note: str  # 笔记正文
-    kind: str = "permanent"  # 笔记类型（permanent/daily）
+    kind: NoteKind = NoteKind.PERMANENT  # 笔记类型（permanent/daily）
     note_date: datetime | None = None  # 日记所属日期
     updated_at: datetime | None = None  # 最近更新时间
 
@@ -140,7 +166,7 @@ class _ContactNoteRow(Base):
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="permanent")
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default=NoteKind.PERMANENT)
     note_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
@@ -204,6 +230,27 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)
+
+    def touch(self, *, contact_id: int | None) -> None:
+        """Stamp ``last_seen_at`` for a contact.
+
+        Cheap, idempotent activity signal — called by the
+        channel→agent publish path (:func:`magi.bus.guild.chatJob.publish_chat`)
+        so :meth:`search`'s recency ordering reflects real
+        inbound traffic. A no-op when ``contact_id`` is
+        ``None`` (e.g. a cron task without a bound contact)
+        or when no row matches the id, so callers don't have
+        to pre-check before publishing a turn.
+        """
+        if contact_id is None:
+            return
+        with self._session() as s:
+            s.execute(
+                update(_ContactRow)
+                .where(_ContactRow.id == contact_id)
+                .values(last_seen_at=utcnow_naive())
+            )
+            s.commit()
 
     def add(
         self,
@@ -389,21 +436,32 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             row = s.get(_ContactNoteRow, note_id)
             return self._row_to_dto(row) if row else None
 
-    def add(self, *, contact_id: int, note: str, kind: str = "permanent") -> ContactNote:
+    def add(
+        self,
+        *,
+        contact_id: int,
+        note: str,
+        kind: NoteKind = NoteKind.PERMANENT,
+    ) -> ContactNote:
         """Insert one note row.
 
         Owns the write invariants: ``note`` non-empty
         after strip, content clamped to
-        :data:`_NOTE_MAX_BYTES` (8 KB). Raises
-        :class:`ValueError` if the parent contact id does
-        not resolve — callers should pre-check via
-        :meth:`ContactBook.get` when they want a friendlier
-        error, but a foreign-key write attempt here is a
-        programmer error worth surfacing as a ValueError.
+        :data:`_NOTE_MAX_BYTES` (8 KB), ``kind`` in
+        :data:`ALL_NOTE_KINDS`. Raises :class:`ValueError`
+        if the parent contact id does not resolve — callers
+        should pre-check via :meth:`ContactBook.get` when
+        they want a friendlier error, but a foreign-key
+        write attempt here is a programmer error worth
+        surfacing as a ValueError.
         """
         content = (note or "").strip()
         if not content:
             raise ValueError("note is required")
+        if kind not in ALL_NOTE_KINDS:
+            raise ValueError(
+                f"kind must be one of {sorted(ALL_NOTE_KINDS)!r}, got {kind!r}"
+            )
         content = content[:_NOTE_MAX_BYTES]
         with self._session() as s:
             row = _ContactNoteRow(
@@ -462,7 +520,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             row = s.scalar(
                 select(_ContactNoteRow).where(
                     _ContactNoteRow.contact_id == contact_id,
-                    _ContactNoteRow.kind == "daily",
+                    _ContactNoteRow.kind == NoteKind.DAILY,
                     _ContactNoteRow.note_date >= today,
                 )
             )
@@ -478,7 +536,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         """Append a delta to today's daily note.
 
         One row per ``(contact_id, note_date)`` —
-        ``kind='daily'``. On a hit, the new line is
+        ``kind=NoteKind.DAILY``. On a hit, the new line is
         appended with a ``"\\n"`` separator and clamped to
         :data:`_DAILY_NOTE_MAX_BYTES` (32 KB per row). On a
         miss, a fresh row is inserted.
@@ -503,7 +561,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             row = s.scalar(
                 select(_ContactNoteRow).where(
                     _ContactNoteRow.contact_id == contact_id,
-                    _ContactNoteRow.kind == "daily",
+                    _ContactNoteRow.kind == NoteKind.DAILY,
                     _ContactNoteRow.note_date == note_date,
                 )
             )
@@ -511,7 +569,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                 row = _ContactNoteRow(
                     contact_id=contact_id,
                     note=content,
-                    kind="daily",
+                    kind=NoteKind.DAILY,
                     note_date=note_date,
                 )
                 s.add(row)
@@ -523,12 +581,14 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
 
 
 __all__ = [
+    "ALL_NOTE_KINDS",
     "Contact",
     "ContactNote",
     "ContactBook",
     "ContactNoteBook",
     "_ContactRow",
     "_ContactNoteRow",
+    "NoteKind",
     "ROLE_ASSIGNED",
     "ROLE_GUEST",
     "ALL_ROLES",
