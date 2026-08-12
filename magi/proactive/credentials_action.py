@@ -1,10 +1,7 @@
 """Credentials nudge: spec + idempotent insert.
 
 The single source of truth for the "set your LLM provider + API key"
-action item every admin sees.  Used by both
-:meth:`~magi.proactive.worker.ProactiveWorker._bootstrap` (Worker
-start-up) and :func:`~magi.channels.api.onboarding.complete_onboarding`
-(onboarding wizard synchronous path).
+action item every admin sees.  It is reconciled at worker start-up.
 """
 
 from __future__ import annotations
