@@ -8,9 +8,10 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import ClassVar
 
-from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
+from sqlalchemy import DateTime, Enum, Integer, String, and_, func, or_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -27,6 +28,25 @@ MAX_ATTEMPTS_CANDIDATES = 10
 
 
 # -- 公共基类 / 列 mixin ---------------------------------------------------
+
+
+class JobStatus(Enum):
+    """Job 队列状态机 + 业务终态。
+
+    Row 层（``JobRowMixin.status``）承载全部 4 个值；Result 层
+    （``BaseJobResult.status``）只承载终态子集 :attr:`COMPLETED` /
+    :attr:`FAILED`，因为 Result 只在 worker submit 时构造。
+
+    列类型用 :class:`sqlalchemy.Enum` + ``values_callable`` 把
+    存储 / CHECK / CREATE TYPE 标签锁定在 ``.value`` 而非成员
+    ``.name``，与现有 :class:`~magi.bus.guild.a2aJob.A2AErrorCode`
+    同构（PG 走原生 ENUM，SQLite 走 CHECK 约束）。
+    """
+
+    PENDING = "pending"        # 入队未 claim
+    PROCESSING = "processing"  # 已 claim，worker 处理中
+    COMPLETED = "completed"    # 业务成功（Result 视角 = SUCCEEDED）
+    FAILED = "failed"          # 业务失败 / 重试耗尽 / 过期
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -52,18 +72,20 @@ class BaseJob:
 class BaseJobResult:
     """所有 Result dataclass 的公共基类。
 
-    承载队列语义字段：``job_id``（业务键）与 ``success``（由
-    ``status`` 派生，不落独立列）。子类只声明纯业务字段，走
+    承载队列语义字段：``job_id``（业务键）与 ``status``（Result
+    业务终态，取 :class:`JobStatus` 子集 :attr:`JobStatus.COMPLETED` /
+    :attr:`JobStatus.FAILED`，由 :func:`_read_result_from_job`
+    从 row.status 归一化）。子类只声明纯业务字段，走
     :func:`_write_result_to_job` / :func:`_read_result_from_job`
     的通用字段映射。这样「队列语义 vs 业务字段」的边界显式化，
-    子类不再需要各自抄一遍 ``job_id`` / ``success``。
+    子类不再需要各自抄一遍 ``job_id`` / ``status``。
 
     两个字段都带默认值，以兼容「无参构造后检查业务字段默认值」
     的用法（如 ``A2ARequestResult().error_code is None``）。
     """
 
     job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
-    success: bool = False  # 是否成功（写侧编码为 status，读侧从 status 推导）
+    status: JobStatus = JobStatus.COMPLETED  # 业务终态（写侧编码为 row.status，读侧从 row.status 推导）
 
 
 class JobRowMixin:
@@ -77,7 +99,22 @@ class JobRowMixin:
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    # Native enum column — see :class:`JobStatus` docstring. ``values_callable``
+    # pins storage / CHECK / CREATE TYPE labels to ``.value`` ("pending" etc.),
+    # matching the legacy VARCHAR representation so existing rows survive the
+    # alembic promotion without a data rewrite.
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(
+            JobStatus,
+            name="job_status",
+            native_enum=True,
+            length=24,
+            create_constraint=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+        default=JobStatus.PENDING,
+    )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
@@ -167,8 +204,8 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             )
             if row is None:
                 return
-            if getattr(row, "status", None) == "processing":
-                row.status = "pending"  # type: ignore[reportAttributeAccessIssue]
+            if getattr(row, "status", None) == JobStatus.PROCESSING:
+                row.status = JobStatus.PENDING  # type: ignore[reportAttributeAccessIssue]
                 row.leased_by = None  # type: ignore[reportAttributeAccessIssue]
                 row.leased_until = None  # type: ignore[reportAttributeAccessIssue]
                 row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # type: ignore[reportAttributeAccessIssue]  # 不消耗重试次数
@@ -225,7 +262,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             stmt = (
                 select(func.count())
                 .select_from(self.job_model)
-                .where(self.job_model.status == "pending")  # type: ignore[reportAttributeAccessIssue]
+                .where(self.job_model.status == JobStatus.PENDING)  # type: ignore[reportAttributeAccessIssue]
             )
             if channel is not None and hasattr(self.job_model, "channel"):
                 stmt = stmt.where(self.job_model.channel == channel)  # type: ignore[reportAttributeAccessIssue]
@@ -300,7 +337,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             # exhaustion must also be a conditional update. Another worker
             # may have completed or renewed this lease after our read; do
             # not overwrite that newer state with ``failed``.
-            if status == "processing" and attempts >= self.max_attempts:
+            if status == JobStatus.PROCESSING and attempts >= self.max_attempts:
                 if not self._mark_exhausted(
                     session,
                     candidate,
@@ -309,15 +346,15 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 ):
                     session.rollback()
                 continue
-            is_reclaim = status == "processing"
+            is_reclaim = status == JobStatus.PROCESSING
             # Conditional UPDATE: same row, same status / lease invariants
             # — atomic on SQLite. rowcount == 1 ⇒ we own the row; 0 ⇒
             # another worker grabbed it first; retry with the next
             # candidate.
             invariant = or_(
-                self.job_model.status == "pending",  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.status == JobStatus.PENDING,  # type: ignore[reportAttributeAccessIssue]
                 and_(
-                    self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
                     self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
                 ),
             )
@@ -328,7 +365,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             if extra_where:
                 where_clauses.extend(extra_where)
             values: dict = {
-                "status": "processing",
+                "status": JobStatus.PROCESSING,
                 "leased_until": lease_until,
                 "attempts": attempts + 1,
             }
@@ -367,9 +404,9 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """
         where_clauses: list[ColumnElement[bool]] = [
             or_(
-                self.job_model.status == "pending",  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.status == JobStatus.PENDING,  # type: ignore[reportAttributeAccessIssue]
                 and_(
-                    self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
                     self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
                 ),
             ),
@@ -402,16 +439,16 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         fail rows at their own threshold, not the generic 3.
         """
         result = self._make_exhausted_result(candidate)
-        values: dict[str, object] = {"status": "failed"}
+        values: dict[str, object] = {"status": JobStatus.FAILED}
         if hasattr(self.job_model, "completed_at"):
             values["completed_at"] = now
         for field in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
-            if field.name != "success" and hasattr(self.job_model, field.name):
+            if field.name != "status" and hasattr(self.job_model, field.name):
                 values[field.name] = getattr(result, field.name)
 
         where_clauses: list[ColumnElement[bool]] = [
             self.job_model.id == candidate.id,  # type: ignore[reportAttributeAccessIssue]
-            self.job_model.status == "processing",  # type: ignore[reportAttributeAccessIssue]
+            self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
             self.job_model.attempts >= self.max_attempts,  # type: ignore[reportAttributeAccessIssue]
             self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
         ]
@@ -429,7 +466,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         if row is None:
             return
         now = utcnow_naive()
-        row.status = "completed" if result.success else "failed"  # type: ignore[reportAttributeAccessIssue]
+        row.status = JobStatus.COMPLETED if result.status == JobStatus.COMPLETED else JobStatus.FAILED  # type: ignore[reportAttributeAccessIssue]
         if hasattr(row, "completed_at"):
             row.completed_at = now  # type: ignore[reportAttributeAccessIssue]
         _write_result_to_job(row, result, self.result_cls)
@@ -438,7 +475,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         row = session.scalar(
             select(self.job_model).where(getattr(self.job_model, self.natural_key_attr) == key)
         )
-        if row is None or getattr(row, "status", "") not in ("completed", "failed"):
+        if row is None or getattr(row, "status", "") not in (JobStatus.COMPLETED, JobStatus.FAILED):
             return None
         return _read_result_from_job(row, self.result_cls, self.natural_key_attr)
 
@@ -462,9 +499,10 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
 
 def _write_result_to_job(row, result, result_cls) -> None:
-    """将 result dataclass 的字段写回 ORM 行（跳过业务键和 success）。"""
+    """将 result dataclass 的字段写回 ORM 行（跳过 ``status``，由
+    :meth:`BaseJobBoard._submit` 显式编码到 row.status）。"""
     for f in dataclasses.fields(result_cls):
-        if f.name in ("success",):
+        if f.name == "status":
             continue
         if hasattr(row, f.name):
             setattr(row, f.name, getattr(result, f.name))
@@ -476,10 +514,10 @@ def _read_result_from_job(row, result_cls, natural_key_attr: str):
     key_val = str(key_val) if key_val is not None else ""
     kwargs: dict = {
         natural_key_attr: key_val,
-        "success": row.status == "completed",
+        "status": row.status,
     }
     for f in dataclasses.fields(result_cls):
-        if f.name in ("success", natural_key_attr):
+        if f.name in ("status", natural_key_attr):
             continue
         if hasattr(row, f.name):
             kwargs[f.name] = getattr(row, f.name)
@@ -487,13 +525,18 @@ def _read_result_from_job(row, result_cls, natural_key_attr: str):
 
 
 def _make_exhausted_result(row, result_cls, natural_key_attr: str):
-    """构造一个"重试耗尽"的失败 Result。"""
+    """构造一个"重试耗尽"的失败 Result。
+
+    仅当 Result 子类声明了 ``error`` 字段时才写入耗尽文案——
+    部分 Result（如 :class:`ChatJobResult`）用 ``error_detail``，
+    不带 ``error`` 字段，硬写会抛 ``TypeError``。
+    """
     key_val = getattr(row, natural_key_attr, None)
     key_val = str(key_val) if key_val is not None else ""
     kwargs: dict = {
         natural_key_attr: key_val,
-        "success": False,
+        "status": JobStatus.FAILED,
     }
-    if hasattr(row, "attempts"):
+    if hasattr(row, "attempts") and "error" in {f.name for f in dataclasses.fields(result_cls)}:
         kwargs["error"] = f"job exhausted after {row.attempts} attempt(s)"
     return result_cls(**kwargs)
