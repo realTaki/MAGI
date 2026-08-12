@@ -8,7 +8,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum
+import enum as _enum_mod
 from typing import ClassVar
 
 from sqlalchemy import DateTime, Enum, Integer, String, and_, func, or_, select, update
@@ -30,7 +30,7 @@ MAX_ATTEMPTS_CANDIDATES = 10
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
 
-class JobStatus(Enum):
+class JobStatus(_enum_mod.Enum):
     """Job 队列状态机 + 业务终态。
 
     Row 层（``JobRowMixin.status``）承载全部 4 个值；Result 层
@@ -85,7 +85,10 @@ class BaseJobResult:
     """
 
     job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
-    status: JobStatus = JobStatus.COMPLETED  # 业务终态（写侧编码为 row.status，读侧从 row.status 推导）
+    # Pylance narrows ``JobStatus.COMPLETED`` to ``Literal["completed"]`` because
+    # ``JobStatus`` is a plain ``Enum`` (not ``StrEnum``); at runtime the value
+    # is a ``JobStatus`` instance, so the assignment is sound.
+    status: JobStatus = JobStatus.COMPLETED  # type: ignore[reportAssignmentType]
 
 
 class JobRowMixin:
@@ -102,10 +105,16 @@ class JobRowMixin:
     # Native enum column — see :class:`JobStatus` docstring. ``values_callable``
     # pins storage / CHECK / CREATE TYPE labels to ``.value`` ("pending" etc.),
     # matching the legacy VARCHAR representation so existing rows survive the
-    # alembic promotion without a data rewrite.
+    # alembic promotion without a data rewrite. The two ``type: ignore``
+    # pragmas cover SQLAlchemy 2.x's overloaded ``Enum.__init__``: Pylance
+    # matches overload 2 (``*enums: str``) against a plain ``Enum`` subclass
+    # (``Type[JobStatus]``), so the call signature and the first argument
+    # both raise false-positive ``reportCallIssue`` / ``reportArgumentType``
+    # diagnostics. ``A2AErrorCode`` (a ``StrEnum`` in ``a2aJob.py``) doesn't
+    # need this because it's also assignable to ``str``.
     status: Mapped[JobStatus] = mapped_column(
         Enum(
-            JobStatus,
+            JobStatus,  # type: ignore[reportArgumentType]
             name="job_status",
             native_enum=True,
             length=24,
