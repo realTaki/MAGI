@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from magi.bus import Bus
 
+from magi.bus.library.local import ActionPriority
+
 logger = logging.getLogger("magi.agent.system_prompt")
 
 
@@ -145,7 +147,7 @@ def build_system_prompt(
                 owner_contact_id=contact_id,
                 include_completed=False,
             )
-            if item.priority == "high"
+            if item.priority == ActionPriority.HIGH
         ]
         if action_items:
             lines = ["## Open high-priority action items"]

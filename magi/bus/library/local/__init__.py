@@ -7,12 +7,10 @@ File names match the Book classes: ``<domain>Book.py``.
 from magi.bus.library.local.actionItemBook import (
     ALL_PRIORITIES,
     ALL_SOURCES,
-    PRIORITY_HIGH,
-    PRIORITY_NORMAL,
-    SOURCE_PROACTIVE,
-    SOURCE_USER,
     ActionItem,
     ActionItemBook,
+    ActionPriority,
+    ActionSource,
 )
 from magi.bus.library.local.contactBook import (
     ALL_ROLES,
@@ -40,6 +38,8 @@ from magi.bus.library.local.memoryBook import (
 )
 from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
 from magi.bus.library.local.tasksBook import (
+    SOURCE_PROACTIVE,
+    SOURCE_USER,
     Channel,
     ChannelEnum,
     Task,
@@ -59,15 +59,13 @@ from magi.bus.library.local.toolsBook import (
 __all__ = [
     "ActionItem",
     "ActionItemBook",
+    "ActionPriority",
+    "ActionSource",
     "ALL_KINDS",
     "ALL_PRIORITIES",
     "ALL_SOURCES",
     "Channel",
     "ChannelEnum",
-    "PRIORITY_HIGH",
-    "PRIORITY_NORMAL",
-    "SOURCE_PROACTIVE",
-    "SOURCE_USER",
     "ALL_ROLES",
     "Contact",
     "ContactBook",
@@ -90,6 +88,8 @@ __all__ = [
     "MCPTimeout",
     "Setting",
     "SettingBook",
+    "SOURCE_PROACTIVE",
+    "SOURCE_USER",
     "Task",
     "TaskBook",
     "TaskRun",

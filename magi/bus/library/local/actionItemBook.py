@@ -219,7 +219,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     # a Book primitive — the only caller, the credentials
     # nudge in :mod:`magi.proactive.worker`,
     # composes the check via :meth:`list_actions` with
-    # ``source=SOURCE_PROACTIVE`` and a client-side title
+    # ``source=ActionSource.PROACTIVE`` and a client-side title
     # match. The Book stays query-neutral.
 
     # -- list reads -------------------------------------------------------
@@ -241,9 +241,9 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         dashboard's default mix).
 
         ``source`` narrows to one provenance tag — pass
-        :data:`SOURCE_USER` for the LLM tool menu (excludes
+        :data:`ActionSource.USER` for the LLM tool menu (excludes
         proactive nudges that live on the dashboard's own
-        pane), :data:`SOURCE_PROACTIVE` for proactive-only
+        pane), :data:`ActionSource.PROACTIVE` for proactive-only
         views, or ``None`` for everything the operator
         owns.
         """
@@ -285,9 +285,9 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         title: str,
         description: str | None = None,
         target_url: str | None = None,
-        priority: str = PRIORITY_NORMAL,
+        priority: ActionPriority = ActionPriority.NORMAL,
         due_date: datetime | None = None,
-        source: str = SOURCE_PROACTIVE,
+        source: ActionSource = ActionSource.PROACTIVE,
     ) -> ActionItem:
         """Insert one action item row.
 
@@ -300,9 +300,9 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         re-implementing length checks.
 
         Callers pass ``source=`` explicitly — chat-driven
-        tools pass :data:`SOURCE_USER`, proactive policies
-        pass :data:`SOURCE_PROACTIVE`. The default
-        (:data:`SOURCE_PROACTIVE`) is the safe side: a
+        tools pass :data:`ActionSource.USER`, proactive policies
+        pass :data:`ActionSource.PROACTIVE`. The default
+        (:data:`ActionSource.PROACTIVE`) is the safe side: a
         writer that forgets to tag is treated as system
         action, which is non-repudiable.
 
@@ -396,11 +396,9 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
 __all__ = [
     "ActionItem",
     "ActionItemBook",
-    "PRIORITY_NORMAL",
-    "PRIORITY_HIGH",
+    "ActionPriority",
+    "ActionSource",
     "ALL_PRIORITIES",
-    "SOURCE_USER",
-    "SOURCE_PROACTIVE",
     "ALL_SOURCES",
     "_ActionItemRow",
 ]

@@ -8,10 +8,8 @@ or ``user``) recording the provenance of the write. The
 dashboard renders those columns straight to the screen — no
 payload blob, no kind-specific column.
 
-Created by system paths (currently ``onboarding/complete``
-inserts one credentials-reminder row per admin; the future
-``POST /api/action_items`` endpoint will let EVA create rows
-through the same Book with ``source='user'``).
+Created by proactive system policies and user-facing tools through the same
+local Book.
 
 Dismissed / completed by the operator via the
 ``POST /api/action_items/{id}/complete`` endpoint below.

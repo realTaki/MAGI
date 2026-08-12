@@ -7,8 +7,7 @@ authenticated WebUI proxy.
 
 Mounting order (matters for routing precedence):
   1. ``/health``         — process-level liveness probe.
-  2. ``/api/onboarding/*`` — feature routers (verify-bot, save-bot, ...).
-  3. ``/``               — SPA static files (built by Vite at web/dist/).
+  2. ``/``               — SPA static files (built by Vite at web/dist/).
      Uses ``html=True`` so unknown paths fall back to index.html and
      the SPA's client-side router can take over.
 
@@ -31,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from magi import __version__
-from magi.channels.api import auth, contacts, magi, magis, onboarding
+from magi.channels.api import auth, contacts, magi, magis
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -104,7 +103,7 @@ def create_app(
     """Build either the standalone control WebUI or an internal Runtime API.
 
     ``include_control_routes=False`` is used by every MAGI runtime: it omits
-    login/onboarding and MAGIS registry routes and never mounts React assets.
+    login and MAGIS registry routes and never mounts React assets.
     The runtime remains an internal HTTP API for the one WebUI service.
 
     TelegramWorker lifecycle is owned by the injected RuntimeContext; this
@@ -151,21 +150,11 @@ def create_app(
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
     if include_control_routes:
         app.include_router(auth.router, prefix="/api/auth")
-        app.include_router(onboarding.router, prefix="/api/onboarding")
         # MAGI management is control-plane state (membership identity plus
         # runtime registry), not a node-local API.  Its self-settings routes
         # are deliberately mounted below on private runtimes only.
         app.include_router(magi.router, prefix="/api")
         app.include_router(magis.router, prefix="/api")
-    # Always mount the narrow ``set-admin-password`` step on every
-    # process — the singleton webui (control-plane mode) forwards the
-    # wizard's first-admin write here so the hash lands on the
-    # runtime's local ``contacts_book``.  Mounting the full onboarding
-    # router on the runtime would expose handlers whose target Book is
-    # the webui-only ``control_settings_book``.
-    from magi.channels.api import onboarding as onboarding_api
-
-    app.include_router(onboarding_api.runtime_onboarding_router, prefix="/api/onboarding")
     from magi.channels.api import runtime_control
 
     app.include_router(runtime_control.router, prefix="/api")
