@@ -38,6 +38,7 @@ from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.db.file import FileShelf
 from magi.bus.guild import (
+    MCPKind,
     McpServerChangedJob,
     mcpServerChangedJobBoard,
 )
@@ -298,7 +299,7 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="added",
+            kind=MCPKind.ADDED,
             server_name="gmail",
             server=_dto("gmail", command="mcp-gmail"),
         )
@@ -343,7 +344,7 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="updated",
+            kind=MCPKind.UPDATED,
             server_name="gmail",
             server=_dto(
                 "gmail",
@@ -392,7 +393,7 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
     assert bus.mcp_servers_book.get_by_name(name="gmail") is not None
 
     job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(kind="deleted", server_name="gmail")
+        McpServerChangedJob(kind=MCPKind.DELETED, server_name="gmail")
     )
     claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
     assert claimed is not None
@@ -429,7 +430,7 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="toggled",
+            kind=MCPKind.TOGGLED,
             server_name="gmail",
             new_enabled=False,
         )
@@ -472,7 +473,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 
     job_id = bus.mcp_server_changed_job_board.publish(
         McpServerChangedJob(
-            kind="toggled",
+            kind=MCPKind.TOGGLED,
             server_name="gmail",
             new_enabled=True,
         )

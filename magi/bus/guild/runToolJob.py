@@ -28,8 +28,7 @@ from magi.bus.guild.base import BaseJobBoard
 class RunToolJob:
     """一个工具执行 job。
 
-    字段集对齐 ``ToolClaim``——``attempts`` /
-    ``source`` / ``catalog_revision`` / ``schema_hash`` 都是
+    ``attempts`` / ``catalog_revision`` / ``schema_hash`` 是
     worker claim 时需要的校验元数据。
 
     ``catalog_revision`` 是 agent publish job 那一刻 catalog
@@ -47,7 +46,6 @@ class RunToolJob:
     tool_call_id: str = ""  # 关联的 LLM tool_use.id；回执用它反哺 conversation
     job_id: str = ""  # 发布时自动生成的 job_id
     attempts: int = 0  # claim 时由 ORM 回填，供上层观察重试次数
-    source: str | None = None  # 触发来源（如 llm/agent/...）；写库默认 ""
     catalog_revision: int | None = None  # publish 那一刻的 catalog revision；claim 时校验是否过期
     schema_hash: str | None = None  # publish 时目标 tool 的 schema 哈希；claim 时校验 schema 是否变动
 
@@ -85,7 +83,6 @@ class _ToolJobRow(Base):
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     tool_call_id: Mapped[str] = mapped_column(String(128), default="")
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     catalog_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     schema_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
@@ -127,7 +124,6 @@ class runToolJobBoard(BaseJobBoard[_ToolJobRow, RunToolJob, RunToolResult]):
                 tool_name=job.tool_name,
                 payload=job.payload,
                 tool_call_id=job.tool_call_id,
-                source=job.source or "",
                 catalog_revision=int(job.catalog_revision or 0),
                 schema_hash=job.schema_hash or "",
             )
