@@ -6,7 +6,6 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.runTaskJob import (
-    FiredBy,
     RunTaskJob,
     RunTaskResult,
     runTaskJobBoard,
@@ -26,7 +25,6 @@ def test_publish_returns_job_id(board):
     job = RunTaskJob(
         task_id="task_abc",
         manual=True,
-        fired_by=FiredBy.MANUAL,
         conversation_id="conv_001",
         contact_id=42,
     )
@@ -37,12 +35,12 @@ def test_publish_returns_job_id(board):
 
 
 def test_claim_returns_published_job(board):
-    """claim returns the job we just published."""
-    board.publish(RunTaskJob(task_id="task_x", fired_by=FiredBy.SCHEDULED))
+    """claim returns the job we just published with manual flag preserved."""
+    board.publish(RunTaskJob(task_id="task_x", manual=False))
     claim = board.claim()
     assert claim is not None
     assert claim.task_id == "task_x"
-    assert claim.fired_by == FiredBy.SCHEDULED
+    assert claim.manual is False
 
 
 def test_claim_returns_none_when_empty(board):
@@ -52,7 +50,7 @@ def test_claim_returns_none_when_empty(board):
 
 def test_submit_result_success(board):
     """submit_result marks job as completed and get_result returns it."""
-    jid = board.publish(RunTaskJob(task_id="task_s", fired_by=FiredBy.MANUAL))
+    jid = board.publish(RunTaskJob(task_id="task_s", manual=True))
     claim = board.claim()
     assert claim is not None
 
@@ -68,7 +66,7 @@ def test_submit_result_success(board):
 
 def test_submit_result_failure(board):
     """submit_result with success=False returns error info."""
-    jid = board.publish(RunTaskJob(task_id="task_f", fired_by=FiredBy.MANUAL))
+    jid = board.publish(RunTaskJob(task_id="task_f", manual=True))
     claim = board.claim()
     assert claim is not None
 
@@ -86,7 +84,7 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     """Abandoned job (lease expired) is re-claimed by next claim()."""
     # Short lease for fast test
     board._lease_seconds = 1
-    jid = board.publish(RunTaskJob(task_id="task_a", fired_by=FiredBy.SCHEDULED))
+    jid = board.publish(RunTaskJob(task_id="task_a", manual=False))
     first = board.claim()
     assert first is not None
 
@@ -114,7 +112,7 @@ def test_max_attempts_exhausted(board):
     """After MAX_ATTEMPTS (3), claim marks job as failed and skips it."""
     from magi.bus.guild.base import MAX_ATTEMPTS
 
-    jid = board.publish(RunTaskJob(task_id="task_ex", fired_by=FiredBy.SCHEDULED))
+    jid = board.publish(RunTaskJob(task_id="task_ex", manual=False))
     board._lease_seconds = 1
 
     from datetime import timedelta

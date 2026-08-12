@@ -156,7 +156,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         All channel workers share the same core payload keys
         (``text`` / ``channel`` / ``contact_id`` /
         ``conversation_id`` / ``caller_role``). Channel-specific
-        extras (``chat_id`` / ``task_id`` / ``fired_by`` / ...)
+        extras (``chat_id`` / ``task_id`` / ``manual`` / ...)
         are forwarded as additional payload keys via ``**extras``.
 
         ``job_id`` and ``correlation_id`` are for callers that
