@@ -111,9 +111,15 @@ disabled                  管理员被禁用；不允许登录
 
 ### 默认 admin
 
-bootstrap 在同一事务性编排中创建稳定的默认 Contact（显示名 `admin`）、
-其 Genesis admin 授权（Per MAGIS）和 `local_no_2fa` 状态。创建必须幂
-等，不能按名称盲目覆盖已有 Contact；不创建任何 `assigned` user。
+bootstrap 在 MAGIS 共享库中创建稳定的 Genesis `MagisAdmin`（显示名
+`admin`）及其 `local_no_2fa` 状态；它是 Per MAGIS 的身份、授权和认证
+主体，不是 Contact 的角色或权限字段。随后在每个需要承载该操作者本地数据的
+MAGI 中，创建一个普通的本地 Contact **投影**，以可空且唯一的
+`magis_admin_id` 记录它对应的 `MagisAdmin`。投影只提供本地会话、对话和
+ActionItem 的归属；它不授予 MAGIS 权限，也不保存认证状态。
+
+创建必须幂等，不能按显示名盲目覆盖已有 Contact；默认投影不得占用或改写一个
+恰好也叫 `admin` 的本地用户。bootstrap 不创建任何 `assigned` user。
 
 登录选择器显示 `eva-000` 和 `admin`。当 admin 处于 `local_no_2fa` 时，显示
 “直接进入”，它只在以下条件同时满足时签发标准 admin session：
@@ -213,7 +219,9 @@ ProactiveWorker 在 ADAM 启动时、认证状态变更后执行 reconcile：状
 ## 注入 Agent 上下文
 
 为了让 Agent 主动提醒，`build_system_prompt` 在既有六个区块之后追加一个
-`Open high-priority action items` 数据块。只读取当前已认证 Contact 自己的、未
+`Open high-priority action items` 数据块。ActionItem 始终是本地数据，继续由
+`contact_id` 归属，因而也能服务本地其他用户；对 MAGIS admin，则通过其本地
+Contact 投影的 `contact_id` 创建和读取待办。只读取当前已认证 Contact 自己的、未
 完成且未 dismiss 的 `priority=high` 项目；不读取其他用户、其他 MAGI 或完整
 历史。
 
