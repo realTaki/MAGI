@@ -284,14 +284,9 @@ class Tool(ABC):
         - ``ctx.bus.contacts_book.get(contact_id=...)`` →
           the MAGI-local role (``assigned`` / ``guest`` /
           ``contact``) — lives on ``Contact.role``.
-        - ``ctx.bus.magis_admins_book.is_admin_for(contact_id=...)``
-          → ``True`` iff the caller has at least one row in
-          the ``magis_admins`` table. Admin is a **MAGIS-level**
-          concept; it never appears as a value on
-          ``Contact.role`` (the role enum is just
-          ``assigned`` / ``guest``). A user can be both
-          ``assigned`` here and ``admin`` in some MAGIS —
-          the two flags are orthogonal.
+        - ``Contact.magis_admin_id`` → shared ``MagisAdmin`` existence.
+          The nullable link denotes this runtime's local projection of a
+          MAGIS administrator; authority itself remains MAGIS-level.
 
         The caller passes when their effective role-tag set
         intersects :attr:`ALLOWED_ROLES`. So a tool with
@@ -336,14 +331,19 @@ class Tool(ABC):
                 "the caller side has not migrated to bus"
             )
 
-        # Build effective role-tag set: local Contact.role
-        # ∪ { "admin" } when the caller has any MAGIS admin row.
+        # Build effective role-tag set: local Contact.role plus the shared
+        # administrator identity when this is its local projection.
         contact = ctx.bus.contacts_book.get(contact_id=ct_id)
         if contact is None:
             return f"contact {ct_id!r} not found"
         effective: set[str] = {contact.role}
         admins_book = getattr(ctx.bus, "magis_admins_book", None)
-        if admins_book is not None and admins_book.is_admin_for(contact_id=ct_id):
+        magis_admin_id = getattr(contact, "magis_admin_id", None)
+        if (
+            admins_book is not None
+            and magis_admin_id is not None
+            and admins_book.get(admin_id=magis_admin_id) is not None
+        ):
             effective.add("admin")
 
         if effective.isdisjoint(self.ALLOWED_ROLES):

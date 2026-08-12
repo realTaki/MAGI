@@ -34,21 +34,24 @@ from magi.bus.library.base import BaseBook
 # Provenance tags — propagated onto ``ActionItem.source``.
 # Two-way split by **causation** (not mechanism):
 #
-#   * ``SOURCE_USER``      — the operator caused this row.
+#   * ``ActionSource.USER``      — the operator caused this row.
 #     Covers: dashboard channel API writes, chat-driven
 #     tool calls (the operator's chat turn kicked the
 #     LLM, even when the LLM picked the tool autonomously),
 #     and any future user-facing surface.
-#   * ``SOURCE_PROACTIVE`` — the system discovered /
+#   * ``ActionSource.PROACTIVE`` — the system discovered /
 #     scheduled this row without an operator in the loop.
 #     Covers: proactive policies (e.g. the onboarding
 #     credentials nudge in ``magi.proactive.worker``),
 #     cron-triggered agents, system-defined nudges.
 #
 # Dashboards and future filters group rows by this tag.
-SOURCE_USER = "user"
-SOURCE_PROACTIVE = "proactive"
-ALL_SOURCES = frozenset({SOURCE_USER, SOURCE_PROACTIVE})
+class ActionSource(StrEnum):
+    USER = "user"
+    PROACTIVE = "proactive"
+
+
+ALL_SOURCES: frozenset[str] = frozenset(s.value for s in ActionSource)
 
 # Priority enum — the LLM tool's UI mentions "normal" and
 # "high" only; other values are reserved for system paths.
@@ -63,28 +66,7 @@ class ActionPriority(StrEnum):
     HIGH = "high"
 
 
-# Back-compat aliases — existing imports keep working.
-PRIORITY_NORMAL = ActionPriority.NORMAL
-PRIORITY_HIGH = ActionPriority.HIGH
-# Plain-``str`` membership set: ``Enum.__hash__`` hashes the
-# member *name*, so a frozenset of members would not contain
-# the raw string ``"high"``. Normalise through
-# :func:`coerce_priority` before any membership test.
-ALL_PRIORITIES = frozenset(p.value for p in ActionPriority)
-
-
-def coerce_priority(priority: str | ActionPriority) -> ActionPriority:
-    """Normalise a raw string / member into :class:`ActionPriority`.
-
-    Raises ``ValueError`` with the Book's usual message shape
-    when the value is not a known priority.
-    """
-    try:
-        return ActionPriority(priority)
-    except ValueError:
-        raise ValueError(
-            f"priority must be one of {sorted(ALL_PRIORITIES)!r}, got {priority!r}"
-        ) from None
+ALL_PRIORITIES: frozenset[str] = frozenset(p.value for p in ActionPriority)
 
 # Default visibility window for completed rows when the caller
 # asks for ``include_completed=True``. Mirrors the dashboard's
@@ -121,9 +103,9 @@ class ActionItem:
     title: str  # 待办标题
     description: str | None = None  # 详细描述
     target_url: str | None = None  # 跳转目标 URL
-    priority: str = PRIORITY_NORMAL  # 优先级（normal/high）
+    priority: ActionPriority = ActionPriority.NORMAL  # 优先级（normal/high）
     due_date: datetime | None = None  # 截止日期
-    source: str = SOURCE_PROACTIVE  # 来源（user/proactive）
+    source: ActionSource = ActionSource.PROACTIVE  # 来源（user/proactive）
     created_at: datetime | None = None  # 创建时间
     completed_at: datetime | None = None  # 完成时间（None=未完成）
     completed_by_contact_id: int | None = None  # 完成者联系人 ID
@@ -170,17 +152,17 @@ class _ActionItemRow(Base):
     priority: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        default=PRIORITY_NORMAL,
+        default=ActionPriority.NORMAL,
     )
     due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Provenance tag — "user" / "proactive". ``SOURCE_PROACTIVE``
+    # Provenance tag — "user" / "proactive". ``ActionSource.PROACTIVE``
     # is the column default so any future writer that forgets
     # to pass ``source=`` defaults to the safe side (system
     # actions are non-repudiable; user actions are auditable).
     source: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        default=SOURCE_PROACTIVE,
+        default=ActionSource.PROACTIVE,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

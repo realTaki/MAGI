@@ -348,20 +348,16 @@ export function useToggleMcpServer() {
 
 export type MeRow = {
   contact_id: number;
+  magis_admin_id: number | null;
   tgid: string | null;
   display_name: string | null;
-  // ``admin`` is sourced from the contact row (replaces the
-  // pre-2024 ``is_super_admin`` boolean that was hardcoded
-  // ``true`` for every signed-in user). The frontend uses
-  // it to render role-aware UI (e.g. hide operator-only
-  // controls for non-admin sign-ins).
+  // Administrator authority is MAGIS-scoped; contact_id is only the
+  // selected runtime's local projection / data owner.
   admin: boolean;
   assigned?: boolean;
-  // Populated by v3 sessions; ``undefined`` (or ``null``)
-  // for legacy cookies that didn't capture a MAGI target.
-  selected_magi_id?: number | null;
-  login_methods?: string[];
-  password_set?: boolean;
+  selected_magi_id: number;
+  two_factor_enabled: boolean;
+  authentication_mode: "local_no_2fa" | "im_2fa_enabled";
 };
 
 /** GET /api/auth/me — the boot identity check. */
@@ -378,16 +374,6 @@ export function useMe() {
     // 401 per focus event. Keep refetching once signed in, so a
     // session that expires in the background is still noticed.
     refetchOnWindowFocus: (query) => query.state.status !== "error",
-  });
-}
-
-/** GET /api/auth/allowed-accounts — login dropdown. */
-export type AllowedAccount = { uid: number; name: string };
-export function useAllowedAccounts() {
-  return useQuery({
-    queryKey: qk.allowedAccounts,
-    queryFn: () =>
-      apiFetch<{ accounts: AllowedAccount[] }>("/api/auth/allowed-accounts"),
   });
 }
 
@@ -408,9 +394,10 @@ export type TargetLoginAccount = {
   name: string;
   admin: boolean;
   assigned: boolean;
-  has_password: boolean;
   has_tg_code: boolean;
   tgid: number | null;
+  auth_mode: "local_no_2fa" | "im_2fa_enabled" | "recovery_local_no_2fa" | "disabled";
+  local_direct_allowed: boolean;
 };
 export function useTargetLoginAccounts(magiId: number | null) {
   return useQuery({
@@ -441,25 +428,15 @@ export function useVerifyTargetLoginCode(magiId: number) {
   });
 }
 
-export type OnboardingStatus = {
-  bot_saved: boolean;
-  bot_username?: string;
-  super_admins_count: number;
-  super_admins: string[];
-  onboarding_complete: boolean;
-  // ``login_methods`` / ``mode`` mirror the new WebUI-only
-  // onboarding path. The wizard uses them to decide whether
-  // to resume on the "with TG" or "WebUI only" branch.
-  login_methods?: string[];
-  mode?: "with_tg" | "webui_only" | null;
-};
-
-/** GET /api/onboarding/status — shared between App boot and OnboardingPage. */
-export function useOnboardingStatus(opts?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: qk.onboardingStatus,
-    queryFn: () => apiFetch<OnboardingStatus>("/api/onboarding/status"),
-    enabled: opts?.enabled ?? true,
+export function useLocalDirectLogin(magiId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { contact_id: number; role: "admin" | "assigned" }) =>
+      apiFetch<{ ok: boolean; error?: string }>(
+        `/api/auth/targets/${magiId}/local-direct-login`,
+        { method: "POST", body: payload },
+      ),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: qk.me }); },
   });
 }
 
@@ -471,163 +448,28 @@ export function useLogout() {
       apiFetch<void>("/api/auth/logout", { method: "POST" }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.me });
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
     },
   });
 }
-
-/** POST /api/onboarding/complete — wizard "OK, got it" button. */
-export function useCompleteOnboarding() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiFetch<{ ok: boolean }>("/api/onboarding/complete", {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
-    },
-  });
-}
-
-/** POST /api/onboarding/restart — dashboard "Restart onboarding". */
-export function useRestartOnboarding() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiFetch<{ ok: boolean }>("/api/onboarding/restart", {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
-      void qc.invalidateQueries({ queryKey: qk.me });
-    },
-  });
-}
-
-// -- onboarding wizard (per-step mutations) -------------------------------
 
 export function useVerifyBot() {
   return useMutation({
     mutationFn: (token: string) =>
       apiFetch<{ ok: boolean; username?: string; error?: string }>(
-        "/api/onboarding/verify-bot",
+        "/api/control/telegram/verify",
         { method: "POST", body: { token } },
       ),
   });
 }
 
 export function useSaveBot() {
-  const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: { token: string; username: string }) =>
-      apiFetch<{ ok: boolean; error?: string }>("/api/onboarding/save-bot", {
+      apiFetch<{ ok: boolean; error?: string }>("/api/control/telegram/bootstrap", {
         method: "POST",
         body: payload,
       }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
-    },
-  });
-}
-
-export function useSendAdminCode() {
-  return useMutation({
-    mutationFn: (tgid: string) =>
-      apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
-        "/api/onboarding/send-admin-code",
-        { method: "POST", body: { tgid } },
-      ),
-  });
-}
-
-// WebUI-only onboarding step 2 — register the first
-// operator in one shot. The wizard collects a single
-// name + password and the backend writes:
-//
-//   • one Contact row on the runtime's local SQLite
-//     (``role='assigned'`` for per-MAGI scope).
-//   • one ``magis_admins`` row on the MAGIS-shared DB
-//     pointing at the same contact_id for per-MAGIS
-//     (Genesis admin) scope.
-//
-// One Contact row covers both scopes; the login picker
-// joins them by ``(contact_id, role)`` so the operator
-// gets a single identity with two login options. Used
-// when the wizard's first step picked "WebUI only"
-// instead of "Telegram". The response carries the new
-// contact id so the wizard's Step3 summary can render
-// the real name.
-export function useSetAdminPassword() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: {
-      operator_name: string;
-      operator_password: string;
-    }) =>
-      apiFetch<{
-        ok: boolean;
-        error?: string;
-        contact_id?: number | null;
-      }>("/api/onboarding/set-admin-password", { method: "POST", body: payload }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
-    },
-  });
-}
-
-export function useVerifyAdminCode() {
-  return useMutation({
-    mutationFn: (payload: { tgid: string; code: string }) =>
-      apiFetch<{
-        ok: boolean;
-        display_name?: string;
-        error?: string;
-      }>("/api/onboarding/verify-admin-code", {
-        method: "POST",
-        body: payload,
-      }),
-  });
-}
-
-export function useSaveAdmin() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (tgids: string[]) =>
-      apiFetch<{ ok: boolean; count?: number; error?: string }>(
-        "/api/onboarding/save-admin",
-        { method: "POST", body: { tgids } },
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.onboardingStatus });
-    },
-  });
-}
-
-// -- auth login flow -------------------------------------------------------
-
-export function useSendLoginCode() {
-  return useMutation({
-    mutationFn: (vars: { contact_id: number }) =>
-      apiFetch<{ ok: boolean; expires_in?: number; error?: string }>(
-        "/api/auth/send-login-code",
-        { method: "POST", body: vars },
-      ),
-  });
-}
-
-export function useVerifyLoginCode() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (vars: { contact_id: number; magi_id: number; code: string }) =>
-      apiFetch<{ ok: boolean; error?: string }>(
-        "/api/auth/verify-login-code",
-        { method: "POST", body: vars },
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.me });
-      void qc.invalidateQueries({ queryKey: qk.allowedAccounts });
-    },
+    onSuccess: () => undefined,
   });
 }
 
@@ -1019,50 +861,5 @@ export function useToggleTask() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     },
-  });
-}
-
-// -- Password login helpers (single-runtime / direct WebUI) --
-//
-// The control-plane login flow lives in
-// ``useTargetLoginAccounts`` / ``useSendTargetLoginCode``
-// above — those proxy to a target MAGI runtime. The
-// password login endpoints live in the WebUI process —
-// they don't go through ``runtime_proxy`` because the
-// cookie is created on the WebUI side, not the target.
-// The two surfaces co-exist: a control-plane deployment
-// can still let the operator choose password (on the
-// target runtime) once a target-version of these
-// endpoints lands.
-
-export interface LoginMethodsResponse {
-  uid: number;
-  methods: string[];
-  is_webui_only: boolean;
-}
-
-export function useLoginMethods(uid: number | null) {
-  return useQuery({
-    queryKey: ["auth", "login-methods", uid] as const,
-    queryFn: () =>
-      apiFetch<LoginMethodsResponse>(
-        `/api/auth/login-methods?contact_id=${uid ?? 0}`,
-      ),
-    enabled: uid != null && uid > 0,
-  });
-}
-
-export function useLoginPassword() {
-  return useMutation({
-    mutationFn: (vars: {
-      contact_id: number;
-      role: "admin" | "assigned";
-      magi_id: number;
-      password: string;
-    }) =>
-      apiFetch<{ ok: boolean; error?: string; retry_after?: number | null }>(
-        "/api/auth/login-password",
-        { method: "POST", body: vars },
-      ),
   });
 }

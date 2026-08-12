@@ -52,7 +52,7 @@ function isControlPath(url: string): boolean {
   if (url === "/api/magi" || /^\/api\/magi\/\d+(?:\/|$)/.test(url)) {
     return true;
   }
-  return ["/api/auth", "/api/onboarding", "/api/runtime", "/api/magis"].some(
+  return ["/api/auth", "/api/runtime", "/api/magis"].some(
     (prefix) => url === prefix || url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`),
   );
 }
@@ -122,6 +122,7 @@ export async function apiFetch<T>(
   } finally {
   clearTimeout(timer);
   }
+}
 
 /** Stable query-key factory so every caller uses the same keys. */
 export const qk = {
@@ -161,11 +162,9 @@ export const qk = {
   systemSettings: (key: string) =>
     runtimeKey("systemSettings", key),
   mcpServers: runtimeKey("mcpServers"),
-  // -- auth / onboarding / soul ---------------------------------------------
-  allowedAccounts: ["auth", "allowed-accounts"] as const,
+  // -- auth / soul ------------------------------------------------------------
   availableMagi: ["auth", "available-magi"] as const,
   targetAccounts: (magiId: number) => ["auth", "target-accounts", magiId] as const,
-  onboardingStatus: ["onboarding", "status"] as const,
   soul: runtimeKey("soul"),
   tgReaction: (kind: "read" | "done") =>
     runtimeKey("tgReaction", kind),
