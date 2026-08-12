@@ -35,11 +35,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.library.base import BaseBook
 
-ROLE_ASSIGNED = "assigned"
-ROLE_GUEST = "guest"
-ALL_ROLES = frozenset({ROLE_ASSIGNED, ROLE_GUEST})
-
-
 class NoteKind(StrEnum):
     """Note-kind discriminator stored on ``ContactNote.kind``.
 
@@ -61,7 +56,31 @@ class NoteKind(StrEnum):
     DAILY = "daily"
 
 
+class Role(StrEnum):
+    """MAGI-local role tag stored on ``Contact.role``.
+
+    ``ASSIGNED`` means the contact owns this MAGI (the chat
+    channel binds every inbound message to exactly one such
+    contact). ``GUEST`` is every other locally-known contact —
+    reached via shared conversation, manual lookup, or just
+    having a Telegram chat id captured before a bind.
+
+    ``StrEnum`` rather than bare string constants so typos are
+    caught at lookup time instead of silently comparing False:
+    every member is still a ``str`` (``Role.GUEST == "guest"``),
+    so ORM columns, ``asdict`` serialisation, ``==`` /
+    ``!=`` against string literals and existing rows keep
+    working unchanged. Admin authority is **not** here — it's a
+    MAGIS-level concept and lives in
+    :class:`~magi.bus.library.magis.magisBook.MagisAdminBook`.
+    """
+
+    ASSIGNED = "assigned"
+    GUEST = "guest"
+
+
 ALL_NOTE_KINDS: frozenset[str] = frozenset(k.value for k in NoteKind)
+ALL_ROLES: frozenset[Role] = frozenset(Role)
 
 
 # Column-length invariants — mirror the ORM column
@@ -94,7 +113,7 @@ class Contact:
     id: int  # 主键（自增）
     name: str  # 联系人唯一名
     display_name: str | None = None  # 显示名
-    role: str = ROLE_GUEST  # 角色（assigned/guest）
+    role: Role = Role.GUEST  # MAGI 本地角色（assigned/guest）
     tgid: int | None = None  # 绑定的 Telegram chat id（本地用户身份）
     # Nullable projection link to the MAGIS-shared operator identity.  It is
     # deliberately not a foreign key because the two stores are independent.
@@ -148,7 +167,7 @@ class _ContactRow(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
-    role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=Role.GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
@@ -223,7 +242,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = _ContactRow(
                 name=candidate,
                 display_name=(display_name or "").strip() or None,
-                role=ROLE_GUEST,
+                role=Role.GUEST,
                 magis_admin_id=magis_admin_id,
             )
             s.add(row)
@@ -256,7 +275,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         self,
         *,
         name: str,
-        role: str = ROLE_GUEST,
+        role: Role = Role.GUEST,
         display_name: str | None = None,
         tgid: int | None = None,
         magis_admin_id: int | None = None,
@@ -299,7 +318,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         contact_id: int,
         name: str | None = None,
         display_name: str | None = None,
-        role: str | None = None,
+        role: Role | None = None,
         tgid: int | None = None,
         set_display_name: bool = False,
         set_tgid: bool = False,
@@ -589,7 +608,6 @@ __all__ = [
     "_ContactRow",
     "_ContactNoteRow",
     "NoteKind",
-    "ROLE_ASSIGNED",
-    "ROLE_GUEST",
+    "Role",
     "ALL_ROLES",
 ]

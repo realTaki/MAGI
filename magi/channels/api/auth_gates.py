@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from magi.bus.library.magis import AUTH_MODE_DISABLED
+from magi.bus.library.local import Role
 from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
 
@@ -73,7 +74,7 @@ def _proxy_identity(request: Request) -> tuple[int, bool] | None:
         if operator is None:
             return None
         contact = get_bus(request).contacts_book.get(contact_id=operator[0])
-        return (contact.id, False) if contact is not None and contact.role == "assigned" else None
+        return (contact.id, False) if contact is not None and contact.role == Role.ASSIGNED else None
     return None
 
 
@@ -106,7 +107,7 @@ def admin_or_assigned_gate(request: Request) -> str:
     contact_id = _session_contact_id(request)
     if contact_id is not None:
         contact = get_bus(request).contacts_book.get(contact_id=contact_id)
-        if contact is not None and contact.role == "assigned":
+        if contact is not None and contact.role == Role.ASSIGNED:
             return str(contact_id)
     raise MagiHTTPException(403, "auth.soul_edit_forbidden", "MAGIS administrator or assigned user required")
 
