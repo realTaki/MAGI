@@ -25,7 +25,6 @@ import { useState } from "react";
 
 import SidebarShell, { type SidebarItem } from "../components/SidebarShell";
 import {
-  IconActionItems,
   IconConnectors,
   IconContacts,
   IconReminders,
@@ -34,7 +33,6 @@ import {
 } from "../components/icons";
 import { SettingsAgentCard } from "../components/settings/SettingsAgentCard";
 import { SettingsChannelsCard } from "../components/settings/SettingsChannelsCard";
-import { SettingsOnboardingCard } from "../components/settings/SettingsOnboardingCard";
 import { SettingsPersonaCard } from "../components/settings/SettingsPersonaCard";
 import { SettingsInstructionCard } from "../components/settings/SettingsInstructionCard";
 import { SettingsSecurityCard } from "../components/settings/SettingsSecurityCard";
@@ -42,7 +40,6 @@ import { SettingsSystemTimezoneCard } from "../components/settings/SettingsSyste
 import { SettingsTgReadReactionCard } from "../components/settings/SettingsTgReadReactionCard";
 import { SettingsWebuiAccessCard } from "../components/settings/SettingsWebuiAccessCard";
 import { useT } from "../i18n/index";
-import type { OnboardingData } from "./onboardingTypes";
 
 export type SettingSection =
   | "channels"
@@ -52,8 +49,7 @@ export type SettingSection =
   | "tz"
   | "agent"
   | "webui-access"
-  | "security"
-  | "onboarding";
+  | "security";
 
 export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "channels", label: "settings.navChannels", icon: <IconConnectors /> },
@@ -64,21 +60,18 @@ export const SETTINGS_SECTIONS: SidebarItem[] = [
   { id: "agent", label: "settings.navAgent", icon: <IconScheduledTasks /> },
   { id: "webui-access", label: "settings.navWebuiAccess", icon: <IconContacts /> },
   { id: "security", label: "settings.navSecurity", icon: <IconContacts /> },
-  { id: "onboarding", label: "settings.navOnboarding", icon: <IconActionItems /> },
 ];
 
 /** Props the Shell passes in. ``onBotUpdated`` and
  *  ``onAdminsChanged`` bubble state out to App; the others are
  *  user-context or restart hooks. */
 export type SettingsTabProps = {
-  data: OnboardingData | null;
   signedInUser: { tgid: string; display_name: string | null };
   isAdmin: boolean;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
-  onRestart: () => void;
 };
 
 export default function SettingsTab(props: SettingsTabProps) {
@@ -87,7 +80,7 @@ export default function SettingsTab(props: SettingsTabProps) {
   return (
     <div className="space-y-4">
       <SidebarShell
-        items={SETTINGS_SECTIONS.filter((it) => props.isAdmin || !["webui-access", "onboarding", "agent"].includes(it.id)).map((it) => ({
+        items={SETTINGS_SECTIONS.filter((it) => props.isAdmin || !["webui-access", "agent"].includes(it.id)).map((it) => ({
           ...it,
           // Translate the i18n key in the consumer (sidebar
           // shell expects pre-resolved labels). ``label`` is
@@ -111,15 +104,10 @@ export default function SettingsTab(props: SettingsTabProps) {
         {section === "agent" && props.isAdmin && <SettingsAgentCard />}
         {section === "webui-access" && props.isAdmin && (
           <SettingsWebuiAccessCard
-            signedInUser={props.signedInUser}
-            onAdminsChanged={props.onAdminsChanged}
           />
         )}
         {section === "security" && (
           <SettingsSecurityCard />
-        )}
-        {section === "onboarding" && props.isAdmin && (
-          <SettingsOnboardingCard onRestart={props.onRestart} />
         )}
       </SidebarShell>
     </div>

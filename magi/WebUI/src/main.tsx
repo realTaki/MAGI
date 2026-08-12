@@ -15,7 +15,7 @@ createRoot(root).render(
   <StrictMode>
     {/* Single shared React Query client for the entire app.
         Lives outside ``App`` so the same client survives every
-        view transition (landing → onboarding → login →
+        view transition (landing → login →
         dashboard) without losing its in-memory cache — important
         when the operator bounces between tabs and the dashboard's
         chat session list is mid-fetch. ``ChatTab`` and any other

@@ -33,20 +33,17 @@ import { useState } from "react";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useT } from "../i18n/index";
-import type { OnboardingData } from "./onboardingTypes";
 import ChatTab from "./ChatTab";
 import KnowledgeTab from "./KnowledgeTab";
 import AgenticSocietyTab from "./AgenticSocietyTab";
 import SettingsTab from "./SettingsTab";
 
 export default function DashboardPage(props: {
-  data: OnboardingData | null;
   signedInUser: { tgid: string; display_name: string | null; admin: boolean } | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
-  onRestart: () => void;
   onSignOut: () => void;
 }) {
   // The dashboard is only meaningful after a successful sign-in.
@@ -66,10 +63,8 @@ export default function DashboardPage(props: {
     <PostLoginLayout
       user={user}
       onSignOut={props.onSignOut}
-      data={props.data}
       onBotUpdated={props.onBotUpdated}
       onAdminsChanged={props.onAdminsChanged}
-      onRestart={props.onRestart}
     />
   );
 }
@@ -81,12 +76,10 @@ export default function DashboardPage(props: {
 // utility buttons on the right, all on one row).
 function PostLoginLayout(props: {
   user: { tgid: string; display_name: string | null; admin: boolean };
-  data: OnboardingData | null;
   onBotUpdated: (newBot: { token: string; username: string }) => void;
   onAdminsChanged: (
     next: Array<{ tgid: string; displayName: string | null }>,
   ) => void;
-  onRestart: () => void;
   onSignOut: () => void;
 }) {
   // D.18+3 — default to the chat tab. The chat pane is the
@@ -149,12 +142,10 @@ function PostLoginLayout(props: {
           {tab === "knowledge" && <KnowledgeTab />}
           {tab === "settings" && (
             <SettingsTab
-              data={props.data}
               signedInUser={props.user}
               isAdmin={props.user.admin}
               onBotUpdated={props.onBotUpdated}
               onAdminsChanged={props.onAdminsChanged}
-              onRestart={props.onRestart}
             />
           )}
         </div>

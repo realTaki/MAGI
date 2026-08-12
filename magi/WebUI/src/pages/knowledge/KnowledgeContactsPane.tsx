@@ -123,9 +123,6 @@ export function KnowledgeContactsPane() {
                           "bg-ink-soft/10 text-ink-soft"
                         }`}>{c.role}</span>
                       )}
-                      {c.admin && (
-                        <span className="ml-1 text-[10px] rounded px-1.5 py-0.5 font-medium bg-amber-100 text-amber-800">admin</span>
-                      )}
                     </td>
                     <td className="py-2.5 pr-3 hidden sm:table-cell">
                       <span className="text-xs text-ink-soft/60">{formatTimestamp(c.last_seen_at)}</span>

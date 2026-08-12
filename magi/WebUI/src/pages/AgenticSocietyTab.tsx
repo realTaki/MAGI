@@ -29,7 +29,6 @@ export type ContactRow = {
   name: string;
   display_name: string | null;
   role: "assigned" | "guest";
-  admin: boolean;
   tgid: number | null;
   notes: string;
   notes_count: number;
