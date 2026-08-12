@@ -68,6 +68,10 @@ class A2ANotifyJob:
     ``claim_for_target``，没有 :meth:`BaseJobBoard.get_result` —
     投递结果只写到 ``status`` / ``error_code``，调用方按业务需
     要轮询而非常规 result 路径。
+
+    ``source_channel`` / ``source_conversation_id`` 显式声明：分别记录
+    发送方的 channel (webui / tg / a2a.* 等) 以及发送方会话 ID，让
+    target 处理时无需打开 JSON dict 也能拿到调用上下文。
     """
 
     job_id: str = ""  # 发布时自动生成的 job_id
@@ -76,7 +80,8 @@ class A2ANotifyJob:
     conversation_id: str | None = None  # 可选的会话 ID 透传
     correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 通知正文
-    payload: dict | None = None  # 额外的 JSON 结构化负载
+    source_channel: str = ""  # 发送方所在 channel（webui / tg / a2a.* 等）
+    source_conversation_id: str | None = None  # 发送方会话 ID 透传
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +154,8 @@ class _A2ANotifyRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    source_conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     error_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -305,7 +311,8 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 conversation_id=job.conversation_id,
                 correlation_id=job.correlation_id,
                 text=job.text,
-                payload=job.payload,
+                source_channel=job.source_channel,
+                source_conversation_id=job.source_conversation_id,
             )
             s.add(row)
             s.commit()

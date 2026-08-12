@@ -159,13 +159,12 @@ class AgentWorker(RuntimeWorker):
             # new run
             if source == "chat":
                 self._active_conversations.add(conversation_id)
-            payload = getattr(job, "payload", None) or {}
             is_a2a = source != "chat"
             ctx = RunContext(
-                contact_id=(None if is_a2a else payload.get("contact_id")),
+                contact_id=(None if is_a2a else job.contact_id),
                 conversation_id=(conversation_id or f"{source}:{job.job_id}"),
-                channel=(source if is_a2a else payload.get("channel", "")),
-                caller_role=(None if is_a2a else payload.get("caller_role")),
+                channel=(source if is_a2a else job.channel),
+                caller_role=(None if is_a2a else job.caller_role),
                 messages=(
                     [{"role": "user", "content": getattr(job, "text", "")}]
                     if is_a2a
@@ -584,10 +583,8 @@ class AgentWorker(RuntimeWorker):
                             conversation_id=ctx.conversation_id,
                             correlation_id=tc_id,
                             text=text,
-                            payload={
-                                "source_channel": ctx.channel,
-                                "source_conversation_id": ctx.conversation_id,
-                            },
+                            source_channel=ctx.channel or "",
+                            source_conversation_id=ctx.conversation_id,
                         )
                     )
             else:
@@ -671,7 +668,7 @@ class AgentWorker(RuntimeWorker):
                     conversation_id=ctx.conversation_id,
                 )
                 if steer is not None:
-                    text = (getattr(steer, "payload", None) or {}).get("text") or ""
+                    text = steer.text or ""
                     if text:
                         steering_parts.append(text)
                     from magi.bus.guild.chatJob import ChatJobResult
@@ -875,13 +872,10 @@ async def submit_agent_message(bus: Bus, message: Any) -> str:
     job = ChatJob(
         job_id=getattr(message, "event_id", "") or uuid.uuid4().hex,
         conversation_id=getattr(message, "conversation_id", None) or "",
-        payload={
-            "text": getattr(message, "text", ""),
-            "channel": getattr(message, "channel", ""),
-            "contact_id": getattr(message, "contact_id", None),
-            "conversation_id": getattr(message, "conversation_id", None),
-            "caller_role": getattr(message, "caller_role", None),
-        },
+        text=getattr(message, "text", ""),
+        channel=getattr(message, "channel", ""),
+        contact_id=getattr(message, "contact_id", None),
+        caller_role=getattr(message, "caller_role", None),
     )
     return await asyncio.to_thread(bus.agent_job_board.publish, job)
 
