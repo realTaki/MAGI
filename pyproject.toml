@@ -99,3 +99,35 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+# -----------------------------------------------------------------------------
+# pyright / Pylance — exclude directories that don't need to be indexed.
+# The defaults scan ``.venv`` (305 MB of site-packages) and ``node_modules``
+# (103 MB of JS deps under ``magi/WebUI``), which blows Pylance's RSS up to
+# ~1.9 GB. These globs are relative to the project root.
+# -----------------------------------------------------------------------------
+[tool.pyright]
+exclude = [
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/.mypy_cache/**",
+    "**/.pytest_cache/**",
+    "**/.ruff_cache/**",
+    "**/.git/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.vite/**",
+    "**/coverage/**",
+    "**/deploy/**",
+    "**/docs/**",
+    "**/.agents/**",
+    "**/.claude/**",
+    "**/.codebuddy/**",
+    "**/.codex/**",
+]
+# Don't auto-add site-packages to the import search path — that's what
+# drags ``.venv`` into Pylance's index in the first place.
+extraPaths = []
+# Skip parsing third-party source for type info; saves another ~30% memory.
+useLibraryCodeForTypes = false
