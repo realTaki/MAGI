@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from sqlalchemy import (
     Boolean,
@@ -51,9 +52,39 @@ ALL_SOURCES = frozenset({SOURCE_USER, SOURCE_PROACTIVE})
 
 # Priority enum — the LLM tool's UI mentions "normal" and
 # "high" only; other values are reserved for system paths.
-PRIORITY_NORMAL = "normal"
-PRIORITY_HIGH = "high"
-ALL_PRIORITIES = frozenset({PRIORITY_NORMAL, PRIORITY_HIGH})
+#
+# ``StrEnum`` rather than bare constants so typos are caught
+# at import/lookup time instead of silently comparing False:
+# every member is still a ``str`` (``ActionPriority.HIGH ==
+# "high"``), so ORM columns, JSON serialisation and existing
+# rows keep working unchanged.
+class ActionPriority(StrEnum):
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+# Back-compat aliases — existing imports keep working.
+PRIORITY_NORMAL = ActionPriority.NORMAL
+PRIORITY_HIGH = ActionPriority.HIGH
+# Plain-``str`` membership set: ``Enum.__hash__`` hashes the
+# member *name*, so a frozenset of members would not contain
+# the raw string ``"high"``. Normalise through
+# :func:`coerce_priority` before any membership test.
+ALL_PRIORITIES = frozenset(p.value for p in ActionPriority)
+
+
+def coerce_priority(priority: str | ActionPriority) -> ActionPriority:
+    """Normalise a raw string / member into :class:`ActionPriority`.
+
+    Raises ``ValueError`` with the Book's usual message shape
+    when the value is not a known priority.
+    """
+    try:
+        return ActionPriority(priority)
+    except ValueError:
+        raise ValueError(
+            f"priority must be one of {sorted(ALL_PRIORITIES)!r}, got {priority!r}"
+        ) from None
 
 # Default visibility window for completed rows when the caller
 # asks for ``include_completed=True``. Mirrors the dashboard's
