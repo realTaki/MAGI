@@ -7,11 +7,21 @@ not a MAGI-local store.  A receiver claims only rows addressed to its own
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select, update
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    select,
+    update,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
@@ -25,13 +35,17 @@ from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 class A2AErrorCode(StrEnum):
     """Stable, A2A-board-managed error codes.
 
-    ``StrEnum`` rather than bare string constants so typos are
-    caught at lookup time instead of silently comparing False:
-    every member is still a ``str``
-    (``A2AErrorCode.TIMEOUT == "a2a_timeout"``), so ORM
-    ``String(64)`` columns, JSON serialisation, ``==`` / ``!=``
-    against string literals and existing rows keep working
-    unchanged. Mirrors
+    ``StrEnum`` rather than bare string constants so the membership
+    check raises on lookup instead of silently comparing False.
+    Every member is still a ``str``
+    (``A2AErrorCode.TIMEOUT == "a2a_timeout"``), so JSON
+    serialisation, ``==`` / ``!=`` against string literals and any
+    remaining ``String`` columns keep working unchanged. The A2A
+    tables' ``error_code`` column is now a native
+    :class:`~sqlalchemy.types.Enum` of this class — PG stores the
+    ENUM type's OID, SQLite stores the value behind a CHECK
+    constraint, both endpoints hand back :class:`A2AErrorCode`
+    members on read. Mirrors
     :class:`magi.bus.guild.mcpServerChangedJob.MCPKind` /
     :class:`magi.bus.library.local.actionItemBook.ActionSource`.
 
@@ -44,14 +58,6 @@ class A2AErrorCode(StrEnum):
     TIMEOUT = "a2a_timeout"  # Request reached ``deadline_at`` without a result
 
 
-# Sentinel stored in the ``NOT NULL DEFAULT ''`` ``error_code``
-# column to mean "no error yet / not a failure." Translates
-# transparently with the dataclass's :data:`None` default at
-# the DB boundary — see ``_normalise_result_for_db`` and
-# ``A2ARequestResult.__post_init__``.
-_EMPTY_DB_ERROR_CODE = ""
-
-
 @dataclass(frozen=True, slots=True)
 class A2ARequestJob:
     """MAGIS 间的可观测 A2A 请求："一问一答"，target claim 后必须回执一次。
@@ -60,7 +66,7 @@ class A2ARequestJob:
     只有 ``target_magi_id`` 对应的 MAGI 通过 ``claim_for_target``
     能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at``
     到达后 worker 通过 ``a2aRequestJobBoard._expire_due`` 自动写
-    ``status="failed"`` + ``error_code=A2AErrorCode.TIMEOUT.value``。
+    ``status="failed"`` + ``error_code=A2AErrorCode.TIMEOUT``。
     """
 
     job_id: str = ""  # 发布时自动生成的 job_id
@@ -87,20 +93,6 @@ class A2ARequestResult:
     content: str = ""  # 目标 MAGI 回传的响应文本
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
     error: str | None = None  # 失败时的错误文案
-
-    def __post_init__(self) -> None:
-        # DB-read path: ``_read_result_from_job`` hands back the
-        # raw ``String(64)`` column as a plain ``str``. Fold the
-        # two DB-level sentinels (``""`` = no error / known code
-        # value) back into the dataclass shape
-        # (``None`` = no error / :class:`A2AErrorCode` member).
-        # Unknown values raise — that's the whole point of the
-        # StrEnum migration.
-        if isinstance(self.error_code, str):
-            if not self.error_code:
-                object.__setattr__(self, "error_code", None)
-            else:
-                object.__setattr__(self, "error_code", A2AErrorCode(self.error_code))
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,16 +129,6 @@ class A2ANotifyResult:
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
     error: str | None = None  # 失败时的错误文案
 
-    def __post_init__(self) -> None:
-        # 镜像 :meth:`A2ARequestResult.__post_init__`：把
-        # ``_read_result_from_job`` 拿到的裸 ``str`` 折叠回 enum /
-        # ``None``，让下游永远看到带类型的 error_code。
-        if isinstance(self.error_code, str):
-            if not self.error_code:
-                object.__setattr__(self, "error_code", None)
-            else:
-                object.__setattr__(self, "error_code", A2AErrorCode(self.error_code))
-
 
 class _A2ARequestRow(Base):
     __tablename__ = "a2a_request_jobs"
@@ -169,7 +151,11 @@ class _A2ARequestRow(Base):
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    error_code: Mapped[A2AErrorCode | None] = mapped_column(
+        Enum(A2AErrorCode, name="a2a_error_code", native_enum=True),
+        nullable=True,
+        default=None,
+    )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -202,7 +188,11 @@ class _A2ANotifyRow(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    error_code: Mapped[A2AErrorCode | None] = mapped_column(
+        Enum(A2AErrorCode, name="a2a_error_code", native_enum=True),
+        nullable=True,
+        default=None,
+    )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -231,26 +221,6 @@ def _validate_route(session, *, source_magi_id: int, target_magi_id: int) -> Non
         raise LookupError("A2A source or target MAGI does not exist")
     if source.magis_id != target.magis_id:
         raise ValueError("A2A source and target must belong to the same MAGIS")
-
-
-def _normalise_result_for_db(result):
-    """Translate dataclass ``error_code`` into the DB column shape.
-
-    The dataclass carries ``A2AErrorCode | None`` (typed sentinel
-    for "no failure"); the ORM column is ``String(64) NOT NULL
-    DEFAULT ''`` (string sentinel for "no failure"). ``str()``
-    on an :class:`A2AErrorCode` member yields its stable string
-    value, so the column never sees the enum type directly.
-
-    Returns ``result`` unchanged when no coercion is needed so
-    the hot path stays allocation-free.
-    """
-    code = result.error_code
-    if code is None:
-        return replace(result, error_code=_EMPTY_DB_ERROR_CODE)
-    if isinstance(code, A2AErrorCode):
-        return replace(result, error_code=code.value)
-    return result
 
 
 class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestResult]):
@@ -300,11 +270,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
 
     def submit_result(self, *, key: str, result: A2ARequestResult) -> None:
         """Complete a request once, and never overwrite expiry/failure."""
-        # Translate ``A2AErrorCode | None`` → DB column shape
-        # (``String(64) NOT NULL DEFAULT ''``) at the boundary so
-        # the row write below doesn't violate the NOT NULL
-        # constraint. See ``_normalise_result_for_db``.
-        result = _normalise_result_for_db(result)
         with self._session() as s:
             row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
             if row is None:
@@ -344,7 +309,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
             .values(
                 status="failed",
-                error_code=A2AErrorCode.TIMEOUT.value,
+                error_code=A2AErrorCode.TIMEOUT,
                 error="A2A request deadline elapsed",
                 completed_at=now,
             )
@@ -395,13 +360,11 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
             return _row_to_job(row, A2ANotifyJob) if row is not None else None
 
     def submit_result(self, *, key: str, result: A2ANotifyResult) -> None:
-        # Override :meth:`BaseJobBoard.submit_result` to fold the
-        # ``A2AErrorCode | None`` dataclass shape into the
-        # ``String(64) NOT NULL`` column before delegating —
-        # otherwise a ``None`` from the caller (no failure) trips
-        # the NOT NULL constraint on UPDATE. Mirrors
-        # :meth:`a2aRequestJobBoard.submit_result`.
-        super().submit_result(key=key, result=_normalise_result_for_db(result))
+        # Dataclass shape (``A2AErrorCode | None``) already matches
+        # the native :class:`~sqlalchemy.types.Enum` column, so
+        # ``BaseJobBoard.submit_result`` writes the value verbatim.
+        # Mirrors :meth:`a2aRequestJobBoard.submit_result`.
+        super().submit_result(key=key, result=result)
 
 
 __all__ = [

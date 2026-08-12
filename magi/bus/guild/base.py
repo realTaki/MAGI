@@ -7,7 +7,6 @@ BaseJobBoard    -- 往返任务队列（publish → claim → submit_result → 
 from __future__ import annotations
 
 import dataclasses
-import uuid
 from datetime import datetime, timedelta
 from typing import ClassVar
 
@@ -25,11 +24,6 @@ MAX_ATTEMPTS = 3
 #: matching the chatJobBoard ceiling. Without this cap a hot
 #: conversation could spin forever.
 MAX_ATTEMPTS_CANDIDATES = 10
-
-
-def new_job_id() -> str:
-    """生成新的 Job ID（hex 字符串）。"""
-    return uuid.uuid4().hex
 
 
 class BaseNotifyBoard[JobT]:
@@ -76,13 +70,22 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
         super().__init__(factory)
         self._lease_seconds = lease_seconds
 
+    # -- ID 生成 -----------------------------------------------------------
+
+    @staticmethod
+    def new_job_id() -> str:
+        """生成新的 Job ID（hex 字符串）。"""
+        import uuid  # local import keeps the base module light and avoids
+        # pulling in :mod:`uuid` for callers that never publish.
+        return uuid.uuid4().hex
+
     # -- 异步队列 ----------------------------------------------------------
 
     def claim(self) -> JobT | None:
         with self._session() as s:
             row = self._claim(s)
             s.commit()
-            return _row_to_job(row, self.job_cls) if row else None
+            return _map_row(row, self.job_cls) if row else None
 
     def submit_result(self, *, key: str, result: ResultT) -> None:
         """提交结果，key 为 natural_key_attr 的值（即 job_id）。"""
@@ -407,10 +410,6 @@ def _map_row(row, cls):
         if hasattr(row, f.name):
             kwargs[f.name] = getattr(row, f.name)
     return cls(**kwargs)
-
-
-def _row_to_job(row, job_cls):
-    return _map_row(row, job_cls)
 
 
 def _write_result_to_job(row, result, result_cls) -> None:
