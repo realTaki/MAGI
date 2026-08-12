@@ -39,7 +39,6 @@ def reconcile_for_admin(
             book.complete(
                 action_item_id=item.id,
                 note="IM two-factor verification enabled",
-                completed_by_contact_id=contact_id,
             )
             changed = True
         return changed

@@ -74,7 +74,6 @@ def _serialize(a) -> ActionItemOut:
         source=a.source,
         created_at=_iso(a.created_at) or "",
         completed_at=_iso(a.completed_at),
-        completed_by_contact_id=a.completed_by_contact_id,
         completion_note=a.completion_note,
         dismissed=a.dismissed,
     )
@@ -91,7 +90,6 @@ class ActionItemOut(BaseModel):
     source: str = "system"
     created_at: str
     completed_at: str | None = None
-    completed_by_contact_id: int | None = None
     completion_note: str | None = None
     dismissed: bool = False
 
@@ -238,7 +236,6 @@ def complete_action_item(
     row = service.complete(
         action_item_id=item_id,
         note=(payload.completion_note if "completion_note" in payload.model_fields_set else None),
-        completed_by_contact_id=admin_id,
     )
     if row is None:  # Ownership was rechecked inside the bus transaction.
         raise MagiHTTPException(

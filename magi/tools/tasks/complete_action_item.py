@@ -105,7 +105,6 @@ class CompleteActionItemTool(Tool):
             row = ctx.bus.action_items_book.complete(
                 action_item_id=item_id,
                 note=note,
-                completed_by_contact_id=ct_id,
             )
         except ValueError as e:
             # ``note`` length invariant lives on the Book.
