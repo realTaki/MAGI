@@ -16,34 +16,41 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import hashlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
+from magi.bus.library.magis import (
+    AUTH_MODE_IM_2FA_ENABLED,
+    AUTH_MODE_LOCAL_NO_2FA,
+    AUTH_MODE_RECOVERY_LOCAL_NO_2FA,
+)
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import verified_proxy_operator
+from magi.channels.api.proxy_auth import verified_proxy_operator, verified_proxy_scope
 from magi.channels.telegram import bot as tg_bot
 
 router = APIRouter(tags=["runtime-access"])
 
 _TTL_SECONDS = 300
 _COOLDOWN_SECONDS = 30
-_PASSWORD_COOLDOWN_SECONDS = 10
 _CODE_PREFIX = "auth.target_login_code"
 
 
 class LoginAccount(BaseModel):
     contact_id: int  # runtime-local contacts.id (opaque; primary key)
+    magis_admin_id: int | None = None  # shared identity for an admin account
     name: str
     role: str = "assigned"  # "admin" | "assigned" — explicit so the picker can disambiguate
     admin: bool = False
     assigned: bool = False
-    has_password: bool = False
     has_tg_code: bool = False
     tgid: int | None = None  # TG chat id when bound; legacy key for the TG-code path
+    auth_mode: str = "local_no_2fa"
+    local_direct_allowed: bool = False
 
 
 class LoginAccountsResponse(BaseModel):
@@ -71,6 +78,7 @@ class VerifyLoginCodeRequest(LoginCodeRequest):
 class VerifyLoginCodeResponse(BaseModel):
     ok: bool
     contact_id: int | None = None
+    magis_admin_id: int | None = None
     role: str | None = None
     tgid: int | None = None
     display_name: str | None = None
@@ -80,10 +88,16 @@ class VerifyLoginCodeResponse(BaseModel):
     retry_after: int | None = None
 
 
-class LoginPasswordRequest(BaseModel):
-    contact_id: int
-    role: str = "assigned"
-    password: str
+class LocalDirectLoginRequest(LoginCodeRequest):
+    """Pre-login request for a local-only admin session."""
+
+
+class TwoFactorSendRequest(BaseModel):
+    tgid: int
+
+
+class TwoFactorVerifyRequest(TwoFactorSendRequest):
+    code: str = Field(min_length=6, max_length=6)
 
 
 def _require_webui(request: Request) -> None:
@@ -91,6 +105,20 @@ def _require_webui(request: Request) -> None:
     # caller.  It is still HMAC authenticated and target-bound.
     if verified_proxy_operator(request) is None:
         raise MagiHTTPException(401, "access.unauthorized", "Invalid WebUI control request")
+
+
+def _current_proxy_admin(request: Request, bus: Bus) -> int:
+    """Return the shared admin identity from an authenticated runtime proxy call."""
+    scope = verified_proxy_scope(request)
+    if scope is None:
+        raise MagiHTTPException(401, "auth.not_signed_in", "Not signed in")
+    is_admin, _assigned, _two_factor, admin_id = scope
+    if not is_admin or admin_id is None or bus.magis_admins_book is None:
+        raise MagiHTTPException(403, "auth.magis_admin_required", "MAGIS administrator required")
+    admin = bus.magis_admins_book.get(admin_id=admin_id)
+    if admin is None:
+        raise MagiHTTPException(403, "auth.magis_admin_required", "MAGIS administrator required")
+    return admin.id
 
 
 def _runtime_magi_id() -> int:
@@ -119,9 +147,10 @@ def _direct_magis(bus: Bus) -> tuple[int, int]:
 def _accounts(bus: Bus, magis_id: int) -> list[LoginAccount]:
     """Enumerate sign-in candidates for the local MAGI's direct MAGIS.
 
-    A person who appears as both Genesis admin AND per-MAGI
-    assigned produces two picker rows — each login grants a
-    different scope of permissions.
+    An administrator's shared MAGIS identity is represented locally by a
+    Contact projection.  The projection is used solely for local ownership
+    (conversations and ActionItems); its ``magis_admin_id`` is the authority
+    identity.  An assigned user remains a separate local account.
 
     ``contact_id`` is the runtime-local ``contacts.id`` —
     opaque from the wire but unique within the runtime. The
@@ -130,37 +159,38 @@ def _accounts(bus: Bus, magis_id: int) -> list[LoginAccount]:
     """
     result: list[LoginAccount] = []
 
-    # 1. Genesis admins (MAGIS-side). The runtime may or may
-    # not have MAGIS DB access; if it doesn't (the typical
-    # webui-only deploy), the webui adds Genesis admins
-    # separately before responding to the picker.
+    # 1. MAGIS admins.  Each must have a local Contact projection before
+    # it can sign in to this runtime.
     if bus.magis_admins_book is not None:
         for admin in bus.magis_admins_book.list_for_magis(magis_id=magis_id):
-            contact = bus.contacts_book.get(contact_id=admin.contact_id)
-            display = (contact.display_name or contact.name) if contact else f"Admin #{admin.contact_id}"
-            has_pw = contact is not None and bus.contacts_book.get_password_hash(contact_id=admin.contact_id) is not None
+            contact = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=admin.id)
+            if contact is None:
+                continue
+            display = admin.name or contact.display_name or contact.name
             result.append(
                 LoginAccount(
-                    contact_id=admin.contact_id,
-                    name=display or f"Admin #{admin.contact_id}",
+                    contact_id=contact.id,
+                    magis_admin_id=admin.id,
+                    name=display,
                     role="admin",
                     admin=True,
-                    assigned=contact is not None and contact.role == "assigned",
-                    has_password=has_pw,
-                    has_tg_code=contact is not None and contact.tgid is not None,
-                    tgid=contact.tgid if contact else None,
+                    assigned=False,
+                    has_tg_code=(
+                        admin.auth_mode == AUTH_MODE_IM_2FA_ENABLED and admin.tgid is not None
+                    ),
+                    tgid=admin.tgid,
+                    auth_mode=admin.auth_mode,
+                    local_direct_allowed=admin.auth_mode
+                    in {AUTH_MODE_LOCAL_NO_2FA, AUTH_MODE_RECOVERY_LOCAL_NO_2FA},
                 )
             )
 
-    # 2. Per-MAGI assigned users. Includes webui-only users
-    # (no TG binding) so the wizard's password-only path
-    # shows up in the picker.
+    # 2. Per-MAGI assigned users.
     for contact in (row for row in bus.contacts_book.list_all() if row.role == "assigned"):
         # If a Genesis-admin row with the same contact_id
         # already exists, still produce an assigned row
         # so the picker offers both login scopes.
         display = contact.display_name or contact.name or ""
-        has_pw = bus.contacts_book.get_password_hash(contact_id=contact.id) is not None
         result.append(
             LoginAccount(
                 contact_id=contact.id,
@@ -168,9 +198,10 @@ def _accounts(bus: Bus, magis_id: int) -> list[LoginAccount]:
                 role="assigned",
                 admin=False,
                 assigned=True,
-                has_password=has_pw,
                 has_tg_code=contact.tgid is not None,
                 tgid=contact.tgid,
+                auth_mode="im_2fa_enabled" if contact.tgid is not None else "disabled",
+                local_direct_allowed=False,
             )
         )
 
@@ -192,10 +223,18 @@ def _new_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _code_hash(code: str) -> str:
+    return hashlib.sha256(code.encode()).hexdigest()
+
+
 async def _send_code(bus: Bus, magi_id: int, magis_id: int, contact_id: int, role: str, text: str) -> str:
     _ = magi_id, magis_id
     account = _find_account(_accounts(bus, magis_id), contact_id, role)
-    if account is None or account.tgid is None:
+    if (
+        account is None
+        or account.tgid is None
+        or (account.admin and account.auth_mode != AUTH_MODE_IM_2FA_ENABLED)
+    ):
         raise MagiHTTPException(
             409, "access.no_tg_binding", "This account has no Telegram binding"
         )
@@ -229,7 +268,11 @@ async def send_login_code(
     _require_webui(request)
     magi_id, magis_id = _direct_magis(bus)
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
-    if account is None or account.tgid is None:
+    if (
+        account is None
+        or account.tgid is None
+        or (account.admin and account.auth_mode != AUTH_MODE_IM_2FA_ENABLED)
+    ):
         # Do not turn this into a principal-enumeration endpoint.
         return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS)
     previous_raw = bus.settings_book.get(key=_code_key(payload.contact_id, payload.role))
@@ -250,7 +293,7 @@ async def send_login_code(
         key=_code_key(payload.contact_id, payload.role),
         value=json.dumps(
             {
-                "code": code,
+                "code_hash": _code_hash(code),
                 "expires_at": now.timestamp() + _TTL_SECONDS,
                 "last_sent_at": now.timestamp(),
             }
@@ -275,75 +318,32 @@ async def send_login_code(
     return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS, delivery=delivery)
 
 
-@router.post("/access/login-password", response_model=VerifyLoginCodeResponse)
-async def access_login_password(
-    payload: LoginPasswordRequest, request: Request, bus: BusDep
+@router.post("/access/local-direct-login", response_model=VerifyLoginCodeResponse)
+async def local_direct_login(
+    payload: LocalDirectLoginRequest, request: Request, bus: BusDep
 ) -> VerifyLoginCodeResponse:
-    """Verify a password against this runtime's local ``contacts`` table.
+    """Return identity claims for a local-only bootstrap admin session.
 
-    Called by the singleton webui via the proxy layer. The
-    webui hands us ``(contact_id, role, password)``; we
-    look up the local contact, verify the scrypt hash, and
-    return the cookie inputs (``display_name``, ``admin``,
-    ``assigned``, ``tgid``).
-
-    Anti-enumeration: a ``contact_id`` the picker did not
-    offer (and that therefore has no password_hash) responds
-    as ``ok=False`` with a generic error and never sets a
-    cookie on the calling webui.
+    The browser reaches this only through the control-plane endpoint, which
+    proves the deployment boundary.  The runtime is still authoritative for
+    both the account role and the persisted operator auth state.
     """
-    from magi.channels.api import password_utils
 
     _require_webui(request)
     _magi_id, magis_id = _direct_magis(bus)
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
-    if account is None or not account.has_password:
-        return VerifyLoginCodeResponse(ok=False, error="password does not match")
-
-    if not password_utils.check_cooldown(
-        bus,
-        f"{payload.role}:{payload.contact_id}",
-        cooldown_seconds=_PASSWORD_COOLDOWN_SECONDS,
-    ):
-        record = password_utils._store_get(bus, f"{payload.role}:{payload.contact_id}") or {}
-        last = float(record.get("last_attempt_at", 0))
-        remaining = max(1, int(_PASSWORD_COOLDOWN_SECONDS - (_now_ts() - last)))
-        return VerifyLoginCodeResponse(
-            ok=False,
-            error=f"Wait {remaining}s before trying again.",
-            retry_after=remaining,
-        )
-
-    password_utils.record_attempt(bus, f"{payload.role}:{payload.contact_id}")
-
-    stored = _password_hash(bus, payload.contact_id)
-    if not stored or not password_utils.verify_password(stored, payload.password):
-        return VerifyLoginCodeResponse(
-            ok=False, error="password does not match", retry_after=_PASSWORD_COOLDOWN_SECONDS
-        )
-
-    password_utils.clear_attempt(bus, f"{payload.role}:{payload.contact_id}")
-    contact = bus.contacts_book.get(contact_id=payload.contact_id)
-    if contact is None:
-        return VerifyLoginCodeResponse(ok=False, error="contact not found")
+    if account is None or not account.admin or not account.local_direct_allowed:
+        return VerifyLoginCodeResponse(ok=False, error="Local direct sign-in is unavailable")
     return VerifyLoginCodeResponse(
         ok=True,
-        contact_id=contact.id,
-        role=payload.role,
-        tgid=contact.tgid,
-        display_name=contact.display_name or contact.name or "",
-        admin=payload.role == "admin",
-        assigned=payload.role == "assigned" and contact.role == "assigned",
+        contact_id=account.contact_id,
+        magis_admin_id=account.magis_admin_id,
+        role=account.role,
+        tgid=account.tgid,
+        display_name=account.name,
+        admin=True,
+        assigned=account.assigned,
     )
-
-
-def _password_hash(bus: Bus, contact_id: int) -> str | None:
-    return bus.contacts_book.get_password_hash(contact_id=contact_id)
-
-
-def _now_ts() -> float:
-    import time
-    return time.time()
 
 
 @router.post("/access/verify-login-code", response_model=VerifyLoginCodeResponse)
@@ -367,14 +367,83 @@ async def verify_login_code(
         stored = {}
     if not valid:
         return VerifyLoginCodeResponse(ok=False, error="Code expired — request a new one.")
-    if payload.code.strip() != str(stored.get("code", "")):
+    if _code_hash(payload.code.strip()) != str(stored.get("code_hash", "")):
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
     return VerifyLoginCodeResponse(
         ok=True,
         contact_id=account.contact_id,
+        magis_admin_id=account.magis_admin_id,
         role=account.role,
         tgid=account.tgid,
         display_name=account.name,
         admin=account.admin,
         assigned=account.assigned,
     )
+
+
+@router.post("/access/two-factor/send-login-code", response_model=LoginCodeResponse)
+async def send_two_factor_setup_code(
+    payload: TwoFactorSendRequest, request: Request, bus: BusDep
+) -> LoginCodeResponse:
+    admin_id = _current_proxy_admin(request, bus)
+    key = f"auth.two_factor_setup.{admin_id}"
+    code = _new_code()
+    now = datetime.now(UTC)
+    bus.settings_book.set(
+        key=key,
+        value=json.dumps(
+            {
+                "tgid": payload.tgid,
+                "code_hash": _code_hash(code),
+                "expires_at": now.timestamp() + _TTL_SECONDS,
+            }
+        ),
+    )
+    token = bus.settings_book.get(key="telegram.bot_token")
+    if not token:
+        bus.settings_book.delete(key=key)
+        raise MagiHTTPException(409, "access.no_delivery_bot", "Configure a Telegram bot first")
+    try:
+        await tg_bot.send_text_raw(
+            token,
+            payload.tgid,
+            f"Your MAGI two-factor setup code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
+        )
+    except Exception as exc:
+        bus.settings_book.delete(key=key)
+        raise MagiHTTPException(503, "access.delivery_failed", "Could not deliver the code") from exc
+    return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS, delivery="self")
+
+
+@router.post("/access/two-factor/verify-login-code", response_model=LoginCodeResponse)
+async def verify_two_factor_setup_code(
+    payload: TwoFactorVerifyRequest, request: Request, bus: BusDep
+) -> LoginCodeResponse:
+    admin_id = _current_proxy_admin(request, bus)
+    key = f"auth.two_factor_setup.{admin_id}"
+    raw = bus.settings_book.get(key=key)
+    bus.settings_book.delete(key=key)
+    try:
+        stored = json.loads(raw or "")
+        valid = (
+            int(stored.get("tgid")) == payload.tgid
+            and str(stored.get("code_hash")) == _code_hash(payload.code.strip())
+            and datetime.now(UTC).timestamp() < float(stored.get("expires_at", 0))
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        valid = False
+    if not valid:
+        return LoginCodeResponse(ok=False, error="Code does not match or expired")
+    if bus.magis_admins_book is None:
+        raise MagiHTTPException(503, "unavailable.magis_store", "MAGIS store unavailable")
+    bus.magis_admins_book.bind_telegram(admin_id=admin_id, tgid=payload.tgid)
+    projection = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=admin_id)
+    if projection is not None:
+        from magi.proactive.two_factor_action import reconcile_for_admin
+
+        reconcile_for_admin(
+            book=bus.action_items_book,
+            contact_id=projection.id,
+            auth_mode=AUTH_MODE_IM_2FA_ENABLED,
+        )
+    return LoginCodeResponse(ok=True)

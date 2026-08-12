@@ -18,6 +18,8 @@ async def _post(path: str, payload: dict[str, object]) -> None:
         operator_id=0,
         operator_name="WebUI bootstrap",
         tgid=None,
+        admin=False,
+        assigned=False,
     )
     base = os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
     # Both endpoints this helper reaches (``/control/telegram/bootstrap``,

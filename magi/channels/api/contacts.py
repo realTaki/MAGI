@@ -4,7 +4,7 @@ Serves two audiences:
   1. Knowledge → Contacts pane — ``GET /api/contacts?with_notes=true``
      returns contacts that have LLM-recorded notes.
   2. Admin CRUD — ``POST`` / ``GET/{id}`` / ``PATCH/{id}`` manage
-     the contact directory (name, role, admin, TG binding).
+     the contact directory (name, role, TG binding).
 
 LLM credentials are managed separately via ``/api/magi``
 (the Magi row owns the provider + API key, not the Contact).
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
@@ -35,13 +35,8 @@ _MAX_ROWS = 200
 _PAGE_SIZE_DEFAULT = 20
 _PAGE_SIZE_MAX = 100
 
-# Valid ``role`` values — the relationship this contact
-# has to MAGI. ``admin`` is intentionally NOT in this set:
-# WebUI sign-in rights are carried by the separate
-# ``admin`` boolean on the same row (see ``ContactOut.admin``
-# and the ``/api/auth/me`` route). Splitting the two
-# fields lets one contact be both ``role='assigned'`` (the
-# person MAGI serves) AND ``admin=True`` (the operator).
+# Valid local roles. MAGIS administrator authority is deliberately absent:
+# a Contact may only be a local served user or guest.
 _CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
 
 
@@ -64,29 +59,12 @@ class ContactOut(BaseModel):
     name: str
     display_name: str | None = None
     role: str | None = None
-    # WebUI sign-in rights — independent of ``role``. True
-    # if the contact can authenticate to the operator
-    # console (``/api/auth/me`` accepts the cookie; tasks
-    # creator gate allows them). The split lets a contact
-    # be ``role='assigned'`` (the person MAGI serves) AND
-    # ``admin=True`` (the operator) at the same time.
-    admin: bool = False
     tgid: int | None = None
     notes: str = ""
     notes_count: int = 0
     last_seen_at: str = ""
     created_at: str = ""
     updated_at: str = ""
-    # ``password_set`` is a boolean flag — the operator
-    # never sees the hash, only whether the contact has
-    # local password hash. Computed per-call so a password added via the
-    # onboarding wizard appears immediately.
-    password_set: bool = False
-    # ``login_methods`` mirrors the ContactBook password state
-    # + the bound IM. The frontend uses this to render
-    # the Settings → Security card without a second
-    # query round-trip.
-    login_methods: list[str] = []
 
 
 class ContactListOut(BaseModel):
@@ -101,13 +79,6 @@ class ContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     display_name: str | None = Field(default=None, max_length=120)
     role: str = Field(default="guest", max_length=16)
-    # Defaults to ``False`` — a freshly-created contact is
-    # not a WebUI operator until the operator explicitly
-    # promotes them via ``PATCH /api/contacts/{id}`` with
-    # ``{"admin": true}``. Pre-2024 schema conflated this
-    # with ``role='admin'``; the split keeps the two
-    # concerns independent.
-    admin: bool = False
     tgid: int | None = None
 
 
@@ -115,94 +86,44 @@ class ContactUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=120)
     name: str | None = Field(default=None, max_length=120)
     role: str | None = Field(default=None, max_length=16)
-    # ``None`` (omitted from the PATCH body) means "leave
-    # admin unchanged"; ``True`` / ``False`` flips the bit.
-    # The ``model_fields_set`` check on the route side
-    # distinguishes the two cases — critical because
-    # ``False`` is a meaningful value (we want to be able
-    # to revoke admin).
-    admin: bool | None = None
     tgid: int | None = None
 
 
-def _serialize(
-    view: Any,
-    notes_count: int = 0,
-    login_methods: list[str] | None = None,
-) -> ContactOut:
+def _serialize(view: Any, notes_count: int = 0) -> ContactOut:
     """Render a :class:`Any` to the wire shape.
 
-    ``login_methods`` is computed by the caller (via
-    :func:`_login_methods_for`) to avoid an N+1 query. A
-    ``None`` value means "didn't compute — fall back to a
-    single-row lookup", which is fine for the single
-    ``GET /api/contacts/{id}`` path.
+    Local contact records do not expose MAGIS admin authentication state.
     """
-    if login_methods is None:
-        login_methods = _login_methods_for(view)
     return ContactOut(
         id=view.id,
         name=view.name,
         display_name=view.display_name,
         role=view.role,
-        admin=view.admin,
         tgid=view.tgid,
         notes="",
         notes_count=notes_count,
         last_seen_at=view.last_seen_at,
         created_at=view.created_at,
         updated_at=view.updated_at,
-        password_set="password" in login_methods,
-        login_methods=login_methods,
     )
 
 
-def _login_methods_for(view: Any) -> list[str]:
-    """Compute the login methods for a single contact.
+def _two_factor_is_enabled(request: Request, bus: Bus) -> bool:
+    """Read the caller's auth posture only on the two user-creation writes.
 
-    Mirrors the same logic the auth endpoints use, kept
-    inline so the contact route doesn't pay a round-trip
-    through the auth module. Side-effect free.
+    This is deliberately not a general API gate: a bootstrap admin can use
+    every other normal feature without IM verification.
     """
-    methods: list[str] = []
-    if view.tgid is not None:
-        methods.append("tg_code")
-    # password_set is queried separately by the bulk
-    # helper below — we let the caller pass the
-    # precomputed set when batching a list response.
-    return methods
+    from magi.channels.api.proxy_auth import verified_proxy_scope
 
+    scope = verified_proxy_scope(request)
+    if scope is not None:
+        is_admin, _assigned, two_factor, _admin_id = scope
+        return is_admin and two_factor
+    from magi.channels.api.auth import resolve_session
 
-def _bulk_login_methods(
-    bus: Bus,
-    views: list[Any],
-) -> dict[int, list[str]]:
-    """Batch-fetch the password-set flag for a list of contacts.
-
-    Returns ``{contact_id: methods}``. The tg_code leg is
-    computed from the already-loaded contact view.
-    """
-    if not views:
-        return {}
-    contact_ids = [v.id for v in views]
-    password_contact_ids = bus.contacts_book.password_contact_ids(contact_ids=contact_ids)
-    out: dict[int, list[str]] = {}
-    for v in views:
-        methods: list[str] = []
-        if v.tgid is not None:
-            methods.append("tg_code")
-        if v.id in password_contact_ids:
-            methods.append("password")
-        out[v.id] = methods
-    return out
-
-
-def _single_login_methods(
-    bus: Bus,
-    view: Any,
-) -> list[str]:
-    """Single-row helper for the by-id endpoints."""
-    return _bulk_login_methods(bus, [view]).get(view.id, [])
+    session = resolve_session(bus, request.cookies.get("magi_session"))
+    return bool(session and session.get("admin") and session.get("two_factor"))
 
 
 # -- routes -----------------------------------------------------------------
@@ -214,7 +135,6 @@ def list_contacts(
     bus: BusDep,
     with_notes: bool = False,
     role: str | None = None,
-    admin: bool | None = None,
     page: int = 1,
     page_size: int = _PAGE_SIZE_DEFAULT,
 ) -> ContactListOut:
@@ -241,13 +161,6 @@ def list_contacts(
                 detail=f"Unknown role {role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
             )
 
-    if admin is not None and not with_notes:
-        # ``admin=true`` ↔ WebUI operators. The Settings →
-        # WebUI access card queries this filter to render
-        # the admin list. Independent of ``role`` — see the
-        # notes on ``ContactOut.admin``.
-        pass
-
     if with_notes:
         views = bus.contacts_book.list_all()[:_MAX_ROWS]
         contact_ids = [v.id for v in views]
@@ -256,14 +169,9 @@ def list_contacts(
             for contact_id in contact_ids
         }
         views = [view for view in views if counts[view.id] > 0]
-        login_methods = _bulk_login_methods(bus, views)
         return ContactListOut(
             items=[
-                _serialize(
-                    v,
-                    notes_count=counts.get(v.id, 0),
-                    login_methods=login_methods.get(v.id, []),
-                )
+                _serialize(v, notes_count=counts.get(v.id, 0))
                 for v in views
             ],
             total=len(views),
@@ -275,14 +183,13 @@ def list_contacts(
     rows = [
         view
         for view in bus.contacts_book.list_all()
-        if (role is None or view.role == role) and (admin is None or view.admin == admin)
+        if role is None or view.role == role
     ]
     total = len(rows)
     rows = rows[(page - 1) * page_size : page * page_size]
-    login_methods = _bulk_login_methods(bus, rows)
     total_pages = max(1, (total + page_size - 1) // page_size)
     return ContactListOut(
-        items=[_serialize(v, login_methods=login_methods.get(v.id, [])) for v in rows],
+        items=[_serialize(v) for v in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -295,6 +202,7 @@ def create_contact(
     payload: ContactCreate,
     _admin: AdminGate,
     bus: BusDep,
+    request: Request,
 ) -> ContactOut:
     name = payload.name.strip()
     if not name:
@@ -314,6 +222,12 @@ def create_contact(
             status_code=400,
             code="validation.role_unknown",
             detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
+        )
+    if payload.role == "assigned" and not _two_factor_is_enabled(request, bus):
+        raise MagiHTTPException(
+            status_code=403,
+            code="auth.two_factor_required_for_user_creation",
+            detail="Enable IM two-factor verification before creating an assigned user",
         )
     if payload.role == "assigned" and any(
         view.role == "assigned" for view in bus.contacts_book.list_all()
@@ -335,7 +249,6 @@ def create_contact(
         name=name,
         display_name=payload.display_name,
         role=payload.role,
-        admin=payload.admin,
         tgid=payload.tgid,
     )
 
@@ -363,7 +276,7 @@ def create_contact(
                 exc,
             )
 
-    return _serialize(view, login_methods=_single_login_methods(bus, view))
+    return _serialize(view)
 
 
 # -- notes sub-resource ---------------------------------------------------
@@ -423,7 +336,7 @@ def get_contact(
             code="not_found.contact",
             detail="contact not found",
         )
-    return _serialize(view, login_methods=_single_login_methods(bus, view))
+    return _serialize(view)
 
 
 @router.patch("/contacts/{contact_id}", response_model=ContactOut)
@@ -432,6 +345,7 @@ def update_contact(
     payload: ContactUpdate,
     _admin: AdminGate,
     bus: BusDep,
+    request: Request,
 ) -> ContactOut:
     existing = bus.contacts_book.get(contact_id=contact_id)
     if existing is None:
@@ -471,6 +385,16 @@ def update_contact(
         if (
             payload.role == "assigned"
             and prev_role != "assigned"
+            and not _two_factor_is_enabled(request, bus)
+        ):
+            raise MagiHTTPException(
+                status_code=403,
+                code="auth.two_factor_required_for_user_creation",
+                detail="Enable IM two-factor verification before creating an assigned user",
+            )
+        if (
+            payload.role == "assigned"
+            and prev_role != "assigned"
             and any(
                 view.role == "assigned" and view.id != contact_id
                 for view in bus.contacts_book.list_all()
@@ -486,13 +410,6 @@ def update_contact(
         # branch. We need this outside the ``if`` so it
         # survives the conditional execution.
         newly_assigned = payload.role == "assigned" and prev_role != "assigned"
-
-    new_admin: bool | None = None
-    # ``admin`` toggle — independent of ``role`` (the role
-    # transition above has its own seed-hook trigger; the
-    # admin bit doesn't affect seeding).
-    if "admin" in payload.model_fields_set and payload.admin is not None:
-        new_admin = bool(payload.admin)
 
     new_tgid: int | None = None
     if "tgid" in payload.model_fields_set:
@@ -513,7 +430,6 @@ def update_contact(
         name=new_name,
         display_name=new_display_name,
         role=new_role,
-        admin=new_admin,
         tgid=new_tgid,
         set_display_name="display_name" in payload.model_fields_set,
         set_tgid="tgid" in payload.model_fields_set,
@@ -550,4 +466,4 @@ def update_contact(
                 exc,
             )
 
-    return _serialize(view, login_methods=_single_login_methods(bus, view))
+    return _serialize(view)

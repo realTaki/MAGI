@@ -83,11 +83,23 @@ async def proxy_runtime(
             method=request.method,
             path_and_query=runtime_path,
             target_id=magi_id,
-            operator_id=int(browser_session["tgid"]),
-            operator_name=named_display_name or f"User {browser_session['tgid']}",
-            tgid=int(browser_session["tgid"]),
+            operator_id=int(
+                browser_session.get("magis_admin_id") or browser_session["contact_id"]
+            ),
+            operator_name=named_display_name or f"User {browser_session['contact_id']}",
+            tgid=(
+                int(browser_session["tgid"])
+                if browser_session.get("tgid") is not None
+                else None
+            ),
+            magis_admin_id=(
+                int(browser_session["magis_admin_id"])
+                if browser_session.get("magis_admin_id") is not None
+                else None
+            ),
             admin=bool(browser_session.get("admin")),
             assigned=bool(browser_session.get("assigned")),
+            two_factor=bool(browser_session.get("two_factor")),
         )
     except RuntimeError as exc:
         raise MagiHTTPException(
@@ -141,8 +153,8 @@ async def proxy_selected_runtime(
 
     Most React Query calls are rewritten client-side, but a few independent
     controls use ``fetch('/api/...')``.  Keeping this server-side fallback
-    means they cannot accidentally reach WebUI-local state.  Auth and
-    onboarding routers are mounted earlier and retain their explicit paths.
+    means they cannot accidentally reach WebUI-local state. Auth routes are
+    mounted earlier and retain their explicit paths.
     """
     from magi.channels.api.auth import selected_session
 

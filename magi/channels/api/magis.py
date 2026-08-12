@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,10 +39,7 @@ def _admin_gate(request: Request) -> str:
 AdminGate = Annotated[str, Depends(_admin_gate)]
 
 
-_BookT = TypeVar("_BookT")
-
-
-def _require_book[BookT](book: _BookT | None, name: str) -> _BookT:
+def _require_book[BookT](book: BookT | None, name: str) -> BookT:
     """Return *book*, or 503 when the MAGIS database isn't attached.
 
     All four MAGIS-side Books on the bus are ``| None`` — they're only
@@ -151,13 +148,14 @@ class MembershipUpdate(BaseModel):
 class MAGISAdminOut(BaseModel):
     id: int
     magis_id: int
-    tgid: int
-    display_name: str | None = None
+    name: str
+    tgid: int | None = None
+    auth_mode: str
 
 
 class MAGISAdminCreate(BaseModel):
-    tgid: int
-    display_name: str | None = Field(default=None, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    tgid: int | None = None
 
 
 # -- Conversion helpers -------------------------------------------------
@@ -218,13 +216,27 @@ def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
 
 
 def _admin_out(bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
-    contact = bus.contacts_book.get(contact_id=view.contact_id)
     return MAGISAdminOut(
         id=view.id,
         magis_id=view.magis_id,
-        tgid=contact.tgid if contact and contact.tgid is not None else 0,
-        display_name=(contact.display_name or contact.name) if contact else None,
+        name=view.name,
+        tgid=view.tgid,
+        auth_mode=view.auth_mode,
     )
+
+
+def _two_factor_is_enabled(request: Request, bus: Bus) -> bool:
+    """Read the caller posture solely for additional-admin creation."""
+    from magi.channels.api.proxy_auth import verified_proxy_scope
+
+    scope = verified_proxy_scope(request)
+    if scope is not None:
+        is_admin, _assigned, two_factor, _admin_id = scope
+        return is_admin and two_factor
+    from magi.channels.api.auth import resolve_session
+
+    session = resolve_session(bus, request.cookies.get("magi_session"))
+    return bool(session and session.get("admin") and session.get("two_factor"))
 
 
 def _translate_bus_error(exc: Exception) -> MagiHTTPException:
@@ -541,16 +553,31 @@ def add_magis_admin(
     payload: MAGISAdminCreate,
     _admin: AdminGate,
     bus: BusDep,
+    request: Request,
 ) -> MAGISAdminOut:
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
-    contact = bus.contacts_book.get_by_telegram(tgid=payload.tgid)
-    if contact is None:
-        raise MagiHTTPException(404, "not_found.contact", "Telegram account is not a local contact")
+    if not _two_factor_is_enabled(request, bus):
+        raise MagiHTTPException(
+            403,
+            "auth.two_factor_required_for_user_creation",
+            "Enable IM two-factor verification before adding a MAGIS administrator",
+        )
     try:
-        view = _admins_book(bus).add(contact_id=contact.id, magis_id=magis_id)
-    except LookupError as exc:
-        raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
+        view = _admins_book(bus).add(
+            magis_id=magis_id,
+            name=payload.name,
+            tgid=payload.tgid,
+        )
+        # This endpoint runs in the MAGI whose local data the Settings page
+        # manages.  The projection is local ownership only; it is not the
+        # source of the just-created MAGIS authority.
+        bus.contacts_book.ensure_magis_admin_projection(
+            magis_admin_id=view.id,
+            display_name=view.name,
+        )
+    except (LookupError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
     return _admin_out(bus, view)
 
 

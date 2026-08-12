@@ -44,8 +44,10 @@ def build_proxy_headers(
     operator_id: int,
     operator_name: str,
     tgid: int | None,
-    admin: bool = True,
+    magis_admin_id: int | None = None,
+    admin: bool = False,
     assigned: bool = False,
+    two_factor: bool = False,
 ) -> dict[str, str]:
     """Return service-to-service headers for one selected MAGI request."""
     secret = _secret()
@@ -54,7 +56,12 @@ def build_proxy_headers(
     timestamp = str(int(time.time()))
     target = str(target_id)
     operator = str(operator_id)
-    scope = f"admin={int(admin)};assigned={int(assigned)}"
+    if admin != (magis_admin_id is not None):
+        raise ValueError("admin proxy calls must carry exactly one magis_admin_id")
+    scope = (
+        f"admin={int(admin)};assigned={int(assigned)};"
+        f"two_factor={int(two_factor)};magis_admin_id={magis_admin_id or 0}"
+    )
     signature = hmac.new(
         secret,
         _canonical(method, path_and_query, timestamp, target, operator, scope),
@@ -95,12 +102,21 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
     if request.url.query:
         path = f"{path}?{request.url.query}"
     scope = request.headers.get("X-MAGI-Proxy-Scope", "")
-    if scope not in {
-        "admin=0;assigned=0",
-        "admin=0;assigned=1",
-        "admin=1;assigned=0",
-        "admin=1;assigned=1",
-    }:
+    try:
+        parts = dict(item.split("=", 1) for item in scope.split(";"))
+        is_admin = parts["admin"] == "1"
+        is_assigned = parts["assigned"] == "1"
+        magis_admin_id = int(parts["magis_admin_id"])
+        two_factor = parts["two_factor"] == "1"
+    except (KeyError, ValueError):
+        return None
+    if (
+        parts["admin"] not in {"0", "1"}
+        or parts["assigned"] not in {"0", "1"}
+        or parts["two_factor"] not in {"0", "1"}
+    ):
+        return None
+    if is_admin != (magis_admin_id > 0):
         return None
     expected = hmac.new(
         secret,
@@ -128,12 +144,23 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
     )
 
 
-def verified_proxy_scope(request: Request) -> tuple[bool, bool] | None:
+def verified_proxy_scope(request: Request) -> tuple[bool, bool, bool, int | None] | None:
     """Return the signed MAGIS-admin / local-assigned capabilities."""
     if verified_proxy_operator(request) is None:
         return None
-    parts = dict(item.split("=", 1) for item in request.headers["X-MAGI-Proxy-Scope"].split(";"))
-    return parts["admin"] == "1", parts["assigned"] == "1"
+    try:
+        parts = dict(item.split("=", 1) for item in request.headers["X-MAGI-Proxy-Scope"].split(";"))
+        is_admin = parts["admin"] == "1"
+        is_assigned = parts["assigned"] == "1"
+        magis_admin_id = int(parts["magis_admin_id"])
+        two_factor = parts["two_factor"] == "1"
+    except (KeyError, ValueError):
+        return None
+    if is_admin != (magis_admin_id > 0):
+        return None
+    if parts["two_factor"] not in {"0", "1"}:
+        return None
+    return is_admin, is_assigned, two_factor, magis_admin_id or None
 
 
 def ensure_runtime_operator(request: Request) -> int | None:
@@ -147,21 +174,21 @@ def ensure_runtime_operator(request: Request) -> int | None:
     identity = verified_proxy_operator(request)
     if identity is None:
         return None
-    operator_id, name, tgid = identity
+    _operator_id, name, _tgid = identity
     scope = verified_proxy_scope(request)
     if scope is None:
         return None
-    is_admin, is_assigned = scope
+    is_admin, _is_assigned, _two_factor, magis_admin_id = scope
+    if not is_admin or magis_admin_id is None:
+        return None
 
     from magi.channels.api.dependencies import get_bus
 
-    return get_bus(request).contacts_book.ensure_runtime_operator(
-        operator_id=operator_id,
-        name=name,
-        tgid=tgid,
-        is_admin=is_admin,
-        is_assigned=is_assigned,
+    projection = get_bus(request).contacts_book.ensure_magis_admin_projection(
+        magis_admin_id=magis_admin_id,
+        display_name=name,
     )
+    return projection.id
 
 
 __all__ = [
