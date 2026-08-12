@@ -65,13 +65,22 @@ class BaseJobBoard[RowT: Base, JobT, ResultT]:
         # pulling in :mod:`uuid` for callers that never publish.
         return uuid.uuid4().hex
 
+    @staticmethod
+    def _map_row(row, cls):
+        """ORM 行 → dataclass 自动映射（按字段名匹配）。"""
+        kwargs = {}
+        for f in dataclasses.fields(cls):
+            if hasattr(row, f.name):
+                kwargs[f.name] = getattr(row, f.name)
+        return cls(**kwargs)
+
     # -- 异步队列 ----------------------------------------------------------
 
     def claim(self) -> JobT | None:
         with self._session() as s:
             row = self._claim(s)
             s.commit()
-            return _map_row(row, self.job_cls) if row else None
+            return self._map_row(row, self.job_cls) if row else None
 
     def submit_result(self, *, key: str, result: ResultT) -> None:
         """提交结果，key 为 natural_key_attr 的值（即 job_id）。"""
@@ -387,15 +396,6 @@ class BaseJobBoard[RowT: Base, JobT, ResultT]:
 
 
 # -- 模块级映射工具 ----------------------------------------------------------
-
-
-def _map_row(row, cls):
-    """ORM 行 → dataclass 自动映射（按字段名匹配）。"""
-    kwargs = {}
-    for f in dataclasses.fields(cls):
-        if hasattr(row, f.name):
-            kwargs[f.name] = getattr(row, f.name)
-    return cls(**kwargs)
 
 
 def _write_result_to_job(row, result, result_cls) -> None:

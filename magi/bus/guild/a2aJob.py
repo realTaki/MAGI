@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _read_result_from_job, _row_to_job
+from magi.bus.guild.base import BaseJobBoard, _read_result_from_job
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -152,7 +152,24 @@ class _A2ARequestRow(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        Enum(A2AErrorCode, name="a2a_error_code", native_enum=True),
+        Enum(
+            A2AErrorCode,
+            name="a2a_error_code",
+            native_enum=True,
+            length=64,
+            # SQLAlchemy 2.x dropped the implicit CHECK on Enum
+            # (was ``True`` in 1.x); SQLite has no native ENUM
+            # so without this the column is just VARCHAR with
+            # no membership enforcement.
+            create_constraint=True,
+            # ``StrEnum`` has both ``name`` (``TIMEOUT``) and
+            # ``value`` (``"a2a_timeout"``); SQLAlchemy defaults
+            # to ``name`` for storage, but pre-Enum rows hold
+            # the ``value`` string verbatim — using ``name`` here
+            # would silently rename existing data. ``values_callable``
+            # forces storage / CHECK against the stable ``value``.
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         nullable=True,
         default=None,
     )
@@ -189,7 +206,14 @@ class _A2ANotifyRow(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        Enum(A2AErrorCode, name="a2a_error_code", native_enum=True),
+        Enum(
+            A2AErrorCode,
+            name="a2a_error_code",
+            native_enum=True,
+            length=64,
+            create_constraint=True,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
         nullable=True,
         default=None,
     )
@@ -266,7 +290,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 extra_where=[_A2ARequestRow.target_magi_id == magi_id],
             )
             s.commit()
-            return _row_to_job(row, A2ARequestJob) if row is not None else None
+            return self._map_row(row, A2ARequestJob) if row is not None else None
 
     def submit_result(self, *, key: str, result: A2ARequestResult) -> None:
         """Complete a request once, and never overwrite expiry/failure."""
@@ -357,7 +381,7 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 extra_where=[_A2ANotifyRow.target_magi_id == magi_id],
             )
             s.commit()
-            return _row_to_job(row, A2ANotifyJob) if row is not None else None
+            return self._map_row(row, A2ANotifyJob) if row is not None else None
 
     def submit_result(self, *, key: str, result: A2ANotifyResult) -> None:
         # Dataclass shape (``A2AErrorCode | None``) already matches

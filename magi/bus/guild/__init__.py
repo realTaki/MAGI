@@ -13,10 +13,7 @@ from magi.bus.guild.a2aJob import (
     a2aNotifyBoard,
     a2aRequestJobBoard,
 )
-from magi.bus.guild.base import (
-    BaseJobBoard,
-    BaseNotifyBoard,
-)
+from magi.bus.guild.base import BaseJobBoard
 
 # 往返 (publish → claim → submit_result)
 from magi.bus.guild.callLLMJob import CallLLMJob, CallLLMResult, callLLMJobBoard
@@ -43,7 +40,6 @@ from magi.bus.guild.seedPresetTasksJob import (
 )
 
 __all__ = [
-    "BaseNotifyBoard",
     "BaseJobBoard",
     # 往返
     "CallLLMJob",
