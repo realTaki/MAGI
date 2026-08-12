@@ -87,11 +87,11 @@ class TestRecordRunStart:
         task = _make_test_task(task_book, task_book._factory, "task_rt1")
         run = task_book.record_run_start(
             task_id=task.id,
-            trigger="cron_tick",
+            manual=False,
         )
         assert run is not None
         assert run.task_id == task.id
-        assert run.trigger == "cron_tick"
+        assert run.manual is False
         assert run.status == "running"
 
         # Verify task.last_run_at was updated
@@ -103,7 +103,7 @@ class TestRecordRunStart:
         task = _make_test_task(task_book, task_book._factory, "task_rt2")
         run = task_book.record_run_start(
             task_id=task.id,
-            trigger="manual_run",
+            manual=True,
             id="my_run_42",
         )
         assert run.id == "my_run_42"
@@ -213,7 +213,7 @@ class TestListAllEnabledForWorkers:
 class TestReapStale:
     def test_flips_stuck_running_rows_to_failed(self, task_book, task_run_book):
         task = _make_test_task(task_book, task_book._factory, "task_stale")
-        run = task_book.record_run_start(task_id=task.id, trigger="cron_tick")
+        run = task_book.record_run_start(task_id=task.id, manual=False)
 
         # Simulate stale by backdating started_at
         from datetime import datetime, timedelta
@@ -239,7 +239,7 @@ class TestReapStale:
 
     def test_ignores_recent_running_rows(self, task_book, task_run_book):
         task = _make_test_task(task_book, task_book._factory, "task_recent")
-        task_book.record_run_start(task_id=task.id, trigger="cron_tick")
+        task_book.record_run_start(task_id=task.id, manual=False)
 
         n = task_run_book.reap_stale(older_than_seconds=300)
         assert n == 0  # should be too recent
