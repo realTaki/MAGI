@@ -12,6 +12,7 @@ from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import EngineFactory
 from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
 from magi.bus.guild.a2aJob import (
+    A2AErrorCode,
     A2ANotifyJob,
     A2ANotifyResult,
     A2ARequestJob,
@@ -56,7 +57,6 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
             job_id="request-one",
             source_magi_id=source.id,
             target_magi_id=target.id,
-            tool_call_id="tool-one",
             text="Please validate the build plan.",
         )
     )
@@ -74,13 +74,13 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
             job_id=job_id,
             success=True,
             content="The plan builds cleanly.",
-            tool_call_id="tool-one",
         ),
     )
     result = requests.get_result(key=job_id)
     assert result is not None
     assert result.success is True
     assert result.content == "The plan builds cleanly."
+    assert result.error_code is None
 
     # A terminal request can never be overwritten by another response.
     requests.submit_result(
@@ -106,6 +106,7 @@ def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> 
     assert claimed.job_id == job_id
     notifies.submit_result(key=job_id, result=A2ANotifyResult(job_id=job_id, success=True))
     assert notifies.get_result(key=job_id).success is True
+    assert notifies.get_result(key=job_id).error_code is None
 
 
 def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
@@ -145,6 +146,19 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
     assert result is not None
     assert result.success is False
     assert result.error_code == "a2a_timeout"
+    # Round-trip through the String(64) column must come back as the enum,
+    # not a plain str — that's the whole point of the StrEnum migration.
+    assert result.error_code is A2AErrorCode.TIMEOUT
+
+
+def test_result_defaults_to_none_error_code() -> None:
+    """``error_code`` defaults to ``None`` (no failure). The column's
+    native ``Enum`` enforces the enum-membership constraint at the
+    DB boundary, so dataclass construction itself is unvalidated
+    (intentional — direct callers get no friction; bad values surface
+    loudly at submit time via the CHECK constraint)."""
+    assert A2ARequestResult().error_code is None
+    assert A2ANotifyResult().error_code is None
 
 
 def test_collaboration_directory_exposes_only_public_same_magis_members(boards) -> None:
@@ -208,8 +222,9 @@ async def test_message_magi_splits_request_and_notify_without_waiting_for_notify
 
     assert len(split.a2a_request_jobs) == 1
     assert len(split.a2a_notify_jobs) == 1
-    assert split.a2a_request_jobs[0].source_magi_id == 11
-    assert split.a2a_request_jobs[0].target_magi_id == 12
+    _request_tc, request_job = split.a2a_request_jobs[0]
+    assert request_job.source_magi_id == 11
+    assert request_job.target_magi_id == 12
 
     _tool_ids, request_ids, notify_results = await worker._publish_effects(split)
     assert request_ids == {"request-tool": "request-job"}
@@ -257,7 +272,6 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
         job_id="inbound-request",
         source_magi_id=11,
         target_magi_id=12,
-        tool_call_id="tool-call",
         text="Please answer once.",
     )
     claims = [("a2a.request", job), (None, None)]
@@ -293,7 +307,6 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
             job_id="cross-member-request",
             source_magi_id=source.id,
             target_magi_id=target.id,
-            tool_call_id="cross-tool",
             text="Return one collaboration result.",
         )
     )

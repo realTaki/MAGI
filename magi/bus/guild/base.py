@@ -1,7 +1,6 @@
 """Job 队列基类。
 
-BaseNotifyBoard -- 单向通知队列（publish 直接落库，不追踪结果）。
-BaseJobBoard    -- 往返任务队列（publish → claim → submit_result → get_result）。
+BaseJobBoard -- 往返任务队列（publish → claim → submit_result → get_result）。
 """
 
 from __future__ import annotations
@@ -26,23 +25,7 @@ MAX_ATTEMPTS = 3
 MAX_ATTEMPTS_CANDIDATES = 10
 
 
-class BaseNotifyBoard[JobT]:
-    """单向通知队列：publish 直接落库，不追踪结果。
-
-    子类只需 override publish()。
-    """
-
-    def __init__(self, factory: EngineFactory):
-        self._factory = factory
-
-    def _session(self):
-        return self._factory.session()
-
-    def publish(self, job: JobT) -> str:
-        raise NotImplementedError
-
-
-class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
+class BaseJobBoard[RowT: Base, JobT, ResultT]:
     """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
     get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
     """
@@ -67,8 +50,11 @@ class BaseJobBoard[RowT: Base, JobT, ResultT](BaseNotifyBoard[JobT]):
     max_attempts: ClassVar[int] = MAX_ATTEMPTS
 
     def __init__(self, factory: EngineFactory, lease_seconds: int = DEFAULT_LEASE_SECONDS):
-        super().__init__(factory)
+        self._factory = factory
         self._lease_seconds = lease_seconds
+
+    def _session(self):
+        return self._factory.session()
 
     # -- ID 生成 -----------------------------------------------------------
 
