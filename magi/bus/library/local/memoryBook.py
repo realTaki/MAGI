@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -14,9 +15,34 @@ from sqlalchemy.orm import Mapped, mapped_column
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.library.base import BaseBook
 
-KIND_FACT = "fact"
-KIND_QUICK_NOTE = "quick_note"
-ALL_KINDS = frozenset({KIND_FACT, KIND_QUICK_NOTE})
+
+class MemoryKind(StrEnum):
+    """Memory-kind discriminator stored on ``Memory.kind``.
+
+    Two-way split by **purpose**, not lifecycle:
+
+    * ``MemoryKind.FACT``       — durable knowledge about a
+      contact (a fact the agent should recall across sessions).
+      The ``remember`` tool writes these.
+    * ``MemoryKind.QUICK_NOTE`` — transient todo / scratch /
+      follow-up the agent parked for itself; can be promoted
+      to a fact via ``update_memory`` (kind is otherwise
+      immutable — delete + re-add).
+
+    ``StrEnum`` rather than bare constants so typos are
+    caught at lookup time instead of silently comparing
+    False: every member is still a ``str``
+    (``MemoryKind.FACT == "fact"``), so ORM columns,
+    ``asdict`` serialisation and existing rows keep
+    working unchanged. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    """
+
+    FACT = "fact"
+    QUICK_NOTE = "quick_note"
+
+
+ALL_MEMORY_KINDS: frozenset[str] = frozenset(k.value for k in MemoryKind)
 
 # Column-length invariants. Mirror the ORM column
 # declarations (``String(200)`` / ``Text``) and the
@@ -35,7 +61,7 @@ _BODY_MAX = 8 * 1024
 class Memory:
     id: int  # 主键（自增）
     contact_id: int  # 所属联系人 ID
-    kind: str  # 记忆类型（fact/quick_note）
+    kind: MemoryKind  # 记忆类型（fact/quick_note）
     subject: str  # 简短标题
     body: str  # 完整内容
     priority: int = 3  # 优先级（1..5，越大越重要）
@@ -129,7 +155,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         self,
         *,
         contact_id: int,
-        kind: str,
+        kind: MemoryKind,
         subject: str,
         body: str,
         priority: int = 3,
@@ -138,14 +164,14 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
         Raises :class:`ValueError` on invariant violation
         (subject / body non-empty, length caps, ``kind``
-        in :data:`ALL_KINDS`, ``priority`` 1..5). The
-        tool worker / dashboard API catch and surface as
-        ``is_error=True`` / 4xx.
+        in :data:`ALL_MEMORY_KINDS`, ``priority`` 1..5).
+        The tool worker / dashboard API catch and surface
+        as ``is_error=True`` / 4xx.
         """
         subject = self._validate_subject(subject)
         body = self._validate_body(body)
-        if kind not in ALL_KINDS:
-            raise ValueError(f"kind must be one of {sorted(ALL_KINDS)!r}, got {kind!r}")
+        if kind not in ALL_MEMORY_KINDS:
+            raise ValueError(f"kind must be one of {sorted(ALL_MEMORY_KINDS)!r}, got {kind!r}")
         self._validate_priority(priority)
 
         with self._session() as s:
@@ -228,10 +254,9 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
 
 
 __all__ = [
+    "ALL_MEMORY_KINDS",
     "Memory",
     "MemoryBook",
+    "MemoryKind",
     "_MemoryRow",
-    "ALL_KINDS",
-    "KIND_FACT",
-    "KIND_QUICK_NOTE",
 ]

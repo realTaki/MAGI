@@ -553,7 +553,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
         content = (body_delta or "").strip()
         if not content:
             raise ValueError("body_delta is required")
-        content = content[:_NOTE_MAX_BYTES]
+        content = content[:_DAILY_NOTE_MAX_BYTES]
         if note_date is None:
             now = datetime.utcnow()
             note_date = datetime(now.year, now.month, now.day)

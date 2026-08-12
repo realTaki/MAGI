@@ -202,6 +202,43 @@ async def test_a_closed_port_is_not_live() -> None:
     assert await runtime_is_live(f"http://127.0.0.1:{dead_port}") is False
 
 
+async def test_runtime_is_live_uses_a_shared_http_client() -> None:
+    """Pin the perf invariant: the probe must reuse one ``AsyncClient``
+    across calls.  Without reuse every proxied request pays ~60 ms of
+    connection setup on top of the ~1 ms TCP round trip — a typical
+    dashboard hits this path ten times per page, so the regression is
+    ~600 ms per page that no caller would notice locally.  We assert
+    on the singleton rather than the wall clock so the test stays fast
+    and deterministic across machines."""
+    from magi.channels.api import runtime_http
+
+    # The probe was just used by the earlier tests, so the singleton
+    # has been created.  All later calls must reach for the SAME object.
+    first = runtime_http._probe_client()
+    second = runtime_http._probe_client()
+    assert first is second, "probe client should be a singleton"
+
+    # Drive runtime_is_live through its public path and confirm it
+    # actually reaches _probe_client() rather than allocating its own.
+    # Capture the original first so the spy doesn't recurse into itself.
+    seen: list[int] = []
+    original = runtime_http._probe_client
+
+    def _spy():
+        c = original()
+        seen.append(id(c))
+        return c
+
+    runtime_http._probe_client = _spy  # type: ignore[assignment]
+    try:
+        with _health_server(200) as base_url:
+            assert await runtime_http.runtime_is_live(base_url) is True
+    finally:
+        runtime_http._probe_client = original  # type: ignore[assignment]
+
+    assert seen, "runtime_is_live did not call _probe_client"
+
+
 # -- proxy integration -------------------------------------------------
 
 
@@ -232,10 +269,22 @@ async def test_proxy_answers_503_instead_of_stalling_on_a_restart(monkeypatch) -
 
     from magi.channels.api import auth as auth_mod
 
+    # Match the v5 session payload shape ``_sign_selected_session`` mints —
+    # the proxy reaches into ``contact_id``, ``tgid``, ``admin``, ``assigned``
+    # via ``browser_session[...]``.
     monkeypatch.setattr(
         auth_mod,
         "selected_session",
-        lambda _bus, _cookie: {"magi_id": 1, "tgid": 42, "admin": True, "assigned": False},
+        lambda _bus, _cookie: {
+            "magi_id": 1,
+            "contact_id": 42,
+            "magis_admin_id": 7,
+            "tgid": 42,
+            "display_name": "Tester",
+            "admin": True,
+            "assigned": False,
+            "two_factor": False,
+        },
     )
 
     with _deaf_listener() as base_url:

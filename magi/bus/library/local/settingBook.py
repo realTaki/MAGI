@@ -71,21 +71,40 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     #: fields moved here from the (now-removed) ``magic`` row in the
     #: MAGIS schema.
     KNOWN_KEYS: tuple[str, ...] = (
+        # ------------------------------------------------------------------
         # Per-MAGI runtime fields (formerly on the ``magic`` table).
-        "name",
-        "instruction",
-        "provider",
-        "api_key",
+        # ------------------------------------------------------------------
+        # Operator-visible display name shown in the UI / API.
+        "name",  # MAGI 的对外显示名
+        # System prompt (soul) injected on every turn.
+        "instruction",  # 注入到每轮对话的 system prompt
+        # LLM provider slug, e.g. "openai" / "anthropic" / "deepseek".
+        "provider",  # LLM 供应商标识（openai / anthropic / ...）
+        # API key for the configured provider. Treat as a secret.
+        "api_key",  # provider 对应的 API key（敏感字段）
+        # ------------------------------------------------------------------
         # System-level knobs.
-        "system.timezone",
-        "system.tool_max_iterations",
+        # ------------------------------------------------------------------
+        # IANA timezone name used when rendering / scheduling. Defaults to "UTC".
+        "system.timezone",  # 系统时区（IANA 名，默认 UTC）
+        # Hard cap on tool-call iterations per agent run.
+        "system.tool_max_iterations",  # 单次 Agent 调用的最大工具迭代次数
+        # ------------------------------------------------------------------
         # Compaction policy (agent-worker-bus.md §6).
-        "system.compact_context_window",
-        "system.compact_threshold_pct",
-        "system.compact_keep_recent",
+        # ------------------------------------------------------------------
+        # Context window size (tokens) for the active model.
+        "system.compact_context_window",  # 触发压缩的上下文窗口（token）
+        # Percentage of the context window that triggers compaction.
+        "system.compact_threshold_pct",  # 触发压缩的上下文占用百分比
+        # Number of recent turns to keep verbatim after compaction.
+        "system.compact_keep_recent",  # 压缩后保留的最近轮次数
+        # ------------------------------------------------------------------
         # Daily-note visibility (agent-worker-bus.md §6).
-        "system.show_daily_note",
-        "system.show_daily_note_prompt",
+        # ------------------------------------------------------------------
+        # Whether the agent reads its daily note on every turn.
+        "system.show_daily_note",  # 是否在每轮注入 daily note
+        # Whether the operator wants a prompt to update the daily note.
+        "system.show_daily_note_prompt",  # 是否在每轮提示更新 daily note
     )
 
     model_cls = _SettingRow

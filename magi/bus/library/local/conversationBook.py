@@ -46,6 +46,7 @@ class Conversation:
     contact_id: int  # 会话所属联系人 ID
     channel: str  # 来源渠道（tg/webui/...）
     title: str | None = None  # 会话标题（auto-titled 或用户设置）
+    summary: str | None = None  # cumulative compaction summary（auto-compact 生成）
     active_tail_count: int = 20  # active 消息窗口大小
     last_compaction_at: str | None = None  # 上次自动压缩的 ISO 时间
     created_at: str | None = None  # 创建时间
@@ -241,6 +242,7 @@ class _ConversationRow(Base):
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     title: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     active_tail_count: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
     last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -544,6 +546,50 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             s.commit()
             row = s.scalar(
                 select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
+            )
+            return self._row_to_dto(row) if row else None
+
+    def set_summary(
+        self,
+        *,
+        contact_id: int,
+        conversation_id: str,
+        summary: str,
+        bump_updated: bool = True,
+    ) -> Conversation | None:
+        """[claude, 2026-08-12] Overwrite Conversation.summary, stamp last_compaction_at.
+
+        Write-back primitive for auto-compaction. Not CAS — incremental
+        compaction always wins; a concurrent pass only produces a
+        fresher tail and the later write supersedes. CAS would silently
+        drop the second writer, which is wrong for an incremental
+        pipeline. Scope by ``(contact_id, conversation_id)`` for
+        cross-contact defence. Returns the updated DTO, or ``None`` if
+        the conversation no longer exists.
+        """
+        from magi.bus.db.base import utcnow_naive
+
+        now = utcnow_naive().isoformat() + "Z"
+        with self._session() as s:
+            stmt = (
+                update(_ConversationRow)
+                .where(
+                    _ConversationRow.conversation_id == conversation_id,
+                    _ConversationRow.contact_id == contact_id,
+                )
+                .values(summary=summary, last_compaction_at=now)
+            )
+            if bump_updated:
+                stmt = stmt.values(updated_at=now)
+            result = s.execute(stmt)
+            if getattr(result, "rowcount", 0) == 0:  # type: ignore[reportAttributeAccessIssue]
+                s.rollback()
+                return None
+            s.commit()
+            row = s.scalar(
+                select(_ConversationRow).where(
+                    _ConversationRow.conversation_id == conversation_id
+                )
             )
             return self._row_to_dto(row) if row else None
 

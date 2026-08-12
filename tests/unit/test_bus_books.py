@@ -221,7 +221,7 @@ def test_memory_book_add_invariants(factory, contact_id):
             body="x" * (8 * 1024 + 1),
         )
 
-    # ``kind`` must be in ALL_KINDS.
+    # ``kind`` must be in ALL_MEMORY_KINDS.
     with pytest.raises(ValueError, match="kind must be one of"):
         book.add(
             contact_id=contact_id,
@@ -371,6 +371,14 @@ def test_contact_note_book(factory):
     n = nbook.add(contact_id=c.id, note="works in finance")
     assert n.contact_id == c.id
     assert len(nbook.list_for_contact(contact_id=c.id)) == 1
+
+
+def test_contact_note_book_rejects_unknown_kind(factory):
+    cbook = ContactBook(factory)
+    nbook = ContactNoteBook(factory)
+    c = cbook.add(name="Bob")
+    with pytest.raises(ValueError, match="kind must be one of"):
+        nbook.add(contact_id=c.id, note="x", kind="not-a-real-kind")
 
 
 # -- ConversationBook + MessageBook -------------------------------------
@@ -546,8 +554,7 @@ def test_action_item_book_complete(factory, contact_id):
     ``row.contact_id == caller`` then ``complete``. The Book
     stays a thin writer, so this test only covers:
 
-    * happy path stamps ``completed_at`` / ``completed_by_contact_id``
-      / ``completion_note``
+    * happy path stamps ``completed_at`` / ``completion_note``
     * idempotency on re-call (no overwrite of ``completed_at``
       or ``completion_note``)
     * missing ``action_item_id`` returns ``None``
@@ -558,16 +565,14 @@ def test_action_item_book_complete(factory, contact_id):
     # Missing row → None (no exception).
     assert book.complete(action_item_id=99999) is None
 
-    # Right path: completes, stamps completed_by_contact_id + note.
+    # Right path: completes, stamps completed_at + note.
     completed = book.complete(
         action_item_id=item.id,
         note="done!",
-        completed_by_contact_id=contact_id,
     )
     assert completed is not None
     assert completed.id == item.id
     assert completed.completed_at is not None
-    assert completed.completed_by_contact_id == contact_id
     assert completed.completion_note == "done!"
     first_completed_at = completed.completed_at
 
@@ -576,7 +581,6 @@ def test_action_item_book_complete(factory, contact_id):
     again = book.complete(
         action_item_id=item.id,
         note="updated note that must NOT overwrite",
-        completed_by_contact_id=contact_id,
     )
     assert again is not None
     assert again.completed_at == first_completed_at
@@ -593,7 +597,7 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
 
     book = ActionItemBook(factory)
-    other_id = ContactBook(factory).add(name="Other").id
+    ContactBook(factory).add(name="Other")  # prove another row exists
     # Operator A's row, but we let the caller drive the close.
     item = book.add(contact_id=contact_id, title="x", description="y")
 
@@ -602,11 +606,9 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     # production. The Book is intentionally permissive.
     closed = book.complete(
         action_item_id=item.id,
-        completed_by_contact_id=other_id,
         note="closed on someone else's behalf — auth was external",
     )
     assert closed is not None
-    assert closed.completed_by_contact_id == other_id
     assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
@@ -668,7 +670,6 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
     ok = book.complete(
         action_item_id=item.id,
         note="n" * 500,
-        completed_by_contact_id=contact_id,
     )
     assert ok is not None
 
@@ -678,7 +679,6 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
         book.complete(
             action_item_id=item2.id,
             note="n" * 501,
-            completed_by_contact_id=contact_id,
         )
 
 

@@ -21,7 +21,7 @@ gate when added.
 Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants (kind membership
-in :data:`ALL_KINDS`, subject non-empty + ≤200
+in :data:`ALL_MEMORY_KINDS`, subject non-empty + ≤200
 chars, body non-empty + ≤8 KB, priority 1..5) and
 surfaces any violation as ``ValueError`` that we
 translate to ``ToolResult.err`` here. The bus
@@ -35,7 +35,7 @@ import logging
 from typing import Any
 
 from magi.bus.library.local.memoryBook import (
-    ALL_KINDS,
+    ALL_MEMORY_KINDS,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult
 
@@ -72,7 +72,7 @@ class AddMemoryTool(Tool):
         "properties": {
             "kind": {
                 "type": "string",
-                "enum": sorted(ALL_KINDS),
+                "enum": sorted(ALL_MEMORY_KINDS),
                 "description": "fact | quick_note",
             },
             "subject": {
