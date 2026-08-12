@@ -15,6 +15,8 @@ from magi.bus.library.local import (
     SOURCE_USER,
     ActionItem,
     ActionItemBook,
+    ActionPriority,
+    ActionSource,
     Channel,
     ChannelEnum,
     Contact,
@@ -639,8 +641,10 @@ def test_action_item_book_add_invariants(factory, contact_id):
     # priority must be in ALL_PRIORITIES.
     with pytest.raises(ValueError, match="priority must be one of"):
         book.add(contact_id=contact_id, title="ok", priority="urgent")
-    # priority "normal" (default) and "high" both pass.
-    a = book.add(contact_id=contact_id, title="a", priority="normal")
+    # priority "normal" (default) and "high" both pass — raw
+    # strings and the enum member should be equivalent under
+    # StrEnum semantics.
+    a = book.add(contact_id=contact_id, title="a", priority=ActionPriority.NORMAL)
     assert a.priority == "normal"
     b = book.add(contact_id=contact_id, title="b", priority="high")
     assert b.priority == "high"
@@ -648,7 +652,7 @@ def test_action_item_book_add_invariants(factory, contact_id):
     # source must be in ALL_SOURCES.
     with pytest.raises(ValueError, match="source must be one of"):
         book.add(contact_id=contact_id, title="ok", source="system")
-    c = book.add(contact_id=contact_id, title="c", source="user")
+    c = book.add(contact_id=contact_id, title="c", source=ActionSource.USER)
     assert c.source == "user"
     d = book.add(contact_id=contact_id, title="d", source="proactive")
     assert d.source == "proactive"

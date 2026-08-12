@@ -102,8 +102,8 @@ class TelegramWorker(ChannelWorker):
         if contact is None:
             await _send_stranger_reply(update, tgid, self.bus)
             return
-        contact_id, role, is_admin = contact
-        if not (is_admin or role == "assigned"):
+        contact_id, role = contact
+        if role != "assigned":
             await update.effective_message.reply_text(f"TG ID: {tgid}. Ask your admin for access.")
             return
         if not text.strip():
@@ -149,7 +149,7 @@ class TelegramWorker(ChannelWorker):
             self._shutdown_event.set()
 
 
-def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
+def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str] | None:
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
@@ -157,7 +157,11 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, bool] | None:
     contact = bus.contacts_book.get_by_telegram(tgid=cid_int)
     if contact is None:
         return None
-    return (contact.id, contact.role, contact.admin)
+    # Telegram contacts are MAGI-local, so only the local ``role`` is resolved
+    # here.  MAGIS administrator identity lives on ``magis_admins`` and is
+    # intentionally not inferred from a local Contact's TG binding; downstream
+    # tool gating combines both via ``Tool.gate``.
+    return (contact.id, contact.role)
 
 
 def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:

@@ -24,7 +24,7 @@ phase is what makes the failure legible:
 
 ``read``
     Where the two call sites diverge.  Control-plane calls (login
-    target lookup, onboarding forwards, Telegram bootstrap) are small
+    target lookup and Telegram bootstrap) are small
     local writes that finish in milliseconds, so :data:`CONTROL_TIMEOUT`
     caps them tightly.  The generic proxy in
     :mod:`magi.channels.api.runtime_proxy` forwards *arbitrary* Runtime
@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import httpx
 
-# Login / onboarding / bootstrap calls. Each one is a small write
+# Login and bootstrap calls. Each one is a small write
 # against the target Runtime's local SQLite, so ten seconds is already
 # an order of magnitude more than the slowest healthy case; anything
 # beyond that means the far side is restarting, not thinking.

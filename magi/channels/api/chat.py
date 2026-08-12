@@ -163,8 +163,7 @@ async def send_chat(
     """Persist input and return a run handle without waiting for inference.
 
     The LLM is selected from the operator's Contact row
-    (``provider`` + ``api_key`` set during onboarding or
-    later via the contact detail panel). If those fields
+    (``provider`` + ``api_key`` configured from Settings). If those fields
     are empty the request is rejected with
     ``403 chat.llm_credentials_required`` — no silent
     fall-back to the system default. The audit row records

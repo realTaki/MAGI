@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from magi.bus.library.local.actionItemBook import PRIORITY_HIGH, SOURCE_PROACTIVE, ActionItemBook
+from magi.bus.library.local.actionItemBook import (
+    ActionItemBook,
+    ActionPriority,
+    ActionSource,
+)
 from magi.bus.library.magis import AUTH_MODE_IM_2FA_ENABLED
 
 TITLE = "启用 IM 两步验证"
@@ -24,7 +28,7 @@ def reconcile_for_admin(
         for item in book.list_actions(
             owner_contact_id=contact_id,
             include_completed=True,
-            source=SOURCE_PROACTIVE,
+            source=ActionSource.PROACTIVE,
         )
         if item.title == TITLE
     ]
@@ -46,8 +50,8 @@ def reconcile_for_admin(
         title=TITLE,
         description=DESCRIPTION,
         target_url=TARGET_URL,
-        priority=PRIORITY_HIGH,
-        source=SOURCE_PROACTIVE,
+        priority=ActionPriority.HIGH,
+        source=ActionSource.PROACTIVE,
     )
     return True
 

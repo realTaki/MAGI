@@ -381,52 +381,17 @@ TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_r
 
 ---
 
-## 7. Onboarding 三步骤流程
+## 7. 首次部署与 IM 两步验证
 
-**入口**: `magi/channels/api/onboarding.py`
+bootstrap 创建 MAGIS 共享的 `MagisAdmin(admin)`，并在 `eva-000` 创建一个仅供
+本地数据归属的 Contact 投影（`magis_admin_id`）。用户可从 `127.0.0.1` 的 WebUI
+直接进入；没有 onboarding API 或密码模式。
 
-### Step 1: 验证并保存 Bot Token
-```
-POST /verify-bot { token }
-  → 调用 Telegram getMe，返回 {ok, username}
-  → 不存储
-
-POST /save-bot { token, username }
-  → 写入 settings_book
-```
-
-### Step 2: 验证 Admin Chat
-```
-POST /verify-admin { tgid }
-  1. 校验 tgid 为数字
-  2. 重发冷却: 60s 内拒绝 (含旧 code 剩余有效期提示)
-  3. 生成 6 位随机码
-  4. 先持久化 (settings_book) → 再发送 (send_text_raw)
-     └─ 发送失败 → 回滚（删除该 code）
-  5. 通过原始 HTTP 发送 (send_text_raw，不用 bot.send_message)
-     └─ 原因: 初始安装时 bot 可能未启动
-
-POST /verify-admin-code { tgid, code }
-  1. 过期检查 (5 分钟 TTL)
-  2. 一次性: 任何路径都 state_delete (防暴力破解)
-  3. 成功后不持久化 — 仅返回 display_name
-     └─ 最终绑定在 save_admin 完成
-```
-
-### Step 3: 保存管理员
-```
-POST /save-admin { tgids: list[str] }
-  1. 校验每个 tgid 为数字
-  2. 逐条: resolve (getChat) → upsert Contact(tgid, role, admin=True)
-  3. 幂等
-```
-
-**不可改的守卫**:
-
-- verify-admin 走原始 HTTP（`send_text_raw`），**不能**经任何 channel worker claim loop — 此时尚无 Contact 行，contact_id→im_id 映射不存在，dispatcher / worker 路径都会失败
-- 验证码必须先存后发，发送失败回滚删除
-- 验证码一次性使用：任何校验路径（成功/不匹配/过期）都必须 state_delete
-- save_admin 是唯一写入 admin Contact 的地方，必须幂等
+在 Settings 配置 Telegram 后，运行时通过
+`/api/access/two-factor/send-login-code` 与
+`/api/access/two-factor/verify-login-code` 验证一次性代码并绑定共享管理员身份。
+验证码仅存 hash、五分钟过期且验证后立即删除。启用前仅禁止创建新的 MAGIS admin
+或 `assigned` user；其他单人使用功能保持可用。
 
 ## 8. 登录与 Cookie 身份
 

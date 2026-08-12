@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.library.local.actionItemBook import SOURCE_USER
+from magi.bus.library.local.actionItemBook import ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.list_action_item")
@@ -26,7 +26,7 @@ class ListActionItemsTool(Tool):
     """Return user-authored action items for the calling operator.
 
     Scope: only ``source = 'user'`` rows are returned
-    (filter applied via ``list_actions(..., source=SOURCE_USER)``).
+    (filter applied via ``list_actions(..., source=ActionSource.USER)``).
     System-generated rows (``source = 'proactive'``, e.g. the
     credentials nudge) are excluded — the dashboard surfaces
     those separately, and the LLM-driven tool surface should
@@ -77,7 +77,7 @@ class ListActionItemsTool(Tool):
         rows = ctx.bus.action_items_book.list_actions(
             owner_contact_id=ct_id,
             include_completed=include_completed,
-            source=SOURCE_USER,
+            source=ActionSource.USER,
         )
         logger.info(
             "list_action_item: contact=%s include_completed=%s returned=%s",

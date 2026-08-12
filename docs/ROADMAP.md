@@ -31,7 +31,7 @@ Identifiers below follow the canonical names in
 
 | Item | Status | Notes |
 |---|---|---|
-| TG self-serve `/start <code>` binding | **Open** | Binding is operator-driven today (`magi/channels/api/onboarding.py`). The code-delivery shape is undecided — see Open question 1. |
+| TG self-serve `/start <code>` binding | **Open** | Binding is configured from Settings through the runtime security API. The code-delivery shape is undecided — see Open question 1. |
 | `/ingest/audit` (EVA → ADAM) | **Next** | Declared as pending in `magi/channels/api/app.py`. |
 | `/ingest/heartbeat` (EVA → ADAM) | **Next** | Same. |
 | `/api/evas/{magi_id}/dispatch` + `/recall` | **Next** | Same. Cross-MAGI work inside one MAGIS goes through the A2A boards today; these routes are the operator-facing control surface on top. |

@@ -166,9 +166,11 @@ state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
 Windows). Run `./deploy/cli/install.sh` once: it installs MAGI, provisions
 the first MAGI (`eva-000`) and the root MAGI Society **Genesis**, then starts
 the Runtime and WebUI. Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
-select the running MAGI, and complete onboarding. Afterwards, `magi start`
-safely preserves the existing Society and recovers services that are not
-running. Each new MAGI is a separate
+select the running MAGI, then choose the default `admin` account. This local
+bootstrap access is intentionally usable without a password; enable IM
+two-factor verification from Settings before adding administrators or assigned
+users. Afterwards, `magi start` safely preserves the existing Society and
+recovers services that are not running. Each new MAGI is a separate
 process: `magi node create --name eva-001`, then `magi node run --name eva-001`.
 
 The **k8s-dev path** starts a local `kind` cluster and the first
@@ -205,8 +207,9 @@ and environment-specific configuration.
 1. **Initialize Genesis.** `magi init` provisions the root MAGI
    Society, **Genesis**, then creates the first MAGI, **`eva-000`**,
    as Genesis's ADAM.
-2. **Onboard an operator.** Configure administrator access and the channels
-   your Society should use.
+2. **Secure the default administrator.** Configure an IM verification channel
+   in Settings; normal local use remains available while the security reminder
+   is open.
 3. **Shape the organization.** In WebUI, create child MAGIS entries and
    assign their ADAM MAGI.
 4. **Add capability.** Configure an EVA's provider and credentials, then ask

@@ -32,7 +32,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.bus.library.local.actionItemBook import SOURCE_USER
+from magi.bus.library.local.actionItemBook import ActionPriority, ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.add_action_item")
@@ -146,9 +146,9 @@ class AddActionItemTool(Tool):
         # LLM.
         title = (kwargs.get("title") or "").strip()
         description = kwargs.get("description")
-        priority = kwargs.get("priority") or "normal"
+        priority = kwargs.get("priority") or ActionPriority.NORMAL
         target_url = kwargs.get("target_url")
-        source = kwargs.get("source") or SOURCE_USER
+        source = kwargs.get("source") or ActionSource.USER
 
         # ``due_date`` stays tool-side: the kwargs may carry
         # an ISO date string, but the Book expects a
