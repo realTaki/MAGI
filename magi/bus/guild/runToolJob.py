@@ -21,11 +21,11 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 
 @dataclass(frozen=True, slots=True)
-class RunToolJob:
+class RunToolJob(BaseJob):
     """一个工具执行 job。
 
     ``attempts`` / ``catalog_revision`` / ``schema_hash`` 是
@@ -44,14 +44,12 @@ class RunToolJob:
     tool_name: str  # 目标 tool 名（与 catalog.tool_name 对齐）
     payload: dict  # tool 调用参数（按该 tool 的 args schema 校验）
     tool_call_id: str = ""  # 关联的 LLM tool_use.id；回执用它反哺 conversation
-    job_id: str = ""  # 发布时自动生成的 job_id
-    attempts: int = 0  # claim 时由 ORM 回填，供上层观察重试次数
     catalog_revision: int | None = None  # publish 那一刻的 catalog revision；claim 时校验是否过期
     schema_hash: str | None = None  # publish 时目标 tool 的 schema 哈希；claim 时校验 schema 是否变动
 
 
 @dataclass(frozen=True, slots=True)
-class RunToolResult:
+class RunToolResult(BaseJobResult):
     """工具执行的完成结果。
 
     ``content`` + ``is_error`` 是 :class:`ToolResult` 的直通
@@ -61,8 +59,6 @@ class RunToolResult:
     策）。
     """
 
-    job_id: str  # 对应 RunToolJob 的 job_id
-    success: bool  # 工具是否执行成功（影响 status=completed/failed）
     content: str = ""  # ToolResult 的纯文本内容（worker 截断到 8 KB）
     is_error: bool = False  # 透传 ToolResult.is_error（与 content 配对）
     error: str | None = None  # 失败时的人类可读错误文案
@@ -73,13 +69,10 @@ class RunToolResult:
     result: dict | None = None
 
 
-class _ToolJobRow(Base):
+class _ToolJobRow(JobRowMixin, Base):
     __tablename__ = "tool_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     tool_call_id: Mapped[str] = mapped_column(String(128), default="")
@@ -99,13 +92,8 @@ class _ToolJobRow(Base):
 
     # -- lease / retry bookkeeping ---------------------------------------
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
 
     # -- timestamps ------------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

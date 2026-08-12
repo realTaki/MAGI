@@ -14,7 +14,7 @@ from sqlalchemy import DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 
 # -- public enum ---------------------------------------------------------
@@ -50,7 +50,7 @@ class SeedPresetTrigger(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class SeedPresetTasksJob:
+class SeedPresetTasksJob(BaseJob):
     """一个预设任务播种 job。
 
     ``contact_id`` 是目标联系人；``trigger`` 标记触发来源
@@ -58,10 +58,7 @@ class SeedPresetTasksJob:
     """
 
     trigger: SeedPresetTrigger  # 触发来源（contact_created/contact_promoted）
-    job_id: str = ""  # 发布时自动生成的 job_id
     contact_id: int = 0  # 目标联系人 ID
-    status: str = "pending"  # job 当前状态
-    attempts: int = 0  # 已重试次数
 
     def __post_init__(self) -> None:
         if self.trigger not in SeedPresetTrigger:
@@ -72,15 +69,13 @@ class SeedPresetTasksJob:
 
 
 @dataclass(frozen=True, slots=True)
-class SeedPresetTasksResult:
+class SeedPresetTasksResult(BaseJobResult):
     """播种完成结果。
 
     ``inserted`` 是实际插入的 Task 行数；``skipped`` 是跳过
     的 preset 数（含仅跳过和 planner 标记跳过两类）。
     """
 
-    job_id: str  # 对应 SeedPresetTasksJob 的 job_id
-    success: bool  # 播种是否成功
     inserted: int = 0  # 实际插入的 Task 行数
     skipped: int = 0  # 跳过的 preset 数
     error: str | None = None  # 失败时的错误描述
@@ -89,12 +84,9 @@ class SeedPresetTasksResult:
     attempts: int = 0  # 已重试次数（由 BaseJobBoard 回写）
 
 
-class _SeedPresetTasksJobRow(Base):
+class _SeedPresetTasksJobRow(JobRowMixin, Base):
     __tablename__ = "seed_preset_tasks_jobs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     #: 触发来源 discriminator。保持 ``String(32)`` 不切到
     #: ``SAEnum``——:class:`SeedPresetTrigger` 是 ``str`` 子类，
@@ -105,15 +97,6 @@ class _SeedPresetTasksJobRow(Base):
     inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    # -- lease / retry bookkeeping ------------------------------------
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-
-    # -- timestamps ---------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class seedPresetTasksJobBoard(

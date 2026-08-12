@@ -19,11 +19,11 @@ from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 
 @dataclass(frozen=True, slots=True)
-class RunTaskJob:
+class RunTaskJob(BaseJob):
     """一次任务触发请求 — 任何调用方都通过同一个 board 触达 TaskWorker。
 
     所有触发来源（cron / run_at / API / UI / tool）共用一份
@@ -41,16 +41,10 @@ class RunTaskJob:
     manual: bool = True  # True=用户/工具主动；False=task 模块按规则（cron/run_at）
     conversation_id: str | None = None  # 可选的会话上下文（仅供 worker 审计用）
     contact_id: int | None = None  # 可选的联系人上下文（仅供 worker 审计用）
-    job_id: str = ""  # 发布时自动生成的 job_id
-    # Populated by ``BaseJobBoard._map_row`` on claim — not stored on
-    # the row (the column exists as a counter only). Exposed here so
-    # callers can observe lease-recovery behaviour (see
-    # ``test_lease_expiry_reclaims_abandoned_job``).
-    attempts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
-class RunTaskResult:
+class RunTaskResult(BaseJobResult):
     """:class:`RunTaskJob` 的处理回执 — TaskWorker 跑完 ``_fire_task`` 后写入。
 
     ``success=False`` 通常意味着 Task 找不到 / 已被禁用 /
@@ -59,18 +53,13 @@ class RunTaskResult:
     ，和 ORM 的 ``attempts`` 列同步。
     """
 
-    job_id: str  # 对应 RunTaskJob 的 job_id
-    success: bool  # Task 是否成功触发（plan 已落库）
     error: str | None = None  # 失败时的错误描述
 
 
-class _RunTaskJobRow(Base):
+class _RunTaskJobRow(JobRowMixin, Base):
     __tablename__ = "run_task_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     #: 是否用户/工具主动触发。``manual=True`` 跳过 since-recent
     #: 判定；``False`` 表示 cron / run_at 系统自触发。与
@@ -85,11 +74,6 @@ class _RunTaskJobRow(Base):
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=utcnow_naive,

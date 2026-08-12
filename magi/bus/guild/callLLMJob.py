@@ -13,13 +13,13 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 # -- public dataclasses ----------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
-class CallLLMJob:
+class CallLLMJob(BaseJob):
     """一次 LLM 推理请求。
 
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
@@ -45,11 +45,10 @@ class CallLLMJob:
     channel: str = ""  # 入口渠道：``"chat"`` / ``"a2a"`` / ``"auto_compact"`` / ...
     caller_role: str | None = None  # 调用者角色：admin/guest/assigned；None 表示未知
     phase: str | None = None  # 调用阶段标签：``"chat"`` / ``"auto_title"`` / ``"auto_compact"``
-    job_id: str = ""  # 发布时自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
-class CallLLMResult:
+class CallLLMResult(BaseJobResult):
     """一次 LLM 推理的完成结果。
 
     ``stream_key`` 非空时表示流式模式：调用方用
@@ -57,8 +56,6 @@ class CallLLMResult:
     从中迭代读取增量文本（``None`` 哨兵表示结束）。
     """
 
-    job_id: str  # 对应 CallLLMJob 的 job_id
-    success: bool  # LLM 调用是否成功（影响 status=completed/failed）
     response: dict | None = None  # {text, thinking, tool_uses, raw_blocks} 形式的结构化结果
     finish_reason: str | None = None  # provider 返回的终止原因（stop/length/tool_use/...）
     token_usage: dict | None = None  # {prompt_tokens, completion_tokens, total_tokens}
@@ -71,13 +68,10 @@ class CallLLMResult:
 # -- internal ORM ----------------------------------------------------------
 
 
-class _LLMJobRow(Base):
+class _LLMJobRow(JobRowMixin, Base):
     __tablename__ = "llm_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     messages: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
@@ -94,8 +88,6 @@ class _LLMJobRow(Base):
     caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
     phase: Mapped[str | None] = mapped_column(String(32), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -103,9 +95,6 @@ class _LLMJobRow(Base):
     stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     error_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

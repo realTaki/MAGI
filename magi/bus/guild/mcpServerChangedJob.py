@@ -46,7 +46,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 if TYPE_CHECKING:
     from magi.bus.library.local.mcpServerBook import McpServer
@@ -90,7 +90,7 @@ class MCPKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class McpServerChangedJob:
+class McpServerChangedJob(BaseJob):
     """一次 MCP 服务器配置变更事件。
 
     ``kind`` 取自 :class:`MCPKind`；``server_name`` 是操作
@@ -111,7 +111,6 @@ class McpServerChangedJob:
     server_name: str  # 目标 MCP server 的主键（与 mcp_servers.name 对齐）
     server: McpServer | None = None  # 完整 DTO（kind in {ADDED,UPDATED} 时必填；存为 JSON 列）
     new_enabled: bool | None = None  # 新的 enabled 标志（kind=TOGGLED 时必填）
-    job_id: str = ""  # 发布时自动生成的 job_id
 
     def __post_init__(self) -> None:
         if self.kind not in MCPKind:
@@ -128,32 +127,22 @@ class McpServerChangedJob:
 
 
 @dataclass(frozen=True, slots=True)
-class McpServerChangedResult:
+class McpServerChangedResult(BaseJobResult):
     """Worker 处理结果的回执。"""
 
-    job_id: str  # 对应 McpServerChangedJob 的 job_id
-    success: bool  # upsert/delete/toggle 是否落库并 reload 成功
     error: str | None = None  # 失败时的错误描述
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _McpServerChangedRow(Base):
+class _McpServerChangedRow(JobRowMixin, Base):
     __tablename__ = "mcp_server_changed_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     server_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )
@@ -285,6 +274,7 @@ class mcpServerChangedJobBoard(
                 server=server,
                 new_enabled=row.new_enabled,
                 job_id=row.job_id,
+                attempts=row.attempts,
             )
 
 

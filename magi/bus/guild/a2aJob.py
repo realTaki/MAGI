@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard, _read_result_from_job
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin, _read_result_from_job
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -59,7 +59,7 @@ class A2AErrorCode(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class A2ARequestJob:
+class A2ARequestJob(BaseJob):
     """MAGIS 间的可观测 A2A 请求："一问一答"，target claim 后必须回执一次。
 
     由 ``a2aRequestJobBoard.publish`` 持久化到 ``a2a_request_jobs``；
@@ -69,7 +69,6 @@ class A2ARequestJob:
     ``status="failed"`` + ``error_code=A2AErrorCode.TIMEOUT``。
     """
 
-    job_id: str = ""  # 发布时自动生成的 job_id
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     conversation_id: str | None = None  # 可选的会话 ID 透传
@@ -79,7 +78,7 @@ class A2ARequestJob:
 
 
 @dataclass(frozen=True, slots=True)
-class A2ARequestResult:
+class A2ARequestResult(BaseJobResult):
     """Target MAGI 处理 :class:`A2ARequestJob` 后的回执。
 
     ``success=True`` 表示 target 接受了请求并填了 ``content``
@@ -88,15 +87,13 @@ class A2ARequestResult:
     看的文案。
     """
 
-    job_id: str = ""  # 对应 A2ARequestJob 的 job_id
-    success: bool = False  # 请求是否被成功处理
     content: str = ""  # 目标 MAGI 回传的响应文本
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
     error: str | None = None  # 失败时的错误文案
 
 
 @dataclass(frozen=True, slots=True)
-class A2ANotifyJob:
+class A2ANotifyJob(BaseJob):
     """MAGIS 间的单向通知："发了就算"，target 异步消化，发布方不等待回执。
 
     持久化到 ``a2a_notify_jobs``；同样只有 ``target_magi_id`` 对应
@@ -106,7 +103,6 @@ class A2ANotifyJob:
     要轮询而非常规 result 路径。
     """
 
-    job_id: str = ""  # 发布时自动生成的 job_id
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     conversation_id: str | None = None  # 可选的会话 ID 透传
@@ -115,7 +111,7 @@ class A2ANotifyJob:
 
 
 @dataclass(frozen=True, slots=True)
-class A2ANotifyResult:
+class A2ANotifyResult(BaseJobResult):
     """:class:`A2ANotifyJob` 的终端回执 — 仅在通知被消费且出错时落库。
 
     没有超时路径（notify 不阻塞发送方），也没有强制的 ``content``
@@ -124,21 +120,17 @@ class A2ANotifyResult:
     构造 Result。
     """
 
-    job_id: str = ""  # 对应 A2ANotifyJob 的 job_id
-    success: bool = False  # 投递是否成功
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
     error: str | None = None  # 失败时的错误文案
 
 
-class _A2ARequestRow(Base):
+class _A2ARequestRow(JobRowMixin, Base):
     __tablename__ = "a2a_request_jobs"
     __table_args__ = (
         Index("ix_a2a_request_target_status_available", "target_magi_id", "status", "available_at"),
         {"extend_existing": True},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     source_magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
@@ -149,7 +141,6 @@ class _A2ARequestRow(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
         Enum(
@@ -175,26 +166,19 @@ class _A2ARequestRow(Base):
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
 
-class _A2ANotifyRow(Base):
+class _A2ANotifyRow(JobRowMixin, Base):
     __tablename__ = "a2a_notify_jobs"
     __table_args__ = (
         Index("ix_a2a_notify_target_status_available", "target_magi_id", "status", "available_at"),
         {"extend_existing": True},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     source_magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
@@ -204,7 +188,6 @@ class _A2ANotifyRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
         Enum(
             A2AErrorCode,
@@ -219,12 +202,7 @@ class _A2ANotifyRow(Base):
     )
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )

@@ -14,7 +14,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 #: Maximum delivery attempts before a row is marked failed.
 #: Distinct from :data:`magi.bus.guild.base.MAX_ATTEMPTS` (which
@@ -28,7 +28,7 @@ MAX_DELIVERY_ATTEMPTS = 10
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryJob:
+class DeliveryJob(BaseJob):
     """一次出站投递请求 — agent 产出回复后入队，对应渠道 worker claim 后送出。
 
     ``channel`` 决定哪个渠道 worker claim（``tg`` / ``webui`` / ...
@@ -48,11 +48,10 @@ class DeliveryJob:
     conversation_id: str | None = None  # 关联会话（webui worker 用）
     contact_id: int | None = None  # 关联 contact（webui worker 用）
     destination: str | None = None  # 目标地址（chat_id 等）
-    job_id: str = ""  # 自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryResult:
+class DeliveryResult(BaseJobResult):
     """:class:`DeliveryJob` 的投递回执 — 渠道 worker 实际送出后写入。
 
     重试预算 :data:`MAX_DELIVERY_ATTEMPTS` 用尽后由
@@ -62,18 +61,13 @@ class DeliveryResult:
     渠道 SDK 的错误文案或重试耗尽提示。
     """
 
-    job_id: str  # 对应 DeliveryJob 的 job_id
-    success: bool  # 投递是否成功
     error: str | None = None  # 失败时的错误描述
 
 
-class _DeliveryJobRow(Base):
+class _DeliveryJobRow(JobRowMixin, Base):
     __tablename__ = "delivery_outbox"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     # Delivery content — formerly a single ``payload`` JSON blob. Split
     # into individual columns in migration 0017 so producers / consumers
@@ -84,13 +78,8 @@ class _DeliveryJobRow(Base):
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

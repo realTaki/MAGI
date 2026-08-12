@@ -6,11 +6,12 @@ BaseJobBoard -- 往返任务队列（publish → claim → submit_result → get
 from __future__ import annotations
 
 import dataclasses
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import ClassVar
 
-from sqlalchemy import and_, func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
+from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
 from magi.bus.db.base import Base, utcnow_naive
@@ -25,7 +26,59 @@ MAX_ATTEMPTS = 3
 MAX_ATTEMPTS_CANDIDATES = 10
 
 
-class BaseJobBoard[RowT: Base, JobT, ResultT]:
+# -- 公共基类 / 列 mixin ---------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class BaseJob:
+    """所有 Job dataclass 的公共基类。
+
+    承载队列语义字段（``job_id`` / ``attempts``）；子类只声明
+    业务字段。``job_id`` 由 ``publish`` 自动生成（``job.job_id
+    or new_job_id()``），``attempts`` 由 :meth:`BaseJobBoard._map_row`
+    在 claim 时回填，供上层观察 lease-recovery 行为，不属于
+    publisher 的输入。
+    """
+
+    job_id: str = ""  # 发布时自动生成；publish 内 ``job.job_id or new_job_id()``
+    attempts: int = 0  # claim 后由 ORM 回填的重试次数（观察值）
+
+
+@dataclass(frozen=True, slots=True)
+class BaseJobResult:
+    """所有 Result dataclass 的公共基类。
+
+    承载队列语义字段：``job_id``（业务键）与 ``success``（由
+    ``status`` 派生，不落独立列）。子类只声明纯业务字段，走
+    :func:`_write_result_to_job` / :func:`_read_result_from_job`
+    的通用字段映射。这样「队列语义 vs 业务字段」的边界显式化，
+    子类不再需要各自抄一遍 ``job_id`` / ``success``。
+    """
+
+    job_id: str  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
+    success: bool  # 是否成功（写侧编码为 status，读侧从 status 推导）
+
+
+class JobRowMixin:
+    """Job 队列行的公共列 mixin。
+
+    每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(JobRowMixin, Base)``
+    继承这 8 个队列控制列，只声明自己的业务列。``leased_by`` /
+    ``updated_at`` / ``available_at`` 不是严格公共（少数表缺），
+    保留在各自表里声明。
+    """
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
     get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
     """
@@ -219,8 +272,11 @@ class BaseJobBoard[RowT: Base, JobT, ResultT]:
         ``None`` and let the caller decide what to do (retry on
         the next poll, alert, etc.).
         """
+        # ``leased_by`` is not on every row (``mcpServerChangedJob`` /
+        # ``seedPresetTasksJob`` omit it), so keep the runtime probe.
+        # ``started_at`` is now guaranteed by :class:`JobRowMixin`, so
+        # the claim path can set it unconditionally on first claim.
         has_leased_by = hasattr(self.job_model, "leased_by")
-        has_started_at = hasattr(self.job_model, "started_at")
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
         for _ in range(MAX_ATTEMPTS_CANDIDATES):
@@ -271,7 +327,7 @@ class BaseJobBoard[RowT: Base, JobT, ResultT]:
             }
             if has_leased_by:
                 values["leased_by"] = owner
-            if not is_reclaim and has_started_at:
+            if not is_reclaim:
                 values["started_at"] = now
             result = session.execute(update(self.job_model).where(*where_clauses).values(**values))
             if getattr(result, "rowcount", 0) == 1:

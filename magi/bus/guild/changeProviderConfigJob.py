@@ -32,7 +32,7 @@ from sqlalchemy import JSON, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 if TYPE_CHECKING:
     from magi.bus.library.local.settingBook import SettingBook
@@ -51,7 +51,7 @@ PROVIDER_MODEL_KEY = "provider.model"
 
 
 @dataclass(frozen=True, slots=True)
-class ChangeProviderConfigJob:
+class ChangeProviderConfigJob(BaseJob):
     """一次 provider 配置变更。
 
     ``publish()`` 会自动把 ``provider`` / ``api_key`` / ``model``
@@ -61,11 +61,10 @@ class ChangeProviderConfigJob:
     provider: str | None = None  # 目标 LLM provider 名（None=不变更）
     api_key: str | None = None  # 新 API key（None=不变更）
     model: str | None = None  # 目标模型名（None=不变更）
-    job_id: str = ""  # 发布时自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
-class ChangeProviderConfigResult:
+class ChangeProviderConfigResult(BaseJobResult):
     """:class:`ChangeProviderConfigJob` 的处理回执 — ProvidersWorker
     在重建 SDK client / 切换模型后写入。
 
@@ -74,21 +73,16 @@ class ChangeProviderConfigResult:
     误描述，调用方通常直接 502 给前端。
     """
 
-    job_id: str  # 对应 ChangeProviderConfigJob 的 job_id
-    success: bool  # provider 配置是否应用成功
     error: str | None = None  # 失败时的错误描述
 
 
 # ── internal ORM ───────────────────────────────────────────────────────────
 
 
-class _ChangeProviderConfigRow(Base):
+class _ChangeProviderConfigRow(JobRowMixin, Base):
     __tablename__ = "change_provider_config_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(24), default="pending")
     # Field-level columns the worker reads to decide between a
     # full SDK rebuild (``provider`` / ``api_key`` set) and a
     # in-place ``provider.model`` swap (only ``model`` set).
@@ -100,12 +94,7 @@ class _ChangeProviderConfigRow(Base):
     # 保留 payload 字段以兼容已有数据；新 publish 不再写入
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

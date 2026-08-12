@@ -24,7 +24,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJobBoard
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
 
 if TYPE_CHECKING:
     from magi.bus.library.local.contactBook import ContactBook
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class ChatJob:
+class ChatJob(BaseJob):
     """Snapshot of a turn request (publisher input).
 
     Typed fields, no ``payload`` dict. The DB row still stores
@@ -68,7 +68,6 @@ class ChatJob:
     - :attr:`manual` — Task: whether the fire was manual.
     """
 
-    job_id: str = ""
     conversation_id: str | None = None
     correlation_id: str | None = None
     # Core turn input
@@ -88,23 +87,18 @@ class ChatJob:
 
 
 @dataclass(frozen=True, slots=True)
-class ChatJobResult:
+class ChatJobResult(BaseJobResult):
     """Final state of a turn."""
 
-    job_id: str = ""  # 对应 ChatJob 的 job_id
-    success: bool = False  # turn 是否成功完成
-    status: str = "failed"  # 终态（completed/failed）
     result: dict[str, Any] | None = None  # 结构化结果
     error_code: str | None = None  # 稳定错误码
     error_detail: str | None = None  # 失败时的详细错误描述
 
 
-class _ChatJobRow(Base):
+class _ChatJobRow(JobRowMixin, Base):
     __tablename__ = "chat_jobs"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Turn input — formerly a single ``payload`` JSON blob. Split into
@@ -124,14 +118,8 @@ class _ChatJobRow(Base):
     # Queue control
     received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
