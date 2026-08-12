@@ -22,7 +22,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     DateTime,
     ForeignKey,
     String,
@@ -70,8 +69,7 @@ class Contact:
     name: str  # 联系人唯一名
     display_name: str | None = None  # 显示名
     role: str = ROLE_GUEST  # 角色（assigned/guest）
-    tgid: int | None = None  # 绑定的 Telegram chat id
-    admin: bool = False  # 预留标志（实际权限由 MAGIS 的 magis_admins 表管理）
+    tgid: int | None = None  # 绑定的 Telegram chat id（本地用户身份）
     # Nullable projection link to the MAGIS-shared operator identity.  It is
     # deliberately not a foreign key because the two stores are independent.
     magis_admin_id: int | None = None
@@ -84,7 +82,7 @@ class Contact:
 
         Mirrors the ``ContactView`` field names
         (``admin`` / ``notes`` / ``source`` fields are
-        gone — admin moved to MAGIS, notes/source live on
+        gone — admin authority moved to MAGIS, notes/source live on
         ``ContactNoteBook``). Timestamp fields are ISO-8601
         ``Z`` strings by the time this runs because
         :meth:`BaseBook._row_to_dto` already passed each
@@ -126,16 +124,12 @@ class _ContactRow(Base):
     display_name: Mapped[str | None] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
-    # Retained only until the dedicated password-removal migration lands;
-    # authentication administration itself is MAGIS-scoped.
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class _ContactNoteRow(Base):
@@ -178,44 +172,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             )
             return self._row_to_dto(row) if row else None
 
-    def get_password_hash(self, *, contact_id: int) -> str | None:
-        """Return the local password hash for one contact, if configured."""
-        with self._session() as s:
-            row = s.get(_ContactRow, contact_id)
-            return row.password_hash if row else None
-
-    def set_password_hash(self, *, contact_id: int, password_hash: str) -> None:
-        if not password_hash:
-            raise ValueError("password_hash is required")
-        with self._session() as s:
-            row = s.get(_ContactRow, contact_id)
-            if row is None:
-                raise LookupError(f"contact {contact_id!r} not found")
-            row.password_hash = password_hash
-            s.commit()
-
-    def clear_password_hash(self, *, contact_id: int) -> bool:
-        with self._session() as s:
-            row = s.get(_ContactRow, contact_id)
-            if row is None or row.password_hash is None:
-                return False
-            row.password_hash = None
-            s.commit()
-            return True
-
-    def password_contact_ids(self, *, contact_ids: list[int]) -> set[int]:
-        if not contact_ids:
-            return set()
-        with self._session() as s:
-            return set(
-                s.scalars(
-                    select(_ContactRow.id).where(
-                        _ContactRow.id.in_(contact_ids),
-                        _ContactRow.password_hash.is_not(None),
-                    )
-                )
-            )
-
     def add(
         self,
         *,
@@ -223,7 +179,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         role: str = ROLE_GUEST,
         display_name: str | None = None,
         tgid: int | None = None,
-        admin: bool = False,
         magis_admin_id: int | None = None,
     ) -> Contact:
         """Insert one contact row.
@@ -251,7 +206,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 role=role,
                 display_name=normalized_display,
                 tgid=tgid,
-                admin=admin,
                 magis_admin_id=magis_admin_id,
             )
             s.add(row)
@@ -266,7 +220,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         name: str | None = None,
         display_name: str | None = None,
         role: str | None = None,
-        admin: bool | None = None,
         tgid: int | None = None,
         set_display_name: bool = False,
         set_tgid: bool = False,
@@ -301,8 +254,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 if role not in ALL_ROLES:
                     raise ValueError(f"role must be one of {sorted(ALL_ROLES)!r}")
                 row.role = role
-            if admin is not None:
-                row.admin = admin
             if set_tgid:
                 if tgid is not None:
                     duplicate = s.scalar(
@@ -386,85 +337,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 reverse=True,
             )
             return [self._row_to_dto(r) for r in name_rows[:limit]]
-
-    def list_admins(self) -> list[Contact]:
-        """Return all contacts with ``admin=True``."""
-        with self._session() as s:
-            rows = s.scalars(
-                select(_ContactRow).where(_ContactRow.admin).order_by(_ContactRow.id)
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
-
-    def upsert_first_admin(self, *, name: str) -> int:
-        """Create or rename the first admin contact row.
-
-        Returns the contact ``id``. On first call, creates a new
-        row with ``admin=True, role='assigned'``. On subsequent
-        calls, renames the existing first admin row so chat
-        history survives a re-entered wizard.
-        """
-        normalized = (name or "").strip()
-        if not normalized:
-            raise ValueError("name is required")
-        with self._session() as s:
-            existing = s.scalars(
-                select(_ContactRow).where(_ContactRow.admin).order_by(_ContactRow.id)
-            ).first()
-            if existing is not None:
-                existing.name = normalized
-                existing.display_name = normalized
-                s.commit()
-                s.refresh(existing)
-                return existing.id
-            row = _ContactRow(
-                name=normalized,
-                display_name=normalized,
-                role=ROLE_ASSIGNED,
-                admin=True,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-            return row.id
-
-    def replace_admin_set(self, pairs: list[tuple[int, str | None]]) -> list[int]:
-        """Replace the admin contact set with *pairs*.
-
-        Each element of *pairs* is ``(tgid, display_name)``.
-        Contacts whose bound TG chat is in *pairs* are upserted
-        with ``admin=True``; existing admins not in *pairs* have
-        ``admin`` cleared. Returns the list of resulting admin
-        contact ids in input order.
-        """
-        tg_ids = {tg_id for tg_id, _ in pairs}
-        result_ids: list[int] = []
-        with self._session() as s:
-            # Demote existing admins not in the new set
-            old_admins = s.scalars(select(_ContactRow).where(_ContactRow.admin)).all()
-            for row in old_admins:
-                if row.tgid not in tg_ids:
-                    row.admin = False
-            # Upsert each new admin
-            for tg_id, display_name in pairs:
-                row = s.scalar(select(_ContactRow).where(_ContactRow.tgid == tg_id))
-                if row is not None:
-                    row.admin = True
-                    if display_name:
-                        row.display_name = display_name
-                else:
-                    row = _ContactRow(
-                        name=display_name or f"Admin {tg_id}",
-                        display_name=display_name,
-                        role=ROLE_ASSIGNED,
-                        tgid=tg_id,
-                        admin=True,
-                    )
-                    s.add(row)
-                s.flush()
-                result_ids.append(row.id)
-            s.commit()
-        return result_ids
-
 
 class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
     model_cls = _ContactNoteRow
