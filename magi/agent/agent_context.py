@@ -39,13 +39,24 @@ def build_messages_from_conversation(
         if conversation is None:
             return [{"role": "user", "content": new_user_text}]
         msgs = bus.messages_book.list_for_conversation(conversation_id=conversation_id)
-        result = [
+        result: list[dict] = []
+        # Prepend the cumulative compaction summary, if any. Same
+        # "[Prior conversation summary]" prefix used by `maybe_compact`
+        # so the round-trip is stable across turns.
+        if getattr(conversation, "summary", None):
+            result.append(
+                {
+                    "role": "user",
+                    "content": f"[Prior conversation summary]\n{conversation.summary}",
+                }
+            )
+        result.extend(
             {
                 "role": "user" if getattr(m, "role", "") in ("user", "system") else "assistant",
                 "content": getattr(m, "text", ""),
             }
             for m in msgs
-        ]
+        )
         if not result or result[-1]["content"] != new_user_text:
             result.append({"role": "user", "content": new_user_text})
         return result

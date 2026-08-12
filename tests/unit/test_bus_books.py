@@ -412,6 +412,86 @@ def test_conversation_and_message(factory):
     assert msgs[0].text == "hi"
 
 
+def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
+    """`set_summary` writes summary, stamps last_compaction_at, bumps updated_at."""
+    sbook = ConversationBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+
+    result = sbook.set_summary(
+        contact_id=contact_id, conversation_id="c1", summary="S0"
+    )
+    assert result is not None
+    assert result.summary == "S0"
+    assert result.last_compaction_at is not None
+    # bump_updated=True by default → updated_at moves forward
+    assert result.updated_at >= "2026-08-05T00:00:00Z"
+
+    # Re-read via get_for_owner to confirm persistence (not just returned DTO)
+    fresh = sbook.get_for_owner(contact_id=contact_id, conversation_id="c1")
+    assert fresh is not None
+    assert fresh.summary == "S0"
+    assert fresh.last_compaction_at == result.last_compaction_at
+
+
+def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
+    """Cross-contact guard: wrong contact_id returns None and leaves row unchanged."""
+    from magi.bus.library.local.contactBook import ContactBook
+
+    sbook = ConversationBook(factory)
+    other_contact = ContactBook(factory).add(name="Other").id
+
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+
+    result = sbook.set_summary(
+        contact_id=other_contact, conversation_id="c1", summary="hijack"
+    )
+    assert result is None
+
+    # Confirm row is unchanged
+    fresh = sbook.get_for_owner(contact_id=contact_id, conversation_id="c1")
+    assert fresh is not None
+    assert fresh.summary is None
+    assert fresh.last_compaction_at is None
+
+
+def test_conversation_set_summary_overwrites(factory, contact_id):
+    """Second call supersedes the first; last_compaction_at moves forward."""
+    sbook = ConversationBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+
+    first = sbook.set_summary(
+        contact_id=contact_id, conversation_id="c1", summary="S0"
+    )
+    second = sbook.set_summary(
+        contact_id=contact_id, conversation_id="c1", summary="S1"
+    )
+    assert first is not None
+    assert second is not None
+    assert second.summary == "S1"
+    assert second.last_compaction_at >= (first.last_compaction_at or "")
+
+
 # -- McpServerBook ------------------------------------------------------
 
 
