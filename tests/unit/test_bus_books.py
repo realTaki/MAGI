@@ -442,22 +442,20 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
     sbook = ConversationBook(factory)
     other_contact = ContactBook(factory).add(name="Other").id
 
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
 
     result = sbook.set_summary(
-        contact_id=other_contact, conversation_id="c1", summary="hijack"
+        contact_id=other_contact, conversation_id=cid, summary="hijack"
     )
     assert result is None
 
     # Confirm row is unchanged
-    fresh = sbook.get_for_owner(contact_id=contact_id, conversation_id="c1")
+    fresh = sbook.get_for_owner(contact_id=contact_id, conversation_id=cid)
     assert fresh is not None
     assert fresh.summary is None
     assert fresh.last_compaction_at is None
@@ -466,20 +464,18 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
 def test_conversation_set_summary_overwrites(factory, contact_id):
     """Second call supersedes the first; last_compaction_at moves forward."""
     sbook = ConversationBook(factory)
-    sbook.add(
-        conversation_id="c1",
+    conv = sbook.add(
         delivery_address="tg:1",
         contact_id=contact_id,
         channel="tg",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    cid = conv.conversation_id
 
     first = sbook.set_summary(
-        contact_id=contact_id, conversation_id="c1", summary="S0"
+        contact_id=contact_id, conversation_id=cid, summary="S0"
     )
     second = sbook.set_summary(
-        contact_id=contact_id, conversation_id="c1", summary="S1"
+        contact_id=contact_id, conversation_id=cid, summary="S1"
     )
     assert first is not None
     assert second is not None
@@ -1346,14 +1342,12 @@ def test_task_book_upsert_by_name(factory, contact_id):
     # SQLite's FK guard.
     from magi.bus.library.local.conversationBook import ConversationBook
 
-    ConversationBook(factory).add(
-        conversation_id="01ABC",
+    conv_seed = ConversationBook(factory).add(
         delivery_address="webui:dashboard",
         contact_id=contact_id,
         channel="webui",
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
     )
+    seed_cid = conv_seed.conversation_id
 
     # First call: insert.
     task_id_1, is_update_1 = book.upsert_by_name(
@@ -1364,7 +1358,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
         delivery_to=None,
         target_channel="webui",
         contact_id=contact_id,
-        conversation_id="01ABC",
+        conversation_id=seed_cid,
         tz="UTC",
     )
     assert is_update_1 is False
@@ -1391,7 +1385,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     assert row.prompt == "summarise the dashboard v2"
     assert row.cron == "0 10 * * *"
     assert row.target_channel == "tg"
-    assert row.conversation_id == "01ABC"  # sticky: NOT overwritten by 01DEF
+    assert row.conversation_id == seed_cid  # sticky: NOT overwritten by 01DEF
 
     # Book invariants still fire via the insert branch —
     # inserting a third task with bad data raises.

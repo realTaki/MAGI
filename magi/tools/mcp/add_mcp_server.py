@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from magi.bus.guild import MCPKind, McpServerChangedJob
+from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
@@ -202,7 +203,7 @@ class AddMcpServerTool(Tool):
                 "MCP worker did not process the change within the timeout; "
                 "list_mcp_servers to verify the new state."
             )
-        if not result.success:
+        if result.status != JobStatus.COMPLETED:
             return ToolResult.err(result.error or "MCP worker failed to apply the change")
 
         # Read the row back so the LLM sees the real autoincrement

@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 from magi.bus.guild import MCPKind, McpServerChangedJob
+from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
@@ -217,7 +218,7 @@ class UpdateMcpServerTool(Tool):
                 "MCP worker did not process the update within the "
                 "timeout; list_mcp_servers to verify the new state."
             )
-        if not result.success:
+        if result.status != JobStatus.COMPLETED:
             return ToolResult.err(result.error or "MCP worker failed to apply the update")
 
         row = ctx.bus.mcp_servers_book.get_by_name(name=name)

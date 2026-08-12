@@ -50,6 +50,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from magi.bus.guild.base import JobStatus
 from magi.bus.guild.runToolJob import RunToolResult
 from magi.bus.library.local import ToolDefinition
 from magi.runtime_worker import RuntimeWorker
@@ -482,7 +483,7 @@ class ToolsWorker(RuntimeWorker):
                 key=job.job_id,
                 result=RunToolResult(
                     job_id=job.job_id,
-                    success=False,
+                    status=JobStatus.FAILED,
                     content=content[:8000],
                     is_error=True,
                     error=content,
@@ -509,7 +510,7 @@ def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
 
     return RunToolResult(
         job_id=job.job_id,
-        success=not result.is_error,
+        status=JobStatus.COMPLETED if not result.is_error else JobStatus.FAILED,
         content=result.content[:8000],
         is_error=result.is_error,
         tool_call_id=job.tool_call_id,
