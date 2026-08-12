@@ -171,7 +171,7 @@ export function RunsHistoryDrawer(props: {
                               {statusLabel}
                             </span>
                             <span className="ml-1">
-                              · {r.trigger === "manual" ? "手动" : "定时"}
+                              · {r.manual ? "手动" : "定时"}
                             </span>
                             {r.latency_ms != null && (
                               <span className="ml-1">

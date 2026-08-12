@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 from croniter import croniter as _croniter
 
-from magi.bus.guild.runTaskJob import FiredBy
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -50,7 +49,7 @@ class TaskWorker(RuntimeWorker):
                     break
                 if self._should_fire(task, now):
                     try:
-                        await self._fire_task(task, fired_by=FiredBy.CRON_TICK)
+                        await self._fire_task(task, manual=False)
                         if task.run_at and not task.cron:
                             await self.call(
                                 self.bus.tasks_book.mark_run_at_consumed, task_id=task.id
@@ -85,7 +84,7 @@ class TaskWorker(RuntimeWorker):
         self,
         task,
         *,
-        fired_by: FiredBy = FiredBy.CRON_TICK,
+        manual: bool = False,
         conversation_id: str | None = None,
         contact_id: int | None = None,
     ) -> None:
@@ -101,7 +100,7 @@ class TaskWorker(RuntimeWorker):
             f"channel: {getattr(task, 'target_channel', 'webui')}\n\n[task prompt]\n{task.prompt}"
         )
         try:
-            await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, trigger=fired_by.value)
+            await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, manual=manual)
         except Exception:
             pass
         if effective_conversation and effective_contact_id:
@@ -122,7 +121,7 @@ class TaskWorker(RuntimeWorker):
             conversation_id=effective_conversation,
             kind="task.triggered",
             task_id=task_id,
-            fired_by=fired_by,
+            manual=manual,
         )
         self._next_fire[task_id] = datetime.now(UTC)
 
@@ -140,7 +139,7 @@ class TaskWorker(RuntimeWorker):
                 return
             await self._fire_task(
                 task,
-                fired_by=rj.fired_by,
+                manual=rj.manual,
                 conversation_id=rj.conversation_id or task.conversation_id,
                 contact_id=rj.contact_id or task.contact_id,
             )

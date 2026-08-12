@@ -120,7 +120,7 @@ export function useTasks(filter?: { enabled?: boolean }) {
 
 export type TaskRunRow = {
   id: string; task_id: string; conversation_id: string | null;
-  trigger: string; started_at: string; finished_at: string | null;
+  manual: boolean; started_at: string; finished_at: string | null;
   latency_ms: number | null; status: string; error: string | null;
   reply_excerpt: string | null;
 };

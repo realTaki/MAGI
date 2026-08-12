@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.guild.runTaskJob import FiredBy, RunTaskJob
+from magi.bus.guild.runTaskJob import RunTaskJob
 from magi.bus.library.local.tasksBook import preset_to_cron, validate_run_at
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
@@ -62,7 +62,7 @@ class RunResponse(BaseModel):
 class TaskRunOut(BaseModel):
     id: str
     task_id: str
-    trigger: str
+    manual: bool
     status: str
     started_at: str
     finished_at: str | None = None
@@ -201,7 +201,6 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
         RunTaskJob(
             task_id=task.id,
             manual=True,
-            fired_by=FiredBy.API_MANUAL_RUN,
             conversation_id=task.conversation_id,
             contact_id=task.contact_id,
         )

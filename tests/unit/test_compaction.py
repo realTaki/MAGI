@@ -184,7 +184,7 @@ async def test_maybe_compact_uses_prior_summary(monkeypatch, seed_conversation, 
 
 
 async def test_maybe_compact_noop_under_keep_tail(monkeypatch, seed_conversation, contact_id):
-    """5 messages (≤ keep_tail=8) → no compaction."""
+    """5 tiny messages → no compaction (token budget not exceeded)."""
     sbook, mbook, cid = seed_conversation
     for i in range(5):
         mbook.add(
@@ -268,6 +268,109 @@ async def test_maybe_compact_returns_none_on_summary_failure(
     # No rows archived
     active = mbook.list_for_conversation(conversation_id=cid, include_archived=False)
     assert len(active) == 20
+
+
+async def test_maybe_compact_shrinks_tail_to_fit_budget(
+    monkeypatch, seed_conversation, contact_id
+):
+    """If the last N messages alone are still over budget, drop from
+    the front of the tail until summary + tail fits. Always keep the
+    most recent turn.
+    """
+    sbook, mbook, cid = seed_conversation
+
+    # 20 messages, each 2000 chars = ~504 tokens each (2000/4 + 4 overhead).
+    # keep_recent=20, context_window=16_000, threshold_pct=50 → threshold = 8000.
+    # 20 × 504 = 10080 > 8000 → compact.
+    # candidate_tail = last 20 = 10080 tokens → still over.
+    # Drop from front until ≤ 8000: 8000 / 504 ≈ 15.87 → keep 15.
+    for i in range(20):
+        mbook.add(
+            conversation_id=cid,
+            message_id=f"m{i:03d}",
+            role="user",
+            text="x" * 2000,
+            ts=f"2026-08-05T00:00:{i:02d}Z",
+        )
+
+    bus = _make_bus(sbook=sbook, mbook=mbook)
+    bus.settings_book.get.side_effect = lambda key: {
+        "system.compact_keep_recent": 20,
+        "system.compact_context_window": 16_000,
+        "system.compact_threshold_pct": 50,
+    }.get(key)
+    _stub_summary(monkeypatch, return_value="NEW")
+
+    dtos = mbook.list_for_conversation(conversation_id=cid, include_archived=False)
+    result = await maybe_compact(contact_id, cid, dtos, bus=bus)
+
+    assert result is not None
+    # 1 summary + 15 tail = 16 entries (shrunk from 20)
+    assert len(result) == 16
+    assert result[0]["content"].startswith("[Prior conversation summary]\nNEW")
+    assert result[-1]["content"] == "x" * 2000  # the most recent
+
+    # DB: oldest 5 (m000..m004) archived; m005..m019 still active
+    all_msgs = mbook.list_for_conversation(conversation_id=cid, include_archived=True)
+    active_msgs = mbook.list_for_conversation(conversation_id=cid, include_archived=False)
+    assert len(all_msgs) == 20
+    assert len(active_msgs) == 15
+    # Active are the most recent 15 (m005..m019)
+    assert all(m.archived == 0 for m in active_msgs)
+    assert active_msgs[0].message_id == "m005"
+    assert active_msgs[-1].message_id == "m019"
+
+
+async def test_maybe_compact_keeps_at_least_one_when_summary_fills_budget(
+    monkeypatch, seed_conversation, contact_id
+):
+    """Even if summary + 1 message is over budget, still keep the
+    most recent turn (don't drop to zero). Logged as a warning.
+
+    Setup: pre-set a giant summary that nearly fills the threshold
+    (32k chars ≈ 8004 tokens, threshold = 8000), then add 2 modest
+    messages. The shrink loop ends with len=1 and post still over
+    budget — we keep the 1 anyway.
+    """
+    sbook, mbook, cid = seed_conversation
+
+    # Pre-fill summary to almost-fill the budget. 32_000 chars
+    # → 32_000/4 + 4 overhead = 8004 tokens. threshold = 8000.
+    sbook.set_summary(contact_id=contact_id, conversation_id=cid, summary="S" * 32_000)
+
+    mbook.add(
+        conversation_id=cid,
+        message_id="m000",
+        role="user",
+        text="x" * 100,  # 29 tokens
+        ts="2026-08-05T00:00:00Z",
+    )
+    mbook.add(
+        conversation_id=cid,
+        message_id="m001",
+        role="user",
+        text="x" * 100,  # 29 tokens
+        ts="2026-08-05T00:00:01Z",
+    )
+
+    bus = _make_bus(sbook=sbook, mbook=mbook)
+    bus.settings_book.get.side_effect = lambda key: {
+        "system.compact_keep_recent": 5,
+        "system.compact_context_window": 16_000,
+        "system.compact_threshold_pct": 50,
+    }.get(key)
+    _stub_summary(monkeypatch, return_value="NEW")
+
+    dtos = mbook.list_for_conversation(conversation_id=cid, include_archived=False)
+    result = await maybe_compact(contact_id, cid, dtos, bus=bus)
+
+    # Even with summary + 1 msg over budget, the floor of 1 keeps m001.
+    assert result is not None
+    assert len(result) == 2  # summary + 1 tail
+    # Oldest 1 (m000) archived; m001 still active
+    active = mbook.list_for_conversation(conversation_id=cid, include_archived=False)
+    assert len(active) == 1
+    assert active[0].message_id == "m001"
 
 
 # ---------------------------------------------------------------------------
