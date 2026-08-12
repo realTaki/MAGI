@@ -108,7 +108,6 @@ class ActionItem:
     source: ActionSource = ActionSource.PROACTIVE  # 来源（user/proactive）
     created_at: datetime | None = None  # 创建时间
     completed_at: datetime | None = None  # 完成时间（None=未完成）
-    completed_by_contact_id: int | None = None  # 完成者联系人 ID
     completion_note: str | None = None  # 完成备注
     dismissed: bool = False  # 是否已被 dismiss（隐藏但未完成）
 
@@ -171,10 +170,6 @@ class _ActionItemRow(Base):
     )
     # Null = still open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    completed_by_contact_id: Mapped[int | None] = mapped_column(
-        ForeignKey("contacts.id", ondelete="SET NULL"),
-        nullable=True,
-    )
     # Optional reason captured at complete-time.
     completion_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Distinct from completion: a dismissed row never claims
@@ -349,7 +344,6 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         *,
         action_item_id: int,
         note: str | None = None,
-        completed_by_contact_id: int | None = None,
     ) -> ActionItem | None:
         """Mark an action item complete.
 
@@ -384,8 +378,6 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                 return None
             if row.completed_at is None:
                 row.completed_at = utcnow_naive()
-                if completed_by_contact_id is not None:
-                    row.completed_by_contact_id = completed_by_contact_id
                 if note is not None:
                     row.completion_note = note
                 s.commit()
