@@ -3,8 +3,8 @@
 Two-step flow (mirror of admin verification):
     1. ``POST /api/auth/send-login-code { contact_id }``
        Sends a 6-digit code to the operator's bound TG chat via
-       the saved bot. Same 5-min TTL and 60-s cooldown as admin
-       code, stored under the same key namespace as a precaution.
+       the saved bot. Same 5-min TTL, separate cooldowns
+       for code and password attempts.
 
     2. ``POST /api/auth/verify-login-code { contact_id, code }``
        On match, sets the ``magi_session`` cookie to the
@@ -1128,8 +1128,8 @@ async def me(
 # pick which tab to render. The TG code flow above is
 # unchanged; password login is a parallel route that
 # co-exists with the code route so an operator can switch
-# back and forth. The 60s cooldown is shared per-contact_id
-# (success or failure both reset the timer) so a typo
+# back and forth.  The cooldown is per-contact_id (success
+# or failure both reset the timer) so a typo
 # followed by a successful retry still has to wait a
 # minute — same UX as the TG code path.
 
@@ -1410,7 +1410,7 @@ async def login_password(
     password hashes; it forwards the verify to the runtime
     via the existing ``_target_access`` proxy and trusts the
     runtime's authoritative response. The runtime path
-    enforces the 60s cooldown, verifies the scrypt hash,
+    enforces the cooldown (10s for password), verifies the scrypt hash,
     and looks up the contact's role for the cookie flags.
 
     On success the cookie carries ``admin = (role == "admin")``

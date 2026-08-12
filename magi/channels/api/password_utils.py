@@ -132,7 +132,7 @@ def verify_password(stored: str, password: str) -> bool:
     return hmac.compare_digest(candidate, digest)
 
 
-# -- 60s cooldown → now caller-defined --------------------------------
+# -- Cooldown (caller-defined duration) ------------------------------------
 #
 # Mirrors the TG-code flow in :mod:`magi.webui.api.auth`:
 # one attempt per contact_id per 60s, success or failure both
