@@ -1,7 +1,7 @@
-"""ContactBook + ContactNoteBook — local people, credentials, and notes.
+"""ContactBook + ContactNoteBook — local people, admin projections, and notes.
 
 Two tables:
-- ``contacts``       — one row per person and its password credential
+- ``contacts``       — people local to this MAGI, including MAGIS-admin projections
 - ``contact_notes``  — one row per fact (kind='permanent') or daily log (kind='daily')
 
 Schema for ``contacts`` + ``contact_notes`` tables.
@@ -38,6 +38,7 @@ ROLE_ASSIGNED = "assigned"
 ROLE_GUEST = "guest"
 ALL_ROLES = frozenset({ROLE_ASSIGNED, ROLE_GUEST})
 
+
 # Column-length invariants — mirror the ORM column
 # declarations (``String(120)`` / ``Text``) and the
 # per-row ``contact_notes`` size cap. The Book enforces them
@@ -71,6 +72,9 @@ class Contact:
     role: str = ROLE_GUEST  # 角色（assigned/guest）
     tgid: int | None = None  # 绑定的 Telegram chat id
     admin: bool = False  # 预留标志（实际权限由 MAGIS 的 magis_admins 表管理）
+    # Nullable projection link to the MAGIS-shared operator identity.  It is
+    # deliberately not a foreign key because the two stores are independent.
+    magis_admin_id: int | None = None
     last_seen_at: datetime | None = None  # 最近活跃时间
     created_at: datetime | None = None  # 创建时间
     updated_at: datetime | None = None  # 最近更新时间
@@ -123,14 +127,14 @@ class _ContactRow(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
-    # Password hashes belong to the local contact identity.  This field is
-    # deliberately absent from the public Contact DTO, so directory reads can
-    # never expose the hash.
+    # Retained only until the dedicated password-removal migration lands;
+    # authentication administration itself is MAGIS-scoped.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
@@ -166,22 +170,21 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = s.scalar(select(_ContactRow).where(_ContactRow.tgid == tgid))
             return self._row_to_dto(row) if row else None
 
-    def get_password_hash(self, *, contact_id: int) -> str | None:
-        """Return the local password hash for one contact, if configured.
+    def get_by_magis_admin_id(self, *, magis_admin_id: int) -> Contact | None:
+        """Return this runtime's local projection of one MAGIS admin."""
+        with self._session() as s:
+            row = s.scalar(
+                select(_ContactRow).where(_ContactRow.magis_admin_id == magis_admin_id)
+            )
+            return self._row_to_dto(row) if row else None
 
-        The hash is intentionally available only through this explicit
-        authentication-oriented operation; it is not a ``Contact`` field.
-        """
+    def get_password_hash(self, *, contact_id: int) -> str | None:
+        """Return the local password hash for one contact, if configured."""
         with self._session() as s:
             row = s.get(_ContactRow, contact_id)
             return row.password_hash if row else None
 
     def set_password_hash(self, *, contact_id: int, password_hash: str) -> None:
-        """Create or replace a contact's local password hash.
-
-        Hashing and password-strength validation happen in the auth channel;
-        this method owns only persistence and parent-contact validation.
-        """
         if not password_hash:
             raise ValueError("password_hash is required")
         with self._session() as s:
@@ -192,7 +195,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             s.commit()
 
     def clear_password_hash(self, *, contact_id: int) -> bool:
-        """Remove a configured password hash; return whether one existed."""
         with self._session() as s:
             row = s.get(_ContactRow, contact_id)
             if row is None or row.password_hash is None:
@@ -202,7 +204,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             return True
 
     def password_contact_ids(self, *, contact_ids: list[int]) -> set[int]:
-        """Return the subset of ids that have a local password configured."""
         if not contact_ids:
             return set()
         with self._session() as s:
@@ -223,6 +224,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         display_name: str | None = None,
         tgid: int | None = None,
         admin: bool = False,
+        magis_admin_id: int | None = None,
     ) -> Contact:
         """Insert one contact row.
 
@@ -250,6 +252,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 display_name=normalized_display,
                 tgid=tgid,
                 admin=admin,
+                magis_admin_id=magis_admin_id,
             )
             s.add(row)
             s.commit()

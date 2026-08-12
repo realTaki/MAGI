@@ -1,4 +1,4 @@
-"""MagisBook + MagisAdminBook — the MAGIS tree + which contacts admin which MAGIS.
+"""MagisBook + MagisAdminBook — the MAGIS tree + its administrators.
 
 Two tables — together they track the MAGIS registry as a forest:
 
@@ -7,10 +7,10 @@ Two tables — together they track the MAGIS registry as a forest:
   ``parent_id IS NULL``.  Each MAGIS carries a unique ``name`` and
   a default ``instruction``.  ``magis.adam_id`` is a FK pointing at
   one specific MAGI under this MAGIS — see "ADAM pointer" below.
-- ``magis_admins``— which external contacts (``contact_id`` → ``contacts.id``)
-  may administer a given MAGIS.  Used by
-  :meth:`magi.tools.base.Tool.gate` to fold the MAGIS-level admin
-  tag into per-tool role checks.
+- ``magis_admins``— MAGIS-scoped administrator identities.  They do not
+  reference a per-MAGI ``contacts`` row: administrator authority and its IM
+  verification factor belong to the Society, while contacts are people a
+  particular MAGI serves.
 
 Schema for the MAGIS registry tables.
 
@@ -30,7 +30,7 @@ Query keys
 ----------
 
 - ``magis_id``  — identifies a MAGIS node in the tree.
-- ``contact_id``       — identifies a contact (admin lookups).
+- ``admin_id``         — identifies a MAGIS administrator.
 - The per-MAGI id (formally the ``magis_memberships.id`` of the
   ADAM, when used as the ``adam_id`` pointer) is called ``magi_id``
   at API boundaries — see :class:`MagisMembershipBook`.
@@ -64,8 +64,10 @@ class Magis:
 @dataclass(frozen=True, slots=True)
 class MagisAdmin:
     id: int  # 主键
-    contact_id: int  # 被授权的联系人 ID
     magis_id: int  # 授权作用的 MAGIS ID
+    name: str  # 管理员显示名
+    tgid: int | None = None  # 已绑定 Telegram 验证地址
+    auth_mode: str = "local_no_2fa"
     created_at: datetime | None = None  # 授权时间
 
 
@@ -94,14 +96,12 @@ class _MagisAdminRow(Base):
     __tablename__ = "magis_admins"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    # ``contacts`` belongs to a MAGI-private SQLite database.  This is an
-    # opaque identity reference validated by the control/API layer, never a
-    # database foreign key: a MAGIS SQLite/PG store must be creatable without
-    # a local ``contacts`` table.
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    tgid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auth_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="local_no_2fa")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
@@ -207,57 +207,68 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def list_for_contact(self, *, contact_id: int) -> list[MagisAdmin]:
+    def get(self, *, admin_id: int) -> MagisAdmin | None:
         with self._session() as s:
-            rows = s.scalars(
-                select(_MagisAdminRow).where(_MagisAdminRow.contact_id == contact_id)
-            ).all()
-            return [self._row_to_dto(r) for r in rows]
+            row = s.get(_MagisAdminRow, admin_id)
+            return self._row_to_dto(row) if row else None
 
-    def is_admin_for(self, *, contact_id: int) -> bool:
-        """True iff ``contact_id`` is an admin of any MAGIS node.
-
-        Used by :meth:`magi.tools.base.Tool.gate` to fold the
-        MAGIS-level admin tag into the per-MAGI role gate —
-        a user with ``role='assigned'`` here **and** an admin
-        row in ``magis_admins`` satisfies any tool whose
-        ``ALLOWED_ROLES`` contains either tag. Tools that
-        genuinely require ``admin`` put ``"admin"`` in
-        ``ALLOWED_ROLES``; tools open to operators put
-        ``"assigned"``. Per-MAGI ``role`` + MAGIS ``admin``
-        are orthogonal — see :class:`Contact` docstring.
-        """
+    def get_by_tgid(self, *, magis_id: int, tgid: int) -> MagisAdmin | None:
         with self._session() as s:
-            return (
-                s.scalar(
-                    select(_MagisAdminRow.id)
-                    .where(_MagisAdminRow.contact_id == contact_id)
-                    .limit(1)
+            row = s.scalar(
+                select(_MagisAdminRow).where(
+                    _MagisAdminRow.magis_id == magis_id,
+                    _MagisAdminRow.tgid == tgid,
                 )
-                is not None
             )
+            return self._row_to_dto(row) if row else None
 
-    def add(self, *, contact_id: int, magis_id: int) -> MagisAdmin:
+    def add(
+        self,
+        *,
+        magis_id: int,
+        name: str,
+        tgid: int | None = None,
+        auth_mode: str = "local_no_2fa",
+    ) -> MagisAdmin:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("admin name is required")
+        if auth_mode not in {"local_no_2fa", "im_2fa_enabled", "recovery_local_no_2fa", "disabled"}:
+            raise ValueError("invalid admin auth_mode")
         with self._session() as s:
-            row = _MagisAdminRow(contact_id=contact_id, magis_id=magis_id)
+            row = _MagisAdminRow(
+                magis_id=magis_id,
+                name=normalized_name,
+                tgid=tgid,
+                auth_mode=auth_mode,
+            )
             s.add(row)
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
 
-    def remove(self, *, contact_id: int, magis_id: int) -> bool:
+    def set_auth_mode(self, *, admin_id: int, auth_mode: str) -> MagisAdmin:
+        if auth_mode not in {"local_no_2fa", "im_2fa_enabled", "recovery_local_no_2fa", "disabled"}:
+            raise ValueError("invalid admin auth_mode")
         with self._session() as s:
-            row = s.scalar(
-                select(_MagisAdminRow).where(
-                    _MagisAdminRow.contact_id == contact_id,
-                    _MagisAdminRow.magis_id == magis_id,
-                )
-            )
+            row = s.get(_MagisAdminRow, admin_id)
             if row is None:
-                return False
-            s.delete(row)
+                raise LookupError(f"MAGIS admin {admin_id!r} not found")
+            row.auth_mode = auth_mode
             s.commit()
-            return True
+            s.refresh(row)
+        return self._row_to_dto(row)
+
+    def bind_telegram(self, *, admin_id: int, tgid: int) -> MagisAdmin:
+        with self._session() as s:
+            row = s.get(_MagisAdminRow, admin_id)
+            if row is None:
+                raise LookupError(f"MAGIS admin {admin_id!r} not found")
+            row.tgid = tgid
+            row.auth_mode = "im_2fa_enabled"
+            s.commit()
+            s.refresh(row)
+        return self._row_to_dto(row)
 
     def remove_by_id(self, *, admin_id: int, magis_id: int) -> bool:
         with self._session() as s:
