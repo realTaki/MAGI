@@ -201,7 +201,6 @@ class AgentWorker(RuntimeWorker):
                         result=ChatJobResult(
                             job_id=job.job_id,
                             success=succeeded,
-                            status="completed" if succeeded else "failed",
                             result=None,
                             error_code=ctx.final_error,
                         ),
@@ -698,7 +697,6 @@ class AgentWorker(RuntimeWorker):
                         result=ChatJobResult(
                             job_id=steer.job_id,
                             success=True,
-                            status="completed",
                         ),
                     )
 

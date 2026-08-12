@@ -42,7 +42,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
@@ -269,7 +269,7 @@ class mcpServerChangedJobBoard(
                 return None
             server = _load_server(row.server_payload) if row.server_payload is not None else None
             return McpServerChangedJob(
-                kind=row.kind,
+                kind=MCPKind(row.kind),
                 server_name=row.server_name,
                 server=server,
                 new_enabled=row.new_enabled,

@@ -287,7 +287,7 @@ async def test_steering_injected():
 
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
-        result=ChatJobResult(job_id="steer-1", success=True, status="completed"),
+        result=ChatJobResult(job_id="steer-1", success=True),
     )
 
 

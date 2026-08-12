@@ -29,7 +29,7 @@ MAX_ATTEMPTS_CANDIDATES = 10
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class BaseJob:
     """所有 Job dataclass 的公共基类。
 
@@ -38,6 +38,10 @@ class BaseJob:
     or new_job_id()``），``attempts`` 由 :meth:`BaseJobBoard._map_row`
     在 claim 时回填，供上层观察 lease-recovery 行为，不属于
     publisher 的输入。
+
+    ``kw_only=True`` 让这两个队列语义字段排到子类业务字段之后，
+    这样子类可以声明无默认值的必填字段（如 ``DeliveryJob.channel``）
+    而不违反 dataclass「无默认字段不能跟在有默认字段之后」的规则。
     """
 
     job_id: str = ""  # 发布时自动生成；publish 内 ``job.job_id or new_job_id()``
@@ -53,10 +57,13 @@ class BaseJobResult:
     :func:`_write_result_to_job` / :func:`_read_result_from_job`
     的通用字段映射。这样「队列语义 vs 业务字段」的边界显式化，
     子类不再需要各自抄一遍 ``job_id`` / ``success``。
+
+    两个字段都带默认值，以兼容「无参构造后检查业务字段默认值」
+    的用法（如 ``A2ARequestResult().error_code is None``）。
     """
 
-    job_id: str  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
-    success: bool  # 是否成功（写侧编码为 status，读侧从 status 推导）
+    job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
+    success: bool = False  # 是否成功（写侧编码为 status，读侧从 status 推导）
 
 
 class JobRowMixin:

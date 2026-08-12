@@ -16,7 +16,6 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
-    Integer,
     String,
     Text,
     select,
