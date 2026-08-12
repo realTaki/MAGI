@@ -111,10 +111,9 @@ disabled                  管理员被禁用；不允许登录
 
 ### 默认 admin
 
-bootstrap 在同一事务性编排中创建稳定的默认 Contact（显示名 `admin`）、其
-Genesis admin 授权、`eva-000` 的 assigned/admin 映射和
-`local_no_2fa` 状态。创建必须幂等，不能按名称盲目覆盖已有
-Contact。
+bootstrap 在同一事务性编排中创建稳定的默认 Contact（显示名 `admin`）、
+其 Genesis admin 授权（Per MAGIS）和 `local_no_2fa` 状态。创建必须幂
+等，不能按名称盲目覆盖已有 Contact；不创建任何 `assigned` user。
 
 登录选择器显示 `eva-000` 和 `admin`。当 admin 处于 `local_no_2fa` 时，显示
 “直接进入”，它只在以下条件同时满足时签发标准 admin session：
