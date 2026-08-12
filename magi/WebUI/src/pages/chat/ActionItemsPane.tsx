@@ -39,7 +39,6 @@ type ActionItem = {
   source: "system" | "eva" | "user";
   created_at: string;
   completed_at: string | null;
-  completed_by_uid: number | null;
   completion_note: string | null;
   dismissed: boolean;
 };
