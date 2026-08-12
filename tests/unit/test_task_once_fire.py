@@ -110,7 +110,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     contact_id = ContactBook(f).add(name="test-contact", role=Role.ASSIGNED).id
 
     future = (datetime.now(dt.UTC) + timedelta(hours=1)).isoformat()
-    now = datetime.now(dt.UTC).isoformat()
+    now = datetime.now(dt.UTC).replace(tzinfo=None)
 
     task = tb.add(
         name="Once consume test",

@@ -62,7 +62,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0006_rename_contacts_telegram_id_to_tgid"
+            == "0014_convert_task_time_columns_to_datetime"
         )
     with bus._magis_factory.engine.connect() as connection:
         assert (
@@ -116,7 +116,7 @@ def test_open_bus_upgrades_existing_local_contacts_with_password_hash(tmp_path: 
     with bus._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0006_rename_contacts_telegram_id_to_tgid"
+            == "0014_convert_task_time_columns_to_datetime"
         )
 
 
@@ -292,7 +292,7 @@ def test_runtime_open_repairs_an_outdated_schema_before_exposing_books(tmp_path:
     with repaired._local_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0006_rename_contacts_telegram_id_to_tgid"
+            == "0014_convert_task_time_columns_to_datetime"
         )
 
 
@@ -373,3 +373,239 @@ def test_run_magi_uses_import_factory_for_uvicorn_reload(
     assert captured["factory"] is True
     assert captured["reload"] is True
     assert captured["port"] == spec.runtime_port
+
+
+# -- 0014: tasks / task_runs time columns String(32) → DateTime ---------
+
+
+def test_0014_converts_task_time_columns_and_preserves_task_runs(tmp_path: Path) -> None:
+    """Migration ``0014_convert_task_time_columns_to_datetime``.
+
+    Validates the four guarantees the migration must hold:
+
+    1. ``tasks.{created_at, updated_at, last_run_at}`` are stored as
+       native ``DateTime`` after upgrade (not ``VARCHAR(32)``).
+    2. ``task_runs.{started_at, finished_at}`` are ``DateTime``
+       after upgrade.
+    3. Existing ``task_runs`` rows survive the column swap — the
+       ``PRAGMA foreign_keys=OFF`` guard prevents SQLite from
+       cascading the parent ``tasks`` recreation (which would
+       otherwise wipe every child row).
+    4. Legacy ISO strings parse to naive UTC datetimes — both
+       naive-with-microseconds (the historical writer's output) and
+       Z-suffixed (the alternative form inherited from
+       ``validate_run_at``).
+    """
+    state_dir = tmp_path / "memories"
+    state_dir.mkdir()
+    factory = EngineFactory(f"sqlite:///{state_dir / 'magi.db'}")
+    with factory.engine.begin() as connection:
+        # Legacy schema at 0013 — time columns are VARCHAR(32) ISO.
+        connection.execute(
+            text(
+                """
+                CREATE TABLE tasks (
+                    id VARCHAR(26) PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    prompt TEXT NOT NULL,
+                    source VARCHAR(16) NOT NULL,
+                    channel VARCHAR(16) NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    cron VARCHAR(120),
+                    run_at VARCHAR(32),
+                    tz VARCHAR(64) NOT NULL,
+                    delivery_to VARCHAR(128),
+                    conversation_id VARCHAR(26),
+                    contact_id INTEGER,
+                    consecutive_failures INTEGER NOT NULL,
+                    last_run_at VARCHAR(32),
+                    last_status VARCHAR(16),
+                    last_error VARCHAR(500),
+                    created_at VARCHAR(32) NOT NULL,
+                    updated_at VARCHAR(32) NOT NULL
+                )
+            """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE task_runs (
+                    id VARCHAR(26) PRIMARY KEY,
+                    task_id VARCHAR(26) NOT NULL
+                        REFERENCES tasks(id) ON DELETE CASCADE,
+                    conversation_id VARCHAR(26),
+                    manual INTEGER NOT NULL DEFAULT 0,
+                    started_at VARCHAR(32) NOT NULL,
+                    finished_at VARCHAR(32),
+                    latency_ms INTEGER,
+                    status VARCHAR(16) NOT NULL,
+                    error VARCHAR(500),
+                    reply_excerpt VARCHAR(500)
+                )
+            """
+            )
+        )
+        # Mixed-form ISO data: naive microseconds + Z-suffixed.
+        connection.execute(
+            text(
+                """
+                INSERT INTO tasks (
+                    id, name, prompt, source, channel, enabled,
+                    cron, run_at, tz, delivery_to, conversation_id,
+                    contact_id, consecutive_failures,
+                    last_run_at, last_status, last_error,
+                    created_at, updated_at
+                ) VALUES (
+                    'task_001', 'Daily brief', 'summarise', 'user',
+                    'webui', 1, '0 9 * * *', NULL, 'UTC', NULL,
+                    NULL, NULL, 0,
+                    '2026-08-01T13:00:00Z',
+                    NULL, NULL,
+                    '2026-08-01T12:00:00.123456',
+                    '2026-08-01T12:00:00.123456'
+                )
+            """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO task_runs (
+                    id, task_id, conversation_id, manual,
+                    started_at, finished_at, latency_ms,
+                    status, error, reply_excerpt
+                ) VALUES (
+                    'run_001', 'task_001', NULL, 0,
+                    '2026-08-01T12:30:00.123456',
+                    '2026-08-01T12:31:00.500000',
+                    NULL,
+                    'success', NULL, NULL
+                )
+            """
+            )
+        )
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO alembic_version (version_num) "
+                "VALUES ('0013_replace_run_task_fired_by_and_task_run_trigger')"
+            )
+        )
+
+    bus = open_bus(state_dir=str(state_dir))
+
+    # 1. Column types are DateTime on both tables.
+    tasks_columns = {
+        c["name"]: c["type"]
+        for c in inspect(bus._local_factory.engine).get_columns("tasks")
+    }
+    for col in ("created_at", "updated_at", "last_run_at"):
+        assert col in tasks_columns, f"tasks.{col} missing"
+        assert "DATETIME" in str(tasks_columns[col]).upper(), (
+            f"tasks.{col} should be DateTime, got {tasks_columns[col]!r}"
+        )
+    runs_columns = {
+        c["name"]: c["type"]
+        for c in inspect(bus._local_factory.engine).get_columns("task_runs")
+    }
+    for col in ("started_at", "finished_at"):
+        assert col in runs_columns, f"task_runs.{col} missing"
+        assert "DATETIME" in str(runs_columns[col]).upper(), (
+            f"task_runs.{col} should be DateTime, got {runs_columns[col]!r}"
+        )
+
+    # 2. Schema is at head (0014).
+    with bus._local_factory.engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+            == "0014_convert_task_time_columns_to_datetime"
+        )
+
+    # 3. Existing task_runs rows survived the column swap — no FK cascade wipe.
+    with bus._local_factory.engine.connect() as connection:
+        rows = connection.execute(text("SELECT id FROM task_runs")).fetchall()
+        assert [r[0] for r in rows] == ["run_001"]
+
+    # 4. Legacy ISO strings parsed into naive UTC datetimes — validated
+    #    through the Book so the assertion exercises the full
+    #    ORM → ``datetime`` round-trip (not just SQLite's text fallback
+    #    that raw ``SELECT`` returns for DateTime columns).
+    from magi.bus.library.local.tasksBook import TaskBook, TaskRunBook
+
+    task = TaskBook(bus._local_factory).get(task_id="task_001")
+    assert task is not None
+    # naive microseconds pass through unchanged.
+    assert task.created_at is not None
+    assert task.created_at.year == 2026
+    assert task.created_at.month == 8
+    assert task.created_at.day == 1
+    assert task.created_at.microsecond == 123456
+    assert task.created_at.tzinfo is None
+    # Z-suffixed → astimezone(UTC) → naive UTC.
+    assert task.last_run_at is not None
+    assert task.last_run_at.hour == 13
+    assert task.last_run_at.minute == 0
+    assert task.last_run_at.tzinfo is None
+
+    run = TaskRunBook(bus._local_factory).get(id="run_001")
+    assert run is not None
+    assert run.started_at.minute == 30
+    assert run.started_at.microsecond == 123456
+    assert run.finished_at is not None
+    assert run.finished_at.minute == 31
+    assert run.finished_at.microsecond == 500000
+    # status is the loose String column that 0014 doesn't touch.
+    assert run.status.value == "success"
+
+
+def test_0014_is_a_noop_on_fresh_db(tmp_path: Path) -> None:
+    """A fresh DB lands at 0014 with ``DateTime`` columns straight from ``create_all``.
+
+    Validates the migration's idempotency guard: the upgrade must
+    no-op when the column is already ``DateTime`` (which is the
+    shape that ``Base.metadata.create_all`` produces when the
+    Python ORM is ahead of the migration, which is what happens
+    on a fresh deployment).
+    """
+    config = _first_config(tmp_path)
+    init_first_magi(config)
+
+    spec = load_runtime_spec(config.workspace_dir)
+    bus = open_bus(
+        state_dir=str(config.workspace_dir / "memories"),
+        magis_url=spec.magis_database_url,
+    )
+
+    # Schema is at 0014 head on a fresh DB.
+    with bus._local_factory.engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+            == "0014_convert_task_time_columns_to_datetime"
+        )
+
+    # Time columns are DateTime directly from create_all — no migration DDL needed.
+    tasks_columns = {
+        c["name"]: c["type"]
+        for c in inspect(bus._local_factory.engine).get_columns("tasks")
+    }
+    for col in ("created_at", "updated_at", "last_run_at"):
+        assert "DATETIME" in str(tasks_columns[col]).upper(), (
+            f"tasks.{col} should already be DateTime on a fresh DB; "
+            f"got {tasks_columns[col]!r}"
+        )
+    runs_columns = {
+        c["name"]: c["type"]
+        for c in inspect(bus._local_factory.engine).get_columns("task_runs")
+    }
+    for col in ("started_at", "finished_at"):
+        assert "DATETIME" in str(runs_columns[col]).upper(), (
+            f"task_runs.{col} should already be DateTime on a fresh DB; "
+            f"got {runs_columns[col]!r}"
+        )

@@ -7,6 +7,7 @@ in-memory SQLite via :func:`EngineFactory` to keep them isolated.
 from __future__ import annotations
 
 import pytest
+from datetime import datetime
 
 from magi.bus.db import EngineFactory
 from magi.bus.library.local import (
@@ -853,8 +854,8 @@ def test_task_book_lifecycle(factory, contact_id):
         cron="0 9 * * *",
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
+        created_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
+        updated_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
     )
     assert isinstance(preset, Task)
     assert preset.source == TaskSource.PROACTIVE
@@ -872,8 +873,8 @@ def test_task_book_lifecycle(factory, contact_id):
         contact_id=contact_id,
         target_channel="webui",
         source=TaskSource.USER,
-        created_at="2026-08-05T00:00:00Z",
-        updated_at="2026-08-05T00:00:00Z",
+        created_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
+        updated_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
     )
     assert isinstance(t, Task)
     assert t.source == TaskSource.USER
@@ -912,14 +913,14 @@ def test_task_book_lifecycle(factory, contact_id):
         id="r1",
         task_id="t1",
         trigger="manual",
-        started_at="2026-08-05T09:00:00Z",
+        started_at=datetime.fromisoformat("2026-08-05T09:00:00Z").replace(tzinfo=None),
         status="running",
     )
     assert isinstance(r, TaskRun)
     rbook.complete(
         id="r1",
         status="success",
-        finished_at="2026-08-05T09:01:00Z",
+        finished_at=datetime.fromisoformat("2026-08-05T09:01:00Z").replace(tzinfo=None),
     )
     assert rbook.get(id="r1").status == "success"
 
@@ -968,8 +969,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
     with pytest.raises(ValueError, match="name must be a non-empty"):
         book.add(
@@ -979,8 +980,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # ``name`` over the column cap is rejected.
@@ -992,8 +993,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # ``prompt`` empty / whitespace-only is rejected.
@@ -1005,8 +1006,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
         book.add(
@@ -1016,8 +1017,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # ``prompt`` over the cap is rejected.
@@ -1029,8 +1030,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # ``target_channel`` outside the closed enum is rejected.
@@ -1042,8 +1043,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel="web",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # All closed-set values pass.
@@ -1055,8 +1056,8 @@ def test_task_book_add_invariants(factory, contact_id):
             cron="0 0 * * *",
             contact_id=contact_id,
             target_channel=ch,
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
         assert row.target_channel == ch
 
@@ -1068,8 +1069,8 @@ def test_task_book_add_invariants(factory, contact_id):
         cron="0 9 * * *",
         contact_id=contact_id,
         target_channel="webui",
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert happy.name == "ok-name"
     assert happy.target_channel == "webui"
@@ -1123,8 +1124,8 @@ def test_task_source_enum_values():
         contact_id=cid,
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert isinstance(row.source, TaskSource)
     assert row.source is TaskSource.PROACTIVE
@@ -1143,8 +1144,8 @@ def test_task_source_enum_values():
         contact_id=cid,
         target_channel="webui",
         source=TaskSource.USER,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert raw.source is TaskSource.USER
 
@@ -1183,8 +1184,8 @@ def test_task_source_enum_values():
         contact_id=cid,
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert isinstance(row.source, TaskSource)
     assert row.source is TaskSource.PROACTIVE
@@ -1203,8 +1204,8 @@ def test_task_source_enum_values():
         contact_id=cid,
         target_channel="webui",
         source=TaskSource.USER,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert raw.source is TaskSource.USER
 
@@ -1226,8 +1227,8 @@ def test_task_book_schedule_xor(factory, contact_id):
             run_at="2026-12-31T00:00:00Z",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # Neither set — rejected.
@@ -1238,8 +1239,8 @@ def test_task_book_schedule_xor(factory, contact_id):
             prompt="p",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
     # run_at alone — accepted (one-shot).
@@ -1250,8 +1251,8 @@ def test_task_book_schedule_xor(factory, contact_id):
         run_at="2026-12-31T00:00:00Z",
         contact_id=contact_id,
         target_channel="webui",
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     assert once.run_at == "2026-12-31T00:00:00Z"
     assert once.cron is None
@@ -1271,8 +1272,8 @@ def test_task_book_rejects_invalid_cron(factory, contact_id):
             cron="not a cron",
             contact_id=contact_id,
             target_channel="webui",
-            created_at="x",
-            updated_at="x",
+            created_at=datetime(1970, 1, 1),
+            updated_at=datetime(1970, 1, 1),
         )
 
 
@@ -1294,8 +1295,8 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         cron="0 9 * * *",
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
     # User-private preset for contact_id only.
     book.add(
@@ -1306,8 +1307,8 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
         contact_id=contact_id,
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at="x",
-        updated_at="x",
+        created_at=datetime(1970, 1, 1),
+        updated_at=datetime(1970, 1, 1),
     )
 
     # contact_id sees BOTH (system + own private).

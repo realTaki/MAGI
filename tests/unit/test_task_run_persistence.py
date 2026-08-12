@@ -64,7 +64,7 @@ def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
 
     uid = _seed_contact(factory)
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC).replace(tzinfo=None)
     # Use the TaskBook's add with valid schedule. ``conversation_id``
     # is None so we don't trip the FK to ``chat_conversations`` — the
     # session-creation flow is exercised by chat tests, not here.
@@ -116,7 +116,7 @@ class TestMarkRunAtConsumed:
         # Use the contact id minted by the factory, not a hardcoded 42.
         uid = _seed_contact(factory)
 
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC).replace(tzinfo=None)
         # ``datetime.now(timezone.utc).isoformat()`` already returns
         # the trailing ``+00:00`` form; append ``Z`` directly so we
         # don't end up with ``...ZZ`` (which ISO parsing rejects).
@@ -156,7 +156,7 @@ class TestListAllEnabledForWorkers:
         contacts = cbook.list_all()
         uid_a, uid_b = contacts[0].id, contacts[1].id
 
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC).replace(tzinfo=None)
         task_book.add(
             name="User A Task",
             prompt="do stuff",
@@ -191,7 +191,7 @@ class TestListAllEnabledForWorkers:
 
         uid = _seed_contact(factory)
 
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC).replace(tzinfo=None)
         t = task_book.add(
             name="Disabled Task",
             prompt="skip",
@@ -218,7 +218,7 @@ class TestReapStale:
         # Simulate stale by backdating started_at
         from datetime import datetime, timedelta
 
-        stale_time = (datetime.now(UTC) - timedelta(seconds=600)).isoformat()
+        stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=600)
         from sqlalchemy import select
 
         from magi.bus.library.local.tasksBook import _TaskRunRow
