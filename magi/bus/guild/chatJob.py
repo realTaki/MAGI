@@ -8,6 +8,7 @@ moves the row's ``status`` to ``completed``/``failed``.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.guild.base import BaseJobBoard, _row_to_job, new_job_id
+
+logger = logging.getLogger(__name__)
 
 # =========================================================================
 # chatJobBoard — durable agent turn queue (chat_jobs table)
@@ -172,6 +175,14 @@ def publish_chat(
         payload=payload,
     )
     bus.agent_job_board.publish(job)
+    # Best-effort activity stamp. ``contact_book.touch`` is
+    # idempotent (no-op on unknown / ``None`` contact_id) and
+    # runs in its own transaction, so a failure here must not
+    # block the inbound turn that we just successfully queued.
+    try:
+        bus.contact_book.touch(contact_id=contact_id)
+    except Exception:
+        logger.exception("publish_chat: contact_book.touch failed for contact_id=%r", contact_id)
     return str(job_id)
 
 
