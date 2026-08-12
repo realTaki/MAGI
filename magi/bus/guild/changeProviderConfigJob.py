@@ -66,6 +66,14 @@ class ChangeProviderConfigJob:
 
 @dataclass(frozen=True, slots=True)
 class ChangeProviderConfigResult:
+    """:class:`ChangeProviderConfigJob` 的处理回执 — ProvidersWorker
+    在重建 SDK client / 切换模型后写入。
+
+    ``success=True`` 表示配置已经生效（缓存的 client 已经是新
+    provider / 新 model）；``success=False`` 时 ``error`` 写错
+    误描述，调用方通常直接 502 给前端。
+    """
+
     job_id: str  # 对应 ChangeProviderConfigJob 的 job_id
     success: bool  # provider 配置是否应用成功
     error: str | None = None  # 失败时的错误描述

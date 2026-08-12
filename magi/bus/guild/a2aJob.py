@@ -20,6 +20,15 @@ from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestJob:
+    """MAGIS 间的可观测 A2A 请求："一问一答"，target claim 后必须回执一次。
+
+    由 ``a2aRequestJobBoard.publish`` 持久化到 ``a2a_request_jobs``；
+    只有 ``target_magi_id`` 对应的 MAGI 通过 ``claim_for_target``
+    能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at``
+    到达后 worker 通过 ``a2aRequestJobBoard._expire_due`` 自动写
+    ``status="failed"`` + ``error_code="a2a_timeout"``。
+    """
+
     job_id: str = ""  # 发布时自动生成的 job_id
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
@@ -33,6 +42,15 @@ class A2ARequestJob:
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestResult:
+    """Target MAGI 处理 :class:`A2ARequestJob` 后的回执。
+
+    ``success=True`` 表示 target 接受了请求并填了 ``content``
+    回传响应；``success=False`` 时 ``error_code`` 是稳定错误
+    码（``a2a_timeout`` / 业务码），``error`` 是给人看的文案。
+    ``tool_call_id`` 与原 job 对齐，方便 caller 把回执拼回
+    LLM tool_use / tool_result。
+    """
+
     job_id: str = ""  # 对应 A2ARequestJob 的 job_id
     success: bool = False  # 请求是否被成功处理
     content: str = ""  # 目标 MAGI 回传的响应文本
@@ -43,6 +61,15 @@ class A2ARequestResult:
 
 @dataclass(frozen=True, slots=True)
 class A2ANotifyJob:
+    """MAGIS 间的单向通知："发了就算"，target 异步消化，发布方不等待回执。
+
+    持久化到 ``a2a_notify_jobs``；同样只有 ``target_magi_id`` 对应
+    的 MAGI 能 claim。``a2aNotifyBoard`` 只暴露 ``publish`` /
+    ``claim_for_target``，没有 :meth:`BaseJobBoard.get_result` —
+    投递结果只写到 ``status`` / ``error_code``，调用方按业务需
+    要轮询而非常规 result 路径。
+    """
+
     job_id: str = ""  # 发布时自动生成的 job_id
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
@@ -54,6 +81,13 @@ class A2ANotifyJob:
 
 @dataclass(frozen=True, slots=True)
 class A2ANotifyResult:
+    """:class:`A2ANotifyJob` 的终端回执 — 仅在通知被消费且出错时落库。
+
+    没有超时路径（notify 不阻塞发送方），也没有强制的 ``content``
+    字段：``success=False`` 时 ``error_code`` / ``error`` 描述
+    投递失败原因，成功则通常只更新 ``status`` 而不构造 Result。
+    """
+
     job_id: str = ""  # 对应 A2ANotifyJob 的 job_id
     success: bool = False  # 投递是否成功
     error_code: str = ""  # 稳定错误码

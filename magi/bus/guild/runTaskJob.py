@@ -23,12 +23,25 @@ from magi.bus.guild.base import BaseJobBoard
 
 @dataclass(frozen=True, slots=True)
 class RunTaskJob:
-    task_id: str
-    manual: bool = True
-    fired_by: str = "manual"
-    conversation_id: str | None = None
-    contact_id: int | None = None
-    job_id: str = ""
+    """一次任务触发请求 — 任何调用方都通过同一个 board 触达 TaskWorker。
+
+    所有触发来源（``cron_tick`` / ``run_at_consume`` /
+    ``api_manual_run`` / ``schedule_task_tool``）共用一份
+    :class:`RunTaskJob` + :class:`RunTaskResult`，由 :class:`TaskWorker`
+    claim 后走统一的 ``_fire_task`` 路径。这样无论谁触发，任务
+    在 worker 侧的执行路径完全一致，观测和重试预算也统一计数。
+
+    ``manual`` 标记触发是否由用户主动发起 — 影响后续 ``plans``
+    的写入决策（如 manual run 跳过 since-recent 判定）。
+    ``fired_by`` 是 closed set 的字符串标签，用于 log / 调试。
+    """
+
+    task_id: str  # 目标 Task 的 ID（对应 tasks.id）
+    manual: bool = True  # 是否用户主动触发；影响 Plan 写入策略（跳过 since-recent）
+    fired_by: str = "manual"  # 触发来源标签（cron_tick/run_at_consume/api_manual_run/schedule_task_tool）
+    conversation_id: str | None = None  # 可选的会话上下文（仅供 worker 审计用）
+    contact_id: int | None = None  # 可选的联系人上下文（仅供 worker 审计用）
+    job_id: str = ""  # 发布时自动生成的 job_id
     # Populated by ``BaseJobBoard._map_row`` on claim — not stored on
     # the row (the column exists as a counter only). Exposed here so
     # callers can observe lease-recovery behaviour (see
@@ -38,9 +51,17 @@ class RunTaskJob:
 
 @dataclass(frozen=True, slots=True)
 class RunTaskResult:
-    job_id: str
-    success: bool
-    error: str | None = None
+    """:class:`RunTaskJob` 的处理回执 — TaskWorker 跑完 ``_fire_task`` 后写入。
+
+    ``success=False`` 通常意味着 Task 找不到 / 已被禁用 /
+    ：class:`PlanBook` 写入失败 — 这些都写在 ``error`` 里供
+    上层排查。``attempts`` 由 :class:`BaseJobBoard` 回写
+    ，和 ORM 的 ``attempts`` 列同步。
+    """
+
+    job_id: str  # 对应 RunTaskJob 的 job_id
+    success: bool  # Task 是否成功触发（plan 已落库）
+    error: str | None = None  # 失败时的错误描述
 
 
 class _RunTaskJobRow(Base):

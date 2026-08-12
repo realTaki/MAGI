@@ -101,6 +101,28 @@ class TaskSource(StrEnum):
     PROACTIVE = "proactive"
 
 
+# Runtime status of the most recent execution attempt, surfaced
+# on the user task row so the dashboard doesn't have to join the
+# ``task_runs`` table for the "✓ 成功 / ✗ 失败" cell. Vocabulary
+# matches the WebUI's existing checks (see
+# ``TaskListPane.tsx`` — ``"success"`` / ``"failed"``); the
+# ``TaskRun.status`` field tracks a finer-grained
+# running/completed/failed set. Kept as a separate enum rather
+# than shared with ``TaskRun.status`` so the two vocabularies
+# can diverge without a cross-Book refactor.
+class TaskLastStatus(StrEnum):
+    """Closed set of values for ``Task.last_status``.
+
+    Stored loose at the DB (``String(16)``), normalised to this
+    enum at the Book boundary — same convention as
+    :class:`TaskSource` and :class:`ChannelEnum`.
+    """
+
+    SUCCESS = "success"
+    FAILED = "failed"
+    RUNNING = "running"
+
+
 # Column-length invariants. Mirror the ORM column
 # declarations (``String(120)`` / ``Text``). The Book
 # enforces them so every caller — chat-driven tool,
@@ -161,7 +183,7 @@ class Task:
     # --- user-task runtime bookkeeping ------------------------------------
     consecutive_failures: int = 0  # 连续失败次数
     last_run_at: str | None = None  # 最近一次触发时间
-    last_status: str | None = None  # 最近一次状态
+    last_status: TaskLastStatus | None = None  # 最近一次状态
     last_error: str | None = None  # 最近一次的错误信息
     created_at: str = ""  # 创建时间
     updated_at: str = ""  # 最近更新时间
@@ -240,6 +262,10 @@ class _TaskRow(Base):
         default=0,
     )
     last_run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # ``String(16)`` — not enum-enforced at the DB layer so legacy
+    # rows survive; the Book normalises to :class:`TaskLastStatus`
+    # on read (same "loose at DB, strict at Book" pattern as
+    # ``source`` / ``target_channel``).
     last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -310,6 +336,25 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             return value
         return TaskSource(value)
 
+    @staticmethod
+    def _coerce_last_status(value: object) -> TaskLastStatus | None:
+        """Map an ORM ``last_status`` value (str OR enum) to :class:`TaskLastStatus`.
+
+        Mirrors :meth:`_coerce_source` — the column is ``String(16)``
+        and not enum-enforced at the DB layer, so historical rows
+        may already be a bare string. ``None`` round-trips as
+        ``None`` (the field is nullable for tasks that have never
+        fired). Unknown strings raise :class:`ValueError` via the
+        enum constructor so a typo in a future writer surfaces
+        loudly instead of silently round-tripping as a bare
+        string that the WebUI can't classify.
+        """
+        if value is None:
+            return None
+        if isinstance(value, TaskLastStatus):
+            return value
+        return TaskLastStatus(value)
+
     def _row_to_dto(self, row: _TaskRow) -> Task:
         kwargs: dict = {}
         for f in dataclasses.fields(self.dto_cls):
@@ -319,6 +364,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     kwargs[f.name] = to_iso(val)
                 elif f.name == "source":
                     kwargs[f.name] = self._coerce_source(val)
+                elif f.name == "last_status":
+                    kwargs[f.name] = self._coerce_last_status(val)
                 else:
                     kwargs[f.name] = val
         return self.dto_cls(**kwargs)
@@ -1130,6 +1177,7 @@ __all__ = [
     "CronFrequency",
     "Task",
     "TaskBook",
+    "TaskLastStatus",
     "TaskRun",
     "TaskRunBook",
     "TaskSource",

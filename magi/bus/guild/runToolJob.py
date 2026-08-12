@@ -42,14 +42,14 @@ class RunToolJob:
     不一致就拒绝。
     """
 
-    tool_name: str
-    payload: dict
-    tool_call_id: str = ""
-    job_id: str = ""
-    attempts: int = 0
-    source: str | None = None
-    catalog_revision: int | None = None
-    schema_hash: str | None = None
+    tool_name: str  # 目标 tool 名（与 catalog.tool_name 对齐）
+    payload: dict  # tool 调用参数（按该 tool 的 args schema 校验）
+    tool_call_id: str = ""  # 关联的 LLM tool_use.id；回执用它反哺 conversation
+    job_id: str = ""  # 发布时自动生成的 job_id
+    attempts: int = 0  # claim 时由 ORM 回填，供上层观察重试次数
+    source: str | None = None  # 触发来源（如 llm/agent/...）；写库默认 ""
+    catalog_revision: int | None = None  # publish 那一刻的 catalog revision；claim 时校验是否过期
+    schema_hash: str | None = None  # publish 时目标 tool 的 schema 哈希；claim 时校验 schema 是否变动
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,13 +63,13 @@ class RunToolResult:
     策）。
     """
 
-    job_id: str
-    success: bool
-    content: str = ""
-    is_error: bool = False
-    error: str | None = None
-    error_code: str = ""
-    tool_call_id: str = ""
+    job_id: str  # 对应 RunToolJob 的 job_id
+    success: bool  # 工具是否执行成功（影响 status=completed/failed）
+    content: str = ""  # ToolResult 的纯文本内容（worker 截断到 8 KB）
+    is_error: bool = False  # 透传 ToolResult.is_error（与 content 配对）
+    error: str | None = None  # 失败时的人类可读错误文案
+    error_code: str = ""  # 稳定错误码（与 CallLLMResult 对齐）
+    tool_call_id: str = ""  # 回传对应 RunToolJob.tool_call_id，方便 caller 反哺 LLM tool_result
     # 给上层 structured use（与 ``content`` 不冲突；
     # ``content`` 是 ``str``，``result`` 是 ``dict``）。
     result: dict | None = None

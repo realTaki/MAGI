@@ -28,6 +28,16 @@ MAX_DELIVERY_ATTEMPTS = 10
 
 @dataclass(frozen=True, slots=True)
 class DeliveryJob:
+    """一次出站投递请求 — agent 产出回复后入队，对应渠道 worker claim 后送出。
+
+    ``channel`` 决定哪个渠道 worker claim（``tg`` / ``webui`` / ...
+    各自一个 :meth:`deliveryJobBoard.claim_for_channel` 调用）；
+    ``payload`` 的 schema 按渠道约定（每渠道的 serialization
+    helper 知道怎么转成 SDK 调用）；``destination`` 可选——
+    直接渠道（如 WebUI WS 单 session）可能靠 connection 隐式
+    寻址，不强制给地址。
+    """
+
     channel: str  # 投递渠道（tg/webui/...）
     payload: dict  # 投递内容（按渠道 schema）
     destination: str | None = None  # 目标地址（chat_id 等）
@@ -36,6 +46,15 @@ class DeliveryJob:
 
 @dataclass(frozen=True, slots=True)
 class DeliveryResult:
+    """:class:`DeliveryJob` 的投递回执 — 渠道 worker 实际送出后写入。
+
+    重试预算 :data:`MAX_DELIVERY_ATTEMPTS` 用尽后由
+    :meth:`BaseJobBoard._mark_exhausted` 写成 ``success=False``
+    的失败 Result；正常路径下 ``success=True`` 表示 SDK 已确认
+    收到 / WS 已发送完毕。``error`` 在 ``success=False`` 时填
+    渠道 SDK 的错误文案或重试耗尽提示。
+    """
+
     job_id: str  # 对应 DeliveryJob 的 job_id
     success: bool  # 投递是否成功
     error: str | None = None  # 失败时的错误描述
