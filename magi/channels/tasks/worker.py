@@ -103,16 +103,8 @@ class TaskWorker(RuntimeWorker):
             await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, manual=manual)
         except Exception:
             pass
-        if effective_conversation and effective_contact_id:
-            try:
-                await self.call(
-                    self.bus.messages_book.add,
-                    conversation_id=effective_conversation,
-                    role="user",
-                    text=contextual_prompt,
-                )
-            except Exception:
-                pass
+        # The user message is persisted to ``chat_messages`` inside
+        # :meth:`chatJobBoard.publish_chat`. No direct write here.
         await self.call(
             self.bus.agent_job_board.publish_chat,
             text=contextual_prompt,
@@ -166,8 +158,12 @@ class TaskWorker(RuntimeWorker):
         # and a ``None`` value both read as ``None`` via ``.get(task.id)``,
         # so dropping them keeps the runtime invariant without losing
         # information.
+        #
+        # ``last_run_at`` is already a ``datetime`` from the Book;
+        # ``is not None`` is explicit because midnight ``00:00:00``
+        # datetimes are falsy and would otherwise be silently dropped.
         self._next_fire = {
-            t.id: datetime.fromisoformat(t.last_run_at) for t in tasks if t.last_run_at
+            t.id: t.last_run_at for t in tasks if t.last_run_at is not None
         }
 
     async def _reap_stale_runs(self) -> None:

@@ -42,7 +42,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, to_iso
+from magi.bus.library.base import BaseBook
 
 
 def _new_task_id() -> str:
@@ -183,11 +183,11 @@ class Task:
 
     # --- user-task runtime bookkeeping ------------------------------------
     consecutive_failures: int = 0  # 连续失败次数
-    last_run_at: str | None = None  # 最近一次触发时间
+    last_run_at: datetime | None = None  # 最近一次触发时间
     last_status: TaskRunStatus | None = None  # 最近一次状态
     last_error: str | None = None  # 最近一次的错误信息
-    created_at: str = ""  # 创建时间
-    updated_at: str = ""  # 最近更新时间
+    created_at: datetime = dataclasses.field(default_factory=utcnow_naive)  # 创建时间
+    updated_at: datetime = dataclasses.field(default_factory=utcnow_naive)  # 最近更新时间
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,8 +195,8 @@ class TaskRun:
     id: str  # 运行记录主键
     task_id: str  # 所属任务 ID
     manual: bool  # 是否用户/工具主动触发（True=API/UI/tool；False=cron/run_at）
-    started_at: str  # 开始时间
-    finished_at: str | None = None  # 结束时间
+    started_at: datetime  # 开始时间
+    finished_at: datetime | None = None  # 结束时间
     latency_ms: int | None = None  # 总耗时（毫秒）
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
     error: str | None = None  # 错误信息
@@ -262,7 +262,7 @@ class _TaskRow(Base):
         nullable=False,
         default=0,
     )
-    last_run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # ``String(16)`` — not enum-enforced at the DB layer so legacy
     # rows survive; the Book normalises to :class:`TaskRunStatus`
     # on read (same "loose at DB, strict at Book" pattern as
@@ -270,8 +270,12 @@ class _TaskRow(Base):
     # ``TaskRunRow.status`` below.
     last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow_naive
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
+    )
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_tasks_name"),
@@ -295,8 +299,8 @@ class _TaskRunRow(Base):
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
     )
     manual: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    started_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)  # TaskRunStatus.value (loose at DB)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -358,13 +362,23 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         return TaskRunStatus(value)
 
     def _row_to_dto(self, row: _TaskRow) -> Task:
+        """Override :meth:`BaseBook._row_to_dto` — pass DateTime through.
+
+        Per-field coercion happens at the ORM→DTO boundary:
+
+        - ``source`` / ``last_status`` are stored as loose strings
+          (legacy schema); normalise to enums here.
+        - Time columns (``created_at`` / ``updated_at`` /
+          ``last_run_at``) are native ``DateTime`` and pass through
+          untouched — :func:`to_iso` is the API layer's job, not
+          this mapper's, so the wire format decouples from the
+          in-DTO Python type.
+        """
         kwargs: dict = {}
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
-                if isinstance(val, datetime):
-                    kwargs[f.name] = to_iso(val)
-                elif f.name == "source":
+                if f.name == "source":
                     kwargs[f.name] = self._coerce_source(val)
                 elif f.name == "last_status":
                     kwargs[f.name] = self._coerce_last_status(val)
@@ -743,7 +757,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             # transaction. The write invariants above
             # already passed; this is the same row that
             # ``add()`` would have built.
-            now = utcnow_naive().isoformat()
+            now = utcnow_naive()
             insert = _TaskRow(
                 id=_new_task_id(),
                 name=name,
@@ -826,7 +840,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         同构。
         """
         new_id = id or uuid.uuid4().hex
-        started_at = utcnow_naive().isoformat()
+        started_at = utcnow_naive()
         with self._session() as s:
             run_row = _TaskRunRow(
                 id=new_id,
@@ -895,25 +909,25 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         return TaskRunStatus(value)
 
     def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
-        """Override :meth:`BaseBook._row_to_dto` to coerce ``status``.
+        """Override :meth:`BaseBook._row_to_dto` to coerce ``status`` + ``manual``.
 
-        Mirrors the per-field coercion pattern in
-        :meth:`TaskBook._row_to_dto` — the ORM column is plain
-        ``str`` so we re-shape it into the :class:`TaskRunStatus`
-        enum at the boundary.
+        Per-field coercion at the ORM→DTO boundary:
+
+        - ``status`` is stored loose (``String(16)``); normalise to
+          :class:`TaskRunStatus`.
+        - ``manual`` is stored as ``Integer`` (0/1) — coerce to
+          ``bool`` so the dataclass field matches downstream
+          consumer expectations.
+        - Time columns (``started_at`` / ``finished_at``) are
+          native ``DateTime`` and pass through untouched.
         """
         kwargs: dict = {}
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
-                if isinstance(val, datetime):
-                    kwargs[f.name] = to_iso(val)
-                elif f.name == "status":
+                if f.name == "status":
                     kwargs[f.name] = self._coerce_status(val)
                 elif f.name == "manual":
-                    # ORM column is ``Integer`` (0/1) — coerce to ``bool``
-                    # so the dataclass field type matches the actual
-                    # representation downstream consumers see.
                     kwargs[f.name] = bool(val)
                 else:
                     kwargs[f.name] = val
@@ -939,7 +953,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         status: TaskRunStatus | str,
         error: str | None = None,
         reply_excerpt: str | None = None,
-        finished_at: str = "",
+        finished_at: datetime | None = None,
         latency_ms: int | None = None,
     ) -> None:
         """Mark a run as finished with a terminal ``status``.
@@ -968,7 +982,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
 
         Used by TaskWorker on startup for crash recovery.
         """
-        cutoff = (datetime.now(UTC) - timedelta(seconds=older_than_seconds)).isoformat()
+        cutoff = utcnow_naive() - timedelta(seconds=older_than_seconds)
         with self._session() as s:
             rows = s.scalars(
                 select(_TaskRunRow).where(
@@ -979,7 +993,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             for row in rows:
                 row.status = TaskRunStatus.FAILED.value
                 row.error = "abandoned by previous worker"
-                row.finished_at = utcnow_naive().isoformat()
+                row.finished_at = utcnow_naive()
             s.commit()
             return len(rows)
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from magi.bus.guild.runTaskJob import RunTaskJob
+from magi.bus.library.base import to_iso
 from magi.bus.library.local.tasksBook import preset_to_cron, validate_run_at
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
@@ -79,6 +80,13 @@ def _owner(request: Request, admin: AdminGate) -> int:
 
 
 def _out(task) -> TaskOut:
+    """Render the wire form of a Task — Pydantic ``TaskOut``.
+
+    The Book stores timestamps as native ``DateTime``; the API contract
+    is the existing ``"YYYY-MM-DDTHH:MM:SSZ"`` string. ``to_iso`` lives
+    here (the wire boundary), not in :meth:`TaskBook._row_to_dto`, so
+    the in-process DTO type decouples from the on-the-wire format.
+    """
     return TaskOut(
         id=task.id,
         name=task.name,
@@ -91,8 +99,8 @@ def _out(task) -> TaskOut:
         contact_id=task.contact_id,
         enabled=bool(task.enabled),
         conversation_id=task.conversation_id,
-        created_at=task.created_at,
-        updated_at=task.updated_at,
+        created_at=to_iso(task.created_at),
+        updated_at=to_iso(task.updated_at),
     )
 
 

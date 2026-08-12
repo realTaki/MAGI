@@ -111,7 +111,10 @@ class TelegramWorker(ChannelWorker):
             await update.effective_message.reply_text("MAGI currently only handles text messages.")
             return
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
-        _append_user_message(self.bus, conversation_id, text)
+        # The user message is persisted to ``chat_messages`` inside
+        # :meth:`chatJobBoard.publish_chat` — see
+        # ``magi.bus.guild.chatJob``. Channels must not reach into
+        # ``messages_book`` directly anymore.
         asyncio.create_task(_send_read_receipt(update, self.bus))
 
         try:
@@ -172,11 +175,11 @@ def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
     return session.conversation_id
 
 
-def _append_user_message(bus: Bus, conversation_id: str, text: str) -> None:
-    try:
-        bus.messages_book.add(conversation_id=conversation_id, role="user", text=text)
-    except Exception:
-        pass
+# Note: the user message is persisted to ``chat_messages`` inside
+# :meth:`chatJobBoard.publish_chat` (see ``magi.bus.guild.chatJob``).
+# Channels must not reach into ``messages_book`` directly anymore —
+# the chokepoint lives in the bus layer where the cap, D.22 guard,
+# and chatJob enqueue are all atomic.
 
 
 async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
