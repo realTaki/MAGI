@@ -10,19 +10,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import JSON, DateTime, Integer, String
+from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.guild.base import BaseJobBoard, _row_to_job
 
 #: Maximum delivery attempts before a row is marked failed.
-#: Distinct from :data:`BaseJobBoard.MAX_ATTEMPTS` (which gates
-#: the generic per-process retry ceiling at 3) — delivery needs
-#: more headroom for channel-side rate limits and reconnect
-#: loops. Shared between :meth:`_mark_exhausted` and
-#: :meth:`_cas_claim` (via the ``is_reclaim`` /
-#: ``MAX_ATTEMPTS`` import below).
+#: Distinct from :data:`magi.bus.guild.base.MAX_ATTEMPTS` (which
+#: gates the generic per-process retry ceiling at 3) — delivery
+#: needs more headroom for channel-side rate limits and reconnect
+#: loops. Read by :meth:`BaseJobBoard._mark_exhausted` and the
+#: ``is_reclaim`` branch of :meth:`BaseJobBoard._cas_claim` via
+#: ``BaseJobBoard.max_attempts``, which this board overrides on
+#: the next line.
 MAX_DELIVERY_ATTEMPTS = 10
 
 
@@ -32,14 +33,20 @@ class DeliveryJob:
 
     ``channel`` 决定哪个渠道 worker claim（``tg`` / ``webui`` / ...
     各自一个 :meth:`deliveryJobBoard.claim_for_channel` 调用）；
-    ``payload`` 的 schema 按渠道约定（每渠道的 serialization
-    helper 知道怎么转成 SDK 调用）；``destination`` 可选——
-    直接渠道（如 WebUI WS 单 session）可能靠 connection 隐式
-    寻址，不强制给地址。
+    ``destination`` 可选——直接渠道（如 WebUI WS 单 session）
+    可能靠 connection 隐式寻址，不强制给地址。
+
+    投递内容（``text`` / ``conversation_id`` / ``contact_id``）以
+    **类型化字段** 暴露,producer / consumer 看到的是具名属性。
+    在 DB 层每个字段都是独立列（见 :class:`_DeliveryJobRow`）,
+    没有 ``payload`` JSON 黑盒——ORM 行 → dataclass 直接按字段
+    名映射,migration 0017 已经把旧的 ``payload`` 列拆掉。
     """
 
     channel: str  # 投递渠道（tg/webui/...）
-    payload: dict  # 投递内容（按渠道 schema）
+    text: str = ""  # 投递文本（最终回复 / send_message 文本）
+    conversation_id: str | None = None  # 关联会话（webui worker 用）
+    contact_id: int | None = None  # 关联 contact（webui worker 用）
     destination: str | None = None  # 目标地址（chat_id 等）
     job_id: str = ""  # 自动生成的 job_id
 
@@ -68,7 +75,13 @@ class _DeliveryJobRow(Base):
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Delivery content — formerly a single ``payload`` JSON blob. Split
+    # into individual columns in migration 0017 so producers / consumers
+    # see one field per attribute on :class:`DeliveryJob` (no
+    # ``payload`` dict). The pre-migration rows had no value here.
+    text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -98,7 +111,9 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
                 job_id=uuid.uuid4().hex,
                 status="pending",
                 channel=job.channel,
-                payload=job.payload,
+                text=job.text,
+                conversation_id=job.conversation_id,
+                contact_id=job.contact_id,
                 destination=job.destination,
             )
             s.add(row)
@@ -126,3 +141,12 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
                 return None
             fresh = s.get(_DeliveryJobRow, row.id)
             return _row_to_job(fresh, self.job_cls) if fresh else None
+
+    def claim(self) -> DeliveryJob | None:
+        """Generic (no channel scope) claim — falls through to the base.
+
+        No bridge needed: every :class:`DeliveryJob` field is its own
+        column on :class:`_DeliveryJobRow`, so the generic
+        :func:`_row_to_job` name-match mapping works directly.
+        """
+        return super().claim()

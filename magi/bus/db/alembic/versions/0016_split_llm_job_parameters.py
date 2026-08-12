@@ -44,14 +44,16 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Field mapping: (new column name, parameters key, SQL type). Mirrors
-# ``_LLMJobRow`` in :mod:`magi.bus.guild.callLLMJob`.
-_BACKFILL_FIELDS: tuple[tuple[str, str, type[sa.types.TypeEngine]], ...] = (
-    ("contact_id", "contact_id", sa.Integer()),
-    ("conversation_id", "conversation_id", sa.String(128)),
-    ("channel", "channel", sa.String(16)),
-    ("caller_role", "caller_role", sa.String(16)),
-    ("phase", "phase", sa.String(32)),
+# Field mapping: (new column name, parameters key, SQL type, nullable). Mirrors
+# ``_LLMJobRow`` in :mod:`magi.bus.guild.callLLMJob`. ``nullable=False`` lines
+# up with the ORM (``conversation_id`` / ``channel`` are always populated at
+# publish time) and matches the ``chat_jobs`` precedent (migration 0015).
+_BACKFILL_FIELDS: tuple[tuple[str, str, type[sa.types.TypeEngine], bool], ...] = (
+    ("contact_id", "contact_id", sa.Integer(), True),
+    ("conversation_id", "conversation_id", sa.String(128), False),
+    ("channel", "channel", sa.String(16), False),
+    ("caller_role", "caller_role", sa.String(16), True),
+    ("phase", "phase", sa.String(32), True),
 )
 
 
@@ -61,16 +63,17 @@ def upgrade() -> None:
     has_parameters = "parameters" in cols
 
     with op.batch_alter_table("llm_jobs") as batch:
-        for col_name, _param_key, sql_type in _BACKFILL_FIELDS:
+        for col_name, _param_key, sql_type, nullable in _BACKFILL_FIELDS:
             if col_name not in cols:
-                # All five context fields are nullable: ``contact_id``
-                # is None for task-driven / internal jobs,
-                # ``conversation_id`` defaults to ``""`` for one-shot
-                # calls (auto_title on a draft), and the others are
-                # informational tags that the call site may omit.
-                batch.add_column(
-                    sa.Column(col_name, sql_type, nullable=True)
-                )
+                # NOT NULL columns get a server_default so pre-migration
+                # rows backfill to ``""`` rather than failing the
+                # add-column (SQLite refuses NOT NULL without DEFAULT
+                # on ALTER TABLE). The ORM still declares them
+                # ``default=""`` for fresh schemas.
+                kwargs: dict[str, object] = {"nullable": nullable}
+                if not nullable:
+                    kwargs["server_default"] = ""
+                batch.add_column(sa.Column(col_name, sql_type, **kwargs))
 
     # Backfill from the existing parameters JSON. Some drivers
     # return the JSON as a string, some as a dict — normalise.
@@ -86,15 +89,23 @@ def upgrade() -> None:
             params = raw if isinstance(raw, dict) else _safe_load(raw)
             if not isinstance(params, dict):
                 continue
+            # ``COALESCE(..., '')`` so missing keys don't violate the
+            # NOT NULL constraint on ``conversation_id`` / ``channel``.
             values: dict[str, object] = {
                 col_name: params.get(key)
-                for col_name, key, _ in _BACKFILL_FIELDS
+                for col_name, key, _, _ in _BACKFILL_FIELDS
             }
+            assignments = ", ".join(
+                # Two single quotes for the SQL empty-string literal;
+                # NULL for nullable columns (the column's default
+                # would override anyway).
+                f"{n} = COALESCE(:{n}, '')" if not nullable
+                else f"{n} = COALESCE(:{n}, NULL)"
+                for n, _, _, nullable in _BACKFILL_FIELDS
+            )
             bind.execute(
                 sa.text(
-                    "UPDATE llm_jobs SET "
-                    + ", ".join(f"{n} = :{n}" for n in values)
-                    + " WHERE id = :id"
+                    f"UPDATE llm_jobs SET {assignments} WHERE id = :id"
                 ),
                 {**values, "id": row_id},
             )
@@ -138,7 +149,7 @@ def downgrade() -> None:
         )
 
     with op.batch_alter_table("llm_jobs") as batch:
-        for col_name, _key, _sql_type in _BACKFILL_FIELDS:
+        for col_name, _key, _sql_type, _nullable in _BACKFILL_FIELDS:
             batch.drop_column(col_name)
 
 

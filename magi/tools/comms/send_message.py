@@ -155,11 +155,9 @@ class SendMessageTool(Tool):
                 DeliveryJob(
                     channel=conversation.channel,
                     destination=conversation.delivery_address or None,
-                    payload={
-                        "text": text,
-                        "conversation_id": conversation.conversation_id,
-                        "contact_id": conversation.contact_id,
-                    },
+                    text=text,
+                    conversation_id=conversation.conversation_id,
+                    contact_id=conversation.contact_id,
                 )
             )
             logger.info("send_message: queued for conversation=%s", ctx.conversation_id)

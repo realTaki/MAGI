@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import McpServerChangedJob
+from magi.bus.guild import MCPKind, McpServerChangedJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 
@@ -62,7 +62,7 @@ class DeleteMcpServerTool(Tool):
             )
 
         job_id = ctx.bus.mcp_server_changed_job_board.publish(
-            McpServerChangedJob(kind="deleted", server_name=name)
+            McpServerChangedJob(kind=MCPKind.DELETED, server_name=name)
         )
 
         result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(

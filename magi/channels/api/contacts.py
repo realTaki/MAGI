@@ -22,7 +22,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob, SeedPresetTrigger
 from magi.bus.library.local import Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
@@ -271,7 +271,10 @@ def create_contact(
     if view.role == Role.ASSIGNED:
         try:
             bus.seed_preset_tasks_job_board.publish(
-                SeedPresetTasksJob(contact_id=view.id, trigger="contact_created"),
+                SeedPresetTasksJob(
+                    contact_id=view.id,
+                    trigger=SeedPresetTrigger.CONTACT_CREATED,
+                ),
             )
         except Exception as exc:
             logger.warning(
@@ -461,7 +464,10 @@ def update_contact(
     if newly_assigned:
         try:
             bus.seed_preset_tasks_job_board.publish(
-                SeedPresetTasksJob(contact_id=view.id, trigger="contact_promoted"),
+                SeedPresetTasksJob(
+                    contact_id=view.id,
+                    trigger=SeedPresetTrigger.CONTACT_PROMOTED,
+                ),
             )
         except Exception as exc:
             logger.warning(

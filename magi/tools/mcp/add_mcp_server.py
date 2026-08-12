@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import McpServerChangedJob
+from magi.bus.guild import MCPKind, McpServerChangedJob
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
@@ -188,7 +188,7 @@ class AddMcpServerTool(Tool):
         )
 
         job_id = ctx.bus.mcp_server_changed_job_board.publish(
-            McpServerChangedJob(kind="added", server_name=name, server=server)
+            McpServerChangedJob(kind=MCPKind.ADDED, server_name=name, server=server)
         )
 
         # Wait for the Worker to upsert + connect so the LLM

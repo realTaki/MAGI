@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import McpServerChangedJob
+from magi.bus.guild import MCPKind, McpServerChangedJob
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
@@ -195,7 +195,7 @@ class UpdateMcpServerTool(Tool):
         if changed == {"enabled"}:
             job_id = ctx.bus.mcp_server_changed_job_board.publish(
                 McpServerChangedJob(
-                    kind="toggled",
+                    kind=MCPKind.TOGGLED,
                     server_name=name,
                     new_enabled=new_server.enabled,
                 )
@@ -203,7 +203,7 @@ class UpdateMcpServerTool(Tool):
         else:
             job_id = ctx.bus.mcp_server_changed_job_board.publish(
                 McpServerChangedJob(
-                    kind="updated",
+                    kind=MCPKind.UPDATED,
                     server_name=name,
                     server=new_server,
                 )
