@@ -201,10 +201,10 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
         conversation_id="c1",
     )
     job = board.claim_for_conversation(conversation_id="c1")
-    payload = job.payload or {}
-    # ChatJob payload is the raw text — no truncation flag.
-    assert payload["text"] == huge
-    assert "text_truncated" not in payload
+    # ChatJob is typed — no payload dict, no truncation flag. The
+    # raw text travels through the row, intact.
+    assert job.text == huge
+    assert job.channel == "tg"
     # But messages_book row IS truncated (cap lives there).
     rows = mbook.list_for_conversation(conversation_id="c1")
     assert len(rows[0].text) == 8_000
@@ -241,8 +241,9 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
 
     job = board.claim_for_conversation(conversation_id="c1")
     assert job is not None
-    assert job.payload is not None
-    assert job.payload["text"] == "hello world"
+    assert job.text == "hello world"
+    assert job.channel == "tg"
+    assert job.contact_id == contact_id
 
     rows = mbook.list_for_conversation(conversation_id="c1")
     assert len(rows) == 1
