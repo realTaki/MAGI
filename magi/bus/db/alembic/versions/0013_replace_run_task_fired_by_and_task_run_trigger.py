@@ -100,9 +100,9 @@ def upgrade() -> None:
         # 2b. Backfill: the closed set's user-initiated values become 1,
         #     everything else (cron_tick / run_at_consume / unknown) is 0.
         for value in _USER_INITIATED_TRIGGERS:
-            op.execute(
-                "UPDATE task_runs SET manual = 1 WHERE trigger = :trigger",
-                params={"trigger": value},
+            conn.execute(
+                sa.text("UPDATE task_runs SET manual = 1 WHERE trigger = :trigger"),
+                {"trigger": value},
             )
         op.execute(
             "UPDATE task_runs SET manual = 0 "

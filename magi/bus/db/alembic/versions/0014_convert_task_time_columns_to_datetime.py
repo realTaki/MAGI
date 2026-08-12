@@ -135,6 +135,29 @@ def _is_datetime(t: object) -> bool:
     return t.__class__.__name__ == "DateTime"  # type: ignore[attr-defined]
 
 
+def _indexes_referencing(
+    conn: sa.engine.Connection, table: str, columns: list[str]
+) -> list[tuple[str, list[str]]]:
+    """Return ``[(index_name, [col, ...]), ...]`` for indexes that touch any
+    of ``columns`` on ``table``.
+
+    SQLite only stores the parsed column list in ``sqlite_master.sql``
+    for indexes it created itself (i.e. non-``autoindex``); the
+    ``autoindex`` entries have ``sql=NULL`` and are auto-managed by
+    SQLite, so they're skipped here.
+    """
+    colset = set(columns)
+    insp = sa.inspect(conn)
+    if table not in insp.get_table_names():
+        return []
+    out: list[tuple[str, list[str]]] = []
+    for idx in insp.get_indexes(table):
+        idx_cols = [c for c in idx["column_names"] if c]
+        if colset.intersection(idx_cols):
+            out.append((idx["name"], idx_cols))
+    return out
+
+
 def _parse_iso_to_naive(s: object) -> datetime | None:
     """Parse an ISO 8601 string into naive UTC.
 
@@ -190,9 +213,29 @@ def _swap_columns(
     ``required`` are columns where ``None`` / "" / malformed rows
     must be replaced with the upgrade-time ``fallback`` (this is
     the contract of a ``NOT NULL`` column).
+
+    SQLite refuses ``ALTER TABLE ... DROP COLUMN`` when an index still
+    references the dropped column — the error is reported as
+    ``error in index <name> after drop column: no such column: <col>``.
+    We drop those indexes before the column swap and recreate them
+    against the renamed column afterwards so the post-migration schema
+    matches the ORM's ``__table_args__``.
     """
+    # Indexes that reference at least one of the columns we're about
+    # to drop. Collected once (not per-column) so we don't redundantly
+    # drop / recreate the same index for every column it covers.
+    affected_indexes: dict[str, list[str]] = {}
+    for idx_name, idx_cols in _indexes_referencing(conn, table, columns):
+        affected_indexes[idx_name] = list(idx_cols)
+
     for col in columns:
         shadow = f"_{col}_dt"
+        # Drop indexes that reference this column BEFORE the column
+        # goes away. The index will be recreated on the renamed
+        # column once all the per-column swaps are done.
+        for idx_name, idx_cols in list(affected_indexes.items()):
+            if col in idx_cols:
+                conn.execute(sa.text(f"DROP INDEX IF EXISTS {idx_name}"))
         conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {shadow} DATETIME"))
         for row in rows:
             raw = row._mapping[col]
@@ -208,6 +251,11 @@ def _swap_columns(
         conn.execute(
             sa.text(f"ALTER TABLE {table} RENAME COLUMN {shadow} TO {col}")
         )
+
+    # Recreate the dropped indexes against the now-renamed columns.
+    for idx_name, idx_cols in affected_indexes.items():
+        cols_csv = ", ".join(idx_cols)
+        conn.execute(sa.text(f"CREATE INDEX {idx_name} ON {table} ({cols_csv})"))
 
 
 # -- upgrade / downgrade -----------------------------------------------
