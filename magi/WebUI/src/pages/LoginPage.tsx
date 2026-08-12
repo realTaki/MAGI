@@ -25,7 +25,7 @@
  * the picker shows both so the operator picks which layer
  * they want to log in as.
  *
- * The 60s cooldown on the password side is enforced
+ * The cooldown on the password side is enforced
  * server-side and surfaced via ``retry_after`` so the
  * button can disable itself for the remaining window.
  */
