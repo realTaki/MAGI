@@ -7,6 +7,13 @@ TaskWorker claim 后执行同一 ``_fire_task`` 路径。
 触发语义：``RunTaskJob.manual: bool`` —— True 表示用户/工具
 主动触发（API / UI / tool），False 表示 task 模块按自身规则
 （cron / run_at）触发。
+
+``conversation_id`` / ``contact_id`` **不在 job 上** —— 这些
+字段由 :class:`~magi.bus.library.local.tasksBook.Task` 持有，
+TaskWorker claim 后通过 :meth:`tasks_book.get` 读取。这样
+任务的所有 run 都自动共享同一个会话上下文（创建时由
+``conversations_book.create_task_conversation`` 分配并落到
+``tasks.conversation_id``），fire 时无需调用方重传。
 """
 
 from __future__ import annotations
@@ -19,7 +26,7 @@ from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin, JobStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,20 +42,23 @@ class RunTaskJob(BaseJob):
     ``plans`` 的写入决策（如 manual run 跳过 since-recent 判定）。
     与 :class:`~magi.bus.library.local.tasksBook.TaskRun.manual`
     同构。
+
+    只携带 ``task_id`` —— 会话/联系人上下文由 worker 从
+    :class:`~magi.bus.library.local.tasksBook.Task` 读取，
+    确保任务创建时分配的 conversation 在所有 run 间共享。
     """
 
     task_id: str  # 目标 Task 的 ID（对应 tasks.id）
     manual: bool = True  # True=用户/工具主动；False=task 模块按规则（cron/run_at）
-    conversation_id: str | None = None  # 可选的会话上下文（仅供 worker 审计用）
-    contact_id: int | None = None  # 可选的联系人上下文（仅供 worker 审计用）
 
 
 @dataclass(frozen=True, slots=True)
 class RunTaskResult(BaseJobResult):
     """:class:`RunTaskJob` 的处理回执 — TaskWorker 跑完 ``_fire_task`` 后写入。
 
-    ``success=False`` 通常意味着 Task 找不到 / 已被禁用 /
-    ：class:`PlanBook` 写入失败 — 这些都写在 ``error`` 里供
+    :attr:`JobStatus.FAILED` 通常意味着 Task 找不到 / 已被禁用 /
+    任务缺少 ``conversation_id``（创建契约被破坏）/
+    :class:`PlanBook` 写入失败 — 这些都写在 ``error`` 里供
     上层排查。``attempts`` 由 :class:`BaseJobBoard` 回写
     ，和 ORM 的 ``attempts`` 列同步。
     """
@@ -66,8 +76,6 @@ class _RunTaskJobRow(JobRowMixin, Base):
     #: :class:`~magi.bus.library.local.tasksBook.TaskRun.manual`
     #: 同构。
     manual: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result: Mapped[dict | None] = mapped_column(
         type_=__import__("sqlalchemy").JSON,
         nullable=True,
@@ -91,11 +99,9 @@ class runTaskJobBoard(BaseJobBoard[_RunTaskJobRow, RunTaskJob, RunTaskResult]):
         with self._session() as s:
             row = _RunTaskJobRow(
                 job_id=uuid.uuid4().hex,
-                status="pending",
+                status=JobStatus.PENDING,
                 task_id=job.task_id,
                 manual=int(job.manual),
-                conversation_id=job.conversation_id,
-                contact_id=job.contact_id,
             )
             s.add(row)
             s.flush()
@@ -111,8 +117,6 @@ class runTaskJobBoard(BaseJobBoard[_RunTaskJobRow, RunTaskJob, RunTaskResult]):
             return RunTaskJob(
                 task_id=row.task_id,
                 manual=bool(row.manual),
-                conversation_id=row.conversation_id,
-                contact_id=row.contact_id,
                 job_id=row.job_id,
                 attempts=row.attempts,
             )

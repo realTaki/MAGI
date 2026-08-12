@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
@@ -151,11 +150,13 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
     delivery_to = payload.delivery_to
     if delivery_to is None and payload.target_channel == Channel.TG:
         delivery_to = str(contact.tgid)
-    conversation_id = f"task_{uuid.uuid4().hex}"
-    bus.conversations_book.add(
-        conversation_id=conversation_id,
+    # Allocate the task's home conversation up-front so cron fires
+    # accumulate into one conversation per task. Same path the
+    # ``schedule_task`` LLM tool uses; ``title`` distinguishes task
+    # conversations in the WebUI list.
+    conversation_id = bus.conversations_book.create_task_conversation(
         contact_id=contact_id,
-        channel="task",
+        title=f"[定时] {payload.name}",
         delivery_address=delivery_to or "",
     )
     try:
@@ -205,13 +206,12 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
         raise MagiHTTPException(404, "not_found.task", "task not found")
     if not task.enabled:
         raise MagiHTTPException(409, "task.disabled", "task is disabled")
+    # ``conversation_id`` / ``contact_id`` are NOT passed on the job —
+    # TaskWorker reads them off the Task row at claim time so every
+    # run shares the same conversation and we have a single source
+    # of truth.
     job_id = bus.run_task_job_board.publish(
-        RunTaskJob(
-            task_id=task.id,
-            manual=True,
-            conversation_id=task.conversation_id,
-            contact_id=task.contact_id,
-        )
+        RunTaskJob(task_id=task.id, manual=True)
     )
     return RunResponse(job_id=job_id)
 

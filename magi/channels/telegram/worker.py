@@ -167,9 +167,8 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str] | None:
 
 
 def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
-    session = bus.conversations_book.get_or_create_for_channel(
+    session = bus.conversations_book.get_or_create_for_tg(
         contact_id=contact_id,
-        channel="tg",
         delivery_address=tgid,
     )
     return session.conversation_id

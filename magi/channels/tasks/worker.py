@@ -81,17 +81,27 @@ class TaskWorker(RuntimeWorker):
         last = self._next_fire.get(task.id)
         return last is None or (prev_fire and prev_fire > last)
 
-    async def _fire_task(
-        self,
-        task,
-        *,
-        manual: bool = False,
-        conversation_id: str | None = None,
-        contact_id: int | None = None,
-    ) -> None:
+    async def _fire_task(self, task, *, manual: bool = False) -> None:
+        """Fire a single task — assumes ``task`` is fully populated.
+
+        ``conversation_id`` / ``contact_id`` come from the Task row
+        itself (set at task creation via
+        :meth:`conversations_book.create_task_conversation` and
+        :attr:`Task.contact_id`); they are NOT overridable per-run,
+        so every run accumulates into the same conversation and the
+        caller can't accidentally strand a run in the wrong session.
+        """
         task_id = task.id
-        effective_contact_id = contact_id or task.contact_id
-        effective_conversation = conversation_id or task.conversation_id
+        # Contract guard: a task without ``conversation_id`` means
+        # the create-path skipped ``create_task_conversation`` (or a
+        # legacy row slipped through). Refuse to fire rather than
+        # publish a chatJob that ``build_messages_from_conversation``
+        # can't resolve.
+        if not task.conversation_id:
+            raise ValueError(
+                f"task {task_id!r} has no conversation_id; "
+                f"task creation must call create_task_conversation"
+            )
         schedule_desc = (
             task.cron if task.cron else (f"once at {task.run_at}" if task.run_at else "ad-hoc")
         )
@@ -110,8 +120,8 @@ class TaskWorker(RuntimeWorker):
             self.bus.agent_job_board.publish_chat,
             text=contextual_prompt,
             channel="task",
-            contact_id=effective_contact_id,
-            conversation_id=effective_conversation,
+            contact_id=task.contact_id,
+            conversation_id=task.conversation_id,
             kind="task.triggered",
             task_id=task_id,
             manual=manual,
@@ -130,12 +140,11 @@ class TaskWorker(RuntimeWorker):
                     result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error="task not found"),
                 )
                 return
-            await self._fire_task(
-                task,
-                manual=rj.manual,
-                conversation_id=rj.conversation_id or task.conversation_id,
-                contact_id=rj.contact_id or task.contact_id,
-            )
+            # ``_fire_task`` raises if ``task.conversation_id`` is
+            # missing; the surrounding ``except`` flips the job to
+            # FAILED with that error. Keeps the create-task contract
+            # loud instead of producing a chatJob with no session.
+            await self._fire_task(task, manual=rj.manual)
             await self.call(
                 self.bus.run_task_job_board.submit_result,
                 key=rj.job_id,
