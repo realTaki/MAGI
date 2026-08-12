@@ -292,19 +292,12 @@ export default function TaskListPane() {
 
       {loadError && <p className="form-error">✗ {loadError.message}</p>}
 
-      {/* Custom section — operator-authored. Rendered
-          FIRST (above the preset section) so the
-          operator's own tasks are front-and-center; the
-          "+ 新建任务" button lives here (and only here)
-          because operators create their own tasks; preset
-          rows are seeded automatically. */}
       <TaskSection
-        title="自定义任务"
-        hint="你自己创建的定时任务。"
-        rows={customRows}
-        loading={customQuery.isLoading}
-        emptyMessage="还没有自定义任务。点 + 新建任务 创建第一条。"
-        showPresetBadge={false}
+        title="定时任务"
+        hint="自动按周期执行；点击名称查看运行历史。"
+        rows={rows}
+        loading={query.isLoading}
+        emptyMessage="还没有定时任务。点 + 新建任务 创建第一条。"
         actions={
           <button
             type="button"
@@ -314,25 +307,6 @@ export default function TaskListPane() {
             + 新建任务
           </button>
         }
-        handlers={rowHandlers}
-      />
-
-      {/* Preset section — auto-seeded rows from
-          ``task_presets`` templates. Rendered AFTER the
-          custom section (operator-authored tasks rank
-          above system-seeded ones). Read-only in the
-          sense that there's no "+ 新建" button here
-          (operators don't create preset tasks; they
-          configure templates in Settings → 任务预设 which
-          seed new assigned users). Each row is still
-          individually editable / toggleable / deletable. */}
-      <TaskSection
-        title="预设任务"
-        hint="系统按预设模板自动生成。编辑模板去 设置 → 任务预设。"
-        rows={presetRows}
-        loading={presetQuery.isLoading}
-        emptyMessage="还没有预设任务。新增 assigned 用户时会自动 seed。"
-        showPresetBadge
         handlers={rowHandlers}
       />
 
@@ -348,7 +322,7 @@ export default function TaskListPane() {
       )}
 
       {runsForId && (() => {
-        const allRows = [...(presetRows ?? []), ...(customRows ?? [])];
+        const allRows = rows ?? [];
         const t = allRows.find((row) => row.id === runsForId);
         if (!t) return null;
         return (
@@ -366,10 +340,9 @@ export default function TaskListPane() {
 
 
 // ────────────────────────────────────────────────────────────── //
-// TaskSection — one of the two list panes inside TaskListPane.
-// Identical row shape; the only differences are the header
-// title/hint, the presence (or absence) of the "+ 新建" action
-// button, and whether each row renders the inline "预设" badge.
+// TaskSection — the list pane inside TaskListPane. The header
+// title/hint and the "+ 新建" action button are the only knobs;
+// the row shape is shared across every row.
 // ────────────────────────────────────────────────────────────── //
 
 function TaskSection({
@@ -378,7 +351,6 @@ function TaskSection({
   rows,
   loading,
   emptyMessage,
-  showPresetBadge,
   actions,
   handlers,
 }: {
@@ -387,7 +359,6 @@ function TaskSection({
   rows: TaskRow[] | null;
   loading: boolean;
   emptyMessage: string;
-  showPresetBadge: boolean;
   actions?: React.ReactNode;
   handlers: RowHandlers;
 }) {
@@ -428,7 +399,6 @@ function TaskSection({
                 <TaskRowView
                   key={t.id}
                   task={t}
-                  showPresetBadge={showPresetBadge}
                   handlers={handlers}
                 />
               ))}
@@ -443,11 +413,9 @@ function TaskSection({
 
 function TaskRowView({
   task: t,
-  showPresetBadge,
   handlers,
 }: {
   task: TaskRow;
-  showPresetBadge: boolean;
   handlers: RowHandlers;
 }) {
   const isRunning = handlers.runningTasks.has(t.id);
@@ -468,15 +436,6 @@ function TaskRowView({
           >
             {t.name}
           </button>
-          {/* Inline preset badge — only in the preset
-              section. Identifies the source template at
-              a glance without requiring the operator to
-              cross-reference the Settings card. */}
-          {showPresetBadge && t.preset_key && (
-            <span className="inline-block rounded bg-sky-pale/40 text-ink-soft text-[10px] font-mono px-1.5 py-px">
-              预设 · {t.preset_key}
-            </span>
-          )}
           <button
             type="button"
             onClick={() => handlers.onEdit(t)}
