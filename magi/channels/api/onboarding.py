@@ -771,10 +771,7 @@ _CODE_TTL_SECONDS = 300
 
 # Resend cooldown: a user can hit "Send code" again after this many
 # seconds, even if the previous code is still live. Prevents an impatient
-# user (or a stuck-network retry loop) from spamming TG. 60s is short
-# enough to feel responsive on a fluke, long enough to rate-limit an
-# accidental double-click or three.
-_RESEND_COOLDOWN_SECONDS = 60
+_RESEND_COOLDOWN_SECONDS = 30
 
 
 def _generate_code() -> str:

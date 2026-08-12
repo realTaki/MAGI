@@ -64,10 +64,9 @@ logger = logging.getLogger("magi.api.auth")
 router = APIRouter(tags=["auth"])
 
 
-# Same TTL / cooldown as the admin code — reuses the user's mental
-# model. Could be tuned later; for now identical is fine.
 _CODE_TTL_SECONDS = 300
-_RESEND_COOLDOWN_SECONDS = 60
+_RESEND_COOLDOWN_SECONDS = 30
+_PASSWORD_COOLDOWN_SECONDS = 10
 
 SESSION_COOKIE_NAME = "magi_session"
 SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
@@ -1331,11 +1330,11 @@ async def _login_password_local(
     if not password_utils.check_cooldown(
         bus,
         payload.contact_id,
-        cooldown_seconds=_RESEND_COOLDOWN_SECONDS,
+        cooldown_seconds=_PASSWORD_COOLDOWN_SECONDS,
     ):
         record = password_utils._store_get(bus, payload.contact_id) or {}
         last = float(record.get("last_attempt_at", 0))
-        remaining = max(1, int(_RESEND_COOLDOWN_SECONDS - (_now_ts() - last)))
+        remaining = max(1, int(_PASSWORD_COOLDOWN_SECONDS - (_now_ts() - last)))
         return LoginPasswordResponse(
             ok=False,
             error=f"Wait {remaining}s before trying again.",
@@ -1349,7 +1348,7 @@ async def _login_password_local(
         return LoginPasswordResponse(
             ok=False,
             error="password does not match",
-            retry_after=_RESEND_COOLDOWN_SECONDS,
+            retry_after=_PASSWORD_COOLDOWN_SECONDS,
         )
 
     password_utils.clear_attempt(bus, payload.contact_id)

@@ -23,7 +23,7 @@ Why stdlib scrypt
   - Memory-hard. Unlike PBKDF2, scrypt doesn't degrade to
     GPU-friendly hashing.
 
-The 60s cooldown lives here too — it has the same shape as
+The per-site cooldown lives here too — it has the same shape as
 the TG code cooldown so :mod:`magi.webui.api.auth` can
 reuse one cooldown store.
 """
@@ -132,7 +132,7 @@ def verify_password(stored: str, password: str) -> bool:
     return hmac.compare_digest(candidate, digest)
 
 
-# -- 60s cooldown -----------------------------------------------------------
+# -- 60s cooldown → now caller-defined --------------------------------
 #
 # Mirrors the TG-code flow in :mod:`magi.webui.api.auth`:
 # one attempt per contact_id per 60s, success or failure both
@@ -198,7 +198,7 @@ def record_attempt(bus: Bus, contact_id: int) -> None:
     """Stamp the current time as the last attempt.
 
     Called whether the password was correct or not — the
-    60s lock applies to both outcomes.
+    cooldown applies to both outcomes.
     """
     _store_set(bus, contact_id, {"last_attempt_at": _now_ts()})
 

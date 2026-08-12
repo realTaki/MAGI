@@ -30,7 +30,8 @@ from magi.channels.telegram import bot as tg_bot
 router = APIRouter(tags=["runtime-access"])
 
 _TTL_SECONDS = 300
-_COOLDOWN_SECONDS = 60
+_COOLDOWN_SECONDS = 30
+_PASSWORD_COOLDOWN_SECONDS = 10
 _CODE_PREFIX = "auth.target_login_code"
 
 
@@ -302,11 +303,11 @@ async def access_login_password(
     if not password_utils.check_cooldown(
         bus,
         f"{payload.role}:{payload.contact_id}",
-        cooldown_seconds=60,
+        cooldown_seconds=_PASSWORD_COOLDOWN_SECONDS,
     ):
         record = password_utils._store_get(bus, f"{payload.role}:{payload.contact_id}") or {}
         last = float(record.get("last_attempt_at", 0))
-        remaining = max(1, int(60 - (_now_ts() - last)))
+        remaining = max(1, int(_PASSWORD_COOLDOWN_SECONDS - (_now_ts() - last)))
         return VerifyLoginCodeResponse(
             ok=False,
             error=f"Wait {remaining}s before trying again.",
@@ -318,7 +319,7 @@ async def access_login_password(
     stored = _password_hash(bus, payload.contact_id)
     if not stored or not password_utils.verify_password(stored, payload.password):
         return VerifyLoginCodeResponse(
-            ok=False, error="password does not match", retry_after=60
+            ok=False, error="password does not match", retry_after=_PASSWORD_COOLDOWN_SECONDS
         )
 
     password_utils.clear_attempt(bus, f"{payload.role}:{payload.contact_id}")
