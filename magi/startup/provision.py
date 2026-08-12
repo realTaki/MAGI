@@ -50,6 +50,32 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     return member.id
 
 
+def _ensure_default_admin(*, bus, magi_id: int) -> int:
+    """Create the first MAGIS admin and its local Contact projection.
+
+    The first admin is MAGIS-scoped.  A local Contact represents a person a
+    MAGI serves, not an operator's authority, so bootstrap must never create
+    an ``assigned`` Contact merely to make WebUI login work.
+    """
+
+    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
+    if membership is None or bus.magis_admins_book is None:
+        raise RuntimeError("MAGIS admin registry unavailable")
+    grants = bus.magis_admins_book.list_for_magis(magis_id=membership.magis_id)
+    existing = next((admin for admin in grants if admin.name == "admin"), None)
+    if existing is None:
+        existing = bus.magis_admins_book.add(name="admin", magis_id=membership.magis_id)
+    projection = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=existing.id)
+    if projection is None:
+        # This is not an assigned user.  It merely anchors the MAGIS admin's
+        # local conversations and ActionItems in eva-000.
+        bus.contacts_book.ensure_magis_admin_projection(
+            magis_admin_id=existing.id,
+            display_name=existing.name,
+        )
+    return existing.id
+
+
 def _ensure_control_secret(path) -> str:
     import os
     import secrets
@@ -105,6 +131,7 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     if bus._magis_factory is None:
         raise RuntimeError("MAGIS store was not provisioned")
     magi_id = _ensure_first_magi_identity(bus._magis_factory, magis_name=config.magis_name)
+    _ensure_default_admin(bus=bus, magi_id=magi_id)
     _register_local_runtime(bus=bus, runtime_id=magi_id, config=config, port=RUNTIME_PORT)
     if bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")

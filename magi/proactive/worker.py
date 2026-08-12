@@ -80,6 +80,7 @@ class ProactiveWorker(RuntimeWorker):
     async def _bootstrap(self) -> None:
         """启动时：如果本 MAGI 是 Adam，对已有 admin 幂等插入 credentials nudge。"""
         from magi.proactive.credentials_action import ensure_for_admin
+        from magi.proactive.two_factor_action import reconcile_for_admin
 
         magis_id = self._resolve_magis_id()
         if magis_id is None:
@@ -98,15 +99,30 @@ class ProactiveWorker(RuntimeWorker):
             return
 
         for entry in admin_rows:
-            contact_id = entry.contact_id  # contacts.id
+            projection = self.bus.contacts_book.get_by_magis_admin_id(magis_admin_id=entry.id)
+            if projection is None:
+                logger.warning(
+                    "proactive worker: MAGIS admin id=%d has no local Contact projection",
+                    entry.id,
+                )
+                continue
             inserted = ensure_for_admin(
                 book=self.bus.action_items_book,
-                admin_id=contact_id,
+                admin_id=projection.id,
             )
             if inserted:
                 logger.info(
                     "proactive worker: bootstrap nudge inserted for admin contact_id=%d",
-                    contact_id,
+                    projection.id,
+                )
+            if reconcile_for_admin(
+                book=self.bus.action_items_book,
+                contact_id=projection.id,
+                auth_mode=entry.auth_mode,
+            ):
+                logger.info(
+                    "proactive worker: two-factor reminder reconciled for admin contact_id=%d",
+                    projection.id,
                 )
 
     # ------------------------------------------------------------------
