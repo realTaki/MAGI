@@ -6,6 +6,7 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.runTaskJob import (
+    FiredBy,
     RunTaskJob,
     RunTaskResult,
     runTaskJobBoard,
@@ -25,7 +26,7 @@ def test_publish_returns_job_id(board):
     job = RunTaskJob(
         task_id="task_abc",
         manual=True,
-        fired_by="api_manual_run",
+        fired_by=FiredBy.API_MANUAL_RUN,
         conversation_id="conv_001",
         contact_id=42,
     )
@@ -37,11 +38,11 @@ def test_publish_returns_job_id(board):
 
 def test_claim_returns_published_job(board):
     """claim returns the job we just published."""
-    board.publish(RunTaskJob(task_id="task_x", fired_by="cron_tick"))
+    board.publish(RunTaskJob(task_id="task_x", fired_by=FiredBy.CRON_TICK))
     claim = board.claim()
     assert claim is not None
     assert claim.task_id == "task_x"
-    assert claim.fired_by == "cron_tick"
+    assert claim.fired_by == FiredBy.CRON_TICK
 
 
 def test_claim_returns_none_when_empty(board):
@@ -51,7 +52,7 @@ def test_claim_returns_none_when_empty(board):
 
 def test_submit_result_success(board):
     """submit_result marks job as completed and get_result returns it."""
-    jid = board.publish(RunTaskJob(task_id="task_s", fired_by="manual_run"))
+    jid = board.publish(RunTaskJob(task_id="task_s", fired_by=FiredBy.MANUAL_RUN))
     claim = board.claim()
     assert claim is not None
 
@@ -67,7 +68,7 @@ def test_submit_result_success(board):
 
 def test_submit_result_failure(board):
     """submit_result with success=False returns error info."""
-    jid = board.publish(RunTaskJob(task_id="task_f", fired_by="manual_run"))
+    jid = board.publish(RunTaskJob(task_id="task_f", fired_by=FiredBy.MANUAL_RUN))
     claim = board.claim()
     assert claim is not None
 

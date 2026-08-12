@@ -26,12 +26,12 @@ class CallLLMJob:
     ``parameters`` 为调用方透传的 opaque 数据（如 contact_id/conversation_id 等上下文）。
     """
 
-    messages: list[dict]
-    max_tokens: int = 1024
-    tools: list[dict] | None = None
-    streaming: bool = False
-    parameters: dict | None = None
-    job_id: str = ""
+    messages: list[dict]  # LLM 消息序列；首条 role="system" 即为 system prompt
+    max_tokens: int = 1024  # 单次响应上限（调用方按 provider 限制设定）
+    tools: list[dict] | None = None  # 工具 schema（OpenAI-style function calling）
+    streaming: bool = False  # 是否走流式（True 时 result.stream_key 非空）
+    parameters: dict | None = None  # 透传的 opaque 上下文（contact_id/conversation_id/...）
+    job_id: str = ""  # 发布时自动生成的 job_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,14 +43,14 @@ class CallLLMResult:
     从中迭代读取增量文本（``None`` 哨兵表示结束）。
     """
 
-    job_id: str
-    success: bool
-    response: dict | None = None  # {text, thinking, tool_uses, raw_blocks}
-    finish_reason: str | None = None
-    token_usage: dict | None = None
+    job_id: str  # 对应 CallLLMJob 的 job_id
+    success: bool  # LLM 调用是否成功（影响 status=completed/failed）
+    response: dict | None = None  # {text, thinking, tool_uses, raw_blocks} 形式的结构化结果
+    finish_reason: str | None = None  # provider 返回的终止原因（stop/length/tool_use/...）
+    token_usage: dict | None = None  # {prompt_tokens, completion_tokens, total_tokens}
     model: str = ""  # provider 实际使用的模型
     stream_key: str = ""  # bus.stream_hub 的管道句柄
-    error: str | None = None
+    error: str | None = None  # 失败时的错误文案
     error_code: str = ""  # 稳定错误码，如 "LLMAuthError"
 
 

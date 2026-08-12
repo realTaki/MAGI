@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from croniter import croniter as _croniter
 
+from magi.bus.guild.runTaskJob import FiredBy
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ class TaskWorker(RuntimeWorker):
                     break
                 if self._should_fire(task, now):
                     try:
-                        await self._fire_task(task, fired_by="cron_tick")
+                        await self._fire_task(task, fired_by=FiredBy.CRON_TICK)
                         if task.run_at and not task.cron:
                             await self.call(
                                 self.bus.tasks_book.mark_run_at_consumed, task_id=task.id
@@ -84,7 +85,7 @@ class TaskWorker(RuntimeWorker):
         self,
         task,
         *,
-        fired_by: str = "cron_tick",
+        fired_by: FiredBy = FiredBy.CRON_TICK,
         conversation_id: str | None = None,
         contact_id: int | None = None,
     ) -> None:
@@ -100,7 +101,7 @@ class TaskWorker(RuntimeWorker):
             f"channel: {getattr(task, 'target_channel', 'webui')}\n\n[task prompt]\n{task.prompt}"
         )
         try:
-            await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, trigger=fired_by)
+            await self.call(self.bus.tasks_book.record_run_start, task_id=task_id, trigger=fired_by.value)
         except Exception:
             pass
         if effective_conversation and effective_contact_id:

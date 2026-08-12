@@ -79,11 +79,11 @@ class McpServerChangedJob:
       deletes the row.
     """
 
-    kind: str
-    server_name: str
-    server: McpServer | None = None
-    new_enabled: bool | None = None
-    job_id: str = ""
+    kind: str  # 变更类型（added/updated/toggled/deleted，取自 VALID_KINDS）
+    server_name: str  # 目标 MCP server 的主键（与 mcp_servers.name 对齐）
+    server: McpServer | None = None  # 完整 DTO（kind in {added,updated} 时必填；存为 JSON 列）
+    new_enabled: bool | None = None  # 新的 enabled 标志（kind="toggled" 时必填）
+    job_id: str = ""  # 发布时自动生成的 job_id
 
     def __post_init__(self) -> None:
         if self.kind not in VALID_KINDS:
@@ -100,9 +100,9 @@ class McpServerChangedJob:
 class McpServerChangedResult:
     """Worker 处理结果的回执。"""
 
-    job_id: str
-    success: bool
-    error: str | None = None
+    job_id: str  # 对应 McpServerChangedJob 的 job_id
+    success: bool  # upsert/delete/toggle 是否落库并 reload 成功
+    error: str | None = None  # 失败时的错误描述
 
 
 # -- internal ORM --------------------------------------------------------
