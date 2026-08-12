@@ -834,11 +834,7 @@ def test_tool_definition_upsert(factory):
 def test_task_book_lifecycle(factory, contact_id):
     """One ``TaskBook`` carries BOTH user tasks
     (``source=TaskSource.USER``) and preset templates
-    (``source=TaskSource.PROACTIVE``) on the same table. The
-    Book deliberately keeps no per-row ``preset_id`` /
-    ``preset_key`` linkage — the dashboard / LLM tool pair
-    templates and user tasks by overlap (name / cron /
-    target_channel) outside the Book.
+    (``source=TaskSource.PROACTIVE``) on the same table.
 
     Schedule is unified: every row carries either
     ``cron`` (recurring) or ``run_at`` (one-shot), never
@@ -854,7 +850,6 @@ def test_task_book_lifecycle(factory, contact_id):
         id="p1",
         name="Daily-preset",
         prompt="preset prompt",
-        key="daily",
         cron="0 9 * * *",
         target_channel="webui",
         source=TaskSource.PROACTIVE,
@@ -863,17 +858,12 @@ def test_task_book_lifecycle(factory, contact_id):
     )
     assert isinstance(preset, Task)
     assert preset.source == TaskSource.PROACTIVE
-    assert preset.key == "daily"
     assert preset.contact_id is None
     assert preset.cron == "0 9 * * *"
     assert preset.run_at is None
 
     # User task row: source=TaskSource.USER, cron string,
-    # owned by a contact. No ``preset_id`` / ``preset_key``
-    # linkage — the relationship between a user task and
-    # the proactive template that inspired it lives in the
-    # caller's head (e.g., the dashboard pairs them by
-    # ``name`` / cron overlap); the Book doesn't persist it.
+    # owned by a contact.
     t = tbook.add(
         id="t1",
         name="MyTask",

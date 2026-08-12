@@ -136,7 +136,7 @@ export const qk = {
   magic: ["magi"] as const,
   skills: runtimeKey("skills"),
   memory: runtimeKey("memory"),
-  tasks: (filter?: { enabled?: boolean; kind?: "preset" | "custom" }) =>
+  tasks: (filter?: { enabled?: boolean }) =>
     filter ? runtimeKey("tasks", filter) : runtimeKey("tasks"),
   taskRuns: (taskId: string) =>
     runtimeKey("taskRuns", taskId),

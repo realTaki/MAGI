@@ -124,8 +124,7 @@ class Task:
       runtime bookkeeping (``last_run_at`` / ``last_status`` /
       ``consecutive_failures``).
     - ``TaskSource.PROACTIVE`` — preset templates bundled from
-      ``prompts/task_presets/``. Have a stable ``key``; no
-      owning ``contact_id``.
+      ``prompts/task_presets/``. No owning ``contact_id``.
 
     The schedule is stored in ONE of two shapes — never both,
     never neither (enforced by :meth:`TaskBook.add`):
@@ -155,9 +154,6 @@ class Task:
     tz: str = "UTC"  # 时区
     delivery_to: str | None = None  # 投递目标地址
     conversation_id: str | None = None  # 关联的会话 ID
-
-    # --- proactive-only: stable preset key -------------------------------
-    key: str | None = None  # preset 稳定键
 
     # --- user-task ownership ----------------------------------------------
     contact_id: int | None = None  # 所属联系人
@@ -229,13 +225,6 @@ class _TaskRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"),
         nullable=True,
-    )
-
-    # --- proactive-only: stable preset key ---------------------------------
-    key: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        unique=True,
     )
 
     # --- user-task ownership -----------------------------------------------

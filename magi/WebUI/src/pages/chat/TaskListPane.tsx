@@ -1,29 +1,19 @@
 /**
  * TaskListPane — operator-facing CRUD over scheduled tasks.
  *
- * v3 layout (preset + custom split):
+ * v4 layout (single list):
  *
  *   ┌────────────────────────────────────────────────────┐
  *   │ Header: 定时任务 + tz line                         │
  *   ├────────────────────────────────────────────────────┤
- *   │ 自定义任务 (operator-authored)            [+ 新建] │
- *   │   - identical row shape, no badge                  │
- *   │   - "+ 新建任务" button lives here                 │
- *   ├────────────────────────────────────────────────────┤
- *   │ 预设任务 (preset tasks, auto-seeded)               │
- *   │   - read-only + "预设" badge inline                │
+ *   │ 定时任务                            [+ 新建] │
  *   │   - rows: name / channel / last status / actions   │
  *   └────────────────────────────────────────────────────┘
  *
- * The two lists come from independent ``useTasks({ kind })``
- * hooks — react-query keeps them in separate cache entries
- * (``qk.tasks({kind:"preset"})`` vs ``qk.tasks({kind:"custom"})``)
- * so a mutation on one list doesn't refetch the other.
- *
  * Polling, the runs-history drawer, and the per-row
  * "立刻跑 / 编辑 / 启用-停用 / 查看日志 / 删除" toolbar are
- * shared across both sections — the parent owns those
- * pieces of state and passes them down.
+ * shared across all rows — the parent owns those pieces
+ * of state and passes them down.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -109,25 +99,14 @@ export type RowHandlers = {
 
 export default function TaskListPane() {
   const t = useT();
-  // Two independent queries — one per section. The cache
-  // entries have distinct keys so react-query refetches
-  // each independently (a mutation on a custom task
-  // doesn't refetch the preset list, and vice versa).
-  const presetQuery = useTasks({ kind: "preset" });
-  const customQuery = useTasks({ kind: "custom" });
+  const query = useTasks();
   const qc = useQueryClient();
   const refresh = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["tasks"] });
   }, [qc]);
 
-  const presetRows = presetQuery.data ?? null;
-  const customRows = customQuery.data ?? null;
-  // Surface a single error from either query — both go
-  // through the same /api/tasks endpoint so showing one is
-  // enough; a real backend failure lights up both queries
-  // simultaneously.
-  const loadError =
-    (presetQuery.error ?? customQuery.error) as Error | null;
+  const rows = query.data ?? null;
+  const loadError = query.error as Error | null;
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);

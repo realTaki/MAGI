@@ -154,7 +154,7 @@ async def test_maybe_compact_uses_prior_summary(monkeypatch, seed_conversation, 
             conversation_id=cid,
             message_id=f"m{i:03d}",
             role="user",
-            text="x" * 1200,
+            text="x" * 1700,  # 20 × 1700 = 34000 chars = 8500 tokens > 8000 threshold
             ts=f"2026-08-05T00:00:{i:02d}Z",
         )
 
@@ -246,13 +246,15 @@ async def test_maybe_compact_returns_none_on_summary_failure(
             conversation_id=cid,
             message_id=f"m{i:03d}",
             role="user",
-            text="x" * 1000,
+            text="x" * 1200,
             ts=f"2026-08-05T00:00:{i:02d}Z",
         )
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
-        "system.compact_threshold_pct": 1,
+        "system.compact_keep_recent": 8,
+        "system.compact_context_window": 16_000,
+        "system.compact_threshold_pct": 50,
     }.get(key)
     _stub_summary(monkeypatch, return_value=None)
 

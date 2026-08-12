@@ -98,36 +98,19 @@ export type TaskRow = {
   last_run_at: string | null; last_status: string | null;
   consecutive_failures: number;
   created_at: string; updated_at: string;
-  // Preset back-pointers (server-side, read-only on the
-  // per-user row). ``preset_key IS NOT NULL`` drives the
-  // Knowledge → Tasks pane's "预设任务" / "自定义任务"
-  // split.
-  preset_id: string | null;
-  preset_key: string | null;
 };
 
-/** Tasks query — drives the WebUI's two-list layout.
- *
- * ``filter.kind="preset"`` filters to rows where the
- * source template's ``preset_key`` is set (auto-seeded);
- * ``filter.kind="custom"`` filters to operator-authored
- * rows (preset_key IS NULL); omitted → all rows.
+/** Tasks query — returns every task owned by the caller.
  *
  * ``filter.enabled`` narrows further to enabled / disabled.
- * The two axes are independent — a caller can ask
- * "all enabled preset tasks" via
- * ``{ kind: "preset", enabled: true }``.
  */
-export function useTasks(filter?: { enabled?: boolean; kind?: "preset" | "custom" }) {
+export function useTasks(filter?: { enabled?: boolean }) {
   return useQuery({
     queryKey: qk.tasks(filter),
     queryFn: () => {
       const params = new URLSearchParams();
       if (filter?.enabled !== undefined) {
         params.set("enabled", String(filter.enabled));
-      }
-      if (filter?.kind) {
-        params.set("kind", filter.kind);
       }
       const qs = params.toString();
       return apiFetch<TaskOut[]>(`/api/tasks${qs ? "?" + qs : ""}`);
@@ -763,14 +746,6 @@ export type TaskOut = {
   updated_at: string;
   description?: string | null;
   conversation_id?: string | null;
-  // Preset back-pointers (read-only on the per-user row).
-  // ``preset_key IS NOT NULL`` is the source of truth for
-  // the Knowledge → Tasks pane's "preset" / "custom" split;
-  // ``preset_id`` is the FK back to ``task_presets.id``
-  // (NULL after a template delete — ``preset_key`` stays
-  // populated for the snapshot grouping).
-  preset_id?: string | null;
-  preset_key?: string | null;
 };
 
 export function useTask(taskId: string | null) {
