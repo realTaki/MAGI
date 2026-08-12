@@ -14,8 +14,6 @@ from magi.bus.guild.a2aJob import (
     a2aRequestJobBoard,
 )
 from magi.bus.guild.base import (
-    DEFAULT_LEASE_SECONDS,
-    MAX_ATTEMPTS,
     BaseJobBoard,
     BaseNotifyBoard,
     new_job_id,
@@ -30,9 +28,6 @@ from magi.bus.guild.changeProviderConfigJob import (
 )
 from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
-from magi.bus.guild.mcpServerChangedJob import (
-    VALID_KINDS as _MCP_CHANGED_KINDS,
-)
 from magi.bus.guild.mcpServerChangedJob import (
     McpServerChangedJob,
     McpServerChangedResult,
@@ -49,8 +44,6 @@ from magi.bus.guild.seedPresetTasksJob import (
 __all__ = [
     "BaseNotifyBoard",
     "BaseJobBoard",
-    "MAX_ATTEMPTS",
-    "DEFAULT_LEASE_SECONDS",
     "new_job_id",
     # 往返
     "CallLLMJob",
@@ -77,7 +70,6 @@ __all__ = [
     "McpServerChangedJob",
     "McpServerChangedResult",
     "mcpServerChangedJobBoard",
-    "_MCP_CHANGED_KINDS",
     "SeedPresetTasksJob",
     "SeedPresetTasksResult",
     "seedPresetTasksJobBoard",

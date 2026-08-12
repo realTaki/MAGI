@@ -67,7 +67,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     with bus._magis_factory.engine.connect() as connection:
         assert (
             connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            == "0003_add_a2a_job_boards"
+            == "0005_split_a2a_notify_payload_into_source_columns"
         )
 
 

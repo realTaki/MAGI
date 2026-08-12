@@ -423,8 +423,9 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     job = ChatJob(
         job_id="steer-1",
         conversation_id="c1",
-        payload={"text": "x", "channel": "webui", "contact_id": contact_id,
-                 "conversation_id": "c1"},
+        text="x",
+        channel="webui",
+        contact_id=contact_id,
     )
 
     from magi.bus.library.local.conversationBook import ChannelMismatchError
