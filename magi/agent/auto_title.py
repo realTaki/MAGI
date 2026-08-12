@@ -43,11 +43,10 @@ async def request_conversation_title(
             {"role": "user", "content": getattr(first_user, "text", "")},
         ],
         max_tokens=20,
-        parameters={
-            "contact_id": contact_id,
-            "conversation_id": conversation_id,
-            "phase": "auto_title",
-        },
+        contact_id=contact_id,
+        conversation_id=conversation_id,
+        channel="chat",
+        phase="auto_title",
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=30.0)

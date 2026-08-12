@@ -29,6 +29,7 @@ from magi.bus.guild.changeProviderConfigJob import (
 from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 from magi.bus.guild.mcpServerChangedJob import (
+    MCPKind,
     McpServerChangedJob,
     McpServerChangedResult,
     mcpServerChangedJobBoard,
@@ -67,6 +68,7 @@ __all__ = [
     "ChangeProviderConfigJob",
     "ChangeProviderConfigResult",
     "changeProviderConfigJobBoard",
+    "MCPKind",
     "McpServerChangedJob",
     "McpServerChangedResult",
     "mcpServerChangedJobBoard",

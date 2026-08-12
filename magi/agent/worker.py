@@ -402,12 +402,11 @@ class AgentWorker(RuntimeWorker):
             max_tokens=await self._read_max_tokens(),
             tools=tools or None,
             streaming=False,
-            parameters={
-                "contact_id": ctx.contact_id,
-                "conversation_id": ctx.conversation_id,
-                "channel": ctx.channel,
-                "caller_role": ctx.caller_role,
-            },
+            contact_id=ctx.contact_id,
+            conversation_id=ctx.conversation_id,
+            channel=ctx.channel,
+            caller_role=ctx.caller_role,
+            phase="chat",
         )
 
     async def _system_prompt(self, ctx: RunContext) -> str:
@@ -564,10 +563,8 @@ class AgentWorker(RuntimeWorker):
                             conversation_id=ctx.conversation_id,
                             correlation_id=tc_id,
                             text=text,
-                            payload={
-                                "source_channel": ctx.channel,
-                                "source_conversation_id": ctx.conversation_id,
-                            },
+                            source_channel=ctx.channel or "",
+                            source_conversation_id=ctx.conversation_id,
                             deadline_at=(
                                 datetime.now(UTC).replace(tzinfo=None)
                                 + timedelta(seconds=deadline_seconds)
@@ -788,11 +785,9 @@ class AgentWorker(RuntimeWorker):
             self.bus.delivery_job_board.publish,
             DeliveryJob(
                 channel=ctx.channel,
-                payload={
-                    "text": ctx.final_reply or "处理完毕。",
-                    "conversation_id": ctx.conversation_id,
-                    "contact_id": ctx.contact_id,
-                },
+                text=ctx.final_reply or "处理完毕。",
+                conversation_id=ctx.conversation_id,
+                contact_id=ctx.contact_id,
                 destination=None,
             ),
         )

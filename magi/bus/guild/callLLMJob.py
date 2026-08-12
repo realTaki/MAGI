@@ -23,14 +23,28 @@ class CallLLMJob:
     """一次 LLM 推理请求。
 
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
-    ``parameters`` 为调用方透传的 opaque 数据（如 contact_id/conversation_id 等上下文）。
+
+    The context fields (``contact_id`` / ``conversation_id`` / ``channel``
+    / ``caller_role`` / ``phase``) used to live in a single opaque
+    ``parameters: dict`` bag — see migration ``0016_split_llm_job_parameters``.
+    They are now first-class typed attributes so producers and
+    consumers see one field per attribute instead of a black-box
+    dict. ``phase`` distinguishes internal callers
+    (``"auto_title"`` / ``"auto_compact"`` / ``"chat"``) from chat
+    traffic and is purely informational — the provider worker does
+    not branch on it.
     """
 
     messages: list[dict]  # LLM 消息序列；首条 role="system" 即为 system prompt
     max_tokens: int = 1024  # 单次响应上限（调用方按 provider 限制设定）
     tools: list[dict] | None = None  # 工具 schema（OpenAI-style function calling）
     streaming: bool = False  # 是否走流式（True 时 result.stream_key 非空）
-    parameters: dict | None = None  # 透传的 opaque 上下文（contact_id/conversation_id/...）
+    # Context — formerly the ``parameters`` JSON blob.
+    contact_id: int | None = None  # 拥有者 contact；None 表示任务侧无 contact
+    conversation_id: str = ""  # 所属会话；空串表示内部单次调用（如 auto_title）
+    channel: str = ""  # 入口渠道：``"chat"`` / ``"a2a"`` / ``"auto_compact"`` / ...
+    caller_role: str | None = None  # 调用者角色：admin/guest/assigned；None 表示未知
+    phase: str | None = None  # 调用阶段标签：``"chat"`` / ``"auto_title"`` / ``"auto_compact"``
     job_id: str = ""  # 发布时自动生成的 job_id
 
 
@@ -68,7 +82,17 @@ class _LLMJobRow(Base):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    parameters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Context — formerly the ``parameters`` JSON blob. Split into
+    # individual columns in migration 0016 so producers / consumers
+    # see one field per attribute on :class:`CallLLMJob` (no
+    # ``parameters`` dict). The pre-migration rows had no value here.
+    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conversation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, default=""
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    phase: Mapped[str | None] = mapped_column(String(32), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -104,7 +128,11 @@ class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
                 max_tokens=job.max_tokens,
                 tools=job.tools,
                 streaming=job.streaming,
-                parameters=job.parameters,
+                contact_id=job.contact_id,
+                conversation_id=job.conversation_id,
+                channel=job.channel,
+                caller_role=job.caller_role,
+                phase=job.phase,
             )
             s.add(row)
             s.flush()

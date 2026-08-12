@@ -273,11 +273,10 @@ async def call_llm_for_summary(
             {"role": "user", "content": to_compress},
         ],
         max_tokens=1024,
-        parameters={
-            "phase": "auto_compact",
-            "contact_id": contact_id,
-            "conversation_id": conversation_id,
-        },
+        contact_id=contact_id,
+        conversation_id=conversation_id,
+        channel="chat",
+        phase="auto_compact",
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=wait_seconds)

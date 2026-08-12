@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, select, update
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
@@ -27,6 +27,10 @@ class A2ARequestJob:
     能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at``
     到达后 worker 通过 ``a2aRequestJobBoard._expire_due`` 自动写
     ``status="failed"`` + ``error_code="a2a_timeout"``。
+
+    ``source_channel`` / ``source_conversation_id`` 显式声明：分别记录
+    发送方的 channel (webui / tg / a2a.* 等) 以及发送方会话 ID，让
+    target 处理时无需打开 JSON dict 也能拿到调用上下文。
     """
 
     job_id: str = ""  # 发布时自动生成的 job_id
@@ -36,7 +40,8 @@ class A2ARequestJob:
     conversation_id: str | None = None  # 可选的会话 ID 透传
     correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 请求正文
-    payload: dict | None = None  # 额外的 JSON 结构化负载
+    source_channel: str = ""  # 发送方所在 channel（webui / tg / a2a.* 等）
+    source_conversation_id: str | None = None  # 发送方会话 ID 透传
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
 
@@ -118,7 +123,8 @@ class _A2ARequestRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_channel: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    source_conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -217,7 +223,8 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 conversation_id=job.conversation_id,
                 correlation_id=job.correlation_id,
                 text=job.text,
-                payload=job.payload,
+                source_channel=job.source_channel,
+                source_conversation_id=job.source_conversation_id,
                 deadline_at=job.deadline_at,
             )
             s.add(row)
