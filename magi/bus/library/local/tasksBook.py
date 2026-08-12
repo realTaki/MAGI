@@ -29,6 +29,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import (
+    DateTime,
     ForeignKey,
     Index,
     Integer,
