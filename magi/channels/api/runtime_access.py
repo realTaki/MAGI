@@ -23,6 +23,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
+from magi.bus.library.local import Role
 from magi.bus.library.magis import (
     AUTH_MODE_IM_2FA_ENABLED,
     AUTH_MODE_LOCAL_NO_2FA,
@@ -186,7 +187,7 @@ def _accounts(bus: Bus, magis_id: int) -> list[LoginAccount]:
             )
 
     # 2. Per-MAGI assigned users.
-    for contact in (row for row in bus.contacts_book.list_all() if row.role == "assigned"):
+    for contact in (row for row in bus.contacts_book.list_all() if row.role == Role.ASSIGNED):
         # If a Genesis-admin row with the same contact_id
         # already exists, still produce an assigned row
         # so the picker offers both login scopes.

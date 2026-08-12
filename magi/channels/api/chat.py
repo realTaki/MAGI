@@ -343,13 +343,10 @@ async def send_chat(
             detail="could not persist chat message",
         )
 
-    from magi.bus.guild.chatJob import publish_chat
-
     # Stable producer-side idempotency: the inbound message
     # id is what makes a network retry collapse to the same inbox row.
     chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
-    job_id = publish_chat(
-        bus,
+    job_id = bus.agent_job_board.publish_chat(
         text=text,
         channel=Channel.WEBUI,
         contact_id=contact_id,

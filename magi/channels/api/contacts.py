@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+from magi.bus.library.local import Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -36,8 +37,11 @@ _PAGE_SIZE_DEFAULT = 20
 _PAGE_SIZE_MAX = 100
 
 # Valid local roles. MAGIS administrator authority is deliberately absent:
-# a Contact may only be a local served user or guest.
-_CONTACT_ROLES: tuple[str, ...] = ("assigned", "guest")
+# a Contact may only be a local served user or guest — see ``Role`` for the
+# canonical enum. ``payload.role`` is wire-shape ``str`` (Pydantic); the
+# ``in Role`` / ``== Role.ASSIGNED`` checks below exploit ``StrEnum``'s
+# ``str`` equality so the boundary stays a passthrough.
+_VALID_LOCAL_ROLES: tuple[str, ...] = tuple(r.value for r in Role)
 
 
 # -- helpers ----------------------------------------------------------------
@@ -217,20 +221,20 @@ def create_contact(
             code="conflict.contact_name_exists",
             detail=f"contact {name!r} already exists",
         )
-    if payload.role not in _CONTACT_ROLES:
+    if payload.role not in _VALID_LOCAL_ROLES:
         raise MagiHTTPException(
             status_code=400,
             code="validation.role_unknown",
-            detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_CONTACT_ROLES)}",
+            detail=f"Unknown role {payload.role!r}. Valid: {', '.join(_VALID_LOCAL_ROLES)}",
         )
-    if payload.role == "assigned" and not _two_factor_is_enabled(request, bus):
+    if payload.role == Role.ASSIGNED and not _two_factor_is_enabled(request, bus):
         raise MagiHTTPException(
             status_code=403,
             code="auth.two_factor_required_for_user_creation",
             detail="Enable IM two-factor verification before creating an assigned user",
         )
-    if payload.role == "assigned" and any(
-        view.role == "assigned" for view in bus.contacts_book.list_all()
+    if payload.role == Role.ASSIGNED and any(
+        view.role == Role.ASSIGNED for view in bus.contacts_book.list_all()
     ):
         raise MagiHTTPException(
             status_code=409,
@@ -264,7 +268,7 @@ def create_contact(
     # doesn't roll back the contact creation — the
     # contact row is more valuable than the preset rows.
     #
-    if view.role == "assigned":
+    if view.role == Role.ASSIGNED:
         try:
             bus.seed_preset_tasks_job_board.publish(
                 SeedPresetTasksJob(contact_id=view.id, trigger="contact_created"),
@@ -371,7 +375,7 @@ def update_contact(
 
     new_role: str | None = None
     if "role" in payload.model_fields_set and payload.role is not None:
-        if payload.role not in _CONTACT_ROLES:
+        if payload.role not in _VALID_LOCAL_ROLES:
             raise MagiHTTPException(
                 status_code=400,
                 code="validation.role_unknown",
@@ -383,8 +387,8 @@ def update_contact(
         # shouldn't trigger a fresh seed round).
         prev_role = existing.role
         if (
-            payload.role == "assigned"
-            and prev_role != "assigned"
+            payload.role == Role.ASSIGNED
+            and prev_role != Role.ASSIGNED
             and not _two_factor_is_enabled(request, bus)
         ):
             raise MagiHTTPException(
@@ -393,10 +397,10 @@ def update_contact(
                 detail="Enable IM two-factor verification before creating an assigned user",
             )
         if (
-            payload.role == "assigned"
-            and prev_role != "assigned"
+            payload.role == Role.ASSIGNED
+            and prev_role != Role.ASSIGNED
             and any(
-                view.role == "assigned" and view.id != contact_id
+                view.role == Role.ASSIGNED and view.id != contact_id
                 for view in bus.contacts_book.list_all()
             )
         ):
@@ -409,7 +413,7 @@ def update_contact(
         # Tag the local variable for the post-commit
         # branch. We need this outside the ``if`` so it
         # survives the conditional execution.
-        newly_assigned = payload.role == "assigned" and prev_role != "assigned"
+        newly_assigned = payload.role == Role.ASSIGNED and prev_role != Role.ASSIGNED
 
     new_tgid: int | None = None
     if "tgid" in payload.model_fields_set:
