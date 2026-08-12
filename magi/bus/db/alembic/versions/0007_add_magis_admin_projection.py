@@ -25,7 +25,8 @@ def upgrade() -> None:
     columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("contacts")}
     if "magis_admin_id" not in columns:
         with op.batch_alter_table("contacts") as batch:
-            batch.add_column(sa.Column("magis_admin_id", sa.BigInteger(), nullable=True, unique=True))
+            batch.add_column(sa.Column("magis_admin_id", sa.BigInteger(), nullable=True))
+            batch.create_unique_constraint("uq_contacts_magis_admin_id", ["magis_admin_id"])
 
 
 def downgrade() -> None:
