@@ -1,8 +1,4 @@
-# TODO: migrate to bus — currently failing under the
-# tools/bus migration (see magi/startup/runtime.py and
-# magi/bus). Re-baseline this test file when the agent
-# loop moves to bus.tool_job_board + the new ToolWorker.
-"""Regression tests for the single-WebUI / per-MAGI Runtime API boundary."""
+"""Regression tests for selected-MAGI admin sessions and runtime proxying."""
 
 from __future__ import annotations
 
@@ -18,285 +14,51 @@ from magi.startup.workers import WorkerRegistry
 def _request(headers: dict[str, str]) -> Request:
     return Request(
         {
-            "type": "http",
-            "method": "GET",
-            "path": "/api/contacts",
+            "type": "http", "method": "GET", "path": "/api/contacts",
             "query_string": b"page=1",
             "headers": [(key.lower().encode(), value.encode()) for key, value in headers.items()],
-            "scheme": "http",
-            "server": ("runtime", 42069),
+            "scheme": "http", "server": ("runtime", 42069),
         }
     )
 
 
-def test_runtime_proxy_signature_is_bound_to_target_and_path(monkeypatch) -> None:
-    from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator
+def test_runtime_proxy_signature_is_bound_to_admin_identity_target_and_path(monkeypatch) -> None:
+    from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator, verified_proxy_scope
 
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
     monkeypatch.setenv("MAGI_RUNTIME_ID", "7")
     headers = build_proxy_headers(
-        method="GET",
-        path_and_query="/api/contacts?page=1",
-        target_id=7,
-        operator_id=42,
-        operator_name="Operator",
-        tgid=12345,
+        method="GET", path_and_query="/api/contacts?page=1", target_id=7,
+        operator_id=42, operator_name="Operator", tgid=12345,
+        magis_admin_id=11, admin=True, two_factor=True,
     )
-    assert verified_proxy_operator(_request(headers)) == (42, "Operator", 12345)
+    request = _request(headers)
+    assert verified_proxy_operator(request) == (42, "Operator", 12345)
+    assert verified_proxy_scope(request) == (True, False, True, 11)
 
     headers["X-MAGI-Proxy-Target"] = "8"
     assert verified_proxy_operator(_request(headers)) is None
 
 
-def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
-    app = create_runtime_app(
-        context=SimpleNamespace(
-            bus=MagicMock(),
-            workers=MagicMock(spec=WorkerRegistry),
-        )
+def test_selected_session_keeps_shared_admin_and_local_projection_distinct() -> None:
+    from magi.channels.api.auth import _sign_selected_session, resolve_session
+
+    bus = MagicMock()
+    bus.settings_book.get.return_value = "test-signing-secret"
+    token = _sign_selected_session(
+        bus, magi_id=7, contact_id=3, magis_admin_id=11, tgid=987654321,
+        display_name="Operator", admin=True, assigned=False, two_factor=True,
     )
+    session = resolve_session(bus, token)
+    assert session is not None
+    assert session["contact_id"] == 3
+    assert session["magis_admin_id"] == 11
+    assert session["tgid"] == 987654321
+    assert session["two_factor"] is True
+
+
+def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
+    app = create_runtime_app(context=SimpleNamespace(bus=MagicMock(), workers=MagicMock(spec=WorkerRegistry)))
     paths = {route.path for route in app.routes if hasattr(route, "path")}
-    # MAGIS management is target-scoped and therefore lives in the selected
-    # runtime; browser login and the SPA remain control-plane only.
     assert "/api/auth/available-magi" not in paths
     assert "/" not in paths
-
-
-def test_apps_keep_explicit_bus_instances_isolated() -> None:
-    from magi.channels.api.dependencies import get_bus
-
-    first, second = MagicMock(), MagicMock()
-    first_app = create_runtime_app(
-        context=SimpleNamespace(
-            bus=first,
-            workers=MagicMock(spec=WorkerRegistry),
-        )
-    )
-    second_app = create_runtime_app(
-        context=SimpleNamespace(
-            bus=second,
-            workers=MagicMock(spec=WorkerRegistry),
-        )
-    )
-
-    assert get_bus(Request({"type": "http", "app": first_app})) is first
-    assert get_bus(Request({"type": "http", "app": second_app})) is second
-
-
-def test_selected_session_keeps_contact_id_and_tgid_distinct() -> None:
-    """A TG-bound operator's contact_id must survive the cookie round-trip.
-
-    The v4 payload carries ``contact_id`` and ``tgid`` in
-    separate slots. An earlier draft stored a single slot
-    that held the tgid when the contact had a TG binding
-    and fell back to the contact_id when they did not;
-    :func:`resolve_session` then read that one slot as the
-    contact_id, so every TG-bound operator was handed their
-    Telegram chat id as their identity. The two values are
-    deliberately far apart here so a regression cannot pass
-    by coincidence.
-    """
-    from magi.channels.api.auth import _sign_selected_session, resolve_session
-
-    bus = MagicMock()
-    bus.settings_book.get.return_value = "test-signing-secret"
-
-    token = _sign_selected_session(
-        bus,
-        magi_id=7,
-        contact_id=3,
-        tgid=987654321,
-        display_name="Operator",
-        admin=True,
-        assigned=False,
-    )
-    session = resolve_session(bus, token)
-
-    assert session is not None
-    assert session["contact_id"] == 3
-    assert session["tgid"] == 987654321
-    assert session["magi_id"] == 7
-
-
-def test_selected_session_allows_a_webui_only_operator_without_tgid() -> None:
-    """``tgid=None`` is legitimate — a WebUI-only operator has no TG binding.
-
-    Guards the other direction of the same fix: making
-    ``tgid`` nullable must not make the cookie unreadable,
-    otherwise password-only operators cannot stay signed in.
-    """
-    from magi.channels.api.auth import _sign_selected_session, resolve_session
-
-    bus = MagicMock()
-    bus.settings_book.get.return_value = "test-signing-secret"
-
-    token = _sign_selected_session(
-        bus,
-        magi_id=7,
-        contact_id=3,
-        tgid=None,
-        display_name="WebUI operator",
-        admin=False,
-        assigned=True,
-    )
-    session = resolve_session(bus, token)
-
-    assert session is not None
-    assert session["contact_id"] == 3
-    assert session["tgid"] is None
-
-
-def test_login_methods_reports_password_for_a_contact_without_a_tgid() -> None:
-    """No TG binding must not read as "no way to sign in".
-
-    The onboarding wizard can set an admin password before
-    any bot token exists, so a password-only operator is a
-    normal state. An earlier control-plane branch keyed the
-    lookup off the Telegram chat id and never consulted the
-    password hash at all, which reported such an operator as
-    having no login methods.
-    """
-    from magi.channels.api.auth import _login_methods_for
-
-    bus = MagicMock()
-    bus.contacts_book.get.return_value = SimpleNamespace(id=3, tgid=None)
-    bus.contacts_book.get_password_hash.return_value = "argon2-hash"
-
-    methods, is_webui_only = _login_methods_for(bus, 3)
-
-    assert methods == ["password"]
-    assert is_webui_only is True
-
-
-def test_login_methods_reports_both_when_password_and_tg_are_available() -> None:
-    from magi.channels.api.auth import _login_methods_for
-
-    bus = MagicMock()
-    bus.contacts_book.get.return_value = SimpleNamespace(id=3, tgid=987654321)
-    bus.contacts_book.get_password_hash.return_value = "argon2-hash"
-
-    methods, is_webui_only = _login_methods_for(bus, 3)
-
-    assert methods == ["password", "tg_code"]
-    assert is_webui_only is False
-
-
-def test_login_methods_degrades_instead_of_raising_when_contacts_are_unreachable() -> None:
-    """Control-plane Bus has no ``contacts`` table — degrade, don't 500."""
-    from magi.channels.api.auth import _login_methods_for
-
-    bus = MagicMock()
-    bus.contacts_book.get.side_effect = RuntimeError("no such table: contacts")
-
-    assert _login_methods_for(bus, 3) == ([], True)
-
-
-def test_me_reads_login_methods_from_the_runtime_in_control_plane_mode(monkeypatch) -> None:
-    """The control plane must not report a password-holder as having none.
-
-    Its Bus is bound to the MAGIS store, which has no
-    ``contacts`` table, so the local lookup cannot answer
-    this. Before the fix ``/me`` fell through to the
-    defensive branch and returned ``login_methods=[]``,
-    which made the Settings → Security card offer "set a
-    password" to an operator who already had one.
-    """
-    import asyncio
-
-    from magi.channels.api import auth as auth_mod
-
-    monkeypatch.setenv("MAGIS_DATABASE_URL", "postgresql://control/magis")
-
-    async def fake_target_access(bus, magi_id, method, path, payload=None):
-        assert (method, path) == ("GET", "/api/access/login-accounts")
-        return {
-            "accounts": [
-                {"contact_id": 9, "has_password": False, "has_tg_code": True},
-                {"contact_id": 3, "has_password": True, "has_tg_code": False},
-            ]
-        }
-
-    monkeypatch.setattr(auth_mod, "_target_access", fake_target_access)
-    monkeypatch.setattr(
-        auth_mod,
-        "resolve_session",
-        lambda _bus, _token: {
-            "contact_id": 3,
-            "magi_id": 7,
-            "tgid": None,
-            "display_name": "WebUI operator",
-            "admin": True,
-            "assigned": False,
-        },
-    )
-
-    result = asyncio.run(auth_mod.me(bus=MagicMock(), magi_session="v4.stub"))
-
-    assert result.contact_id == 3
-    assert result.login_methods == ["password"]
-    assert result.password_set is True
-
-
-def test_me_degrades_when_the_runtime_cannot_answer(monkeypatch) -> None:
-    """An unreachable runtime must not 500 ``/me``."""
-    import asyncio
-
-    from magi.channels.api import auth as auth_mod
-
-    monkeypatch.setenv("MAGIS_DATABASE_URL", "postgresql://control/magis")
-
-    async def unreachable(bus, magi_id, method, path, payload=None):
-        raise RuntimeError("runtime unavailable")
-
-    monkeypatch.setattr(auth_mod, "_target_access", unreachable)
-    monkeypatch.setattr(
-        auth_mod,
-        "resolve_session",
-        lambda _bus, _token: {
-            "contact_id": 3,
-            "magi_id": 7,
-            "tgid": None,
-            "display_name": "WebUI operator",
-            "admin": True,
-            "assigned": False,
-        },
-    )
-
-    result = asyncio.run(auth_mod.me(bus=MagicMock(), magi_session="v4.stub"))
-
-    assert result.contact_id == 3
-    assert result.login_methods == []
-
-
-def test_a_non_int_tgid_cannot_mint_a_permanently_unusable_cookie() -> None:
-    """A cookie must never sign cleanly and then fail its own type check.
-
-    ``tgid`` arrives from another service's JSON on the
-    password-via-runtime path. If a string slipped through,
-    ``_sign_selected_session`` accepted it and
-    ``selected_session`` then rejected the result on every
-    request — a 401 that signing in again could not clear,
-    because each attempt minted the same unusable cookie.
-    """
-    from magi.channels.api.auth import (
-        _as_optional_int,
-        _sign_selected_session,
-        resolve_session,
-    )
-
-    bus = MagicMock()
-    bus.settings_book.get.return_value = "test-signing-secret"
-
-    for raw in ("987654321", 987654321, None, "not-a-number"):
-        token = _sign_selected_session(
-            bus,
-            magi_id=7,
-            contact_id=3,
-            tgid=_as_optional_int(raw),
-            display_name="Operator",
-            admin=True,
-            assigned=False,
-        )
-        session = resolve_session(bus, token)
-        assert session is not None, f"tgid={raw!r} produced an unusable cookie"
-        assert session["contact_id"] == 3

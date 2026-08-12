@@ -342,9 +342,8 @@ def test_contact_book_full_lifecycle(factory):
     c = book.add(name="Alice", tgid=12345)
     assert isinstance(c, Contact)
     assert c.name == "Alice"
-    # Contact retains its local role flag; MAGIS membership remains the
-    # authority for organisation-level administration.
-    assert c.admin is False
+    # Local contacts do not carry administrator authority.
+    assert c.magis_admin_id is None
 
     found = book.get(contact_id=c.id)
     assert found is not None and found.tgid == 12345
@@ -353,18 +352,14 @@ def test_contact_book_full_lifecycle(factory):
     assert tg is not None and tg.id == c.id
 
 
-def test_contact_book_keeps_password_hash_private_and_local(factory):
+def test_contact_book_keeps_magis_admin_projection_local(factory):
     book = ContactBook(factory)
-    contact = book.add(name="Password Owner")
+    projection = book.ensure_magis_admin_projection(magis_admin_id=42, display_name="Admin")
 
-    assert book.get_password_hash(contact_id=contact.id) is None
-    book.set_password_hash(contact_id=contact.id, password_hash="scrypt$hash")
-    assert book.get_password_hash(contact_id=contact.id) == "scrypt$hash"
-    assert book.password_contact_ids(contact_ids=[contact.id, 999]) == {contact.id}
-    # The public directory DTO must never contain a credential hash.
-    assert "password_hash" not in contact.to_dict()
-    assert book.clear_password_hash(contact_id=contact.id) is True
-    assert book.clear_password_hash(contact_id=contact.id) is False
+    assert projection.role == "guest"
+    assert projection.magis_admin_id == 42
+    assert book.ensure_magis_admin_projection(magis_admin_id=42, display_name="Changed").id == projection.id
+    assert "password_hash" not in projection.to_dict()
 
 
 def test_contact_note_book(factory):
@@ -979,7 +974,7 @@ def test_task_book_add_invariants(factory, contact_id):
         )
 
     # All closed-set values pass.
-    for ch in ("webui", "tg", "a2a", "scheduled"):
+    for ch in ("webui", "tg", "scheduled"):
         row = book.add(
             id=f"t-ch-{ch}",
             name=f"task-{ch}",
@@ -1014,7 +1009,6 @@ def test_channel_enum_values():
     """
     assert ChannelEnum.TG == "tg"
     assert ChannelEnum.WEBUI == "webui"
-    assert ChannelEnum.A2A == "a2a"
     assert ChannelEnum.SCHEDULED == "scheduled"
     # ``Channel`` is the back-compat alias (mirrors the old
     # bus shape so adapter / agent modules can migrate

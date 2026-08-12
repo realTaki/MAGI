@@ -59,6 +59,7 @@ class _StubContact:
     Contact)."""
 
     role: str
+    magis_admin_id: int | None = None
 
 
 class _StubContactsBook:
@@ -73,8 +74,8 @@ class _StubMagisAdminsBook:
     def __init__(self, admin_uids: set[int]):
         self._admin_uids = admin_uids
 
-    def is_admin_for(self, *, contact_id: int) -> bool:
-        return contact_id in self._admin_uids
+    def get(self, *, admin_id: int):
+        return object() if admin_id in self._admin_uids else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +113,10 @@ def _bus_with(
     admin_uids: set[int] | None = None,
 ) -> _StubBus:
     return _StubBus(
-        contacts_book=_StubContactsBook({uid: _StubContact(role=role) for uid, role in contacts}),
+        contacts_book=_StubContactsBook({
+            uid: _StubContact(role=role, magis_admin_id=uid if uid in (admin_uids or set()) else None)
+            for uid, role in contacts
+        }),
         magis_admins_book=_StubMagisAdminsBook(admin_uids or set()),
     )
 

@@ -102,18 +102,16 @@ def test_membership_api_persists_public_collaboration_responsibility(bus: Simple
     assert updated.responsibility == "Owns frontend release validation."
 
 
-def test_magis_admin_resolves_tgid_to_contact_uid(bus: SimpleNamespace) -> None:
+def test_magis_admin_is_shared_identity_with_local_projection(bus: SimpleNamespace) -> None:
     society, _, _ = _society(bus)
-    contact = bus.contacts_book.add(name="operator", display_name="Operator", tgid=4242)
-
-    result = magis.add_magis_admin(
-        society.id, magis.MAGISAdminCreate(tgid=4242), "admin", bus
+    stored = bus.magis_admins_book.add(magis_id=society.id, name="Operator", tgid=4242)
+    projection = bus.contacts_book.ensure_magis_admin_projection(
+        magis_admin_id=stored.id, display_name=stored.name
     )
 
-    stored = bus.magis_admins_book.list_for_magis(magis_id=society.id)
-    assert stored[0].contact_id == contact.id
-    assert result.tgid == 4242
-    assert result.display_name == "Operator"
+    assert stored.tgid == 4242
+    assert stored.name == "Operator"
+    assert projection.magis_admin_id == stored.id
 
 
 def test_magis_scope_is_derived_from_runtime_membership(bus: SimpleNamespace, monkeypatch) -> None:
