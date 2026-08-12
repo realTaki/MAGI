@@ -76,6 +76,7 @@ class VerifyLoginCodeResponse(BaseModel):
     admin: bool = False
     assigned: bool = False
     error: str | None = None
+    retry_after: int | None = None
 
 
 class LoginPasswordRequest(BaseModel):
@@ -309,13 +310,16 @@ async def access_login_password(
         return VerifyLoginCodeResponse(
             ok=False,
             error=f"Wait {remaining}s before trying again.",
+            retry_after=remaining,
         )
 
     password_utils.record_attempt(bus, f"{payload.role}:{payload.contact_id}")
 
     stored = _password_hash(bus, payload.contact_id)
     if not stored or not password_utils.verify_password(stored, payload.password):
-        return VerifyLoginCodeResponse(ok=False, error="password does not match")
+        return VerifyLoginCodeResponse(
+            ok=False, error="password does not match", retry_after=60
+        )
 
     password_utils.clear_attempt(bus, f"{payload.role}:{payload.contact_id}")
     contact = bus.contacts_book.get(contact_id=payload.contact_id)

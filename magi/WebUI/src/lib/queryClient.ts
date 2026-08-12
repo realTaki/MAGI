@@ -66,21 +66,33 @@ function runtimeKey<T extends readonly unknown[]>(...key: T): readonly ["runtime
   return ["runtime", getSelectedMagiId(), ...key];
 }
 
-/** Typed fetch wrapper that throws on non-2xx. */
+/** Typed fetch wrapper that throws on non-2xx.
+ *
+ * Every request gets an ``AbortController`` with a generous
+ * 30 s timeout.  The server-side control-plane proxy uses a
+ * 10 s read budget (see ``CONTROL_TIMEOUT`` in
+ * :mod:`runtime_http`), so 30 s gives every proxy hop +
+ * the target runtime + network RTT ample headroom while
+ * still preventing a hung socket from locking the button
+ * into "logging in..." forever. */
 export async function apiFetch<T>(
   url: string,
-  init?: Omit<RequestInit, "body"> & { body?: unknown },
+  init?: Omit<RequestInit, "body"> & { body?: unknown; timeoutMs?: number },
 ): Promise<T> {
-  const { body, ...rest } = init ?? {};
-  const r = await fetch(runtimeUrl(url), {
-    ...rest,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(rest.headers as Record<string, string> | undefined),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
+  const { body, timeoutMs = 30_000, ...rest } = init ?? {};
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(runtimeUrl(url), {
+      ...rest,
+      credentials: "include",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(rest.headers as Record<string, string> | undefined),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
   if (!r.ok) {
     const err = await r.json().catch(() => ({})) as { detail?: unknown; code?: string; message?: string };
     // Always lead with ``HTTP <status>`` so console errors are
@@ -102,7 +114,14 @@ export async function apiFetch<T>(
     throw Object.assign(new Error(msg), { status: r.status });
   }
   return r.json() as T;
-}
+  } catch (err) {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    throw new Error("Request timed out — the server did not respond in time");
+  }
+  throw err;
+  } finally {
+  clearTimeout(timer);
+  }
 
 /** Stable query-key factory so every caller uses the same keys. */
 export const qk = {

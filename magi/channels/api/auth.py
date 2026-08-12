@@ -1282,6 +1282,7 @@ async def _login_password_via_runtime(
         return LoginPasswordResponse(
             ok=False,
             error=str(upstream.get("error") or "Sign-in failed"),
+            retry_after=_as_optional_int(upstream.get("retry_after")),
         )
     # ``upstream`` is another service's JSON, so coerce rather
     # than trust: a non-int tgid would sign cleanly and then
