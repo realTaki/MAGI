@@ -40,7 +40,6 @@ from magi.bus import Bus
 from magi.bus.library.local import Role
 from magi.bus.library.local.conversationBook import (
     ChannelMismatchError,
-    ConversationMessage,
     ConversationPathError,
 )
 from magi.channels import Channel
@@ -285,31 +284,23 @@ async def send_chat(
         )
         conversation_id = sess.conversation_id
 
-    # Inbound audit + SQLite append happen atomically inside
-    # ``store.append_messages`` (single INSERT). Pre-D.18 this
-    # block held the per-conversation ``asyncio.Lock`` so the
-    # auto-title worker (D.7) saw a coherent state; SQLite's
-    # per-statement atomicity replaces that need.
-    #
-    # D.22: ``channel=Channel.WEBUI`` is the cross-channel guard —
-    # if the conversation was created on TG, the store raises
-    # ``ChannelMismatchError`` and we 403 the caller instead
-    # of mixing two LLM loops into one history.
-    ts_in = _utcnow_iso()
+    # D.22 cross-channel guard + chat_messages write + chatJob
+    # enqueue are all consolidated inside
+    # :meth:`chatJobBoard.publish_chat`. The user message is
+    # persisted to ``chat_messages`` at the same chokepoint, so
+    # the channel never touches ``messages_book`` directly.
     inbound_message_id = new_conversation_id()
+    chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
     try:
-        store.append_messages(
-            contact_id,
-            conversation_id,
-            [
-                ConversationMessage(
-                    role="user",
-                    text=text,
-                    ts=ts_in,
-                    message_id=inbound_message_id,
-                )
-            ],
+        job_id = bus.agent_job_board.publish_chat(
+            text=text,
             channel=Channel.WEBUI,
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+            caller_role=contact_role,
+            job_id=chat_job_id,
+            correlation_id=inbound_message_id,
+            message_id=inbound_message_id,  # idempotency for retry
         )
     except ChannelMismatchError as e:
         # D.22: the conversation was created on a different
@@ -334,25 +325,13 @@ async def send_chat(
         )
     except Exception:
         logger.exception(
-            "chat: failed to append user message for conversation %s",
+            "chat: failed to publish chatJob for conversation %s",
             conversation_id,
         )
         raise MagiHTTPException(  # noqa: B904
             status_code=500,
             code="chat.conversation_store_failed",
-            detail="could not persist chat message",
+            detail="could not publish chat turn",
         )
 
-    # Stable producer-side idempotency: the inbound message
-    # id is what makes a network retry collapse to the same inbox row.
-    chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
-    job_id = bus.agent_job_board.publish_chat(
-        text=text,
-        channel=Channel.WEBUI,
-        contact_id=contact_id,
-        conversation_id=conversation_id,
-        caller_role=contact_role,
-        job_id=chat_job_id,
-        correlation_id=inbound_message_id,
-    )
     return ChatSendResponse(job_id=job_id, conversation_id=conversation_id)

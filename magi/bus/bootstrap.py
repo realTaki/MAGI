@@ -351,12 +351,12 @@ def _open_with_dirs(
         synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
 
     # ---- local books -------------------------------------------------------
-    conversations_book = ConversationBook(local_factory)
-    messages_book = MessageBook(local_factory)
+    settings_book = SettingBook(local_factory)
+    conversations_book = ConversationBook(local_factory, settings_book=settings_book)
+    messages_book = MessageBook(local_factory, settings_book=settings_book)
     memory_book = MemoryBook(local_factory)
     contacts_book = ContactBook(local_factory)
     contact_notes_book = ContactNoteBook(local_factory)
-    settings_book = SettingBook(local_factory)
     tasks_book = TaskBook(local_factory)
     task_runs_book = TaskRunBook(local_factory)
     tool_definitions_book = ToolDefinitionBook(local_factory)
@@ -381,7 +381,12 @@ def _open_with_dirs(
     stream_hub = StreamHub()
 
     # ---- local job boards ---------------------------------------------------
-    agent_job_board = chatJobBoard(local_factory, contact_book=contacts_book)
+    agent_job_board = chatJobBoard(
+        local_factory,
+        contact_book=contacts_book,
+        messages_book=messages_book,
+        conversations_book=conversations_book,
+    )
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
     delivery_job_board = deliveryJobBoard(local_factory)

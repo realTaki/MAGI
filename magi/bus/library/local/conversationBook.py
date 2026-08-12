@@ -15,6 +15,7 @@ Schema for ``chat_conversations`` + ``chat_messages`` tables.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
@@ -35,6 +36,65 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
 from magi.bus.library.base import BaseBook
+
+logger = logging.getLogger("magi.bus.library.local.conversationBook")
+
+# -- inbound text cap ----------------------------------------------------
+#
+# Per-turn character cap applied at :meth:`MessageBook.add` to prevent a
+# single runaway turn from blowing past the LLM context budget and
+# breaking compaction's floor-of-1 guarantee (always keep the most
+# recent turn). Lives in this module because the cap is fundamentally
+# a *write-side* concern — the row is what compaction reads; the LLM
+# reads the row, not a chatJob payload.
+DEFAULT_CHAT_MAX_INPUT_CHARS = 8_000
+MIN_CHAT_MAX_INPUT_CHARS = 1_000
+MAX_CHAT_MAX_INPUT_CHARS = 100_000
+
+
+def _clamp_int(raw: str | None, default: int, minimum: int, maximum: int) -> int:
+    """Parse + clamp a settings value. Garbage / missing → default."""
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _resolve_max_input_chars(settings_book) -> int:
+    """Read ``system.chat_max_input_chars`` from a settings book, clamped.
+
+    Safe to call with ``None`` (returns the default). The clamp
+    range matches :mod:`magi.channels.api.system_settings` so the
+    API surface and the runtime read can never diverge.
+    """
+    if settings_book is None:
+        return DEFAULT_CHAT_MAX_INPUT_CHARS
+    try:
+        raw = settings_book.get(key="system.chat_max_input_chars")
+    except Exception:
+        return DEFAULT_CHAT_MAX_INPUT_CHARS
+    return _clamp_int(
+        raw,
+        DEFAULT_CHAT_MAX_INPUT_CHARS,
+        MIN_CHAT_MAX_INPUT_CHARS,
+        MAX_CHAT_MAX_INPUT_CHARS,
+    )
+
+
+def _truncate_inbound(text: str, max_chars: int) -> tuple[str, bool, int]:
+    """Truncate *text* to *max_chars* chars.
+
+    Returns ``(text, was_truncated, original_len)``. A no-op when
+    the text is already within budget — ``was_truncated`` is False
+    in that case.
+    """
+    if len(text) <= max_chars:
+        return text, False, len(text)
+    return text[:max_chars], True, len(text)
+
 
 # -- public dataclasses --------------------------------------------------
 
@@ -279,6 +339,17 @@ class _MessageRow(Base):
 class ConversationBook(BaseBook[_ConversationRow, Conversation]):
     model_cls = _ConversationRow
     dto_cls = Conversation
+
+    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(factory)
+        # ``settings_book`` is optional so unit tests can build a
+        # ConversationBook with just a factory. When present, the
+        # cap is forwarded to any internal :class:`MessageBook` this
+        # book constructs (in :meth:`append_messages` and
+        # :meth:`get_messages_page`), so the persistent layer
+        # enforces the same cap that
+        # :meth:`chatJobBoard.publish_chat` enforces on the LLM input.
+        self._settings_book = settings_book
 
     def get(self, *, conversation_id: str) -> Conversation | None:
         with self._session() as s:
@@ -598,6 +669,15 @@ class MessageBook(BaseBook[_MessageRow, Message]):
     model_cls = _MessageRow
     dto_cls = Message
 
+    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(factory)
+        # ``settings_book`` is optional so unit tests can build a
+        # MessageBook with just a factory and skip the
+        # ``system.chat_max_input_chars`` cap. When present, the
+        # cap is applied on :meth:`add` so a single huge turn
+        # cannot break compaction's floor-of-1 guarantee.
+        self._settings_book = settings_book
+
     def get(self, *, message_id: int) -> Message | None:
         with self._session() as s:
             row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
@@ -689,6 +769,24 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         """Add one message row."""
         import uuid
         from datetime import datetime
+
+        # Per-turn cap: protect the persistent layer (and therefore
+        # compaction, which reads from here) from a single runaway
+        # turn. This is the single chokepoint for the cap — the
+        # chatJob does not need a parallel cap, since the LLM
+        # reads the truncated row via
+        # :func:`build_messages_from_conversation`, not a chatJob
+        # payload.
+        max_chars = _resolve_max_input_chars(self._settings_book)
+        text, was_truncated, original_len = _truncate_inbound(text, max_chars)
+        if was_truncated:
+            logger.warning(
+                "MessageBook.add: truncated %d→%d chars (cap=%d, role=%s)",
+                original_len,
+                max_chars,
+                max_chars,
+                role,
+            )
 
         if message_id is None:
             message_id = uuid.uuid4().hex

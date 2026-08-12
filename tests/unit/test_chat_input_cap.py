@@ -1,17 +1,21 @@
-"""Unit tests for the inbound chat-text cap.
+"""Unit tests for the inbound chat-text chokepoint.
 
-Two layers are tested:
+Two concerns, **separated by layer**:
 
-  - :meth:`chatJobBoard.publish_chat` — caps the LLM input on the
-    way in, sets ``text_truncated`` + ``text_original_len`` flags
-    on the payload for downstream LLM/UI consumers.
-  - :meth:`MessageBook.add` — caps the persistent message row, so
-    compaction (which reads from messages_book) can never be broken
-    by a single runaway turn.
+  1. **Cap** (the ``system.chat_max_input_chars`` setting) — enforced
+     at :meth:`MessageBook.add` because the cap is fundamentally a
+     *write-side* concern. The LLM reads from ``chat_messages`` (the
+     post-cap row), not from a chatJob payload; the chatJob layer
+     therefore has no parallel cap to keep in sync.
+  2. **D.22 cross-channel guard + consolidated user-message write** —
+     :meth:`chatJobBoard.publish_chat` enforces the guard and writes
+     the user message to ``chat_messages`` at the same chokepoint as
+     the chatJob enqueue. Channels (TG / WebUI / Task) never reach
+     into ``messages_book`` directly.
 
-Both read the same ``system.chat_max_input_chars`` setting, so
-operator changes propagate uniformly. The shared helper is in
-:mod:`magi.bus.library.chat_input`.
+Helpers ``_truncate_inbound`` / ``_resolve_max_input_chars`` live
+in :mod:`magi.bus.library.local.conversationBook` (the Book that
+uses them).
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.chatJob import chatJobBoard
-from magi.bus.library.local import MessageBook
+from magi.bus.library.local import ConversationBook, MessageBook
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +51,9 @@ def contact_id(factory):
 
 @pytest.fixture
 def seed_conversation(factory, contact_id):
-    sbook_factory = factory
     from magi.bus.library.local import ConversationBook
 
-    sbook = ConversationBook(sbook_factory)
+    sbook = ConversationBook(factory)
     cid = "c1"
     sbook.add(
         conversation_id=cid,
@@ -64,133 +67,30 @@ def seed_conversation(factory, contact_id):
 
 
 # ---------------------------------------------------------------------------
-# chatJobBoard.publish_chat
-# ---------------------------------------------------------------------------
-
-
-def _make_chat_board(factory, *, settings_book=None):
-    return chatJobBoard(factory, settings_book=settings_book)
-
-
-def test_publish_chat_noop_under_cap(factory):
-    """Under the cap: no truncation, no flags, original text preserved."""
-    board = _make_chat_board(factory, settings_book=None)  # uses default 8000
-    bigish = "x" * 100  # well under 8000
-
-    jid = board.publish_chat(
-        text=bigish,
-        channel="tg",
-        contact_id=None,
-        conversation_id="c1",
-    )
-    job = board.claim_for_conversation(conversation_id="c1")
-    assert job is not None
-    assert job.job_id == jid
-    assert job.payload is not None
-    assert job.payload["text"] == bigish
-    assert "text_truncated" not in job.payload
-    assert "text_original_len" not in job.payload
-
-
-def test_publish_chat_truncates_over_cap(factory):
-    """Over the cap: text truncated to cap, flags set on the payload."""
-    board = _make_chat_board(factory, settings_book=None)
-    huge = "x" * 12_000  # over default 8000
-
-    board.publish_chat(
-        text=huge,
-        channel="tg",
-        contact_id=None,
-        conversation_id="c1",
-    )
-    job = board.claim_for_conversation(conversation_id="c1")
-    assert job is not None
-    payload = job.payload or {}
-    assert len(payload["text"]) == 8_000
-    assert payload["text"] == "x" * 8_000
-    assert payload["text_truncated"] is True
-    assert payload["text_original_len"] == 12_000
-
-
-def test_publish_chat_honors_lowered_cap(factory):
-    """Operator sets the cap to 1000; oversize messages get cut to 1000."""
-    settings_book = MagicMock()
-    settings_book.get.return_value = "1000"
-    board = _make_chat_board(factory, settings_book=settings_book)
-
-    board.publish_chat(
-        text="y" * 5_000,
-        channel="webui",
-        contact_id=None,
-        conversation_id="c1",
-    )
-    job = board.claim_for_conversation(conversation_id="c1")
-    payload = job.payload or {}
-    assert len(payload["text"]) == 1_000
-    assert payload["text_original_len"] == 5_000
-
-
-def test_publish_chat_clamps_out_of_range_settings(factory):
-    """Garbage / out-of-range settings values are clamped to the bounds."""
-    # 50 below MIN (1000) — clamp to 1000
-    settings_book = MagicMock()
-    settings_book.get.return_value = "50"
-    board = _make_chat_board(factory, settings_book=settings_book)
-    board.publish_chat(text="z" * 200, channel="tg", contact_id=None, conversation_id="c1")
-    job = board.claim_for_conversation(conversation_id="c1")
-    payload = job.payload or {}
-    assert len(payload["text"]) == 200  # fits in 1000, no truncation
-    assert "text_truncated" not in payload
-
-    # Above MAX (100_000) — clamp to 100_000; 200 chars still fits
-    settings_book.get.return_value = "999_999_999"
-    board2 = _make_chat_board(factory, settings_book=settings_book)
-    board2.publish_chat(text="z" * 200, channel="tg", contact_id=None, conversation_id="c2")
-    job2 = board2.claim_for_conversation(conversation_id="c2")
-    payload2 = job2.payload or {}
-    assert len(payload2["text"]) == 200
-    assert "text_truncated" not in payload2
-
-
-def test_publish_chat_no_settings_book_uses_default(factory):
-    """No settings_book passed → fall back to default cap (8000)."""
-    board = _make_chat_board(factory, settings_book=None)
-    board.publish_chat(text="a" * 9_000, channel="tg", contact_id=None, conversation_id="c1")
-    job = board.claim_for_conversation(conversation_id="c1")
-    payload = job.payload or {}
-    assert len(payload["text"]) == 8_000
-    assert payload["text_original_len"] == 9_000
-
-
-# ---------------------------------------------------------------------------
-# MessageBook.add
+# MessageBook.add — the single chokepoint for the cap
 # ---------------------------------------------------------------------------
 
 
 def test_messages_book_add_noop_under_cap(factory, seed_conversation):
-    mbook = MessageBook(factory, settings_book=None)  # default 8000
+    mbook = MessageBook(factory, settings_book=None)
     m = mbook.add(conversation_id="c1", message_id="m1", role="user", text="hi")
     assert m.text == "hi"
-    assert m.text is not None and len(m.text) == 2
 
 
 def test_messages_book_add_truncates_over_cap(factory, seed_conversation):
-    """Over the cap → stored row is truncated; original length is gone (no flag on row)."""
+    """Over the cap → stored row is truncated."""
     mbook = MessageBook(factory, settings_book=None)
     huge = "x" * 20_000
-
     m = mbook.add(
         conversation_id="c1", message_id="m1", role="user", text=huge
     )
     assert m.text is not None
-    assert len(m.text) == 8_000
-    # No flag on the row — the flag lives on the chatJob payload only.
-    # The row just holds the truncated text.
+    assert len(m.text) == 8_000  # default cap
 
 
 def test_messages_book_add_honors_lowered_cap(factory, seed_conversation):
     settings_book = MagicMock()
-    settings_book.get.return_value = "2000"  # within clamp range 1000-100_000
+    settings_book.get.return_value = "2000"  # within clamp range
     mbook = MessageBook(factory, settings_book=settings_book)
     m = mbook.add(
         conversation_id="c1", message_id="m1", role="user", text="y" * 5_000
@@ -205,8 +105,6 @@ def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
     """End-to-end: even with a single huge turn, compaction's floor-of-1
     works because the row stored is already capped.
     """
-    from magi.bus.library.local import ConversationBook
-
     sbook = ConversationBook(factory, settings_book=None)
     sbook.add(
         conversation_id="c1",
@@ -216,59 +114,320 @@ def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
         created_at="2026-08-05T00:00:00Z",
         updated_at="2026-08-05T00:00:00Z",
     )
-
     mbook = MessageBook(factory, settings_book=None)
     mbook.add(
         conversation_id="c1",
         message_id="m_huge",
         role="user",
-        text="x" * 50_000,  # would otherwise single-handedly bust the budget
+        text="x" * 50_000,
     )
-
-    # Stored row is capped → never > 8000 chars
     rows = mbook.list_for_conversation(conversation_id="c1")
     assert len(rows) == 1
     assert len(rows[0].text) == 8_000
 
 
 # ---------------------------------------------------------------------------
-# chat_input helper unit tests
+# Module-private helpers in conversationBook
 # ---------------------------------------------------------------------------
 
 
 def test_resolve_max_input_chars_with_none_settings():
-    from magi.bus.library.chat_input import resolve_max_input_chars
+    from magi.bus.library.local.conversationBook import _resolve_max_input_chars
 
-    assert resolve_max_input_chars(None) == 8_000
+    assert _resolve_max_input_chars(None) == 8_000
 
 
 def test_resolve_max_input_chars_clamps_garbage():
-    from magi.bus.library.chat_input import resolve_max_input_chars
+    from magi.bus.library.local.conversationBook import _resolve_max_input_chars
 
     sb = MagicMock()
     sb.get.return_value = "not-a-number"
-    assert resolve_max_input_chars(sb) == 8_000  # garbage → default
+    assert _resolve_max_input_chars(sb) == 8_000
 
-    sb.get.return_value = "50"  # below MIN 1000
-    assert resolve_max_input_chars(sb) == 1_000
+    sb.get.return_value = "50"  # below MIN
+    assert _resolve_max_input_chars(sb) == 1_000
 
-    sb.get.return_value = "999_999_999"  # above MAX 100_000
-    assert resolve_max_input_chars(sb) == 100_000
+    sb.get.return_value = "999_999_999"  # above MAX
+    assert _resolve_max_input_chars(sb) == 100_000
 
 
-def test_truncate_text_under():
-    from magi.bus.library.chat_input import truncate_text
+def test_truncate_inbound_under():
+    from magi.bus.library.local.conversationBook import _truncate_inbound
 
-    text, was_truncated, original = truncate_text("hello", 100)
+    text, was_truncated, original = _truncate_inbound("hello", 100)
     assert text == "hello"
     assert was_truncated is False
     assert original == 5
 
 
-def test_truncate_text_over():
-    from magi.bus.library.chat_input import truncate_text
+def test_truncate_inbound_over():
+    from magi.bus.library.local.conversationBook import _truncate_inbound
 
-    text, was_truncated, original = truncate_text("x" * 200, 50)
+    text, was_truncated, original = _truncate_inbound("x" * 200, 50)
     assert len(text) == 50
     assert was_truncated is True
     assert original == 200
+
+
+# ---------------------------------------------------------------------------
+# chatJobBoard — consolidated chokepoint (D.22 + writes user message)
+# ---------------------------------------------------------------------------
+
+
+def test_publish_chat_does_not_cap_payload(factory, contact_id):
+    """The cap moved to MessageBook. The chatJob payload.text is the
+    *raw* user input — the LLM never reads it; compaction / LLM read
+    from messages_book, which is what truncates.
+    """
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory, messages_book=mbook, conversations_book=sbook
+    )
+
+    huge = "x" * 20_000
+    board.publish_chat(
+        text=huge,
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id="c1",
+    )
+    job = board.claim_for_conversation(conversation_id="c1")
+    payload = job.payload or {}
+    # ChatJob payload is the raw text — no truncation flag.
+    assert payload["text"] == huge
+    assert "text_truncated" not in payload
+    # But messages_book row IS truncated (cap lives there).
+    rows = mbook.list_for_conversation(conversation_id="c1")
+    assert len(rows[0].text) == 8_000
+
+
+def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
+    """A single publish_chat call writes the chatJob row AND the
+    user-message row. Channels don't reach into messages_book
+    directly anymore.
+    """
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory,
+        messages_book=mbook,
+        conversations_book=sbook,
+    )
+
+    jid = board.publish_chat(
+        text="hello world",
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id="c1",
+    )
+    assert jid
+
+    job = board.claim_for_conversation(conversation_id="c1")
+    assert job is not None
+    assert job.payload is not None
+    assert job.payload["text"] == "hello world"
+
+    rows = mbook.list_for_conversation(conversation_id="c1")
+    assert len(rows) == 1
+    assert rows[0].text == "hello world"
+    assert rows[0].role == "user"
+
+
+def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
+    """Same message_id on retry → same chat_messages row (producer-side idempotency)."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory, messages_book=mbook, conversations_book=sbook
+    )
+
+    fixed_id = "fixed-message-id-123"
+    board.publish_chat(
+        text="retry me",
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id="c1",
+        message_id=fixed_id,
+    )
+    board.publish_chat(
+        text="retry me",
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id="c1",
+        message_id=fixed_id,
+    )
+
+    rows = mbook.list_for_conversation(conversation_id="c1")
+    # Unique constraint on (conversation_id, message_id) collapses
+    # the retry into a single row.
+    assert len(rows) == 1
+
+
+def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
+    """D.22: conversation created on TG, caller publishes as webui → ChannelMismatchError."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory, messages_book=mbook, conversations_book=sbook
+    )
+
+    from magi.bus.library.local.conversationBook import ChannelMismatchError
+
+    with pytest.raises(ChannelMismatchError) as exc:
+        board.publish_chat(
+            text="cross-channel write",
+            channel="webui",
+            contact_id=contact_id,
+            conversation_id="c1",
+        )
+    assert exc.value.conversation_channel == "tg"
+
+    # No chatJob, no message row — the guard fires before either write.
+    assert board.claim_for_conversation(conversation_id="c1") is None
+    rows = mbook.list_for_conversation(conversation_id="c1")
+    assert len(rows) == 0
+
+
+def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
+    """D.22: same channel → no error, both writes happen."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory, messages_book=mbook, conversations_book=sbook
+    )
+
+    jid = board.publish_chat(
+        text="normal",
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id="c1",
+    )
+    assert jid
+    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+
+
+def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
+    """Task path: no contact_id → D.22 guard skipped."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=1,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(
+        factory, messages_book=mbook, conversations_book=sbook
+    )
+
+    jid = board.publish_chat(
+        text="task fire",
+        channel="task",
+        contact_id=None,
+        conversation_id="c1",
+    )
+    assert jid
+    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+
+
+def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id):
+    """Backward-compat: board constructed without conversations_book → no D.22 check."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(factory, messages_book=mbook)  # no conversations_book
+
+    jid = board.publish_chat(
+        text="no-d22",
+        channel="webui",
+        contact_id=contact_id,
+        conversation_id="c1",
+    )
+    assert jid
+    assert len(mbook.list_for_conversation(conversation_id="c1")) == 1
+
+
+# ---------------------------------------------------------------------------
+# publish() (lower-level, used by submit_agent_message etc.) gets the
+# same D.22 treatment, no messages_book write.
+# ---------------------------------------------------------------------------
+
+
+def test_publish_direct_enforces_d22(factory, contact_id):
+    """Direct :meth:`publish` callers (e.g. :func:`submit_agent_message`
+    for internal steering republishes) get the same D.22 guard.
+    """
+    from magi.bus.guild.chatJob import ChatJob
+
+    sbook = ConversationBook(factory)
+    sbook.add(
+        conversation_id="c1",
+        delivery_address="tg:1",
+        contact_id=contact_id,
+        channel="tg",
+        created_at="2026-08-05T00:00:00Z",
+        updated_at="2026-08-05T00:00:00Z",
+    )
+    board = chatJobBoard(factory, conversations_book=sbook)
+
+    job = ChatJob(
+        job_id="steer-1",
+        conversation_id="c1",
+        payload={"text": "x", "channel": "webui", "contact_id": contact_id,
+                 "conversation_id": "c1"},
+    )
+
+    from magi.bus.library.local.conversationBook import ChannelMismatchError
+
+    with pytest.raises(ChannelMismatchError):
+        board.publish(job)
