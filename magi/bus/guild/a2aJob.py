@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
+from magi.bus.db.base import enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
@@ -70,7 +70,6 @@ class A2ARequestJob(BaseJob):
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     conversation_id: str | None = None  # 可选的会话 ID 透传
-    correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 请求正文
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
@@ -87,7 +86,6 @@ class A2ARequestResult(BaseJobResult):
 
     content: str = ""  # 目标 MAGI 回传的响应文本
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
-    error: str | None = None  # 失败时的错误文案
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +102,6 @@ class A2ANotifyJob(BaseJob):
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     conversation_id: str | None = None  # 可选的会话 ID 透传
-    correlation_id: str | None = None  # 跨系统追踪 ID
     text: str = ""  # 通知正文
 
 
@@ -119,13 +116,12 @@ class A2ANotifyResult(BaseJobResult):
     """
 
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
-    error: str | None = None  # 失败时的错误文案
 
 
-class _A2ARequestRow(BaseJobRowMixin, Base):
+class _A2ARequestRow(BaseJobRowMixin):
     __tablename__ = "a2a_request_jobs"
     __table_args__ = (
-        Index("ix_a2a_request_target_status_available", "target_magi_id", "status", "available_at"),
+        Index("ix_a2a_request_target_status", "target_magi_id", "status"),
         {"extend_existing": True},
     )
 
@@ -136,7 +132,6 @@ class _A2ARequestRow(BaseJobRowMixin, Base):
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -145,18 +140,17 @@ class _A2ARequestRow(BaseJobRowMixin, Base):
         nullable=True,
         default=None,
     )
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
+    error_code: Mapped[A2AErrorCode | None] = mapped_column(
+        enum_column(A2AErrorCode, name="a2a_error_code"),
+        nullable=True,
+        default=None,
     )
 
 
-class _A2ANotifyRow(BaseJobRowMixin, Base):
+class _A2ANotifyRow(BaseJobRowMixin):
     __tablename__ = "a2a_notify_jobs"
     __table_args__ = (
-        Index("ix_a2a_notify_target_status_available", "target_magi_id", "status", "available_at"),
+        Index("ix_a2a_notify_target_status", "target_magi_id", "status"),
         {"extend_existing": True},
     )
 
@@ -167,18 +161,11 @@ class _A2ANotifyRow(BaseJobRowMixin, Base):
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
         enum_column(A2AErrorCode, name="a2a_error_code"),
         nullable=True,
         default=None,
-    )
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
 
 
@@ -215,23 +202,17 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
             )
-            job_id = job.job_id or self.new_job_id()
-            existing = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
-            if existing is not None:
-                s.commit()
-                return existing.job_id
             row = _A2ARequestRow(
-                job_id=job_id,
+                job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
                 conversation_id=job.conversation_id,
-                correlation_id=job.correlation_id,
                 text=job.text,
                 deadline_at=job.deadline_at,
             )
             s.add(row)
             s.commit()
-            return job_id
+            return row.job_id
 
     def claim_for_target(self, *, magi_id: int) -> A2ARequestJob | None:
         with self._session() as s:
@@ -308,22 +289,16 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
             )
-            job_id = job.job_id or self.new_job_id()
-            existing = s.scalar(select(_A2ANotifyRow).where(_A2ANotifyRow.job_id == job_id))
-            if existing is not None:
-                s.commit()
-                return existing.job_id
             row = _A2ANotifyRow(
-                job_id=job_id,
+                job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
                 conversation_id=job.conversation_id,
-                correlation_id=job.correlation_id,
                 text=job.text,
             )
             s.add(row)
             s.commit()
-            return job_id
+            return row.job_id
 
     def claim_for_target(self, *, magi_id: int) -> A2ANotifyJob | None:
         with self._session() as s:
@@ -334,13 +309,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
             )
             s.commit()
             return self._map_row(row, A2ANotifyJob) if row is not None else None
-
-    def submit_result(self, *, key: str, result: A2ANotifyResult) -> None:
-        # Dataclass shape (``A2AErrorCode | None``) already matches
-        # the native :class:`~sqlalchemy.types.Enum` column, so
-        # ``BaseJobBoard.submit_result`` writes the value verbatim.
-        # Mirrors :meth:`a2aRequestJobBoard.submit_result`.
-        super().submit_result(key=key, result=result)
 
 
 __all__ = [
