@@ -22,7 +22,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.guild.seedPresetTasksJob import SeedPresetTasksJob
+from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskJob
 from magi.bus.library.local import Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
@@ -274,15 +274,23 @@ def create_contact(
     # contact row is more valuable than the preset rows.
     #
     if view.role == Role.ASSIGNED:
+        # Publish **one job per preset** so the worker logs each
+        # insertion / skip independently. A bulk job that reports
+        # ``inserted=3, skipped=2`` forces post-mortem log-diving to
+        # figure out which preset failed; one-job-per-preset makes
+        # the failure surface obvious from the JobBoard's claim log.
         try:
-            bus.seed_preset_tasks_job_board.publish(
-                SeedPresetTasksJob(
-                    contact_id=view.id,
-                ),
-            )
+            presets = bus.prompt_book.task_presets()
+            for preset_key in presets:
+                bus.seed_preset_task_job_board.publish(
+                    SeedPresetTaskJob(
+                        contact_id=view.id,
+                        preset_key=preset_key,
+                    ),
+                )
         except Exception as exc:
             logger.warning(
-                "preset seeding failed for newly-created contact %d: %s",
+                "preset seeding dispatch failed for newly-created contact %d: %s",
                 view.id,
                 exc,
             )
@@ -461,19 +469,23 @@ def update_contact(
     # short-circuits when rows already exist, so a
     # double-seed is a no-op rather than a duplicate.
     #
-    # TODO(proactive-refactor): 改为发布 SeedPresetTasksJob 到
-    # bus.seed_preset_tasks_job_board，由 ProactiveWorker
-    # 异步消费。当前同步调用将在 Worker 就绪 + 验证稳定后移除。
+    # TODO(proactive-refactor): currently dispatches one job per preset to
+    # bus.seed_preset_task_job_board; ProactiveWorker is the async consumer.
+    # One-job-per-preset means each preset's failure mode shows up in the
+    # JobBoard claim log without post-mortem log-diving.
     if newly_assigned:
         try:
-            bus.seed_preset_tasks_job_board.publish(
-                SeedPresetTasksJob(
-                    contact_id=view.id,
-                ),
-            )
+            presets = bus.prompt_book.task_presets()
+            for preset_key in presets:
+                bus.seed_preset_task_job_board.publish(
+                    SeedPresetTaskJob(
+                        contact_id=view.id,
+                        preset_key=preset_key,
+                    ),
+                )
         except Exception as exc:
             logger.warning(
-                "preset seeding failed for contact %d (role → assigned): %s",
+                "preset seeding dispatch failed for contact %d (role → assigned): %s",
                 view.id,
                 exc,
             )

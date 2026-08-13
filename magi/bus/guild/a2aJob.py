@@ -15,7 +15,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    String,
     Text,
     select,
     update,
@@ -69,7 +68,6 @@ class A2ARequestJob(BaseJob):
 
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
-    conversation_id: str | None = None  # 可选的会话 ID 透传
     text: str = ""  # 请求正文
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
@@ -101,7 +99,6 @@ class A2ANotifyJob(BaseJob):
 
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
-    conversation_id: str | None = None  # 可选的会话 ID 透传
     text: str = ""  # 通知正文
 
 
@@ -131,7 +128,6 @@ class _A2ARequestRow(BaseJobRowMixin):
     target_magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
-    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -155,7 +151,6 @@ class _A2ANotifyRow(BaseJobRowMixin):
     target_magi_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), nullable=False
     )
-    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
         enum_column(A2AErrorCode, name="a2a_error_code"),
@@ -201,7 +196,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
-                conversation_id=job.conversation_id,
                 text=job.text,
                 deadline_at=job.deadline_at,
             )
@@ -288,7 +282,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
-                conversation_id=job.conversation_id,
                 text=job.text,
             )
             s.add(row)

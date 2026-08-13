@@ -167,6 +167,11 @@ class AgentWorker(RuntimeWorker):
             if source == "chat":
                 self._active_conversations.add(conversation_id)
             is_a2a = source != "chat"
+            if is_a2a:
+                # A2A jobs carry no conversation_id on the wire: the
+                # conversation is the single per-peer thread, keyed by the
+                # source MAGI's membership id.
+                conversation_id = f"a2a:{getattr(job, 'source_magi_id', 0)}"
             ctx = RunContext(
                 contact_id=(None if is_a2a else job.contact_id),
                 conversation_id=(conversation_id or f"{source}:{job.job_id}"),
@@ -573,7 +578,6 @@ class AgentWorker(RuntimeWorker):
                             A2ARequestJob(
                                 source_magi_id=self._magi_id,
                                 target_magi_id=target_magi_id,
-                                conversation_id=ctx.conversation_id,
                                 text=text,
                                 deadline_at=(
                                     datetime.now(UTC).replace(tzinfo=None)
@@ -589,7 +593,6 @@ class AgentWorker(RuntimeWorker):
                             A2ANotifyJob(
                                 source_magi_id=self._magi_id,
                                 target_magi_id=target_magi_id,
-                                conversation_id=ctx.conversation_id,
                                 text=text,
                             ),
                         )
