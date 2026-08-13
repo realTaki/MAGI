@@ -59,16 +59,17 @@ class CallLLMJob(BaseJob):
 
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
 
-    Context fields (contact / conversation / channel / caller_role / phase)
-    intentionally NOT carried on this board — the provider worker only
-    needs ``messages`` + ``tools`` + ``max_tokens`` + ``streaming`` to
-    dial the SDK. Callers that need to thread context to the *agent*
-    worker (chat / a2a / compaction / auto_title) push that context on
-    a separate board (e.g. :class:`ChatJob`) which the agent worker
-    reads before publishing an LLM call here.
+    ``contact_id`` 是唯一携带的业务上下文——provider worker 在每次
+    成功调用后写 ``token_usage`` 记账行，需要知道这笔 token 算在哪个
+    联系人头上（``None`` 表示无归属，如 compaction 的独立调用）。
+    其余上下文（conversation / channel / caller_role / phase）仍不
+    携带：provider worker 只需 ``messages`` + ``tools`` +
+    ``max_tokens`` + ``streaming`` 即可拨号，调用方需要区分来源时在
+    自己的层做。
     """
 
     messages: list[dict]  # LLM 消息序列；首条 role="system" 即为 system prompt
+    contact_id: int | None = None  # 记账归属联系人（provider 写 token_usage 用）
     max_tokens: int = 1024  # 单次响应上限（调用方按 provider 限制设定）
     tools: list[dict] | None = None  # 工具 schema（OpenAI-style function calling）
     streaming: bool = False  # 是否走流式（True 时 result.stream_key 非空）
@@ -81,11 +82,13 @@ class CallLLMResult(BaseJobResult):
     ``stream_key`` 非空时表示流式模式：调用方用
     ``bus.stream_hub.get(stream_key)`` 拿到 ``asyncio.Queue``，
     从中迭代读取增量文本（``None`` 哨兵表示结束）。
+
+    token 用量不在此回传——provider worker 在成功调用后直接写
+    ``token_usage`` 表，调用方无需关心。
     """
 
     response: dict | None = None  # {text, thinking, tool_uses, raw_blocks} 形式的结构化结果
     finish_reason: str | None = None  # provider 返回的终止原因（stop/length/tool_use/...）
-    token_usage: dict | None = None  # {prompt_tokens, completion_tokens, total_tokens}
     model: str = ""  # provider 实际使用的模型
     stream_key: str = ""  # bus.stream_hub 的管道句柄
     error_code: LLMErrorCode = LLMErrorCode.NONE  # 稳定错误码（成功 = LLMErrorCode.NONE）
@@ -99,12 +102,12 @@ class _LLMJobRow(BaseJobRowMixin):
     __table_args__ = {"extend_existing": True}
 
     messages: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
+    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error_code: Mapped[LLMErrorCode] = mapped_column(

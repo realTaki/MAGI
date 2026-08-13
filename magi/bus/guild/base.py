@@ -22,7 +22,7 @@ DEFAULT_LEASE_SECONDS = 60
 MAX_ATTEMPTS = 3
 #: Hard cap on candidate retries in :meth:`BaseJobBoard._cas_claim`.
 #: Bounds the loop when many workers race for the same hot row,
-#: matching the chatJobBoard ceiling. Without this cap a hot
+#: matching the chatNotifyBoard ceiling. Without this cap a hot
 #: conversation could spin forever.
 MAX_ATTEMPTS_CANDIDATES = 10
 
@@ -157,7 +157,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     # abstract ``None`` shape breaks Pylance's view of every ORM
     # call below (``select(self.job_model)`` would otherwise see
     # ``None``). Each concrete Board (``runToolJobBoard``,
-    # ``chatJobBoard``, ...) supplies the row / DTO / result
+    # ``chatNotifyBoard``, ...) supplies the row / DTO / result
     # types that match its ``Generic[RowT, JobT, ResultT]`` args.
     job_model: ClassVar[type[RowT]]  # type: ignore[reportGeneralTypeIssues]
     job_cls: ClassVar[type[JobT]]  # type: ignore[reportGeneralTypeIssues]
@@ -277,7 +277,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     def release(self, *, key: str) -> None:
         """Release a claimed job back to *pending*.
 
-        Used by AgentWorker when ``_run()`` claims a ChatJob for a
+        Used by AgentWorker when ``_run()`` claims a ChatNotifyJob for a
         session that already has an active in-flight run.  The job
         is released so ``_process()`` can reclaim it as steering
         via ``claim_for_steering``.
@@ -358,7 +358,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """Default CAS-claim — no extra WHERE filter.
 
         Specialized boards (``deliveryJobBoard.claim_for_channel``,
-        ``chatJobBoard.claim_for_steering``) wrap
+        ``chatNotifyBoard.claim_for_steering``) wrap
         :meth:`_cas_claim` with their own scoping clause.
         """
         return self._cas_claim(

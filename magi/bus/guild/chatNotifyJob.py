@@ -1,11 +1,11 @@
-"""chatJobBoard — durable agent turn queue.
+"""chatNotifyBoard — durable agent turn queue.
 
-Backed by the ``chat_jobs`` table.  A publish inserts a new row;
+Backed by the ``chat_notify_jobs`` table.  A publish inserts a new row;
 a claim picks up the oldest pending row, updates its ``status`` and
 lease fields, and returns the job snapshot.  Submitting the result
 moves the row's ``status`` to ``completed``/``failed``.
 
-As a side effect of enqueue, :meth:`chatJobBoard.publish` also
+As a side effect of enqueue, :meth:`chatNotifyBoard.publish` also
 stamps ``contacts.last_seen_at`` so the directory's recency
 ordering (:meth:`ContactBook.search`) reflects real inbound
 traffic — every code path that enqueues a turn, including
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,12 +30,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # =========================================================================
-# chatJobBoard — durable agent turn queue (chat_jobs table)
+# chatNotifyBoard — durable agent turn queue (chat_notify_jobs table)
 # =========================================================================
 
 
 @dataclass(frozen=True, slots=True)
-class ChatJob(BaseJob):
+class ChatNotifyJob(BaseJob):
     """Snapshot of a turn request (publisher input).
 
     Typed fields, no ``payload`` dict. The DB row still stores
@@ -45,7 +45,7 @@ class ChatJob(BaseJob):
     producers and consumers see one attribute per field, not a
     black-box dict.
 
-    Core turn input (set by :meth:`chatJobBoard.publish`):
+    Core turn input (set by :meth:`chatNotifyBoard.publish`):
 
     - :attr:`text` — the user message (raw, pre-cap; the
       ``chat_messages`` row carries the post-cap version).
@@ -71,7 +71,7 @@ class ChatJob(BaseJob):
 
 
 class ChatErrorCode(StrEnum):
-    """Stable error code returned on a failed :class:`ChatJobResult`.
+    """Stable error code returned on a failed :class:`ChatNotifyResult`.
 
     ``StrEnum`` so each member is a ``str`` subclass — ``==`` against
     string literals, JSON serialisation and any ``String`` columns keep
@@ -88,34 +88,33 @@ class ChatErrorCode(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ChatJobResult(BaseJobResult):
+class ChatNotifyResult(BaseJobResult):
     """Final state of a turn."""
 
-    result: dict[str, Any] | None = None  # 结构化结果
     error_code: ChatErrorCode | None = None  # 稳定错误码（失败时非 None）
     # 失败的人类可读文案用继承的 ``BaseJobResult.error``，不再另设 error_detail
 
 
-class _ChatJobRow(BaseJobRowMixin):
-    __tablename__ = "chat_jobs"
+class _ChatNotifyRow(BaseJobRowMixin):
+    __tablename__ = "chat_notify_jobs"
     __table_args__ = {"extend_existing": True}
 
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 会话 ID
     # Turn input — formerly a single ``payload`` JSON blob. Split into
     # individual columns in migration 0011 so producers / consumers
-    # see one field per attribute on :class:`ChatJob` (no
+    # see one field per attribute on :class:`ChatNotifyJob` (no
     # ``payload`` dict). The pre-migration rows had no value here.
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)  # 用户消息原文
     channel: Mapped[str] = mapped_column(String(16), default="", nullable=False)  # 入站渠道
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 所属联系人
 
 
-class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
+class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResult]):
     """Queue (write + claim + submit_result) for agent turns."""
 
-    job_model = _ChatJobRow
-    job_cls = ChatJob
-    result_cls = ChatJobResult
+    job_model = _ChatNotifyRow
+    job_cls = ChatNotifyJob
+    result_cls = ChatNotifyResult
     natural_key_attr = "job_id"
 
     def __init__(
@@ -137,14 +136,14 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         # In production, :func:`magi.bus.bootstrap.open_bus` wires
         # both — :meth:`publish` uses them to (a) enforce the
         # D.22 cross-channel guard and (b) persist the user message
-        # to ``chat_messages`` at the same chokepoint as the chatJob
+        # to ``chat_messages`` at the same chokepoint as the chatNotifyJob
         # enqueue, so callers don't reach into the messages Book
         # directly. The cap is enforced by :meth:`MessageBook.add`
         # (the persistent layer is what compaction reads), not here.
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: ChatJob, *, message_id: str | None = None) -> str:
+    def publish(self, job: ChatNotifyJob, *, message_id: str | None = None) -> str:
         """Enqueue one agent turn and persist the user message.
 
         Single chokepoint for inbound turn intake — every path that
@@ -155,23 +154,23 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
              conversation exists and was created on a different
              channel (raises :class:`ChannelMismatchError`). Reads the
              typed ``contact_id`` / ``channel`` / ``conversation_id``
-             fields on the ChatJob, so any caller gets the same
+             fields on the ChatNotifyJob, so any caller gets the same
              protection. Skipped when ``contact_id is None`` (task
              path with no contact), no ``conversations_book`` (legacy
              / tests), or no channel (misconfigured job).
-          2. Enqueue the chatJob row.
+          2. Enqueue the chatNotifyJob row.
           3. Stamp ``contacts.last_seen_at`` (best-effort — a failure
              is logged and swallowed so a transient ``contact_book``
              outage cannot block an inbound turn).
           4. Persist the user message to ``chat_messages`` (the same
              row the agent's LLM call reads via
              :func:`build_messages_from_conversation`). ``MessageBook.add``
-             enforces the inbound cap; the chatJob row carries the raw
+             enforces the inbound cap; the chatNotifyJob row carries the raw
              text. Skipped when the board has no ``messages_book``
-             (legacy / tests) — best-effort, since the chatJob is
+             (legacy / tests) — best-effort, since the chatNotifyJob is
              already enqueued.
 
-        The per-turn text cap is **not** applied to the chatJob row —
+        The per-turn text cap is **not** applied to the chatNotifyJob row —
         that lives in :meth:`MessageBook.add`, which is the chokepoint
         compaction reads.
 
@@ -224,21 +223,21 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
                 )
             except Exception:
                 logger.exception(
-                    "chatJobBoard.publish: messages_book.add failed "
-                    "(conversation=%s, channel=%s); chatJob %s enqueued without row",
+                    "chatNotifyBoard.publish: messages_book.add failed "
+                    "(conversation=%s, channel=%s); chatNotifyJob %s enqueued without row",
                     conversation_id,
                     channel,
                     job_id,
                 )
         return job_id
 
-    def _stamp_last_seen(self, job: ChatJob) -> None:
+    def _stamp_last_seen(self, job: ChatNotifyJob) -> None:
         """Best-effort ``last_seen_at`` update keyed on ``job.contact_id``.
 
         No-op when the board was constructed without a
         ``contact_book`` (test mode) or when the job has no
         contact (e.g. an internal agent-side republish). Runs in
-        its own transaction, isolated from the chatJob insert
+        its own transaction, isolated from the chatNotifyJob insert
         that already committed.
         """
         if self._contact_book is None:
@@ -249,14 +248,14 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             self._contact_book.touch(contact_id=job.contact_id)
         except Exception:
             logger.exception(
-                "chatJobBoard.publish: contact_book.touch failed for contact_id=%r", job.contact_id
+                "chatNotifyBoard.publish: contact_book.touch failed for contact_id=%r", job.contact_id
             )
 
-    def claim_for_steering(self, *, conversation_id: str) -> ChatJob | None:
-        """CAS-claim a ChatJob scoped to one conversation.
+    def claim_for_steering(self, *, conversation_id: str) -> ChatNotifyJob | None:
+        """CAS-claim a ChatNotifyJob scoped to one conversation.
 
         设计 §2.5 + §5.2：AgentWorker 在 ``_gather_all`` 中每轮轮询调用，
-        认领同 conversation 的 pending ChatJob 作为 steering。steering
+        认领同 conversation 的 pending ChatNotifyJob 作为 steering。steering
         只取消息、不动 conversation 状态（lease 由 AgentWorker 自身管理）。
 
         Thin wrapper around :meth:`BaseJobBoard._cas_claim` —
@@ -270,18 +269,18 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             row = self._cas_claim(
                 s,
                 owner=f"steer:{conversation_id}:{id(self)}",
-                extra_where=[_ChatJobRow.conversation_id == conversation_id],
+                extra_where=[_ChatNotifyRow.conversation_id == conversation_id],
             )
             s.commit()
             if row is None:
                 return None
-            return self._map_row(row, ChatJob)
+            return self._map_row(row, ChatNotifyJob)
 
 
 __all__ = [
     "ChatErrorCode",
-    "ChatJob",
-    "ChatJobResult",
-    "chatJobBoard",
-    "_ChatJobRow",
+    "ChatNotifyJob",
+    "ChatNotifyResult",
+    "chatNotifyBoard",
+    "_ChatNotifyRow",
 ]

@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import JSON, Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
+from magi.bus.db.base import enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
@@ -130,22 +130,16 @@ class McpServerChangedJob(BaseJob):
 class McpServerChangedResult(BaseJobResult):
     """Worker 处理结果的回执。"""
 
-    error: str | None = None  # 失败时的错误描述
-
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _McpServerChangedRow(BaseJobRowMixin, Base):
+class _McpServerChangedRow(BaseJobRowMixin):
     __tablename__ = "mcp_server_changed_jobs"
     __table_args__ = {"extend_existing": True}
 
     kind: Mapped[MCPKind] = mapped_column(enum_column(MCPKind), nullable=False)
     server_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
-    )
 
     #: JSON-serialised :class:`McpServer` DTO. Populated for
     #: :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED`; ``None``
@@ -227,16 +221,15 @@ class mcpServerChangedJobBoard(
     result_cls = McpServerChangedResult
 
     def publish(self, job: McpServerChangedJob) -> str:
-        """插入一行变更 job；自动生成 ``job_id``（如果未提供）。
+        """插入一行变更 job；Board 生成 ``job_id``，调用方无法指定。
 
         Serialises ``job.server`` (if any) to the ``server_payload``
         JSON column and copies ``new_enabled`` across verbatim.
         """
-        job_id = job.job_id or self.new_job_id()
         server_payload = _dump_server(job.server) if job.server is not None else None
         with self._session() as s:
             row = _McpServerChangedRow(
-                job_id=job_id,
+                job_id=self.new_job_id(),
                 status=JobStatus.PENDING,
                 kind=job.kind,
                 server_name=job.server_name,
@@ -250,9 +243,9 @@ class mcpServerChangedJobBoard(
             "mcpServerChangedJob: published kind=%s name=%s job_id=%s",
             job.kind,
             job.server_name,
-            job_id,
+            row.job_id,
         )
-        return job_id
+        return row.job_id
 
     def claim(self) -> McpServerChangedJob | None:
         """Claim the next pending job, materialising the payload
@@ -268,14 +261,14 @@ class mcpServerChangedJobBoard(
             if row is None:
                 return None
             server = _load_server(row.server_payload) if row.server_payload is not None else None
-            return McpServerChangedJob(
+            job = McpServerChangedJob(
                 kind=MCPKind(row.kind),
                 server_name=row.server_name,
                 server=server,
                 new_enabled=row.new_enabled,
-                job_id=row.job_id,
-                attempts=row.attempts,
             )
+            object.__setattr__(job, "job_id", row.job_id)  # init=False，frozen 下回填
+            return job
 
 
 __all__ = [
