@@ -8,15 +8,14 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import StrEnum
+from enum import Enum
 from typing import ClassVar
 
 from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
-from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.db.engine import EngineFactory
 
 DEFAULT_LEASE_SECONDS = 60
@@ -95,38 +94,6 @@ class BaseJobResult:
     status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
 
 
-def _enum_column(
-    enum_cls: type,
-    *,
-    name: str,
-    length: int = 24,
-) -> SAEnum:
-    """SAEnum 列工厂：PG native ENUM + SQLite CHECK + 老数据兼容。
-
-    集中放在 :class:`BaseJobRowMixin` 旁边是让 10 个 Job Row 都共享同一份
-    配置——schema 演进（alembic migration）和 ORM 声明永远一致。
-
-    ``values_callable`` 把存储 / CHECK / CREATE TYPE 标签锁定到
-    ``enum.value``（小写字符串），匹配老 ``VARCHAR(24)`` 的数据格式——
-    这样 alembic 把 VARCHAR 提升为 enum 时不需要数据回填。
-
-    ``name`` 必须显式传——隐式值会是 ``enum_cls.__name__.lower()``，
-    跨模块（base.py 引用 vs alembic migration 引用）不一致会导致
-    migration 找不到现有类型。
-
-    ``length`` 默认 24 匹配老 ``VARCHAR(24)``。SQLite 上控制 VARCHAR(N)，
-    PG native enum 不读 length（由成员字符串长度决定）。
-    """
-    return SAEnum(
-        enum_cls,
-        name=name,
-        native_enum=True,
-        length=length,
-        create_constraint=True,
-        values_callable=lambda cls: [m.value for m in cls],
-    )
-
-
 class BaseJobRowMixin:
     """Job 队列行的公共列 mixin。
 
@@ -140,10 +107,13 @@ class BaseJobRowMixin:
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
-    # lives in :func:`_enum_column` so all 10 Job boards share one source of
-    # truth and stay aligned with the alembic promotion migration.
+    # lives in :func:`magi.bus.db.base.enum_column` so all 10 Job boards
+    # share one source of truth and stay aligned with the alembic promotion
+    # migration. ``name="job_status"`` is pinned to match the migration's
+    # ``_ENUM_NAME`` literal — see alembic/versions/0019_… / magis_versions/0009_…
+    # for the PG ``CREATE TYPE`` / SQLite CHECK definition.
     status: Mapped[JobStatus] = mapped_column(
-        _enum_column(JobStatus, name="job_status"),
+        enum_column(JobStatus, name="job_status"),
         nullable=False,
         default=JobStatus.PENDING,
     )

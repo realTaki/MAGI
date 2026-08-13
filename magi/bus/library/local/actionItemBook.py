@@ -25,7 +25,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook
 
 # -- public dataclass ----------------------------------------------------
@@ -146,8 +146,8 @@ class _ActionItemRow(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # In-app deep-link target for the row's "go to" button.
     target_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    priority: Mapped[str] = mapped_column(
-        String(16),
+    priority: Mapped[ActionPriority] = mapped_column(
+        enum_column(ActionPriority),
         nullable=False,
         default=ActionPriority.NORMAL,
     )
@@ -156,8 +156,8 @@ class _ActionItemRow(Base):
     # is the column default so any future writer that forgets
     # to pass ``source=`` defaults to the safe side (system
     # actions are non-repudiable; user actions are auditable).
-    source: Mapped[str] = mapped_column(
-        String(16),
+    source: Mapped[ActionSource] = mapped_column(
+        enum_column(ActionSource),
         nullable=False,
         default=ActionSource.PROACTIVE,
     )

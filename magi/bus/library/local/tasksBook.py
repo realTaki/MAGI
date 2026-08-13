@@ -41,7 +41,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook
 
 
@@ -114,9 +114,9 @@ class TaskSource(StrEnum):
 class TaskRunStatus(StrEnum):
     """Closed set of values for ``TaskRun.status`` + ``Task.last_status``.
 
-    Stored loose at the DB (``String(16)`` on both columns), normalised
-    to this enum at the Book boundary — same "loose at DB, strict
-    at Book" convention as :class:`TaskSource` and :class:`ChannelEnum`.
+    Stored as native ENUM via :func:`magi.bus.db.base.enum_column` (PG) / CHECK (SQLite).
+    ``StrEnum`` keeps raw-string ↔ enum value equivalence so callers
+    can pass either shape without a coercion shim.
     """
 
     RUNNING = "running"
@@ -217,14 +217,14 @@ class _TaskRow(Base):
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    source: Mapped[str] = mapped_column(
-        String(16),
+    source: Mapped[TaskSource] = mapped_column(
+        enum_column(TaskSource),
         nullable=False,
         default=TaskSource.USER,
     )
-    target_channel: Mapped[str] = mapped_column(
+    target_channel: Mapped[ChannelEnum] = mapped_column(
         "channel",
-        String(16),
+        enum_column(ChannelEnum),
         nullable=False,
     )
     enabled: Mapped[int] = mapped_column(
@@ -263,12 +263,9 @@ class _TaskRow(Base):
         default=0,
     )
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # ``String(16)`` — not enum-enforced at the DB layer so legacy
-    # rows survive; the Book normalises to :class:`TaskRunStatus`
-    # on read (same "loose at DB, strict at Book" pattern as
-    # ``source`` / ``target_channel``). Shared vocabulary with
-    # ``TaskRunRow.status`` below.
-    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_status: Mapped[TaskRunStatus | None] = mapped_column(
+        enum_column(TaskRunStatus), nullable=True
+    )
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow_naive
@@ -302,7 +299,7 @@ class _TaskRunRow(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False)  # TaskRunStatus.value (loose at DB)
+    status: Mapped[TaskRunStatus] = mapped_column(enum_column(TaskRunStatus), nullable=False)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -325,66 +322,6 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
     model_cls = _TaskRow
     dto_cls = Task
-
-    @staticmethod
-    def _coerce_source(value: object) -> TaskSource:
-        """Map an ORM-source value (raw string OR enum) to :class:`TaskSource`.
-
-        The ``source`` column is ``String(16)`` and the DB layer is not
-        enum-enforced — historical rows may already be a bare string,
-        so we accept both shapes and normalise to the enum. Unknown
-        values are passed through unchanged so :class:`Task` keeps
-        the same string shape the existing code expects, matching
-        the action-item book's "loose at the DB, strict at the Book"
-        pattern.
-        """
-        if isinstance(value, TaskSource):
-            return value
-        return TaskSource(value)
-
-    @staticmethod
-    def _coerce_last_status(value: object) -> TaskRunStatus | None:
-        """Map an ORM ``last_status`` value (str OR enum) to :class:`TaskRunStatus`.
-
-        Mirrors :meth:`_coerce_source` — the column is ``String(16)``
-        and not enum-enforced at the DB layer, so historical rows
-        may already be a bare string. ``None`` round-trips as
-        ``None`` (the field is nullable for tasks that have never
-        fired). Unknown strings raise :class:`ValueError` via the
-        enum constructor so a typo in a future writer surfaces
-        loudly instead of silently round-tripping as a bare
-        string that the WebUI can't classify.
-        """
-        if value is None:
-            return None
-        if isinstance(value, TaskRunStatus):
-            return value
-        return TaskRunStatus(value)
-
-    def _row_to_dto(self, row: _TaskRow) -> Task:
-        """Override :meth:`BaseBook._row_to_dto` — pass DateTime through.
-
-        Per-field coercion happens at the ORM→DTO boundary:
-
-        - ``source`` / ``last_status`` are stored as loose strings
-          (legacy schema); normalise to enums here.
-        - Time columns (``created_at`` / ``updated_at`` /
-          ``last_run_at``) are native ``DateTime`` and pass through
-          untouched — :func:`to_iso` is the API layer's job, not
-          this mapper's, so the wire format decouples from the
-          in-DTO Python type.
-        """
-        kwargs: dict = {}
-        for f in dataclasses.fields(self.dto_cls):
-            if hasattr(row, f.name):
-                val = getattr(row, f.name)
-                if f.name == "source":
-                    kwargs[f.name] = self._coerce_source(val)
-                elif f.name == "last_status":
-                    kwargs[f.name] = self._coerce_last_status(val)
-                else:
-                    kwargs[f.name] = val
-        return self.dto_cls(**kwargs)
 
     def get(self, *, task_id: str) -> Task | None:
         with self._session() as s:
@@ -535,7 +472,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             if "id" not in kwargs or not kwargs["id"]:
                 kwargs["id"] = _new_task_id()
             row = _TaskRow(
-                source=source.value if isinstance(source, TaskSource) else source,
+                source=source,
                 **kwargs,
             )
             s.add(row)
@@ -813,14 +750,12 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 f"{sorted(c.value for c in ChannelEnum)!r}, "
                 f"got {target_channel!r}"
             )
-        if isinstance(source, TaskSource):
-            source_value = source.value
-        else:
-            source_value = source
-        if source_value not in TaskSource:
+        # ``TaskSource`` is a ``StrEnum`` so membership works for
+        # both enum members and matching raw strings.
+        if source not in TaskSource:
             raise ValueError(
                 f"source must be one of "
-                f"{sorted(s.value for s in TaskSource)!r}, got {source_value!r}"
+                f"{sorted(s.value for s in TaskSource)!r}, got {source!r}"
             )
 
     # -- v2.0: worker-facing methods -------------------------------------
@@ -891,43 +826,20 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
     dto_cls = TaskRun
 
-    @staticmethod
-    def _coerce_status(value: object) -> TaskRunStatus:
-        """Map an ORM ``status`` value (str OR enum) to :class:`TaskRunStatus`.
-
-        Same "loose at DB, strict at Book" pattern as
-        :meth:`TaskBook._coerce_source` and
-        :meth:`TaskBook._coerce_last_status`. The column is
-        ``String(16)`` and not enum-enforced at the DB layer, so
-        historical rows may already be a bare string. Unknown
-        strings raise :class:`ValueError` so a typo in a future
-        writer surfaces loudly instead of round-tripping as a
-        bare string the WebUI can't classify.
-        """
-        if isinstance(value, TaskRunStatus):
-            return value
-        return TaskRunStatus(value)
-
     def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
-        """Override :meth:`BaseBook._row_to_dto` to coerce ``status`` + ``manual``.
+        """Override :meth:`BaseBook._row_to_dto` to coerce ``manual``.
 
-        Per-field coercion at the ORM→DTO boundary:
-
-        - ``status`` is stored loose (``String(16)``); normalise to
-          :class:`TaskRunStatus`.
-        - ``manual`` is stored as ``Integer`` (0/1) — coerce to
-          ``bool`` so the dataclass field matches downstream
-          consumer expectations.
-        - Time columns (``started_at`` / ``finished_at``) are
-          native ``DateTime`` and pass through untouched.
+        ``status`` is :class:`TaskRunStatus` end-to-end (the column
+        is :func:`magi.bus.db.base.enum_column`-typed, so SQLAlchemy auto-coerces both
+        on write and read). The only remaining ORM→DTO coercion is
+        ``manual``: stored as ``Integer`` (0/1), exposed as ``bool``
+        so downstream consumers can use truthiness directly.
         """
         kwargs: dict = {}
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
-                if f.name == "status":
-                    kwargs[f.name] = self._coerce_status(val)
-                elif f.name == "manual":
+                if f.name == "manual":
                     kwargs[f.name] = bool(val)
                 else:
                     kwargs[f.name] = val
@@ -961,16 +873,18 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         ``status`` accepts either a :class:`TaskRunStatus` enum
         (preferred — :data:`TaskRunStatus.SUCCESS` /
         :data:`TaskRunStatus.FAILED`) or the equivalent bare
-        string. Strings are coerced through :meth:`_coerce_status`
-        so a typo (``"succes"``) raises :class:`ValueError`
-        immediately rather than persisting silently.
+        string. Strings go through :class:`TaskRunStatus` so a typo
+        (``"succes"``) raises :class:`ValueError` immediately rather
+        than persisting silently. The ``status`` column is
+        SAEnum-typed, so SQLAlchemy accepts the enum member
+        directly on write.
         """
-        normalised = self._coerce_status(status)
+        normalised = status if isinstance(status, TaskRunStatus) else TaskRunStatus(status)
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
             if row is None:
                 return
-            row.status = normalised.value
+            row.status = normalised
             row.error = error
             row.reply_excerpt = reply_excerpt
             row.finished_at = finished_at

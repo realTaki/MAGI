@@ -43,21 +43,10 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Boolean, DateTime, String
-from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
-
-
-_ENUM_COL = lambda enum_cls: SAEnum(  # noqa: E731
-    enum_cls,
-    name=f"{enum_cls.__name__.lower()}",
-    native_enum=True,
-    length=24,
-    create_constraint=True,
-    values_callable=lambda e: [m.value for m in e],
-)
 
 if TYPE_CHECKING:
     from magi.bus.library.local.mcpServerBook import McpServer
@@ -151,7 +140,7 @@ class _McpServerChangedRow(BaseJobRowMixin, Base):
     __tablename__ = "mcp_server_changed_jobs"
     __table_args__ = {"extend_existing": True}
 
-    kind: Mapped[MCPKind] = mapped_column(_ENUM_COL(MCPKind), nullable=False)
+    kind: Mapped[MCPKind] = mapped_column(enum_column(MCPKind), nullable=False)
     server_name: Mapped[str] = mapped_column(String(64), nullable=False)
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

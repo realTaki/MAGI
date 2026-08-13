@@ -13,7 +13,6 @@ from enum import StrEnum
 
 from sqlalchemy import (
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     String,
@@ -23,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin, _read_result_from_job
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 

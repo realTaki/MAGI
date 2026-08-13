@@ -12,7 +12,7 @@ from enum import StrEnum
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook
 
 
@@ -96,7 +96,7 @@ class _MemoryRow(Base):
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[MemoryKind] = mapped_column(enum_column(MemoryKind), nullable=False)
     subject: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
