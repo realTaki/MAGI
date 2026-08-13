@@ -202,6 +202,83 @@ def test_notify_publish_and_claim_write_their_respective_message_books(transcrip
     )] == [("user", "The deployment window is open.")]
 
 
+@pytest.mark.asyncio
+async def test_target_worker_reloads_local_a2a_transcript_on_later_request(transcript_boards) -> None:
+    """A second request sees the first request and its target-side reply."""
+    from magi.agent.worker import AgentWorker
+
+    boards = transcript_boards
+    first_id = boards.source_requests.publish(
+        A2ARequestJob(
+            source_magi_id=boards.source.id,
+            target_magi_id=boards.target.id,
+            text="First request.",
+        )
+    )
+    assert boards.target_requests.claim_for_target(magi_id=boards.target.id) is not None
+    boards.target_requests.submit_result(
+        key=first_id,
+        result=A2ARequestResult(
+            job_id=first_id,
+            status=JobStatus.COMPLETED,
+            content="First answer.",
+        ),
+    )
+
+    boards.source_requests.publish(
+        A2ARequestJob(
+            source_magi_id=boards.source.id,
+            target_magi_id=boards.target.id,
+            text="Second request.",
+        )
+    )
+    worker = AgentWorker(
+        SimpleNamespace(
+            agent_job_board=SimpleNamespace(claim=lambda: None),
+            a2a_request_job_board=boards.target_requests,
+            a2a_notify_job_board=boards.target_notifies,
+            conversations_book=boards.target_conversations,
+            messages_book=boards.target_messages,
+            delivery_job_board=Mock(),
+            settings_book=SimpleNamespace(get=lambda **_kwargs: None),
+        ),
+        magi_id=boards.target.id,
+    )  # type: ignore[arg-type]
+    captured = []
+
+    async def direct_call(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    async def claim_second_request():
+        return (
+            "a2a.request",
+            boards.target_requests.claim_for_target(magi_id=boards.target.id),
+        )
+
+    async def capture_context(ctx):
+        await worker._load_history(ctx)
+        captured.append(ctx)
+        ctx.final_reply = "Second answer."
+        worker._stopping = True
+
+    worker.call = direct_call  # type: ignore[method-assign]
+    worker._claim_next_turn = claim_second_request  # type: ignore[method-assign]
+    worker._process = capture_context  # type: ignore[method-assign]
+    await worker._run()
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    expected_conversation = boards.target_conversations.get_or_create_for_a2a_peer(
+        peer_magi_id=boards.source.id
+    )
+    assert ctx.conversation_id == expected_conversation.conversation_id
+    assert ctx.messages == [
+        {"role": "user", "content": "First request."},
+        {"role": "assistant", "content": "First answer."},
+        {"role": "user", "content": "Second request."},
+    ]
+
+
 def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
     source, target, _memberships, requests, _notifies = boards
     job_id = requests.publish(

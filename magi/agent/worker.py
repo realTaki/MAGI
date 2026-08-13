@@ -72,9 +72,13 @@ class RunContext:
     a2a_kind: str | None = None
     a2a_source_magi_id: int | None = None
     a2a_job_id: str | None = None
+    # The current claimed A2A text is normally already the final user row in
+    # the local transcript.  Keep it separately as a resilience fallback if
+    # that best-effort transcript write was unavailable.
+    a2a_inbound_text: str = ""
 
 
-def _llm_failure_detail(result: "CallLLMResult") -> str | None:
+def _llm_failure_detail(result: CallLLMResult) -> str | None:
     """拼 LLM 失败的人类可读文案（写入继承的 ``BaseJobResult.error``）：底层稳定码 + 人类文案。
 
     底层码保留 :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` 的
@@ -167,24 +171,43 @@ class AgentWorker(RuntimeWorker):
             if source == "chat":
                 self._active_conversations.add(conversation_id)
             is_a2a = source != "chat"
+            a2a_inbound_text = ""
             if is_a2a:
-                # A2A jobs carry no conversation_id on the wire: the
-                # conversation is the single per-peer thread, keyed by the
-                # source MAGI's membership id.
-                conversation_id = f"a2a:{getattr(job, 'source_magi_id', 0)}"
+                # A2A rows are MAGIS-shared, while transcripts live in the
+                # receiving MAGI's local database.  Resolve the same local
+                # per-peer header used by the board's claim write; the old
+                # synthetic ``a2a:<source>`` string is not a valid local
+                # conversation primary key.
+                peer_magi_id = getattr(job, "source_magi_id", 0)
+                a2a_inbound_text = getattr(job, "text", "")
+                try:
+                    conversation = await self.call(
+                        self.bus.conversations_book.get_or_create_for_a2a_peer,
+                        peer_magi_id=peer_magi_id,
+                    )
+                    conversation_id = conversation.conversation_id
+                except Exception:
+                    # The claim remains consumable if a local transcript
+                    # store is temporarily unavailable.  ``_load_history``
+                    # will use ``a2a_inbound_text`` below, preserving the
+                    # pre-transcript one-turn behaviour until recovery.
+                    logger.warning(
+                        "A2A transcript header unavailable for peer=%s; "
+                        "processing current turn without history",
+                        peer_magi_id,
+                        exc_info=True,
+                    )
+                    conversation_id = f"a2a:{peer_magi_id}"
             ctx = RunContext(
                 contact_id=(None if is_a2a else job.contact_id),
                 conversation_id=(conversation_id or f"{source}:{job.job_id}"),
                 channel=(source if is_a2a else job.channel),
-                messages=(
-                    [{"role": "user", "content": getattr(job, "text", "")}]
-                    if is_a2a
-                    else []
-                ),
+                messages=[],
                 max_iterations=await self._read_max_iterations(),
                 a2a_kind=(source if is_a2a else None),
                 a2a_source_magi_id=(getattr(job, "source_magi_id", None) if is_a2a else None),
                 a2a_job_id=(job.job_id if is_a2a else None),
+                a2a_inbound_text=a2a_inbound_text,
             )
             try:
                 await self._process(ctx)
@@ -370,6 +393,38 @@ class AgentWorker(RuntimeWorker):
     # -- context assembly ----------------------------------------------------
 
     async def _load_history(self, ctx: RunContext) -> None:
+        if ctx.a2a_kind is not None:
+            # A2A transcripts are system-owned (no Contact row), so the
+            # contact-scoped chat helper cannot read them.  Claim has already
+            # persisted the current inbound text as a user row in this exact
+            # local conversation; reload the complete peer thread so later
+            # turns remember both directions.
+            if not ctx.conversation_id:
+                ctx.messages = [{"role": "user", "content": ctx.a2a_inbound_text}]
+                return
+            try:
+                dtos = await self.call(
+                    self.bus.messages_book.list_for_conversation,
+                    conversation_id=ctx.conversation_id,
+                )
+                ctx.messages = [
+                    {
+                        "role": "user" if message.role in ("user", "system") else "assistant",
+                        "content": message.text,
+                    }
+                    for message in dtos
+                ]
+            except Exception:
+                logger.warning("load A2A transcript failed, using current turn", exc_info=True)
+                ctx.messages = []
+
+            # A Board transcript write is deliberately best-effort.  If it
+            # failed after a successful claim, retain the original one-turn
+            # behavior instead of sending an empty A2A prompt to the LLM.
+            if not ctx.messages or ctx.messages[-1]["content"] != ctx.a2a_inbound_text:
+                ctx.messages.append({"role": "user", "content": ctx.a2a_inbound_text})
+            return
+
         if ctx.messages:
             return
         if not ctx.conversation_id or ctx.contact_id is None:
