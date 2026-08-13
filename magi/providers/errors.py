@@ -17,11 +17,11 @@ only needs to react to a handful:
                                response body, etc.).
 
 Each subclass carries the upstream message so the audit row can
-hold the actual reason (not just "LLMError"). The worker maps
-``type(exc).__name__`` (or the dedicated
-``"magi.llm_credentials_required"`` short code for
-:class:`LLMNotConfiguredError`) to ``CallLLMResult.error_code``;
-external code reads the string and never catches the class.
+hold the actual reason (not just "LLMError"). The provider worker
+maps each class to its matching :class:`LLMErrorCode` member
+(see ``_map_exception_to_code`` in ``providers/worker.py``); the
+original exception message stays on :attr:`CallLLMResult.error`
+for diagnostics.
 """
 
 from __future__ import annotations

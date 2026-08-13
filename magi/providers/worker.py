@@ -3,7 +3,7 @@
 设计原则
 ========
 
-- **只依赖 bus**。老的 bus store / StreamHub / chat_jobs 一概
+- **只依赖 bus**。老的 bus store / StreamHub / chat_notify_jobs 一概
   不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 bus 再说）。
 
 - **配置变更单一触发**：worker 只在 claim 到
@@ -425,7 +425,6 @@ class ProvidersWorker(RuntimeWorker):
                 "raw_blocks": list(result_dict.get("raw_blocks") or []),
             },
             finish_reason=result_dict.get("stop_reason"),
-            token_usage=result_dict.get("usage"),
             model=result_dict.get("model") or "",
             stream_key=result_dict.get("stream_key") or "",
         )
@@ -436,6 +435,15 @@ class ProvidersWorker(RuntimeWorker):
                 "providers worker: failed to submit llm result for %s",
                 job.job_id,
             )
+        # Best-effort billing — the provider is closest to the usage
+        # data, so it records ``token_usage`` here instead of shipping
+        # the dict back to the agent for the same write.
+        await self.call(
+            self._record_token_usage,
+            job,
+            model=result.model,
+            usage=result_dict.get("usage"),
+        )
 
     async def _consume_stream(
         self,
@@ -521,6 +529,41 @@ class ProvidersWorker(RuntimeWorker):
         }
 
     # ----- helpers ------------------------------------------------------
+
+    def _record_token_usage(self, job: CallLLMJob, *, model: str, usage: dict | None) -> None:
+        """Write a best-effort ``token_usage`` billing row for a successful call.
+
+        The provider is the closest point to the usage data, so billing
+        lives here rather than shipping the dict back to the agent. The
+        ``contact_id`` billing owner rides on :class:`CallLLMJob` — ``None``
+        (e.g. a compaction call with no bound contact) falls back to ``0``.
+        Provider-specific metadata keys beyond ``input_tokens`` /
+        ``output_tokens`` are folded into the row's ``extra`` JSON.
+        """
+        if not usage:
+            return
+        book = getattr(self.bus, "token_usage_book", None)
+        if book is None:
+            return
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        extra: dict[str, Any] = {
+            key: value
+            for key, value in usage.items()
+            if key not in {"input_tokens", "output_tokens"}
+        }
+        provider = model.split(":")[0] if model else "unknown"
+        try:
+            book.add(
+                contact_id=job.contact_id or 0,
+                provider=provider,
+                model=model or "",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                extra=extra or None,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("providers worker: failed to record token usage for %s", job.job_id)
 
     async def _safe_submit_failure(
         self,

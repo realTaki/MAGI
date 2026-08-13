@@ -5,7 +5,7 @@
 
 1. ``_bootstrap()`` — 判断本 MAGI 是否是所处 MAGIS 的 Adam；
    若是，对已有 admin 幂等插入 credentials nudge。
-2. ``_run()`` — 主循环，claim SeedPresetTasksJob 并执行播种。
+2. ``_run()`` — 主循环，claim SeedPresetTaskJob（一次一个 preset）并执行播种。
 
 Policy 逻辑委托给同包下的独立模块：
 - :mod:`magi.proactive.credentials_action` — credentials nudge spec + 幂等插入
@@ -61,7 +61,7 @@ class ProactiveWorker(RuntimeWorker):
         while not self._stopping:
             try:
                 job = await self.call(
-                    self.bus.seed_preset_tasks_job_board.claim,
+                    self.bus.seed_preset_task_job_board.claim,
                 )
             except Exception:
                 logger.exception("proactive worker: claim failed")
