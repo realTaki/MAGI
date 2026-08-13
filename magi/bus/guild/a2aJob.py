@@ -141,24 +141,7 @@ class _A2ARequestRow(BaseJobRowMixin, Base):
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        Enum(
-            A2AErrorCode,
-            name="a2a_error_code",
-            native_enum=True,
-            length=64,
-            # SQLAlchemy 2.x dropped the implicit CHECK on Enum
-            # (was ``True`` in 1.x); SQLite has no native ENUM
-            # so without this the column is just VARCHAR with
-            # no membership enforcement.
-            create_constraint=True,
-            # ``StrEnum`` has both ``name`` (``TIMEOUT``) and
-            # ``value`` (``"a2a_timeout"``); SQLAlchemy defaults
-            # to ``name`` for storage, but pre-Enum rows hold
-            # the ``value`` string verbatim — using ``name`` here
-            # would silently rename existing data. ``values_callable``
-            # forces storage / CHECK against the stable ``value``.
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
+        enum_column(A2AErrorCode, name="a2a_error_code", length=64),
         nullable=True,
         default=None,
     )
@@ -187,14 +170,7 @@ class _A2ANotifyRow(BaseJobRowMixin, Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        Enum(
-            A2AErrorCode,
-            name="a2a_error_code",
-            native_enum=True,
-            length=64,
-            create_constraint=True,
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
+        enum_column(A2AErrorCode, name="a2a_error_code", length=64),
         nullable=True,
         default=None,
     )

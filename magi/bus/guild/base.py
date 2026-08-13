@@ -30,23 +30,17 @@ MAX_ATTEMPTS_CANDIDATES = 10
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
 
-class JobStatus(StrEnum):
+class JobStatus(Enum):
     """Job 队列状态机 + 业务终态。
 
     Row 层（``BaseJobRowMixin.status``）承载全部 4 个值；Result 层
     （``BaseJobResult.status``）只承载终态子集 :attr:`COMPLETED` /
     :attr:`FAILED`，因为 Result 只在 worker submit 时构造。
 
-    ``StrEnum`` 而非裸 ``Enum``：成员继承 ``str``，所以
-    ``JobStatus.PENDING == "pending"`` 为真 —— DB 列存的原始
-    string 与 enum 互通,跨进程传值不需要 .value 拆包。
-    ``Literal`` narrowing 仍然有效（``status: JobStatus`` 在类型
-    检查器中仍细化为 ``Literal[JobStatus.PENDING, ...]``）。
-
-    列类型用 :class:`sqlalchemy.Enum` + ``values_callable`` 把
-    存储 / CHECK / CREATE TYPE 标签锁定在 ``.value`` 而非成员
-    ``.name``，与 :class:`~magi.bus.guild.a2aJob.A2AErrorCode`
-    同构（PG 走原生 ENUM，SQLite 走 CHECK 约束）。
+    裸 :class:`enum.Enum` 而非 :class:`enum.StrEnum`——存储 / 比较走
+    :func:`magi.bus.db.base.enum_column`（``values_callable`` 把存储
+    / CHECK 锁定到 ``.value``），业务代码比较用 ``JobStatus.COMPLETED``
+    而不是字符串字面量。
     """
 
     PENDING = "pending"        # 入队未 claim
