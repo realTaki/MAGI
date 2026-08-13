@@ -5,7 +5,6 @@ Model 不传在 Job 上 —— provider worker 从缓存的配置中取当前模
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -13,7 +12,7 @@ from enum import StrEnum
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
+from magi.bus.db.base import enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 
@@ -89,14 +88,13 @@ class CallLLMResult(BaseJobResult):
     token_usage: dict | None = None  # {prompt_tokens, completion_tokens, total_tokens}
     model: str = ""  # provider 实际使用的模型
     stream_key: str = ""  # bus.stream_hub 的管道句柄
-    error: str | None = None  # 失败时的错误文案
     error_code: LLMErrorCode = LLMErrorCode.NONE  # 稳定错误码（成功 = LLMErrorCode.NONE）
 
 
 # -- internal ORM ----------------------------------------------------------
 
 
-class _LLMJobRow(BaseJobRowMixin, Base):
+class _LLMJobRow(BaseJobRowMixin):
     __tablename__ = "llm_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -104,18 +102,13 @@ class _LLMJobRow(BaseJobRowMixin, Base):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     error_code: Mapped[LLMErrorCode] = mapped_column(
-        enum_column(LLMErrorCode, length=64), nullable=False, default=LLMErrorCode.NONE
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+        enum_column(LLMErrorCode), nullable=False, default=LLMErrorCode.NONE
     )
 
 
@@ -126,18 +119,3 @@ class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
     job_model = _LLMJobRow
     job_cls = CallLLMJob
     result_cls = CallLLMResult
-
-    def publish(self, job: CallLLMJob) -> str:
-        with self._session() as s:
-            row = _LLMJobRow(
-                job_id=uuid.uuid4().hex,
-                status=JobStatus.PENDING,
-                messages=job.messages,
-                max_tokens=job.max_tokens,
-                tools=job.tools,
-                streaming=job.streaming,
-            )
-            s.add(row)
-            s.flush()
-            s.commit()
-            return row.job_id

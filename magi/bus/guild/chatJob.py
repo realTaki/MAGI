@@ -18,10 +18,10 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 if TYPE_CHECKING:
     from magi.bus.library.local.contactBook import ContactBook
@@ -52,17 +52,14 @@ class ChatJob(BaseJob):
       / ``"task"`` / etc.
     - :attr:`contact_id` — owning contact; ``None`` for task-driven
       publishes with no contact.
-    - :attr:`caller_role` — the contact's role at publish time
-      (admin / guest / assigned); ``None`` if unknown.
 
-    Channel-specific (all optional, all ``None`` unless the matching
-    channel sets them):
-
-    - :attr:`chat_id` — TG: the ``tgid``.
-    - :attr:`tg_message_id` — TG: the upstream Telegram message id.
-    - :attr:`kind` — Task: a tag like ``"task.triggered"``.
-    - :attr:`task_id` — Task: the source task id.
-    - :attr:`manual` — Task: whether the fire was manual.
+    ``caller_role`` is intentionally **not** carried here — the agent
+    worker resolves it from :meth:`ContactBook.get` at claim time
+    (a live value, not a publish-time snapshot that can go stale).
+    Channel-specific fields (``chat_id`` / ``tg_message_id`` /
+    ``kind`` / ``task_id`` / ``manual``) were removed too: the agent
+    never reads them — the reply address lives on the conversation
+    row's ``delivery_address``, not on the turn.
     """
 
     conversation_id: str | None = None  # 会话 ID（WebUI 多会话 / TG 单会话）
@@ -70,13 +67,6 @@ class ChatJob(BaseJob):
     text: str = ""  # 用户消息原文（pre-cap，chat_messages 存截断后）
     channel: str = ""  # 入站渠道：tg / webui / task / ...
     contact_id: int | None = None  # 所属联系人；task 无联系人时为 None
-    caller_role: str | None = None  # 发布时联系人角色（admin/guest/assigned）
-    # Channel-specific
-    chat_id: str | None = None  # TG：tgid
-    tg_message_id: int | None = None  # TG：上游 Telegram 消息 id
-    kind: str | None = None  # Task：标签，如 "task.triggered"
-    task_id: str | None = None  # Task：源任务 id
-    manual: bool | None = None  # Task：是否手动触发
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,13 +90,6 @@ class _ChatJobRow(BaseJobRowMixin):
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)  # 用户消息原文
     channel: Mapped[str] = mapped_column(String(16), default="", nullable=False)  # 入站渠道
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 所属联系人
-    caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)  # 联系人角色
-    # Channel-specific (nullable; only the matching channel sets them)
-    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # TG：tgid
-    tg_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # TG：上游消息 id
-    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)  # Task：标签
-    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Task：源任务 id
-    manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # Task：是否手动触发
 
 
 class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
@@ -216,14 +199,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         channel: str,
         contact_id: int | None,
         conversation_id: str,
-        caller_role: str | None = None,
         message_id: str | None = None,
-        # Channel-specific (typed, no `**extras`).
-        chat_id: str | None = None,        # TG
-        tg_message_id: int | None = None,  # TG
-        kind: str | None = None,           # Task
-        task_id: str | None = None,        # Task
-        manual: bool | None = None,        # Task
     ) -> str:
         """Channel→agent convenience: build a ChatJob from channel args and enqueue.
 
@@ -254,13 +230,6 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
              the same shape.
           3. Stamp ``contacts.last_seen_at`` (best-effort).
 
-        All channel-specific kwargs (``chat_id`` / ``tg_message_id``
-        for TG; ``kind`` / ``task_id`` / ``manual`` for Task) are
-        **typed** on the signature — there's no ``**extras`` bag,
-        so a producer who misspells a field name gets an
-        :class:`TypeError` at the call site instead of a silent
-        null in the DB row.
-
         ``message_id`` is the ULID to use for the ``chat_messages``
         row — pass the same value on retry for producer-side idempotency.
 
@@ -283,12 +252,6 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             text=text,
             channel=channel,
             contact_id=contact_id,
-            caller_role=caller_role,
-            chat_id=chat_id,
-            tg_message_id=tg_message_id,
-            kind=kind,
-            task_id=task_id,
-            manual=manual,
         )
         # Enqueue first — :meth:`publish` runs the D.22 guard
         # and raises :class:`ChannelMismatchError` before any
