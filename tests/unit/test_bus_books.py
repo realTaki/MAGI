@@ -903,7 +903,7 @@ def test_task_book_lifecycle(factory, contact_id):
     r = rbook.add(
         id="r1",
         task_id="t1",
-        trigger="manual",
+        manual=1,
         started_at=datetime.fromisoformat("2026-08-05T09:00:00Z").replace(tzinfo=None),
         status="running",
     )

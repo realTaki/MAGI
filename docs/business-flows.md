@@ -239,8 +239,8 @@ permalink: /business-flows/
 
 4. 通过后:
    ├─ `conversation_id = _resolve_tg_session(bus, contact_id=..., tgid=...)` —
-     调 `bus.conversations_book.get_or_create_for_channel(contact_id=...,
-     channel="tg", delivery_address=tgid)`，一个 TG 对话一个持久 conversation
+     调 `bus.conversations_book.get_or_create_for_tg(contact_id=...,
+     delivery_address=tgid)`，一个 TG 对话一个持久 conversation
    ├─ `_append_user_message(bus, conversation_id, text)` — 落 user transcript
      （D.22 守卫在写入时执行）
    ├─ fire-and-forget `_send_read_receipt(update, bus)` — 发一个"已读"表情
@@ -332,17 +332,19 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
    把超时未收尾的 running 行翻成 failed（"abandoned by previous worker"）
 3. 轮询 (poll_seconds 默认 15s):
    ├─ run_task_job_board.claim() — 手动 / API / tool 触发
-   │  └─ _handle_run_task_job(rj) → _fire_task(task, fired_by=rj.fired_by, ...)
-   │     └─ rj.fired_by ∈ {cron_tick, run_at_consume, api_manual_run,
-   │                       schedule_task_tool}（closed set）
+   │  └─ _handle_run_task_job(rj) → tasks_book.get(task_id=rj.task_id)
+   │     → _fire_task(task, manual=rj.manual)
+   │     （conversation_id / contact_id 从 Task 行读，不在 rj 上传）
    └─ tasks_book.list_all_enabled_for_workers() — cron / run_at tick
       ├─ _should_fire(task, now) — cron 用 get_prev(now) 比 _next_fire 缓存；
       │  run_at 用 _next_fire[task.id] 一次性 fire 后置位
-      └─ _fire_task(task, fired_by="cron_tick" / "run_at_consume")
+      └─ _fire_task(task, manual=False)
          └─ run_at 成功后 → tasks_book.mark_run_at_consumed(task_id=task.id)
             （enabled=0；一次性任务绝不二次触发）
 4. _fire_task:
-   ├─ tasks_book.record_run_start(task_id, trigger=fired_by) — 写 task_runs
+   ├─ contract guard: task.conversation_id 必须存在（创建时已分配）；
+   │  否则抛 ValueError →  job 被 _handle_run_task_job 翻成 FAILED
+   ├─ tasks_book.record_run_start(task_id, manual=manual) — 写 task_runs
    │  + tasks.last_run_at
    ├─ 追加 contextual prompt 为 user 消息到 task 的 conversation
    ├─ publish ChatJob(kind="task.triggered", payload={...}) → agent_job_board
@@ -353,20 +355,26 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
 
 ### 手动 / tool 触发 — `run_task_job_board`（唯一入口）
 ```
-入口: bus.run_task_job_board.publish(RunTaskJob(task_id, manual=True,
-                                                 fired_by, conversation_id,
-                                                 contact_id))
-      ├─ WebUI "立即运行" 按钮: fired_by="api_manual_run"
-      └─ schedule_task LLM tool 创建 one-shot 后回灌: fired_by="schedule_task_tool"
+入口: bus.run_task_job_board.publish(RunTaskJob(task_id, manual=True))
+      ├─ WebUI "立即运行" 按钮: manual=True
+      └─ 未来扩展（其他 tool / cron 子路径）: manual=True / False
 
-TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_run_start
-→ ChatJob 投递 → AgentWorker 跑 → 完成后收尾 task_runs 行
+任务创建契约（任务进入 cron 之前必须完成）:
+  1. conversations_book.create_task_conversation(contact_id, title, ...)
+     → 返回 conversation_id
+  2. tasks_book.add(..., conversation_id=conv_id, contact_id=...)
+  两个调用方（WebUI API + schedule_task LLM tool）共用同一段。
+
+TaskWorker claim 后 _handle_run_task_job → tasks_book.get(task_id) →
+_fire_task → tasks_book.record_run_start → ChatJob 投递 → AgentWorker 跑
 （`task_runs.id` 是这次 run 的标识；Agent 侧没有 run 概念，steering 走
-`conversation_id`）
+Task.conversation_id —— 所有 run 共享同一个会话上下文）
 
 历史路径（已删除，不可用）:
   - TaskChannel.dispatch — 已被 publish RunTaskJob 取代
   - scheduler.submit_now — apscheduler 已删
+  - RunTaskJob 上携带 conversation_id / contact_id / fired_by
+    — 已删除，由 TaskWorker 从 Task 行读，避免双源不同步
 ```
 
 **不可改的守卫**:
@@ -376,8 +384,10 @@ TaskWorker claim 后 _handle_run_task_job → _fire_task → tasks_book.record_r
 - 连续失败超阈值必须禁用任务（防止 API key 被无效任务烧光）
 - TaskWorker 的 cron 循环跑在主 event loop（与 FastAPI 共享），apscheduler 依赖已删除（tasksBook.py 明确 "no apscheduler dependency"）
 - 一次性 `run_at` 任务 fire 后必须 `mark_run_at_consumed`，否则下一次轮询会再次触发
-- `run_task_job_board` 的 `fired_by` 是 closed set — 任何新值都必须先在 TaskWorker 注册分支再加 publish，否则会被静默吞掉
 - 任何手动 / tool 触发**只能**走 `run_task_job_board` — 禁止直接调 `_fire_task`
+- task conversation 的 `conversation_id` 是 Task 创建时分配的；fire 时由
+  TaskWorker 从 `tasks.conversation_id` 读取。job 上不传 —— 单一来源
+  防止 caller 把 run 跑到错的会话里
 
 ---
 

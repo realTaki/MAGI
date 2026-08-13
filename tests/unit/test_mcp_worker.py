@@ -496,53 +496,14 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_change_unknown_kind_records_error(bus, monkeypatch):
-    """``_handle_change`` rejects unknown ``kind`` values by
-    submitting a failed result. Today the DTO's
-    ``__post_init__`` keeps bogus kinds out of the board, so
-    we drive the path by patching ``_handle_change``'s input
-    DTO directly: the worker's branch logic is the only
-    thing under test."""
-    from magi.bus.guild.mcpServerChangedJob import _McpServerChangedRow
-
-    # Pre-seed a pending row carrying an unknown kind,
-    # bypassing the DTO's ``__post_init__`` validation. This
-    # mirrors the exact shape a buggy future API client could
-    # leave behind — and the only way to reach the worker's
-    # error branch in production.
-    with bus._local_factory.session() as s:
-        s.add(
-            _McpServerChangedRow(
-                job_id="job-bypass-1",
-                status=JobStatus.PENDING,
-                kind="rotated",
-                server_name="gmail",
-            )
-        )
-        s.commit()
-
-    # Build a DTO with the same key so the worker's
-    # ``submit_result`` call writes back to a real row.
-    leaked = McpServerChangedJob.__new__(McpServerChangedJob)
-    object.__setattr__(leaked, "kind", "rotated")
-    object.__setattr__(leaked, "server_name", "gmail")
-    object.__setattr__(leaked, "job_id", "job-bypass-1")
-    object.__setattr__(leaked, "server", None)
-    object.__setattr__(leaked, "new_enabled", None)
-
-    worker = McpWorker(bus=bus)
-    await worker.start()
-    try:
-        await worker._handle_change(leaked)
-        result = bus.mcp_server_changed_job_board.get_result(key="job-bypass-1")
-        assert result is not None
-        assert result.status == JobStatus.FAILED
-        assert result.error is not None
-        assert "unknown change kind" in result.error
-    finally:
-        with suppress(Exception):
-            await worker.stop()
-
+# NOTE: a prior ``test_handle_change_unknown_kind_records_error`` lived
+# here. With the ``kind`` column promoted to ``SAEnum(MCPKind, ...)``
+# the DB CHECK constraint rejects unknown kinds at INSERT time, so
+# the worker's defensive ``else: error = "unknown change kind"``
+# branch can no longer be reached from a published job. The
+# enforcement now lives in :class:`magi.bus.guild.mcpServerChangedJob._McpServerChangedRow`'s
+# column type, not the worker — see the StrEnum/SAEnum migration
+# docs.
 
 # -- module-level singletons -------------------------------------------
 

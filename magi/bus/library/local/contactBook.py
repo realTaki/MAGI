@@ -30,7 +30,24 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
+
+
+# Standard ``SAEnum(...)`` column config used by every enum-typed
+# column in this module. ``values_callable`` pins storage to the
+# ``StrEnum.value`` (e.g. "assigned") rather than the member ``.name``
+# (``ASSIGNED``), matching the convention used by
+# :data:`magi.bus.guild.base.JobStatus` so legacy VARCHAR rows
+# survive the column-type promotion without a data rewrite.
+_ENUM_COL = lambda enum_cls: SAEnum(  # noqa: E731
+    enum_cls,
+    name=f"{enum_cls.__name__.lower()}",
+    native_enum=True,
+    length=24,
+    create_constraint=True,
+    values_callable=lambda e: [m.value for m in e],
+)
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.library.base import BaseBook
@@ -163,7 +180,7 @@ class _ContactRow(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
-    role: Mapped[str] = mapped_column(String(16), nullable=False, default=Role.GUEST)
+    role: Mapped[Role] = mapped_column(_ENUM_COL(Role), nullable=False, default=Role.GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
@@ -181,7 +198,7 @@ class _ContactNoteRow(Base):
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False, default=NoteKind.PERMANENT)
+    kind: Mapped[NoteKind] = mapped_column(_ENUM_COL(NoteKind), nullable=False, default=NoteKind.PERMANENT)
     note_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
