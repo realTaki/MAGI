@@ -20,7 +20,7 @@ from magi.bus.library.local.conversationBook import (
     SearchUnavailable,
 )
 from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_conversations import ConversationServiceDep, _admin_contact_id
+from magi.channels.api.chat_conversations import _admin_contact_id
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
@@ -44,7 +44,6 @@ class SearchResponse(BaseModel):
 def search_chat(
     request: Request,
     _admin: AdminGate,
-    _service: ConversationServiceDep,
     bus: BusDep,
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=100)] = 20,

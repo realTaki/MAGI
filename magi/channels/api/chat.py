@@ -38,10 +38,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.library.local import Role
-from magi.bus.library.local.conversationBook import (
-    ChannelMismatchError,
-    ConversationPathError,
-)
+from magi.bus.library.local.conversationBook import ChannelMismatchError
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_conversations import ConversationMessageOut
@@ -236,21 +233,16 @@ async def send_chat(
     # the Contact row via the channel dispatcher (when we
     # mint a fresh conversation below).
     if conversation_id:
-        try:
-            # D.23: conversation key is now ``contact_id`` (the
-            # cross-channel identity of the operator),
-            # not the cookie's chat id. The chat id is
-            # still carried on the row's
-            # ``delivery_address`` column for
-            # legacy / outbound-delivery reasons, but it
-            # is NOT a conversation key.
-            existing = store.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
-        except ConversationPathError as e:
-            raise MagiHTTPException(  # noqa: B904
-                status_code=400,
-                code="validation.conversation_id_invalid",
-                detail=str(e),
-            )
+        # D.23: conversation key is now ``contact_id`` (the
+        # cross-channel identity of the operator),
+        # not the cookie's chat id. The chat id is
+        # still carried on the row's
+        # ``delivery_address`` column for
+        # legacy / outbound-delivery reasons, but it
+        # is NOT a conversation key. ``get_for_owner`` returns
+        # ``None`` for a missing / foreign row — no id-format
+        # validation in the ORM layer.
+        existing = store.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
         # Stale / deleted / never-existed → auto-create
         # fresh. Keeps the operator unblocked if they
         # re-open a tab after a manual delete.

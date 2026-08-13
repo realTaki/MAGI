@@ -274,14 +274,6 @@ async def call_llm_for_summary(
             {"role": "user", "content": to_compress},
         ],
         max_tokens=1024,
-        contact_id=contact_id,
-        # ``CallLLMJob.conversation_id`` is a non-nullable ``str`` column
-        # (``nullable=False``, ``default=""`` per the row's dtype contract);
-        # callers without a conversation collapse the value onto the
-        # documented "empty string = internal single-shot call" sentinel.
-        conversation_id=conversation_id or "",
-        channel="chat",
-        phase="auto_compact",
     )
     key = bus.llm_job_board.publish(job)
     result = await bus.llm_job_board.wait_for_result(key=key, timeout=wait_seconds)

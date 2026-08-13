@@ -23,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin, _read_result_from_job
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -141,7 +141,7 @@ class _A2ARequestRow(BaseJobRowMixin, Base):
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        enum_column(A2AErrorCode, name="a2a_error_code", length=64),
+        enum_column(A2AErrorCode, name="a2a_error_code"),
         nullable=True,
         default=None,
     )
@@ -170,7 +170,7 @@ class _A2ANotifyRow(BaseJobRowMixin, Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        enum_column(A2AErrorCode, name="a2a_error_code", length=64),
+        enum_column(A2AErrorCode, name="a2a_error_code"),
         nullable=True,
         default=None,
     )
@@ -268,7 +268,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             if row.status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
                 s.commit()
                 return None
-            result = _read_result_from_job(row, A2ARequestResult, self.natural_key_attr)
+            result = self._read_result_from_job(row)
             s.commit()
             return result
 

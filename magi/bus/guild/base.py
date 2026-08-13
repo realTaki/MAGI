@@ -8,7 +8,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import ClassVar
 
 from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
@@ -30,14 +30,15 @@ MAX_ATTEMPTS_CANDIDATES = 10
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
 
-class JobStatus(Enum):
+class JobStatus(StrEnum):
     """Job 队列状态机 + 业务终态。
 
     Row 层（``BaseJobRowMixin.status``）承载全部 4 个值；Result 层
     （``BaseJobResult.status``）只承载终态子集 :attr:`COMPLETED` /
     :attr:`FAILED`，因为 Result 只在 worker submit 时构造。
 
-    裸 :class:`enum.Enum` 而非 :class:`enum.StrEnum`——存储 / 比较走
+    :class:`~enum.StrEnum`——成员继承 ``str``，``JobStatus.COMPLETED ==
+    "completed"`` 恒为真、JSON 序列化直接输出 ``"completed"``。存储走
     :func:`magi.bus.db.base.enum_column`（``values_callable`` 把存储
     / CHECK 锁定到 ``.value``），业务代码比较用 ``JobStatus.COMPLETED``
     而不是字符串字面量。
@@ -74,9 +75,9 @@ class BaseJobResult:
 
     承载队列语义字段：``job_id``（业务键）与 ``status``（Result
     业务终态，取 :class:`JobStatus` 子集 :attr:`JobStatus.COMPLETED` /
-    :attr:`JobStatus.FAILED`，由 :func:`_read_result_from_job`
+    :attr:`JobStatus.FAILED`，由 :meth:`BaseJobBoard._read_result_from_job`
     从 row.status 归一化）。子类只声明纯业务字段，走
-    :func:`_write_result_to_job` / :func:`_read_result_from_job`
+    :meth:`BaseJobBoard._write_result_to_job` / :meth:`BaseJobBoard._read_result_from_job`
     的通用字段映射。这样「队列语义 vs 业务字段」的边界显式化，
     子类不再需要各自抄一遍 ``job_id`` / ``status``。
 
@@ -465,7 +466,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         row.status = JobStatus.COMPLETED if result.status == JobStatus.COMPLETED else JobStatus.FAILED  # type: ignore[reportAttributeAccessIssue]
         if hasattr(row, "completed_at"):
             row.completed_at = now  # type: ignore[reportAttributeAccessIssue]
-        _write_result_to_job(row, result, self.result_cls)
+        self._write_result_to_job(row, result)
 
     def _get_result(self, session: Session, *, key: str) -> ResultT | None:
         row = session.scalar(
@@ -473,7 +474,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         )
         if row is None or getattr(row, "status", "") not in (JobStatus.COMPLETED, JobStatus.FAILED):
             return None
-        return _read_result_from_job(row, self.result_cls, self.natural_key_attr)
+        return self._read_result_from_job(row)
 
     # -- 键提取 ------------------------------------------------------------
 
@@ -485,54 +486,47 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             return str(row.id)  # type: ignore[reportAttributeAccessIssue]
         return ""
 
-    # -- 耗尽处理 ----------------------------------------------------------
+    # -- Result 映射工具 ----------------------------------------------------
+
+    def _write_result_to_job(self, row: RowT, result: ResultT) -> None:
+        """将 result dataclass 的字段写回 ORM 行（跳过 ``status``，由
+        :meth:`_submit` 显式编码到 row.status）。"""
+        for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
+            if f.name == "status":
+                continue
+            if hasattr(row, f.name):
+                setattr(row, f.name, getattr(result, f.name))
+
+    def _read_result_from_job(self, row: RowT) -> ResultT:
+        """从 ORM 行重建 result dataclass。"""
+        key_val = getattr(row, self.natural_key_attr, None)
+        key_val = str(key_val) if key_val is not None else ""
+        kwargs: dict = {
+            self.natural_key_attr: key_val,
+            "status": getattr(row, "status"),
+        }
+        for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
+            if f.name in ("status", self.natural_key_attr):
+                continue
+            if hasattr(row, f.name):
+                kwargs[f.name] = getattr(row, f.name)
+        return self.result_cls(**kwargs)
 
     def _make_exhausted_result(self, row: RowT) -> ResultT:
-        return _make_exhausted_result(row, self.result_cls, self.natural_key_attr)
+        """构造一个"重试耗尽"的失败 Result。
 
-
-# -- 模块级映射工具 ----------------------------------------------------------
-
-
-def _write_result_to_job(row, result, result_cls) -> None:
-    """将 result dataclass 的字段写回 ORM 行（跳过 ``status``，由
-    :meth:`BaseJobBoard._submit` 显式编码到 row.status）。"""
-    for f in dataclasses.fields(result_cls):
-        if f.name == "status":
-            continue
-        if hasattr(row, f.name):
-            setattr(row, f.name, getattr(result, f.name))
-
-
-def _read_result_from_job(row, result_cls, natural_key_attr: str):
-    """从 ORM 行重建 result dataclass。"""
-    key_val = getattr(row, natural_key_attr, None)
-    key_val = str(key_val) if key_val is not None else ""
-    kwargs: dict = {
-        natural_key_attr: key_val,
-        "status": row.status,
-    }
-    for f in dataclasses.fields(result_cls):
-        if f.name in ("status", natural_key_attr):
-            continue
-        if hasattr(row, f.name):
-            kwargs[f.name] = getattr(row, f.name)
-    return result_cls(**kwargs)
-
-
-def _make_exhausted_result(row, result_cls, natural_key_attr: str):
-    """构造一个"重试耗尽"的失败 Result。
-
-    仅当 Result 子类声明了 ``error`` 字段时才写入耗尽文案——
-    部分 Result（如 :class:`ChatJobResult`）用 ``error_detail``，
-    不带 ``error`` 字段，硬写会抛 ``TypeError``。
-    """
-    key_val = getattr(row, natural_key_attr, None)
-    key_val = str(key_val) if key_val is not None else ""
-    kwargs: dict = {
-        natural_key_attr: key_val,
-        "status": JobStatus.FAILED,
-    }
-    if hasattr(row, "attempts") and "error" in {f.name for f in dataclasses.fields(result_cls)}:
-        kwargs["error"] = f"job exhausted after {row.attempts} attempt(s)"
-    return result_cls(**kwargs)
+        仅当 Result 子类声明了 ``error`` 字段时才写入耗尽文案——
+        部分 Result（如 :class:`ChatJobResult`）用 ``error_detail``，
+        不带 ``error`` 字段，硬写会抛 ``TypeError``。
+        """
+        key_val = getattr(row, self.natural_key_attr, None)
+        key_val = str(key_val) if key_val is not None else ""
+        kwargs: dict = {
+            self.natural_key_attr: key_val,
+            "status": JobStatus.FAILED,
+        }
+        field_names = {f.name for f in dataclasses.fields(self.result_cls)}  # type: ignore[reportArgumentType]
+        attempts = getattr(row, "attempts", None)
+        if attempts is not None and "error" in field_names:
+            kwargs["error"] = f"job exhausted after {attempts} attempt(s)"
+        return self.result_cls(**kwargs)

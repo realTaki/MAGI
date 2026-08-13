@@ -52,12 +52,9 @@ from sqlalchemy import (
     Text,
     select,
 )
-from sqlalchemy import (
-    Enum as SAEnum,
-)
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook
 
 
@@ -83,8 +80,8 @@ class RuntimeObservedState(StrEnum):
 class Runtime:
     runtime_id: int  # 主键（同时是 per-MAGI 身份标识）
     backend_kind: str  # 后端类型（local/k8s）
-    desired_state: str  # 期望状态（started/stopped）
-    observed_state: str  # 观察状态（started/stopped/crashed/...）
+    desired_state: RuntimeDesiredState  # 期望状态（started/stopped）
+    observed_state: RuntimeObservedState  # 观察状态（started/stopped/crashed/...）
     backend_ref: str  # 显示名/标签
     workspace_dir: str  # 工作区目录
     log_dir: str  # 日志目录
@@ -127,12 +124,12 @@ class _RuntimeRow(Base):
     runtime_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     backend_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     desired_state: Mapped[RuntimeDesiredState] = mapped_column(
-        SAEnum(RuntimeDesiredState),
+        enum_column(RuntimeDesiredState, name="runtime_desired_state"),
         nullable=False,
         default=RuntimeDesiredState.STOPPED,
     )
     observed_state: Mapped[RuntimeObservedState] = mapped_column(
-        SAEnum(RuntimeObservedState),
+        enum_column(RuntimeObservedState, name="runtime_observed_state"),
         nullable=False,
         default=RuntimeObservedState.UNKNOWN,
     )

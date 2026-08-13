@@ -30,34 +30,30 @@ def enum_column(
     enum_cls: type[PyEnum],
     *,
     name: str | None = None,
-    length: int = 24,
 ) -> SAEnum:
-    """SAEnum 列工厂：PG native ENUM + SQLite CHECK + 老数据兼容。
+    """SAEnum 列工厂：PG native ENUM + SQLite CHECK + 值类型往返。
 
     所有 enum 列都走这一份配置——避免每个文件 copy-paste 一份 SAEnum
-    样板（``values_callable`` / ``create_constraint`` / ``length`` /
-    ``native_enum``），也让 schema 演进（alembic migration）和 ORM 声明
-    永远共享同一份真源。
+    样板（``values_callable`` / ``create_constraint`` / ``native_enum``），
+    也让 schema 演进（alembic migration）和 ORM 声明永远共享同一份真源。
 
     ``values_callable`` 把存储 / CHECK / CREATE TYPE 标签锁定到
     ``enum.value``（如 ``"started"``），不锁到 ``enum.name``（如
     ``"STARTED"``）——后者会让 SA 在所有现有行上做隐式重命名。
 
-    ``name`` 默认用 ``enum_cls.__name__.lower()``，与 SQLAlchemy 默认
-    行为一致。需要与 alembic migration 对齐固定名字时显式传（如
-    :class:`magi.bus.guild.base.JobStatus` 的 ``"job_status"``）。
+    ``name`` 默认 ``None``，交由 SQLAlchemy 取 ``enum_cls.__name__`` 作为
+    PG 的 ``CREATE TYPE`` 名。需要可读的 snake_case 名（如
+    :class:`magi.bus.guild.base.JobStatus` 的 ``"job_status"``）时显式传。
 
-    ``length`` 默认 24 匹配老 ``VARCHAR(24)`` 列宽。SQLite 上控制
-    VARCHAR(N)，PG native enum 不读 length（由成员字符串长度决定）。
-
-    PG 走 ``CREATE TYPE <name>`` + 列引用；SQLite 无原生 ENUM，SA 自动
-    fall back 到 ``VARCHAR(length)`` + ``CHECK (col IN (...))``。
+    列类型读回时自动还原成枚举成员（``row.status == JobStatus.PENDING``
+    为真），Book 层无需再手动 ``_coerce_*``。PG 走原生 ``CREATE TYPE``；
+    SQLite 无原生 ENUM，SA 自动 fall back 到 ``VARCHAR`` +
+    ``CHECK (col IN (...))``，长度取成员 ``.value`` 最长者，无需手写。
     """
     return SAEnum(
         enum_cls,
         name=name,
         native_enum=True,
-        length=length,
         create_constraint=True,
         values_callable=lambda cls: [m.value for m in cls],
     )

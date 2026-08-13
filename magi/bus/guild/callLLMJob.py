@@ -24,25 +24,19 @@ class CallLLMJob(BaseJob):
 
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
 
-    The context fields (``contact_id`` / ``conversation_id`` / ``channel``
-    / ``caller_role`` / ``phase``) live as first-class typed attributes
-    on the row — producer / consumer see one field per attribute
-    instead of a black-box dict. ``phase`` distinguishes internal callers
-    (``"auto_title"`` / ``"auto_compact"`` / ``"chat"``) from chat
-    traffic and is purely informational — the provider worker does
-    not branch on it.
+    Context fields (contact / conversation / channel / caller_role / phase)
+    intentionally NOT carried on this board — the provider worker only
+    needs ``messages`` + ``tools`` + ``max_tokens`` + ``streaming`` to
+    dial the SDK. Callers that need to thread context to the *agent*
+    worker (chat / a2a / compaction / auto_title) push that context on
+    a separate board (e.g. :class:`ChatJob`) which the agent worker
+    reads before publishing an LLM call here.
     """
 
     messages: list[dict]  # LLM 消息序列；首条 role="system" 即为 system prompt
     max_tokens: int = 1024  # 单次响应上限（调用方按 provider 限制设定）
     tools: list[dict] | None = None  # 工具 schema（OpenAI-style function calling）
     streaming: bool = False  # 是否走流式（True 时 result.stream_key 非空）
-    # Context — formerly the ``parameters`` JSON blob.
-    contact_id: int | None = None  # 拥有者 contact；None 表示任务侧无 contact
-    conversation_id: str = ""  # 所属会话；空串表示内部单次调用（如 auto_title）
-    channel: str = ""  # 入口渠道：``"chat"`` / ``"a2a"`` / ``"auto_compact"`` / ...
-    caller_role: str | None = None  # 调用者角色：admin/guest/assigned；None 表示未知
-    phase: str | None = None  # 调用阶段标签：``"chat"`` / ``"auto_title"`` / ``"auto_compact"``
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,16 +68,6 @@ class _LLMJobRow(BaseJobRowMixin, Base):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Context — formerly the ``parameters`` JSON blob. First-class typed
-    # columns on :class:`CallLLMJob` so producers / consumers see one
-    # field per attribute (no ``parameters`` dict).
-    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    conversation_id: Mapped[str] = mapped_column(
-        String(128), nullable=False, default=""
-    )
-    channel: Mapped[str] = mapped_column(String(16), nullable=False, default="")
-    caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    phase: Mapped[str | None] = mapped_column(String(32), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -114,11 +98,6 @@ class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
                 max_tokens=job.max_tokens,
                 tools=job.tools,
                 streaming=job.streaming,
-                contact_id=job.contact_id,
-                conversation_id=job.conversation_id,
-                channel=job.channel,
-                caller_role=job.caller_role,
-                phase=job.phase,
             )
             s.add(row)
             s.flush()

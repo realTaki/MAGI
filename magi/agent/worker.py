@@ -424,11 +424,6 @@ class AgentWorker(RuntimeWorker):
             max_tokens=await self._read_max_tokens(),
             tools=tools or None,
             streaming=False,
-            contact_id=ctx.contact_id,
-            conversation_id=ctx.conversation_id,
-            channel=ctx.channel,
-            caller_role=ctx.caller_role,
-            phase="chat",
         )
 
     async def _system_prompt(self, ctx: RunContext) -> str:
