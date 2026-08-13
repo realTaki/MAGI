@@ -47,7 +47,7 @@ MIN_COMPACT_KEEP_RECENT = 5
 MAX_COMPACT_KEEP_RECENT = 100
 # Inbound message cap. Default matches the WebUI's Pydantic
 # ``ChatSendRequest.text`` max_length. Telegram and task channels
-# don't pre-validate, so the chatJobBoard + messages_book apply this
+# don't pre-validate, so the chatNotifyBoard + messages_book apply this
 # cap as a defense-in-depth to prevent a single turn from blowing
 # past the LLM context budget (and breaking compaction's floor-of-1
 # guarantee that always keeps the most recent turn).
@@ -327,7 +327,7 @@ def put_chat_max_input_chars(
     _admin: AdminGate,
     bus: BusDep,
 ) -> ChatMaxInputCharsOut:
-    """Persist a new chat-input cap. Truncates the LLM input (chatJob)
+    """Persist a new chat-input cap. Truncates the LLM input (chatNotifyJob)
     AND the persistent message row (``messages_book``); the LLM and
     compaction both see the truncated version, so no single turn can
     break the budget on its own.

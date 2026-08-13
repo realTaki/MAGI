@@ -37,7 +37,7 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.library.local import Role
+from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 from magi.bus.library.local.conversationBook import ChannelMismatchError
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
@@ -82,25 +82,20 @@ def new_conversation_id() -> str:
     return "".join(reversed(chars))
 
 
-def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
+def _resolve_caller_credentials(bus: Bus, contact_id: int) -> int:
     """Look up the operator's Contact row by their
-    ``contact_id`` (the cookie value post-D.24) and return
-    ``(contact_id, role)``.
+    ``contact_id`` (the cookie value post-D.24) and return the
+    resolved ``contact_id``.
 
     LLM credentials live on the MAGI's local ``settings_book``
-    (provider + key), not on ``contacts`` — and
-    the chat handler doesn't carry them anymore.
-    the agent worker reads them
-    internally through :func:`magi.providers.factory
+    (provider + key), not on ``contacts`` — the agent worker
+    reads them internally through :func:`magi.providers.factory
     .get_provider`. Token-usage recording is still per-
     Contact (``token_usage.contact_id``).
 
-    The ``role`` field is included so the chat handler
-    can put it on the durable agent message
-    as ``caller_role`` — ``schedule_task`` and the
-    action-item trio are gated to ``admin`` and ``assigned``
-    only, and the agent worker needs to strip them out of
-    other roles' tool menus.
+    The operator's ``role`` is **not** returned here — the agent
+    worker resolves it from :meth:`ContactBook.get` at claim time
+    (a live value, not a publish-time snapshot).
 
     Raises ``MagiHTTPException``:
 
@@ -116,7 +111,7 @@ def _resolve_caller_credentials(bus: Bus, contact_id: int) -> tuple[int, str]:
             detail="no Contact row bound to this cookie",
         )
 
-    return contact.id, contact.role or Role.GUEST
+    return contact.id
 
 
 class ChatSendRequest(BaseModel):
@@ -210,7 +205,7 @@ async def send_chat(
             detail="no signed-in contact",
         )
     cookie_contact_id = int(session["contact_id"])
-    contact_id, contact_role = _resolve_caller_credentials(bus, cookie_contact_id)
+    contact_id = _resolve_caller_credentials(bus, cookie_contact_id)
     # D.24: per-channel delivery address stamped on the
     # conversation row's ``delivery_address`` column (renamed
     # from the legacy per-channel chat-id column in D.28).
@@ -279,22 +274,20 @@ async def send_chat(
         )
         conversation_id = sess.conversation_id
 
-    # D.22 cross-channel guard + chat_messages write + chatJob
+    # D.22 cross-channel guard + chat_messages write + chatNotifyJob
     # enqueue are all consolidated inside
-    # :meth:`chatJobBoard.publish_chat`. The user message is
+    # :meth:`chatNotifyBoard.publish`. The user message is
     # persisted to ``chat_messages`` at the same chokepoint, so
     # the channel never touches ``messages_book`` directly.
     inbound_message_id = new_conversation_id()
-    chat_job_id = f"webui:{conversation_id}:{inbound_message_id}"
     try:
-        job_id = bus.agent_job_board.publish_chat(
-            text=text,
-            channel=Channel.WEBUI,
-            contact_id=contact_id,
-            conversation_id=conversation_id,
-            caller_role=contact_role,
-            job_id=chat_job_id,
-            correlation_id=inbound_message_id,
+        job_id = bus.agent_job_board.publish(
+            ChatNotifyJob(
+                text=text,
+                channel=Channel.WEBUI,
+                contact_id=contact_id,
+                conversation_id=conversation_id,
+            ),
             message_id=inbound_message_id,  # idempotency for retry
         )
     except ChannelMismatchError as e:
@@ -320,7 +313,7 @@ async def send_chat(
         )
     except Exception:
         logger.exception(
-            "chat: failed to publish chatJob for conversation %s",
+            "chat: failed to publish chatNotifyJob for conversation %s",
             conversation_id,
         )
         raise MagiHTTPException(  # noqa: B904

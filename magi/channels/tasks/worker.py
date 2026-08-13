@@ -95,7 +95,7 @@ class TaskWorker(RuntimeWorker):
         # Contract guard: a task without ``conversation_id`` means
         # the create-path skipped ``create_task_conversation`` (or a
         # legacy row slipped through). Refuse to fire rather than
-        # publish a chatJob that ``build_messages_from_conversation``
+        # publish a chatNotifyJob that ``build_messages_from_conversation``
         # can't resolve.
         if not task.conversation_id:
             raise ValueError(
@@ -115,16 +115,17 @@ class TaskWorker(RuntimeWorker):
         except Exception:
             pass
         # The user message is persisted to ``chat_messages`` inside
-        # :meth:`chatJobBoard.publish_chat`. No direct write here.
+        # :meth:`chatNotifyBoard.publish`. No direct write here.
+        from magi.bus.guild.chatNotifyJob import ChatNotifyJob
+
         await self.call(
-            self.bus.agent_job_board.publish_chat,
-            text=contextual_prompt,
-            channel="task",
-            contact_id=task.contact_id,
-            conversation_id=task.conversation_id,
-            kind="task.triggered",
-            task_id=task_id,
-            manual=manual,
+            self.bus.agent_job_board.publish,
+            ChatNotifyJob(
+                text=contextual_prompt,
+                channel="task",
+                contact_id=task.contact_id,
+                conversation_id=task.conversation_id,
+            ),
         )
         self._next_fire[task_id] = datetime.now(UTC)
 
@@ -143,7 +144,7 @@ class TaskWorker(RuntimeWorker):
             # ``_fire_task`` raises if ``task.conversation_id`` is
             # missing; the surrounding ``except`` flips the job to
             # FAILED with that error. Keeps the create-task contract
-            # loud instead of producing a chatJob with no session.
+            # loud instead of producing a chatNotifyJob with no session.
             await self._fire_task(task, manual=rj.manual)
             await self.call(
                 self.bus.run_task_job_board.submit_result,

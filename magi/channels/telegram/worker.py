@@ -112,24 +112,23 @@ class TelegramWorker(ChannelWorker):
             return
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         # The user message is persisted to ``chat_messages`` inside
-        # :meth:`chatJobBoard.publish_chat` — see
-        # ``magi.bus.guild.chatJob``. Channels must not reach into
-        # ``messages_book`` directly anymore.
+        # :meth:`chatNotifyBoard.publish` — see ``magi.bus.guild.chatNotifyJob``.
+        # Channels must not reach into ``messages_book`` directly anymore.
         asyncio.create_task(_send_read_receipt(update, self.bus))
 
+        from magi.bus.guild.chatNotifyJob import ChatNotifyJob
+
         try:
-            self.bus.agent_job_board.publish_chat(
-                text=text,
-                channel="tg",
-                contact_id=contact_id,
-                conversation_id=conversation_id,
-                caller_role=role,
-                job_id=f"telegram:{tgid}:{update.effective_message.message_id}",
-                chat_id=tgid,
-                tg_message_id=update.effective_message.message_id,
+            self.bus.agent_job_board.publish(
+                ChatNotifyJob(
+                    text=text,
+                    channel="tg",
+                    contact_id=contact_id,
+                    conversation_id=conversation_id,
+                )
             )
         except Exception:
-            logger.exception("TelegramWorker: publish ChatJob failed for tgid=%s", tgid)
+            logger.exception("TelegramWorker: publish ChatNotifyJob failed for tgid=%s", tgid)
 
     async def _run_outbound(self) -> None:
         await self._claim_delivery_loop(self._deliver_tg, "tg")
@@ -175,10 +174,10 @@ def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
 
 
 # Note: the user message is persisted to ``chat_messages`` inside
-# :meth:`chatJobBoard.publish_chat` (see ``magi.bus.guild.chatJob``).
+# :meth:`chatNotifyBoard.publish` (see ``magi.bus.guild.chatNotifyJob``).
 # Channels must not reach into ``messages_book`` directly anymore —
 # the chokepoint lives in the bus layer where the cap, D.22 guard,
-# and chatJob enqueue are all atomic.
+# and chatNotifyJob enqueue are all atomic.
 
 
 async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:

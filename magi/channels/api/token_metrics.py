@@ -9,8 +9,9 @@ month = 1st of month, both inclusive of "now".
 
 The data source is the ``token_usage`` table
 (``magi.db.TokenUsage``) — one row per
-outbound LLM call, written by ``agent._record_token_usage``
-after the audit row. The aggregation is a single SQL
+outbound LLM call, written by the providers worker (which is
+closest to the usage data) right after a successful call. The
+aggregation is a single SQL
 ``SELECT SUM(...)`` per period, no Python-side scan.
 
 Why all three periods in one response:
