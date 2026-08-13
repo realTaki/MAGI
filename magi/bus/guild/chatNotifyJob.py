@@ -115,7 +115,6 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
     job_model = _ChatNotifyRow
     job_cls = ChatNotifyJob
     result_cls = ChatNotifyResult
-    natural_key_attr = "job_id"
 
     def __init__(
         self,

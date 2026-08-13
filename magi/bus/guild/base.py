@@ -60,7 +60,7 @@ class BaseJob:
     强写，claim-side 通过 :meth:`BaseJobBoard._map_row` 把行级
     ``job_id`` 回填给调用方）。保留这个字段是因为 worker 拿到
     claim 结果后通过它调 :meth:`BaseJobBoard.submit_result` /
-    :meth:`release`（它们以 ``job_id`` 作 natural_key_attr）。
+    :meth:`release`（它们以 ``job_id`` 作业务键）。
 
     ``attempts`` 不在这里 — 它是行侧 :class:`BaseJobRowMixin` 的列
     （已重试次数 / lease-recovery 观察值），调用方不该经由
@@ -97,7 +97,7 @@ class BaseJobResult:
     的用法（如 ``A2ARequestResult().error_code is None``）。
     """
 
-    job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
+    job_id: str = ""  # 对应 job 的业务键（即 job_id）
     status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
     error: str | None = None  # 失败时的人类可读错误文案（成功路径保持 None）
 
@@ -162,7 +162,6 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     job_model: ClassVar[type[RowT]]  # type: ignore[reportGeneralTypeIssues]
     job_cls: ClassVar[type[JobT]]  # type: ignore[reportGeneralTypeIssues]
     result_cls: ClassVar[type[ResultT]]  # type: ignore[reportGeneralTypeIssues]
-    natural_key_attr: ClassVar[str] = "job_id"
     #: Per-board retry ceiling. Defaults to the global
     #: :data:`MAX_ATTEMPTS` (3). Boards whose domain tolerates more
     #: retries (delivery against flaky channels, chat steering
@@ -264,13 +263,13 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             return self._map_row(row, self.job_cls) if row else None
 
     def submit_result(self, *, key: str, result: ResultT) -> None:
-        """提交结果，key 为 natural_key_attr 的值（即 job_id）。"""
+        """提交结果，key 为 job_id。"""
         with self._session() as s:
             self._submit(s, key=key, result=result)
             s.commit()
 
     def get_result(self, *, key: str) -> ResultT | None:
-        """轮询结果，key 为 natural_key_attr 的值。"""
+        """轮询结果，key 为 job_id。"""
         with self._session() as s:
             return self._get_result(s, key=key)
 
@@ -284,7 +283,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """
         with self._session() as s:
             row = s.scalar(
-                select(self.job_model).where(getattr(self.job_model, self.natural_key_attr) == key)
+                select(self.job_model).where(getattr(self.job_model, "job_id") == key)
             )
             if row is None:
                 return
@@ -542,7 +541,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     def _submit(self, session: Session, *, key: str, result: ResultT) -> None:
         row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, self.natural_key_attr) == key)
+            select(self.job_model).where(getattr(self.job_model, "job_id") == key)
         )
         if row is None:
             return
@@ -554,21 +553,11 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     def _get_result(self, session: Session, *, key: str) -> ResultT | None:
         row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, self.natural_key_attr) == key)
+            select(self.job_model).where(getattr(self.job_model, "job_id") == key)
         )
         if row is None or getattr(row, "status", "") not in (JobStatus.COMPLETED, JobStatus.FAILED):
             return None
         return self._read_result_from_job(row)
-
-    # -- 键提取 ------------------------------------------------------------
-
-    def _key_of(self, row: RowT) -> str:
-        val = getattr(row, self.natural_key_attr, None)
-        if val is not None:
-            return str(val)
-        if hasattr(row, "id"):
-            return str(row.id)  # type: ignore[reportAttributeAccessIssue]
-        return ""
 
     # -- Result 映射工具 ----------------------------------------------------
 
@@ -583,14 +572,14 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     def _read_result_from_job(self, row: RowT) -> ResultT:
         """从 ORM 行重建 result dataclass。"""
-        key_val = getattr(row, self.natural_key_attr, None)
+        key_val = getattr(row, "job_id", None)
         key_val = str(key_val) if key_val is not None else ""
         kwargs: dict = {
-            self.natural_key_attr: key_val,
+            "job_id": key_val,
             "status": getattr(row, "status"),
         }
         for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
-            if f.name in ("status", self.natural_key_attr):
+            if f.name in ("status", "job_id"):
                 continue
             if hasattr(row, f.name):
                 kwargs[f.name] = getattr(row, f.name)
@@ -604,10 +593,10 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         避免未来某个 Result 子类异常地不带该字段时硬写抛
         ``TypeError``。
         """
-        key_val = getattr(row, self.natural_key_attr, None)
+        key_val = getattr(row, "job_id", None)
         key_val = str(key_val) if key_val is not None else ""
         kwargs: dict = {
-            self.natural_key_attr: key_val,
+            "job_id": key_val,
             "status": JobStatus.FAILED,
         }
         field_names = {f.name for f in dataclasses.fields(self.result_cls)}  # type: ignore[reportArgumentType]
