@@ -45,7 +45,7 @@ class ChatJob(BaseJob):
     producers and consumers see one attribute per field, not a
     black-box dict.
 
-    Core turn input (set by :meth:`chatJobBoard.publish_chat`):
+    Core turn input (set by :meth:`chatJobBoard.publish`):
 
     - :attr:`text` — the user message (raw, pre-cap; the
       ``chat_messages`` row carries the post-cap version).
@@ -135,7 +135,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         # ``messages_book`` and ``conversations_book`` are optional
         # so existing tests can build a board with just a factory.
         # In production, :func:`magi.bus.bootstrap.open_bus` wires
-        # both — :meth:`publish_chat` uses them to (a) enforce the
+        # both — :meth:`publish` uses them to (a) enforce the
         # D.22 cross-channel guard and (b) persist the user message
         # to ``chat_messages`` at the same chokepoint as the chatJob
         # enqueue, so callers don't reach into the messages Book
@@ -144,37 +144,43 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: ChatJob) -> str:
-        """Enqueue one agent turn after the D.22 cross-channel guard.
+    def publish(self, job: ChatJob, *, message_id: str | None = None) -> str:
+        """Enqueue one agent turn and persist the user message.
 
-        D.22 refuses the publish if the conversation exists and was
-        created on a different channel — raises
-        :class:`ChannelMismatchError` from the library Book it
-        guards. The guard reads the typed ``contact_id`` /
-        ``channel`` / ``conversation_id`` fields on the ChatJob so
-        **any** caller of :meth:`publish` — :meth:`publish_chat`,
-        internal steering republishes via
-        :func:`submit_agent_message`, future dead-code producers —
-        gets the same protection.
+        Single chokepoint for inbound turn intake — every path that
+        enqueues a turn (channel intake *and* internal steering
+        republishes) goes through here:
 
-        Skipped when ``contact_id is None`` (task path with no
-        contact), no ``conversations_book`` (legacy / tests), or
-        no channel in the payload (a misconfigured job that the
-        caller is responsible for).
+          1. D.22 cross-channel guard — refuses the publish if the
+             conversation exists and was created on a different
+             channel (raises :class:`ChannelMismatchError`). Reads the
+             typed ``contact_id`` / ``channel`` / ``conversation_id``
+             fields on the ChatJob, so any caller gets the same
+             protection. Skipped when ``contact_id is None`` (task
+             path with no contact), no ``conversations_book`` (legacy
+             / tests), or no channel (misconfigured job).
+          2. Enqueue the chatJob row.
+          3. Stamp ``contacts.last_seen_at`` (best-effort — a failure
+             is logged and swallowed so a transient ``contact_book``
+             outage cannot block an inbound turn).
+          4. Persist the user message to ``chat_messages`` (the same
+             row the agent's LLM call reads via
+             :func:`build_messages_from_conversation`). ``MessageBook.add``
+             enforces the inbound cap; the chatJob row carries the raw
+             text. Skipped when the board has no ``messages_book``
+             (legacy / tests) — best-effort, since the chatJob is
+             already enqueued.
 
-        The per-turn text cap is **not** applied here — that lives
-        in :meth:`MessageBook.add`, which is the chokepoint
-        compaction reads. The chatJob payload carries the raw text;
-        the LLM reads from ``chat_messages`` (post-cap).
+        The per-turn text cap is **not** applied to the chatJob row —
+        that lives in :meth:`MessageBook.add`, which is the chokepoint
+        compaction reads.
 
-        The activity stamp on ``contacts.last_seen_at`` is
-        best-effort — a failure is logged and swallowed so a
-        transient ``contact_book`` outage cannot block an inbound
-        turn.
+        ``message_id`` is the ULID to use for the ``chat_messages``
+        row — pass the same value on retry for producer-side idempotency.
+        ``job_id`` is **always Board-generated** (see
+        :meth:`BaseJobBoard.publish`); callers can't pass one in.
 
-        The dataclass→row copy itself goes through
-        :meth:`BaseJobBoard._build_pending_row`; only the D.22 guard
-        + last-seen stamp are domain-specific.
+        Returns the *job_id* of the published job (Board-generated).
         """
         contact_id = job.contact_id
         channel = job.channel
@@ -208,99 +214,23 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             s.commit()
             job_id = row.job_id
         self._stamp_last_seen(job)
-        return job_id
-
-    def publish_chat(
-        self,
-        *,
-        text: str,
-        channel: str,
-        contact_id: int | None,
-        conversation_id: str,
-        message_id: str | None = None,
-    ) -> str:
-        """Channel→agent convenience: build a ChatJob from channel args and enqueue.
-
-        ``job_id`` is **always Board-generated** — callers can't pass
-        one in (see :meth:`BaseJobBoard.publish`); if the caller needs a
-        stable cross-system identifier (e.g. WebUI retries), use the
-        ``message_id`` argument below.
-
-        Single chokepoint for inbound turn intake. Delegates the
-        enqueue + D.22 guard to :meth:`publish`; this method adds
-        the user-message persistence step (which :meth:`publish`
-        intentionally does not do — internal republishes via
-        :func:`submit_agent_message` should not insert a new
-        ``chat_messages`` row):
-
-          1. :meth:`publish` runs the D.22 cross-channel guard and
-             inserts the chatJob row. Raises
-             :class:`ChannelMismatchError` before any write, so a
-             mismatch doesn't leave an orphan row in
-             ``chat_messages``.
-          2. Persist the user message to ``chat_messages`` (the
-             same row the agent's LLM call will read via
-             :func:`build_messages_from_conversation`). The inbound
-             cap (``system.chat_max_input_chars``) is enforced
-             inside :meth:`MessageBook.add` — the chatJob payload
-             carries the raw text and the persistent row carries
-             the truncated text, so the LLM and compaction read
-             the same shape.
-          3. Stamp ``contacts.last_seen_at`` (best-effort).
-
-        ``message_id`` is the ULID to use for the ``chat_messages``
-        row — pass the same value on retry for producer-side idempotency.
-
-        ``contact_id`` is ``int | None`` because
-        :class:`magi.bus.library.local.tasksBook.Task`-driven
-        publishes can fire for a task with no bound contact; in
-        that case the ChatJob is still enqueued but the D.22
-        guard and ``last_seen_at`` stamp are skipped (no contact
-        to validate / stamp).
-
-        Returns the *job_id* of the published job (Board-generated).
-        """
-        # Build the typed ChatJob — every field visible, no
-        # black-box dict. The cap lives in :meth:`MessageBook.add`
-        # (the layer compaction reads), so the chatJob carries
-        # the raw text and the persistent row carries the
-        # truncated text. ``job_id`` is added by the Board on insert.
-        job = ChatJob(
-            conversation_id=conversation_id,
-            text=text,
-            channel=channel,
-            contact_id=contact_id,
-        )
-        # Enqueue first — :meth:`publish` runs the D.22 guard
-        # and raises :class:`ChannelMismatchError` before any
-        # write, so a mismatch doesn't leave an orphan row in
-        # ``chat_messages``.
-        jid = self.publish(job)
-        # D.22 passed. Persist the user message to ``chat_messages``
-        # so the agent's next ``build_messages_from_conversation``
-        # read sees it. ``MessageBook.add`` enforces the inbound
-        # cap on the row. Skipped when the board was constructed
-        # without ``messages_book`` (legacy / tests). Best-effort:
-        # the chatJob is already enqueued, so a failure here just
-        # logs and moves on (the LLM still has the raw text via
-        # the chatJob payload if it ever falls back to that).
         if self._messages_book is not None:
             try:
                 self._messages_book.add(
                     conversation_id=conversation_id,
                     role="user",
-                    text=text,
+                    text=job.text,
                     message_id=message_id,
                 )
             except Exception:
                 logger.exception(
-                    "chatJobBoard.publish_chat: messages_book.add failed "
+                    "chatJobBoard.publish: messages_book.add failed "
                     "(conversation=%s, channel=%s); chatJob %s enqueued without row",
                     conversation_id,
                     channel,
-                    jid,
+                    job_id,
                 )
-        return jid
+        return job_id
 
     def _stamp_last_seen(self, job: ChatJob) -> None:
         """Best-effort ``last_seen_at`` update keyed on ``job.contact_id``.

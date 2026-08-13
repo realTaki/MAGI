@@ -3,7 +3,7 @@
 Covers:
   1. Single ChatJob → single LLM turn → no tools → delivery
   2. Single ChatJob → LLM returns tool_use → tool completed → second LLM → delivery
-  3. Steering injection via claim_for_conversation
+  3. Steering injection via claim_for_steering
   4. Cancel path (cancel_event)
   5. Context assembly (system_prompt delegation)
   6. Token usage recording
@@ -99,7 +99,7 @@ def _make_bus(**overrides) -> Mock:
     bus.agent_job_board.claim = Mock(return_value=None)
     bus.agent_job_board.release = Mock()
     bus.agent_job_board.submit_result = Mock()
-    bus.agent_job_board.claim_for_conversation = Mock(return_value=None)
+    bus.agent_job_board.claim_for_steering = Mock(return_value=None)
 
     bus.llm_job_board = Mock()
     bus.llm_job_board.publish = Mock(return_value="llm-job-1")
@@ -232,7 +232,7 @@ async def test_tool_loop_completes():
 
 
 # ---------------------------------------------------------------------------
-# Test 3: steering via claim_for_conversation
+# Test 3: steering via claim_for_steering
 # ---------------------------------------------------------------------------
 
 
@@ -267,7 +267,7 @@ async def test_steering_injected():
         text="Also check this please.",
     )
     object.__setattr__(steer_job, "job_id", "steer-1")  # init=False，frozen 下回填
-    bus.agent_job_board.claim_for_conversation.side_effect = [steer_job, None, None]
+    bus.agent_job_board.claim_for_steering.side_effect = [steer_job, None, None]
 
     ctx = RunContext(
         contact_id=42,

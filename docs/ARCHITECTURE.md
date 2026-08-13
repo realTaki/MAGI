@@ -315,7 +315,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 - Steering is in-band: when a fresh `ChatJob` for an already-active
   conversation arrives, the Worker releases it back to the board; the
   active loop pulls it as steering via
-  `agent_job_board.claim_for_conversation(...)` during `_gather_all`.
+  `agent_job_board.claim_for_steering(...)` during `_gather_all`.
 - Module-private helpers (`agent_context.build_messages_from_session`,
   `system_prompt.build_system_prompt`, `auto_title.request_session_title`,
   `token_usage.record_token_usage`) keep the Worker thin.

@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from magi.bus.db import EngineFactory
-from magi.bus.guild.chatJob import chatJobBoard
+from magi.bus.guild.chatJob import ChatJob, chatJobBoard
 from magi.bus.library.local import ConversationBook, MessageBook
 
 
@@ -185,13 +185,15 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
     )
 
     huge = "x" * 20_000
-    board.publish_chat(
-        text=huge,
-        channel="tg",
-        contact_id=contact_id,
-        conversation_id=cid,
+    board.publish(
+        ChatJob(
+            text=huge,
+            channel="tg",
+            contact_id=contact_id,
+            conversation_id=cid,
+        )
     )
-    job = board.claim_for_conversation(conversation_id=cid)
+    job = board.claim_for_steering(conversation_id=cid)
     # ChatJob is typed — no payload dict, no truncation flag. The
     # raw text travels through the row, intact.
     assert job.text == huge
@@ -220,15 +222,17 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
         conversations_book=sbook,
     )
 
-    jid = board.publish_chat(
-        text="hello world",
-        channel="tg",
-        contact_id=contact_id,
-        conversation_id=cid,
+    jid = board.publish(
+        ChatJob(
+            text="hello world",
+            channel="tg",
+            contact_id=contact_id,
+            conversation_id=cid,
+        )
     )
     assert jid
 
-    job = board.claim_for_conversation(conversation_id=cid)
+    job = board.claim_for_steering(conversation_id=cid)
     assert job is not None
     assert job.text == "hello world"
     assert job.channel == "tg"
@@ -255,18 +259,22 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
     )
 
     fixed_id = "fixed-message-id-123"
-    board.publish_chat(
-        text="retry me",
-        channel="tg",
-        contact_id=contact_id,
-        conversation_id=cid,
+    board.publish(
+        ChatJob(
+            text="retry me",
+            channel="tg",
+            contact_id=contact_id,
+            conversation_id=cid,
+        ),
         message_id=fixed_id,
     )
-    board.publish_chat(
-        text="retry me",
-        channel="tg",
-        contact_id=contact_id,
-        conversation_id=cid,
+    board.publish(
+        ChatJob(
+            text="retry me",
+            channel="tg",
+            contact_id=contact_id,
+            conversation_id=cid,
+        ),
         message_id=fixed_id,
     )
 
@@ -293,16 +301,18 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     from magi.bus.library.local.conversationBook import ChannelMismatchError
 
     with pytest.raises(ChannelMismatchError) as exc:
-        board.publish_chat(
-            text="cross-channel write",
-            channel="webui",
-            contact_id=contact_id,
-            conversation_id=cid,
+        board.publish(
+            ChatJob(
+                text="cross-channel write",
+                channel="webui",
+                contact_id=contact_id,
+                conversation_id=cid,
+            )
         )
     assert exc.value.conversation_channel == "tg"
 
     # No chatJob, no message row — the guard fires before either write.
-    assert board.claim_for_conversation(conversation_id=cid) is None
+    assert board.claim_for_steering(conversation_id=cid) is None
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 0
 
@@ -321,11 +331,13 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
         factory, messages_book=mbook, conversations_book=sbook
     )
 
-    jid = board.publish_chat(
-        text="normal",
-        channel="tg",
-        contact_id=contact_id,
-        conversation_id=cid,
+    jid = board.publish(
+        ChatJob(
+            text="normal",
+            channel="tg",
+            contact_id=contact_id,
+            conversation_id=cid,
+        )
     )
     assert jid
     assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
@@ -345,11 +357,13 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
         factory, messages_book=mbook, conversations_book=sbook
     )
 
-    jid = board.publish_chat(
-        text="task fire",
-        channel="task",
-        contact_id=None,
-        conversation_id=cid,
+    jid = board.publish(
+        ChatJob(
+            text="task fire",
+            channel="task",
+            contact_id=None,
+            conversation_id=cid,
+        )
     )
     assert jid
     assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
@@ -367,11 +381,13 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
     cid = conv.conversation_id
     board = chatJobBoard(factory, messages_book=mbook)  # no conversations_book
 
-    jid = board.publish_chat(
-        text="no-d22",
-        channel="webui",
-        contact_id=contact_id,
-        conversation_id=cid,
+    jid = board.publish(
+        ChatJob(
+            text="no-d22",
+            channel="webui",
+            contact_id=contact_id,
+            conversation_id=cid,
+        )
     )
     assert jid
     assert len(mbook.list_for_conversation(conversation_id=cid)) == 1
