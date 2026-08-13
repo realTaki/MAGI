@@ -7,6 +7,8 @@ not a MAGI-local store.  A receiver claims only rows addressed to its own
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -20,6 +22,7 @@ from sqlalchemy import (
     select,
     update,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
@@ -35,6 +38,9 @@ from magi.bus.guild.base import (
 if TYPE_CHECKING:
     from magi.bus.db.engine import EngineFactory
     from magi.bus.library.magis.membershipBook import MagisMembershipBook
+
+
+logger = logging.getLogger("magi.bus.guild.a2aJob")
 
 
 # -- public enum ---------------------------------------------------------
@@ -205,6 +211,55 @@ def _validate_route(
         raise ValueError("A2A source and target must belong to the same MAGIS")
 
 
+def _transcript_message_id(*, job_id: str, event: str) -> str:
+    """Return a portable, deterministic 26-character producer ID.
+
+    ``chat_messages.message_id`` is unique per conversation and limited to
+    26 characters on PostgreSQL.  The stable ID makes lifecycle logging safe
+    across retries and repeated result polling without relaxing that schema
+    constraint.
+    """
+    return hashlib.sha256(f"{job_id}:{event}".encode()).hexdigest()[:26]
+
+
+def _record_transcript(
+    *,
+    messages_book,
+    conversations_book,
+    peer_magi_id: int,
+    job_id: str,
+    event: str,
+    role: str,
+    text: str,
+) -> None:  # type: ignore[no-untyped-def]
+    """Best-effort local transcript write for the MAGI executing an action.
+
+    The A2A rows remain in the shared MAGIS database.  In contrast, both
+    injected books belong to the caller's *local* Bus, so the same board code
+    writes the source's transcript during publish/get-result and the target's
+    transcript during claim/submit-result.  A failed transcript write must
+    never undo an already committed A2A lifecycle transition.
+    """
+    if messages_book is None or conversations_book is None:
+        return
+    try:
+        conversation = conversations_book.get_or_create_for_a2a_peer(
+            peer_magi_id=peer_magi_id
+        )
+        messages_book.add(
+            conversation_id=conversation.conversation_id,
+            message_id=_transcript_message_id(job_id=job_id, event=event),
+            role=role,
+            text=text,
+        )
+    except IntegrityError:
+        # The unique ``(conversation_id, message_id)`` index proves this
+        # lifecycle event was already recorded (e.g. a retry/poll race).
+        logger.debug("A2A transcript event already recorded: job=%s event=%s", job_id, event)
+    except Exception:
+        logger.exception("A2A transcript write failed: job=%s event=%s", job_id, event)
+
+
 class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestResult]):
     """One request, one terminal response, claimed only by its target MAGI."""
 
@@ -218,12 +273,16 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
         *,
         memberships_book: MagisMembershipBook,
+        messages_book=None,  # type: ignore[no-untyped-def]
+        conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
         super().__init__(factory, lease_seconds)
         # Required, not optional: every publish must prove the route
         # exists and stays inside one MAGIS, so there is no degraded
         # "no book injected" mode to fall back to.
         self._memberships_book = memberships_book
+        self._messages_book = messages_book
+        self._conversations_book = conversations_book
 
     def publish(self, job: A2ARequestJob) -> str:
         if not job.text.strip():
@@ -243,7 +302,17 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
             s.add(row)
             s.commit()
-            return row.job_id
+            job_id = row.job_id
+        _record_transcript(
+            messages_book=self._messages_book,
+            conversations_book=self._conversations_book,
+            peer_magi_id=job.target_magi_id,
+            job_id=job_id,
+            event="publish",
+            role="assistant",
+            text=job.text,
+        )
+        return job_id
 
     def claim_for_target(self, *, magi_id: int) -> A2ARequestJob | None:
         with self._session() as s:
@@ -254,10 +323,22 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 extra_where=[_A2ARequestRow.target_magi_id == magi_id],
             )
             s.commit()
-            return self._map_row(row, A2ARequestJob) if row is not None else None
+            job = self._map_row(row, A2ARequestJob) if row is not None else None
+        if job is not None:
+            _record_transcript(
+                messages_book=self._messages_book,
+                conversations_book=self._conversations_book,
+                peer_magi_id=job.source_magi_id,
+                job_id=job.job_id,
+                event="claim",
+                role="user",
+                text=job.text,
+            )
+        return job
 
     def submit_result(self, *, key: str, result: A2ARequestResult) -> None:
         """Complete a request once, and never overwrite expiry/failure."""
+        peer_magi_id: int | None = None
         with self._session() as s:
             row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
             if row is None:
@@ -269,6 +350,17 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 return
             self._submit(s, key=key, result=result)
             s.commit()
+            peer_magi_id = row.source_magi_id
+        if peer_magi_id is not None:
+            _record_transcript(
+                messages_book=self._messages_book,
+                conversations_book=self._conversations_book,
+                peer_magi_id=peer_magi_id,
+                job_id=key,
+                event="submit_result",
+                role="assistant",
+                text=result.content or result.error or "",
+            )
 
     def get_result(self, *, key: str) -> A2ARequestResult | None:
         with self._session() as s:
@@ -282,7 +374,17 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 return None
             result = self._read_result_from_job(row)
             s.commit()
-            return result
+            peer_magi_id = row.target_magi_id
+        _record_transcript(
+            messages_book=self._messages_book,
+            conversations_book=self._conversations_book,
+            peer_magi_id=peer_magi_id,
+            job_id=key,
+            event="get_result",
+            role="user",
+            text=result.content or result.error or "",
+        )
+        return result
 
     @staticmethod
     def _expire_due(session, *, target_magi_id: int) -> None:
@@ -317,9 +419,13 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
         *,
         memberships_book: MagisMembershipBook,
+        messages_book=None,  # type: ignore[no-untyped-def]
+        conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
         super().__init__(factory, lease_seconds)
         self._memberships_book = memberships_book
+        self._messages_book = messages_book
+        self._conversations_book = conversations_book
 
     def publish(self, job: A2ANotifyJob) -> str:
         if not job.text.strip():
@@ -338,7 +444,17 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
             )
             s.add(row)
             s.commit()
-            return row.job_id
+            job_id = row.job_id
+        _record_transcript(
+            messages_book=self._messages_book,
+            conversations_book=self._conversations_book,
+            peer_magi_id=job.target_magi_id,
+            job_id=job_id,
+            event="publish",
+            role="assistant",
+            text=job.text,
+        )
+        return job_id
 
     def claim_for_target(self, *, magi_id: int) -> A2ANotifyJob | None:
         with self._session() as s:
@@ -348,7 +464,18 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 extra_where=[_A2ANotifyRow.target_magi_id == magi_id],
             )
             s.commit()
-            return self._map_row(row, A2ANotifyJob) if row is not None else None
+            job = self._map_row(row, A2ANotifyJob) if row is not None else None
+        if job is not None:
+            _record_transcript(
+                messages_book=self._messages_book,
+                conversations_book=self._conversations_book,
+                peer_magi_id=job.source_magi_id,
+                job_id=job.job_id,
+                event="claim",
+                role="user",
+                text=job.text,
+            )
+        return job
 
 
 __all__ = [

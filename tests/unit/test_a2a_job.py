@@ -10,8 +10,7 @@ import pytest
 
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import EngineFactory
-from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
-from magi.bus.guild.base import JobStatus
+from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 from magi.bus.guild.a2aJob import (
     A2AErrorCode,
     A2ANotifyJob,
@@ -21,6 +20,8 @@ from magi.bus.guild.a2aJob import (
     a2aNotifyBoard,
     a2aRequestJobBoard,
 )
+from magi.bus.guild.base import JobStatus
+from magi.bus.library.local.conversationBook import ConversationBook, MessageBook
 from magi.bus.library.magis.magisBook import MagisBook
 from magi.bus.library.magis.membershipBook import MagisMembershipBook, MagisRoleBook
 
@@ -49,6 +50,156 @@ def boards(tmp_path):
         a2aRequestJobBoard(factory, memberships_book=memberships),
         a2aNotifyBoard(factory, memberships_book=memberships),
     )
+
+
+@pytest.fixture
+def transcript_boards(tmp_path):
+    """One shared MAGIS queue with independent source/target local Books."""
+    magis_factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
+    synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
+    magis = MagisBook(magis_factory).add(name="Alpha")
+    role = MagisRoleBook(magis_factory).add(magis_id=magis.id, name="EVA")
+    memberships = MagisMembershipBook(magis_factory)
+    source = memberships.add(magis_id=magis.id, role_id=role.id)
+    target = memberships.add(magis_id=magis.id, role_id=role.id)
+
+    source_factory = EngineFactory(f"sqlite:///{tmp_path / 'source-local.db'}")
+    target_factory = EngineFactory(f"sqlite:///{tmp_path / 'target-local.db'}")
+    synchronise_schema(source_factory, scope=LOCAL_SCOPE)
+    synchronise_schema(target_factory, scope=LOCAL_SCOPE)
+
+    source_conversations = ConversationBook(source_factory)
+    source_messages = MessageBook(source_factory)
+    target_conversations = ConversationBook(target_factory)
+    target_messages = MessageBook(target_factory)
+
+    source_requests = a2aRequestJobBoard(
+        magis_factory,
+        memberships_book=memberships,
+        messages_book=source_messages,
+        conversations_book=source_conversations,
+    )
+    target_requests = a2aRequestJobBoard(
+        magis_factory,
+        memberships_book=memberships,
+        messages_book=target_messages,
+        conversations_book=target_conversations,
+    )
+    source_notifies = a2aNotifyBoard(
+        magis_factory,
+        memberships_book=memberships,
+        messages_book=source_messages,
+        conversations_book=source_conversations,
+    )
+    target_notifies = a2aNotifyBoard(
+        magis_factory,
+        memberships_book=memberships,
+        messages_book=target_messages,
+        conversations_book=target_conversations,
+    )
+    return SimpleNamespace(
+        source=source,
+        target=target,
+        source_requests=source_requests,
+        target_requests=target_requests,
+        source_notifies=source_notifies,
+        target_notifies=target_notifies,
+        source_conversations=source_conversations,
+        target_conversations=target_conversations,
+        source_messages=source_messages,
+        target_messages=target_messages,
+    )
+
+
+def _peer_messages(conversations, messages, *, peer_magi_id: int):
+    conversation = conversations.get_or_create_for_a2a_peer(peer_magi_id=peer_magi_id)
+    return messages.list_for_conversation(conversation_id=conversation.conversation_id)
+
+
+def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_boards) -> None:
+    boards = transcript_boards
+    job_id = boards.source_requests.publish(
+        A2ARequestJob(
+            source_magi_id=boards.source.id,
+            target_magi_id=boards.target.id,
+            text="Please review the integration.",
+        )
+    )
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.source_conversations,
+        boards.source_messages,
+        peer_magi_id=boards.target.id,
+    )] == [("assistant", "Please review the integration.")]
+    assert _peer_messages(
+        boards.target_conversations,
+        boards.target_messages,
+        peer_magi_id=boards.source.id,
+    ) == []
+
+    claimed = boards.target_requests.claim_for_target(magi_id=boards.target.id)
+    assert claimed is not None
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.target_conversations,
+        boards.target_messages,
+        peer_magi_id=boards.source.id,
+    )] == [("user", "Please review the integration.")]
+
+    boards.target_requests.submit_result(
+        key=job_id,
+        result=A2ARequestResult(
+            job_id=job_id,
+            status=JobStatus.COMPLETED,
+            content="Integration is sound.",
+        ),
+    )
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.target_conversations,
+        boards.target_messages,
+        peer_magi_id=boards.source.id,
+    )] == [
+        ("user", "Please review the integration."),
+        ("assistant", "Integration is sound."),
+    ]
+
+    result = boards.source_requests.get_result(key=job_id)
+    assert result is not None
+    assert result.content == "Integration is sound."
+    # Repeated polling observes the same durable result but does not repeat
+    # the source-side transcript event.
+    assert boards.source_requests.get_result(key=job_id) is not None
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.source_conversations,
+        boards.source_messages,
+        peer_magi_id=boards.target.id,
+    )] == [
+        ("assistant", "Please review the integration."),
+        ("user", "Integration is sound."),
+    ]
+
+
+def test_notify_publish_and_claim_write_their_respective_message_books(transcript_boards) -> None:
+    boards = transcript_boards
+    job_id = boards.source_notifies.publish(
+        A2ANotifyJob(
+            source_magi_id=boards.source.id,
+            target_magi_id=boards.target.id,
+            text="The deployment window is open.",
+        )
+    )
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.source_conversations,
+        boards.source_messages,
+        peer_magi_id=boards.target.id,
+    )] == [("assistant", "The deployment window is open.")]
+
+    claimed = boards.target_notifies.claim_for_target(magi_id=boards.target.id)
+    assert claimed is not None
+    assert claimed.job_id == job_id
+    assert [(m.role, m.text) for m in _peer_messages(
+        boards.target_conversations,
+        boards.target_messages,
+        peer_magi_id=boards.source.id,
+    )] == [("user", "The deployment window is open.")]
 
 
 def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:

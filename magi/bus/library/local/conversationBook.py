@@ -33,6 +33,7 @@ from sqlalchemy import (
     text,
     update,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
@@ -504,6 +505,57 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
+
+    def get_or_create_for_a2a_peer(self, *, peer_magi_id: int) -> Conversation:
+        """Return this MAGI's private transcript header for one A2A peer.
+
+        A2A traffic has no human ``Contact`` and is intentionally not an
+        external channel, but its durable transcript still uses the same
+        ``chat_messages`` table as ordinary turns.  ``contact_id=0`` is the
+        reserved system owner for these internal-only headers; the stable
+        hashed ID and delivery address keep one thread per peer without
+        exposing it through any contact-owned conversation path.
+        """
+        if peer_magi_id <= 0:
+            raise ValueError("peer_magi_id must be positive")
+
+        import hashlib
+        from datetime import datetime
+
+        delivery_address = f"a2a:{peer_magi_id}"
+        conversation_id = hashlib.sha256(delivery_address.encode()).hexdigest()[:26]
+        with self._session() as s:
+            row = s.scalar(
+                select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
+            )
+            if row is None:
+                now = datetime.now(UTC).isoformat()
+                row = _ConversationRow(
+                    conversation_id=conversation_id,
+                    delivery_address=delivery_address,
+                    contact_id=0,
+                    channel="a2a",
+                    title=f"A2A with MAGI {peer_magi_id}",
+                    created_at=now,
+                    updated_at=now,
+                )
+                s.add(row)
+                try:
+                    s.commit()
+                except IntegrityError:
+                    # Another local worker may have created the same
+                    # deterministic header between our read and insert.
+                    s.rollback()
+                    row = s.scalar(
+                        select(_ConversationRow).where(
+                            _ConversationRow.conversation_id == conversation_id
+                        )
+                    )
+                    if row is None:
+                        raise
+                else:
+                    s.refresh(row)
+            return self._row_to_dto(row)
 
     def get_or_create_for_tg(
         self,
