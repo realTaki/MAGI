@@ -36,6 +36,11 @@ _MAX_ROWS = 200
 _PAGE_SIZE_DEFAULT = 20
 _PAGE_SIZE_MAX = 100
 
+#: Closed set of accepted ``role`` query values. Frozen so it can be
+#: reused as a lookup table in :func:`list_contacts` without anyone
+#: mutating it by accident.
+_CONTACT_ROLES: frozenset[str] = frozenset(r.value for r in Role)
+
 # Valid local roles. MAGIS administrator authority is deliberately absent:
 # a Contact may only be a local served user or guest — see ``Role`` for the
 # canonical enum. ``payload.role`` is wire-shape ``str`` (Pydantic); the
@@ -62,7 +67,7 @@ class ContactOut(BaseModel):
     id: int
     name: str
     display_name: str | None = None
-    role: str | None = None
+    role: Role | None = None
     tgid: int | None = None
     notes: str = ""
     notes_count: int = 0
@@ -82,14 +87,14 @@ class ContactListOut(BaseModel):
 class ContactCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     display_name: str | None = Field(default=None, max_length=120)
-    role: str = Field(default="guest", max_length=16)
+    role: Role = Role.GUEST
     tgid: int | None = None
 
 
 class ContactUpdate(BaseModel):
     display_name: str | None = Field(default=None, max_length=120)
     name: str | None = Field(default=None, max_length=120)
-    role: str | None = Field(default=None, max_length=16)
+    role: Role | None = None
     tgid: int | None = None
 
 

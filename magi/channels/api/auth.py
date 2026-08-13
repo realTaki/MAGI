@@ -321,9 +321,10 @@ async def logout(response: Response) -> Response:
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(magi_session: str | None = Cookie(default=None), bus: BusDep = None) -> MeResponse:
-    if bus is None:  # pragma: no cover - FastAPI always injects this dependency
-        raise RuntimeError("Bus dependency was not injected")
+async def me(
+    bus: BusDep,
+    magi_session: str | None = Cookie(default=None),
+) -> MeResponse:
     session = resolve_session(bus, magi_session)
     if session is None:
         raise MagiHTTPException(401, "auth.not_signed_in", "Not signed in")
