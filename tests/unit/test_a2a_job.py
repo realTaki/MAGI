@@ -201,7 +201,7 @@ async def test_message_magi_splits_request_and_notify_without_waiting_for_notify
         return fn(*args, **kwargs)
 
     worker.call = direct_call  # type: ignore[method-assign]
-    ctx = RunContext(contact_id=None, conversation_id="conv", channel="webui", caller_role=None)
+    ctx = RunContext(contact_id=None, conversation_id="conv", channel="webui")
     split = await worker._split_tools(
         ctx,
         [
@@ -243,7 +243,6 @@ async def test_a2a_terminal_does_not_publish_human_delivery() -> None:
         contact_id=None,
         conversation_id="a2a.request:one",
         channel="a2a.request",
-        caller_role=None,
         a2a_kind="a2a.request",
         final_reply="one response",
     )

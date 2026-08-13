@@ -95,7 +95,7 @@ permalink: /business-flows/
    │   ├─ Contact = bus.contacts_book.get + contact_notes_book
    │   │   .list_for_contact + read_daily_note
    │   └─ Skills = bus.skills_book.list()（file-backed，两根目录）
-   └─ tools = bus.tool_definitions_book.list_enabled(caller_role)
+   └─ tools = bus.tool_definitions_book.list_enabled(caller_role=contact.role)
 
 4. 工具循环 (AgentWorker._process 的 for _ in range(max_iterations))
    for _ in range(max_iterations):
@@ -107,7 +107,7 @@ permalink: /business-flows/
    ├─ [每轮] _split_tools(ctx, tool_uses) → tool_jobs / a2a_jobs
    ├─ [每轮] _publish_effects(split) → 收集 tool_call_id → job_id
    ├─ [每轮] _gather_all(ctx, split, tool_ids) — 并发 poll tool /
-   │   a2a + claim_for_conversation 拾 steering
+   │   a2a + claim_for_steering 拾 steering
    ├─ [每轮] _append_tool_result_user_message() — 把 tool_result blocks
    │   + steering 拼成下一轮 user 消息
    ├─ [LLM_REQUEST_PREPARED + LLM_RESPONSE_RECEIVED hook gates]
@@ -244,10 +244,10 @@ permalink: /business-flows/
    ├─ `_append_user_message(bus, conversation_id, text)` — 落 user transcript
      （D.22 守卫在写入时执行）
    ├─ fire-and-forget `_send_read_receipt(update, bus)` — 发一个"已读"表情
-   └─ `publish_chat(bus, text=..., channel="tg", contact_id=...,
-     conversation_id=..., caller_role=role,
-     job_id=f"telegram:{tgid}:{message_id}", chat_id=tgid,
-     tg_message_id=message_id)` — 投递到 agent_job_board
+   └─ `publish_chat(text=..., channel="tg", contact_id=...,
+     conversation_id=...)` — 投递到 agent_job_board
+     （caller_role / chat_id / tg_message_id 不再随 job 传递；
+     AgentWorker 在 claim 时从 contact.role 实时回查）
 ```
 
 **Contact.role 枚举 (2024 collapse)**:
@@ -347,7 +347,7 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
    ├─ tasks_book.record_run_start(task_id, manual=manual) — 写 task_runs
    │  + tasks.last_run_at
    ├─ 追加 contextual prompt 为 user 消息到 task 的 conversation
-   ├─ publish ChatJob(kind="task.triggered", payload={...}) → agent_job_board
+   ├─ publish_chat(text=contextual_prompt, channel="task", ...) → agent_job_board
    └─ AgentWorker._process → 完成后通过 delivery_job_board 投递回复
 5. 失败处理: tasks_book.record_run_end("failed") 持久化 consecutive_failures
    + last_error（上限 9999）；超阈值 → 禁用任务 + 创建 ActionItem

@@ -95,13 +95,6 @@ class BaseJobResult:
 
     三个字段都带默认值，以兼容「无参构造后检查业务字段默认值」
     的用法（如 ``A2ARequestResult().error_code is None``）。
-
-    .. note::
-       :class:`~magi.bus.guild.chatJob.ChatJobResult` 不继承
-       ``error`` 字段，它用
-       :attr:`~magi.bus.guild.chatJob.ChatJobResult.error_detail`
-       表达同一概念（语义同源但历史命名未统一）。这条注释是给
-       后续想 ``grep "error:"`` 字段的人准备的。
     """
 
     job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
@@ -287,7 +280,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         Used by AgentWorker when ``_run()`` claims a ChatJob for a
         session that already has an active in-flight run.  The job
         is released so ``_process()`` can reclaim it as steering
-        via ``claim_for_conversation``.
+        via ``claim_for_steering``.
         """
         with self._session() as s:
             row = s.scalar(
@@ -365,7 +358,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """Default CAS-claim — no extra WHERE filter.
 
         Specialized boards (``deliveryJobBoard.claim_for_channel``,
-        ``chatJobBoard.claim_for_conversation``) wrap
+        ``chatJobBoard.claim_for_steering``) wrap
         :meth:`_cas_claim` with their own scoping clause.
         """
         return self._cas_claim(
@@ -606,9 +599,10 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     def _make_exhausted_result(self, row: RowT) -> ResultT:
         """构造一个"重试耗尽"的失败 Result。
 
-        仅当 Result 子类声明了 ``error`` 字段时才写入耗尽文案——
-        部分 Result（如 :class:`ChatJobResult`）用 ``error_detail``，
-        不带 ``error`` 字段，硬写会抛 ``TypeError``。
+        ``error`` 是所有 Result 继承自 :class:`BaseJobResult` 的通用
+        字段，恒存在；``"error" in field_names`` 守卫保留作防御，
+        避免未来某个 Result 子类异常地不带该字段时硬写抛
+        ``TypeError``。
         """
         key_val = getattr(row, self.natural_key_attr, None)
         key_val = str(key_val) if key_val is not None else ""

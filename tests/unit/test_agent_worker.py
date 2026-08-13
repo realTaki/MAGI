@@ -172,7 +172,6 @@ async def test_single_turn_no_tools_delivers():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
     ctx.messages = []
@@ -220,7 +219,6 @@ async def test_tool_loop_completes():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
     ctx.messages = []
@@ -274,7 +272,6 @@ async def test_steering_injected():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
     ctx.messages = []
@@ -308,7 +305,6 @@ async def test_cancel_interrupts():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
     ctx.messages = []
@@ -343,7 +339,6 @@ async def test_system_prompt_delegates():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
 
@@ -368,7 +363,6 @@ async def test_token_usage_recorded():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
     )
 
@@ -409,7 +403,6 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
         conversation_id="conv-1",
         contact_id=42,
         channel="tg",
-        caller_role=None,
         text="hello",
     )
     claimed = False
@@ -470,7 +463,6 @@ async def test_max_iterations_exceeded():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        caller_role=None,
         conversation_id="conv-1",
         max_iterations=2,
     )
