@@ -273,6 +273,7 @@ async def call_llm_for_summary(
             {"role": "system", "content": system},
             {"role": "user", "content": to_compress},
         ],
+        contact_id=contact_id,
         max_tokens=1024,
     )
     key = bus.llm_job_board.publish(job)

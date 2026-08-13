@@ -3,22 +3,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from magi.bus import Bus
 
 logger = logging.getLogger("magi.agent.agent_context")
-
-DEFAULT_MAX_TOKENS = 1024
-
-
-@dataclass
-class AgentContext:
-    soul: str
-    tool_schemas: list[dict]
-    messages: list[dict]
 
 
 def build_messages_from_conversation(
@@ -65,36 +55,6 @@ def build_messages_from_conversation(
         return [{"role": "user", "content": new_user_text}]
 
 
-def build_context(
-    *,
-    text: str,
-    channel: str,
-    contact_id: int | None,
-    conversation_id: str | None,
-    caller_role: str | None,
-    bus: Bus,
-) -> AgentContext | None:
-    _ = channel
-    try:
-        schemas = bus.tool_definitions_book.list_enabled(caller_role=caller_role)
-        tool_schemas = [
-            {"name": d.name, "description": d.description, "input_schema": d.input_schema}
-            for d in (schemas or [])
-        ]
-    except Exception:
-        logger.warning("tool schemas load failed", exc_info=True)
-        tool_schemas = []
-
-    return AgentContext(
-        soul="",  # caller provides via build_system_prompt
-        tool_schemas=tool_schemas,
-        messages=build_messages_from_conversation(contact_id, conversation_id, text, bus=bus),
-    )
-
-
 __all__ = [
-    "AgentContext",
-    "DEFAULT_MAX_TOKENS",
-    "build_context",
     "build_messages_from_conversation",
 ]

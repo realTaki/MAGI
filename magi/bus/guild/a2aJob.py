@@ -140,11 +140,6 @@ class _A2ARequestRow(BaseJobRowMixin):
         nullable=True,
         default=None,
     )
-    error_code: Mapped[A2AErrorCode | None] = mapped_column(
-        enum_column(A2AErrorCode, name="a2a_error_code"),
-        nullable=True,
-        default=None,
-    )
 
 
 class _A2ANotifyRow(BaseJobRowMixin):

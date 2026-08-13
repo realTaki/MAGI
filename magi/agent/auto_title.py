@@ -44,6 +44,7 @@ async def request_conversation_title(
             {"role": "system", "content": bus.prompt_book.chat_title_prompt()},
             {"role": "user", "content": getattr(first_user, "text", "")},
         ],
+        contact_id=contact_id,
         max_tokens=20,
     )
     key = bus.llm_job_board.publish(job)
