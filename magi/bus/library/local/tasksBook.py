@@ -29,6 +29,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -293,7 +294,7 @@ class _TaskRunRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
     )
-    manual: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -782,7 +783,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             run_row = _TaskRunRow(
                 id=new_id,
                 task_id=task_id,
-                manual=int(manual),
+                manual=manual,
                 started_at=started_at,
                 status=TaskRunStatus.RUNNING.value,
             )
@@ -829,22 +830,20 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     dto_cls = TaskRun
 
     def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
-        """Override :meth:`BaseBook._row_to_dto` to coerce ``manual``.
+        """Map a ``task_runs`` row to its :class:`TaskRun` DTO.
 
-        ``status`` is :class:`TaskRunStatus` end-to-end (the column
-        is :func:`magi.bus.db.base.enum_column`-typed, so SQLAlchemy auto-coerces both
-        on write and read). The only remaining ORM→DTO coercion is
-        ``manual``: stored as ``Integer`` (0/1), exposed as ``bool``
-        so downstream consumers can use truthiness directly.
+        Kept as an override (rather than falling back to
+        :meth:`BaseBook._row_to_dto`) because ``started_at`` /
+        ``finished_at`` must stay native ``datetime`` — the base
+        method converts ``datetime`` values to ISO strings, but
+        :class:`TaskRun` exposes them as ``datetime`` fields.
+        ``status`` and ``manual`` are native-typed columns
+        (``enum_column`` / ``Boolean``) and need no conversion.
         """
         kwargs: dict = {}
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
-                val = getattr(row, f.name)
-                if f.name == "manual":
-                    kwargs[f.name] = bool(val)
-                else:
-                    kwargs[f.name] = val
+                kwargs[f.name] = getattr(row, f.name)
         return self.dto_cls(**kwargs)
 
     def get(self, *, id: str) -> TaskRun | None:

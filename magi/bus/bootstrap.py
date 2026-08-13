@@ -28,12 +28,12 @@ if TYPE_CHECKING:
     from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
     from magi.bus.guild.callLLMJob import callLLMJobBoard
     from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
-    from magi.bus.guild.chatJob import chatJobBoard
+    from magi.bus.guild.chatNotifyJob import chatNotifyBoard
     from magi.bus.guild.deliveryJob import deliveryJobBoard
     from magi.bus.guild.mcpServerChangedJob import mcpServerChangedJobBoard
     from magi.bus.guild.runTaskJob import runTaskJobBoard
     from magi.bus.guild.runToolJob import runToolJobBoard
-    from magi.bus.guild.seedPresetTasksJob import seedPresetTasksJobBoard
+    from magi.bus.guild.seedPresetTasksJob import seedPresetTaskJobBoard
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import SkillsBook
     from magi.bus.library.local.actionItemBook import ActionItemBook
@@ -127,7 +127,7 @@ class Bus:
 
     # -- local: agent (Job board) ---------------------------------------------
 
-    agent_job_board: chatJobBoard  # chatJobBoard
+    agent_job_board: chatNotifyBoard  # chatNotifyBoard
 
     # -- local: LLM (Job board) ----------------------------------------------
 
@@ -152,7 +152,7 @@ class Bus:
 
     # -- local: proactive (Job board) ---------------------------------------
 
-    seed_preset_tasks_job_board: seedPresetTasksJobBoard  # seedPresetTasksJobBoard
+    seed_preset_task_job_board: seedPresetTaskJobBoard  # seedPresetTaskJobBoard (one job per preset)
 
     # -- local: task trigger (Job board) -----------------------------------
 
@@ -276,12 +276,12 @@ def _open_with_dirs(
         a2aRequestJobBoard,
         callLLMJobBoard,
         changeProviderConfigJobBoard,
-        chatJobBoard,
+        chatNotifyBoard,
         deliveryJobBoard,
         mcpServerChangedJobBoard,
         runTaskJobBoard,
         runToolJobBoard,
-        seedPresetTasksJobBoard,
+        seedPresetTaskJobBoard,
     )
     from magi.bus.library.file.promptBook import PromptBook
     from magi.bus.library.file.skillsBook import build_default_skills_book
@@ -381,7 +381,7 @@ def _open_with_dirs(
     stream_hub = StreamHub()
 
     # ---- local job boards ---------------------------------------------------
-    agent_job_board = chatJobBoard(
+    agent_job_board = chatNotifyBoard(
         local_factory,
         contact_book=contacts_book,
         messages_book=messages_book,
@@ -394,7 +394,7 @@ def _open_with_dirs(
         local_factory, settings_book=settings_book
     )
     mcp_server_changed_job_board = mcpServerChangedJobBoard(local_factory)
-    seed_preset_tasks_job_board = seedPresetTasksJobBoard(local_factory)
+    seed_preset_task_job_board = seedPresetTaskJobBoard(local_factory)
     run_task_job_board = runTaskJobBoard(local_factory)
 
     # ---- magis_book books -------------------------------------------------------
@@ -448,7 +448,7 @@ def _open_with_dirs(
         a2a_request_job_board=a2a_request_job_board,
         a2a_notify_job_board=a2a_notify_job_board,
         change_provider_config_job_board=change_provider_config_job_board,
-        seed_preset_tasks_job_board=seed_preset_tasks_job_board,
+        seed_preset_task_job_board=seed_preset_task_job_board,
         run_task_job_board=run_task_job_board,
         token_usage_book=token_usage_book,
         action_items_book=action_items_book,

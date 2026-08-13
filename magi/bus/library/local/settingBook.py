@@ -101,11 +101,11 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         # ------------------------------------------------------------------
         # Inbound chat cap.
         # ------------------------------------------------------------------
-        # Per-turn character cap applied at chatJob publish and at
+        # Per-turn character cap applied at chatNotifyJob publish and at
         # messages_book.add. Prevents a single turn from blowing past
         # the LLM context budget and breaking compaction's
         # floor-of-1 guarantee.
-        "system.chat_max_input_chars",  # 单条消息最大字符数（chatJob + messages_book 共同限制）
+        "system.chat_max_input_chars",  # 单条消息最大字符数（chatNotifyJob + messages_book 共同限制）
         # ------------------------------------------------------------------
         # Daily-note visibility (agent-worker-bus.md §6).
         # ------------------------------------------------------------------

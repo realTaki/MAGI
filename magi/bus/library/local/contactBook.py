@@ -250,7 +250,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """Stamp ``last_seen_at`` for a contact.
 
         Cheap, idempotent activity signal — called by the
-        channel→agent publish path (:meth:`magi.bus.guild.chatJob.chatJobBoard.publish`)
+        channel→agent publish path (:meth:`magi.bus.guild.chatNotifyJob.chatNotifyBoard.publish`)
         so :meth:`search`'s recency ordering reflects real
         inbound traffic. A no-op when ``contact_id`` is
         ``None`` (e.g. a cron task without a bound contact)

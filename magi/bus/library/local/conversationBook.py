@@ -47,7 +47,7 @@ logger = logging.getLogger("magi.bus.library.local.conversationBook")
 # breaking compaction's floor-of-1 guarantee (always keep the most
 # recent turn). Lives in this module because the cap is fundamentally
 # a *write-side* concern — the row is what compaction reads; the LLM
-# reads the row, not a chatJob payload.
+# reads the row, not a chatNotifyJob payload.
 DEFAULT_CHAT_MAX_INPUT_CHARS = 8_000
 MIN_CHAT_MAX_INPUT_CHARS = 1_000
 MAX_CHAT_MAX_INPUT_CHARS = 100_000
@@ -347,7 +347,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         # book constructs (in :meth:`append_messages` and
         # :meth:`get_messages_page`), so the persistent layer
         # enforces the same cap that
-        # :meth:`chatJobBoard.publish_chat` enforces on the LLM input.
+        # :meth:`chatNotifyBoard.publish` enforces on the LLM input.
         self._settings_book = settings_book
 
     def get(self, *, conversation_id: str) -> Conversation | None:
@@ -909,9 +909,9 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         # Per-turn cap: protect the persistent layer (and therefore
         # compaction, which reads from here) from a single runaway
         # turn. This is the single chokepoint for the cap — the
-        # chatJob does not need a parallel cap, since the LLM
+        # chatNotifyJob does not need a parallel cap, since the LLM
         # reads the truncated row via
-        # :func:`build_messages_from_conversation`, not a chatJob
+        # :func:`build_messages_from_conversation`, not a chatNotifyJob
         # payload.
         max_chars = _resolve_max_input_chars(self._settings_book)
         text, was_truncated, original_len = _truncate_inbound(text, max_chars)
