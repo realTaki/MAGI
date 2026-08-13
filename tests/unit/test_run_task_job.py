@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.base import JobStatus
@@ -104,7 +105,13 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     second = board.claim()
     assert second is not None
     assert second.task_id == "task_a"
-    assert second.attempts > first.attempts  # attempts incremented on re-claim
+    # ``attempts`` is row-internal bookkeeping (BaseJobRowMixin) — read it
+    # from the underlying row, not the dataclass (BaseJob no longer
+    # carries the field).
+    with board._session() as s:
+        row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == second.job_id))
+        assert row is not None
+        assert row.attempts > 1, f"attempts should increment on re-claim; got {row.attempts}"
 
 
 def test_max_attempts_exhausted(board):

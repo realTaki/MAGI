@@ -94,17 +94,33 @@ def test_contacts_admin_authority_lives_on_magis_admin_id_not_a_local_admin_flag
     survives as ``_ContactRow.magis_admin_id`` →
     ``_MagisAdminRow.id``. This guard ensures the FK / role split
     doesn't silently regress.
-    """
-    dialect = postgresql.dialect()
-    admin_ddl = str(CreateTable(_MagisAdminRow.__table__).compile(dialect=dialect))
-    contact_ddl = str(CreateTable(_ContactRow.__table__).compile(dialect=dialect))
 
-    assert "REFERENCES contacts" not in admin_ddl
-    # Pre-collapse era columns stay gone.
-    assert "password_hash" not in contact_ddl
-    assert '"admin"' not in contact_ddl
+    Uses table-metadata introspection rather than DDL-string
+    comparison so the check stays stable across native-enum
+    columns (PostgreSQL ENUM ``CREATE TYPE`` requires a type
+    name, which the previous DDL-string check would surface as
+    a ``CompileError`` instead of an assertion failure).
+    """
+    admin_columns = {col.name for col in _MagisAdminRow.__table__.columns}
+    contact_columns = {col.name for col in _ContactRow.__table__.columns}
+
+    # _MagisAdminRow has no FK to the local ``contacts`` table —
+    # admin identity is rooted in the MAGIS-shared store.
+    admin_fks = {
+        fk.target_fullname
+        for fk in _MagisAdminRow.__table__.foreign_keys
+    }
+    assert "contacts.id" not in admin_fks
+    assert "contacts" not in admin_fks
+    # _MagisAdminRow does declare its own self-referential
+    # ``magis_id`` FK, which is fine.
+    assert "magis.id" in admin_fks
+
+    # Pre-collapse era columns stay gone from ``contacts``.
+    assert "password_hash" not in contact_columns
+    assert "admin" not in contact_columns
     # The local projection keeps a back-reference to the MAGIS admin row.
-    assert "magis_admin_id" in contact_ddl
+    assert "magis_admin_id" in contact_columns
 
 
 def test_engine_factory_recognises_sqlite_driver_variants_and_rejects_other_backends(

@@ -55,7 +55,6 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
     source, target, _memberships, requests, _notifies = boards
     job_id = requests.publish(
         A2ARequestJob(
-            job_id="request-one",
             source_magi_id=source.id,
             target_magi_id=target.id,
             text="Please validate the build plan.",
@@ -95,7 +94,6 @@ def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> 
     source, target, _memberships, _requests, notifies = boards
     job_id = notifies.publish(
         A2ANotifyJob(
-            job_id="notify-one",
             source_magi_id=source.id,
             target_magi_id=target.id,
             text="Deployment has completed.",
@@ -135,7 +133,6 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
 
     expired_id = requests.publish(
         A2ARequestJob(
-            job_id="expired-request",
             source_magi_id=source.id,
             target_magi_id=target.id,
             text="too late",
@@ -270,7 +267,6 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
     )
     worker = AgentWorker(bus, magi_id=12)  # type: ignore[arg-type]
     job = A2ARequestJob(
-        job_id="inbound-request",
         source_magi_id=11,
         target_magi_id=12,
         text="Please answer once.",
@@ -305,7 +301,6 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
     source, target, _memberships, requests, notifies = boards
     request_id = requests.publish(
         A2ARequestJob(
-            job_id="cross-member-request",
             source_magi_id=source.id,
             target_magi_id=target.id,
             text="Return one collaboration result.",

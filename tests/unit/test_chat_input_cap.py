@@ -399,7 +399,6 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     board = chatJobBoard(factory, conversations_book=sbook)
 
     job = ChatJob(
-        job_id="steer-1",
         conversation_id=cid,
         text="x",
         channel="webui",

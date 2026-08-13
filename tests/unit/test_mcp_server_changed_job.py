@@ -100,17 +100,30 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     assert row.server_payload["command"] == "mcp-gmail"
 
 
-def test_publish_respects_caller_supplied_job_id(board):
-    custom = "job-abc-123"
-    job_id = board.publish(
+def test_publish_mints_a_fresh_job_id_per_call(board):
+    """Board owns ``job_id`` — two consecutive publishes get two distinct IDs.
+
+    Earlier the Board accepted a caller-supplied ``job_id`` for
+    cross-system idempotency. Now that idempotency is gone at this
+    scale (see :class:`BaseJob`), every publish must mint a fresh
+    uuid so retries / fan-out don't accidentally dedupe.
+    """
+    first = board.publish(
         McpServerChangedJob(
             kind=MCPKind.UPDATED,
             server_name="gmail",
             server=_gmail_dto(),
-            job_id=custom,
         )
     )
-    assert job_id == custom
+    second = board.publish(
+        McpServerChangedJob(
+            kind=MCPKind.UPDATED,
+            server_name="gmail",
+            server=_gmail_dto(),
+        )
+    )
+    assert first != second
+    assert len(first) == 32  # uuid.uuid4().hex
 
 
 def test_claim_returns_none_when_empty(board):

@@ -131,7 +131,7 @@ def _build_bus(tmp_path) -> Bus:
         action_items_book=None,  # type: ignore[arg-type]
         hook_signoffs_book=None,  # type: ignore[arg-type]
         stream_hub=None,  # type: ignore[arg-type]
-        seed_preset_tasks_job_board=None,  # type: ignore[arg-type]
+        seed_preset_task_job_board=None,  # type: ignore[arg-type]
         run_task_job_board=None,  # type: ignore[arg-type]
         _local_factory=factory,
     )

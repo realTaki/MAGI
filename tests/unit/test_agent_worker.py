@@ -264,11 +264,11 @@ async def test_steering_injected():
     )
 
     steer_job = ChatJob(
-        job_id="steer-1",
         conversation_id="conv-1",
         contact_id=42,
         text="Also check this please.",
     )
+    object.__setattr__(steer_job, "job_id", "steer-1")  # init=False，frozen 下回填
     bus.agent_job_board.claim_for_conversation.side_effect = [steer_job, None, None]
 
     ctx = RunContext(

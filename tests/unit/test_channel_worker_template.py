@@ -68,7 +68,7 @@ async def test_successful_delivery_calls_submit_result_with_success():
     w._last_success_at = None
     w._last_error = None
 
-    fake_job = DeliveryJob(channel="fake", text="hi", job_id="j1")
+    fake_job = DeliveryJob(channel="fake", text="hi")
     w.bus = MagicMock()
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
@@ -104,7 +104,7 @@ async def test_failed_delivery_calls_submit_result_with_failure():
     w._last_success_at = None
     w._last_error = None
 
-    fake_job = DeliveryJob(channel="fake", job_id="j2")
+    fake_job = DeliveryJob(channel="fake", text="x")
     w.bus = MagicMock()
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
@@ -139,7 +139,7 @@ async def test_skips_job_with_wrong_channel():
     w._last_success_at = None
     w._last_error = None
 
-    wrong_job = DeliveryJob(channel="tg", job_id="j3")
+    wrong_job = DeliveryJob(channel="tg", text="x")
     w.bus = MagicMock()
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(wrong_job)
     w.bus.delivery_job_board.release = MagicMock()

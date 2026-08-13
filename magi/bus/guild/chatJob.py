@@ -15,7 +15,6 @@ direct :meth:`publish` callers, picks this up automatically.
 from __future__ import annotations
 
 import logging
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -23,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
@@ -68,22 +67,21 @@ class ChatJob(BaseJob):
     - :attr:`manual` — Task: whether the fire was manual.
     """
 
-    conversation_id: str | None = None
-    correlation_id: str | None = None
+    conversation_id: str | None = None  # 会话 ID（WebUI 多会话 / TG 单会话）
     # Core turn input
-    text: str = ""
-    channel: str = ""
-    contact_id: int | None = None
-    caller_role: str | None = None
+    text: str = ""  # 用户消息原文（pre-cap，chat_messages 存截断后）
+    channel: str = ""  # 入站渠道：tg / webui / task / ...
+    contact_id: int | None = None  # 所属联系人；task 无联系人时为 None
+    caller_role: str | None = None  # 发布时联系人角色（admin/guest/assigned）
     # Channel-specific
-    chat_id: str | None = None
-    tg_message_id: int | None = None
-    kind: str | None = None
-    task_id: str | None = None
-    manual: bool | None = None
+    chat_id: str | None = None  # TG：tgid
+    tg_message_id: int | None = None  # TG：上游 Telegram 消息 id
+    kind: str | None = None  # Task：标签，如 "task.triggered"
+    task_id: str | None = None  # Task：源任务 id
+    manual: bool | None = None  # Task：是否手动触发
     # Queue control
-    available_at: datetime | None = None
-    received_seq: int = 0
+    available_at: datetime | None = None  # 最早可被 claim 的时间（延迟投递）
+    received_seq: int = 0  # 同会话接收序号（排序 / 判新旧）
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,34 +93,29 @@ class ChatJobResult(BaseJobResult):
     error_detail: str | None = None  # 失败时的详细错误描述
 
 
-class _ChatJobRow(BaseJobRowMixin, Base):
+class _ChatJobRow(BaseJobRowMixin):
     __tablename__ = "chat_jobs"
     __table_args__ = {"extend_existing": True}
 
-    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 会话 ID
     # Turn input — formerly a single ``payload`` JSON blob. Split into
     # individual columns in migration 0011 so producers / consumers
     # see one field per attribute on :class:`ChatJob` (no
     # ``payload`` dict). The pre-migration rows had no value here.
-    text: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    channel: Mapped[str] = mapped_column(String(16), default="", nullable=False)
-    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    text: Mapped[str] = mapped_column(Text, default="", nullable=False)  # 用户消息原文
+    channel: Mapped[str] = mapped_column(String(16), default="", nullable=False)  # 入站渠道
+    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 所属联系人
+    caller_role: Mapped[str | None] = mapped_column(String(16), nullable=True)  # 联系人角色
     # Channel-specific (nullable; only the matching channel sets them)
-    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    tg_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # TG：tgid
+    tg_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # TG：上游消息 id
+    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)  # Task：标签
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Task：源任务 id
+    manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # Task：是否手动触发
     # Queue control
-    received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
-    )
+    received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 同会话接收序号
+    context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 上下文消息序号（行侧队列字段，dataclass 不暴露）
+    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)  # 最早可 claim 时间
 
 
 class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
@@ -159,28 +152,6 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def _insert_pending(self, session, job: ChatJob, **_kwargs) -> _ChatJobRow:
-        job_id = job.job_id or self.new_job_id()
-        row = _ChatJobRow(
-            job_id=job_id,
-            conversation_id=job.conversation_id,
-            correlation_id=job.correlation_id,
-            text=job.text,
-            channel=job.channel,
-            contact_id=job.contact_id,
-            caller_role=job.caller_role,
-            chat_id=job.chat_id,
-            tg_message_id=job.tg_message_id,
-            kind=job.kind,
-            task_id=job.task_id,
-            manual=job.manual,
-            received_seq=job.received_seq,
-            status=JobStatus.PENDING,
-        )
-        session.add(row)
-        session.flush()
-        return row
-
     def publish(self, job: ChatJob) -> str:
         """Enqueue one agent turn after the D.22 cross-channel guard.
 
@@ -208,6 +179,10 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         best-effort — a failure is logged and swallowed so a
         transient ``contact_book`` outage cannot block an inbound
         turn.
+
+        The dataclass→row copy itself goes through
+        :meth:`BaseJobBoard._build_pending_row`; only the D.22 guard
+        + last-seen stamp are domain-specific.
         """
         contact_id = job.contact_id
         channel = job.channel
@@ -235,7 +210,9 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
 
                     raise ChannelMismatchError(conversation.channel)
         with self._session() as s:
-            row = self._insert_pending(s, job)
+            row = self._build_pending_row(job)
+            s.add(row)
+            s.flush()
             s.commit()
             job_id = row.job_id
         self._stamp_last_seen(job)
@@ -249,8 +226,6 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         contact_id: int | None,
         conversation_id: str,
         caller_role: str | None = None,
-        job_id: str | None = None,
-        correlation_id: str | None = None,
         message_id: str | None = None,
         # Channel-specific (typed, no `**extras`).
         chat_id: str | None = None,        # TG
@@ -260,6 +235,11 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         manual: bool | None = None,        # Task
     ) -> str:
         """Channel→agent convenience: build a ChatJob from channel args and enqueue.
+
+        ``job_id`` is **always Board-generated** — callers can't pass
+        one in (see :meth:`BaseJobBoard.publish`); if the caller needs a
+        stable cross-system identifier (e.g. WebUI retries), use the
+        ``message_id`` argument below.
 
         Single chokepoint for inbound turn intake. Delegates the
         enqueue + D.22 guard to :meth:`publish`; this method adds
@@ -290,15 +270,8 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         :class:`TypeError` at the call site instead of a silent
         null in the DB row.
 
-        ``job_id`` and ``correlation_id`` are for callers that
-        need stable idempotency keys (e.g. WebUI). When
-        ``job_id`` is omitted the format is
-        ``"{channel}:{uuid16}"``.
-
-        ``message_id`` is the ULID to use for the
-        ``chat_messages`` row. Defaults to a fresh UUID4 hex so
-        concurrent retries produce distinct rows; pass the same
-        value on retry for producer-side idempotency.
+        ``message_id`` is the ULID to use for the ``chat_messages``
+        row — pass the same value on retry for producer-side idempotency.
 
         ``contact_id`` is ``int | None`` because
         :class:`magi.bus.library.local.tasksBook.Task`-driven
@@ -307,18 +280,15 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
         guard and ``last_seen_at`` stamp are skipped (no contact
         to validate / stamp).
 
-        Returns the *job_id* of the published job.
+        Returns the *job_id* of the published job (Board-generated).
         """
-        resolved_job_id = job_id or f"{channel}:{uuid.uuid4().hex[:16]}"
         # Build the typed ChatJob — every field visible, no
         # black-box dict. The cap lives in :meth:`MessageBook.add`
         # (the layer compaction reads), so the chatJob carries
         # the raw text and the persistent row carries the
-        # truncated text.
+        # truncated text. ``job_id`` is added by the Board on insert.
         job = ChatJob(
-            job_id=str(resolved_job_id),
             conversation_id=conversation_id,
-            correlation_id=correlation_id,
             text=text,
             channel=channel,
             contact_id=contact_id,

@@ -91,7 +91,6 @@ async def test_telegram_worker_fails_without_token():
         channel="tg",
         destination="123",
         text="hi",
-        job_id="j1",
     )
 
     from magi.channels.telegram.worker import TelegramWorker
