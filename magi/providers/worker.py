@@ -345,7 +345,7 @@ class ProvidersWorker(RuntimeWorker):
             )
             await self._safe_submit_failure(
                 job,
-                error_code=_PROVIDER_CRASHED_CODE,
+                error_code=LLMErrorCode.PROVIDER_CRASHED,
                 error_detail=str(exc),
             )
         finally:
@@ -359,11 +359,7 @@ class ProvidersWorker(RuntimeWorker):
             exc = self._provider_error or LLMNotConfiguredError(
                 "MAGI runtime has no LLM provider configured"
             )
-            error_code = (
-                _NOT_CONFIGURED_CODE
-                if isinstance(exc, LLMNotConfiguredError)
-                else type(exc).__name__
-            )
+            error_code = _map_exception_to_code(exc)
             await self._safe_submit_failure(
                 job,
                 error_code=error_code,
@@ -407,14 +403,14 @@ class ProvidersWorker(RuntimeWorker):
         except LLMNotConfiguredError as exc:
             await self._safe_submit_failure(
                 job,
-                error_code=_NOT_CONFIGURED_CODE,
+                error_code=LLMErrorCode.CREDENTIALS_REQUIRED,
                 error_detail=str(exc),
             )
             return
         except LLMError as exc:
             await self._safe_submit_failure(
                 job,
-                error_code=type(exc).__name__,
+                error_code=_map_exception_to_code(exc),
                 error_detail=str(exc),
             )
             return
@@ -530,7 +526,7 @@ class ProvidersWorker(RuntimeWorker):
         self,
         job: CallLLMJob,
         *,
-        error_code: str,
+        error_code: LLMErrorCode,
         error_detail: str,
     ) -> None:
         """Submit a failed :class:`CallLLMResult`. Swallows errors so

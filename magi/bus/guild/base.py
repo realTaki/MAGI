@@ -73,29 +73,39 @@ class BaseJob:
 class BaseJobResult:
     """所有 Result dataclass 的公共基类。
 
-    承载队列语义字段：``job_id``（业务键）与 ``status``（Result
-    业务终态，取 :class:`JobStatus` 子集 :attr:`JobStatus.COMPLETED` /
-    :attr:`JobStatus.FAILED`，由 :meth:`BaseJobBoard._read_result_from_job`
-    从 row.status 归一化）。子类只声明纯业务字段，走
-    :meth:`BaseJobBoard._write_result_to_job` / :meth:`BaseJobBoard._read_result_from_job`
-    的通用字段映射。这样「队列语义 vs 业务字段」的边界显式化，
-    子类不再需要各自抄一遍 ``job_id`` / ``status``。
+    承载队列语义字段：``job_id``（业务键）、``status``
+    （Result 业务终态，取 :class:`JobStatus` 子集
+    :attr:`JobStatus.COMPLETED` / :attr:`JobStatus.FAILED`，由
+    :meth:`BaseJobBoard._read_result_from_job` 从 row.status
+    归一化）、``error``（失败时的人类可读描述；成功路径下
+    Result 通常不构造，走过 :meth:`BaseJobBoard._submit` 的快
+    路径时 ``error`` 保持 ``None``）。子类只声明纯业务字段,
+    走 :meth:`BaseJobBoard._write_result_to_job` /
+    :meth:`BaseJobBoard._read_result_from_job` 的通用字段映射。
+    这样「队列语义 vs 业务字段」的边界显式化，子类不再需要
+    各自抄一遍 ``job_id`` / ``status`` / ``error``。
 
-    两个字段都带默认值，以兼容「无参构造后检查业务字段默认值」
+    三个字段都带默认值，以兼容「无参构造后检查业务字段默认值」
     的用法（如 ``A2ARequestResult().error_code is None``）。
+
+    .. note::
+       :class:`~magi.bus.guild.chatJob.ChatJobResult` 不继承
+       ``error`` 字段，它用
+       :attr:`~magi.bus.guild.chatJob.ChatJobResult.error_detail`
+       表达同一概念（语义同源但历史命名未统一）。这条注释是给
+       后续想 ``grep "error:"`` 字段的人准备的。
     """
 
     job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
     status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
+    error: str | None = None  # 失败时的人类可读错误文案（成功路径保持 None）
 
 
 class BaseJobRowMixin:
     """Job 队列行的公共列 mixin。
 
     每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(BaseJobRowMixin, Base)``
-    继承这 8 个队列控制列，只声明自己的业务列。``leased_by`` /
-    ``updated_at`` / ``available_at`` 不是严格公共（少数表缺），
-    保留在各自表里声明。
+    继承这 10 个队列控制列，只声明自己的业务列。
     """
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -103,10 +113,13 @@ class BaseJobRowMixin:
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
     # lives in :func:`magi.bus.db.base.enum_column` so all 10 Job boards
-    # share one source of truth and stay aligned with the alembic promotion
-    # migration. ``name="job_status"`` is pinned to match the migration's
-    # ``_ENUM_NAME`` literal — see alembic/versions/0019_… / magis_versions/0009_…
-    # for the PG ``CREATE TYPE`` / SQLite CHECK definition.
+    # share one source of truth. ``name="job_status"`` is the PG
+    # ``CREATE TYPE`` / SQLite CHECK constraint label emitted by the
+    # collapsed initial schema (see
+    # :mod:`magi.bus.db.alembic.versions.0001_initial_schema` and
+    # :mod:`magi.bus.db.alembic.magis_versions.0001_initial_schema` —
+    # the 2026.08 dev-mode collapse folded the historical migration
+    # chain into a single baseline per scope).
     status: Mapped[JobStatus] = mapped_column(
         enum_column(JobStatus, name="job_status"),
         nullable=False,
@@ -114,7 +127,11 @@ class BaseJobRowMixin:
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -170,6 +187,51 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     # -- 异步队列 ----------------------------------------------------------
 
+    def publish(self, job: JobT) -> str:
+        """Enqueue a new PENDING row and return its freshly minted ``job_id``.
+
+        Default impl: copy every dataclass field whose name is also a
+        column on :attr:`job_model` (skipping ``job_id`` /
+        ``attempts`` which :class:`BaseJob` owns), insert, commit.
+
+        Subclasses that need pre-insert side effects (cross-channel
+        guard, derived columns, idempotency lookup, external
+        settings write) override :meth:`publish` and call
+        :meth:`_build_pending_row` after their checks — the
+        dataclass→row copy itself stays generic.
+        """
+        with self._session() as s:
+            row = self._build_pending_row(job)
+            s.add(row)
+            s.flush()
+            s.commit()
+            return row.job_id
+
+    def _build_pending_row(self, job: JobT) -> RowT:
+        """Build a new PENDING row by mirroring dataclass fields onto columns.
+
+        ``job_id`` is freshly minted (``BaseJob.job_id = ""`` is always
+        empty pre-publish); ``attempts`` is claim-time bookkeeping so
+        it stays at its column default. Every other dataclass field
+        whose name is also a mapped column is copied via ``setattr``
+        — values are taken verbatim, so a dataclass field typed as
+        ``int | None`` with ``None`` will land as ``NULL`` and fail
+        against a ``NOT NULL`` column with the appropriate DB error.
+        Override :meth:`publish` (and skip the auto-copy by calling
+        the row constructor directly) when you need defensive
+        coercion or a derived column.
+        """
+        row = self.job_model(
+            job_id=self.new_job_id(),
+            status=JobStatus.PENDING,
+        )
+        for f in dataclasses.fields(job):
+            if f.name in ("job_id", "attempts"):
+                continue
+            if hasattr(row, f.name):
+                setattr(row, f.name, getattr(job, f.name))
+        return row
+
     def claim(self) -> JobT | None:
         with self._session() as s:
             row = self._claim(s)
@@ -203,7 +265,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 return
             if getattr(row, "status", None) == JobStatus.PROCESSING:
                 row.status = JobStatus.PENDING  # type: ignore[reportAttributeAccessIssue]
-                row.leased_by = None  # type: ignore[reportAttributeAccessIssue]
+                row.leased_by = None
                 row.leased_until = None  # type: ignore[reportAttributeAccessIssue]
                 row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # type: ignore[reportAttributeAccessIssue]  # 不消耗重试次数
             s.commit()
@@ -313,11 +375,9 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         ``None`` and let the caller decide what to do (retry on
         the next poll, alert, etc.).
         """
-        # ``leased_by`` is not on every row (``mcpServerChangedJob`` /
-        # ``seedPresetTasksJob`` omit it), so keep the runtime probe.
-        # ``started_at`` is now guaranteed by :class:`BaseJobRowMixin`, so
-        # the claim path can set it unconditionally on first claim.
-        has_leased_by = hasattr(self.job_model, "leased_by")
+        # ``leased_by`` and ``started_at`` are both guaranteed by
+        # :class:`BaseJobRowMixin`, so the claim path can set them
+        # unconditionally.
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
         for _ in range(MAX_ATTEMPTS_CANDIDATES):
@@ -365,9 +425,8 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 "status": JobStatus.PROCESSING,
                 "leased_until": lease_until,
                 "attempts": attempts + 1,
+                "leased_by": owner,
             }
-            if has_leased_by:
-                values["leased_by"] = owner
             if not is_reclaim:
                 values["started_at"] = now
             result = session.execute(update(self.job_model).where(*where_clauses).values(**values))
