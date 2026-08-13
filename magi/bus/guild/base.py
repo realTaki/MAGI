@@ -8,10 +8,11 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import enum as _enum_mod
+from enum import StrEnum
 from typing import ClassVar
 
-from sqlalchemy import DateTime, Enum, Integer, String, and_, func, or_, select, update
+from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -30,16 +31,22 @@ MAX_ATTEMPTS_CANDIDATES = 10
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
 
-class JobStatus(_enum_mod.Enum):
+class JobStatus(StrEnum):
     """Job 队列状态机 + 业务终态。
 
-    Row 层（``JobRowMixin.status``）承载全部 4 个值；Result 层
+    Row 层（``BaseJobRowMixin.status``）承载全部 4 个值；Result 层
     （``BaseJobResult.status``）只承载终态子集 :attr:`COMPLETED` /
     :attr:`FAILED`，因为 Result 只在 worker submit 时构造。
 
+    ``StrEnum`` 而非裸 ``Enum``：成员继承 ``str``，所以
+    ``JobStatus.PENDING == "pending"`` 为真 —— DB 列存的原始
+    string 与 enum 互通,跨进程传值不需要 .value 拆包。
+    ``Literal`` narrowing 仍然有效（``status: JobStatus`` 在类型
+    检查器中仍细化为 ``Literal[JobStatus.PENDING, ...]``）。
+
     列类型用 :class:`sqlalchemy.Enum` + ``values_callable`` 把
     存储 / CHECK / CREATE TYPE 标签锁定在 ``.value`` 而非成员
-    ``.name``，与现有 :class:`~magi.bus.guild.a2aJob.A2AErrorCode`
+    ``.name``，与 :class:`~magi.bus.guild.a2aJob.A2AErrorCode`
     同构（PG 走原生 ENUM，SQLite 走 CHECK 约束）。
     """
 
@@ -85,16 +92,13 @@ class BaseJobResult:
     """
 
     job_id: str = ""  # 对应 job 的 natural_key_attr 值（默认 "job_id"）
-    # Pylance narrows ``JobStatus.COMPLETED`` to ``Literal["completed"]`` because
-    # ``JobStatus`` is a plain ``Enum`` (not ``StrEnum``); at runtime the value
-    # is a ``JobStatus`` instance, so the assignment is sound.
-    status: JobStatus = JobStatus.COMPLETED  # type: ignore[reportAssignmentType]
+    status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
 
 
-class JobRowMixin:
+class BaseJobRowMixin:
     """Job 队列行的公共列 mixin。
 
-    每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(JobRowMixin, Base)``
+    每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(BaseJobRowMixin, Base)``
     继承这 8 个队列控制列，只声明自己的业务列。``leased_by`` /
     ``updated_at`` / ``available_at`` 不是严格公共（少数表缺），
     保留在各自表里声明。
@@ -105,16 +109,10 @@ class JobRowMixin:
     # Native enum column — see :class:`JobStatus` docstring. ``values_callable``
     # pins storage / CHECK / CREATE TYPE labels to ``.value`` ("pending" etc.),
     # matching the legacy VARCHAR representation so existing rows survive the
-    # alembic promotion without a data rewrite. The two ``type: ignore``
-    # pragmas cover SQLAlchemy 2.x's overloaded ``Enum.__init__``: Pylance
-    # matches overload 2 (``*enums: str``) against a plain ``Enum`` subclass
-    # (``Type[JobStatus]``), so the call signature and the first argument
-    # both raise false-positive ``reportCallIssue`` / ``reportArgumentType``
-    # diagnostics. ``A2AErrorCode`` (a ``StrEnum`` in ``a2aJob.py``) doesn't
-    # need this because it's also assignable to ``str``.
+    # alembic promotion without a data rewrite.
     status: Mapped[JobStatus] = mapped_column(
-        Enum(
-            JobStatus,  # type: ignore[reportArgumentType]
+        SAEnum(
+            JobStatus,
             name="job_status",
             native_enum=True,
             length=24,
@@ -327,7 +325,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """
         # ``leased_by`` is not on every row (``mcpServerChangedJob`` /
         # ``seedPresetTasksJob`` omit it), so keep the runtime probe.
-        # ``started_at`` is now guaranteed by :class:`JobRowMixin`, so
+        # ``started_at`` is now guaranteed by :class:`BaseJobRowMixin`, so
         # the claim path can set it unconditionally on first claim.
         has_leased_by = hasattr(self.job_model, "leased_by")
         now = utcnow_naive()
