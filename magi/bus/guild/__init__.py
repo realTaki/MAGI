@@ -16,7 +16,7 @@ from magi.bus.guild.a2aJob import (
 from magi.bus.guild.base import BaseJobBoard
 
 # 往返 (publish → claim → submit_result)
-from magi.bus.guild.callLLMJob import CallLLMJob, CallLLMResult, callLLMJobBoard
+from magi.bus.guild.callLLMJob import CallLLMJob, CallLLMResult, LLMErrorCode, callLLMJobBoard
 from magi.bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
@@ -43,6 +43,7 @@ __all__ = [
     # 往返
     "CallLLMJob",
     "CallLLMResult",
+    "LLMErrorCode",
     "callLLMJobBoard",
     "RunToolJob",
     "RunToolResult",

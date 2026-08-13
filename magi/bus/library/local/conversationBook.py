@@ -28,6 +28,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     select,
     text,
     update,
@@ -399,6 +400,75 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
+    def list_summaries(
+        self,
+        *,
+        contact_id: int,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[ConversationSummary], int]:
+        """Paginated, newest-first summaries for the list endpoint.
+
+        Each :class:`ConversationSummary` projects the conversation header
+        plus two message-derived fields — ``message_count`` (active rows
+        only) and ``preview`` (the latest active message text). The two
+        aggregates are fetched per row (N+1) because a single operator's
+        conversation set is small (the HTTP layer clamps ``limit`` to 200);
+        a join + window-function rewrite is a follow-up if this ever shows
+        up in a profile.
+        """
+        with self._session() as s:
+            total = int(
+                s.scalar(
+                    select(func.count())
+                    .select_from(_ConversationRow)
+                    .where(_ConversationRow.contact_id == contact_id)
+                )
+                or 0
+            )
+            rows = s.scalars(
+                select(_ConversationRow)
+                .where(_ConversationRow.contact_id == contact_id)
+                .order_by(_ConversationRow.updated_at.desc())
+                .limit(limit)
+                .offset(offset)
+            ).all()
+            summaries: list[ConversationSummary] = []
+            for row in rows:
+                conv = self._row_to_dto(row)
+                message_count = int(
+                    s.scalar(
+                        select(func.count())
+                        .select_from(_MessageRow)
+                        .where(
+                            _MessageRow.conversation_id == row.conversation_id,
+                            _MessageRow.archived == 0,
+                        )
+                    )
+                    or 0
+                )
+                preview_row = s.scalar(
+                    select(_MessageRow)
+                    .where(
+                        _MessageRow.conversation_id == row.conversation_id,
+                        _MessageRow.archived == 0,
+                    )
+                    .order_by(_MessageRow.id.desc())
+                    .limit(1)
+                )
+                summaries.append(
+                    ConversationSummary(
+                        conversation_id=conv.conversation_id,
+                        channel=conv.channel,
+                        created_at=conv.created_at or "",
+                        updated_at=conv.updated_at or "",
+                        message_count=message_count,
+                        preview=preview_row.text if preview_row else "",
+                        title=conv.title,
+                    )
+                )
+        return summaries, total
+
     def add(
         self,
         *,
@@ -661,6 +731,74 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 )
             )
             return self._row_to_dto(row) if row else None
+
+    def set_title(
+        self,
+        *,
+        contact_id: int,
+        conversation_id: str,
+        title: str | None,
+        bump_updated: bool = True,
+    ) -> Conversation | None:
+        """Set (or clear) the conversation title, scoped to its owner.
+
+        Unlike :meth:`set_title_if_null` (the auto-title CAS primitive),
+        this is an unconditional write — ``title=None`` clears the column.
+        The value is trimmed and clamped to 80 chars to match the column
+        width and the PATCH body's ``max_length``. Returns the updated DTO,
+        or ``None`` when no matching row exists.
+        """
+        from magi.bus.db.base import utcnow_naive
+
+        if title is not None:
+            title = title.strip()
+            if len(title) > 80:
+                title = title[:80]
+        now = utcnow_naive().isoformat() + "Z"
+        with self._session() as s:
+            stmt = (
+                update(_ConversationRow)
+                .where(
+                    _ConversationRow.conversation_id == conversation_id,
+                    _ConversationRow.contact_id == contact_id,
+                )
+                .values(title=title)
+            )
+            if bump_updated:
+                stmt = stmt.values(updated_at=now)
+            result = s.execute(stmt)
+            if getattr(result, "rowcount", 0) == 0:  # type: ignore[reportAttributeAccessIssue]
+                s.rollback()
+                return None
+            s.commit()
+            row = s.scalar(
+                select(_ConversationRow).where(
+                    _ConversationRow.conversation_id == conversation_id
+                )
+            )
+            return self._row_to_dto(row) if row else None
+
+    def delete(self, *, contact_id: int, conversation_id: str) -> bool:
+        """Delete one owned conversation (and its messages via FK cascade).
+
+        Idempotent — returns ``False`` (without error) when the row is
+        absent or owned by another contact, so a stale DELETE on an
+        already-removed id is a no-op. ``chat_messages`` rows are removed
+        by the ``ondelete="CASCADE"`` FK (``foreign_keys=ON`` is enabled
+        in :mod:`magi.bus.db.engine`).
+        """
+        with self._session() as s:
+            row = s.scalar(
+                select(_ConversationRow).where(
+                    _ConversationRow.conversation_id == conversation_id,
+                    _ConversationRow.contact_id == contact_id,
+                )
+            )
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+        return True
 
 
 class MessageBook(BaseBook[_MessageRow, Message]):

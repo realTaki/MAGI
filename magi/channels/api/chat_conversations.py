@@ -25,16 +25,13 @@ directly.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus.library.local.conversationBook import (
     Conversation,
-    ConversationCorruptError,
     ConversationNotFoundError,
-    ConversationPathError,
     ConversationSummary,
     Message,
 )
@@ -46,23 +43,6 @@ from magi.channels.api.errors import MagiHTTPException
 logger = logging.getLogger("magi.api.chat_conversations")
 
 router = APIRouter(tags=["chat_conversations"])
-
-
-ConversationStore = Any
-
-
-def get_conversation_store(request: Request) -> ConversationStore:
-    """FastAPI dependency — one bus conversation facade per request.
-
-    We deliberately construct it lazily (per-request) rather
-    than at module import: tests that override
-    the path is resolved via ``magi.startup.paths.resolve_workspace_dir()``
-    current value, not the value captured at import time.
-    """
-    return get_bus(request).conversations_book
-
-
-ConversationServiceDep = Annotated[ConversationStore, Depends(get_conversation_store)]
 
 
 # -- Pydantic response shapes ------------------------------------------------
@@ -298,7 +278,7 @@ def _admin_contact_id(request: Request) -> int:
 def create_conversation(
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
+    bus: BusDep,
 ) -> CreateConversationResponse:
     """Create a new empty conversation for the current operator.
 
@@ -315,14 +295,14 @@ def create_conversation(
     # column (renamed from the legacy per-channel chat-id
     # column in D.28). We resolve it via the channel
     # dispatcher so this endpoint never reads
-    # ``Contact.tgid`` directly. The store key,
-    # however, is ``contact_id`` — see
-    # :meth:`ConversationService.create`.
+    # ``Contact.tgid`` directly. The row key, however, is
+    # ``contact_id`` — the ``conversation_id`` is owned by
+    # :meth:`ConversationBook.add`.
     delivery_address = _delivery_address_for_contact_id(request, contact_id)
-    sess = service.create(
-        contact_id,
-        channel=Channel.WEBUI,
+    sess = bus.conversations_book.add(
         delivery_address=delivery_address,
+        contact_id=contact_id,
+        channel=Channel.WEBUI,
     )
     return CreateConversationResponse(conversation_id=sess.conversation_id)
 
@@ -334,18 +314,14 @@ def create_conversation(
 def list_conversations(
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
+    bus: BusDep,
     limit: int = 50,
     offset: int = 0,
 ) -> ConversationListOut:
     """List current operator's conversations, newest first.
 
     ``limit`` is clamped to a sane range: the v0 cap is 200
-    to bound the per-request work (the implementation
-    reads every conversation file under the chat's directory —
-    fine for a single operator's tens-to-hundreds of
-    conversations, but a misbehaving client cannot push it
-    further).
+    to bound the per-request work.
     """
     if limit < 1:
         limit = 50
@@ -357,13 +333,13 @@ def list_conversations(
     contact_id = _admin_contact_id(request)
     # D.23: list scope is the operator's contact_id, not
     # a per-channel delivery address.
-    # ``store.list_summaries`` returns every row whose
+    # ``ConversationBook.list_summaries`` returns every row whose
     # ``contact_id`` matches — webui, TG, and (in future) any
     # other channel the operator owns. The frontend
     # renders the channel alongside each row (D.22
     # added the field).
-    items, total = service.list_summaries(
-        contact_id,
+    items, total = bus.conversations_book.list_summaries(
+        contact_id=contact_id,
         limit=limit,
         offset=offset,
     )
@@ -383,34 +359,13 @@ def get_conversation(
     conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
     bus: BusDep,
 ) -> ConversationOut:
     """Load a single conversation — full transcript + metadata."""
     contact_id = _admin_contact_id(request)
-    try:
-        sess = service.get(contact_id, conversation_id)
-    except ConversationPathError as e:
-        # Malformed conversation_id from the URL — it's a 400,
-        # not a 404 (the id is invalid, not absent).
-        logger.warning(
-            "conversation get rejected (bad conversation_id %r from contact %s): %s",
-            conversation_id,
-            contact_id,
-            e,
-        )
-        raise MagiHTTPException(  # noqa: B904
-            status_code=400,
-            code="validation.conversation_id_invalid",
-            detail=str(e),
-        )
-    except ConversationCorruptError as e:
-        logger.error("conversation file corrupt: %s", e)
-        raise MagiHTTPException(  # noqa: B904
-            status_code=500,
-            code="validation.conversation_corrupt",
-            detail="conversation file is malformed",
-        )
+    sess = bus.conversations_book.get_for_owner(
+        contact_id=contact_id, conversation_id=conversation_id
+    )
     if sess is None:
         raise MagiHTTPException(
             status_code=404,
@@ -426,7 +381,7 @@ def delete_conversation(
     conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
+    bus: BusDep,
 ):
     """Remove a conversation permanently.
 
@@ -436,19 +391,10 @@ def delete_conversation(
     older conversation list.
     """
     contact_id = _admin_contact_id(request)
-    try:
-        removed = service.delete(contact_id, conversation_id)
-    except ConversationPathError as e:
-        raise MagiHTTPException(  # noqa: B904
-            status_code=400,
-            code="validation.conversation_id_invalid",
-            detail=str(e),
-        )
-    if not removed:
-        # The 204 status is set by the response_model /
-        # response_class on the route. For clarity, we
-        # ALWAYS return 204 — see the comment above.
-        return None
+    # ``delete`` returns False when the row is absent or owned by
+    # another contact — both are treated as "already gone", so the
+    # route always answers 204.
+    bus.conversations_book.delete(contact_id=contact_id, conversation_id=conversation_id)
     return None
 
 
@@ -461,7 +407,6 @@ def update_conversation(
     payload: UpdateConversationRequest,
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
     bus: BusDep,
 ) -> ConversationOut:
     """Rename a conversation (D.7).
@@ -479,7 +424,7 @@ def update_conversation(
 
     Manual renames do **not** bump ``updated_at``: a rename is
     operator metadata and shouldn't reshuffle the sidebar.
-    The auto-title worker takes the same ``rename`` path with
+    The auto-title worker takes the same path with
     ``bump_updated=True`` because a freshly-titled conversation is
     content, not metadata.
     """
@@ -488,34 +433,17 @@ def update_conversation(
     if "title" in payload.model_fields_set:
         raw = payload.title
         # ``None`` and empty (whitespace-only or ``""``) both
-        # clear. ``ConversationService.rename`` re-clamps to 80 as a
+        # clear. ``ConversationBook.set_title`` re-clamps to 80 as a
         # final defensive ceiling.
-        if raw is None or raw.strip() == "":
-            new_title: str | None = None
-        else:
-            new_title = raw
-
-        try:
-            sess = service.rename(contact_id, conversation_id, new_title, bump_updated=False)
-        except ConversationPathError as e:
-            raise MagiHTTPException(  # noqa: B904
-                status_code=400,
-                code="validation.conversation_id_invalid",
-                detail=str(e),
-            )
-        except ConversationCorruptError as e:
-            logger.error(
-                "rename failed: conversation file corrupt: %s",
-                e,
-                extra={"conversation_id": conversation_id},
-            )
-            raise MagiHTTPException(  # noqa: B904
-                status_code=500,
-                code="validation.conversation_corrupt",
-                detail="conversation file is malformed",
-            )
-        except ConversationNotFoundError:
-            raise MagiHTTPException(  # noqa: B904
+        new_title: str | None = None if (raw is None or raw.strip() == "") else raw
+        sess = bus.conversations_book.set_title(
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+            title=new_title,
+            bump_updated=False,
+        )
+        if sess is None:
+            raise MagiHTTPException(
                 status_code=404,
                 code="not_found.conversation",
                 detail=f"conversation {conversation_id} not found",
@@ -524,28 +452,12 @@ def update_conversation(
         return _conversation_to_out(sess, messages=messages)
 
     # No-op path — return current state. Going through
-    # ``store.get`` (rather than synthesizing) surfaces a
+    # ``get_for_owner`` (rather than synthesizing) surfaces a
     # 404 if the conversation vanished between the GET that
     # showed the row and this PATCH.
-    try:
-        sess = service.get(contact_id, conversation_id)
-    except ConversationPathError as e:
-        raise MagiHTTPException(  # noqa: B904
-            status_code=400,
-            code="validation.conversation_id_invalid",
-            detail=str(e),
-        )
-    except ConversationCorruptError as e:
-        logger.error(
-            "get failed: conversation file corrupt: %s",
-            e,
-            extra={"conversation_id": conversation_id},
-        )
-        raise MagiHTTPException(  # noqa: B904
-            status_code=500,
-            code="validation.conversation_corrupt",
-            detail="conversation file is malformed",
-        )
+    sess = bus.conversations_book.get_for_owner(
+        contact_id=contact_id, conversation_id=conversation_id
+    )
     if sess is None:
         raise MagiHTTPException(
             status_code=404,
@@ -592,7 +504,7 @@ def get_conversation_messages(
     conversation_id: str,
     request: Request,
     _admin: AdminGate,
-    service: ConversationServiceDep,
+    bus: BusDep,
     limit: int = 50,
     offset: int = 0,
     include_archived: bool = False,
@@ -619,7 +531,7 @@ def get_conversation_messages(
     if offset < 0:
         offset = 0
     try:
-        msgs, total_active, total_all = service.get_messages_page(
+        msgs, total_active, total_all = bus.conversations_book.get_messages_page(
             contact_id,
             conversation_id,
             limit=limit,
@@ -636,19 +548,15 @@ def get_conversation_messages(
             code="not_found.conversation",
             detail=f"conversation {conversation_id} not found",
         )
-    except ConversationPathError as e:
-        raise MagiHTTPException(  # noqa: B904
-            status_code=400,
-            code="validation.conversation_id_invalid",
-            detail=str(e),
-        )
 
     if not msgs and offset == 0:
         # No messages AND we asked for page 0 — likely the
         # conversation doesn't exist (vs. an empty conversation).
-        # Distinguishing the two cases: try ``store.get``
+        # Distinguishing the two cases: try ``get_for_owner``
         # and 404 if it returns None.
-        sess = service.get(contact_id, conversation_id)
+        sess = bus.conversations_book.get_for_owner(
+            contact_id=contact_id, conversation_id=conversation_id
+        )
         if sess is None:
             raise MagiHTTPException(
                 status_code=404,

@@ -8,12 +8,48 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+
+
+# -- public enum -----------------------------------------------------------
+
+
+class LLMErrorCode(StrEnum):
+    """Stable error code returned on a failed :class:`CallLLMResult`.
+
+    Three layers of values:
+
+    - ``NONE`` — sentinel for "result is successful; the worker never
+      set an error". Stored as ``""`` so the existing
+      ``if result.error_code:`` truthy check still works.
+    - ``CREDENTIALS_REQUIRED`` / ``PROVIDER_CRASHED`` / ``RUN_CANCELLED``
+      — bus-wide codes already in use by :class:`magi.bus.guild.base.JobStatus`
+      neighbours; keeping them verbatim avoids cross-board wire churn.
+    - ``AUTH_FAILED`` / ``RATE_LIMITED`` / ``NETWORK_ERROR`` /
+      ``CONTEXT_TOO_LONG`` — one member per known provider exception
+      class under :mod:`magi.providers.errors`; the provider worker
+      maps ``isinstance(exc, ...)`` to the matching member instead of
+      leaking ``type(exc).__name__`` into the wire format.
+    - ``UNKNOWN`` — fallback for a brand-new exception class not yet
+      enumerated here. The provider worker keeps the original class
+      name in :attr:`CallLLMResult.error` for diagnostics.
+    """
+
+    NONE = ""
+    CREDENTIALS_REQUIRED = "magi.llm_credentials_required"
+    AUTH_FAILED = "llm.auth_failed"
+    RATE_LIMITED = "llm.rate_limited"
+    NETWORK_ERROR = "llm.network_error"
+    CONTEXT_TOO_LONG = "llm.context_too_long"
+    PROVIDER_CRASHED = "chat.provider_crashed"
+    RUN_CANCELLED = "magi.run_cancelled"
+    UNKNOWN = "llm.unknown"
 
 # -- public dataclasses ----------------------------------------------------
 
@@ -54,7 +90,7 @@ class CallLLMResult(BaseJobResult):
     model: str = ""  # provider 实际使用的模型
     stream_key: str = ""  # bus.stream_hub 的管道句柄
     error: str | None = None  # 失败时的错误文案
-    error_code: str = ""  # 稳定错误码，如 "LLMAuthError"
+    error_code: LLMErrorCode = LLMErrorCode.NONE  # 稳定错误码（成功 = LLMErrorCode.NONE）
 
 
 # -- internal ORM ----------------------------------------------------------
@@ -75,7 +111,9 @@ class _LLMJobRow(BaseJobRowMixin, Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    error_code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    error_code: Mapped[LLMErrorCode] = mapped_column(
+        enum_column(LLMErrorCode, length=64), nullable=False, default=LLMErrorCode.NONE
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive
     )

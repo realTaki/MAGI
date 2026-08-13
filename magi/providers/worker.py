@@ -47,10 +47,18 @@ from magi.bus.guild import (
     CallLLMResult,
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
+    LLMErrorCode,
 )
 from magi.bus.guild.base import JobStatus
 from magi.providers.base import LLMProvider, LLMStreamEvent
-from magi.providers.errors import LLMError, LLMNotConfiguredError
+from magi.providers.errors import (
+    LLMAuthError,
+    LLMContextLengthError,
+    LLMError,
+    LLMNetworkError,
+    LLMNotConfiguredError,
+    LLMRateLimitError,
+)
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -64,9 +72,25 @@ logger = logging.getLogger("magi.providers.worker")
 # constructor parameter; there is no environment-variable knob.
 _DEFAULT_CONCURRENCY = 2
 
-# Stable short codes for the operator-facing error envelope.
-_NOT_CONFIGURED_CODE = "magi.llm_credentials_required"
-_PROVIDER_CRASHED_CODE = "chat.provider_crashed"
+
+def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
+    """Map a provider-side exception to a stable :class:`LLMErrorCode`.
+
+    Closed mapping — any class not listed collapses to
+    :attr:`LLMErrorCode.UNKNOWN`. The original class name stays
+    on :attr:`CallLLMResult.error` for diagnostics.
+    """
+    if isinstance(exc, LLMNotConfiguredError):
+        return LLMErrorCode.CREDENTIALS_REQUIRED
+    if isinstance(exc, LLMAuthError):
+        return LLMErrorCode.AUTH_FAILED
+    if isinstance(exc, LLMRateLimitError):
+        return LLMErrorCode.RATE_LIMITED
+    if isinstance(exc, LLMNetworkError):
+        return LLMErrorCode.NETWORK_ERROR
+    if isinstance(exc, LLMContextLengthError):
+        return LLMErrorCode.CONTEXT_TOO_LONG
+    return LLMErrorCode.UNKNOWN
 
 # Setting key under which the worker publishes the supported-provider
 # list (id + human label). WebUI reads this from ``bus.settings_book``
@@ -310,7 +334,7 @@ class ProvidersWorker(RuntimeWorker):
         except asyncio.CancelledError:
             await self._safe_submit_failure(
                 job,
-                error_code="magi.run_cancelled",
+                error_code=LLMErrorCode.RUN_CANCELLED,
                 error_detail="providers worker cancelled",
             )
             raise
