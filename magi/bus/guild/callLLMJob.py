@@ -13,7 +13,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 # -- public dataclasses ----------------------------------------------------
 
@@ -25,11 +25,9 @@ class CallLLMJob(BaseJob):
     ``messages`` 中第一条 role="system" 的消息即为 system prompt。
 
     The context fields (``contact_id`` / ``conversation_id`` / ``channel``
-    / ``caller_role`` / ``phase``) used to live in a single opaque
-    ``parameters: dict`` bag — see migration ``0016_split_llm_job_parameters``.
-    They are now first-class typed attributes so producers and
-    consumers see one field per attribute instead of a black-box
-    dict. ``phase`` distinguishes internal callers
+    / ``caller_role`` / ``phase``) live as first-class typed attributes
+    on the row — producer / consumer see one field per attribute
+    instead of a black-box dict. ``phase`` distinguishes internal callers
     (``"auto_title"`` / ``"auto_compact"`` / ``"chat"``) from chat
     traffic and is purely informational — the provider worker does
     not branch on it.
@@ -68,7 +66,7 @@ class CallLLMResult(BaseJobResult):
 # -- internal ORM ----------------------------------------------------------
 
 
-class _LLMJobRow(JobRowMixin, Base):
+class _LLMJobRow(BaseJobRowMixin, Base):
     __tablename__ = "llm_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -76,10 +74,9 @@ class _LLMJobRow(JobRowMixin, Base):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Context — formerly the ``parameters`` JSON blob. Split into
-    # individual columns in migration 0016 so producers / consumers
-    # see one field per attribute on :class:`CallLLMJob` (no
-    # ``parameters`` dict). The pre-migration rows had no value here.
+    # Context — formerly the ``parameters`` JSON blob. First-class typed
+    # columns on :class:`CallLLMJob` so producers / consumers see one
+    # field per attribute (no ``parameters`` dict).
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     conversation_id: Mapped[str] = mapped_column(
         String(128), nullable=False, default=""
@@ -112,7 +109,7 @@ class callLLMJobBoard(BaseJobBoard[_LLMJobRow, CallLLMJob, CallLLMResult]):
         with self._session() as s:
             row = _LLMJobRow(
                 job_id=uuid.uuid4().hex,
-                status="pending",
+                status=JobStatus.PENDING,
                 messages=job.messages,
                 max_tokens=job.max_tokens,
                 tools=job.tools,

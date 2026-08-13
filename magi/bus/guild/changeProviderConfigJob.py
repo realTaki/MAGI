@@ -32,7 +32,7 @@ from sqlalchemy import JSON, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
     from magi.bus.library.local.settingBook import SettingBook
@@ -68,9 +68,10 @@ class ChangeProviderConfigResult(BaseJobResult):
     """:class:`ChangeProviderConfigJob` 的处理回执 — ProvidersWorker
     在重建 SDK client / 切换模型后写入。
 
-    ``success=True`` 表示配置已经生效（缓存的 client 已经是新
-    provider / 新 model）；``success=False`` 时 ``error`` 写错
-    误描述，调用方通常直接 502 给前端。
+    :attr:`JobStatus.COMPLETED` 表示配置已经生效（缓存的
+    client 已经是新 provider / 新 model）；
+    :attr:`JobStatus.FAILED` 时 ``error`` 写错误描述，调用方
+    通常直接 502 给前端。
     """
 
     error: str | None = None  # 失败时的错误描述
@@ -79,7 +80,7 @@ class ChangeProviderConfigResult(BaseJobResult):
 # ── internal ORM ───────────────────────────────────────────────────────────
 
 
-class _ChangeProviderConfigRow(JobRowMixin, Base):
+class _ChangeProviderConfigRow(BaseJobRowMixin, Base):
     __tablename__ = "change_provider_config_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -132,7 +133,7 @@ class changeProviderConfigJobBoard(
         with self._session() as s:
             row = _ChangeProviderConfigRow(
                 job_id=job_id,
-                status="pending",
+                status=JobStatus.PENDING,
                 provider=job.provider,
                 api_key=job.api_key,
                 model=job.model,

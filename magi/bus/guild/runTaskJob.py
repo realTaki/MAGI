@@ -26,7 +26,7 @@ from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin, JobStatus
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +66,7 @@ class RunTaskResult(BaseJobResult):
     error: str | None = None  # 失败时的错误描述
 
 
-class _RunTaskJobRow(JobRowMixin, Base):
+class _RunTaskJobRow(BaseJobRowMixin, Base):
     __tablename__ = "run_task_jobs"
     __table_args__ = {"extend_existing": True}
 

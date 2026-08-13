@@ -14,7 +14,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 #: Maximum delivery attempts before a row is marked failed.
 #: Distinct from :data:`magi.bus.guild.base.MAX_ATTEMPTS` (which
@@ -40,7 +40,7 @@ class DeliveryJob(BaseJob):
     **类型化字段** 暴露,producer / consumer 看到的是具名属性。
     在 DB 层每个字段都是独立列（见 :class:`_DeliveryJobRow`）,
     没有 ``payload`` JSON 黑盒——ORM 行 → dataclass 直接按字段
-    名映射,migration 0017 已经把旧的 ``payload`` 列拆掉。
+    名映射。
     """
 
     channel: str  # 投递渠道（tg/webui/...）
@@ -55,24 +55,24 @@ class DeliveryResult(BaseJobResult):
     """:class:`DeliveryJob` 的投递回执 — 渠道 worker 实际送出后写入。
 
     重试预算 :data:`MAX_DELIVERY_ATTEMPTS` 用尽后由
-    :meth:`BaseJobBoard._mark_exhausted` 写成 ``success=False``
-    的失败 Result；正常路径下 ``success=True`` 表示 SDK 已确认
-    收到 / WS 已发送完毕。``error`` 在 ``success=False`` 时填
+    :meth:`BaseJobBoard._mark_exhausted` 写成
+    :attr:`JobStatus.FAILED` 的失败 Result；正常路径下
+    :attr:`JobStatus.COMPLETED` 表示 SDK 已确认收到 / WS
+    已发送完毕。``error`` 在 :attr:`JobStatus.FAILED` 时填
     渠道 SDK 的错误文案或重试耗尽提示。
     """
 
     error: str | None = None  # 失败时的错误描述
 
 
-class _DeliveryJobRow(JobRowMixin, Base):
+class _DeliveryJobRow(BaseJobRowMixin, Base):
     __tablename__ = "delivery_outbox"
     __table_args__ = {"extend_existing": True}
 
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Delivery content — formerly a single ``payload`` JSON blob. Split
-    # into individual columns in migration 0017 so producers / consumers
-    # see one field per attribute on :class:`DeliveryJob` (no
-    # ``payload`` dict). The pre-migration rows had no value here.
+    # Delivery content — formerly a single ``payload`` JSON blob. First-class
+    # typed columns on :class:`DeliveryJob` so producers / consumers see
+    # one field per attribute (no ``payload`` dict).
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -98,7 +98,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
         with self._session() as s:
             row = _DeliveryJobRow(
                 job_id=uuid.uuid4().hex,
-                status="pending",
+                status=JobStatus.PENDING,
                 channel=job.channel,
                 text=job.text,
                 conversation_id=job.conversation_id,

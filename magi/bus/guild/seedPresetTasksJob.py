@@ -7,42 +7,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from enum import StrEnum
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
-
-
-# -- public enum ---------------------------------------------------------
-
-
-class SeedPresetTrigger(StrEnum):
-    """触发来源 discriminator stored on :class:`SeedPresetTasksJob.trigger`.
-
-    * :attr:`CONTACT_CREATED` — 新联系人以 ``assigned`` 身份落地时
-      publish，由 API 创建路径触发。
-    * :attr:`CONTACT_PROMOTED` — 已存在的联系人从 ``guest`` /
-      ``admin`` 角色升级为 ``assigned`` 时 publish，由角色变更路径触发。
-
-    两条触发路径的预设选择 / 写入路径完全一致；``trigger`` 只
-    是审计 / 排障用的来源标记，未来可能按它走不同的 preset 集
-    或埋点策略。
-
-    ``StrEnum`` 而非裸字符串常量——typo 在 publish 时立即被
-    :meth:`SeedPresetTasksJob.__post_init__` 抛回，不会悄悄写
-    入数据库。成员仍为 ``str`` 子类
-    （``SeedPresetTrigger.CONTACT_CREATED == "contact_created"``），
-    所以 ORM 列、``==`` 与历史行的字符串值依然兼容。Mirrors
-    :class:`~magi.bus.guild.mcpServerChangedJob.MCPKind` /
-    :class:`~magi.bus.library.local.contactBook.Role`。
-    See ``docs/insights/ENUM_MIGRATION_INVENTORY.md`` §1.6.
-    """
-
-    CONTACT_CREATED = "contact_created"
-    CONTACT_PROMOTED = "contact_promoted"
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 
 # -- public dataclasses --------------------------------------------------
@@ -50,21 +20,9 @@ class SeedPresetTrigger(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SeedPresetTasksJob(BaseJob):
-    """一个预设任务播种 job。
+    """一个预设任务播种 job。``contact_id`` 是目标联系人。"""
 
-    ``contact_id`` 是目标联系人；``trigger`` 标记触发来源
-    （取自 :class:`SeedPresetTrigger`）。
-    """
-
-    trigger: SeedPresetTrigger  # 触发来源（contact_created/contact_promoted）
     contact_id: int = 0  # 目标联系人 ID
-
-    def __post_init__(self) -> None:
-        if self.trigger not in SeedPresetTrigger:
-            raise ValueError(
-                f"invalid trigger {self.trigger!r}; expected one of "
-                f"{sorted(t.value for t in SeedPresetTrigger)!r}"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,14 +41,10 @@ class SeedPresetTasksResult(BaseJobResult):
     attempts: int = 0  # 已重试次数（由 BaseJobBoard 回写）
 
 
-class _SeedPresetTasksJobRow(JobRowMixin, Base):
+class _SeedPresetTasksJobRow(BaseJobRowMixin, Base):
     __tablename__ = "seed_preset_tasks_jobs"
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    #: 触发来源 discriminator。保持 ``String(32)`` 不切到
-    #: ``SAEnum``——:class:`SeedPresetTrigger` 是 ``str`` 子类，
-    #: 列里存的就是 ``.value``，与历史行零迁移成本。
-    trigger: Mapped[str] = mapped_column(String(32), nullable=False)
 
     # -- result-side columns ------------------------------------------
     inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -109,9 +63,8 @@ class seedPresetTasksJobBoard(
         with self._session() as s:
             row = _SeedPresetTasksJobRow(
                 job_id=uuid.uuid4().hex,
-                status="pending",
+                status=JobStatus.PENDING,
                 contact_id=job.contact_id,
-                trigger=job.trigger,
             )
             s.add(row)
             s.flush()
@@ -120,7 +73,6 @@ class seedPresetTasksJobBoard(
 
 
 __all__ = [
-    "SeedPresetTrigger",
     "SeedPresetTasksJob",
     "SeedPresetTasksResult",
     "seedPresetTasksJobBoard",

@@ -21,7 +21,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +69,7 @@ class RunToolResult(BaseJobResult):
     result: dict | None = None
 
 
-class _ToolJobRow(JobRowMixin, Base):
+class _ToolJobRow(BaseJobRowMixin, Base):
     __tablename__ = "tool_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -108,7 +108,7 @@ class runToolJobBoard(BaseJobBoard[_ToolJobRow, RunToolJob, RunToolResult]):
         with self._session() as s:
             row = _ToolJobRow(
                 job_id=uuid.uuid4().hex,
-                status="pending",
+                status=JobStatus.PENDING,
                 tool_name=job.tool_name,
                 payload=job.payload,
                 tool_call_id=job.tool_call_id,

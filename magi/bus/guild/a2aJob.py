@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin, _read_result_from_job
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin, _read_result_from_job
 from magi.bus.library.magis.membershipBook import _MagisMembershipRow
 
 
@@ -80,10 +80,10 @@ class A2ARequestJob(BaseJob):
 class A2ARequestResult(BaseJobResult):
     """Target MAGI 处理 :class:`A2ARequestJob` 后的回执。
 
-    ``success=True`` 表示 target 接受了请求并填了 ``content``
-    回传响应；``success=False`` 时 ``error_code`` 是 :class:`A2AErrorCode`
-    中的稳定错误码（``TIMEOUT`` / 业务码），``error`` 是给人
-    看的文案。
+    :attr:`JobStatus.COMPLETED` 表示 target 接受了请求并填了
+    ``content`` 回传响应；:attr:`JobStatus.FAILED` 时
+    ``error_code`` 是 :class:`A2AErrorCode` 中的稳定错误码
+    （``TIMEOUT`` / 业务码），``error`` 是给人看的文案。
     """
 
     content: str = ""  # 目标 MAGI 回传的响应文本
@@ -114,16 +114,16 @@ class A2ANotifyResult(BaseJobResult):
     """:class:`A2ANotifyJob` 的终端回执 — 仅在通知被消费且出错时落库。
 
     没有超时路径（notify 不阻塞发送方），也没有强制的 ``content``
-    字段：``success=False`` 时 ``error_code`` 取自 :class:`A2AErrorCode`，
-    ``error`` 描述投递失败原因，成功则通常只更新 ``status`` 而不
-    构造 Result。
+    字段：:attr:`JobStatus.FAILED` 时 ``error_code`` 取自
+    :class:`A2AErrorCode`，``error`` 描述投递失败原因，成功则
+    通常只更新 ORM ``status`` 而不构造 Result。
     """
 
     error_code: A2AErrorCode | None = None  # 稳定错误码（来自 A2AErrorCode）
     error: str | None = None  # 失败时的错误文案
 
 
-class _A2ARequestRow(JobRowMixin, Base):
+class _A2ARequestRow(BaseJobRowMixin, Base):
     __tablename__ = "a2a_request_jobs"
     __table_args__ = (
         Index("ix_a2a_request_target_status_available", "target_magi_id", "status", "available_at"),
@@ -171,7 +171,7 @@ class _A2ARequestRow(JobRowMixin, Base):
     )
 
 
-class _A2ANotifyRow(JobRowMixin, Base):
+class _A2ANotifyRow(BaseJobRowMixin, Base):
     __tablename__ = "a2a_notify_jobs"
     __table_args__ = (
         Index("ix_a2a_notify_target_status_available", "target_magi_id", "status", "available_at"),
@@ -277,7 +277,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 return
             self._expire_due(s, target_magi_id=row.target_magi_id)
             s.refresh(row)
-            if row.status != "processing":
+            if row.status != JobStatus.PROCESSING:
                 s.commit()
                 return
             self._submit(s, key=key, result=result)
@@ -290,7 +290,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 return None
             self._expire_due(s, target_magi_id=row.target_magi_id)
             s.refresh(row)
-            if row.status not in {"completed", "failed"}:
+            if row.status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
                 s.commit()
                 return None
             result = _read_result_from_job(row, A2ARequestResult, self.natural_key_attr)
@@ -306,10 +306,10 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 _A2ARequestRow.target_magi_id == target_magi_id,
                 _A2ARequestRow.deadline_at.is_not(None),
                 _A2ARequestRow.deadline_at <= now,
-                _A2ARequestRow.status.in_(("pending", "processing")),
+                _A2ARequestRow.status.in_((JobStatus.PENDING, JobStatus.PROCESSING)),
             )
             .values(
-                status="failed",
+                status=JobStatus.FAILED,
                 error_code=A2AErrorCode.TIMEOUT,
                 error="A2A request deadline elapsed",
                 completed_at=now,

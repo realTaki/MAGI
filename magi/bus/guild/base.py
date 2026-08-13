@@ -95,6 +95,38 @@ class BaseJobResult:
     status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
 
 
+def _enum_column(
+    enum_cls: type,
+    *,
+    name: str,
+    length: int = 24,
+) -> SAEnum:
+    """SAEnum 列工厂：PG native ENUM + SQLite CHECK + 老数据兼容。
+
+    集中放在 :class:`BaseJobRowMixin` 旁边是让 10 个 Job Row 都共享同一份
+    配置——schema 演进（alembic migration）和 ORM 声明永远一致。
+
+    ``values_callable`` 把存储 / CHECK / CREATE TYPE 标签锁定到
+    ``enum.value``（小写字符串），匹配老 ``VARCHAR(24)`` 的数据格式——
+    这样 alembic 把 VARCHAR 提升为 enum 时不需要数据回填。
+
+    ``name`` 必须显式传——隐式值会是 ``enum_cls.__name__.lower()``，
+    跨模块（base.py 引用 vs alembic migration 引用）不一致会导致
+    migration 找不到现有类型。
+
+    ``length`` 默认 24 匹配老 ``VARCHAR(24)``。SQLite 上控制 VARCHAR(N)，
+    PG native enum 不读 length（由成员字符串长度决定）。
+    """
+    return SAEnum(
+        enum_cls,
+        name=name,
+        native_enum=True,
+        length=length,
+        create_constraint=True,
+        values_callable=lambda cls: [m.value for m in cls],
+    )
+
+
 class BaseJobRowMixin:
     """Job 队列行的公共列 mixin。
 
@@ -106,19 +138,12 @@ class BaseJobRowMixin:
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    # Native enum column — see :class:`JobStatus` docstring. ``values_callable``
-    # pins storage / CHECK / CREATE TYPE labels to ``.value`` ("pending" etc.),
-    # matching the legacy VARCHAR representation so existing rows survive the
-    # alembic promotion without a data rewrite.
+    # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
+    # configuration (values_callable / length / create_constraint / name)
+    # lives in :func:`_enum_column` so all 10 Job boards share one source of
+    # truth and stay aligned with the alembic promotion migration.
     status: Mapped[JobStatus] = mapped_column(
-        SAEnum(
-            JobStatus,
-            name="job_status",
-            native_enum=True,
-            length=24,
-            create_constraint=True,
-            values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        ),
+        _enum_column(JobStatus, name="job_status"),
         nullable=False,
         default=JobStatus.PENDING,
     )

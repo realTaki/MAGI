@@ -24,7 +24,7 @@ from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobRowMixin
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
     from magi.bus.library.local.contactBook import ContactBook
@@ -95,7 +95,7 @@ class ChatJobResult(BaseJobResult):
     error_detail: str | None = None  # 失败时的详细错误描述
 
 
-class _ChatJobRow(JobRowMixin, Base):
+class _ChatJobRow(BaseJobRowMixin, Base):
     __tablename__ = "chat_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -175,7 +175,7 @@ class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):
             task_id=job.task_id,
             manual=job.manual,
             received_seq=job.received_seq,
-            status="pending",
+            status=JobStatus.PENDING,
         )
         session.add(row)
         session.flush()
