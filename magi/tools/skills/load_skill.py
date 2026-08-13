@@ -46,8 +46,8 @@ class LoadSkillTool(Tool):
 
     Visible only to ``admin`` and ``assigned`` operators — same gate
     as the WebUI dashboard and as ``ScheduleTaskTool`` / the
-    action-item trio. The chat path always passes the operator's
-    role through to ``handle_message(caller_role=...)`` so
+    action-item trio. The agent worker resolves the operator's
+    role from the Contact row and filters the tool menu so
     non-eligible callers never see these tools in the LLM's menu.
     """
 

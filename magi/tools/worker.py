@@ -15,9 +15,10 @@
   默认值 2，通过 ``concurrency`` 构造参数覆盖。
 
 GATE（enqueue 时由调用方校验角色）已在 publish 之前完成；
-worker 拿到 job 时只做 **catalog revision 校验**（防止 agent 拿了
-老 schema 后调用），不再重做角色门控（那一步属于 publish 时刻的
-权限检查）。
+worker 拿到 job 后直接查 tool 名 → 跑 gate → 执行，不再重做角色
+门控（那一步属于 publish 时刻的权限检查）。Catalog 过期校验
+（revision / schema_hash）也已移除——schema 不一致时工具执行本身
+会失败并回传错误。
 
 执行流程
 ========
@@ -51,7 +52,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.bus.guild.base import JobStatus
-from magi.bus.guild.runToolJob import RunToolResult
+from magi.bus.guild.runToolJob import RunToolResult, ToolErrorCode
 from magi.bus.library.local import ToolDefinition
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.base import Tool, ToolContext, ToolResult
@@ -63,16 +64,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.tools.worker")
 
-#: Stable short codes for operator-facing error envelopes.
-#: Mirrors :mod:`magi.providers.worker` conventions so the agent
-#: layer (when it migrates) can treat tool and LLM failures with
-#: the same retry logic.
-_ERROR_CODES = {
-    "catalog_stale": "tool.catalog_stale",
-    "unknown": "tool.unknown",
-    "crashed": "tool.crashed",
-    "cancelled": "tool.cancelled",
-}
+#: Stable error codes moved to
+#: :class:`~magi.bus.guild.runToolJob.ToolErrorCode` (StrEnum) so the
+#: agent layer can treat tool and LLM failures with the same retry
+#: logic — see :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` for the
+#: mirror on the provider side.
 
 #: Default concurrency — how many tool jobs may run simultaneously.
 #: Override by passing ``concurrency`` to the constructor.
@@ -86,9 +82,8 @@ def _canonical_json(value: object) -> str:
 def _schema_hash(definition: ToolDefinition) -> str:
     """sha256 of canonical JSON over the LLM-visible fields.
 
-    The hash is what the worker compares against the
-    ``schema_hash`` on a claimed :class:`RunToolJob`; a mismatch
-    means the agent's menu was stale when it enqueued the call.
+    Feeds the per-definition fingerprint used to compute the catalog
+    ``snapshot_hash`` (see :meth:`_publish_full_catalog`).
     """
     return hashlib.sha256(
         _canonical_json(
@@ -259,7 +254,7 @@ class ToolsWorker(RuntimeWorker):
             await self._submit_failure(
                 job,
                 content="tools worker cancelled",
-                error_code=_ERROR_CODES["cancelled"],
+                error_code=ToolErrorCode.CANCELLED,
             )
             raise
         finally:
@@ -357,56 +352,7 @@ class ToolsWorker(RuntimeWorker):
     async def _execute(self, job: RunToolJob) -> None:
         ctx_data = dict(job.payload.get("context") or {})
 
-        # 1. Catalog revision check — did the menu move between
-        #    the agent's LLM call and our claim?
-        if job.catalog_revision:
-            state = await self.call(self.bus.tool_catalog_book.get)
-            current_revision = state.revision if state else 0
-            if current_revision > job.catalog_revision:
-                await self._submit_failure(
-                    job,
-                    content=(
-                        f"tool {job.tool_name!r}: catalog moved "
-                        f"forward (claimed at r{job.catalog_revision}, "
-                        f"current r{current_revision})"
-                    ),
-                    error_code=_ERROR_CODES["catalog_stale"],
-                )
-                return
-
-        # 2. schema_hash check — did this specific tool's schema
-        #    change between enqueue and claim?
-        #
-        #    The Book hands back a ``ToolDefinition`` with the same
-        #    semantic fields the publish path hashed, so we re-run
-        #    :func:`_schema_hash` on it directly. ``schema_hash`` is
-        #    not a stored column — recomputing is the contract.
-        if job.schema_hash:
-            definition = await self.call(
-                self.bus.tool_definitions_book.get_by_name,
-                name=job.tool_name,
-            )
-            if definition is None:
-                await self._submit_failure(
-                    job,
-                    content=f"unknown tool: {job.tool_name!r}",
-                    error_code=_ERROR_CODES["unknown"],
-                )
-                return
-            current_hash = _schema_hash(definition)
-            if current_hash != job.schema_hash:
-                await self._submit_failure(
-                    job,
-                    content=(
-                        f"tool {job.tool_name!r}: schema changed since "
-                        f"agent enqueued (claimed hash {job.schema_hash[:8]}, "
-                        f"current {current_hash[:8]})"
-                    ),
-                    error_code=_ERROR_CODES["catalog_stale"],
-                )
-                return
-
-        # 3. Look up the tool by name. Role gating happens in
+        # 1. Look up the tool by name. Role gating happens in
         #    ``tool.gate(ctx)`` below — registry dispatch is
         #    no longer role-aware (the menu filter lives on
         #    the agent side via the catalog, not here).
@@ -415,11 +361,11 @@ class ToolsWorker(RuntimeWorker):
             await self._submit_failure(
                 job,
                 content=f"unknown tool: {job.tool_name!r}",
-                error_code=_ERROR_CODES["unknown"],
+                error_code=ToolErrorCode.UNKNOWN,
             )
             return
 
-        # 4. Build execution context and run the runtime gate.
+        # 2. Build execution context and run the runtime gate.
         #    ``Tool.gate`` re-resolves the caller's role from
         #    ``ctx.bus.contacts_book`` on every call, so we
         #    don't carry a stale role on the context.
@@ -435,11 +381,11 @@ class ToolsWorker(RuntimeWorker):
             await self._submit_failure(
                 job,
                 content=denied,
-                error_code="tool.unauthorized",
+                error_code=ToolErrorCode.UNAUTHORIZED,
             )
             return
 
-        # 5. Execute. The worker MUST NOT raise to surface
+        # 3. Execute. The worker MUST NOT raise to surface
         #    "expected failure" — Tool.run() returns ToolResult
         #    with is_error=True in that case. Real bugs raise;
         #    we catch and translate.
@@ -453,11 +399,11 @@ class ToolsWorker(RuntimeWorker):
             await self._submit_failure(
                 job,
                 content=f"tool {job.tool_name!r} crashed: {exc}"[:8000],
-                error_code=_ERROR_CODES["crashed"],
+                error_code=ToolErrorCode.CRASHED,
             )
             return
 
-        # 5. Submit the result. BaseJobBoard handles attempts ≥
+        # 4. Submit the result. BaseJobBoard handles attempts ≥
         #    MAX_ATTEMPTS automatically; we don't call retry()
         #    ourselves.
         await self.call(
@@ -471,7 +417,7 @@ class ToolsWorker(RuntimeWorker):
         job: RunToolJob,
         *,
         content: str,
-        error_code: str,
+        error_code: ToolErrorCode,
     ) -> None:
         """Submit a failed :class:`RunToolResult`. Swallows submit
         errors so the worker loop never crashes on a transient DB
@@ -485,7 +431,6 @@ class ToolsWorker(RuntimeWorker):
                     job_id=job.job_id,
                     status=JobStatus.FAILED,
                     content=content[:8000],
-                    is_error=True,
                     error=content,
                     error_code=error_code,
                     tool_call_id=job.tool_call_id,
@@ -506,12 +451,12 @@ def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
 
     ``content`` is truncated to 8 KB to fit the column.
     """
-    from magi.bus.guild.runToolJob import RunToolResult
+    from magi.bus.guild.runToolJob import RunToolResult, ToolErrorCode
 
     return RunToolResult(
         job_id=job.job_id,
         status=JobStatus.COMPLETED if not result.is_error else JobStatus.FAILED,
         content=result.content[:8000],
-        is_error=result.is_error,
+        error_code=ToolErrorCode.FAILED if result.is_error else ToolErrorCode.NONE,
         tool_call_id=job.tool_call_id,
     )

@@ -23,11 +23,11 @@ class BashOutputTool(Tool):
     # Visible only to ``admin`` and ``assigned``
     # operators — same gate as the WebUI dashboard and
     # as :class:`~magi.tools.tasks.schedule.ScheduleTaskTool`
-    # / the action-item trio. The chat path always
-    # passes the operator's role through to
-    # ``handle_message(caller_role=...)`` so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
+    # / the action-item trio. The agent worker resolves the
+    # operator's role from the Contact row and filters the
+    # tool menu so non-eligible callers never see these
+    # tools in the LLM's menu. ``MCPTool`` is intentionally
+    # permissive
     # (operator-configured at the MCP server level).
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
