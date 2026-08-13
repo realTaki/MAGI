@@ -105,11 +105,17 @@ class BaseJobRowMixin:
     """Job 队列行的公共列 mixin。
 
     每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(BaseJobRowMixin, Base)``
-    继承这 10 个队列控制列，只声明自己的业务列。
+    继承这 11 个队列控制列，只声明自己的业务列。
     """
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # Result-side error description. Width 1024 covers every realistic
+    # worker / provider / runner failure message (~10× what we'd ever
+    # want a UI to display); the value aligns with the inherited
+    # :attr:`BaseJobResult.error` dataclass field, so subclasses don't
+    # re-declare an ``error`` column just to match the result shape.
+    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
     # lives in :func:`magi.bus.db.base.enum_column` so all 10 Job boards

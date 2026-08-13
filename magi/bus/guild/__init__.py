@@ -33,9 +33,9 @@ from magi.bus.guild.mcpServerChangedJob import (
 from magi.bus.guild.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
 from magi.bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
 from magi.bus.guild.seedPresetTasksJob import (
-    SeedPresetTasksJob,
-    SeedPresetTasksResult,
-    seedPresetTasksJobBoard,
+    SeedPresetTaskJob,
+    SeedPresetTaskResult,
+    seedPresetTaskJobBoard,
 )
 
 __all__ = [
@@ -67,9 +67,9 @@ __all__ = [
     "McpServerChangedJob",
     "McpServerChangedResult",
     "mcpServerChangedJobBoard",
-    "SeedPresetTasksJob",
-    "SeedPresetTasksResult",
-    "seedPresetTasksJobBoard",
+    "SeedPresetTaskJob",
+    "SeedPresetTaskResult",
+    "seedPresetTaskJobBoard",
     "RunTaskJob",
     "RunTaskResult",
     "runTaskJobBoard",
