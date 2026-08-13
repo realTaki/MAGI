@@ -405,8 +405,8 @@ to a MAGI's local SQLite:
   lease → retry → `submit_result` / `get_result`) with a
   `claim_for_target(magi_id=…)` so only the addressed MAGI can claim.
   Request rows carry `source_magi_id`, `target_magi_id` (both FKs to
-  `magis_memberships.id`), `conversation_id` / `correlation_id` (tracking
-  only, no auto-reply semantics), `text` / JSON payload, `deadline_at`,
+  `magis_memberships.id`), `conversation_id` (tracking only, no
+  auto-reply semantics), `text` / JSON payload, `deadline_at`,
   lease, attempt, timestamps, and a `response_status` /
   `response_payload` pair (`pending` / `responded` / `rejected` /
   `timed_out` / `failed`) that may be written **exactly once**.
@@ -419,8 +419,8 @@ to a MAGI's local SQLite:
   `ack()`, retry on failure, and expiration handling. These primitives
   live on the A2A board until a second consumer-of-notifications proves
   the need for a shared base class.
-- Both tables carry a `(target_magi_id, status, available_at)` claim
-  index and a unique idempotency index for the sender's effect.
+- Both tables carry a `(target_magi_id, status)` claim index and a
+  unique idempotency index for the sender's effect.
   Pre-insert validation in the Book/board enforces that `source` and
   `target` belong to the same MAGIS and that a MAGI cannot send to itself.
 

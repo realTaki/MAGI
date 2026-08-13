@@ -16,13 +16,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
@@ -79,9 +77,6 @@ class ChatJob(BaseJob):
     kind: str | None = None  # Task：标签，如 "task.triggered"
     task_id: str | None = None  # Task：源任务 id
     manual: bool | None = None  # Task：是否手动触发
-    # Queue control
-    available_at: datetime | None = None  # 最早可被 claim 的时间（延迟投递）
-    received_seq: int = 0  # 同会话接收序号（排序 / 判新旧）
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,10 +107,6 @@ class _ChatJobRow(BaseJobRowMixin):
     kind: Mapped[str | None] = mapped_column(String(32), nullable=True)  # Task：标签
     task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Task：源任务 id
     manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # Task：是否手动触发
-    # Queue control
-    received_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 同会话接收序号
-    context_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 上下文消息序号（行侧队列字段，dataclass 不暴露）
-    available_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)  # 最早可 claim 时间
 
 
 class chatJobBoard(BaseJobBoard[_ChatJobRow, ChatJob, ChatJobResult]):

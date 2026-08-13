@@ -729,7 +729,7 @@ schema:
         - a2a_request_job_board（共享 MAGIS）
         - a2a_notify_job_board（共享 MAGIS）
       每类连续消费上限（例如 4 条）→ 防止一侧饥饿
-      优先取最早 available_at 的项
+      优先取最早 created_at 的项
 
 A2A 入参 RunContext:
   ctx.channel ∈ {"a2a.notify", "a2a.request"}
