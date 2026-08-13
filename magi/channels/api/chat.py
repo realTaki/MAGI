@@ -276,8 +276,11 @@ async def send_chat(
         # anywhere).
         contact = bus.contacts_book.get(contact_id=contact_id)
         tg_im_id = str(contact.tgid) if contact and contact.tgid is not None else ""
+        # ``conversations_book.add`` owns ``conversation_id`` itself —
+        # callers never pass it (see :meth:`ConversationBook.add`
+        # docstring). The new id comes back on the returned
+        # ``Conversation`` below.
         sess = store.add(
-            conversation_id=new_conversation_id(),
             contact_id=contact_id,
             channel=Channel.WEBUI,
             delivery_address=tg_im_id,

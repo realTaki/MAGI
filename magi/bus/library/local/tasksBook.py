@@ -77,8 +77,6 @@ class ChannelEnum(StrEnum):
     WEBUI = "webui"
     """WebUI chat console — operator's dashboard history."""
 
-    """Agent-to-Agent channel — MAGI peer exchange."""
-
     SCHEDULED = "scheduled"
     """Internal scheduled-task channel — fires on a cron / run_at."""
 
@@ -168,7 +166,7 @@ class Task:
     name: str  # 任务唯一名
     prompt: str  # 触发后执行的 prompt
     source: TaskSource  # 来源（user/proactive）
-    target_channel: str  # 投递渠道（tg/webui/...）
+    target_channel: ChannelEnum  # 投递渠道（tg/webui/scheduled）
     enabled: int = 1  # 1=启用，0=禁用
 
     # --- schedule (cron XOR run_at, never both) ---------------------------
@@ -592,7 +590,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         cron: str | None,
         run_at: str | None,
         delivery_to: str | None,
-        target_channel: str,
+        target_channel: ChannelEnum,
         contact_id: int,
         conversation_id: str,
         tz: str,
@@ -677,7 +675,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 existing.cron = cron
                 existing.run_at = canonical_run_at
                 existing.delivery_to = delivery_to
-                existing.target_channel = target_channel
+                # Pylance narrows ``ChannelEnum`` (a ``StrEnum``) to ``str`` at the
+                # assignment site even though ``target_channel`` is declared
+                # ``ChannelEnum`` — at runtime SQLAlchemy coerces via
+                # ``values_callable``, so the assignment is sound.
+                existing.target_channel = target_channel  # type: ignore[reportAttributeAccessIssue]
                 existing.enabled = enabled
                 existing.contact_id = contact_id
                 # Preserve the existing ``conversation_id`` for
@@ -744,14 +746,14 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             raise ValueError("prompt must be a non-empty string")
         if len(str(prompt)) > PROMPT_MAX:
             raise ValueError(f"prompt length {len(str(prompt))} exceeds maximum {PROMPT_MAX}")
-        if target_channel is not None and target_channel not in set(ChannelEnum):
+        if target_channel is not None and target_channel not in ChannelEnum:
             raise ValueError(
                 f"target_channel must be one of "
                 f"{sorted(c.value for c in ChannelEnum)!r}, "
                 f"got {target_channel!r}"
             )
-        # ``TaskSource`` is a ``StrEnum`` so membership works for
-        # both enum members and matching raw strings.
+        # Both ``ChannelEnum`` and ``TaskSource`` are ``StrEnum`` so
+        # ``in`` works for enum members and matching raw strings alike.
         if source not in TaskSource:
             raise ValueError(
                 f"source must be one of "
@@ -905,7 +907,11 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
                 )
             ).all()
             for row in rows:
-                row.status = TaskRunStatus.FAILED.value
+                # ``enum_column`` stores ``.value`` via ``values_callable``,
+                # so writing the enum member is equivalent to writing
+                # ``TaskRunStatus.FAILED.value`` and stays type-correct
+                # (``row.status: Mapped[TaskRunStatus]``).
+                row.status = TaskRunStatus.FAILED
                 row.error = "abandoned by previous worker"
                 row.finished_at = utcnow_naive()
             s.commit()

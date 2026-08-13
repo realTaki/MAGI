@@ -257,7 +257,7 @@ async def call_llm_for_summary(
         marker = "[Prior summary]\n"
         if to_compress.startswith(marker):
             tail_start = _COMPRESS_INPUT_CAP - _TRUNCATE_TAIL
-            head_end = marker + _TRUNCATE_HEAD  # i.e. first _TRUNCATE_HEAD chars after marker
+            head_end = len(marker) + _TRUNCATE_HEAD  # i.e. first _TRUNCATE_HEAD chars after marker
             truncated = to_compress[:head_end] + "\n[…truncated…]\n" + to_compress[tail_start:]
             if len(truncated) <= _COMPRESS_INPUT_CAP:
                 to_compress = truncated
@@ -275,7 +275,11 @@ async def call_llm_for_summary(
         ],
         max_tokens=1024,
         contact_id=contact_id,
-        conversation_id=conversation_id,
+        # ``CallLLMJob.conversation_id`` is a non-nullable ``str`` column
+        # (``nullable=False``, ``default=""`` per the row's dtype contract);
+        # callers without a conversation collapse the value onto the
+        # documented "empty string = internal single-shot call" sentinel.
+        conversation_id=conversation_id or "",
         channel="chat",
         phase="auto_compact",
     )
