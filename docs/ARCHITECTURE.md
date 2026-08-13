@@ -140,7 +140,7 @@ Durable runtime rules (enforced by the architecture guard):
 4. Worker completion is written back through the corresponding Job Board.
 5. A terminal committed result outranks a streamed delta.
 6. `/api/chat/send` is asynchronous: it returns `202 Accepted` with a
-   `job_id` (the `chat_jobs` natural key) and the `conversation_id`; clients
+   `job_id` (the `chat_notify_jobs` natural key) and the `conversation_id`; clients
    consume progress and final state through the durable job / SSE path.
 
 ## Important paths
@@ -205,7 +205,7 @@ Each outbound worker reduces to a `_deliver_<channel>` coroutine:
 | --- | --- |
 | `TelegramWorker._deliver_tg` | raw HTTP via `channels.telegram.bot.send_text_raw(token, chat_id, text)` |
 | `WebUIWorker._deliver_webui` | append `assistant` row via `bus.messages_book.add` |
-| `TaskWorker` (no channel loop) | publishes a `ChatJob` after `_fire_task`; the `AgentWorker` does the work and the channel-worker path delivers the reply |
+| `TaskWorker` (no channel loop) | publishes a `ChatNotifyJob` after `_fire_task`; the `AgentWorker` does the work and the channel-worker path delivers the reply |
 
 The shared `ChannelWorker` template means per-channel workers never
 backpressure independently — depth is global per `channel` filter — and
@@ -241,7 +241,7 @@ Bus (magi/bus/bootstrap.py)
 │  │   prompt_book            PromptBook (file-backed, always populated)
 │  │   skills_book            SkillsBook (file-backed; None if absent)
 │  ├─ Job Boards
-│  │   agent_job_board        chatJobBoard        (ChatJob in/out)
+│  │   agent_job_board        chatNotifyBoard        (ChatNotifyJob in/out)
 │  │   tool_job_board         runToolJobBoard     (RunToolJob in/out)
 │  │   llm_job_board          callLLMJobBoard     (CallLLMJob in/out)
 │  │   delivery_job_board     deliveryJobBoard    (DeliveryJob out)
@@ -312,7 +312,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
   compare-and-set and ends the run. Responses are not new inbound messages
   and cannot themselves carry `request` / `expect_reply` semantics, so
   two Agents never auto-loop just because each wants to "answer the other".
-- Steering is in-band: when a fresh `ChatJob` for an already-active
+- Steering is in-band: when a fresh `ChatNotifyJob` for an already-active
   conversation arrives, the Worker releases it back to the board; the
   active loop pulls it as steering via
   `agent_job_board.claim_for_steering(...)` during `_gather_all`.
@@ -358,7 +358,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 ### `magi.channels` — ingress + egress
 
 - **Ingress** writes to `conversations_book` / `messages_book` and publishes a
-  `ChatJob` to `agent_job_board`. Telegram is a long-polling inbound worker
+  `ChatNotifyJob` to `agent_job_board`. Telegram is a long-polling inbound worker
   (`python-telegram-bot` v21+ `Application.start_polling`); the WebUI
   ingress is the FastAPI route `POST /api/chat/send`. A2A is **not** an HTTP
   ingress: peer `message_magi` tool effects persist directly into the

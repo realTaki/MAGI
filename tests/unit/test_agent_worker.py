@@ -1,8 +1,8 @@
 """AgentWorker unit tests (design §8).
 
 Covers:
-  1. Single ChatJob → single LLM turn → no tools → delivery
-  2. Single ChatJob → LLM returns tool_use → tool completed → second LLM → delivery
+  1. Single ChatNotifyJob → single LLM turn → no tools → delivery
+  2. Single ChatNotifyJob → LLM returns tool_use → tool completed → second LLM → delivery
   3. Steering injection via claim_for_steering
   4. Cancel path (cancel_event)
   5. Context assembly (system_prompt delegation)
@@ -79,7 +79,6 @@ class _FakeLLMResult:
     response: dict | None = None
     error: str | None = None
     error_code: str = ""
-    token_usage: dict | None = None
     model: str = "claude:sonnet"
 
 
@@ -158,7 +157,7 @@ def _make_bus(**overrides) -> Mock:
 
 
 # ---------------------------------------------------------------------------
-# Test 1: single turn, no tools → delivery published, ChatJobResult success
+# Test 1: single turn, no tools → delivery published, ChatNotifyResult success
 # ---------------------------------------------------------------------------
 
 
@@ -183,7 +182,7 @@ async def test_single_turn_no_tools_delivers():
     assert ctx.final_reply == "Hello!"
     assert ctx.final_error is None
     bus.delivery_job_board.publish.assert_called_once()
-    # ChatJobResult is submitted by _run(), not _process();
+    # ChatNotifyResult is submitted by _run(), not _process();
     # inside _process we only test side-effects are correct.
 
 
@@ -212,7 +211,6 @@ async def test_tool_loop_completes():
         job_id="tj-1",
         status=JobStatus.COMPLETED,
         content="result",
-        is_error=False,
         tool_call_id="tc-1",
     )
 
@@ -239,7 +237,7 @@ async def test_tool_loop_completes():
 @pytest.mark.asyncio
 async def test_steering_injected():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.guild.chatJob import ChatJob
+    from magi.bus.guild.chatNotifyJob import ChatNotifyJob
     from magi.bus.guild.runToolJob import RunToolResult
 
     bus = _make_bus()
@@ -257,11 +255,10 @@ async def test_steering_injected():
         job_id="tj-1",
         status=JobStatus.COMPLETED,
         content="result",
-        is_error=False,
         tool_call_id="tc-1",
     )
 
-    steer_job = ChatJob(
+    steer_job = ChatNotifyJob(
         conversation_id="conv-1",
         contact_id=42,
         text="Also check this please.",
@@ -282,12 +279,12 @@ async def test_steering_injected():
     # steering text should appear in messages
     steering_found = any("Also check this" in str(m.get("content", "")) for m in ctx.messages)
     assert steering_found
-    # steering ChatJob was consumed (submitted as ChatJobResult)
-    from magi.bus.guild.chatJob import ChatJobResult
+    # steering ChatNotifyJob was consumed (submitted as ChatNotifyResult)
+    from magi.bus.guild.chatNotifyJob import ChatNotifyResult
 
     bus.agent_job_board.submit_result.assert_any_call(
         key="steer-1",
-        result=ChatJobResult(job_id="steer-1", status=JobStatus.COMPLETED),
+        result=ChatNotifyResult(job_id="steer-1", status=JobStatus.COMPLETED),
     )
 
 
@@ -347,47 +344,6 @@ async def test_system_prompt_delegates():
 
     assert "MAGI" in prompt
     assert "fact" in prompt.lower() or "Python" in prompt
-
-
-# ---------------------------------------------------------------------------
-# Test 6: token usage recorded
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_token_usage_recorded():
-    from magi.agent.worker import AgentWorker, RunContext
-
-    bus = _make_bus()
-    worker = AgentWorker(bus=bus)
-    ctx = RunContext(
-        contact_id=42,
-        channel="tg",
-        conversation_id="conv-1",
-    )
-
-    result = _fake_llm(
-        text="ok",
-        token_usage={"input_tokens": 100, "output_tokens": 50},
-        model="claude:sonnet",
-    )
-    await worker._record_token_usage(ctx, result)
-
-    bus.token_usage_book.add.assert_called_once()
-    # Assert the argument shape — the previous regression where
-    # ``Book.add`` was silently getting a ``TypeError`` because the
-    # adapter passed ``usage=``/``channel=`` keys the new signature
-    # doesn't recognise would have slipped past ``assert_called_once``
-    # alone (the call still happens, just inside the swallowed
-    # ``except``). These assertions catch the next refactor of this
-    # boundary.
-    call_kwargs = bus.token_usage_book.add.call_args.kwargs
-    assert call_kwargs["contact_id"] == 42
-    assert call_kwargs["provider"] == "claude"
-    assert call_kwargs["model"] == "claude:sonnet"
-    assert call_kwargs["input_tokens"] == 100
-    assert call_kwargs["output_tokens"] == 50
-    assert call_kwargs["extra"] == {"channel": "tg"}
 
 
 @pytest.mark.asyncio
@@ -456,7 +412,6 @@ async def test_max_iterations_exceeded():
         job_id="tj-1",
         status=JobStatus.COMPLETED,
         content="r",
-        is_error=False,
         tool_call_id="tc-1",
     )
 

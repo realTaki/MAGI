@@ -5,12 +5,12 @@ Two concerns, **separated by layer**:
   1. **Cap** (the ``system.chat_max_input_chars`` setting) — enforced
      at :meth:`MessageBook.add` because the cap is fundamentally a
      *write-side* concern. The LLM reads from ``chat_messages`` (the
-     post-cap row), not from a chatJob payload; the chatJob layer
+     post-cap row), not from a chatNotifyJob payload; the chatNotifyJob layer
      therefore has no parallel cap to keep in sync.
   2. **D.22 cross-channel guard + consolidated user-message write** —
-     :meth:`chatJobBoard.publish_chat` enforces the guard and writes
+     :meth:`chatNotifyBoard.publish_chat` enforces the guard and writes
      the user message to ``chat_messages`` at the same chokepoint as
-     the chatJob enqueue. Channels (TG / WebUI / Task) never reach
+     the chatNotifyJob enqueue. Channels (TG / WebUI / Task) never reach
      into ``messages_book`` directly.
 
 Helpers ``_truncate_inbound`` / ``_resolve_max_input_chars`` live
@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from magi.bus.db import EngineFactory
-from magi.bus.guild.chatJob import ChatJob, chatJobBoard
+from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
 from magi.bus.library.local import ConversationBook, MessageBook
 
 
@@ -163,12 +163,12 @@ def test_truncate_inbound_over():
 
 
 # ---------------------------------------------------------------------------
-# chatJobBoard — consolidated chokepoint (D.22 + writes user message)
+# chatNotifyBoard — consolidated chokepoint (D.22 + writes user message)
 # ---------------------------------------------------------------------------
 
 
 def test_publish_chat_does_not_cap_payload(factory, contact_id):
-    """The cap moved to MessageBook. The chatJob payload.text is the
+    """The cap moved to MessageBook. The chatNotifyJob payload.text is the
     *raw* user input — the LLM never reads it; compaction / LLM read
     from messages_book, which is what truncates.
     """
@@ -180,13 +180,13 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
     huge = "x" * 20_000
     board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text=huge,
             channel="tg",
             contact_id=contact_id,
@@ -194,7 +194,7 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
         )
     )
     job = board.claim_for_steering(conversation_id=cid)
-    # ChatJob is typed — no payload dict, no truncation flag. The
+    # ChatNotifyJob is typed — no payload dict, no truncation flag. The
     # raw text travels through the row, intact.
     assert job.text == huge
     assert job.channel == "tg"
@@ -204,7 +204,7 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
 
 
 def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
-    """A single publish_chat call writes the chatJob row AND the
+    """A single publish_chat call writes the chatNotifyJob row AND the
     user-message row. Channels don't reach into messages_book
     directly anymore.
     """
@@ -216,14 +216,14 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory,
         messages_book=mbook,
         conversations_book=sbook,
     )
 
     jid = board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="hello world",
             channel="tg",
             contact_id=contact_id,
@@ -254,13 +254,13 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
     fixed_id = "fixed-message-id-123"
     board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="retry me",
             channel="tg",
             contact_id=contact_id,
@@ -269,7 +269,7 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
         message_id=fixed_id,
     )
     board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="retry me",
             channel="tg",
             contact_id=contact_id,
@@ -294,7 +294,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
@@ -302,7 +302,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
 
     with pytest.raises(ChannelMismatchError) as exc:
         board.publish(
-            ChatJob(
+            ChatNotifyJob(
                 text="cross-channel write",
                 channel="webui",
                 contact_id=contact_id,
@@ -311,7 +311,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
         )
     assert exc.value.conversation_channel == "tg"
 
-    # No chatJob, no message row — the guard fires before either write.
+    # No chatNotifyJob, no message row — the guard fires before either write.
     assert board.claim_for_steering(conversation_id=cid) is None
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 0
@@ -327,12 +327,12 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
     jid = board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="normal",
             channel="tg",
             contact_id=contact_id,
@@ -353,12 +353,12 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(
+    board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
     jid = board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="task fire",
             channel="task",
             contact_id=None,
@@ -379,10 +379,10 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(factory, messages_book=mbook)  # no conversations_book
+    board = chatNotifyBoard(factory, messages_book=mbook)  # no conversations_book
 
     jid = board.publish(
-        ChatJob(
+        ChatNotifyJob(
             text="no-d22",
             channel="webui",
             contact_id=contact_id,
@@ -403,7 +403,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     """Direct :meth:`publish` callers (e.g. :func:`submit_agent_message`
     for internal steering republishes) get the same D.22 guard.
     """
-    from magi.bus.guild.chatJob import ChatJob
+    from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 
     sbook = ConversationBook(factory)
     conv = sbook.add(
@@ -412,9 +412,9 @@ def test_publish_direct_enforces_d22(factory, contact_id):
         channel="tg",
     )
     cid = conv.conversation_id
-    board = chatJobBoard(factory, conversations_book=sbook)
+    board = chatNotifyBoard(factory, conversations_book=sbook)
 
-    job = ChatJob(
+    job = ChatNotifyJob(
         conversation_id=cid,
         text="x",
         channel="webui",

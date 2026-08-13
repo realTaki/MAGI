@@ -120,7 +120,7 @@ permalink: /business-flows/
    ├─ 异常 → ctx.final_error = "agent_crashed" + publish delivery
    └─ cancel → ctx.final_reply = "任务已取消。" + publish delivery
      （**不**制造伪造 assistant reply — 避免污染 transcript）
-   └─ ChatJobResult(success=True/False, status="completed"/"failed")
+   └─ ChatNotifyResult(success=True/False, status="completed"/"failed")
      写回 agent_job_board
 
 6. 后台 (fire-and-forget)
@@ -134,7 +134,7 @@ permalink: /business-flows/
 - tool result 必须在拼接新消息前安全截断（否则 Anthropic API 拒绝交错 tool 块）— 阈值 8000 字符
 - system prompt 六块顺序不可变：SOUL → Instructions → Memory → Contact → Daily note → Skills
 - cancel 不发送伪造 assistant reply（避免污染 transcript）
-- AgentWorker 是 `chatJobBoard` 的唯一消费者；不接 `run_agent_step` / `agent.run` 类的 in-process helper
+- AgentWorker 是 `chatNotifyBoard` 的唯一消费者；不接 `run_agent_step` / `agent.run` 类的 in-process helper
 
 ---
 
@@ -154,11 +154,11 @@ permalink: /business-flows/
     （自动落 settings_book）；runtime_provider FastAPI 路由也直接写
 
 调用链:
-  TG bot:    _on_tg_message → _resolve_contact → ChatJob →
+  TG bot:    _on_tg_message → _resolve_contact → ChatNotifyJob →
              AgentWorker → get_provider() (bus.settings_book)
-  WebUI:     /api/chat/send → publish ChatJob → AgentWorker →
+  WebUI:     /api/chat/send → publish ChatNotifyJob → AgentWorker →
              get_provider() (bus.settings_book)
-  Runner:    TaskWorker._fire_task → publish ChatJob → AgentWorker →
+  Runner:    TaskWorker._fire_task → publish ChatNotifyJob → AgentWorker →
              get_provider() (bus.settings_book)
 ```
 
@@ -260,7 +260,7 @@ permalink: /business-flows/
 - `guest` 角色必须被拒绝（不属于此 MAGI 服务范围，等待管理员提升）
 - `guest` 软自动创建时 admin 必须为 False
 - admin 必须能和 assigned 一样聊天（不能退化为 v0 的 no-op）
-- 对话持久化（`messages_book.add`）必须在发布 `ChatJob` 到 `agent_job_board` 之前完成
+- 对话持久化（`messages_book.add`）必须在发布 `ChatNotifyJob` 到 `agent_job_board` 之前完成
 - `job_id` 形如 `telegram:<tgid>:<message_id>`，提供去重幂等性
 
 ---
@@ -282,7 +282,7 @@ ChannelWorker._claim_delivery_loop(deliver_fn, channel_label):
      （TG → 原始 HTTP send_text_raw；
       WebUI → 写 messages_book；
       A2A → send_a2a_delivery；
-      Task → _fire_task → publish ChatJob，delivery 由下游 channel 处理）
+      Task → _fire_task → publish ChatNotifyJob，delivery 由下游 channel 处理）
   5. delivery_job_board.submit_result(DeliveryResult(success, error))
   6. 异常 → submit_result(success=False, error=str(exc)[:1024])
      （**不**自己重试；BaseJobBoard._claim 负责 lease 过期后 re-lease，
@@ -366,7 +366,7 @@ TelegramWorker._deliver_tg(job: DeliveryJob):
   两个调用方（WebUI API + schedule_task LLM tool）共用同一段。
 
 TaskWorker claim 后 _handle_run_task_job → tasks_book.get(task_id) →
-_fire_task → tasks_book.record_run_start → ChatJob 投递 → AgentWorker 跑
+_fire_task → tasks_book.record_run_start → ChatNotifyJob 投递 → AgentWorker 跑
 （`task_runs.id` 是这次 run 的标识；Agent 侧没有 run 概念，steering 走
 Task.conversation_id —— 所有 run 共享同一个会话上下文）
 
@@ -747,11 +747,11 @@ A2A run 终态（_process 收尾）:
   - 不写 delivery_job_board（普通最终回答不进任何人类 channel）
   - mode == notify:
       → ack() a2a_notify_job_board 行（compare-and-set 标记已消费）
-      → 写 ChatJobResult(success=True, status="completed")
+      → 写 ChatNotifyResult(success=True, status="completed")
   - mode == request:
       → compare-and-set 写 response_payload + response_status
         ∈ {"responded", "rejected", "timed_out", "failed"}（一次）
-      → 写 ChatJobResult(success=True/False, status="completed"/"failed")
+      → 写 ChatNotifyResult(success=True/False, status="completed"/"failed")
       → **绝不**再生成 A2A reply；response 不是新入站消息
 ```
 
@@ -832,7 +832,7 @@ responsibility 字段:
 - [ ] v4 selected-MAGI cookie 必须包含 `magi_id`（不是 `magic_id`）
 - [ ] Onboarding 验证码一次性使用（任何路径都 state_delete）
 - [ ] TG adapter send 走原始 HTTP，不走 bot.send_message
-- [ ] Task runner 不绑定 TG 回调，只发 ChatJob 给 AgentWorker
+- [ ] Task runner 不绑定 TG 回调，只发 ChatNotifyJob 给 AgentWorker
 - [ ] Memory/Contact 工具的双重角色守卫完整
 - [ ] 压缩失败不阻塞对话（maybe_compact 失败时吞掉）
 - [ ] system prompt 六块顺序不变：SOUL → Instructions → Memory → Contact → Daily note → Skills

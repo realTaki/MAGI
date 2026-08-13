@@ -1,7 +1,7 @@
 """bus.guild — 仅写。继承 BaseJobBoard，override publish 即可。
 
 Job 命名（publish → claim → submit_result）：动词打头
-（chatJob / a2aRequestJobBoard / callLLMJobBoard / ...）。
+（chatNotifyBoard / a2aRequestJobBoard / callLLMJobBoard / ...）。
 Book 命名：名词结尾（memoryBook / contactBook / ...）。
 """
 
@@ -22,7 +22,7 @@ from magi.bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigResult,
     changeProviderConfigJobBoard,
 )
-from magi.bus.guild.chatJob import ChatJob, ChatJobResult, chatJobBoard
+from magi.bus.guild.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
 from magi.bus.guild.mcpServerChangedJob import (
     MCPKind,
@@ -51,9 +51,9 @@ __all__ = [
     "DeliveryJob",
     "DeliveryResult",
     "deliveryJobBoard",
-    "ChatJob",
-    "ChatJobResult",
-    "chatJobBoard",
+    "ChatNotifyJob",
+    "ChatNotifyResult",
+    "chatNotifyBoard",
     "A2ARequestJob",
     "A2ARequestResult",
     "a2aRequestJobBoard",

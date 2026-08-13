@@ -70,7 +70,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     )
     local_tables = set(inspect(bus._local_factory.engine).get_table_names())
     magis_tables = set(inspect(bus._magis_factory.engine).get_table_names())
-    assert {"settings", "chat_jobs", "contacts"} <= local_tables
+    assert {"settings", "chat_notify_jobs", "contacts"} <= local_tables
     assert "magis" not in local_tables
     assert {"magis", "runtime_state", "a2a_request_jobs", "a2a_notify_jobs"} <= magis_tables
     assert "settings" not in magis_tables

@@ -1,8 +1,14 @@
-"""runTaskJobBoard — 任务触发作业板。
+"""runTaskJobBoard — 任务触发通知板（单向，fire-and-forget）。
 
 inter-worker / tool 统一触发接口：任何调用方
 ``bus.run_task_job_board.publish(RunTaskJob(task_id=...))``，
 TaskWorker claim 后执行同一 ``_fire_task`` 路径。
+
+与 ``callLLMJobBoard`` / ``runToolJobBoard`` 的往返语义不同，
+本 board 是**单向触发通知**：publish 后调用方不等待回执，任务
+真正的执行结果走 agent → delivery 链路返回用户，不回写这里。
+``submit_result`` 落终态（COMPLETED / FAILED + error）仅用于
+worker 重试预算与审计排查，不是给调用方的业务回执。
 
 触发语义：``RunTaskJob.manual: bool`` —— True 表示用户/工具
 主动触发（API / UI / tool），False 表示 task 模块按自身规则
@@ -18,15 +24,12 @@ TaskWorker claim 后通过 :meth:`tasks_book.get` 读取。这样
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
-from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,19 +57,19 @@ class RunTaskJob(BaseJob):
 
 @dataclass(frozen=True, slots=True)
 class RunTaskResult(BaseJobResult):
-    """:class:`RunTaskJob` 的处理回执 — TaskWorker 跑完 ``_fire_task`` 后写入。
+    """单向触发通知的终端回执 — 仅在 worker 处理完成/失败后落库。
+
+    发布方（API ``run_task_now`` / tool）**不等待**此回执 ——
+    :class:`runTaskJobBoard` 是 fire-and-forget 队列。此 Result
+    只承载继承的 :attr:`BaseJobResult.error` 供审计与重试排查：
 
     :attr:`JobStatus.FAILED` 通常意味着 Task 找不到 / 已被禁用 /
     任务缺少 ``conversation_id``（创建契约被破坏）/
-    :class:`PlanBook` 写入失败 — 这些都写在 ``error`` 里供
-    上层排查。``attempts`` 由 :class:`BaseJobBoard` 回写
-    ，和 ORM 的 ``attempts`` 列同步。
+    :class:`PlanBook` 写入失败。
     """
 
-    error: str | None = None  # 失败时的错误描述
 
-
-class _RunTaskJobRow(BaseJobRowMixin, Base):
+class _RunTaskJobRow(BaseJobRowMixin):
     __tablename__ = "run_task_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -74,49 +77,11 @@ class _RunTaskJobRow(BaseJobRowMixin, Base):
     #: 是否用户/工具主动触发。``manual=True`` 跳过 since-recent
     #: 判定；``False`` 表示 cron / run_at 系统自触发。与
     #: :class:`~magi.bus.library.local.tasksBook.TaskRun.manual`
-    #: 同构。
-    manual: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    result: Mapped[dict | None] = mapped_column(
-        type_=__import__("sqlalchemy").JSON,
-        nullable=True,
-    )
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
-    )
+    #: 同构（两者都是 ``Boolean`` 列 + ``bool`` DTO，无 int 转换）。
+    manual: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class runTaskJobBoard(BaseJobBoard[_RunTaskJobRow, RunTaskJob, RunTaskResult]):
     job_model = _RunTaskJobRow
     job_cls = RunTaskJob
     result_cls = RunTaskResult
-    natural_key_attr = "job_id"
-
-    def publish(self, job: RunTaskJob) -> str:
-        with self._session() as s:
-            row = _RunTaskJobRow(
-                job_id=uuid.uuid4().hex,
-                status=JobStatus.PENDING,
-                task_id=job.task_id,
-                manual=int(job.manual),
-            )
-            s.add(row)
-            s.flush()
-            s.commit()
-            return row.job_id
-
-    def claim(self) -> RunTaskJob | None:
-        with self._session() as s:
-            row = self._claim(s)
-            s.commit()
-            if row is None:
-                return None
-            return RunTaskJob(
-                task_id=row.task_id,
-                manual=bool(row.manual),
-                job_id=row.job_id,
-                attempts=row.attempts,
-            )
