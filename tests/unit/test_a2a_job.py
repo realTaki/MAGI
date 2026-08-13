@@ -46,8 +46,8 @@ def boards(tmp_path):
         source,
         target,
         memberships,
-        a2aRequestJobBoard(factory),
-        a2aNotifyBoard(factory),
+        a2aRequestJobBoard(factory, memberships_book=memberships),
+        a2aNotifyBoard(factory, memberships_book=memberships),
     )
 
 

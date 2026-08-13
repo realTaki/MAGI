@@ -414,8 +414,10 @@ def _open_with_dirs(
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
         control_secrets_book = ControlSecretBook(magis_factory)
-        a2a_request_job_board = a2aRequestJobBoard(magis_factory)
-        a2a_notify_job_board = a2aNotifyBoard(magis_factory)
+        a2a_request_job_board = a2aRequestJobBoard(
+            magis_factory, memberships_book=memberships_book
+        )
+        a2a_notify_job_board = a2aNotifyBoard(magis_factory, memberships_book=memberships_book)
     else:
         magis_book = None
         magis_admins_book = None

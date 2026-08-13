@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     DateTime,
@@ -22,8 +23,18 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, JobStatus, BaseJobRowMixin
-from magi.bus.library.magis.membershipBook import _MagisMembershipRow
+from magi.bus.guild.base import (
+    DEFAULT_LEASE_SECONDS,
+    BaseJob,
+    BaseJobBoard,
+    BaseJobResult,
+    BaseJobRowMixin,
+    JobStatus,
+)
+
+if TYPE_CHECKING:
+    from magi.bus.db.engine import EngineFactory
+    from magi.bus.library.magis.membershipBook import MagisMembershipBook
 
 
 # -- public enum ---------------------------------------------------------
@@ -159,17 +170,35 @@ class _A2ANotifyRow(BaseJobRowMixin):
     )
 
 
-def _validate_route(session, *, source_magi_id: int, target_magi_id: int) -> None:
+def _validate_route(
+    memberships: MagisMembershipBook,
+    *,
+    source_magi_id: int,
+    target_magi_id: int,
+) -> None:
+    """Reject A2A routes that no membership row can justify.
+
+    Reads through :class:`~magi.bus.library.magis.membershipBook.MagisMembershipBook`
+    rather than selecting ``magis_memberships`` directly, so guild
+    boards never depend on another layer's private ORM row (same
+    injection shape as
+    :class:`~magi.bus.guild.changeProviderConfigJob.changeProviderConfigJobBoard`
+    and its ``settings_book``).
+
+    The lookups run in the Book's own session, i.e. *before* the
+    publishing transaction opens — a membership deleted in that
+    window still fails the insert, because both ``source_magi_id``
+    and ``target_magi_id`` are FKs onto ``magis_memberships.id``.
+    This check exists to turn that ``IntegrityError`` into a
+    readable error, and to enforce the one rule the FK cannot
+    express: both ends live under the same MAGIS.
+    """
     if source_magi_id <= 0 or target_magi_id <= 0:
         raise ValueError("source_magi_id and target_magi_id are required")
     if source_magi_id == target_magi_id:
         raise ValueError("A2A cannot target the sending MAGI")
-    source = session.scalar(
-        select(_MagisMembershipRow).where(_MagisMembershipRow.id == source_magi_id)
-    )
-    target = session.scalar(
-        select(_MagisMembershipRow).where(_MagisMembershipRow.id == target_magi_id)
-    )
+    source = memberships.get(magi_id=source_magi_id)
+    target = memberships.get(magi_id=target_magi_id)
     if source is None or target is None:
         raise LookupError("A2A source or target MAGI does not exist")
     if source.magis_id != target.magis_id:
@@ -183,15 +212,28 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
     job_cls = A2ARequestJob
     result_cls = A2ARequestResult
 
+    def __init__(
+        self,
+        factory: EngineFactory,
+        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        *,
+        memberships_book: MagisMembershipBook,
+    ) -> None:
+        super().__init__(factory, lease_seconds)
+        # Required, not optional: every publish must prove the route
+        # exists and stays inside one MAGIS, so there is no degraded
+        # "no book injected" mode to fall back to.
+        self._memberships_book = memberships_book
+
     def publish(self, job: A2ARequestJob) -> str:
         if not job.text.strip():
             raise ValueError("A2A request text is required")
+        _validate_route(
+            self._memberships_book,
+            source_magi_id=job.source_magi_id,
+            target_magi_id=job.target_magi_id,
+        )
         with self._session() as s:
-            _validate_route(
-                s,
-                source_magi_id=job.source_magi_id,
-                target_magi_id=job.target_magi_id,
-            )
             row = _A2ARequestRow(
                 job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
@@ -269,15 +311,25 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
     job_cls = A2ANotifyJob
     result_cls = A2ANotifyResult
 
+    def __init__(
+        self,
+        factory: EngineFactory,
+        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        *,
+        memberships_book: MagisMembershipBook,
+    ) -> None:
+        super().__init__(factory, lease_seconds)
+        self._memberships_book = memberships_book
+
     def publish(self, job: A2ANotifyJob) -> str:
         if not job.text.strip():
             raise ValueError("A2A notification text is required")
+        _validate_route(
+            self._memberships_book,
+            source_magi_id=job.source_magi_id,
+            target_magi_id=job.target_magi_id,
+        )
         with self._session() as s:
-            _validate_route(
-                s,
-                source_magi_id=job.source_magi_id,
-                target_magi_id=job.target_magi_id,
-            )
             row = _A2ANotifyRow(
                 job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
