@@ -54,19 +54,16 @@ class JobStatus(StrEnum):
 class BaseJob:
     """所有 Job dataclass 的公共基类。
 
-    承载队列语义字段（``job_id`` / ``attempts``）；子类只声明
-    业务字段。``job_id`` 由 ``publish`` 自动生成（``job.job_id
-    or new_job_id()``），``attempts`` 由 :meth:`BaseJobBoard._map_row`
-    在 claim 时回填，供上层观察 lease-recovery 行为，不属于
-    publisher 的输入。
+    空壳：业务字段留给子类声明；与发布/claim 流程相关的字段
+    (``job_id`` / ``attempts`` / ``status`` 等) 全部归到行侧
+    (:class:`BaseJobRowMixin`)。这样 publish-side 只需关心业务
+    内容，row-internal 的副作用（重试计数、行级唯一标识）从
+    dataclass API 上完全拿不到 — 避免调用方误填。
 
-    ``kw_only=True`` 让这两个队列语义字段排到子类业务字段之后，
-    这样子类可以声明无默认值的必填字段（如 ``DeliveryJob.channel``）
-    而不违反 dataclass「无默认字段不能跟在有默认字段之后」的规则。
+    ``kw_only=True`` 给子类留出空间声明无默认值的必填字段（如
+    ``DeliveryJob.channel``）而不违反 dataclass「无默认字段不能
+    跟在有默认字段之后」的规则。
     """
-
-    job_id: str = ""  # 发布时自动生成；publish 内 ``job.job_id or new_job_id()``
-    attempts: int = 0  # claim 后由 ORM 回填的重试次数（观察值）
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,12 +98,17 @@ class BaseJobResult:
     error: str | None = None  # 失败时的人类可读错误文案（成功路径保持 None）
 
 
-class BaseJobRowMixin:
+class BaseJobRowMixin(Base):
     """Job 队列行的公共列 mixin。
 
-    每个 ``_XxxJobRow`` 通过 ``class _XxxJobRow(BaseJobRowMixin, Base)``
-    继承这 11 个队列控制列，只声明自己的业务列。
+    自身继承 :class:`Base` 并标 ``__abstract__ = True`` —— 不直接对应
+    表（SA 不会建 ``base_job_row_mixin`` 这种无意义表），但 MRO 中
+    已经携带 ``Base``，所以子类只需要 ``class _XxxJobRow(BaseJobRowMixin)``
+    就能挂到同一份 ``Base.metadata`` 上。每个 ``_XxxJobRow`` 通过
+    这个单继承获得 11 个队列控制列，只声明自己的业务列。
     """
+
+    __abstract__ = True
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -216,24 +218,20 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     def _build_pending_row(self, job: JobT) -> RowT:
         """Build a new PENDING row by mirroring dataclass fields onto columns.
 
-        ``job_id`` is freshly minted (``BaseJob.job_id = ""`` is always
-        empty pre-publish); ``attempts`` is claim-time bookkeeping so
-        it stays at its column default. Every other dataclass field
-        whose name is also a mapped column is copied via ``setattr``
-        — values are taken verbatim, so a dataclass field typed as
-        ``int | None`` with ``None`` will land as ``NULL`` and fail
-        against a ``NOT NULL`` column with the appropriate DB error.
-        Override :meth:`publish` (and skip the auto-copy by calling
-        the row constructor directly) when you need defensive
-        coercion or a derived column.
+        ``job_id`` is freshly minted by :meth:`new_job_id`; every other
+        dataclass field whose name is also a mapped column is copied via
+        ``setattr`` — values are taken verbatim, so a dataclass field typed
+        as ``int | None`` with ``None`` will land as ``NULL`` and fail
+        against a ``NOT NULL`` column with the appropriate DB error. Now
+        that ``job_id`` / ``attempts`` no longer live on the Job dataclass,
+        there's nothing to skip: every dataclass field is a business field
+        with a corresponding row column.
         """
         row = self.job_model(
             job_id=self.new_job_id(),
             status=JobStatus.PENDING,
         )
         for f in dataclasses.fields(job):
-            if f.name in ("job_id", "attempts"):
-                continue
             if hasattr(row, f.name):
                 setattr(row, f.name, getattr(job, f.name))
         return row

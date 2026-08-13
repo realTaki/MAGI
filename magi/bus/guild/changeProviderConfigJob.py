@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, String
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
@@ -70,17 +70,15 @@ class ChangeProviderConfigResult(BaseJobResult):
 
     :attr:`JobStatus.COMPLETED` 表示配置已经生效（缓存的
     client 已经是新 provider / 新 model）；
-    :attr:`JobStatus.FAILED` 时 ``error`` 写错误描述，调用方
-    通常直接 502 给前端。
+    :attr:`JobStatus.FAILED` 时基类的 ``error`` 字段写错误描述,
+    调用方通常直接 502 给前端。
     """
-
-    error: str | None = None  # 失败时的错误描述
 
 
 # ── internal ORM ───────────────────────────────────────────────────────────
 
 
-class _ChangeProviderConfigRow(BaseJobRowMixin, Base):
+class _ChangeProviderConfigRow(BaseJobRowMixin):
     __tablename__ = "change_provider_config_jobs"
     __table_args__ = {"extend_existing": True}
 
@@ -92,13 +90,6 @@ class _ChangeProviderConfigRow(BaseJobRowMixin, Base):
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     api_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # 保留 payload 字段以兼容已有数据；新 publish 不再写入
-    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
-    )
 
 
 # ── Board ──────────────────────────────────────────────────────────────────
@@ -127,26 +118,19 @@ class changeProviderConfigJobBoard(
 
         # 2. 创建 job 行。Field-level columns let the worker decide
         #    between a full SDK rebuild (provider / api_key set) and
-        #    an in-place model swap (only model set); the legacy
-        #    ``payload`` is kept for audit only.
-        job_id = job.job_id or self.new_job_id()
+        #    an in-place model swap (only model set).
         with self._session() as s:
             row = _ChangeProviderConfigRow(
-                job_id=job_id,
+                job_id=self.new_job_id(),
                 status=JobStatus.PENDING,
                 provider=job.provider,
                 api_key=job.api_key,
                 model=job.model,
-                payload={
-                    "provider": job.provider,
-                    "api_key_last4": (job.api_key or "")[-4:] or None,
-                    "model": job.model,
-                },
             )
             s.add(row)
             s.flush()
             s.commit()
-        return job_id
+        return row.job_id
 
     def _write_to_settings(self, job: ChangeProviderConfigJob) -> None:
         """Upsert provider config into ``settings_book``."""
