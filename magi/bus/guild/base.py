@@ -54,16 +54,27 @@ class JobStatus(StrEnum):
 class BaseJob:
     """所有 Job dataclass 的公共基类。
 
-    空壳：业务字段留给子类声明；与发布/claim 流程相关的字段
-    (``job_id`` / ``attempts`` / ``status`` 等) 全部归到行侧
-    (:class:`BaseJobRowMixin`)。这样 publish-side 只需关心业务
-    内容，row-internal 的副作用（重试计数、行级唯一标识）从
-    dataclass API 上完全拿不到 — 避免调用方误填。
+    承载 ``job_id``（行级唯一标识；声明为 ``init=False``，caller
+    无法在 ``Job(...)`` 构造里传它——publish-side
+    :meth:`BaseJobBoard.publish` 用 :meth:`BaseJobBoard.new_job_id`
+    强写，claim-side 通过 :meth:`BaseJobBoard._map_row` 把行级
+    ``job_id`` 回填给调用方）。保留这个字段是因为 worker 拿到
+    claim 结果后通过它调 :meth:`BaseJobBoard.submit_result` /
+    :meth:`release`（它们以 ``job_id`` 作 natural_key_attr）。
+
+    ``attempts`` 不在这里 — 它是行侧 :class:`BaseJobRowMixin` 的列
+    （已重试次数 / lease-recovery 观察值），调用方不该经由
+    dataclass 路径读写。Board 内部 :meth:`_cas_claim` /
+    :meth:`_mark_exhausted` 直接写行，不经过 Job dataclass。
+
+    业务字段留给子类声明。
 
     ``kw_only=True`` 给子类留出空间声明无默认值的必填字段（如
     ``DeliveryJob.channel``）而不违反 dataclass「无默认字段不能
     跟在有默认字段之后」的规则。
     """
+
+    job_id: str = dataclasses.field(default="", init=False)  # Board-owned; publish 强写、claim 回填
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,12 +197,25 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     @staticmethod
     def _map_row(row, cls):
-        """ORM 行 → dataclass 自动映射（按字段名匹配）。"""
-        kwargs = {}
+        """ORM 行 → dataclass 自动映射（按字段名匹配）。
+
+        ``init=False`` 字段（如 :attr:`BaseJob.job_id`）不参与
+        ``cls(**kwargs)`` 构造，构造后再用 ``object.__setattr__`` 回填——
+        ``frozen=True`` 下普通 ``setattr`` 会被 dataclass 拦截。
+        """
+        init_kwargs: dict = {}
+        deferred: dict = {}
         for f in dataclasses.fields(cls):
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return cls(**kwargs)
+            if not hasattr(row, f.name):
+                continue
+            if f.init:
+                init_kwargs[f.name] = getattr(row, f.name)
+            else:
+                deferred[f.name] = getattr(row, f.name)
+        obj = cls(**init_kwargs)
+        for name, val in deferred.items():
+            object.__setattr__(obj, name, val)
+        return obj
 
     # -- 异步队列 ----------------------------------------------------------
 
@@ -213,25 +237,29 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             s.add(row)
             s.flush()
             s.commit()
-            return row.job_id
+            return row.job_id  # type: ignore[reportAttributeAccessIssue]
 
     def _build_pending_row(self, job: JobT) -> RowT:
         """Build a new PENDING row by mirroring dataclass fields onto columns.
 
-        ``job_id`` is freshly minted by :meth:`new_job_id`; every other
-        dataclass field whose name is also a mapped column is copied via
-        ``setattr`` — values are taken verbatim, so a dataclass field typed
-        as ``int | None`` with ``None`` will land as ``NULL`` and fail
-        against a ``NOT NULL`` column with the appropriate DB error. Now
-        that ``job_id`` / ``attempts`` no longer live on the Job dataclass,
-        there's nothing to skip: every dataclass field is a business field
-        with a corresponding row column.
+        :class:`BaseJobRowMixin`'s Board-owned defaults (a fresh
+        ``new_job_id()`` and ``JobStatus.PENDING``) are written into the
+        row constructor; the dataclass copy loop below skips every
+        ``init=False`` field (e.g. :attr:`BaseJob.job_id`) so the
+        dataclass-side defaults don't clobber the Board-owned values,
+        and copies everything else verbatim. A dataclass field typed
+        ``int | None`` with ``None`` will land as ``NULL`` and fail
+        against a ``NOT NULL`` column with the appropriate DB error.
         """
         row = self.job_model(
             job_id=self.new_job_id(),
             status=JobStatus.PENDING,
         )
         for f in dataclasses.fields(job):
+            if not f.init:
+                # Board-owned（如 BaseJob.job_id 的 init=False）：值已由
+                # 上行 row 构造器写入，跳过，避免 dataclass 默认值覆盖。
+                continue
             if hasattr(row, f.name):
                 setattr(row, f.name, getattr(job, f.name))
         return row
@@ -269,7 +297,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 return
             if getattr(row, "status", None) == JobStatus.PROCESSING:
                 row.status = JobStatus.PENDING  # type: ignore[reportAttributeAccessIssue]
-                row.leased_by = None
+                row.leased_by = None  # type: ignore[reportAttributeAccessIssue]
                 row.leased_until = None  # type: ignore[reportAttributeAccessIssue]
                 row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # type: ignore[reportAttributeAccessIssue]  # 不消耗重试次数
             s.commit()

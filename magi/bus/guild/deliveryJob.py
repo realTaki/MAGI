@@ -5,7 +5,6 @@ agent 产出回复 → 入队 → worker 投递到渠道
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
@@ -13,7 +12,7 @@ from typing import ClassVar
 from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
+from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 #: Maximum delivery attempts before a row is marked failed.
@@ -58,14 +57,12 @@ class DeliveryResult(BaseJobResult):
     :meth:`BaseJobBoard._mark_exhausted` 写成
     :attr:`JobStatus.FAILED` 的失败 Result；正常路径下
     :attr:`JobStatus.COMPLETED` 表示 SDK 已确认收到 / WS
-    已发送完毕。``error`` 在 :attr:`JobStatus.FAILED` 时填
-    渠道 SDK 的错误文案或重试耗尽提示。
+    已发送完毕。基类 ``error`` 字段在 :attr:`JobStatus.FAILED`
+    时填渠道 SDK 的错误文案或重试耗尽提示。
     """
 
-    error: str | None = None  # 失败时的错误描述
 
-
-class _DeliveryJobRow(BaseJobRowMixin, Base):
+class _DeliveryJobRow(BaseJobRowMixin):
     __tablename__ = "delivery_outbox"
     __table_args__ = {"extend_existing": True}
 
@@ -77,12 +74,7 @@ class _DeliveryJobRow(BaseJobRowMixin, Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive
-    )
 
 
 class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult]):
@@ -93,22 +85,6 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
     # channels (Telegram rate limits, WebUI WS reconnects) often
     # fail 4–5 times before settling.
     max_attempts: ClassVar[int] = MAX_DELIVERY_ATTEMPTS
-
-    def publish(self, job: DeliveryJob) -> str:
-        with self._session() as s:
-            row = _DeliveryJobRow(
-                job_id=uuid.uuid4().hex,
-                status=JobStatus.PENDING,
-                channel=job.channel,
-                text=job.text,
-                conversation_id=job.conversation_id,
-                contact_id=job.contact_id,
-                destination=job.destination,
-            )
-            s.add(row)
-            s.flush()
-            s.commit()
-            return row.job_id
 
     def claim_for_channel(self, *, channel: str) -> DeliveryJob | None:
         """CAS-claim the oldest pending delivery row scoped to *channel*.
@@ -130,12 +106,3 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
                 return None
             fresh = s.get(_DeliveryJobRow, row.id)
             return self._map_row(fresh, self.job_cls) if fresh else None
-
-    def claim(self) -> DeliveryJob | None:
-        """Generic (no channel scope) claim — falls through to the base.
-
-        No bridge needed: every :class:`DeliveryJob` field is its own
-        column on :class:`_DeliveryJobRow`, so the generic
-        :meth:`BaseJobBoard._map_row` name-match mapping works directly.
-        """
-        return super().claim()
