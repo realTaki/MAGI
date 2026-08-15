@@ -144,6 +144,24 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             )
             return self._row_to_dto(row) if row else None
 
+    def root_runtime_url(self, *, magi_id: int) -> str | None:
+        """Return the K8s service URL for the root MAGIS's ADAM, when applicable.
+
+        The WebUI control plane uses this as the platform-neutral fallback
+        when a runtime row is missing from ``runtime_state_book``: in K8s
+        deployments the root MAGI is reached via the service DNS name
+        (``magi`` by default, overridable via ``MAGI_ROOT_RUNTIME_URL``),
+        not via the local-mode ``base_url`` written by the launcher.  Local
+        callers never reach this path — ``runtime_state_book.get()``
+        resolves first and short-circuits with ``base_url``.
+        """
+        import os
+
+        root = self.get_root()
+        if root is not None and root.adam_id == magi_id:
+            return os.environ.get("MAGI_ROOT_RUNTIME_URL", "http://magi:42069")
+        return None
+
     def list_all(self) -> list[Magis]:
         with self._session() as s:
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()

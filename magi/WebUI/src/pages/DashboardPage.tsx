@@ -92,13 +92,19 @@ function PostLoginLayout(props: {
   const t = useT();
 
   return (
-    <main className="min-h-screen flex flex-col">
+    // Edge-to-edge layout: no max-w / mx-auto on either the
+    // topbar or the content row, so the sidebar nav and main
+    // pane extend to the browser edges instead of being capped
+    // at 1152 px. Matches Linear / Stripe / MiniMax-style
+    // admin products where horizontal space is a feature, not
+    // a constraint.
+    <main className="h-screen flex flex-col">
       {/* Opaque topbar — solid white surface with a 1px
           border. Tabs are accent-soft on active (Linear's
           subtle-active pattern), ink-2 idle. No blur, no
           translucent overlay. */}
-      <header className="relative z-30 border-b border-border bg-surface">
-        <div className="max-w-6xl mx-auto px-6 h-12 flex items-center gap-6">
+      <header className="relative z-30 shrink-0 border-b border-border bg-surface">
+        <div className="px-4 h-12 flex items-center gap-6">
           <div className="flex items-center gap-2 shrink-0">
             <img
               src="/assets/favicon.svg"
@@ -135,8 +141,8 @@ function PostLoginLayout(props: {
         </div>
       </header>
 
-      <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">
-        <div className="space-y-4">
+      <div className="flex-1 min-h-0 w-full px-3 pb-3 pt-2">
+        <div className="h-full">
           {tab === "chat" && <ChatTab />}
           {tab === "magic" && props.user.admin && <AgenticSocietyTab />}
           {tab === "knowledge" && <KnowledgeTab />}

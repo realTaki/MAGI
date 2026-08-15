@@ -547,15 +547,27 @@ class AgentWorker(RuntimeWorker):
     # -- LLM wait ------------------------------------------------------------
 
     async def _wait_for_llm(self, job_id: str) -> CallLLMResult | None:
+        # ``get_result`` is a one-shot query that returns ``None`` the
+        # instant the result row does not exist yet — wrapping it in
+        # ``asyncio.wait_for`` only enforces an upper bound, so the
+        # call returned ``None`` long before the providers worker
+        # could poll (0.25s cadence) and complete the call. The board
+        # exposes ``wait_for_result`` which polls every 50ms; use it
+        # so the agent actually waits for the LLM result instead of
+        # declaring a spurious timeout.
         timeout = await self._read_llm_timeout()
         try:
-            return await asyncio.wait_for(
-                self.call(self.bus.llm_job_board.get_result, key=job_id),
+            result = await self.bus.llm_job_board.wait_for_result(
+                key=job_id,
                 timeout=timeout,
+                poll_interval=0.05,
             )
-        except TimeoutError:
-            logger.warning("llm job %s timed out (%.0fs)", job_id, timeout)
+        except Exception:
+            logger.exception("llm wait crashed for %s", job_id)
             return None
+        if result is None:
+            logger.warning("llm job %s timed out (%.0fs)", job_id, timeout)
+        return result
 
     # -- split tools ---------------------------------------------------------
 

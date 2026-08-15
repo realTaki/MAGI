@@ -7,13 +7,30 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
-from typing import TypeVar, overload
+from typing import ClassVar, Protocol, TypeVar, overload
 
 from magi.bus.db.base import Base
 from magi.bus.db.engine import EngineFactory
 
 RowT = TypeVar("RowT", bound=Base)
-DtoT = TypeVar("DtoT")
+
+
+class _Dataclass(Protocol):
+    """Structural Protocol for ``@dataclasses.dataclass``-decorated classes.
+
+    ``dataclasses.fields()`` types its argument as
+    ``DataclassInstance | type[DataclassInstance]``; without this
+    bound, Pylance sees ``type[DtoT]`` (a TypeVar with no upper
+    bound) as ``type[Any]`` and rejects the call. Binding DtoT to
+    this Protocol makes the class satisfy the dataclass shape
+    structurally without forcing every subclass to inherit from a
+    concrete base.
+    """
+
+    __dataclass_fields__: ClassVar[dict]
+
+
+DtoT = TypeVar("DtoT", bound=_Dataclass)
 
 
 # ``to_iso`` is called from two very different contexts:
@@ -60,7 +77,7 @@ def to_iso(value: datetime | str | None) -> str | None:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-class BaseBook[RowT: Base, DtoT]:
+class BaseBook[RowT: Base, DtoT: _Dataclass]:
     """子类设置 model_cls / dto_cls，自动处理 Session 和映射。"""
 
     model_cls: type[RowT]

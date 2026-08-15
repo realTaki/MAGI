@@ -25,7 +25,7 @@ def _runtime_url(bus, magi_id: int) -> str:
         if runtime is not None and runtime.base_url:
             return runtime.base_url
     if bus.magis_book is not None:
-        root_url = bus.magis_book.root_runtime_url(magi_id)
+        root_url = bus.magis_book.root_runtime_url(magi_id=magi_id)
         if root_url is not None:
             return root_url
     raise MagiHTTPException(

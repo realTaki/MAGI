@@ -41,18 +41,15 @@ export default function SidebarShell(props: {
   belowItems?: React.ReactNode;
 }) {
   return (
-    <div className="surface overflow-hidden">
-      {/*
-        Pinned to the viewport so the sidebar history list /
-        and the right pane each get their own scroll column.
-        Without ``h-[calc(100vh-X)]`` the card grows with its
-        content (a long history list made the whole page
-        taller than the viewport, so the rest of the chat UI
-        — composer, message list bottom — slid below the
-        fold). The header + main padding above take ~7rem,
-        so we leave that out of the available height.
-      */}
-      <div className="flex h-[calc(100vh-7rem)] min-h-[420px]">
+    // Edge-to-edge: h-full + min-h-0 lets the inner flex
+    // column fill whatever vertical space the parent
+    // ``.flex-1`` row above the header gives it (the parent
+    // is already ``h-screen flex flex-col`` with the header
+    // pinned at h-12). No more ``calc(100vh - Nrem)`` —
+    // that math was tied to the old centred ``max-w-6xl``
+    // padding, which is gone now.
+    <div className="surface h-full overflow-hidden">
+      <div className="flex h-full min-h-0">
         {/* Soft inset sidebar column. Reads as "navigation
             panel" without the translucent glass strip of
             the previous design. Active = accent pill (see
