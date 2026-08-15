@@ -265,14 +265,21 @@ def _claim_pid_file(pid_path: Path) -> None:
     detached paths are interchangeable from the operator's perspective.
     A stale PID file pointing at a dead PID is overwritten without
     complaint — same PID-reuse caveat as the detached path.
+
+    The ``current == existing`` short-circuit handles the detach case:
+    :func:`magi.startup.local.start_magi` writes the supervisor's PID
+    before spawning the foreground ``magi node run --foreground``
+    subprocess; that subprocess is the supervisor itself when reload
+    is off, so re-claiming its own PID is not a conflict.
     """
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     existing = read_pid(pid_path)
-    if existing is not None and is_alive(existing):
+    current = os.getpid()
+    if existing is not None and is_alive(existing) and existing != current:
         raise RuntimeError(
             f"runtime already running (pid={existing}, pid_file={pid_path})"
         )
-    pid_path.write_text(str(os.getpid()), encoding="utf-8")
+    pid_path.write_text(str(current), encoding="utf-8")
 
 
 def _install_lifecycle_handlers(
