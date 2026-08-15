@@ -285,7 +285,7 @@ export default function TaskListPane() {
         {systemTz && (
           <p className="mt-1 text-xs text-ink-soft">
             时区：<span className="font-mono">{systemTz}</span>，去
-            <a href="/chat/scheduled-tasks?tab=settings" className="text-sky-700 ml-1">设置</a>改
+            <a href="/chat/scheduled-tasks?tab=settings" className="text-accent ml-1">设置</a>改
           </p>
         )}
       </div>
@@ -363,7 +363,7 @@ function TaskSection({
   handlers: RowHandlers;
 }) {
   return (
-    <div className="glass-card overflow-hidden flex flex-col">
+    <div className="surface overflow-hidden flex flex-col">
       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-sky-light/30">
         <div>
           <div className="flex items-center gap-2">

@@ -67,14 +67,14 @@ export function ChatConversationPane(props: {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header — session title + new chat link */}
-      <div className="shrink-0 flex items-center justify-between px-1 pb-3 border-b border-sky-light/30">
+      <div className="shrink-0 flex items-center justify-between px-1 pb-3 border-b border-border">
         <h3 className="text-sm font-medium text-ink truncate">
           {headerLabel}
         </h3>
         <button
           type="button"
           onClick={props.onNewChat}
-          className="text-xs text-sky-700 hover:text-sky-deep transition shrink-0 ml-3"
+          className="text-xs text-accent hover:text-accent-ink transition shrink-0 ml-3"
         >
           {t("sidebar.newChat")}
         </button>

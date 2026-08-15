@@ -54,7 +54,7 @@ export default function DashboardPage(props: {
   if (!props.signedInUser) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <p className="text-ink-soft text-sm">MAGI · loading dashboard…</p>
+        <p className="text-ink-2 text-sm">MAGI · loading dashboard…</p>
       </main>
     );
   }
@@ -93,11 +93,11 @@ function PostLoginLayout(props: {
 
   return (
     <main className="min-h-screen flex flex-col">
-      {/* Light sky-tinted glass strip. Reads as "the sky slightly
-          intensified" rather than a dark bar; the body gradient
-          shows through. Tabs are sky-blue active, ink-soft idle
-          — clean, no dark glass. */}
-      <header className="relative z-30 border-b border-sky-light/40 bg-white/60 backdrop-blur-xl">
+      {/* Opaque topbar — solid white surface with a 1px
+          border. Tabs are accent-soft on active (Linear's
+          subtle-active pattern), ink-2 idle. No blur, no
+          translucent overlay. */}
+      <header className="relative z-30 border-b border-border bg-surface">
         <div className="max-w-6xl mx-auto px-6 h-12 flex items-center gap-6">
           <div className="flex items-center gap-2 shrink-0">
             <img
@@ -201,7 +201,7 @@ function SignedInLabel(props: {
 }) {
   const t = useT();
   return (
-    <span className="text-xs text-ink-soft hidden sm:inline">
+    <span className="text-xs text-ink-2 hidden sm:inline">
       {t("topbar.signedInAs")}{" "}
       <span className="font-mono text-ink">
         {props.displayName ?? props.tgid}

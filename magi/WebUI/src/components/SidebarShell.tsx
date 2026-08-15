@@ -1,11 +1,11 @@
 /**
- * SidebarShell — the two-column "light sky sidebar + light
+ * SidebarShell — the two-column "soft inset sidebar + light
  * content pane" layout used by every tab that needs a
  * second-level navigation: Chat (6 EVA-output categories +
  * 新对话/搜索对话 + history list), Knowledge (Skills /
  * Connectors / Contacts), MAGI Council (智群管理 / 智能体管理).
  *
- * The shell owns the outer container, the sky-tinted sidebar
+ * The shell owns the outer container, the inset sidebar
  * column, and the light content pane. The caller owns:
  *   - which items appear in the sidebar (`items` prop)
  *   - which one is selected (`selectedId` + `onSelect`)
@@ -41,7 +41,7 @@ export default function SidebarShell(props: {
   belowItems?: React.ReactNode;
 }) {
   return (
-    <div className="glass-card overflow-hidden">
+    <div className="surface overflow-hidden">
       {/*
         Pinned to the viewport so the sidebar history list /
         and the right pane each get their own scroll column.
@@ -53,16 +53,15 @@ export default function SidebarShell(props: {
         so we leave that out of the available height.
       */}
       <div className="flex h-[calc(100vh-7rem)] min-h-[420px]">
-        {/* Light sky-tinted sidebar. Subtle but distinct from
-            the surrounding sky gradient body — reads as
-            "navigation panel", not a heavy dark bar. Active =
-            sky-deep blue pill so the user always knows where
-            they are. ``min-h-0`` lets the inner scrollable
-            history list (rendered via ``belowItems``) own
-            its own overflow instead of pushing the whole
-            card taller. */}
+        {/* Soft inset sidebar column. Reads as "navigation
+            panel" without the translucent glass strip of
+            the previous design. Active = accent pill (see
+            SidebarNavItem). ``min-h-0`` lets the inner
+            scrollable history list (rendered via
+            ``belowItems``) own its own overflow instead of
+            pushing the whole card taller. */}
         <nav
-          className="w-56 shrink-0 bg-sky-pale/70 backdrop-blur-md border-r border-sky-light/40 p-3 flex flex-col min-h-0"
+          className="w-56 shrink-0 bg-surface-2 border-r border-border p-3 flex flex-col min-h-0"
           aria-label={props.ariaLabel}
         >
           <ul className="space-y-1 shrink-0">

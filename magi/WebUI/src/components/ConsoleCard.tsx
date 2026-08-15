@@ -1,6 +1,6 @@
 /**
- * ConsoleCard — the small white card with a uppercase title used
- * across the dashboard (System, Contacts, EVA nodes, Audit log,
+ * ConsoleCard — the white surface card with a sentence-case title
+ * used across the dashboard (System, Contacts, EVA nodes, Audit log,
  * Connectors, the admin/contact/connector tables, etc.).
  *
  * `title` may be empty — when it is, the card collapses to just
@@ -26,10 +26,10 @@ export default function ConsoleCard(props: {
   headerAction?: React.ReactNode;
 }) {
   return (
-    <div className="glass-card p-5">
+    <div className="surface p-5">
       {props.title && (
         <div className="flex items-start gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-ocean shrink-0">
+          <h2 className="text-sm font-medium text-ink shrink-0">
             {props.title}
           </h2>
           {props.headerRight && (

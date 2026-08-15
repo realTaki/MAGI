@@ -697,14 +697,14 @@ export default function ChatTab() {
       ariaLabel="Chat navigation"
       belowItems={
         <>
-          <hr className="my-3 border-sky-light/40" />
-          <p className="mt-1 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-ocean/70">
+          <hr className="my-3 border-border" />
+          <p className="mt-1 mb-1 px-3 text-xs text-ink-3 font-medium">
             历史对话
           </p>
           {historyLoading && history.length === 0 ? (
-            <p className="px-3 text-xs text-ink-soft">Loading…</p>
+            <p className="px-3 text-xs text-ink-2">Loading…</p>
           ) : history.length === 0 ? (
-            <p className="px-3 text-xs text-ink-soft">
+            <p className="px-3 text-xs text-ink-2">
               No conversations yet.
             </p>
           ) : (
@@ -715,12 +715,12 @@ export default function ChatTab() {
                 <li
                   key={h.conversation_id}
                   className={
-                    "flex items-center gap-1 rounded-md transition " +
+                    "flex items-center gap-1 rounded-md transition-colors " +
                     (h.conversation_id === conversationId
-                      ? (isForeign ? "bg-ink-soft/30 text-ink-soft" : "bg-sky-deep text-white")
+                      ? (isForeign ? "bg-surface-2 text-ink-3" : "bg-accent text-white")
                       : (isForeign
-                        ? "text-ink-soft/60 hover:bg-ink-soft/10"
-                        : "text-ocean hover:bg-sky-light/60 hover:text-sky-deep"))
+                        ? "text-ink-3 hover:bg-surface-2"
+                        : "text-ink-2 hover:bg-surface-2 hover:text-ink"))
                   }
                 >
                   {editing?.id === h.conversation_id ? (
@@ -794,7 +794,7 @@ export default function ChatTab() {
                           "px-2 py-1.5 text-xs " +
                           (h.conversation_id === conversationId
                             ? "text-white/80 hover:text-white"
-                            : "text-ocean/60 hover:text-sky-deep")
+                            : "text-ink-3 hover:text-ink")
                         }
                         title="重命名"
                         aria-label="重命名对话"
@@ -808,7 +808,7 @@ export default function ChatTab() {
                           "px-2 py-1.5 text-xs " +
                           (h.conversation_id === conversationId
                             ? "text-white/80 hover:text-white"
-                            : "text-ocean/60 hover:text-sky-deep")
+                            : "text-ink-3 hover:text-ink")
                         }
                         title="删除"
                         aria-label="删除对话"
@@ -824,7 +824,7 @@ export default function ChatTab() {
                 <button
                   type="button"
                   onClick={() => setHistoryExpanded((b) => !b)}
-                  className="mt-1 w-full text-left px-3 py-1.5 text-xs text-sky-deep hover:text-sky-mid"
+                  className="mt-1 w-full text-left px-3 py-1.5 text-xs text-accent hover:text-accent-ink"
                 >
                   {historyExpanded
                     ? "收起"
@@ -837,10 +837,10 @@ export default function ChatTab() {
             type="button"
             onClick={() => setSelectedId("view-all")}
             className={
-              "mt-1 w-full text-left px-3 py-1.5 rounded-md text-xs transition " +
+              "mt-1 w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors " +
               (selectedId === "view-all"
-                ? "bg-sky-deep text-white"
-                : "text-sky-deep hover:text-sky-mid hover:bg-sky-light/40")
+                ? "bg-accent text-white"
+                : "text-accent hover:text-accent-ink hover:bg-surface-2")
             }
           >
             查看全部 →

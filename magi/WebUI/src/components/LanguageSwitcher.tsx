@@ -96,7 +96,7 @@ export default function LanguageSwitcher() {
         <div
           role="menu"
           aria-label="Language"
-          className="absolute right-0 mt-1 w-32 rounded-md border border-sky-light/60 bg-white shadow-lg overflow-hidden z-50"
+          className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-surface shadow-sm overflow-hidden z-50"
         >
           {SUPPORTED_LOCALES.map((l) => {
             const active = l === locale;
@@ -108,13 +108,13 @@ export default function LanguageSwitcher() {
                 aria-checked={active}
                 onClick={() => pick(l)}
                 className={
-                  "w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-sky-pale/40 " +
-                  (active ? "bg-sky-pale/60 text-ink font-medium" : "text-ink-soft")
+                  "w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-surface-2 " +
+                  (active ? "bg-accent-soft text-accent-ink font-medium" : "text-ink-2")
                 }
               >
                 <span>{LOCALE_LABELS[l]}</span>
                 {active && (
-                  <span aria-hidden="true" className="text-ocean">
+                  <span aria-hidden="true" className="text-accent">
                     ✓
                   </span>
                 )}

@@ -7,6 +7,7 @@ import {
   useVerifyTargetLoginCode,
   type TargetLoginAccount,
 } from "../lib/queries";
+import Notice from "../components/Notice";
 
 type Role = "admin" | "assigned";
 
@@ -75,13 +76,17 @@ export default function LoginPage(props: {
 
   return (
     <main className="min-h flex flex-col px-6 py-12">
-      <div className="w-full max-w-md mx-auto glass-card p-8">
-        <button type="button" className="text-sm text-ink-soft" onClick={props.onBack}>← Back</button>
+      <div className="w-full max-w-md mx-auto surface p-8">
+        <button type="button" className="text-sm text-ink-2 hover:text-ink" onClick={props.onBack}>← Back</button>
         <h1 className="mt-4 text-2xl font-semibold text-ink">Sign in to MAGI</h1>
-        <p className="mt-2 text-sm text-ink-soft">Choose the MAGIS administrator for this MAGI.</p>
-        {accounts.isLoading && <p className="mt-6 text-sm text-ink-soft">Loading accounts…</p>}
+        <p className="mt-2 text-sm text-ink-2">Choose the MAGIS administrator for this MAGI.</p>
+        {accounts.isLoading && <p className="mt-6 text-sm text-ink-2">Loading accounts…</p>}
         {accounts.data && accounts.data.accounts.length === 0 && (
-          <p className="mt-6 text-sm text-amber-700">No login accounts are available on this MAGI.</p>
+          <div className="mt-6">
+            <Notice tone="warning">
+              No login accounts are available on this MAGI.
+            </Notice>
+          </div>
         )}
         {accounts.data && accounts.data.accounts.length > 0 && (
           <>
@@ -93,8 +98,10 @@ export default function LoginPage(props: {
               ))}
             </select>
             {account?.local_direct_allowed && (
-              <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm text-amber-900">Two-factor verification is not enabled yet. Local access is available while you set it up.</p>
+              <div className="mt-5">
+                <Notice tone="warning">
+                  Two-factor verification is not enabled yet. Local access is available while you set it up.
+                </Notice>
                 <button type="button" className="btn btn-primary mt-3" disabled={directLogin.isPending} onClick={loginLocal}>
                   {directLogin.isPending ? "Signing in…" : "Sign in locally"}
                 </button>
@@ -108,7 +115,7 @@ export default function LoginPage(props: {
                   </button>
                 ) : (
                   <>
-                    <label className="block text-sm font-medium text-sky-deep">Verification code</label>
+                    <label className="form-label">Verification code</label>
                     <input className="form-input mt-2 w-full" inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value)} />
                     <button type="button" className="btn btn-primary mt-3" disabled={verifyCode.isPending || code.trim().length !== 6} onClick={verify}>
                       {verifyCode.isPending ? "Verifying…" : "Verify and sign in"}
@@ -119,7 +126,11 @@ export default function LoginPage(props: {
             )}
           </>
         )}
-        {error && <p className="mt-4 text-sm text-red-700">{error}</p>}
+        {error && (
+          <div className="mt-4">
+            <Notice tone="danger">{error}</Notice>
+          </div>
+        )}
       </div>
     </main>
   );

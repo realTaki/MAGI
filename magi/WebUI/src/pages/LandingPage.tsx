@@ -1,25 +1,29 @@
 /**
  * Landing page — the deployer's first stop.
  *
- * Clean hero layout: glass card on the existing sky-gradient
- * body. Logo lockup, tagline, three feature highlights, and
- * a single CTA button. All copy in i18n (``landing.*``).
+ * Clean hero layout: white surface card on the neutral canvas.
+ * Logo lockup, tagline, three feature highlights, and a single
+ * CTA button. All copy in i18n (``landing.*``).
  */
 import { useT } from "../i18n/index";
 import { useEffect, useState } from "react";
 import { useAvailableMagi } from "../lib/queries";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
-function FeaturePill(props: { color: string; title: string; desc: string }) {
+/* The three feature pills keep their Shinkai colours as a
+   single memory of the original palette — sun, sky, sakura.
+   The CSS classes below expose those three tokens so we
+   don't ship raw hex literals in JSX. */
+function FeaturePill(props: { toneClass: string; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-3">
       <span
-        className="mt-0.5 shrink-0 w-2.5 h-2.5 rounded-full"
-        style={{ backgroundColor: props.color }}
+        aria-hidden="true"
+        className={`mt-0.5 shrink-0 w-2.5 h-2.5 rounded-full ${props.toneClass}`}
       />
       <div>
-        <h3 className="text-sm font-semibold text-ink">{props.title}</h3>
-        <p className="text-xs text-ink-soft/70 leading-relaxed mt-0.5">
+        <h3 className="text-sm font-medium text-ink">{props.title}</h3>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-3">
           {props.desc}
         </p>
       </div>
@@ -42,7 +46,7 @@ export default function LandingPage(props: {
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-10">
-      <div className="glass-card w-full max-w-lg px-8 py-10 sm:px-10 sm:py-12">
+      <div className="surface w-full max-w-lg px-8 py-10 sm:px-10 sm:py-12">
         {/* Logo + name lockup + language picker.
             The deployer hasn't signed in yet, so this is the
             only place to switch UI language before onboarding
@@ -51,48 +55,46 @@ export default function LandingPage(props: {
             ``localStorage[magi.locale]`` and renders the page
             in the new locale on the next tick. */}
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
+          <div className="brand-lockup">
             <img
               src="/assets/favicon.svg"
               alt="MAGI"
-              width={36}
-              height={36}
+              width={28}
+              height={28}
               className="rounded-md"
             />
-            <span className="font-serif text-xl tracking-wide text-ink">
-              MAGI
-            </span>
+            <span>MAGI</span>
           </div>
           <LanguageSwitcher />
         </div>
 
         {/* Tagline */}
-        <h1 className="text-2xl sm:text-3xl font-serif font-semibold tracking-tight text-ink leading-snug">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink leading-snug sm:text-3xl">
           {t("landing.tagline")}
         </h1>
 
         {/* Description */}
-        <p className="mt-4 text-sm text-ink-soft/80 leading-relaxed">
+        <p className="mt-4 text-sm leading-relaxed text-ink-2">
           {t("landing.description")}
         </p>
 
         {/* Divider */}
-        <div className="glass-divider my-7" />
+        <div className="divider my-7" />
 
         {/* Feature highlights */}
         <div className="space-y-4">
           <FeaturePill
-            color="#f5c76e"
+            toneClass="bg-sun"
             title={t("landing.feature1Title")}
             desc={t("landing.feature1Desc")}
           />
           <FeaturePill
-            color="#3d8ac4"
+            toneClass="bg-sky"
             title={t("landing.feature2Title")}
             desc={t("landing.feature2Desc")}
           />
           <FeaturePill
-            color="#f5a8b8"
+            toneClass="bg-sakura"
             title={t("landing.feature3Title")}
             desc={t("landing.feature3Desc")}
           />
@@ -100,11 +102,11 @@ export default function LandingPage(props: {
 
         {/* CTA */}
         {props.isFirstTime && (
-          <p className="mt-8 text-center text-xs text-ink-soft/50">
+          <p className="mt-8 text-center text-xs text-ink-3">
             {t("landing.setupHint")}
           </p>
         )}
-        <label className="mt-7 block text-sm font-medium text-sky-deep">
+        <label className="mt-7 block text-sm font-medium text-ink">
           {t("landing.selectMagi")}
           <select
             value={selectedMagiId ?? ""}
@@ -121,13 +123,13 @@ export default function LandingPage(props: {
         </label>
         {magiQuery.isError && <p className="form-error mt-3">{t("landing.loadMagiError")}</p>}
         {!magiQuery.isLoading && !magiQuery.data?.magi.length && (
-          <p className="mt-3 text-sm text-ink-soft">{t("landing.noMagiRunning")}</p>
+          <p className="mt-3 text-sm text-ink-2">{t("landing.noMagiRunning")}</p>
         )}
         <button
           type="button"
           onClick={() => selectedMagiId !== null && props.onSelectMagic(selectedMagiId)}
           disabled={selectedMagiId === null}
-          className="btn btn-primary w-full mt-3 py-3 text-base"
+          className="btn btn-sun w-full mt-3 py-3 text-base"
         >
           {props.isFirstTime
             ? t("landing.setup")

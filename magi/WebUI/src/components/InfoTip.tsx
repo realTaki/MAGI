@@ -86,9 +86,9 @@ export function InfoTip({ text, size = 14 }: InfoTipProps) {
         onFocus={() => { recomputePosition(); setOpen(true); }}
         onBlur={() => setOpen(false)}
         className="inline-flex items-center justify-center
-                   text-ink-soft hover:text-ink
+                   text-ink-2 hover:text-ink
                    focus:outline-none focus-visible:ring-2
-                   focus-visible:ring-sky-300 rounded-full
+                   focus-visible:ring-accent-soft rounded-full
                    transition-colors"
         style={{ width: size, height: size }}
       >
@@ -101,10 +101,10 @@ export function InfoTip({ text, size = 14 }: InfoTipProps) {
           onMouseLeave={scheduleClose}
           className="fixed z-[100] w-72 max-w-xs
                      -translate-y-1/2
-                     rounded-md border border-sky-light/40
-                     bg-white/95 backdrop-blur
-                     px-3 py-2 text-xs leading-relaxed text-ink-soft
-                     shadow-md
+                     rounded-md border border-border
+                     bg-surface
+                     px-3 py-2 text-xs leading-relaxed text-ink-2
+                     shadow-sm
                      whitespace-normal pointer-events-auto"
           style={{ left: pos.left, top: pos.top }}
         >
