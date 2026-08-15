@@ -48,9 +48,9 @@ def bus(tmp_path) -> SimpleNamespace:
 
 
 def _society(bus: SimpleNamespace):
-    society = bus.magis_book.get_by_id(bus.magis_book.add(Magis(name='Alpha')))
-    eva = bus.roles_book.get_by_id(bus.roles_book.add(MagisRole(magis_id=society.id, name='EVA')))
-    adam = bus.roles_book.get_by_id(bus.roles_book.add(MagisRole(magis_id=society.id, name='ADAM')))
+    society = bus.magis_book.get(bus.magis_book.add(Magis(name='Alpha')))
+    eva = bus.roles_book.get(bus.roles_book.add(MagisRole(magis_id=society.id, name='EVA')))
+    adam = bus.roles_book.get(bus.roles_book.add(MagisRole(magis_id=society.id, name='ADAM')))
     return society, eva, adam
 
 
@@ -63,26 +63,26 @@ def test_magi_api_creates_membership_identity_and_control_label(bus: SimpleNames
         bus,
     )
 
-    assert result.id == bus.memberships_book.get(magi_id=result.id).id
+    assert result.id == bus.memberships_book.get(result.id).id
     assert result.name == "eve-one"
     assert result.memberships == [
         magi.MembershipBrief(
             magis_id=society.id, magis_name="Alpha", role_id=eva.id, role_name="EVA"
         )
     ]
-    assert bus.memberships_book.get(magi_id=result.id).role_id == eva.id
-    assert bus.runtime_state_book.get(runtime_id=result.id).backend_ref == "eve-one"
+    assert bus.memberships_book.get(result.id).role_id == eva.id
+    assert bus.runtime_state_book.get_by_runtime_id(runtime_id=result.id).backend_ref == "eve-one"
 
 
 def test_membership_api_rejects_retired_magi_id_and_cross_magis_role(bus: SimpleNamespace) -> None:
     first, eva, _ = _society(bus)
-    second = bus.magis_book.get_by_id(bus.magis_book.add(Magis(name='Beta')))
-    other_role = bus.roles_book.get_by_id(bus.roles_book.add(MagisRole(magis_id=second.id, name='EVA')))
+    second = bus.magis_book.get(bus.magis_book.add(Magis(name='Beta')))
+    other_role = bus.roles_book.get(bus.roles_book.add(MagisRole(magis_id=second.id, name='EVA')))
 
     with pytest.raises(ValidationError):
         magis.MembershipCreate(role_id=eva.id, magi_id=99)
     with pytest.raises(ValueError, match="target MAGIS"):
-        bus.memberships_book.get_by_id(bus.memberships_book.add(MagisMembership(magis_id=first.id, role_id=other_role.id)))
+        bus.memberships_book.get(bus.memberships_book.add(MagisMembership(magis_id=first.id, role_id=other_role.id)))
 
 
 def test_membership_api_persists_public_collaboration_responsibility(bus: SimpleNamespace) -> None:
@@ -109,7 +109,7 @@ def test_membership_api_persists_public_collaboration_responsibility(bus: Simple
 
 def test_magis_admin_is_shared_identity_with_local_projection(bus: SimpleNamespace) -> None:
     society, _, _ = _society(bus)
-    stored = bus.magis_admins_book.get_by_id(bus.magis_admins_book.add(MagisAdmin(magis_id=society.id, name='Operator', tgid=4242)))
+    stored = bus.magis_admins_book.get(bus.magis_admins_book.add(MagisAdmin(magis_id=society.id, name='Operator', tgid=4242)))
     projection = bus.contacts_book.ensure_magis_admin_projection(
         magis_admin_id=stored.id, display_name=stored.name
     )
@@ -121,9 +121,9 @@ def test_magis_admin_is_shared_identity_with_local_projection(bus: SimpleNamespa
 
 def test_magis_scope_is_derived_from_runtime_membership(bus: SimpleNamespace, monkeypatch) -> None:
     first, eva, _ = _society(bus)
-    second = bus.magis_book.get_by_id(bus.magis_book.add(Magis(name='Beta')))
-    second_eva = bus.roles_book.get_by_id(bus.roles_book.add(MagisRole(magis_id=second.id, name='EVA')))
-    runtime_member = bus.memberships_book.get_by_id(bus.memberships_book.add(MagisMembership(magis_id=first.id, role_id=eva.id)))
+    second = bus.magis_book.get(bus.magis_book.add(Magis(name='Beta')))
+    second_eva = bus.roles_book.get(bus.roles_book.add(MagisRole(magis_id=second.id, name='EVA')))
+    runtime_member = bus.memberships_book.get(bus.memberships_book.add(MagisMembership(magis_id=first.id, role_id=eva.id)))
     monkeypatch.setenv("MAGI_RUNTIME_ID", str(runtime_member.id))
 
     assert magis._served_direct_magis_id(bus) == first.id
@@ -132,7 +132,7 @@ def test_magis_scope_is_derived_from_runtime_membership(bus: SimpleNamespace, mo
     assert getattr(raised.value, "status_code", None) == 403
     # Keep a second membership so this test also proves the lookup uses the
     # runtime membership, rather than e.g. the first MAGIS row in the table.
-    assert bus.memberships_book.get_by_id(bus.memberships_book.add(MagisMembership(magis_id=second.id, role_id=second_eva.id)))
+    assert bus.memberships_book.get(bus.memberships_book.add(MagisMembership(magis_id=second.id, role_id=second_eva.id)))
 
 
 def test_create_magis_seeds_reserved_roles(bus: SimpleNamespace) -> None:
@@ -146,7 +146,7 @@ def test_create_magis_seeds_reserved_roles(bus: SimpleNamespace) -> None:
 
 def test_self_instruction_uses_the_runtime_bus(bus: SimpleNamespace, monkeypatch) -> None:
     society, eva, _ = _society(bus)
-    member = bus.memberships_book.get_by_id(bus.memberships_book.add(MagisMembership(magis_id=society.id, role_id=eva.id)))
+    member = bus.memberships_book.get(bus.memberships_book.add(MagisMembership(magis_id=society.id, role_id=eva.id)))
     monkeypatch.setenv("MAGI_RUNTIME_ID", str(member.id))
 
     written = magi.put_self_instruction(

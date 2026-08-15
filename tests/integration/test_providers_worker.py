@@ -626,7 +626,7 @@ async def test_worker_publishes_provider_options_to_settings_book(bus: Bus):
     try:
         import json
 
-        raw = bus.settings_book.get(key="providers.options")
+        raw = bus.settings_book.get_value(key="providers.options")
         assert raw is not None
         options = json.loads(raw)
         ids = {row["value"] for row in options}

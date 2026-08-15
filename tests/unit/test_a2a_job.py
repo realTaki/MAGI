@@ -35,11 +35,11 @@ from magi.bus.library.magis.membershipBook import (
 def boards(tmp_path):
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(factory, scope=MAGIS_SCOPE)
-    magis = MagisBook(factory).get_by_id(MagisBook(factory).add(Magis(name='Alpha')))
-    role = MagisRoleBook(factory).get_by_id(MagisRoleBook(factory).add(MagisRole(magis_id=magis.id, name='EVA')))
+    magis = MagisBook(factory).get(MagisBook(factory).add(Magis(name='Alpha')))
+    role = MagisRoleBook(factory).get(MagisRoleBook(factory).add(MagisRole(magis_id=magis.id, name='EVA')))
     memberships = MagisMembershipBook(factory)
-    source = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Coordinates research and task decomposition.')))
-    target = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Owns frontend implementation and build validation.')))
+    source = memberships.get(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Coordinates research and task decomposition.')))
+    target = memberships.get(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Owns frontend implementation and build validation.')))
     return (
         source,
         target,
@@ -54,11 +54,11 @@ def transcript_boards(tmp_path):
     """One shared MAGIS queue with independent source/target local Books."""
     magis_factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
-    magis = MagisBook(magis_factory).get_by_id(MagisBook(magis_factory).add(Magis(name='Alpha')))
-    role = MagisRoleBook(magis_factory).get_by_id(MagisRoleBook(magis_factory).add(MagisRole(magis_id=magis.id, name='EVA')))
+    magis = MagisBook(magis_factory).get(MagisBook(magis_factory).add(Magis(name='Alpha')))
+    role = MagisRoleBook(magis_factory).get(MagisRoleBook(magis_factory).add(MagisRole(magis_id=magis.id, name='EVA')))
     memberships = MagisMembershipBook(magis_factory)
-    source = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
-    target = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
+    source = memberships.get(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
+    target = memberships.get(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
 
     source_factory = EngineFactory(f"sqlite:///{tmp_path / 'source-local.db'}")
     target_factory = EngineFactory(f"sqlite:///{tmp_path / 'target-local.db'}")
@@ -344,9 +344,9 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
             )
         )
 
-    other_magis = MagisBook(requests._factory).get_by_id(MagisBook(requests._factory).add(Magis(name='Other')))
-    other_role = MagisRoleBook(requests._factory).get_by_id(MagisRoleBook(requests._factory).add(MagisRole(magis_id=other_magis.id, name='EVA')))
-    other_member = memberships.get_by_id(
+    other_magis = MagisBook(requests._factory).get(MagisBook(requests._factory).add(Magis(name='Other')))
+    other_role = MagisRoleBook(requests._factory).get(MagisRoleBook(requests._factory).add(MagisRole(magis_id=other_magis.id, name='EVA')))
+    other_member = memberships.get(
         memberships.add(MagisMembership(magis_id=other_magis.id, role_id=other_role.id))
     )
     with pytest.raises(ValueError, match="same MAGIS"):
@@ -419,7 +419,7 @@ async def test_message_magi_splits_request_and_notify_without_waiting_for_notify
     bus = SimpleNamespace(
         a2a_request_job_board=request_board,
         a2a_notify_job_board=notify_board,
-        tool_catalog_book=SimpleNamespace(get=lambda: None),
+        tool_catalog_book=SimpleNamespace(get_current=lambda: None),
         tool_job_board=SimpleNamespace(publish=lambda _job: "tool-job"),
     )
     worker = AgentWorker(bus, magi_id=11)  # type: ignore[arg-type]

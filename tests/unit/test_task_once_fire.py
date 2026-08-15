@@ -97,16 +97,16 @@ def test_mark_run_at_consumed_sets_enabled_zero():
 
     # ``tasks.contact_id`` → ``contacts.id`` is a RESTRICT FK; seed a
     # contact so the INSERT below doesn't trip it.
-    contact_id = ContactBook(f).get_by_id(ContactBook(f).add(Contact(name='test-contact', role=Role.ASSIGNED))).id
+    contact_id = ContactBook(f).get(ContactBook(f).add(Contact(name='test-contact', role=Role.ASSIGNED))).id
 
     future = (datetime.now(dt.UTC) + timedelta(hours=1)).replace(tzinfo=None)
     datetime.now(dt.UTC).replace(tzinfo=None)
 
-    task = tb.get_by_id(tb.add(Task(name='Once consume test', prompt='run once then disable', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=contact_id, conversation_id=None, tz='UTC')))
+    task = tb.get(tb.add(Task(name='Once consume test', prompt='run once then disable', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=contact_id, conversation_id=None, tz='UTC')))
     assert task.enabled == 1
 
     tb.mark_run_at_consumed(task_id=task.task_id)
-    updated = tb.get(task_id=task.task_id)
+    updated = tb.get_by_task_id(task_id=task.task_id)
     assert updated is not None
     assert updated.enabled == 0
 

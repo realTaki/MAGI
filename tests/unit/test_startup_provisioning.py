@@ -93,7 +93,7 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert open_bus(
         state_dir=str(workspace / "memories"),
         magis_url=spec.magis_database_url,
-    ).settings_book.get(key="auth.signing_key")
+    ).settings_book.get_value(key="auth.signing_key")
 
 
 def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None:
@@ -186,7 +186,7 @@ def test_repeated_init_is_identity_and_key_idempotent(tmp_path: Path) -> None:
         state_dir=str(config.workspace_dir / "memories"),
         magis_url=first.magis_database_url,
     )
-    signing_key = first_bus.settings_book.get(key="auth.signing_key")
+    signing_key = first_bus.settings_book.get_value(key="auth.signing_key")
     members_before = first_bus.memberships_book.list_for_magis(magis_id=1)
 
     second = init_first_magi(config)
@@ -196,7 +196,7 @@ def test_repeated_init_is_identity_and_key_idempotent(tmp_path: Path) -> None:
     )
 
     assert second == first
-    assert second_bus.settings_book.get(key="auth.signing_key") == signing_key
+    assert second_bus.settings_book.get_value(key="auth.signing_key") == signing_key
     assert second_bus.memberships_book.list_for_magis(magis_id=1) == members_before
 
 
@@ -247,7 +247,7 @@ def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path)
     assert control_dir.is_dir()
     assert bus.control_settings_book is not None
     bus.control_settings_book.set(key="control.test", value="shared")
-    assert bus.control_settings_book.get(key="control.test") == "shared"
+    assert bus.control_settings_book.get_value(key="control.test") == "shared"
     assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())
 
 

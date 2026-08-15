@@ -62,7 +62,7 @@ def contact_id(factory):
     FK can use this fixture to get a valid contact_id."""
     from magi.bus.library.local.contactBook import ContactBook
 
-    c = ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Fixture')))
+    c = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture')))
     return c.id
 
 
@@ -79,12 +79,12 @@ def test_base_record_id_is_book_owned() -> None:
 
 def test_setting_book_get_set(factory):
     book = SettingBook(factory)
-    assert book.get(key="system.timezone") is None
+    assert book.get_value(key="system.timezone") is None
     s = book.set(key="system.timezone", value="UTC")
     assert isinstance(s, Setting)
     assert s.key == "system.timezone"
     assert s.value == "UTC"
-    assert book.get(key="system.timezone") == "UTC"
+    assert book.get_value(key="system.timezone") == "UTC"
 
 
 def test_setting_book_list_and_delete(factory):
@@ -102,11 +102,11 @@ def test_setting_book_list_and_delete(factory):
 
 def test_memory_book_add_and_get(factory, contact_id):
     book = MemoryBook(factory)
-    m = book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='alice', body='likes cats')))
+    m = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='alice', body='likes cats')))
     assert isinstance(m, Memory)
     assert m.contact_id == contact_id
     assert m.body == "likes cats"
-    found = book.get(memory_id=m.id)
+    found = book.get(m.id)
     assert found is not None and found.body == "likes cats"
 
 
@@ -118,7 +118,7 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
 
     assert isinstance(record_id, int)
     assert record_id > 0
-    stored = book.get_by_id(record_id)
+    stored = book.get(record_id)
     assert stored is not None and stored.id == record_id
     with pytest.raises(TypeError):
         Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
@@ -129,9 +129,9 @@ def test_memory_book_list_by_owner(factory, contact_id):
 
     book = MemoryBook(factory)
     cbook = ContactBook(factory)
-    other_id = cbook.get_by_id(cbook.add(Contact(name='Other'))).id
-    book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='a', body='x')))
-    book.get_by_id(book.add(Memory(contact_id=other_id, kind='fact', subject='b', body='y')))
+    other_id = cbook.get(cbook.add(Contact(name='Other'))).id
+    book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='a', body='x')))
+    book.get(book.add(Memory(contact_id=other_id, kind='fact', subject='b', body='y')))
     assert len(book.list_by_owner(contact_id=contact_id)) == 1
     assert len(book.list_by_owner(contact_id=other_id)) == 1
 
@@ -151,7 +151,7 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     from datetime import datetime
 
     book = MemoryBook(factory)
-    created = book.get_by_id(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='ship the deal', body='waiting on legal', priority=3)))
+    created = book.get(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='ship the deal', body='waiting on legal', priority=3)))
     assert isinstance(created, Memory)
     assert created.completed_at is None
 
@@ -172,7 +172,7 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     again = book.complete(memory_id=created.id)
     assert again.completed_at == first_completed_at  # idempotent
 
-    fetched = book.get(memory_id=created.id)
+    fetched = book.get(created.id)
     assert fetched is not None
     assert isinstance(fetched.completed_at, datetime)
     assert fetched.completed_at == first_completed_at
@@ -186,9 +186,9 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     book = MemoryBook(factory)
     assert book.delete(memory_id=99999) is False
     # Real row still works.
-    m = book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='x', body='y')))
+    m = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='x', body='y')))
     assert book.delete(memory_id=m.id) is True
-    assert book.get(memory_id=m.id) is None
+    assert book.get(m.id) is None
 
 
 def test_memory_book_add_invariants(factory, contact_id):
@@ -203,36 +203,36 @@ def test_memory_book_add_invariants(factory, contact_id):
 
     # Empty / whitespace-only subject is rejected.
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='', body='x')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='', body='x')))
     with pytest.raises(ValueError, match="subject must be a non-empty"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='   ', body='x')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='   ', body='x')))
 
     # Subject over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="subject length"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='x' * 201, body='y')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='x' * 201, body='y')))
 
     # Empty body is rejected.
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='')))
     with pytest.raises(ValueError, match="body must be a non-empty"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='   ')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='   ')))
 
     # Body over 8 KiB is rejected.
     with pytest.raises(ValueError, match="body length"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='x' * (8 * 1024 + 1))))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='x' * (8 * 1024 + 1))))
 
     # ``kind`` must be in ALL_MEMORY_KINDS.
     with pytest.raises(ValueError, match="kind must be one of"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='weird', subject='ok', body='ok')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='weird', subject='ok', body='ok')))
 
     # ``priority`` outside 1..5 is rejected.
     with pytest.raises(ValueError, match="priority must be 1..5"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=0)))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=0)))
     with pytest.raises(ValueError, match="priority must be 1..5"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=6)))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=6)))
     # Non-int is rejected.
     with pytest.raises(ValueError, match="priority must be 1..5"):
-        book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority='3')))
+        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority='3')))
 
 
 def test_memory_book_update_invariants(factory, contact_id):
@@ -241,7 +241,7 @@ def test_memory_book_update_invariants(factory, contact_id):
     import pytest
 
     book = MemoryBook(factory)
-    row = book.get_by_id(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
+    row = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
 
     # Empty subject via update is rejected.
     with pytest.raises(ValueError, match="subject must be a non-empty"):
@@ -289,7 +289,7 @@ def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
     fields the caller supplied — any untouched
     field round-trips through unchanged."""
     book = MemoryBook(factory)
-    row = book.get_by_id(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
+    row = book.get(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
     after = book.update(memory_id=row.id, priority=5)
     assert after.subject == "orig"
     assert after.body == "orig body"
@@ -306,13 +306,13 @@ def test_contact_book_full_lifecycle(factory):
     ``Contact`` — verified by the absence of any
     ``Contact.admin`` field on the DTO."""
     book = ContactBook(factory)
-    c = book.get_by_id(book.add(Contact(name='Alice', tgid=12345)))
+    c = book.get(book.add(Contact(name='Alice', tgid=12345)))
     assert isinstance(c, Contact)
     assert c.name == "Alice"
     # Local contacts do not carry administrator authority.
     assert c.magis_admin_id is None
 
-    found = book.get(contact_id=c.id)
+    found = book.get(c.id)
     assert found is not None and found.tgid == 12345
 
     tg = book.get_by_telegram(tgid=12345)
@@ -332,8 +332,8 @@ def test_contact_book_keeps_magis_admin_projection_local(factory):
 def test_contact_note_book(factory):
     cbook = ContactBook(factory)
     nbook = ContactNoteBook(factory)
-    c = cbook.get_by_id(cbook.add(Contact(name='Bob')))
-    n = nbook.get_by_id(nbook.add(ContactNote(contact_id=c.id, note='works in finance')))
+    c = cbook.get(cbook.add(Contact(name='Bob')))
+    n = nbook.get(nbook.add(ContactNote(contact_id=c.id, note='works in finance')))
     assert n.contact_id == c.id
     assert len(nbook.list_for_contact(contact_id=c.id)) == 1
 
@@ -341,9 +341,9 @@ def test_contact_note_book(factory):
 def test_contact_note_book_rejects_unknown_kind(factory):
     cbook = ContactBook(factory)
     nbook = ContactNoteBook(factory)
-    c = cbook.get_by_id(cbook.add(Contact(name='Bob')))
+    c = cbook.get(cbook.add(Contact(name='Bob')))
     with pytest.raises(ValueError, match="kind must be one of"):
-        nbook.get_by_id(nbook.add(ContactNote(contact_id=c.id, note='x', kind='not-a-real-kind')))
+        nbook.get(nbook.add(ContactNote(contact_id=c.id, note='x', kind='not-a-real-kind')))
 
 
 # -- ConversationBook + MessageBook -------------------------------------
@@ -353,11 +353,11 @@ def test_conversation_and_message(factory):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
 
-    s = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:12345', contact_id=1, channel='tg')))
+    s = sbook.get(sbook.add(Conversation(delivery_address='tg:12345', contact_id=1, channel='tg')))
     assert isinstance(s, Conversation)
     assert s.conversation_id  # book-managed, just check it's truthy
 
-    m = mbook.get_by_id(mbook.add(Message(conversation_id=s.conversation_id, message_id='m1', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, 1))))
+    m = mbook.get(mbook.add(Message(conversation_id=s.conversation_id, message_id='m1', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, 1))))
     assert isinstance(m, Message)
     msgs = mbook.list_for_conversation(conversation_id=s.conversation_id)
     assert len(msgs) == 1
@@ -367,7 +367,7 @@ def test_conversation_and_message(factory):
 def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
     """`set_summary` writes summary, stamps last_compaction_at, bumps updated_at."""
     sbook = ConversationBook(factory)
-    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
+    conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
 
     result = sbook.set_summary(
@@ -391,9 +391,9 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
 
     sbook = ConversationBook(factory)
-    other_contact = ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Other'))).id
+    other_contact = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
 
-    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
+    conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
 
     result = sbook.set_summary(
@@ -411,7 +411,7 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
 def test_conversation_set_summary_overwrites(factory, contact_id):
     """Second call supersedes the first; last_compaction_at moves forward."""
     sbook = ConversationBook(factory)
-    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
+    conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
 
     first = sbook.set_summary(
@@ -436,7 +436,7 @@ def test_mcp_server_book_basic_add_and_list(factory):
     worker reads via ``list_enabled()``).
     """
     book = McpServerBook(factory)
-    s = book.get_by_id(book.add(McpServer(name='gmail', connection_type='stdio', command='mcp-gmail')))
+    s = book.get(book.add(McpServer(name='gmail', connection_type='stdio', command='mcp-gmail')))
     assert isinstance(s, McpServer)
     assert s.name == "gmail"
     assert s.connection_type == "stdio"
@@ -545,13 +545,13 @@ def test_action_item_book(factory, contact_id):
     lives on ``completed_at is None`` vs ``is not None``.
     """
     book = ActionItemBook(factory)
-    item = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
+    item = book.get(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
     assert isinstance(item, ActionItem)
     assert item.completed_at is None  # "open" == not yet completed
     completed = book.complete(action_item_id=item.id)
     assert completed is not None
     assert completed.completed_at is not None  # "done" == completed_at stamped
-    refreshed = book.get(item_id=item.id)
+    refreshed = book.get(item.id)
     assert refreshed is not None
     assert refreshed.completed_at == completed.completed_at
 
@@ -570,7 +570,7 @@ def test_action_item_book_complete(factory, contact_id):
     * missing ``action_item_id`` returns ``None``
     """
     book = ActionItemBook(factory)
-    item = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
+    item = book.get(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
 
     # Missing row → None (no exception).
     assert book.complete(action_item_id=99999) is None
@@ -607,9 +607,9 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
 
     book = ActionItemBook(factory)
-    ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Other')))  # prove another row exists
+    ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other')))  # prove another row exists
     # Operator A's row, but we let the caller drive the close.
-    item = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
+    item = book.get(book.add(ActionItem(contact_id=contact_id, title='x', description='y')))
 
     # Any caller with the id can complete; the tool's
     # ``get``+``row.contact_id`` check is what blocks this in
@@ -634,39 +634,39 @@ def test_action_item_book_add_invariants(factory, contact_id):
 
     # Empty / whitespace-only title is rejected.
     with pytest.raises(ValueError, match="title must be a non-empty"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='')))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='')))
     with pytest.raises(ValueError, match="title must be a non-empty"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='   ')))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='   ')))
 
     # Title over the column cap (200 chars) is rejected.
     with pytest.raises(ValueError, match="title length"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='x' * 201)))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='x' * 201)))
 
     # Description over 1000 chars is rejected.
     with pytest.raises(ValueError, match="description length"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='ok', description='d' * 1001)))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', description='d' * 1001)))
 
     # target_url over 500 chars is rejected.
     with pytest.raises(ValueError, match="target_url length"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='ok', target_url='u' * 501)))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', target_url='u' * 501)))
 
     # priority must be in ALL_PRIORITIES.
     with pytest.raises(ValueError, match="priority must be one of"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='ok', priority='urgent')))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', priority='urgent')))
     # priority "normal" (default) and "high" both pass — raw
     # strings and the enum member should be equivalent under
     # StrEnum semantics.
-    a = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='a', priority=ActionPriority.NORMAL)))
+    a = book.get(book.add(ActionItem(contact_id=contact_id, title='a', priority=ActionPriority.NORMAL)))
     assert a.priority == "normal"
-    b = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='b', priority='high')))
+    b = book.get(book.add(ActionItem(contact_id=contact_id, title='b', priority='high')))
     assert b.priority == "high"
 
     # source must be in TaskSource.
     with pytest.raises(ValueError, match="source must be one of"):
-        book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='ok', source='system')))
-    c = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='c', source=ActionSource.USER)))
+        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', source='system')))
+    c = book.get(book.add(ActionItem(contact_id=contact_id, title='c', source=ActionSource.USER)))
     assert c.source == "user"
-    d = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='d', source='proactive')))
+    d = book.get(book.add(ActionItem(contact_id=contact_id, title='d', source='proactive')))
     assert d.source == "proactive"
 
 
@@ -674,7 +674,7 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
     """``complete`` enforces ``completion_note`` ≤500 chars
     regardless of who calls it (tool, API, future agent)."""
     book = ActionItemBook(factory)
-    item = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='x')))
+    item = book.get(book.add(ActionItem(contact_id=contact_id, title='x')))
 
     # Note at exactly the cap is fine.
     ok = book.complete(
@@ -684,7 +684,7 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
     assert ok is not None
 
     # Note one over the cap raises.
-    item2 = book.get_by_id(book.add(ActionItem(contact_id=contact_id, title='y')))
+    item2 = book.get(book.add(ActionItem(contact_id=contact_id, title='y')))
     with pytest.raises(ValueError, match="completion_note length"):
         book.complete(
             action_item_id=item2.id,
@@ -697,9 +697,9 @@ def test_action_item_book_complete_note_invariant(factory, contact_id):
 
 def test_token_usage_book(factory, contact_id):
     book = TokenUsageBook(factory)
-    book.get_by_id(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=10, output_tokens=20)))
-    book.get_by_id(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=5, output_tokens=10)))
-    book.get_by_id(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', llm_attempt_id='attempt-1', input_tokens=100, output_tokens=200)))
+    book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=10, output_tokens=20)))
+    book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=5, output_tokens=10)))
+    book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', llm_attempt_id='attempt-1', input_tokens=100, output_tokens=200)))
     rows = book.list_for_owner(contact_id=contact_id)
     assert len(rows) == 3
     attempt = next(row for row in rows if row.llm_attempt_id == "attempt-1")
@@ -712,7 +712,7 @@ def test_token_usage_book(factory, contact_id):
 
 def test_tool_catalog_replace_snapshot(factory):
     sbook = ToolCatalogStateBook(factory)
-    assert sbook.get() is None
+    assert sbook.get_current() is None
     s = sbook.replace_snapshot(revision=1, snapshot_hash="abc")
     assert isinstance(s, ToolCatalogState)
     assert s.revision == 1
@@ -766,7 +766,7 @@ def test_task_book_lifecycle(factory, contact_id):
     # (caller converted the LLM-facing structured form
     # via ``preset_to_cron`` before reaching the Book),
     # no contact_id.
-    preset = tbook.get_by_id(tbook.add(Task(task_id='p1', name='Daily-preset', prompt='preset prompt', cron='0 9 * * *', target_channel='webui', source=TaskSource.PROACTIVE)))
+    preset = tbook.get(tbook.add(Task(task_id='p1', name='Daily-preset', prompt='preset prompt', cron='0 9 * * *', target_channel='webui', source=TaskSource.PROACTIVE)))
     assert isinstance(preset, Task)
     assert preset.source == TaskSource.PROACTIVE
     assert preset.contact_id is None
@@ -775,7 +775,7 @@ def test_task_book_lifecycle(factory, contact_id):
 
     # User task row: source=TaskSource.USER, cron string,
     # owned by a contact.
-    t = tbook.get_by_id(tbook.add(Task(task_id='t1', name='MyTask', prompt='do', cron='0 9 * * *', contact_id=contact_id, target_channel='webui', source=TaskSource.USER)))
+    t = tbook.get(tbook.add(Task(task_id='t1', name='MyTask', prompt='do', cron='0 9 * * *', contact_id=contact_id, target_channel='webui', source=TaskSource.USER)))
     assert isinstance(t, Task)
     assert t.source == TaskSource.USER
     assert t.contact_id == contact_id
@@ -800,23 +800,23 @@ def test_task_book_lifecycle(factory, contact_id):
     # disable is owner-scoped: other contact_id returns False.
     other_id = contact_id + 999
     assert tbook.disable(task_id="t1", contact_id=other_id) is False
-    assert tbook.get(task_id="t1").enabled == 1  # unchanged
+    assert tbook.get_by_task_id(task_id="t1").enabled == 1  # unchanged
     # right contact_id flips it; row is now disabled.
     assert tbook.disable(task_id="t1", contact_id=contact_id) is True
-    assert tbook.get(task_id="t1").enabled == 0
+    assert tbook.get_by_task_id(task_id="t1").enabled == 0
     # post-disable, list_enabled no longer surfaces it.
     assert tbook.list_enabled(contact_id=contact_id) == []
 
     # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
-    r = rbook.get_by_id(rbook.add(TaskRun(task_id='t1', run_id='r1', manual=1, started_at=datetime.fromisoformat('2026-08-05T09:00:00Z').replace(tzinfo=None), status='running')))
+    r = rbook.get(rbook.add(TaskRun(task_id='t1', run_id='r1', manual=1, started_at=datetime.fromisoformat('2026-08-05T09:00:00Z').replace(tzinfo=None), status='running')))
     assert isinstance(r, TaskRun)
     rbook.complete(
         run_id="r1",
         status="success",
         finished_at=datetime.fromisoformat("2026-08-05T09:01:00Z").replace(tzinfo=None),
     )
-    assert rbook.get(run_id="r1").status == "success"
+    assert rbook.get_by_run_id(run_id="r1").status == "success"
 
 
 def test_task_book_add_rejects_unknown_source(factory):
@@ -827,7 +827,7 @@ def test_task_book_add_rejects_unknown_source(factory):
     """
     book = TaskBook(factory)
     with pytest.raises(ValueError, match="source must be one of"):
-        book.get_by_id(book.add(Task(task_id='t-bad', name='bad', prompt='x', cron='0 0 * * *', contact_id=1, target_channel='webui', source='system-external-thing')))
+        book.get(book.add(Task(task_id='t-bad', name='bad', prompt='x', cron='0 0 * * *', contact_id=1, target_channel='webui', source='system-external-thing')))
 
 
 def test_task_book_add_invariants(factory, contact_id):
@@ -848,35 +848,35 @@ def test_task_book_add_invariants(factory, contact_id):
 
     # ``name`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="name must be a non-empty"):
-        book.get_by_id(book.add(Task(task_id='t1', name='', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t1', name='', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
     with pytest.raises(ValueError, match="name must be a non-empty"):
-        book.get_by_id(book.add(Task(task_id='t2', name='   ', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t2', name='   ', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``name`` over the column cap is rejected.
     with pytest.raises(ValueError, match="name length"):
-        book.get_by_id(book.add(Task(task_id='t3', name='n' * 121, prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t3', name='n' * 121, prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``prompt`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
-        book.get_by_id(book.add(Task(task_id='t4', name='ok', prompt='', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t4', name='ok', prompt='', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
-        book.get_by_id(book.add(Task(task_id='t5', name='ok', prompt='   ', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t5', name='ok', prompt='   ', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``prompt`` over the cap is rejected.
     with pytest.raises(ValueError, match="prompt length"):
-        book.get_by_id(book.add(Task(task_id='t6', name='ok', prompt='p' * 8001, cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='t6', name='ok', prompt='p' * 8001, cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``target_channel`` outside the closed enum is rejected.
     with pytest.raises(ValueError, match="target_channel must be one of"):
-        book.get_by_id(book.add(Task(task_id='t7', name='ok', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='web')))
+        book.get(book.add(Task(task_id='t7', name='ok', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='web')))
 
     # All closed-set values pass.
     for ch in ("webui", "tg", "scheduled"):
-        row = book.get_by_id(book.add(Task(task_id=f't-ch-{ch}', name=f'task-{ch}', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel=ch)))
+        row = book.get(book.add(Task(task_id=f't-ch-{ch}', name=f'task-{ch}', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel=ch)))
         assert row.target_channel == ch
 
     # Happy path lands a row.
-    happy = book.get_by_id(book.add(Task(task_id='happy', name='ok-name', prompt='ok-prompt', cron='0 9 * * *', contact_id=contact_id, target_channel='webui')))
+    happy = book.get(book.add(Task(task_id='happy', name='ok-name', prompt='ok-prompt', cron='0 9 * * *', contact_id=contact_id, target_channel='webui')))
     assert happy.name == "ok-name"
     assert happy.target_channel == "webui"
 
@@ -919,19 +919,19 @@ def test_task_source_enum_values():
     ef = _EF("sqlite:///:memory:")
     ef.create_all()
     cbook = ContactBook(ef)
-    cid = cbook.get_by_id(cbook.add(Contact(name='fixture'))).id
+    cid = cbook.get(cbook.add(Contact(name='fixture'))).id
     book = TaskBook(ef)
-    row = book.get_by_id(book.add(Task(task_id='src-enum', name='src-enum', prompt='p', cron='0 0 * * *', contact_id=cid, target_channel='webui', source=TaskSource.PROACTIVE)))
+    row = book.get(book.add(Task(task_id='src-enum', name='src-enum', prompt='p', cron='0 0 * * *', contact_id=cid, target_channel='webui', source=TaskSource.PROACTIVE)))
     assert isinstance(row.source, TaskSource)
     assert row.source is TaskSource.PROACTIVE
     # Round-trip via ``get`` keeps the enum.
-    fetched = book.get(task_id="src-enum")
+    fetched = book.get_by_task_id(task_id="src-enum")
     assert fetched is not None
     assert isinstance(fetched.source, TaskSource)
     assert fetched.source is TaskSource.PROACTIVE
     # Raw string form (legacy callers) is also accepted via the
     # back-compat alias and returns the same enum.
-    raw = book.get_by_id(book.add(Task(task_id='src-raw', name='src-raw', prompt='p', cron='0 0 * * *', contact_id=cid, target_channel='webui', source=TaskSource.USER)))
+    raw = book.get(book.add(Task(task_id='src-raw', name='src-raw', prompt='p', cron='0 0 * * *', contact_id=cid, target_channel='webui', source=TaskSource.USER)))
     assert raw.source is TaskSource.USER
 
 
@@ -944,14 +944,14 @@ def test_task_book_schedule_xor(factory, contact_id):
 
     # Both set — rejected.
     with pytest.raises(ValueError, match="exactly one of cron"):
-        book.get_by_id(book.add(Task(task_id='both', name='both', prompt='p', cron='0 9 * * *', run_at=datetime(2026, 12, 31), contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='both', name='both', prompt='p', cron='0 9 * * *', run_at=datetime(2026, 12, 31), contact_id=contact_id, target_channel='webui')))
 
     # Neither set — rejected.
     with pytest.raises(ValueError, match="exactly one of cron"):
-        book.get_by_id(book.add(Task(task_id='neither', name='neither', prompt='p', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='neither', name='neither', prompt='p', contact_id=contact_id, target_channel='webui')))
 
     # run_at alone — accepted (one-shot).
-    once = book.get_by_id(book.add(Task(task_id='once', name='once', prompt='p', run_at=datetime(2026, 12, 31), contact_id=contact_id, target_channel='webui')))
+    once = book.get(book.add(Task(task_id='once', name='once', prompt='p', run_at=datetime(2026, 12, 31), contact_id=contact_id, target_channel='webui')))
     assert once.run_at == datetime(2026, 12, 31)
     assert once.cron is None
 
@@ -963,7 +963,7 @@ def test_task_book_rejects_invalid_cron(factory, contact_id):
     """
     book = TaskBook(factory)
     with pytest.raises(ValueError, match="cron is not a valid expression"):
-        book.get_by_id(book.add(Task(task_id='badcron', name='badcron', prompt='p', cron='not a cron', contact_id=contact_id, target_channel='webui')))
+        book.get(book.add(Task(task_id='badcron', name='badcron', prompt='p', cron='not a cron', contact_id=contact_id, target_channel='webui')))
 
 
 def test_task_book_list_proactive_uid_scoped(factory, contact_id):
@@ -974,12 +974,12 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
 
     book = TaskBook(factory)
-    other_id = ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Other'))).id
+    other_id = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
 
     # System preset (contact_id=None): visible to both uids.
-    book.get_by_id(book.add(Task(task_id='sys-preset', name='system', prompt='p', cron='0 9 * * *', target_channel='webui', source=TaskSource.PROACTIVE)))
+    book.get(book.add(Task(task_id='sys-preset', name='system', prompt='p', cron='0 9 * * *', target_channel='webui', source=TaskSource.PROACTIVE)))
     # User-private preset for contact_id only.
-    book.get_by_id(book.add(Task(task_id='priv-preset', name='private', prompt='p', cron='0 10 * * *', contact_id=contact_id, target_channel='webui', source=TaskSource.PROACTIVE)))
+    book.get(book.add(Task(task_id='priv-preset', name='private', prompt='p', cron='0 10 * * *', contact_id=contact_id, target_channel='webui', source=TaskSource.PROACTIVE)))
 
     # contact_id sees BOTH (system + own private).
     own = book.list_proactive_tasks(contact_id=contact_id)
@@ -1021,7 +1021,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     # SQLite's FK guard.
     from magi.bus.library.local.conversationBook import ConversationBook
 
-    conv_seed = ConversationBook(factory).get_by_id(ConversationBook(factory).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
+    conv_seed = ConversationBook(factory).get(ConversationBook(factory).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
     seed_cid = conv_seed.conversation_id
 
     # First call: insert.
@@ -1055,7 +1055,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     assert task_id_2 == task_id_1
 
     # Verify the row got refreshed, with conversation_id kept sticky.
-    row = book.get(task_id=task_id_1)
+    row = book.get_by_task_id(task_id=task_id_1)
     assert row is not None
     assert row.prompt == "summarise the dashboard v2"
     assert row.cron == "0 10 * * *"

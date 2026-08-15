@@ -135,7 +135,7 @@ def _make_bus(**overrides) -> Mock:
     bus.tool_definitions_book.list_enabled = Mock(return_value=[])
 
     bus.tool_catalog_book = Mock()
-    bus.tool_catalog_book.get = Mock(return_value=None)
+    bus.tool_catalog_book.get_current = Mock(return_value=None)
 
     bus.skills_book = Mock()
     bus.skills_book.list = Mock(return_value=[])

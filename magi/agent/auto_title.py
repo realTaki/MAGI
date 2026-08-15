@@ -47,8 +47,8 @@ async def request_conversation_title(
         contact_id=contact_id,
         max_tokens=20,
     )
-    key = bus.llm_job_board.publish(job)
-    result = await bus.llm_job_board.wait_for_result(job_id=key, timeout=30.0)
+    llm_job_id = bus.llm_job_board.publish(job)
+    result = await bus.llm_job_board.wait_for_result(job_id=llm_job_id, timeout=30.0)
     if result is None or result.status != JobStatus.COMPLETED:
         return None
     resp = getattr(result, "response", None) or {}

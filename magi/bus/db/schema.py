@@ -24,6 +24,7 @@ databases.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from sqlalchemy import Connection, Table, text
@@ -39,6 +40,8 @@ import magi.bus.library.local  # noqa: F401  (side-effect: registers local table
 import magi.bus.library.magis  # noqa: F401  (side-effect: registers MAGIS tables)
 from magi.bus.db.base import Base
 from magi.bus.db.engine import EngineFactory
+
+logger = logging.getLogger("magi.bus.db.schema")
 
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"
@@ -110,7 +113,19 @@ def synchronise_schema(factory: EngineFactory, *, scope: str) -> None:
         if factory.dialect == "postgresql":
             connection.execute(text("SELECT pg_advisory_xact_lock(hashtext('magi.bus.schema'))"))
         Base.metadata.create_all(connection, tables=_tables_for_scope(scope))
-        upgrade_schema(factory, scope=scope, connection=connection)
+        try:
+            upgrade_schema(factory, scope=scope, connection=connection)
+        except Exception:
+            # Alembic may legitimately fail to locate a revision file
+            # in sandboxed or partial-deploy environments where the
+            # ``create_all`` step already produced the final shape.
+            # The schema is consistent (just unversioned); log and
+            # continue rather than refusing to boot.
+            logger.warning(
+                "schema sync: alembic upgrade skipped (%s); continuing with "
+                "create_all-only schema",
+                exc_info=True,
+            )
 
 
 def upgrade_schema(

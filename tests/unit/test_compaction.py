@@ -34,7 +34,7 @@ def factory():
 def contact_id(factory):
     from magi.bus.library.local.contactBook import ContactBook
 
-    return ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Fixture'))).id
+    return ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture'))).id
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def seed_conversation(factory, contact_id):
     """Create a conversation row, return ``(sbook, mbook, conversation_id)``."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    cid = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).conversation_id
+    cid = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).conversation_id
     return sbook, mbook, cid
 
 
@@ -87,7 +87,7 @@ async def test_maybe_compact_archives_and_persists_summary(
     # min threshold_pct=50 → threshold = 8000 tokens; 30 × 1200 chars
     # = 9000 text tokens + 30 × 4 overhead = 9120 tokens ✓.
     for i in range(30):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user' if i % 2 == 0 else 'assistant', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user' if i % 2 == 0 else 'assistant', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
@@ -136,7 +136,7 @@ async def test_maybe_compact_uses_prior_summary(monkeypatch, seed_conversation, 
     sbook.set_summary(contact_id=contact_id, conversation_id=cid, summary="PREV")
 
     for i in range(20):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1700, ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1700, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
@@ -167,7 +167,7 @@ async def test_maybe_compact_noop_under_keep_tail(monkeypatch, seed_conversation
     """5 tiny messages → no compaction (token budget not exceeded)."""
     sbook, mbook, cid = seed_conversation
     for i in range(5):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     stub = _stub_summary(monkeypatch, return_value="NEW")
@@ -192,7 +192,7 @@ async def test_maybe_compact_noop_under_threshold(
     """12 messages (above keep_tail but tiny text) → token check skips."""
     sbook, mbook, cid = seed_conversation
     for i in range(12):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     stub = _stub_summary(monkeypatch, return_value="NEW")
@@ -210,7 +210,7 @@ async def test_maybe_compact_returns_none_on_summary_failure(
     """If the LLM returns None/empty, return None and leave DB untouched."""
     sbook, mbook, cid = seed_conversation
     for i in range(20):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
@@ -247,7 +247,7 @@ async def test_maybe_compact_shrinks_tail_to_fit_budget(
     # candidate_tail = last 20 = 10080 tokens → still over.
     # Drop from front until ≤ 8000: 8000 / 504 ≈ 15.87 → keep 15.
     for i in range(20):
-        mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 2000, ts=datetime(2026, 8, 5, 0, 0, i))))
+        mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 2000, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
@@ -294,8 +294,8 @@ async def test_maybe_compact_keeps_at_least_one_when_summary_fills_budget(
     # → 32_000/4 + 4 overhead = 8004 tokens. threshold = 8000.
     sbook.set_summary(contact_id=contact_id, conversation_id=cid, summary="S" * 32_000)
 
-    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m000', role='user', text='x' * 100, ts=datetime(2026, 8, 5, 0, 0, 0))))
-    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m001', role='user', text='x' * 100, ts=datetime(2026, 8, 5, 0, 0, 1))))
+    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m000', role='user', text='x' * 100, ts=datetime(2026, 8, 5, 0, 0, 0))))
+    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m001', role='user', text='x' * 100, ts=datetime(2026, 8, 5, 0, 0, 1))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
     bus.settings_book.get.side_effect = lambda key: {
@@ -328,8 +328,8 @@ async def test_build_messages_prepends_summary(seed_conversation, contact_id):
 
     sbook, mbook, cid = seed_conversation
     sbook.set_summary(contact_id=contact_id, conversation_id=cid, summary="S")
-    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m1', role='user', text='u1', ts=datetime(2026, 8, 5, 0, 0, 1))))
-    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m2', role='assistant', text='a1', ts=datetime(2026, 8, 5, 0, 0, 2))))
+    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m1', role='user', text='u1', ts=datetime(2026, 8, 5, 0, 0, 1))))
+    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m2', role='assistant', text='a1', ts=datetime(2026, 8, 5, 0, 0, 2))))
 
     bus = MagicMock()
     bus.conversations_book = sbook
@@ -352,7 +352,7 @@ async def test_build_messages_no_summary(seed_conversation, contact_id):
     from magi.agent.agent_context import build_messages_from_conversation
 
     sbook, mbook, cid = seed_conversation
-    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m1', role='user', text='u1', ts=datetime(2026, 8, 5, 0, 0, 1))))
+    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m1', role='user', text='u1', ts=datetime(2026, 8, 5, 0, 0, 1))))
 
     bus = MagicMock()
     bus.conversations_book = sbook

@@ -58,7 +58,7 @@ def _seed_contact(factory, *, name="test-contact", role: Role = Role.ASSIGNED) -
     existing = cbook.list_all()
     if existing:
         return existing[0].id
-    return cbook.get_by_id(cbook.add(Contact(name=name, role=role))).id
+    return cbook.get(cbook.add(Contact(name=name, role=role))).id
 
 
 def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
@@ -68,7 +68,7 @@ def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
     # Use the TaskBook's add with valid schedule. ``conversation_id``
     # is None so we don't trip the FK to ``chat_conversations`` — the
     # session-creation flow is exercised by chat tests, not here.
-    return task_book.get_by_id(task_book.add(Task(name=f'Test Task {task_id}', prompt='Do nothing', cron=cron, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
+    return task_book.get(task_book.add(Task(name=f'Test Task {task_id}', prompt='Do nothing', cron=cron, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
 
 
 class TestRecordRunStart:
@@ -85,7 +85,7 @@ class TestRecordRunStart:
         assert run.status == "running"
 
         # Verify task.last_run_at was updated
-        updated = task_book.get(task_id=task.task_id)
+        updated = task_book.get_by_task_id(task_id=task.task_id)
         assert updated is not None
         assert updated.last_run_at is not None
 
@@ -106,11 +106,11 @@ class TestMarkRunAtConsumed:
 
         datetime.now(UTC).replace(tzinfo=None)
         future = datetime.now(UTC).replace(tzinfo=None, microsecond=0) + timedelta(hours=1)
-        task = task_book.get_by_id(task_book.add(Task(name='One-shot Task', prompt='Run once', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
+        task = task_book.get(task_book.add(Task(name='One-shot Task', prompt='Run once', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
         assert task.enabled == 1
 
         task_book.mark_run_at_consumed(task_id=task.task_id)
-        updated = task_book.get(task_id=task.task_id)
+        updated = task_book.get_by_task_id(task_id=task.task_id)
         assert updated is not None
         assert updated.enabled == 0
 
@@ -122,14 +122,14 @@ class TestListAllEnabledForWorkers:
         # Two contacts so the test can assert both uids appear in
         # the worker-visible list.
         cbook = ContactBook(factory)
-        cbook.get_by_id(cbook.add(Contact(name='contact-A', role=Role.ASSIGNED)))
-        cbook.get_by_id(cbook.add(Contact(name='contact-B', role=Role.ASSIGNED)))
+        cbook.get(cbook.add(Contact(name='contact-A', role=Role.ASSIGNED)))
+        cbook.get(cbook.add(Contact(name='contact-B', role=Role.ASSIGNED)))
         contacts = cbook.list_all()
         uid_a, uid_b = contacts[0].id, contacts[1].id
 
         datetime.now(UTC).replace(tzinfo=None)
-        task_book.get_by_id(task_book.add(Task(name='User A Task', prompt='do stuff', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid_a, conversation_id=None, tz='UTC')))
-        task_book.get_by_id(task_book.add(Task(name='User B Task', prompt='do other stuff', cron='*/30 * * * *', target_channel=ChannelEnum.TG, contact_id=uid_b, conversation_id=None, tz='UTC')))
+        task_book.get(task_book.add(Task(name='User A Task', prompt='do stuff', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid_a, conversation_id=None, tz='UTC')))
+        task_book.get(task_book.add(Task(name='User B Task', prompt='do other stuff', cron='*/30 * * * *', target_channel=ChannelEnum.TG, contact_id=uid_b, conversation_id=None, tz='UTC')))
 
         tasks = task_book.list_all_enabled_for_workers()
         assert len(tasks) == 2
@@ -141,7 +141,7 @@ class TestListAllEnabledForWorkers:
         uid = _seed_contact(factory)
 
         datetime.now(UTC).replace(tzinfo=None)
-        t = task_book.get_by_id(task_book.add(Task(name='Disabled Task', prompt='skip', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
+        t = task_book.get(task_book.add(Task(name='Disabled Task', prompt='skip', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
         task_book.disable(task_id=t.task_id, contact_id=uid)
 
         tasks = task_book.list_all_enabled_for_workers()
@@ -169,7 +169,7 @@ class TestReapStale:
         n = task_run_book.reap_stale(older_than_seconds=300)
         assert n == 1
 
-        reaped = task_run_book.get(run_id=run.run_id)
+        reaped = task_run_book.get_by_run_id(run_id=run.run_id)
         assert reaped is not None
         assert reaped.status == "failed"
         assert reaped.error == "abandoned by previous worker"

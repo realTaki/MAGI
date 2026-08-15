@@ -106,7 +106,7 @@ class _SplitJobs:
     # ``tool_call_id``); A2A jobs no longer carry ``tool_call_id`` on the
     # wire, so we pair each one with the LLM tool_call_id it came from
     # here — downstream ``_publish_effects`` / ``_gather_all`` both want
-    # ``tc_id`` as the dict key.
+    # ``tool_call_id`` as the dict key.
     tool_jobs: list = field(default_factory=list)
     a2a_request_jobs: list[tuple[str, Any]] = field(default_factory=list)
     a2a_notify_jobs: list[tuple[str, Any]] = field(default_factory=list)
@@ -164,7 +164,8 @@ class AgentWorker(RuntimeWorker):
                 and conversation_id
                 and conversation_id in self._active_conversations
             ):
-                await self.call(self.bus.agent_job_board.release, job_id=job.job_id)
+                chat_job_id = job.job_id
+                await self.call(self.bus.agent_job_board.release, job_id=chat_job_id)
                 continue
 
             # new run
@@ -225,11 +226,12 @@ class AgentWorker(RuntimeWorker):
                     self._active_conversations.discard(conversation_id)
                 succeeded = ctx.final_error is None
                 if source == "chat":
+                    chat_job_id = job.job_id
                     await self.call(
                         self.bus.agent_job_board.submit_result,
-                        job_id=job.job_id,
+                        job_id=chat_job_id,
                         result=ChatNotifyResult(
-                            job_id=job.job_id,
+                            job_id=chat_job_id,
                             status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                             error_code=ctx.final_error,
                             error=ctx.final_error_detail,
@@ -251,11 +253,12 @@ class AgentWorker(RuntimeWorker):
                             if ctx.final_error == A2AErrorCode.TIMEOUT.value
                             else None
                         )
+                        a2a_request_job_id = job.job_id
                         await self.call(
                             board.submit_result,
-                            job_id=job.job_id,
+                            job_id=a2a_request_job_id,
                             result=A2ARequestResult(
-                                job_id=job.job_id,
+                                job_id=a2a_request_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                                 content=ctx.final_reply,
                                 error_code=board_code,
@@ -271,11 +274,12 @@ class AgentWorker(RuntimeWorker):
                         # worker's business code flows through ``error``
                         # and ``error_code`` stays ``None`` so the
                         # StrEnum contract isn't violated.
+                        a2a_notify_job_id = job.job_id
                         await self.call(
                             board.submit_result,
-                            job_id=job.job_id,
+                            job_id=a2a_notify_job_id,
                             result=A2ANotifyResult(
-                                job_id=job.job_id,
+                                job_id=a2a_notify_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                                 error_code=None,
                                 error=ctx.final_error,
@@ -337,8 +341,8 @@ class AgentWorker(RuntimeWorker):
                     await self._publish_delivery(ctx)
                     return
 
-                job_id = await self.call(self.bus.llm_job_board.publish, llm_job)
-                result = await self._wait_for_llm(job_id)
+                llm_job_id = await self.call(self.bus.llm_job_board.publish, llm_job)
+                result = await self._wait_for_llm(llm_job_id)
 
                 if ctx.cancel_event.is_set():
                     ctx.cancelled = True
@@ -372,12 +376,12 @@ class AgentWorker(RuntimeWorker):
                     return
 
                 split = await self._split_tools(ctx, tool_uses)
-                tool_ids, request_ids, notify_results = await self._publish_effects(split)
+                tool_jobs_by_call, a2a_requests_by_call, a2a_notify_results = await self._publish_effects(split)
                 gather = await self._gather_all(
                     ctx,
-                    tool_ids,
-                    request_ids,
-                    notify_results,
+                    tool_jobs_by_call,
+                    a2a_requests_by_call,
+                    a2a_notify_results,
                 )
                 if gather is None:
                     ctx.final_error = ChatErrorCode.LEASE_LOST
@@ -546,7 +550,7 @@ class AgentWorker(RuntimeWorker):
 
     # -- LLM wait ------------------------------------------------------------
 
-    async def _wait_for_llm(self, job_id: int) -> CallLLMResult | None:
+    async def _wait_for_llm(self, llm_job_id: int) -> CallLLMResult | None:
         # ``get_result`` is a one-shot query that returns ``None`` the
         # instant the result row does not exist yet — wrapping it in
         # ``asyncio.wait_for`` only enforces an upper bound, so the
@@ -558,15 +562,15 @@ class AgentWorker(RuntimeWorker):
         timeout = await self._read_llm_timeout()
         try:
             result = await self.bus.llm_job_board.wait_for_result(
-                job_id=job_id,
+                job_id=llm_job_id,
                 timeout=timeout,
                 poll_interval=0.05,
             )
         except Exception:
-            logger.exception("llm wait crashed for %s", job_id)
+            logger.exception("llm wait crashed for %s", llm_job_id)
             return None
         if result is None:
-            logger.warning("llm job %s timed out (%.0fs)", job_id, timeout)
+            logger.warning("llm job %s timed out (%.0fs)", llm_job_id, timeout)
         return result
 
     # -- split tools ---------------------------------------------------------
@@ -596,7 +600,7 @@ class AgentWorker(RuntimeWorker):
         for tu in tool_uses:
             name = tu.get("name", "")
             args = dict(tu.get("input") or {})
-            tc_id = str(tu.get("id") or uuid.uuid4().hex)
+            tool_call_id = str(tu.get("id") or uuid.uuid4().hex)
             context = {
                 "workspace": "",
                 "contact_id": ctx.contact_id or 0,
@@ -612,7 +616,7 @@ class AgentWorker(RuntimeWorker):
                 ):
                     tool_jobs.append(
                         self._make_tool_job(
-                            tc_id,
+                            tool_call_id,
                             "message_magi",
                             {"_validation_error": "a2a_disabled"},
                             context,
@@ -631,7 +635,7 @@ class AgentWorker(RuntimeWorker):
                 except (KeyError, TypeError, ValueError) as exc:
                     tool_jobs.append(
                         self._make_tool_job(
-                            tc_id,
+                            tool_call_id,
                             "message_magi",
                             {"_validation_error": str(exc)},
                             context,
@@ -641,7 +645,7 @@ class AgentWorker(RuntimeWorker):
                 if mode == "request":
                     a2a_request_jobs.append(
                         (
-                            tc_id,
+                            tool_call_id,
                             A2ARequestJob(
                                 source_magi_id=self._magi_id,
                                 target_magi_id=target_magi_id,
@@ -656,7 +660,7 @@ class AgentWorker(RuntimeWorker):
                 else:
                     a2a_notify_jobs.append(
                         (
-                            tc_id,
+                            tool_call_id,
                             A2ANotifyJob(
                                 source_magi_id=self._magi_id,
                                 target_magi_id=target_magi_id,
@@ -667,7 +671,7 @@ class AgentWorker(RuntimeWorker):
             else:
                 tool_jobs.append(
                     self._make_tool_job(
-                        tc_id,
+                        tool_call_id,
                         name or "",
                         args,
                         context,
@@ -684,55 +688,66 @@ class AgentWorker(RuntimeWorker):
     async def _publish_effects(
         self, split: _SplitJobs
     ) -> tuple[dict[str, int], dict[str, int], dict[str, Any]]:
-        """Publish effects and return tool, request, and immediate notify results."""
-        tool_ids: dict[str, int] = {}
-        request_ids: dict[str, int] = {}
-        notify_results: dict[str, Any] = {}
+        """Publish effects and return tool / request mappings plus immediate notify results.
+
+        Each returned dict is keyed by ``tool_call_id`` (the LLM
+        ``tool_use.id`` shared by the originating tool call); the int
+        values are the corresponding board's ``job_id`` (``tool_job_id``
+        for the tool board, ``a2a_request_job_id`` for the request board).
+        ``a2a_notify_results`` keys the same way but holds the synchronously
+        recorded {success, content} dict because the notify board does not
+        return a per-call job_id.
+        """
+        tool_jobs_by_call: dict[str, int] = {}
+        a2a_requests_by_call: dict[str, int] = {}
+        a2a_notify_results: dict[str, Any] = {}
         for tj in split.tool_jobs:
-            jid = await self.call(self.bus.tool_job_board.publish, tj)
-            tool_ids[tj.tool_call_id] = jid
+            tool_job_id = await self.call(self.bus.tool_job_board.publish, tj)
+            tool_jobs_by_call[tj.tool_call_id] = tool_job_id
         if self.bus.a2a_request_job_board is not None:
-            for tc_id, request in split.a2a_request_jobs:
+            for tool_call_id, request in split.a2a_request_jobs:
                 try:
-                    jid = await self.call(self.bus.a2a_request_job_board.publish, request)
-                    request_ids[tc_id] = jid
+                    a2a_request_job_id = await self.call(
+                        self.bus.a2a_request_job_board.publish, request
+                    )
+                    a2a_requests_by_call[tool_call_id] = a2a_request_job_id
                 except (LookupError, ValueError) as exc:
-                    notify_results[tc_id] = {
+                    a2a_notify_results[tool_call_id] = {
                         "success": False,
                         "content": f"A2A request was rejected: {exc}",
                     }
         if self.bus.a2a_notify_job_board is not None:
-            for tc_id, notify in split.a2a_notify_jobs:
+            for tool_call_id, notify in split.a2a_notify_jobs:
                 try:
                     await self.call(self.bus.a2a_notify_job_board.publish, notify)
-                    notify_results[tc_id] = {
+                    a2a_notify_results[tool_call_id] = {
                         "success": True,
                         "content": "A2A notification persisted for the target MAGI.",
                     }
                 except (LookupError, ValueError) as exc:
-                    notify_results[tc_id] = {
+                    a2a_notify_results[tool_call_id] = {
                         "success": False,
                         "content": f"A2A notification was rejected: {exc}",
                     }
-        return tool_ids, request_ids, notify_results
+        return tool_jobs_by_call, a2a_requests_by_call, a2a_notify_results
 
     # -- gather results + steering -------------------------------------------
 
     async def _gather_all(
         self,
         ctx: RunContext,
-        tool_ids: dict[str, int],  # tool_call_id → job_id
-        request_ids: dict[str, int],
-        notify_results: dict[str, Any],
+        tool_jobs_by_call: dict[str, int],  # tool_call_id → tool_job_id
+        a2a_requests_by_call: dict[str, int],  # tool_call_id → a2a_request_job_id
+        a2a_notify_results: dict[str, Any],
     ) -> _GatherResult | None:
         deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
-        tool_timeout: dict[str, int] = dict(tool_ids)  # tc_id → job_id (copy to mutate)
-        a2a_timeout: dict[str, int] = dict(request_ids)
+        pending_tool_jobs: dict[str, int] = dict(tool_jobs_by_call)  # tool_call_id → tool_job_id (copy to mutate)
+        pending_a2a_jobs: dict[str, int] = dict(a2a_requests_by_call)
         tool_results: dict[str, Any] = {}
-        a2a_results: dict[str, Any] = dict(notify_results)
+        a2a_results: dict[str, Any] = dict(a2a_notify_results)
         steering_parts: list[str] = []
 
-        while tool_timeout or a2a_timeout:
+        while pending_tool_jobs or pending_a2a_jobs:
             if ctx.cancel_event.is_set():
                 break
 
@@ -748,57 +763,58 @@ class AgentWorker(RuntimeWorker):
                         steering_parts.append(text)
                     from magi.bus.guild.chatNotifyJob import ChatNotifyResult
 
+                    chat_steer_job_id = steer.job_id
                     await self.call(
                         self.bus.agent_job_board.submit_result,
-                        job_id=steer.job_id,
+                        job_id=chat_steer_job_id,
                         result=ChatNotifyResult(
-                            job_id=steer.job_id,
+                            job_id=chat_steer_job_id,
                             status=JobStatus.COMPLETED,
                         ),
                     )
 
             # tool results
-            for tc_id, job_id in list(tool_timeout.items()):
-                r = await self.call(self.bus.tool_job_board.get_result, job_id=job_id)
+            for tool_call_id, tool_job_id in list(pending_tool_jobs.items()):
+                r = await self.call(self.bus.tool_job_board.get_result, job_id=tool_job_id)
                 if r is not None:
-                    tool_results[tc_id] = r
-                    del tool_timeout[tc_id]
+                    tool_results[tool_call_id] = r
+                    del pending_tool_jobs[tool_call_id]
 
             # a2a results
-            for tc_id, inv_id in list(a2a_timeout.items()):
+            for tool_call_id, a2a_request_job_id in list(pending_a2a_jobs.items()):
                 board = self.bus.a2a_request_job_board
-                r = await self.call(board.get_result, job_id=inv_id) if board is not None else None
+                r = await self.call(board.get_result, job_id=a2a_request_job_id) if board is not None else None
                 if r is not None:
-                    a2a_results[tc_id] = r
-                    del a2a_timeout[tc_id]
+                    a2a_results[tool_call_id] = r
+                    del pending_a2a_jobs[tool_call_id]
 
-            if not tool_timeout and not a2a_timeout:
+            if not pending_tool_jobs and not pending_a2a_jobs:
                 break
             if asyncio.get_running_loop().time() >= deadline:
                 logger.warning(
                     "gather timeout, pending_tools=%d pending_a2a=%d",
-                    len(tool_timeout),
-                    len(a2a_timeout),
+                    len(pending_tool_jobs),
+                    len(pending_a2a_jobs),
                 )
                 break
             await asyncio.sleep(0.1)
 
         from magi.bus.guild.runToolJob import RunToolResult, ToolErrorCode
 
-        for tc_id, job_id in tool_timeout.items():
-            tool_results[tc_id] = RunToolResult(
-                job_id=job_id,
+        for tool_call_id, tool_job_id in pending_tool_jobs.items():
+            tool_results[tool_call_id] = RunToolResult(
+                job_id=tool_job_id,
                 status=JobStatus.FAILED,
                 content="tool execution timed out",
                 error_code=ToolErrorCode.FAILED,
-                tool_call_id=tc_id,
+                tool_call_id=tool_call_id,
             )
 
         from magi.bus.guild.a2aJob import A2AErrorCode, A2ARequestResult
 
-        for tc_id, job_id in a2a_timeout.items():
-            a2a_results[tc_id] = A2ARequestResult(
-                job_id=job_id,
+        for tool_call_id, a2a_request_job_id in pending_a2a_jobs.items():
+            a2a_results[tool_call_id] = A2ARequestResult(
+                job_id=a2a_request_job_id,
                 status=JobStatus.FAILED,
                 error_code=A2AErrorCode.TIMEOUT,
                 error="A2A request timed out",
@@ -817,16 +833,16 @@ class AgentWorker(RuntimeWorker):
         from magi.bus.guild.runToolJob import ToolErrorCode
 
         blocks: list[dict] = []
-        for tc_id, r in gather.tool_results.items():
+        for tool_call_id, r in gather.tool_results.items():
             blocks.append(
                 {
-                    "tool_use_id": tc_id,
+                    "tool_use_id": tool_call_id,
                     "type": "tool_result",
                     "content": getattr(r, "content", "") or "",
                     "is_error": getattr(r, "error_code", ToolErrorCode.NONE) != ToolErrorCode.NONE,
                 }
             )
-        for tc_id, r in gather.a2a_results.items():
+        for tool_call_id, r in gather.a2a_results.items():
             if isinstance(r, dict):
                 content = str(r.get("content") or "")
                 success = bool(r.get("success", False))
@@ -835,7 +851,7 @@ class AgentWorker(RuntimeWorker):
                 success = bool(getattr(r, "success", False))
             blocks.append(
                 {
-                    "tool_use_id": tc_id,
+                    "tool_use_id": tool_call_id,
                     "type": "tool_result",
                     "content": content,
                     "is_error": not success,
