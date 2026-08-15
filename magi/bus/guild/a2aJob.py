@@ -60,7 +60,7 @@ class A2AErrorCode(StrEnum):
     ENUM type's OID, SQLite stores the value behind a CHECK
     constraint, both endpoints hand back :class:`A2AErrorCode`
     members on read. Mirrors
-    :class:`magi.bus.guild.mcpServerChangedJob.MCPKind` /
+    :class:`magi.bus.guild.changeMCPServerJob.MCPKind` /
     :class:`magi.bus.library.local.actionItemBook.ActionSource`.
 
     When the target MAGI rejects a request with its own

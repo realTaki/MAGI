@@ -43,6 +43,8 @@ from magi.startup.process import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from magi.bus import Bus
 
 logger = logging.getLogger("magi.startup.webui")

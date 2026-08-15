@@ -17,6 +17,12 @@ from magi.bus.guild.base import BaseJobBoard
 
 # 往返 (publish → claim → submit_result)
 from magi.bus.guild.callLLMJob import CallLLMJob, CallLLMResult, LLMErrorCode, callLLMJobBoard
+from magi.bus.guild.changeMCPServerJob import (
+    MCPKind,
+    ChangeMCPServerJob,
+    ChangeMCPServerResult,
+    changeMCPServerJobBoard,
+)
 from magi.bus.guild.changeProviderConfigJob import (
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
@@ -24,12 +30,6 @@ from magi.bus.guild.changeProviderConfigJob import (
 )
 from magi.bus.guild.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
 from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
-from magi.bus.guild.mcpServerChangedJob import (
-    MCPKind,
-    McpServerChangedJob,
-    McpServerChangedResult,
-    mcpServerChangedJobBoard,
-)
 from magi.bus.guild.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
 from magi.bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
 from magi.bus.guild.seedPresetTasksJob import (
@@ -64,9 +64,9 @@ __all__ = [
     "ChangeProviderConfigResult",
     "changeProviderConfigJobBoard",
     "MCPKind",
-    "McpServerChangedJob",
-    "McpServerChangedResult",
-    "mcpServerChangedJobBoard",
+    "ChangeMCPServerJob",
+    "ChangeMCPServerResult",
+    "changeMCPServerJobBoard",
     "SeedPresetTaskJob",
     "SeedPresetTaskResult",
     "seedPresetTaskJobBoard",

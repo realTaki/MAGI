@@ -27,10 +27,10 @@ from magi.bus.db.engine import EngineFactory, build_local_factory, build_magis_f
 if TYPE_CHECKING:
     from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
     from magi.bus.guild.callLLMJob import callLLMJobBoard
+    from magi.bus.guild.changeMCPServerJob import changeMCPServerJobBoard
     from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
     from magi.bus.guild.chatNotifyJob import chatNotifyBoard
     from magi.bus.guild.deliveryJob import deliveryJobBoard
-    from magi.bus.guild.mcpServerChangedJob import mcpServerChangedJobBoard
     from magi.bus.guild.runTaskJob import runTaskJobBoard
     from magi.bus.guild.runToolJob import runToolJobBoard
     from magi.bus.guild.seedPresetTasksJob import seedPresetTaskJobBoard
@@ -122,7 +122,7 @@ class Bus:
     tool_definitions_book: ToolDefinitionBook  # ToolDefinitionBook
     tool_catalog_book: ToolCatalogStateBook  # ToolCatalogStateBook
     mcp_servers_book: McpServerBook  # McpServerBook
-    mcp_server_changed_job_board: mcpServerChangedJobBoard  # mcpServerChangedJobBoard
+    change_mcp_server_job_board: changeMCPServerJobBoard  # changeMCPServerJobBoard
     tool_job_board: runToolJobBoard  # runToolJobBoard
 
     # -- local: agent (Job board) ---------------------------------------------
@@ -275,10 +275,10 @@ def _open_with_dirs(
         a2aNotifyBoard,
         a2aRequestJobBoard,
         callLLMJobBoard,
+        changeMCPServerJobBoard,
         changeProviderConfigJobBoard,
         chatNotifyBoard,
         deliveryJobBoard,
-        mcpServerChangedJobBoard,
         runTaskJobBoard,
         runToolJobBoard,
         seedPresetTaskJobBoard,
@@ -336,7 +336,6 @@ def _open_with_dirs(
     # query the database. Every explicit Runtime restart passes this barrier
     # again.
     from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
-    from magi.bus.db.schema_drift_fix import apply_schema_drift_fixes
 
     local_scope = MAGIS_SCOPE if local_provision_scope == "magis" else LOCAL_SCOPE
     if (
@@ -350,17 +349,6 @@ def _open_with_dirs(
         local_scope == MAGIS_SCOPE and local_factory.url == magis_factory.url
     ):
         synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
-
-    # Legacy tables pre-date :class:`BaseRecordMixin` and therefore
-    # lack ``created_at`` even though the ORM mapper declares it.
-    # :func:`apply_schema_drift_fixes` issues idempotent
-    # ``ALTER TABLE … ADD COLUMN`` statements once per database
-    # lifetime, then SQLAlchemy queries stop raising
-    # ``no such column`` errors.  Runs against both stores so the
-    # MAGIS shared DB picks up any drift there too.
-    apply_schema_drift_fixes(local_factory.engine)
-    if magis_factory is not None and local_factory is not magis_factory:
-        apply_schema_drift_fixes(magis_factory.engine)
 
     # ---- local books -------------------------------------------------------
     settings_book = SettingBook(local_factory)
@@ -405,7 +393,7 @@ def _open_with_dirs(
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
-    mcp_server_changed_job_board = mcpServerChangedJobBoard(local_factory)
+    change_mcp_server_job_board = changeMCPServerJobBoard(local_factory)
     seed_preset_task_job_board = seedPresetTaskJobBoard(local_factory)
     run_task_job_board = runTaskJobBoard(local_factory)
 
@@ -462,7 +450,7 @@ def _open_with_dirs(
         tool_definitions_book=tool_definitions_book,
         tool_catalog_book=tool_catalog_book,
         mcp_servers_book=mcp_servers_book,
-        mcp_server_changed_job_board=mcp_server_changed_job_board,
+        change_mcp_server_job_board=change_mcp_server_job_board,
         tool_job_board=tool_job_board,
         agent_job_board=agent_job_board,
         llm_job_board=llm_job_board,

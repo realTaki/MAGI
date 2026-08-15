@@ -6,7 +6,7 @@
 
 - **Only depends on bus**. The composition root (see
   :mod:`magi.startup.runtime`) wires a :class:`~magi.bus.Bus`
-  with a ready-to-use :class:`mcpServerChangedJobBoard` and
+  with a ready-to-use :class:`changeMCPServerJobBoard` and
   :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`.
 - **No environment reads**. Timeouts and per-server config come
   from ``bus.settings_book`` / the row, never from ``os.environ``.
@@ -18,7 +18,7 @@ Write authority
 
 The Worker is the **only writer** to ``McpServerBook``. The LLM
 manage tools (under :mod:`magi.tools.mcp`) only publish a
-:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
 — they never call ``book.upsert`` / ``book.delete`` /
 ``book.update`` themselves. The Worker claims the job, applies the
 write, and reconnects the live connection in the same handler.
@@ -34,7 +34,7 @@ Lifecycle
       ├─ _bootstrap_connections()    # full table read + parallel connect
       │   └─ register_tools("mcp", [...discovered tools...])
       │        └─ on_tools_changed → ToolsWorker auto-republishes catalog
-      └─ spawn _run() task (claims mcpServerChangedJobBoard)
+      └─ spawn _run() task (claims changeMCPServerJobBoard)
     stop()
       ├─ cancel _run() task
       ├─ _disconnect_all()
@@ -68,8 +68,8 @@ from typing import TYPE_CHECKING, Any
 
 from magi.bus.guild import (
     MCPKind,
-    McpServerChangedJob,
-    McpServerChangedResult,
+    ChangeMCPServerJob,
+    ChangeMCPServerResult,
 )
 from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
@@ -101,7 +101,7 @@ class McpWorker(RuntimeWorker):
     """Consumer that owns every MCP server connection in a MAGI process.
 
     Receives a fully-wired :class:`~magi.bus.Bus` via
-    constructor injection. The :class:`mcpServerChangedJobBoard` is
+    constructor injection. The :class:`changeMCPServerJobBoard` is
     drained in the background; :meth:`_bootstrap_connections`
     reads the current enabled set on startup. Every change job the
     worker claims carries enough payload to write
@@ -142,7 +142,7 @@ class McpWorker(RuntimeWorker):
     async def _run(self) -> None:
         while not self._stopping:
             try:
-                job = await self.call(self.bus.mcp_server_changed_job_board.claim)
+                job = await self.call(self.bus.change_mcp_server_job_board.claim)
             except Exception:
                 logger.exception("mcp worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
@@ -201,7 +201,7 @@ class McpWorker(RuntimeWorker):
             len(servers),
         )
 
-    async def _handle_change(self, job: McpServerChangedJob) -> None:
+    async def _handle_change(self, job: ChangeMCPServerJob) -> None:
         """Apply the change to the Book, then refresh the connection.
 
         Always :meth:`submit_result` so the Job Board reaches a
@@ -244,9 +244,9 @@ class McpWorker(RuntimeWorker):
 
         try:
             await self.call(
-                self.bus.mcp_server_changed_job_board.submit_result,
+                self.bus.change_mcp_server_job_board.submit_result,
                 job_id=job.job_id,
-                result=McpServerChangedResult(
+                result=ChangeMCPServerResult(
                     job_id=job.job_id,
                     status=JobStatus.COMPLETED if success else JobStatus.FAILED,
                     error=error,

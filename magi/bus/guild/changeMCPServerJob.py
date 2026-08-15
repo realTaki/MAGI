@@ -1,16 +1,16 @@
-"""mcpServerChangedJobBoard — MCP server 变更作业。
+"""changeMCPServerJobBoard — MCP server 变更作业。
 
 当 WebUI / LLM manage tool 修改 / 启用 / 停用 / 删除 MCP server 时，
 调用方 publish 到本 board；:class:`~magi.mcp.worker.McpWorker` 是唯一
 的 consumer，claim 后**写库 + 重连 / 断开 / 重新注入 tools 到
-registry**，并 submit :class:`McpServerChangedResult`。
+registry**，并 submit :class:`ChangeMCPServerResult`。
 
 与 ``changeProviderConfigJobBoard`` 的区分
 ------------------------------------------
 
 - ``changeProviderConfigJob`` 专门服务 provider 配置变更，只有一个
   claimer（provider worker）。
-- ``mcpServerChangedJob`` 专门服务 MCP server 配置变更，只有一个
+- ``changeMCPServerJob`` 专门服务 MCP server 配置变更，只有一个
   claimer（mcp worker），与上述正交。
 
 设计要点
@@ -28,7 +28,7 @@ registry**，并 submit :class:`McpServerChangedResult`。
     payload（存为 JSON 列）。
   - :attr:`MCPKind.TOGGLED` 必须带 ``new_enabled: bool``。
   - :attr:`MCPKind.DELETED` 只需 ``server_name``。
-- **结果回执**：通过 ``submit_result(McpServerChangedResult)`` 落库
+- **结果回执**：通过 ``submit_result(ChangeMCPServerResult)`` 落库
   status / completed_at / error；调用方按
   :meth:`BaseJobBoard.get_result` 轮询，或
   :meth:`BaseJobBoard.wait_for_result` 阻塞到完成。
@@ -50,14 +50,14 @@ from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 if TYPE_CHECKING:
     from magi.bus.library.local.mcpServerBook import McpServer
 
-logger = logging.getLogger("magi.bus.guild.mcpServerChangedJob")
+logger = logging.getLogger("magi.bus.guild.changeMCPServerJob")
 
 
 # -- public enum ---------------------------------------------------------
 
 
 class MCPKind(StrEnum):
-    """Change-kind discriminator stored on :class:`McpServerChangedJob.kind`.
+    """Change-kind discriminator stored on :class:`ChangeMCPServerJob.kind`.
 
     * ``MCPKind.ADDED``   — new server registered; the worker
       ``book.upsert(server)`` and connects.
@@ -89,7 +89,7 @@ class MCPKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class McpServerChangedJob(BaseJob):
+class ChangeMCPServerJob(BaseJob):
     """一次 MCP 服务器配置变更事件。
 
     ``kind`` 取自 :class:`MCPKind`；``server_name`` 是操作
@@ -126,15 +126,15 @@ class McpServerChangedJob(BaseJob):
 
 
 @dataclass(frozen=True, slots=True)
-class McpServerChangedResult(BaseJobResult):
+class ChangeMCPServerResult(BaseJobResult):
     """Worker 处理结果的回执。"""
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _McpServerChangedRow(BaseJobRowMixin):
-    __tablename__ = "mcp_server_changed_jobs"
+class _ChangeMCPServerRow(BaseJobRowMixin):
+    __tablename__ = "change_mcp_server_jobs"
     __table_args__ = {"extend_existing": True}
 
     kind: Mapped[MCPKind] = mapped_column(enum_column(MCPKind), nullable=False)
@@ -205,16 +205,16 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
 # -- Board ---------------------------------------------------------------
 
 
-class mcpServerChangedJobBoard(
-    BaseJobBoard[_McpServerChangedRow, McpServerChangedJob, McpServerChangedResult]
+class changeMCPServerJobBoard(
+    BaseJobBoard[_ChangeMCPServerRow, ChangeMCPServerJob, ChangeMCPServerResult]
 ):
     """MCP 服务器变更作业板（claim → 处理 → submit_result → get_result）。"""
 
-    job_model = _McpServerChangedRow
-    job_cls = McpServerChangedJob
-    result_cls = McpServerChangedResult
+    job_model = _ChangeMCPServerRow
+    job_cls = ChangeMCPServerJob
+    result_cls = ChangeMCPServerResult
 
-    def publish(self, job: McpServerChangedJob) -> int:
+    def publish(self, job: ChangeMCPServerJob) -> int:
         """插入一行变更 job；数据库生成 ``job_id``，调用方无法指定。
 
         Serialises ``job.server`` (if any) to the ``server_payload``
@@ -222,7 +222,7 @@ class mcpServerChangedJobBoard(
         """
         server_payload = _dump_server(job.server) if job.server is not None else None
         with self._session() as s:
-            row = _McpServerChangedRow(
+            row = _ChangeMCPServerRow(
                 status=JobStatus.PENDING,
                 kind=job.kind,
                 server_name=job.server_name,
@@ -233,16 +233,16 @@ class mcpServerChangedJobBoard(
             s.flush()
             s.commit()
         logger.info(
-            "mcpServerChangedJob: published kind=%s name=%s job_id=%s",
+            "changeMCPServerJob: published kind=%s name=%s job_id=%s",
             job.kind,
             job.server_name,
             row.job_id,
         )
         return row.job_id
 
-    def claim(self) -> McpServerChangedJob | None:
+    def claim(self) -> ChangeMCPServerJob | None:
         """Claim the next pending job, materialising the payload
-        columns into the :class:`McpServerChangedJob` DTO.
+        columns into the :class:`ChangeMCPServerJob` DTO.
 
         Mirrors :meth:`BaseJobBoard.claim` but adds the
         ``server_payload`` → :class:`McpServer` and ``new_enabled``
@@ -254,7 +254,7 @@ class mcpServerChangedJobBoard(
             if row is None:
                 return None
             server = _load_server(row.server_payload) if row.server_payload is not None else None
-            job = McpServerChangedJob(
+            job = ChangeMCPServerJob(
                 kind=MCPKind(row.kind),
                 server_name=row.server_name,
                 server=server,
@@ -266,7 +266,7 @@ class mcpServerChangedJobBoard(
 
 __all__ = [
     "MCPKind",
-    "McpServerChangedJob",
-    "McpServerChangedResult",
-    "mcpServerChangedJobBoard",
+    "ChangeMCPServerJob",
+    "ChangeMCPServerResult",
+    "changeMCPServerJobBoard",
 ]

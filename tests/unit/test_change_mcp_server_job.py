@@ -1,4 +1,4 @@
-"""Unit tests for :class:`mcpServerChangedJobBoard`.
+"""Unit tests for :class:`changeMCPServerJobBoard`.
 
 Exercises the publish → claim → submit_result round-trip on a
 fresh in-memory SQLite, plus the validation contract the
@@ -14,9 +14,9 @@ import pytest
 from magi.bus.db import EngineFactory
 from magi.bus.guild import (
     MCPKind,
-    McpServerChangedJob,
-    McpServerChangedResult,
-    mcpServerChangedJobBoard,
+    ChangeMCPServerJob,
+    ChangeMCPServerResult,
+    changeMCPServerJobBoard,
 )
 from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import McpServer
@@ -31,7 +31,7 @@ def factory():
 
 @pytest.fixture
 def board(factory):
-    return mcpServerChangedJobBoard(factory)
+    return changeMCPServerJobBoard(factory)
 
 
 def _gmail_dto() -> McpServer:
@@ -51,27 +51,27 @@ def _gmail_dto() -> McpServer:
 
 def test_job_validation_rejects_unknown_kind():
     with pytest.raises(ValueError, match="invalid kind"):
-        McpServerChangedJob(kind="rotated", server_name="gmail")
+        ChangeMCPServerJob(kind="rotated", server_name="gmail")
 
 
 def test_job_validation_rejects_blank_server_name():
     with pytest.raises(ValueError, match="server_name is required"):
-        McpServerChangedJob(kind=MCPKind.DELETED, server_name="")
+        ChangeMCPServerJob(kind=MCPKind.DELETED, server_name="")
 
 
 def test_job_validation_requires_server_payload_for_added():
     with pytest.raises(ValueError, match="requires a McpServer payload"):
-        McpServerChangedJob(kind=MCPKind.ADDED, server_name="gmail")
+        ChangeMCPServerJob(kind=MCPKind.ADDED, server_name="gmail")
 
 
 def test_job_validation_requires_server_payload_for_updated():
     with pytest.raises(ValueError, match="requires a McpServer payload"):
-        McpServerChangedJob(kind=MCPKind.UPDATED, server_name="gmail")
+        ChangeMCPServerJob(kind=MCPKind.UPDATED, server_name="gmail")
 
 
 def test_job_validation_requires_new_enabled_for_toggled():
     with pytest.raises(ValueError, match="requires new_enabled"):
-        McpServerChangedJob(kind=MCPKind.TOGGLED, server_name="gmail")
+        ChangeMCPServerJob(kind=MCPKind.TOGGLED, server_name="gmail")
 
 
 # -- round-trip ---------------------------------------------------------
@@ -79,16 +79,16 @@ def test_job_validation_requires_new_enabled_for_toggled():
 
 def test_publish_assigns_job_id_and_persists(board, factory):
     job_id = board.publish(
-        McpServerChangedJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
+        ChangeMCPServerJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
     )
     assert isinstance(job_id, int) and job_id > 0
     # The row landed in the table.
     from sqlalchemy import select
 
-    from magi.bus.guild.mcpServerChangedJob import _McpServerChangedRow
+    from magi.bus.guild.changeMCPServerJob import _ChangeMCPServerRow
 
     with factory.session() as s:
-        row = s.scalar(select(_McpServerChangedRow).where(_McpServerChangedRow.job_id == job_id))
+        row = s.scalar(select(_ChangeMCPServerRow).where(_ChangeMCPServerRow.job_id == job_id))
     assert row is not None
     assert row.status == JobStatus.PENDING
     assert row.kind == "added"
@@ -102,14 +102,14 @@ def test_publish_assigns_job_id_and_persists(board, factory):
 def test_publish_assigns_distinct_auto_incrementing_job_ids(board):
     """Each publish receives a distinct database-generated primary key."""
     first = board.publish(
-        McpServerChangedJob(
+        ChangeMCPServerJob(
             kind=MCPKind.UPDATED,
             server_name="gmail",
             server=_gmail_dto(),
         )
     )
     second = board.publish(
-        McpServerChangedJob(
+        ChangeMCPServerJob(
             kind=MCPKind.UPDATED,
             server_name="gmail",
             server=_gmail_dto(),
@@ -124,7 +124,7 @@ def test_claim_returns_none_when_empty(board):
 
 def test_claim_then_submit_result_round_trip(board):
     job_id = board.publish(
-        McpServerChangedJob(
+        ChangeMCPServerJob(
             kind=MCPKind.TOGGLED,
             server_name="gmail",
             new_enabled=False,
@@ -139,7 +139,7 @@ def test_claim_then_submit_result_round_trip(board):
 
     board.submit_result(
         job_id=job_id,
-        result=McpServerChangedResult(job_id=job_id, status=JobStatus.COMPLETED, error=None),
+        result=ChangeMCPServerResult(job_id=job_id, status=JobStatus.COMPLETED, error=None),
     )
     result = board.get_result(job_id=job_id)
     assert result is not None
@@ -151,7 +151,7 @@ def test_claim_round_trips_added_payload_into_dto(board):
     """``claim()`` materialises ``server_payload`` back into a
     :class:`McpServer` so the Worker sees a fully populated DTO."""
     job_id = board.publish(
-        McpServerChangedJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
+        ChangeMCPServerJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
     )
     claimed = board.claim()
     assert claimed is not None
@@ -164,11 +164,11 @@ def test_claim_round_trips_added_payload_into_dto(board):
 
 
 def test_submit_result_records_error(board):
-    job_id = board.publish(McpServerChangedJob(kind=MCPKind.DELETED, server_name="gmail"))
+    job_id = board.publish(ChangeMCPServerJob(kind=MCPKind.DELETED, server_name="gmail"))
     board.claim()
     board.submit_result(
         job_id=job_id,
-        result=McpServerChangedResult(job_id=job_id, status=JobStatus.FAILED, error="boom"),
+        result=ChangeMCPServerResult(job_id=job_id, status=JobStatus.FAILED, error="boom"),
     )
     result = board.get_result(job_id=job_id)
     assert result is not None
@@ -179,7 +179,7 @@ def test_submit_result_records_error(board):
 def test_mcp_kind_enum_matches_documented_set():
     """Locks the four :class:`MCPKind` members; adding a fifth
     without a docstring / payload-shape update will fail here."""
-    from magi.bus.guild.mcpServerChangedJob import MCPKind
+    from magi.bus.guild.changeMCPServerJob import MCPKind
 
     assert {k.value for k in MCPKind} == {"added", "updated", "deleted", "toggled"}
     # StrEnum contract: members compare equal to their string value

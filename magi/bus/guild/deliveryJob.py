@@ -63,7 +63,7 @@ class DeliveryResult(BaseJobResult):
 
 
 class _DeliveryJobRow(BaseJobRowMixin):
-    __tablename__ = "delivery_outbox"
+    __tablename__ = "delivery_jobs"
     __table_args__ = {"extend_existing": True}
 
     channel: Mapped[str] = mapped_column(String(32), nullable=False)

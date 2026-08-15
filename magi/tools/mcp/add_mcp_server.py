@@ -7,7 +7,7 @@ right fields before calling this tool — ``name`` and
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It builds the full :class:`McpServer` DTO, publishes a
-:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
 with ``kind="added"``, and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the write + reconnect.
 The Worker is the single writer — see
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import MCPKind, McpServerChangedJob
+from magi.bus.guild import MCPKind, ChangeMCPServerJob
 from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
@@ -185,14 +185,14 @@ class AddMcpServerTool(Tool):
             sse_read_timeout=kwargs.get("sse_read_timeout"),
         )
 
-        job_id = ctx.bus.mcp_server_changed_job_board.publish(
-            McpServerChangedJob(kind=MCPKind.ADDED, server_name=name, server=server)
+        job_id = ctx.bus.change_mcp_server_job_board.publish(
+            ChangeMCPServerJob(kind=MCPKind.ADDED, server_name=name, server=server)
         )
 
         # Wait for the Worker to upsert + connect so the LLM
         # gets immediate feedback. ``None`` means the worker
         # hasn't answered yet (DB blip / poll lag).
-        result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
+        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:

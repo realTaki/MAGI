@@ -42,7 +42,7 @@ Bus plumbing: this tool talks to bus
 lookup via :meth:`ConversationBook.get_for_owner`) and
 ``ctx.bus.delivery_job_board`` (publish a
 :class:`magi.bus.guild.deliveryJob.DeliveryJob` to
-the durable ``delivery_outbox`` queue — the channel-owned
+the durable ``delivery_jobs`` queue — the channel-owned
 DeliveryWorker performs the actual protocol I/O after the
 agent transition has committed). The legacy services at
 bus Book API and
