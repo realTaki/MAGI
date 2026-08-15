@@ -38,14 +38,14 @@ Query keys
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+from typing import Annotated
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, select
+from pydantic import Strict, StringConstraints
+
+from sqlalchemy import BigInteger, ForeignKey, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 AUTH_MODE_LOCAL_NO_2FA = "local_no_2fa"
 AUTH_MODE_IM_2FA_ENABLED = "im_2fa_enabled"
@@ -63,20 +63,28 @@ ALL_ADMIN_AUTH_MODES = frozenset(
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Magis(BaseRecord):
-    name: str  # MAGIS 唯一名
-    parent_id: int | None = None  # 父 MAGIS ID（根节点为 NULL）
-    adam_id: int | None = None  # ADAM MAGI 的身份 ID
-    instruction: str = ""  # MAGIS 默认指令
+    name: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]  # MAGIS 唯一名
+    parent_id: Annotated[int, Strict()] | None = None  # 父 MAGIS ID（根节点为 NULL）
+    adam_id: Annotated[int, Strict()] | None = None  # ADAM MAGI 的身份 ID
+    instruction: Annotated[str, Strict()] = ""  # MAGIS 默认指令
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class MagisAdmin(BaseRecord):
-    magis_id: int  # 授权作用的 MAGIS ID
-    name: str  # 管理员显示名
-    tgid: int | None = None  # 已绑定 Telegram 验证地址
-    auth_mode: str = AUTH_MODE_LOCAL_NO_2FA
+    magis_id: Annotated[int, Strict()]  # 授权作用的 MAGIS ID
+    name: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]  # 管理员显示名
+    tgid: Annotated[int, Strict()] | None = None  # 已绑定 Telegram 验证地址
+    auth_mode: Annotated[
+        str,
+        Strict(),
+        StringConstraints(pattern="^(local_no_2fa|im_2fa_enabled|recovery_local_no_2fa|disabled)$"),
+    ] = AUTH_MODE_LOCAL_NO_2FA
 
 
 # -- internal ORM --------------------------------------------------------
@@ -113,12 +121,7 @@ class _MagisAdminRow(BaseRecordMixin):
 
 class MagisBook(BaseBook[_MagisRow, Magis]):
     model_cls = _MagisRow
-    dto_cls = Magis
-
-    def get(self, *, magis_id: int) -> Magis | None:
-        with self._session() as s:
-            row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = Magis
 
     def get_by_name(self, *, name: str) -> Magis | None:
         with self._session() as s:
@@ -140,7 +143,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
         deployments the root MAGI is reached via the service DNS name
         (``magi`` by default, overridable via ``MAGI_ROOT_RUNTIME_URL``),
         not via the local-mode ``base_url`` written by the launcher.  Local
-        callers never reach this path — ``runtime_state_book.get()``
+        callers never reach this path — ``runtime_state_book.get_by_runtime_id()``
         resolves first and short-circuits with ``base_url``.
         """
         import os
@@ -154,26 +157,6 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
         with self._session() as s:
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def add(
-        self,
-        *,
-        name: str,
-        parent_id: int | None = None,
-        adam_id: int | None = None,
-        instruction: str = "",
-    ) -> Magis:
-        with self._session() as s:
-            row = _MagisRow(
-                name=name,
-                parent_id=parent_id,
-                adam_id=adam_id,
-                instruction=instruction,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
 
     def set_adam(self, *, magis_id: int, adam_id: int | None) -> None:
         with self._session() as s:
@@ -219,7 +202,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
 
 class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
     model_cls = _MagisAdminRow
-    dto_cls = MagisAdmin
+    record_cls = MagisAdmin
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisAdmin]:
         with self._session() as s:
@@ -227,11 +210,6 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
                 select(_MagisAdminRow).where(_MagisAdminRow.magis_id == magis_id)
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def get(self, *, admin_id: int) -> MagisAdmin | None:
-        with self._session() as s:
-            row = s.get(_MagisAdminRow, admin_id)
-            return self._row_to_dto(row) if row else None
 
     def get_by_tgid(self, *, magis_id: int, tgid: int) -> MagisAdmin | None:
         with self._session() as s:
@@ -243,39 +221,19 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             )
             return self._row_to_dto(row) if row else None
 
-    def add(
-        self,
-        *,
-        magis_id: int,
-        name: str,
-        tgid: int | None = None,
-        auth_mode: str = AUTH_MODE_LOCAL_NO_2FA,
-    ) -> MagisAdmin:
-        normalized_name = name.strip()
-        if not normalized_name:
-            raise ValueError("admin name is required")
-        if auth_mode not in ALL_ADMIN_AUTH_MODES:
-            raise ValueError("invalid admin auth_mode")
-        with self._session() as s:
-            if tgid is not None:
-                duplicate = s.scalar(
-                    select(_MagisAdminRow).where(
-                        _MagisAdminRow.magis_id == magis_id,
-                        _MagisAdminRow.tgid == tgid,
-                    )
+    def _record_to_row_values(self, record: MagisAdmin, session) -> dict:
+        values = super()._record_to_row_values(record, session)
+        if record.tgid is not None:
+            duplicate = session.scalar(
+                select(_MagisAdminRow).where(
+                    _MagisAdminRow.magis_id == record.magis_id,
+                    _MagisAdminRow.tgid == record.tgid,
                 )
-                if duplicate is not None:
-                    raise ValueError("tgid already bound to a MAGIS admin")
-            row = _MagisAdminRow(
-                magis_id=magis_id,
-                name=normalized_name,
-                tgid=tgid,
-                auth_mode=auth_mode,
             )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+            if duplicate is not None:
+                raise ValueError("tgid already bound to a MAGIS admin")
+        values["name"] = record.name.strip()
+        return values
 
     def set_auth_mode(self, *, admin_id: int, auth_mode: str) -> MagisAdmin:
         if auth_mode not in ALL_ADMIN_AUTH_MODES:

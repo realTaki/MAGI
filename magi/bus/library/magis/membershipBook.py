@@ -16,7 +16,7 @@ under the ``SettingBook.KNOWN_KEYS`` keys.  This Book only tracks
 the per-MAGI identity + role binding.
 
 FKs that target a per-MAGI identity (``magis.adam_id``,
-``runtime_state.runtime_id``) all point at ``magis_memberships.id``.
+``runtime_state.membership_row_id``) all point at ``magis_memberships.id``.
 
 Query keys
 ----------
@@ -30,11 +30,9 @@ Query keys
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
-    DateTime,
     ForeignKey,
     String,
     Text,
@@ -43,8 +41,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 from magi.bus.library.local.settingBook import SettingBook
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
@@ -57,7 +54,7 @@ DEFAULT_ROLE_INSTRUCTIONS = {
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class MagisRole(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     name: str  # 角色名（ADAM/EVA/...）
@@ -65,7 +62,7 @@ class MagisRole(BaseRecord):
     is_reserved: bool = False  # 是否为保留角色（ADAM/EVA）
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class MagisMembership(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     role_id: int  # 绑定的角色 ID
@@ -115,12 +112,7 @@ class _MagisMembershipRow(BaseRecordMixin):
 
 class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
     model_cls = _MagisRoleRow
-    dto_cls = MagisRole
-
-    def get(self, *, role_id: int) -> MagisRole | None:
-        with self._session() as s:
-            row = s.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == role_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = MagisRole
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisRole]:
         with self._session() as s:
@@ -140,21 +132,6 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
                 )
             )
             return self._row_to_dto(row) if row else None
-
-    def add(
-        self, *, magis_id: int, name: str, instruction: str = "", is_reserved: bool = False
-    ) -> MagisRole:
-        with self._session() as s:
-            row = _MagisRoleRow(
-                magis_id=magis_id,
-                name=name,
-                instruction=instruction,
-                is_reserved=is_reserved,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
 
     def update(
         self,
@@ -198,7 +175,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
 
 class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
-    dto_cls = MagisMembership
+    record_cls = MagisMembership
 
     def __init__(self, factory, *, settings_book: SettingBook | None = None) -> None:
         super().__init__(factory)
@@ -223,17 +200,6 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             rows = s.scalars(select(_MagisMembershipRow).order_by(_MagisMembershipRow.id)).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def get(self, *, magi_id: int) -> MagisMembership | None:
-        """Look up a single MAGI under any MAGIS by its per-MAGI identity.
-
-        ``magi_id`` is the ``magis_memberships.id`` (the row's own
-        PK, which is what used to be ``magic.id`` before the
-        ``magic`` table was retired).
-        """
-        with self._session() as s:
-            row = s.scalar(select(_MagisMembershipRow).where(_MagisMembershipRow.id == magi_id))
-            return self._row_to_dto(row) if row else None
-
     def list_for_magis(self, *, magis_id: int) -> list[MagisMembership]:
         """All MAGIs registered under a given parent MAGIS."""
         with self._session() as s:
@@ -255,7 +221,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             rows = s.execute(
                 select(_MagisMembershipRow, _MagisRoleRow, _RuntimeRow)
                 .join(_MagisRoleRow, _MagisRoleRow.id == _MagisMembershipRow.role_id)
-                .outerjoin(_RuntimeRow, _RuntimeRow.runtime_id == _MagisMembershipRow.id)
+                .outerjoin(_RuntimeRow, _RuntimeRow.membership_row_id == _MagisMembershipRow.id)
                 .where(_MagisMembershipRow.magis_id == own.magis_id)
                 .order_by(_MagisMembershipRow.id)
             ).all()
@@ -312,31 +278,15 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
                 )
         return contexts
 
-    def add(
-        self, *, magis_id: int, role_id: int, responsibility: str = ""
-    ) -> MagisMembership:
-        """Register a new MAGI under ``magis_id`` with ``role_id``.
-
-        The MAGI's own identity is assigned by the DB and comes back
-        as ``dto.id`` — keep that id for later lookup and for use as
-        a FK target from elsewhere (``magis.adam_id``,
-        ``runtime_state.runtime_id``).
-        """
-        with self._session() as s:
-            role = s.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == role_id))
-            if role is None:
-                raise LookupError(f"role {role_id} not found")
-            if role.magis_id != magis_id:
-                raise ValueError("role must belong to the target MAGIS")
-            row = _MagisMembershipRow(
-                magis_id=magis_id,
-                role_id=role_id,
-                responsibility=responsibility.strip(),
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    def _record_to_row_values(self, record: MagisMembership, session) -> dict:
+        role = session.scalar(select(_MagisRoleRow).where(_MagisRoleRow.id == record.role_id))
+        if role is None:
+            raise LookupError(f"role {record.role_id} not found")
+        if role.magis_id != record.magis_id:
+            raise ValueError("role must belong to the target MAGIS")
+        values = super()._record_to_row_values(record, session)
+        values["responsibility"] = record.responsibility.strip()
+        return values
 
     def remove(self, *, magi_id: int) -> bool:
         """Unregister a MAGI by its per-MAGI identity."""
@@ -404,7 +354,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         personal = ""
         if self._settings_book is not None:
             try:
-                raw = self._settings_book.get(key="instruction")
+                raw = self._settings_book.get_value(key="instruction")
                 if raw:
                     personal = str(raw)
             except Exception:

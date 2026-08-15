@@ -16,7 +16,6 @@ from enum import StrEnum
 from typing import Annotated
 
 from pydantic import Strict, StringConstraints
-
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -28,7 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclass ----------------------------------------------------
 

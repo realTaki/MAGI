@@ -10,16 +10,13 @@ is registered in a different import order.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import field
 from typing import Any, cast
 
 from sqlalchemy import (
     JSON,
     Boolean,
-    DateTime,
     Float,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -27,13 +24,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class McpServer(BaseRecord):
     """One operator-configured MCP server.
 
@@ -200,12 +196,7 @@ def _parse_json_list(raw: str | None) -> list[str]:
 
 class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     model_cls = _McpServerRow
-    dto_cls = McpServer
-
-    def get(self, *, server_id: int) -> McpServer | None:
-        with self._session() as s:
-            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = McpServer
 
     def get_by_name(self, *, name: str) -> McpServer | None:
         with self._session() as s:
@@ -232,39 +223,21 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(
-        self,
-        *,
-        name: str,
-        connection_type: str,
-        command: str | None = None,
-        args: list[str] | None = None,
-        env: dict[str, str] | None = None,
-        url: str | None = None,
-        headers: dict[str, str] | None = None,
-        enabled: bool = True,
-        connect_timeout: float | None = None,
-        execute_timeout: float | None = None,
-        sse_read_timeout: float | None = None,
-    ) -> McpServer:
-        with self._session() as s:
-            row = _McpServerRow(
-                name=name,
-                connection_type=connection_type,
-                command=command,
-                args_json=json.dumps(args or []),
-                env_json=json.dumps(env or {}),
-                url=url,
-                headers_json=json.dumps(headers or {}),
-                enabled=enabled,
-                connect_timeout=connect_timeout,
-                execute_timeout=execute_timeout,
-                sse_read_timeout=sse_read_timeout,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    def _record_to_row_values(self, record: McpServer, _session) -> dict:
+        return {
+            "name": record.name,
+            "connection_type": record.connection_type,
+            "command": record.command,
+            "args_json": json.dumps(list(record.args)),
+            "env_json": json.dumps(record.env),
+            "url": record.url,
+            "headers_json": json.dumps(record.headers),
+            "enabled": record.enabled,
+            "connect_timeout": record.connect_timeout,
+            "execute_timeout": record.execute_timeout,
+            "sse_read_timeout": record.sse_read_timeout,
+            "config": record.config,
+        }
 
     def update(
         self,
@@ -377,11 +350,11 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # ``None`` here means "caller did not pass this; clear it
         # if it's now stale".
         if existing is None:
-            return self.add(
+            record = McpServer(
                 name=name,
                 connection_type=connection_type,
                 command=command,
-                args=args_list,
+                args=tuple(args_list),
                 env=env_dict,
                 url=url,
                 headers=headers_dict,
@@ -390,6 +363,8 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
                 execute_timeout=execute_timeout,
                 sse_read_timeout=sse_read_timeout,
             )
+            self.add(record)
+            return self.get_by_name(name=name)  # type: ignore[return-value]
         # When the transport type is changing, force-clear the
         # fields that don't belong to the new type so a previous
         # stdio ``command`` doesn't linger after switching to
@@ -464,7 +439,6 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # attributes silently become ``None`` — we don't rely
         # on that here.
         kwargs: dict = {
-            "id": row.id,
             "name": row.name,
             "connection_type": row.connection_type,
             "command": row.command,
@@ -485,28 +459,13 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             "connect_timeout",
             "execute_timeout",
             "sse_read_timeout",
-            "created_at",
-            "updated_at",
         ):
-            value = getattr(row, ts_name, None)
-            if isinstance(value, DateTime):
-                # SQLAlchemy's DateTime column type is structurally
-                # identical to ``datetime.datetime`` at runtime (the
-                # value is loaded from a row that's already been
-                # refreshed via ``s.refresh(row)`` above), but the
-                # stub types ``value`` as the column class. Cast to
-                # the underlying stdlib type so ``tzinfo`` /
-                # ``isoformat`` / ``astimezone`` resolve statically.
-                dt = cast(datetime, value)
-                if dt.tzinfo is None:
-                    kwargs[ts_name] = dt.isoformat() + "Z"
-                else:
-                    kwargs[ts_name] = dt.astimezone().isoformat().replace("+00:00", "Z")
-            elif value is None:
-                kwargs[ts_name] = None
-            else:
-                kwargs[ts_name] = value
-        return McpServer(**kwargs)
+            kwargs[ts_name] = getattr(row, ts_name, None)
+        server = McpServer(**kwargs)
+        object.__setattr__(server, "id", row.id)
+        object.__setattr__(server, "created_at", row.created_at)
+        object.__setattr__(server, "updated_at", row.updated_at)
+        return server
 
 
 # -- public serialiser ---------------------------------------------------

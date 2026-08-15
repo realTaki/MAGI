@@ -27,13 +27,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ToolCatalogState(BaseRecord):
     """Singleton catalog-state row DTO."""
 
@@ -41,7 +40,7 @@ class ToolCatalogState(BaseRecord):
     snapshot_hash: str  # 当前快照的指纹哈希
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ToolDefinition(BaseRecord):
     """LLM-contract DTO — the tool as the agent sees it.
 
@@ -105,9 +104,9 @@ class _ToolDefinitionRow(BaseRecordMixin):
 
 class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
     model_cls = _ToolCatalogStateRow
-    dto_cls = ToolCatalogState
+    record_cls = ToolCatalogState
 
-    def get(self) -> ToolCatalogState | None:
+    def get_current(self) -> ToolCatalogState | None:
         with self._session() as s:
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
             return self._row_to_dto(row) if row else None
@@ -141,7 +140,7 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
 
 class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
     model_cls = _ToolDefinitionRow
-    dto_cls = ToolDefinition
+    record_cls = ToolDefinition
 
     # -- mapping ---------------------------------------------------------
 

@@ -13,11 +13,10 @@ from dataclasses import dataclass
 from sqlalchemy import String, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ControlSetting(BaseRecord):
     key: str  # 配置键
     value: str  # 配置值
@@ -33,9 +32,9 @@ class _ControlSettingRow(BaseRecordMixin):
 
 class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
     model_cls = _ControlSettingRow
-    dto_cls = ControlSetting
+    record_cls = ControlSetting
 
-    def get(self, *, key: str) -> str | None:
+    def get_value(self, *, key: str) -> str | None:
         with self._session() as session:
             row = session.scalar(select(_ControlSettingRow).where(_ControlSettingRow.key == key))
             return row.value if row else None

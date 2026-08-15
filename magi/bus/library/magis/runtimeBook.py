@@ -39,13 +39,16 @@ The unified design means:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import Strict, StringConstraints
 
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     Integer,
     LargeBinary,
     String,
@@ -54,8 +57,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 
 class RuntimeDesiredState(StrEnum):
@@ -76,42 +79,41 @@ class RuntimeObservedState(StrEnum):
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Runtime(BaseRecord):
-    runtime_id: int  # 主键（同时是 per-MAGI 身份标识）
-    backend_kind: str  # 后端类型（local/k8s）
+    runtime_id: Annotated[int, Strict()]
+    backend_kind: Annotated[str, Strict(), StringConstraints(max_length=20)]
     desired_state: RuntimeDesiredState  # 期望状态（started/stopped）
     observed_state: RuntimeObservedState  # 观察状态（started/stopped/crashed/...）
-    backend_ref: str  # 显示名/标签
-    workspace_dir: str  # 工作区目录
-    log_dir: str  # 日志目录
-    audit_log_path: str  # 审计日志路径
-    pid: int | None = None  # 进程 PID（local 模式）
-    base_url: str | None = None  # 访问基地址（local 模式）
-    port: int | None = None  # 当前占用的端口
-    spawned_at: datetime | None = None  # 启动时间
-    stopped_at: datetime | None = None  # 停止时间
-    updated_at: datetime | None = None  # 最近更新时间
-    stale: bool = False  # 是否被标记为过期
+    backend_ref: Annotated[str, Strict(), StringConstraints(max_length=100)]
+    workspace_dir: Annotated[str, Strict(), StringConstraints(max_length=500)]
+    log_dir: Annotated[str, Strict(), StringConstraints(max_length=500)]
+    audit_log_path: Annotated[str, Strict(), StringConstraints(max_length=500)]
+    pid: Annotated[int, Strict()] | None = None
+    base_url: Annotated[str, Strict(), StringConstraints(max_length=200)] | None = None
+    port: Annotated[int, Strict()] | None = None
+    spawned_at: Annotated[datetime, Strict()] | None = None
+    stopped_at: Annotated[datetime, Strict()] | None = None
+    stale: Annotated[bool, Strict()] = False
     # K8s-only fields (NULL in local mode).
-    deployment_name: str | None = None  # K8s deployment 名
-    namespace: str | None = None  # K8s namespace
-    image: str | None = None  # K8s 镜像
-    extra: str | None = None  # 额外配置（JSON）
+    deployment_name: Annotated[str, Strict(), StringConstraints(max_length=120)] | None = None
+    namespace: Annotated[str, Strict(), StringConstraints(max_length=64)] | None = None
+    image: Annotated[str, Strict(), StringConstraints(max_length=256)] | None = None
+    extra: Annotated[str, Strict()] | None = None
     # Sticky port allocation (NULL for an un-allocated runtime).
-    port_in_use_since: datetime | None = None  # 端口占用起始时间
-    port_released_at: datetime | None = None  # 端口释放时间
+    port_in_use_since: Annotated[datetime, Strict()] | None = None
+    port_released_at: Annotated[datetime, Strict()] | None = None
     # Workspace tombstone (NULL for live runtimes).
-    archive_path: str | None = None  # 工作区归档路径（软删除）
-    archived_at: datetime | None = None  # 归档时间
-    restored: bool = False  # 是否已被恢复
+    archive_path: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
+    archived_at: Annotated[datetime, Strict()] | None = None
+    restored: Annotated[bool, Strict()] = False
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ControlSecret(BaseRecord):
-    name: str  # secret 名称（PK）
-    secret_hash: bytes  # 哈希值
-    salt: bytes  # 哈希盐
+    name: Annotated[str, Strict(), StringConstraints(max_length=100)]
+    secret_hash: Annotated[bytes, Strict()]
+    salt: Annotated[bytes, Strict()]
     # Raw secret value — populated alongside ``secret_hash`` once the
     # ``0002_add_control_secret_value`` migration ran on this MAGIS
     # store. The WebUI / Runtime proxy HMAC needs the raw bytes to
@@ -119,23 +121,16 @@ class ControlSecret(BaseRecord):
     # make the control plane unable to mint / verify proxy signatures.
     # Older deployments (pre-migration) only have ``secret_hash`` +
     # ``salt`` and will fall back to the bootstrap file at startup.
-    secret_value: bytes | None = None
-    created_at: datetime = None  # type: ignore[assignment]
-
-
-class _RuntimeRow(Base):
-    """ORM row for ``runtime_state``.
-
-    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
-    table pre-dates the mixin convention with ``runtime_id`` as its
-    primary key. Switching to ``id`` PK would orphan existing rows on
-    upgrade; the migration path is intentionally additive so the
-    table shape stays stable.
-    """
+    secret_value: Annotated[bytes, Strict()] | None = None
+class _RuntimeRow(BaseRecordMixin):
+    """Runtime state with an internal PK and explicit MAGI business key."""
 
     __tablename__ = "runtime_state"
 
-    runtime_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    runtime_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    membership_row_id: Mapped[int] = mapped_column(
+        ForeignKey("magis_memberships.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
     backend_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     desired_state: Mapped[RuntimeDesiredState] = mapped_column(
         enum_column(RuntimeDesiredState, name="runtime_desired_state"),
@@ -156,7 +151,6 @@ class _RuntimeRow(Base):
     port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     spawned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # K8s-only fields — NULL in local mode.
     deployment_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -172,27 +166,15 @@ class _RuntimeRow(Base):
     restored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-class _ControlSecretRow(Base):
-    """Single-row MAGIS control secret store keyed by MAGIS name.
-
-    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
-    table pre-dates the mixin convention with ``name`` as its primary
-    key. Switching to ``id`` PK would orphan existing rows on upgrade;
-    the migration path is intentionally additive (see alembic
-    ``0002_add_control_secret_value``) so the table shape stays
-    stable.
-    """
+class _ControlSecretRow(BaseRecordMixin):
+    """Control secret with ``name`` retained as its business key."""
 
     __tablename__ = "control_secrets"
 
-    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     secret_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    # ``0002_add_control_secret_value`` migration adds this column.
-    # Nullable so legacy rows survive the upgrade — old rows will have
-    # NULL here and the lookup path falls back to the bootstrap file.
     secret_value: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 # -- Books ---------------------------------------------------------------
@@ -200,9 +182,9 @@ class _ControlSecretRow(Base):
 
 class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
     model_cls = _RuntimeRow
-    dto_cls = Runtime
+    record_cls = Runtime
 
-    def get(self, *, runtime_id: int) -> Runtime | None:
+    def get_by_runtime_id(self, *, runtime_id: int) -> Runtime | None:
         with self._session() as s:
             row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
             return self._row_to_dto(row) if row else None
@@ -268,6 +250,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             if row is None:
                 row = _RuntimeRow(
                     runtime_id=runtime_id,
+                    membership_row_id=runtime_id,
                     backend_kind=backend_kind,
                     backend_ref=backend_ref,
                     workspace_dir=workspace_dir,
@@ -279,7 +262,6 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
                     namespace=namespace,
                     image=image,
                     extra=extra,
-                    updated_at=now,
                     port_in_use_since=now if (allocate_port and port is not None) else None,
                 )
                 s.add(row)
@@ -488,9 +470,9 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
 
 class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
     model_cls = _ControlSecretRow
-    dto_cls = ControlSecret
+    record_cls = ControlSecret
 
-    def get(self, *, name: str) -> ControlSecret | None:
+    def get_by_name(self, *, name: str) -> ControlSecret | None:
         with self._session() as s:
             row = s.scalar(select(_ControlSecretRow).where(_ControlSecretRow.name == name))
             return self._row_to_dto(row) if row else None
@@ -533,7 +515,7 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
                 row.secret_value = secret_value
             s.flush()
             s.commit()
-        return self.get(name=name)  # type: ignore[return-value]
+        return self.get_by_name(name=name)  # type: ignore[return-value]
 
 
 __all__ = [

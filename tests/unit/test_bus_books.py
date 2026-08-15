@@ -70,7 +70,7 @@ def test_base_record_id_is_book_owned() -> None:
     """The auto-increment primary key cannot be supplied by DTO callers."""
     contact = Contact(name="Unpersisted")
     assert contact.id == 0
-    with pytest.raises(TypeError, match="unexpected keyword argument 'id'"):
+    with pytest.raises(ValueError, match="Unexpected keyword argument"):
         Contact(name="Unpersisted", id=1)
 
 
@@ -120,7 +120,7 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
     assert record_id > 0
     stored = book.get(record_id)
     assert stored is not None and stored.id == record_id
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError, match="Unexpected keyword argument"):
         Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
 
 
@@ -202,36 +202,36 @@ def test_memory_book_add_invariants(factory, contact_id):
     book = MemoryBook(factory)
 
     # Empty / whitespace-only subject is rejected.
-    with pytest.raises(ValueError, match="subject must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='', body='x')))
-    with pytest.raises(ValueError, match="subject must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='   ', body='x')))
 
     # Subject over the column cap (200 chars) is rejected.
-    with pytest.raises(ValueError, match="subject length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='x' * 201, body='y')))
 
     # Empty body is rejected.
-    with pytest.raises(ValueError, match="body must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='')))
-    with pytest.raises(ValueError, match="body must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='   ')))
 
     # Body over 8 KiB is rejected.
-    with pytest.raises(ValueError, match="body length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='x' * (8 * 1024 + 1))))
 
     # ``kind`` must be in ALL_MEMORY_KINDS.
-    with pytest.raises(ValueError, match="kind must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='weird', subject='ok', body='ok')))
 
     # ``priority`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="priority must be 1..5"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=0)))
-    with pytest.raises(ValueError, match="priority must be 1..5"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=6)))
     # Non-int is rejected.
-    with pytest.raises(ValueError, match="priority must be 1..5"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority='3')))
 
 
@@ -244,23 +244,23 @@ def test_memory_book_update_invariants(factory, contact_id):
     row = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
 
     # Empty subject via update is rejected.
-    with pytest.raises(ValueError, match="subject must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.update(memory_id=row.id, subject="   ")
 
     # Subject over 200 chars is rejected.
-    with pytest.raises(ValueError, match="subject length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.update(memory_id=row.id, subject="x" * 201)
 
     # Empty body via update is rejected.
-    with pytest.raises(ValueError, match="body must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.update(memory_id=row.id, body="   ")
 
     # Body over 8 KiB is rejected.
-    with pytest.raises(ValueError, match="body length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.update(memory_id=row.id, body="x" * (8 * 1024 + 1))
 
     # ``priority`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="priority must be 1..5"):
+    with pytest.raises(ValueError, match="validation error"):
         book.update(memory_id=row.id, priority=7)
 
     # Missing row → LookupError.
@@ -342,7 +342,7 @@ def test_contact_note_book_rejects_unknown_kind(factory):
     cbook = ContactBook(factory)
     nbook = ContactNoteBook(factory)
     c = cbook.get(cbook.add(Contact(name='Bob')))
-    with pytest.raises(ValueError, match="kind must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         nbook.get(nbook.add(ContactNote(contact_id=c.id, note='x', kind='not-a-real-kind')))
 
 
@@ -633,25 +633,25 @@ def test_action_item_book_add_invariants(factory, contact_id):
     book = ActionItemBook(factory)
 
     # Empty / whitespace-only title is rejected.
-    with pytest.raises(ValueError, match="title must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='')))
-    with pytest.raises(ValueError, match="title must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='   ')))
 
     # Title over the column cap (200 chars) is rejected.
-    with pytest.raises(ValueError, match="title length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='x' * 201)))
 
     # Description over 1000 chars is rejected.
-    with pytest.raises(ValueError, match="description length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='ok', description='d' * 1001)))
 
     # target_url over 500 chars is rejected.
-    with pytest.raises(ValueError, match="target_url length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='ok', target_url='u' * 501)))
 
     # priority must be in ALL_PRIORITIES.
-    with pytest.raises(ValueError, match="priority must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='ok', priority='urgent')))
     # priority "normal" (default) and "high" both pass — raw
     # strings and the enum member should be equivalent under
@@ -662,7 +662,7 @@ def test_action_item_book_add_invariants(factory, contact_id):
     assert b.priority == "high"
 
     # source must be in TaskSource.
-    with pytest.raises(ValueError, match="source must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(ActionItem(contact_id=contact_id, title='ok', source='system')))
     c = book.get(book.add(ActionItem(contact_id=contact_id, title='c', source=ActionSource.USER)))
     assert c.source == "user"
@@ -809,7 +809,7 @@ def test_task_book_lifecycle(factory, contact_id):
 
     # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
-    r = rbook.get(rbook.add(TaskRun(task_id='t1', run_id='r1', manual=1, started_at=datetime.fromisoformat('2026-08-05T09:00:00Z').replace(tzinfo=None), status='running')))
+    r = rbook.get(rbook.add(TaskRun(task_id='t1', run_id='r1', manual=True, started_at=datetime.fromisoformat('2026-08-05T09:00:00Z').replace(tzinfo=None), status='running')))
     assert isinstance(r, TaskRun)
     rbook.complete(
         run_id="r1",
@@ -826,7 +826,7 @@ def test_task_book_add_rejects_unknown_source(factory):
     ``String(16)``.
     """
     book = TaskBook(factory)
-    with pytest.raises(ValueError, match="source must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t-bad', name='bad', prompt='x', cron='0 0 * * *', contact_id=1, target_channel='webui', source='system-external-thing')))
 
 
@@ -847,27 +847,27 @@ def test_task_book_add_invariants(factory, contact_id):
     book = TaskBook(factory)
 
     # ``name`` empty / whitespace-only is rejected.
-    with pytest.raises(ValueError, match="name must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t1', name='', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-    with pytest.raises(ValueError, match="name must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t2', name='   ', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``name`` over the column cap is rejected.
-    with pytest.raises(ValueError, match="name length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t3', name='n' * 121, prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``prompt`` empty / whitespace-only is rejected.
-    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t4', name='ok', prompt='', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t5', name='ok', prompt='   ', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``prompt`` over the cap is rejected.
-    with pytest.raises(ValueError, match="prompt length"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t6', name='ok', prompt='p' * 8001, cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
 
     # ``target_channel`` outside the closed enum is rejected.
-    with pytest.raises(ValueError, match="target_channel must be one of"):
+    with pytest.raises(ValueError, match="validation error"):
         book.get(book.add(Task(task_id='t7', name='ok', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='web')))
 
     # All closed-set values pass.

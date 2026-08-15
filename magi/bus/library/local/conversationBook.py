@@ -16,13 +16,15 @@ Schema for ``chat_conversations`` + ``chat_messages`` tables.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
+from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
-    DateTime,
     JSON,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -35,12 +37,16 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from magi.bus.db.base import utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 logger = logging.getLogger("magi.bus.library.local.conversationBook")
+
+
+def _new_semantic_id() -> str:
+    return uuid.uuid4().hex[:26]
 
 # -- inbound text cap ----------------------------------------------------
 #
@@ -76,7 +82,7 @@ def _resolve_max_input_chars(settings_book) -> int:
     if settings_book is None:
         return DEFAULT_CHAT_MAX_INPUT_CHARS
     try:
-        raw = settings_book.get(key="system.chat_max_input_chars")
+        raw = settings_book.get_value(key="system.chat_max_input_chars")
     except Exception:
         return DEFAULT_CHAT_MAX_INPUT_CHARS
     return _clamp_int(
@@ -102,27 +108,27 @@ def _truncate_inbound(text: str, max_chars: int) -> tuple[str, bool, int]:
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Conversation(BaseRecord):
-    conversation_id: str  # 跨 API / Job 使用的稳定会话身份
-    delivery_address: str  # 渠道内的目标地址（如 tg chat_id）
-    contact_id: int  # 会话所属联系人 ID
-    channel: str  # 来源渠道（tg/webui/...）
-    title: str | None = None  # 会话标题（auto-titled 或用户设置）
-    summary: str | None = None  # cumulative compaction summary（auto-compact 生成）
-    last_compaction_at: str | None = None  # 上次自动压缩时间（JSON UTC）
+    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_semantic_id)
+    delivery_address: Annotated[str, Strict(), StringConstraints(max_length=64)]
+    contact_id: Annotated[int, Strict()]
+    channel: Annotated[str, Strict(), StringConstraints(max_length=16)]
+    title: Annotated[str, Strict(), StringConstraints(strip_whitespace=True, max_length=80)] | None = None
+    summary: Annotated[str, Strict()] | None = None
+    last_compaction_at: Annotated[datetime, Strict()] | None = None
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Message(BaseRecord):
-    conversation_id: str  # 所属会话 ID
-    message_id: str  # 生产方幂等键（ULID）
-    role: str  # 消息角色（user/assistant/system/tool）
-    text: str  # 消息正文
-    ts: str  # 消息时间戳（JSON UTC）
-    archived: int = 0  # 1=被自动压缩归档
+    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)]
+    message_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_semantic_id)
+    role: Annotated[str, Strict(), StringConstraints(max_length=16)]
+    text: Annotated[str, Strict()]
+    ts: Annotated[datetime, Strict()] = field(default_factory=utcnow_naive)
+    archived: Annotated[int, Strict(), Field(ge=0, le=1)] = 0
     content_blocks: list[dict[str, Any]] | None = None  # 富内容块（tool_use 等）
-    llm_attempt_id: str | None = None  # 关联的 LLM 调用 ID（用于去重）
+    llm_attempt_id: Annotated[str, Strict(), StringConstraints(max_length=128)] | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -139,7 +145,7 @@ class SearchHit:
     conversation_id: str  # 命中消息所属会话 ID
     message_id: str  # 命中消息的 message_id
     role: str  # 命中消息的角色
-    ts: str  # 命中消息的时间戳
+    ts: datetime  # 命中消息的时间戳
     snippet: str  # 含 <mark> 高亮的片段
     score: float  # bm25 评分（越低越相关）
     channel: str  # 命中消息的渠道
@@ -223,7 +229,7 @@ class ConversationMessage:
 
     role: str  # 消息角色（user/assistant/system/tool）
     text: str  # 消息正文
-    ts: str  # 消息时间戳（ISO 8601）
+    ts: datetime  # 消息时间戳（naive UTC）
     message_id: str  # 生产方幂等键
 
 
@@ -242,8 +248,8 @@ class ConversationSummary:
 
     conversation_id: str  # 会话 ID
     channel: str  # 渠道
-    created_at: str  # 创建时间
-    updated_at: str  # 最近活动时间
+    created_at: datetime  # 创建时间
+    updated_at: datetime  # 最近活动时间
     message_count: int  # 消息总数（active）
     preview: str  # 最新一条消息预览
     title: str | None = None  # 会话标题
@@ -313,6 +319,7 @@ class _MessageRow(BaseRecordMixin):
         nullable=False,
         index=True,
     )
+    conversation: Mapped[_ConversationRow] = relationship()
     message_id: Mapped[str] = mapped_column(String(26), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -332,7 +339,7 @@ class _MessageRow(BaseRecordMixin):
 
 class ConversationBook(BaseBook[_ConversationRow, Conversation]):
     model_cls = _ConversationRow
-    dto_cls = Conversation
+    record_cls = Conversation
 
     def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(factory)
@@ -345,7 +352,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         # :meth:`chatNotifyBoard.publish` enforces on the LLM input.
         self._settings_book = settings_book
 
-    def get(self, *, conversation_id: str) -> Conversation | None:
+    def get_by_conversation_id(self, *, conversation_id: str) -> Conversation | None:
         with self._session() as s:
             row = s.scalar(
                 select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
@@ -354,7 +361,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
 
     def resolve_delivery_address(self, *, conversation_id: str) -> str | None:
         """Return the ``delivery_address`` for a conversation, or ``None``."""
-        conv = self.get(conversation_id=conversation_id)
+        conv = self.get_by_conversation_id(conversation_id=conversation_id)
         return conv.delivery_address if conv is not None else None
 
     def get_for_owner(self, *, contact_id: int, conversation_id: str) -> Conversation | None:
@@ -379,7 +386,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         the cross-contact defence lives in one place rather than
         being re-implemented (and forgotten) at every call site.
         """
-        conversation = self.get(conversation_id=conversation_id)
+        conversation = self.get_by_conversation_id(conversation_id=conversation_id)
         if conversation is None:
             return None
         if conversation.contact_id != contact_id:
@@ -436,7 +443,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                         select(func.count())
                         .select_from(_MessageRow)
                         .where(
-                            _MessageRow.conversation_id == row.conversation_id,
+                            _MessageRow.conversation_row_id == row.id,
                             _MessageRow.archived == 0,
                         )
                     )
@@ -445,7 +452,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 preview_row = s.scalar(
                     select(_MessageRow)
                     .where(
-                        _MessageRow.conversation_id == row.conversation_id,
+                        _MessageRow.conversation_row_id == row.id,
                         _MessageRow.archived == 0,
                     )
                     .order_by(_MessageRow.id.desc())
@@ -455,46 +462,14 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                     ConversationSummary(
                         conversation_id=conv.conversation_id,
                         channel=conv.channel,
-                        created_at=conv.created_at or "",
-                        updated_at=conv.updated_at or "",
+                        created_at=conv.created_at or utcnow_naive(),
+                        updated_at=conv.updated_at or utcnow_naive(),
                         message_count=message_count,
                         preview=preview_row.text if preview_row else "",
                         title=conv.title,
                     )
                 )
         return summaries, total
-
-    def add(
-        self,
-        *,
-        delivery_address: str,
-        contact_id: int,
-        channel: str,
-        title: str | None = None,
-    ) -> Conversation:
-        """Create a new conversation row.
-
-        ``conversation_id``, ``created_at`` and ``updated_at`` are owned
-        by this Book — callers never pass them. ``conversation_id``
-        comes back in the returned :class:`Conversation` for callers to
-        thread into follow-up calls (``append_messages``, ``touch``,
-        ``set_summary``, …).
-        """
-        import uuid
-
-        conversation_id = uuid.uuid4().hex[:26]
-        with self._session() as s:
-            row = _ConversationRow(
-                conversation_id=conversation_id,
-                delivery_address=delivery_address,
-                contact_id=contact_id,
-                channel=channel,
-                title=title,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
 
     def get_or_create_for_a2a_peer(self, *, peer_magi_id: int) -> Conversation:
         """Return this MAGI's private transcript header for one A2A peer.
@@ -564,11 +539,16 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         for c in conversations:
             if c.channel == "tg" and c.delivery_address == delivery_address:
                 return c
-        return self.add(
+        record = Conversation(
             delivery_address=delivery_address,
             contact_id=contact_id,
             channel="tg",
         )
+        record_id = self.add(record)
+        created = self.get_for_owner(contact_id=contact_id, conversation_id=record.conversation_id)
+        if created is None:
+            raise RuntimeError(f"conversation row {record_id} disappeared after insert")
+        return created
 
     def create_task_conversation(
         self,
@@ -583,13 +563,14 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         Returns the new ``conversation_id`` so the caller can stamp it
         onto the Task row.
         """
-        conv = self.add(
+        record = Conversation(
             delivery_address=delivery_address,
             contact_id=contact_id,
             channel=channel,
             title=title,
         )
-        return conv.conversation_id
+        self.add(record)
+        return record.conversation_id
 
     def append_messages(
         self,
@@ -626,14 +607,18 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         message_book = MessageBook(self._factory)
         persisted: list[Message] = []
         for sm in messages:
-            msg = message_book.add(
+            record = Message(
                 conversation_id=conversation_id,
                 role=sm.role,
                 text=sm.text,
                 message_id=sm.message_id,
                 ts=sm.ts,
             )
-            persisted.append(msg)
+            message_id = message_book.add(record)
+            message = message_book.get(message_id)
+            if message is None:
+                raise RuntimeError(f"message row {message_id} disappeared after insert")
+            persisted.append(message)
         return persisted
 
     def get_messages_page(
@@ -832,7 +817,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
 
 class MessageBook(BaseBook[_MessageRow, Message]):
     model_cls = _MessageRow
-    dto_cls = Message
+    record_cls = Message
 
     def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(factory)
@@ -843,16 +828,36 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         # cannot break compaction's floor-of-1 guarantee.
         self._settings_book = settings_book
 
-    def get(self, *, message_id: int) -> Message | None:
-        with self._session() as s:
-            row = s.scalar(select(_MessageRow).where(_MessageRow.id == message_id))
-            return self._row_to_dto(row) if row else None
+    def _row_to_dto(self, row: _MessageRow) -> Message:
+        conversation = row.conversation
+        if conversation is None:
+            raise ConversationCorruptError(
+                f"message {row.id} references missing conversation row {row.conversation_row_id}"
+            )
+        message = Message(
+            conversation_id=conversation.conversation_id,
+            message_id=row.message_id,
+            role=row.role,
+            text=row.text,
+            ts=row.ts,
+            archived=row.archived,
+            content_blocks=row.content_blocks,
+            llm_attempt_id=row.llm_attempt_id,
+        )
+        object.__setattr__(message, "id", row.id)
+        object.__setattr__(message, "created_at", row.created_at)
+        object.__setattr__(message, "updated_at", row.updated_at)
+        return message
 
     def list_for_conversation(
         self, *, conversation_id: str, include_archived: bool = False
     ) -> list[Message]:
         with self._session() as s:
-            stmt = select(_MessageRow).where(_MessageRow.conversation_id == conversation_id)
+            stmt = (
+                select(_MessageRow)
+                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                .where(_ConversationRow.conversation_id == conversation_id)
+            )
             if not include_archived:
                 stmt = stmt.where(_MessageRow.archived == 0)
             stmt = stmt.order_by(_MessageRow.id)
@@ -891,7 +896,11 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         from sqlalchemy import func
 
         with self._session() as s:
-            base = select(_MessageRow).where(_MessageRow.conversation_id == conversation_id)
+            base = (
+                select(_MessageRow)
+                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                .where(_ConversationRow.conversation_id == conversation_id)
+            )
             archived_filter = [] if include_archived else [_MessageRow.archived == 0]
 
             page_rows = s.scalars(
@@ -901,7 +910,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 s.scalar(
                     select(func.count())
                     .select_from(_MessageRow)
-                    .where(_MessageRow.conversation_id == conversation_id)
+                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                    .where(_ConversationRow.conversation_id == conversation_id)
                     .where(_MessageRow.archived == 0)
                 )
                 or 0
@@ -910,7 +920,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 s.scalar(
                     select(func.count())
                     .select_from(_MessageRow)
-                    .where(_MessageRow.conversation_id == conversation_id)
+                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                    .where(_ConversationRow.conversation_id == conversation_id)
                 )
                 or 0
             )
@@ -920,21 +931,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             int(total_all),
         )
 
-    def add(
-        self,
-        *,
-        conversation_id: str,
-        role: str,
-        text: str,
-        message_id: str | None = None,
-        ts: str | None = None,
-        content_blocks: list[dict[str, Any]] | None = None,
-        llm_attempt_id: str | None = None,
-    ) -> Message:
-        """Add one message row."""
-        import uuid
-        from datetime import datetime
-
+    def _record_to_row_values(self, record: Message, session) -> dict:
+        """Resolve the semantic conversation key and apply the inbound cap."""
         # Per-turn cap: protect the persistent layer (and therefore
         # compaction, which reads from here) from a single runaway
         # turn. This is the single chokepoint for the cap — the
@@ -943,34 +941,30 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         # :func:`build_messages_from_conversation`, not a chatNotifyJob
         # payload.
         max_chars = _resolve_max_input_chars(self._settings_book)
-        text, was_truncated, original_len = _truncate_inbound(text, max_chars)
+        text, was_truncated, original_len = _truncate_inbound(record.text, max_chars)
         if was_truncated:
             logger.warning(
                 "MessageBook.add: truncated %d→%d chars (cap=%d, role=%s)",
                 original_len,
                 max_chars,
                 max_chars,
-                role,
+                record.role,
             )
-
-        if message_id is None:
-            message_id = uuid.uuid4().hex
-        if ts is None:
-            ts = datetime.now(UTC).isoformat()
-        with self._session() as s:
-            row = _MessageRow(
-                conversation_id=conversation_id,
-                message_id=message_id,
-                role=role,
-                text=text,
-                ts=ts,
-                content_blocks=content_blocks,
-                llm_attempt_id=llm_attempt_id,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+        conversation = session.scalar(
+            select(_ConversationRow).where(_ConversationRow.conversation_id == record.conversation_id)
+        )
+        if conversation is None:
+            raise ConversationNotFoundError(record.conversation_id)
+        return {
+            "conversation_row_id": conversation.id,
+            "message_id": record.message_id or _new_semantic_id(),
+            "role": record.role,
+            "text": text,
+            "ts": record.ts or utcnow_naive(),
+            "archived": record.archived,
+            "content_blocks": record.content_blocks,
+            "llm_attempt_id": record.llm_attempt_id,
+        }
 
     def archive(self, *, message_id: int) -> None:
         with self._session() as s:
@@ -1036,7 +1030,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         base = (
             "FROM chat_messages_fts "
             "JOIN chat_messages m ON m.id = chat_messages_fts.rowid "
-            "JOIN chat_conversations c ON c.conversation_id = m.conversation_id "
+            "JOIN chat_conversations c ON c.id = m.conversation_row_id "
             "WHERE chat_messages_fts MATCH :match AND c.contact_id = :contact_id"
         )
         with self._session() as s:
@@ -1051,14 +1045,14 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             ).scalar_one()
             rows = s.execute(
                 text(
-                    "SELECT m.conversation_id, m.message_id, m.role, m.ts, "
+                    "SELECT c.conversation_id, m.message_id, m.role, m.ts, "
                     "c.title, c.channel, c.delivery_address, "
                     "snippet(chat_messages_fts, 0, '<mark>', '</mark>', "
                     "'…', 16) AS snippet, "
                     "bm25(chat_messages_fts) AS score "
                     + base
                     + " ORDER BY score LIMIT :limit OFFSET :offset"
-                ),
+                ).columns(ts=DateTime),
                 {"match": match, "contact_id": contact_id, "limit": limit, "offset": offset},
             ).fetchall()
 

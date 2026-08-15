@@ -17,10 +17,11 @@ short repository transaction.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
+from pydantic import Strict, StringConstraints
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -32,8 +33,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+
 
 class NoteKind(StrEnum):
     """Note-kind discriminator stored on ``ContactNote.kind``.
@@ -92,7 +94,7 @@ _DAILY_NOTE_MAX_BYTES = 32 * 1024
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Contact(BaseRecord):
     """Per-MAGI operator record.
 
@@ -106,21 +108,25 @@ class Contact(BaseRecord):
     :meth:`magi.tools.base.Tool.gate`.
     """
 
-    name: str  # 联系人唯一名
-    display_name: str | None = None  # 显示名
+    name: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]  # 联系人唯一名
+    display_name: Annotated[str, Strict(), StringConstraints(strip_whitespace=True, max_length=120)] | None = None
     role: Role = Role.GUEST  # MAGI 本地角色（assigned/guest）
-    tgid: int | None = None  # 绑定的 Telegram chat id（本地用户身份）
+    tgid: Annotated[int, Strict()] | None = None  # 绑定的 Telegram chat id（本地用户身份）
     # Nullable projection link to the MAGIS-shared operator identity.  It is
     # deliberately not a foreign key because the two stores are independent.
-    magis_admin_id: int | None = None
-    last_seen_at: datetime | None = None  # 最近活跃时间
+    magis_admin_id: Annotated[int, Strict()] | None = None
+    last_seen_at: Annotated[datetime, Strict()] | None = None  # 最近活跃时间
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ContactNote(BaseRecord):
-    contact_id: int  # 所属联系人 ID
-    note: str  # 笔记正文
+    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
+    note: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8 * 1024)
+    ]  # 笔记正文
     kind: NoteKind = NoteKind.PERMANENT  # 笔记类型（permanent/daily）
-    note_date: datetime | None = None  # 日记所属日期
+    note_date: Annotated[datetime, Strict()] | None = None  # 日记所属日期
 
 # -- internal ORM --------------------------------------------------------
 
@@ -152,12 +158,7 @@ class _ContactNoteRow(BaseRecordMixin):
 
 class ContactBook(BaseBook[_ContactRow, Contact]):
     model_cls = _ContactRow
-    dto_cls = Contact
-
-    def get(self, *, contact_id: int) -> Contact | None:
-        with self._session() as s:
-            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = Contact
 
     def get_by_telegram(self, *, tgid: int) -> Contact | None:
         with self._session() as s:
@@ -226,48 +227,15 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             )
             s.commit()
 
-    def add(
-        self,
-        *,
-        name: str,
-        role: Role = Role.GUEST,
-        display_name: str | None = None,
-        tgid: int | None = None,
-        magis_admin_id: int | None = None,
-    ) -> Contact:
-        """Insert one contact row.
-
-        Owns the write invariants: ``name`` non-empty,
-        ``role`` in :class:`Role`. Raises
-        :class:`ValueError` if ``name`` collides with an
-        existing row — the directory treats names as
-        unique. ``display_name`` is normalised (whitespace
-        stripped; empty → ``None``) so callers don't have
-        to.
-        """
-        normalized = (name or "").strip()
-        if not normalized:
-            raise ValueError("name is required")
-        if role not in Role:
-            raise ValueError(
-                f"role must be one of {sorted(r.value for r in Role)!r}, got {role!r}"
-            )
-        normalized_display = (display_name or "").strip() or None
-        with self._session() as s:
-            existing = s.scalar(select(_ContactRow).where(_ContactRow.name == normalized))
-            if existing is not None:
-                raise ValueError(f"contact name {normalized!r} already exists")
-            row = _ContactRow(
-                name=normalized,
-                role=role,
-                display_name=normalized_display,
-                tgid=tgid,
-                magis_admin_id=magis_admin_id,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    def _record_to_row_values(self, record: Contact, session) -> dict:
+        values = super()._record_to_row_values(record, session)
+        normalized = record.name.strip()
+        existing = session.scalar(select(_ContactRow).where(_ContactRow.name == normalized))
+        if existing is not None:
+            raise ValueError(f"contact name {normalized!r} already exists")
+        values["name"] = normalized
+        values["display_name"] = (record.display_name or "").strip() or None
+        return values
 
     def update(
         self,
@@ -398,7 +366,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
 
 class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
     model_cls = _ContactNoteRow
-    dto_cls = ContactNote
+    record_cls = ContactNote
 
     def list_for_contact(self, *, contact_id: int) -> list[ContactNote]:
         with self._session() as s:
@@ -409,49 +377,10 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def get(self, *, note_id: int) -> ContactNote | None:
-        with self._session() as s:
-            row = s.get(_ContactNoteRow, note_id)
-            return self._row_to_dto(row) if row else None
-
-    def add(
-        self,
-        *,
-        contact_id: int,
-        note: str,
-        kind: NoteKind = NoteKind.PERMANENT,
-    ) -> ContactNote:
-        """Insert one note row.
-
-        Owns the write invariants: ``note`` non-empty
-        after strip, content clamped to
-        :data:`_NOTE_MAX_BYTES` (8 KB), ``kind`` in
-        :class:`NoteKind`. Raises :class:`ValueError`
-        if the parent contact id does not resolve — callers
-        should pre-check via :meth:`ContactBook.get` when
-        they want a friendlier error, but a foreign-key
-        write attempt here is a programmer error worth
-        surfacing as a ValueError.
-        """
-        content = (note or "").strip()
-        if not content:
-            raise ValueError("note is required")
-        if kind not in NoteKind:
-            raise ValueError(
-                f"kind must be one of "
-                f"{sorted(k.value for k in NoteKind)!r}, got {kind!r}"
-            )
-        content = content[:_NOTE_MAX_BYTES]
-        with self._session() as s:
-            row = _ContactNoteRow(
-                contact_id=contact_id,
-                note=content,
-                kind=kind,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    def _record_to_row_values(self, record: ContactNote, session) -> dict:
+        values = super()._record_to_row_values(record, session)
+        values["note"] = record.note.strip()[:_NOTE_MAX_BYTES]
+        return values
 
     def update_note(self, *, note_id: int, note: str) -> ContactNote:
         """Replace a note row's body.
