@@ -282,27 +282,17 @@ async def target_verify_login_code(
     return TargetLoginResult(ok=True)
 
 
-def _local_direct_request_allowed(request: Request) -> bool:
-    host = request.client.host if request.client is not None else ""
-    return host in {"127.0.0.1", "::1", "localhost"} or os.environ.get(
-        "MAGI_ALLOW_LOCAL_DIRECT_LOGIN"
-    ) == "1"
-
-
 @router.post("/targets/{magi_id}/local-direct-login", response_model=TargetLoginResult)
 async def target_local_direct_login(
     magi_id: int,
     payload: TargetLoginRequest,
     response: Response,
-    request: Request,
     bus: BusDep,
 ) -> TargetLoginResult:
-    if not _local_direct_request_allowed(request):
-        raise MagiHTTPException(
-            403,
-            "auth.local_direct_unavailable",
-            "Direct sign-in is available only from the local deployment boundary",
-        )
+    # NOTE: deployment boundary (loopback-only, public-IP-only, VPN-only,
+    # …) is the operator's call — enforce it in nginx / auth-proxy / VPN /
+    # private network, not here. The application is authn/authz-scoped
+    # only; access scoping belongs to the network/ops layer.
     result = await _target_access(
         bus, magi_id, "POST", "/api/access/local-direct-login", payload.model_dump()
     )
