@@ -211,7 +211,7 @@ def _validate_route(
         raise ValueError("A2A source and target must belong to the same MAGIS")
 
 
-def _transcript_message_id(*, job_id: str, event: str) -> str:
+def _transcript_message_id(*, job_kind: str, job_id: int, event: str) -> str:
     """Return a portable, deterministic 26-character producer ID.
 
     ``chat_messages.message_id`` is unique per conversation and limited to
@@ -219,7 +219,7 @@ def _transcript_message_id(*, job_id: str, event: str) -> str:
     across retries and repeated result polling without relaxing that schema
     constraint.
     """
-    return hashlib.sha256(f"{job_id}:{event}".encode()).hexdigest()[:26]
+    return hashlib.sha256(f"{job_kind}:{job_id}:{event}".encode()).hexdigest()[:26]
 
 
 def _record_transcript(
@@ -227,7 +227,8 @@ def _record_transcript(
     messages_book,
     conversations_book,
     peer_magi_id: int,
-    job_id: str,
+    job_kind: str,
+    job_id: int,
     event: str,
     role: str,
     text: str,
@@ -243,15 +244,17 @@ def _record_transcript(
     if messages_book is None or conversations_book is None:
         return
     try:
+        from magi.bus.library.local.conversationBook import Message
+
         conversation = conversations_book.get_or_create_for_a2a_peer(
             peer_magi_id=peer_magi_id
         )
-        messages_book.add(
+        messages_book.add(Message(
             conversation_id=conversation.conversation_id,
-            message_id=_transcript_message_id(job_id=job_id, event=event),
+            message_id=_transcript_message_id(job_kind=job_kind, job_id=job_id, event=event),
             role=role,
             text=text,
-        )
+        ))
     except IntegrityError:
         # The unique ``(conversation_id, message_id)`` index proves this
         # lifecycle event was already recorded (e.g. a retry/poll race).
@@ -284,7 +287,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: A2ARequestJob) -> str:
+    def publish(self, job: A2ARequestJob) -> int:
         if not job.text.strip():
             raise ValueError("A2A request text is required")
         _validate_route(
@@ -294,7 +297,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         )
         with self._session() as s:
             row = _A2ARequestRow(
-                job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
                 text=job.text,
@@ -307,6 +309,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             messages_book=self._messages_book,
             conversations_book=self._conversations_book,
             peer_magi_id=job.target_magi_id,
+            job_kind="request",
             job_id=job_id,
             event="publish",
             role="assistant",
@@ -329,6 +332,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=job.source_magi_id,
+                job_kind="request",
                 job_id=job.job_id,
                 event="claim",
                 role="user",
@@ -336,11 +340,11 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
         return job
 
-    def submit_result(self, *, key: str, result: A2ARequestResult) -> None:
+    def submit_result(self, *, job_id: int, result: A2ARequestResult) -> None:
         """Complete a request once, and never overwrite expiry/failure."""
         peer_magi_id: int | None = None
         with self._session() as s:
-            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
+            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if row is None:
                 return
             self._expire_due(s, target_magi_id=row.target_magi_id)
@@ -348,7 +352,7 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             if row.status != JobStatus.PROCESSING:
                 s.commit()
                 return
-            self._submit(s, key=key, result=result)
+            self._submit(s, job_id=job_id, result=result)
             s.commit()
             peer_magi_id = row.source_magi_id
         if peer_magi_id is not None:
@@ -356,15 +360,16 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=peer_magi_id,
-                job_id=key,
+                job_kind="request",
+                job_id=job_id,
                 event="submit_result",
                 role="assistant",
                 text=result.content or result.error or "",
             )
 
-    def get_result(self, *, key: str) -> A2ARequestResult | None:
+    def get_result(self, *, job_id: int) -> A2ARequestResult | None:
         with self._session() as s:
-            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == key))
+            row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if row is None:
                 return None
             self._expire_due(s, target_magi_id=row.target_magi_id)
@@ -379,7 +384,8 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             messages_book=self._messages_book,
             conversations_book=self._conversations_book,
             peer_magi_id=peer_magi_id,
-            job_id=key,
+            job_kind="request",
+            job_id=job_id,
             event="get_result",
             role="user",
             text=result.content or result.error or "",
@@ -427,7 +433,7 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: A2ANotifyJob) -> str:
+    def publish(self, job: A2ANotifyJob) -> int:
         if not job.text.strip():
             raise ValueError("A2A notification text is required")
         _validate_route(
@@ -437,7 +443,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         )
         with self._session() as s:
             row = _A2ANotifyRow(
-                job_id=self.new_job_id(),
                 source_magi_id=job.source_magi_id,
                 target_magi_id=job.target_magi_id,
                 text=job.text,
@@ -449,6 +454,7 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
             messages_book=self._messages_book,
             conversations_book=self._conversations_book,
             peer_magi_id=job.target_magi_id,
+            job_kind="notify",
             job_id=job_id,
             event="publish",
             role="assistant",
@@ -470,6 +476,7 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=job.source_magi_id,
+                job_kind="notify",
                 job_id=job.job_id,
                 event="claim",
                 role="user",

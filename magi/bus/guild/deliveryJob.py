@@ -104,5 +104,5 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
             s.commit()
             if row is None:
                 return None
-            fresh = s.get(_DeliveryJobRow, row.id)
+            fresh = s.get(_DeliveryJobRow, row.job_id)
             return self._map_row(fresh, self.job_cls) if fresh else None

@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 from magi.bus.db.engine import EngineFactory
-from magi.bus.library.local.contactBook import ContactBook
-from magi.bus.library.local.memoryBook import MemoryBook
+from magi.bus.library.local.contactBook import Contact, ContactBook
+from magi.bus.library.local.memoryBook import Memory, MemoryBook
 from magi.tools.base import ToolContext, ToolResult
 from magi.tools.memory.core_memory.add_memory import AddMemoryTool
 from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
@@ -91,7 +91,7 @@ def contact_id(bus: _BusStub) -> int:
     operator's id in sync with this fixture so happy
     paths land on owned rows.
     """
-    return bus.contacts_book.add(name="fixture-operator").id
+    return bus.contacts_book.get_by_id(bus.contacts_book.add(Contact(name='fixture-operator'))).id
 
 
 # -- add_memory ----------------------------------------------------------
@@ -206,12 +206,7 @@ async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
 async def test_complete_memory_marks_row_done(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    row = bus.memory_book.add(
-        contact_id=contact_id,
-        kind="quick_note",
-        subject="ship",
-        body="in flight",
-    )
+    row = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=contact_id, kind='quick_note', subject='ship', body='in flight')))
     tool = CompleteMemoryTool()
     result = await tool.run(ctx, memory_id=row.id)
     assert result.is_error is False
@@ -251,13 +246,8 @@ async def test_complete_memory_blocks_cross_contact(
     so existence isn't leaked."""
     # ``ctx.contact_id=1`` belongs to ``contact_id``; the row
     # belongs to a different contact.
-    other_id = bus.contacts_book.add(name="other").id
-    foreign = bus.memory_book.add(
-        contact_id=other_id,
-        kind="quick_note",
-        subject="not yours",
-        body="private",
-    )
+    other_id = bus.contacts_book.get_by_id(bus.contacts_book.add(Contact(name='other'))).id
+    foreign = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=other_id, kind='quick_note', subject='not yours', body='private')))
     tool = CompleteMemoryTool()
     result = await tool.run(ctx, memory_id=foreign.id)
     assert result.is_error is True
@@ -286,12 +276,7 @@ async def test_complete_memory_missing_id(
 async def test_delete_memory_removes_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    row = bus.memory_book.add(
-        contact_id=contact_id,
-        kind="fact",
-        subject="x",
-        body="y",
-    )
+    row = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=contact_id, kind='fact', subject='x', body='y')))
     tool = DeleteMemoryTool()
     result = await tool.run(ctx, memory_id=row.id)
     assert result.is_error is False
@@ -318,13 +303,8 @@ async def test_delete_memory_missing_id_returns_not_found(
 async def test_delete_memory_blocks_cross_contact(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    other_id = bus.contacts_book.add(name="other").id
-    foreign = bus.memory_book.add(
-        contact_id=other_id,
-        kind="fact",
-        subject="not yours",
-        body="private",
-    )
+    other_id = bus.contacts_book.get_by_id(bus.contacts_book.add(Contact(name='other'))).id
+    foreign = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=other_id, kind='fact', subject='not yours', body='private')))
     tool = DeleteMemoryTool()
     result = await tool.run(ctx, memory_id=foreign.id)
     assert result.is_error is True
@@ -350,13 +330,7 @@ async def test_delete_memory_rejects_non_int(
 async def test_update_memory_patches_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    row = bus.memory_book.add(
-        contact_id=contact_id,
-        kind="quick_note",
-        subject="orig",
-        body="orig body",
-        priority=2,
-    )
+    row = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
     tool = UpdateMemoryTool()
     result = await tool.run(
         ctx,
@@ -383,14 +357,8 @@ async def test_update_memory_patches_owned_row(
 async def test_update_memory_rejects_cross_contact(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    other_id = bus.contacts_book.add(name="other").id
-    foreign = bus.memory_book.add(
-        contact_id=other_id,
-        kind="fact",
-        subject="orig",
-        body="private",
-        priority=3,
-    )
+    other_id = bus.contacts_book.get_by_id(bus.contacts_book.add(Contact(name='other'))).id
+    foreign = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=other_id, kind='fact', subject='orig', body='private', priority=3)))
     tool = UpdateMemoryTool()
     result = await tool.run(
         ctx,
@@ -413,13 +381,7 @@ async def test_update_memory_translates_value_error(
     """Book-side invariants (subject empty, priority
     out of range, body over the cap) must surface as
     LLM-facing ``ToolResult.err`` rather than crashing."""
-    row = bus.memory_book.add(
-        contact_id=contact_id,
-        kind="fact",
-        subject="ok",
-        body="ok",
-        priority=3,
-    )
+    row = bus.memory_book.get_by_id(bus.memory_book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
     tool = UpdateMemoryTool()
 
     # Empty subject.

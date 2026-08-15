@@ -51,7 +51,7 @@ class RunTaskJob(BaseJob):
     确保任务创建时分配的 conversation 在所有 run 间共享。
     """
 
-    task_id: str  # 目标 Task 的 ID（对应 tasks.id）
+    task_id: str  # 目标 Task 的业务 ID（对应 tasks.task_id）
     manual: bool = True  # True=用户/工具主动；False=task 模块按规则（cron/run_at）
 
 

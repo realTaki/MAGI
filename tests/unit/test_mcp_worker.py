@@ -37,12 +37,12 @@ import pytest
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.db.file import FileShelf
-from magi.bus.guild.base import JobStatus
 from magi.bus.guild import (
     MCPKind,
     McpServerChangedJob,
     mcpServerChangedJobBoard,
 )
+from magi.bus.guild.base import JobStatus
 from magi.bus.library.file.promptBook import PromptBook
 from magi.bus.library.local import (
     McpServerBook,
@@ -192,7 +192,6 @@ def _dto(
 ) -> McpServer:
     """Build a minimal :class:`McpServer` DTO for change jobs."""
     return McpServer(
-        id=0,
         name=name,
         connection_type=connection_type,
         command=command,

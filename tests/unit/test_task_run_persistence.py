@@ -6,14 +6,15 @@ and TaskRunBook.reap_stale.
 
 from __future__ import annotations
 
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from magi.bus.db import EngineFactory
-from magi.bus.library.local.contactBook import Role
+from magi.bus.library.local.contactBook import Contact, Role
 from magi.bus.library.local.tasksBook import (
     ChannelEnum,
+    Task,
     TaskBook,
     TaskRunBook,
 )
@@ -57,29 +58,17 @@ def _seed_contact(factory, *, name="test-contact", role: Role = Role.ASSIGNED) -
     existing = cbook.list_all()
     if existing:
         return existing[0].id
-    return cbook.add(name=name, role=role).id
+    return cbook.get_by_id(cbook.add(Contact(name=name, role=role))).id
 
 
 def _make_test_task(task_book, factory, task_id="task_test1", cron="0 9 * * *"):
-    from datetime import datetime
-
     uid = _seed_contact(factory)
 
-    now = datetime.now(UTC).replace(tzinfo=None)
+    datetime.now(UTC).replace(tzinfo=None)
     # Use the TaskBook's add with valid schedule. ``conversation_id``
     # is None so we don't trip the FK to ``chat_conversations`` — the
     # session-creation flow is exercised by chat tests, not here.
-    return task_book.add(
-        name=f"Test Task {task_id}",
-        prompt="Do nothing",
-        cron=cron,
-        target_channel=ChannelEnum.WEBUI,
-        contact_id=uid,
-        conversation_id=None,
-        tz="UTC",
-        created_at=now,
-        updated_at=now,
-    )
+    return task_book.get_by_id(task_book.add(Task(name=f'Test Task {task_id}', prompt='Do nothing', cron=cron, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
 
 
 class TestRecordRunStart:
@@ -112,29 +101,12 @@ class TestRecordRunStart:
 
 class TestMarkRunAtConsumed:
     def test_sets_enabled_to_zero(self, task_book, factory):
-        from datetime import datetime
-
         # Use the contact id minted by the factory, not a hardcoded 42.
         uid = _seed_contact(factory)
 
-        now = datetime.now(UTC).replace(tzinfo=None)
-        # ``datetime.now(timezone.utc).isoformat()`` already returns
-        # the trailing ``+00:00`` form; append ``Z`` directly so we
-        # don't end up with ``...ZZ`` (which ISO parsing rejects).
-        from datetime import datetime as _dt
-
-        future_iso = _dt.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        task = task_book.add(
-            name="One-shot Task",
-            prompt="Run once",
-            run_at=future_iso,
-            target_channel=ChannelEnum.WEBUI,
-            contact_id=uid,
-            conversation_id=None,
-            tz="UTC",
-            created_at=now,
-            updated_at=now,
-        )
+        datetime.now(UTC).replace(tzinfo=None)
+        future = datetime.now(UTC).replace(tzinfo=None, microsecond=0) + timedelta(hours=1)
+        task = task_book.get_by_id(task_book.add(Task(name='One-shot Task', prompt='Run once', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
         assert task.enabled == 1
 
         task_book.mark_run_at_consumed(task_id=task.task_id)
@@ -145,41 +117,19 @@ class TestMarkRunAtConsumed:
 
 class TestListAllEnabledForWorkers:
     def test_lists_enabled_user_tasks_across_uids(self, task_book, factory):
-        from datetime import datetime
-
         from magi.bus.library.local.contactBook import ContactBook
 
         # Two contacts so the test can assert both uids appear in
         # the worker-visible list.
         cbook = ContactBook(factory)
-        cbook.add(name="contact-A", role=Role.ASSIGNED)
-        cbook.add(name="contact-B", role=Role.ASSIGNED)
+        cbook.get_by_id(cbook.add(Contact(name='contact-A', role=Role.ASSIGNED)))
+        cbook.get_by_id(cbook.add(Contact(name='contact-B', role=Role.ASSIGNED)))
         contacts = cbook.list_all()
         uid_a, uid_b = contacts[0].id, contacts[1].id
 
-        now = datetime.now(UTC).replace(tzinfo=None)
-        task_book.add(
-            name="User A Task",
-            prompt="do stuff",
-            cron="0 9 * * *",
-            target_channel=ChannelEnum.WEBUI,
-            contact_id=uid_a,
-            conversation_id=None,
-            tz="UTC",
-            created_at=now,
-            updated_at=now,
-        )
-        task_book.add(
-            name="User B Task",
-            prompt="do other stuff",
-            cron="*/30 * * * *",
-            target_channel=ChannelEnum.TG,
-            contact_id=uid_b,
-            conversation_id=None,
-            tz="UTC",
-            created_at=now,
-            updated_at=now,
-        )
+        datetime.now(UTC).replace(tzinfo=None)
+        task_book.get_by_id(task_book.add(Task(name='User A Task', prompt='do stuff', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid_a, conversation_id=None, tz='UTC')))
+        task_book.get_by_id(task_book.add(Task(name='User B Task', prompt='do other stuff', cron='*/30 * * * *', target_channel=ChannelEnum.TG, contact_id=uid_b, conversation_id=None, tz='UTC')))
 
         tasks = task_book.list_all_enabled_for_workers()
         assert len(tasks) == 2
@@ -188,22 +138,10 @@ class TestListAllEnabledForWorkers:
         assert uid_b in uids
 
     def test_excludes_disabled_tasks(self, task_book, factory):
-        from datetime import datetime
-
         uid = _seed_contact(factory)
 
-        now = datetime.now(UTC).replace(tzinfo=None)
-        t = task_book.add(
-            name="Disabled Task",
-            prompt="skip",
-            cron="0 9 * * *",
-            target_channel=ChannelEnum.WEBUI,
-            contact_id=uid,
-            conversation_id=None,
-            tz="UTC",
-            created_at=now,
-            updated_at=now,
-        )
+        datetime.now(UTC).replace(tzinfo=None)
+        t = task_book.get_by_id(task_book.add(Task(name='Disabled Task', prompt='skip', cron='0 9 * * *', target_channel=ChannelEnum.WEBUI, contact_id=uid, conversation_id=None, tz='UTC')))
         task_book.disable(task_id=t.task_id, contact_id=uid)
 
         tasks = task_book.list_all_enabled_for_workers()
@@ -217,8 +155,6 @@ class TestReapStale:
         run = task_book.record_run_start(task_id=task.task_id, manual=False)
 
         # Simulate stale by backdating started_at
-        from datetime import datetime, timedelta
-
         stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=600)
         from sqlalchemy import select
 

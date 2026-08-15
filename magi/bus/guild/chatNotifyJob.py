@@ -142,7 +142,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: ChatNotifyJob, *, message_id: str | None = None) -> str:
+    def publish(self, job: ChatNotifyJob, *, message_id: str | None = None) -> int:
         """Enqueue one agent turn and persist the user message.
 
         Single chokepoint for inbound turn intake — every path that
@@ -214,12 +214,14 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._stamp_last_seen(job)
         if self._messages_book is not None:
             try:
-                self._messages_book.add(
+                from magi.bus.library.local.conversationBook import Message
+
+                self._messages_book.add(Message(
                     conversation_id=conversation_id,
                     role="user",
                     text=job.text,
                     message_id=message_id,
-                )
+                ))
             except Exception:
                 logger.exception(
                     "chatNotifyBoard.publish: messages_book.add failed "

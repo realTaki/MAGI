@@ -38,14 +38,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, DateTime, String
+from sqlalchemy import JSON, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.db.base import enum_column
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
@@ -189,8 +188,7 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
     """Inverse of :func:`_dump_server`."""
     from magi.bus.library.local.mcpServerBook import McpServer
 
-    return McpServer(
-        id=int(payload.get("id", 0) or 0),
+    server = McpServer(
         name=payload["name"],
         connection_type=payload["connection_type"],
         command=payload.get("command"),
@@ -202,10 +200,12 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
         connect_timeout=payload.get("connect_timeout"),
         execute_timeout=payload.get("execute_timeout"),
         sse_read_timeout=payload.get("sse_read_timeout"),
-        created_at=payload.get("created_at"),
-        updated_at=payload.get("updated_at"),
         config=dict(payload.get("config") or {}),
     )
+    object.__setattr__(server, "id", int(payload.get("id", 0) or 0))
+    object.__setattr__(server, "created_at", payload.get("created_at"))
+    object.__setattr__(server, "updated_at", payload.get("updated_at"))
+    return server
 
 
 # -- Board ---------------------------------------------------------------
@@ -220,8 +220,8 @@ class mcpServerChangedJobBoard(
     job_cls = McpServerChangedJob
     result_cls = McpServerChangedResult
 
-    def publish(self, job: McpServerChangedJob) -> str:
-        """插入一行变更 job；Board 生成 ``job_id``，调用方无法指定。
+    def publish(self, job: McpServerChangedJob) -> int:
+        """插入一行变更 job；数据库生成 ``job_id``，调用方无法指定。
 
         Serialises ``job.server`` (if any) to the ``server_payload``
         JSON column and copies ``new_enabled`` across verbatim.
@@ -229,7 +229,6 @@ class mcpServerChangedJobBoard(
         server_payload = _dump_server(job.server) if job.server is not None else None
         with self._session() as s:
             row = _McpServerChangedRow(
-                job_id=self.new_job_id(),
                 status=JobStatus.PENDING,
                 kind=job.kind,
                 server_name=job.server_name,

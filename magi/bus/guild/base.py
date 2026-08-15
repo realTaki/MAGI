@@ -148,7 +148,7 @@ class BaseJobRowMixin(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
+class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]:
     """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
     get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
     """
@@ -159,9 +159,9 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     # ``None``). Each concrete Board (``runToolJobBoard``,
     # ``chatNotifyBoard``, ...) supplies the row / DTO / result
     # types that match its ``Generic[RowT, JobT, ResultT]`` args.
-    job_model: ClassVar[type[RowT]]  # type: ignore[reportGeneralTypeIssues]
-    job_cls: ClassVar[type[JobT]]  # type: ignore[reportGeneralTypeIssues]
-    result_cls: ClassVar[type[ResultT]]  # type: ignore[reportGeneralTypeIssues]
+    job_model: type[RowT]
+    job_cls: type[JobT]
+    result_cls: type[ResultT]
     #: Per-board retry ceiling. Defaults to the global
     #: :data:`MAX_ATTEMPTS` (3). Boards whose domain tolerates more
     #: retries (delivery against flaky channels, chat steering

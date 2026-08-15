@@ -37,7 +37,6 @@ def board(factory):
 def _gmail_dto() -> McpServer:
     """Minimal :class:`McpServer` DTO for ``added`` / ``updated`` jobs."""
     return McpServer(
-        id=0,
         name="gmail",
         connection_type="stdio",
         command="mcp-gmail",

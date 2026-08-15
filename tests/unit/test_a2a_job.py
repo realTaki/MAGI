@@ -22,27 +22,24 @@ from magi.bus.guild.a2aJob import (
 )
 from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.conversationBook import ConversationBook, MessageBook
-from magi.bus.library.magis.magisBook import MagisBook
-from magi.bus.library.magis.membershipBook import MagisMembershipBook, MagisRoleBook
+from magi.bus.library.magis.magisBook import Magis, MagisBook
+from magi.bus.library.magis.membershipBook import (
+    MagisMembership,
+    MagisMembershipBook,
+    MagisRole,
+    MagisRoleBook,
+)
 
 
 @pytest.fixture
 def boards(tmp_path):
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(factory, scope=MAGIS_SCOPE)
-    magis = MagisBook(factory).add(name="Alpha")
-    role = MagisRoleBook(factory).add(magis_id=magis.id, name="EVA")
+    magis = MagisBook(factory).get_by_id(MagisBook(factory).add(Magis(name='Alpha')))
+    role = MagisRoleBook(factory).get_by_id(MagisRoleBook(factory).add(MagisRole(magis_id=magis.id, name='EVA')))
     memberships = MagisMembershipBook(factory)
-    source = memberships.add(
-        magis_id=magis.id,
-        role_id=role.id,
-        responsibility="Coordinates research and task decomposition.",
-    )
-    target = memberships.add(
-        magis_id=magis.id,
-        role_id=role.id,
-        responsibility="Owns frontend implementation and build validation.",
-    )
+    source = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Coordinates research and task decomposition.')))
+    target = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id, responsibility='Owns frontend implementation and build validation.')))
     return (
         source,
         target,
@@ -57,11 +54,11 @@ def transcript_boards(tmp_path):
     """One shared MAGIS queue with independent source/target local Books."""
     magis_factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
-    magis = MagisBook(magis_factory).add(name="Alpha")
-    role = MagisRoleBook(magis_factory).add(magis_id=magis.id, name="EVA")
+    magis = MagisBook(magis_factory).get_by_id(MagisBook(magis_factory).add(Magis(name='Alpha')))
+    role = MagisRoleBook(magis_factory).get_by_id(MagisRoleBook(magis_factory).add(MagisRole(magis_id=magis.id, name='EVA')))
     memberships = MagisMembershipBook(magis_factory)
-    source = memberships.add(magis_id=magis.id, role_id=role.id)
-    target = memberships.add(magis_id=magis.id, role_id=role.id)
+    source = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
+    target = memberships.get_by_id(memberships.add(MagisMembership(magis_id=magis.id, role_id=role.id)))
 
     source_factory = EngineFactory(f"sqlite:///{tmp_path / 'source-local.db'}")
     target_factory = EngineFactory(f"sqlite:///{tmp_path / 'target-local.db'}")
@@ -347,9 +344,11 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
             )
         )
 
-    other_magis = MagisBook(requests._factory).add(name="Other")
-    other_role = MagisRoleBook(requests._factory).add(magis_id=other_magis.id, name="EVA")
-    other_member = memberships.add(magis_id=other_magis.id, role_id=other_role.id)
+    other_magis = MagisBook(requests._factory).get_by_id(MagisBook(requests._factory).add(Magis(name='Other')))
+    other_role = MagisRoleBook(requests._factory).get_by_id(MagisRoleBook(requests._factory).add(MagisRole(magis_id=other_magis.id, name='EVA')))
+    other_member = memberships.get_by_id(
+        memberships.add(MagisMembership(magis_id=other_magis.id, role_id=other_role.id))
+    )
     with pytest.raises(ValueError, match="same MAGIS"):
         requests.publish(
             A2ARequestJob(

@@ -26,8 +26,7 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
-from magi.bus.library.local import ConversationBook, MessageBook
-
+from magi.bus.library.local import Contact, Conversation, ConversationBook, Message, MessageBook
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -46,7 +45,7 @@ def factory():
 def contact_id(factory):
     from magi.bus.library.local.contactBook import ContactBook
 
-    return ContactBook(factory).add(name="Fixture").id
+    return ContactBook(factory).get_by_id(ContactBook(factory).add(Contact(name='Fixture'))).id
 
 
 @pytest.fixture
@@ -54,11 +53,7 @@ def seed_conversation(factory, contact_id):
     from magi.bus.library.local import ConversationBook
 
     sbook = ConversationBook(factory)
-    return sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    ).conversation_id
+    return sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).conversation_id
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +63,7 @@ def seed_conversation(factory, contact_id):
 
 def test_messages_book_add_noop_under_cap(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
-    m = mbook.add(conversation_id=seed_conversation, message_id="m1", role="user", text="hi")
+    m = mbook.get_by_id(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text='hi')))
     assert m.text == "hi"
 
 
@@ -76,9 +71,7 @@ def test_messages_book_add_truncates_over_cap(factory, seed_conversation):
     """Over the cap → stored row is truncated."""
     mbook = MessageBook(factory, settings_book=None)
     huge = "x" * 20_000
-    m = mbook.add(
-        conversation_id=seed_conversation, message_id="m1", role="user", text=huge
-    )
+    m = mbook.get_by_id(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text=huge)))
     assert m.text is not None
     assert len(m.text) == 8_000  # default cap
 
@@ -87,9 +80,7 @@ def test_messages_book_add_honors_lowered_cap(factory, seed_conversation):
     settings_book = MagicMock()
     settings_book.get.return_value = "2000"  # within clamp range
     mbook = MessageBook(factory, settings_book=settings_book)
-    m = mbook.add(
-        conversation_id=seed_conversation, message_id="m1", role="user", text="y" * 5_000
-    )
+    m = mbook.get_by_id(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text='y' * 5000)))
     assert m.text is not None
     assert len(m.text) == 2_000
 
@@ -101,19 +92,10 @@ def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
     works because the row stored is already capped.
     """
     sbook = ConversationBook(factory, settings_book=None)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     mbook = MessageBook(factory, settings_book=None)
-    mbook.add(
-        conversation_id=cid,
-        message_id="m_huge",
-        role="user",
-        text="x" * 50_000,
-    )
+    mbook.get_by_id(mbook.add(Message(conversation_id=cid, message_id='m_huge', role='user', text='x' * 50000)))
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 1
     assert len(rows[0].text) == 8_000
@@ -174,11 +156,7 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
     """
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
@@ -210,11 +188,7 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     """
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory,
@@ -248,11 +222,7 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
     """Same message_id on retry → same chat_messages row (producer-side idempotency)."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
@@ -288,11 +258,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     """D.22: conversation created on TG, caller publishes as webui → ChannelMismatchError."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
@@ -321,11 +287,7 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
     """D.22: same channel → no error, both writes happen."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
@@ -347,11 +309,7 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
     """Task path: no contact_id → D.22 guard skipped."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=1,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=1, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
@@ -373,11 +331,7 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
     """Backward-compat: board constructed without conversations_book → no D.22 check."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(factory, messages_book=mbook)  # no conversations_book
 
@@ -406,11 +360,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 
     sbook = ConversationBook(factory)
-    conv = sbook.add(
-        delivery_address="tg:1",
-        contact_id=contact_id,
-        channel="tg",
-    )
+    conv = sbook.get_by_id(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
     board = chatNotifyBoard(factory, conversations_book=sbook)
 
