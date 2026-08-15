@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCreateTask, useTask, useUpdateTask } from "../../lib/queries";
 import { WEEKDAY_LABELS } from "./TaskListPane";
 import type { Frequency } from "./TaskListPane";
+import Toggle from "../../components/Toggle";
 
 export function TaskFormDrawer(props: {
   taskId: string | null;
@@ -173,16 +174,16 @@ export function TaskFormDrawer(props: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[calc(100vh-2rem)] flex flex-col">
-        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
+    <div className="modal-overlay flex items-center justify-center p-4 overflow-hidden">
+      <div className="modal-panel max-w-2xl w-full max-h-[calc(100vh-2rem)] flex flex-col">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
           <h3 className="text-base font-semibold text-ink">
             {props.taskId ? "编辑任务" : "新建任务"}
           </h3>
           <button
             type="button"
             onClick={props.onClose}
-            className="text-ink-soft hover:text-ink text-sm"
+            className="text-ink-3 hover:text-ink text-sm"
           >
             ✕ 关闭
           </button>
@@ -431,27 +432,26 @@ export function TaskFormDrawer(props: {
                   bound tgid (400 if unbound). The cell
                   snippet further down renders the resolved value. */}
             </div>
-            <div className="text-xs text-ink-soft self-end pb-2">
+            <div className="text-xs text-ink-3 self-end pb-2">
               投递目标自动决定：webui 每次新建会话，tg 推到 operator 绑定的 TG chat
             </div>
           </div>
 
-          <p className="text-xs text-ink-soft">
+          <p className="text-xs text-ink-3">
             时区和凭据由系统自动决定：cron 用 Settings → 系统时区；凭据用当前登录者（admin 或「被此 MAGI 服务」的 assigned）的 provider / API key。
           </p>
 
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Toggle
               checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="accent-sky-deep"
+              onChange={setEnabled}
+              ariaLabel="启用（取消勾选 = 停止调度）"
             />
             启用（取消勾选 = 停止调度）
           </label>
           {error && <p className="form-error">✗ {error}</p>}
         </div>
-        <div className="px-6 py-4 border-t border-sky-light/40 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={props.onClose}

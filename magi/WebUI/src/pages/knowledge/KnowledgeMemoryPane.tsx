@@ -48,7 +48,7 @@ export function KnowledgeMemoryPane() {
         {!isLoading && memory.length === 0 && !loadError && <p className="text-sm text-ink-soft">{t("settings.knowledgeMemoryEmpty")}</p>}
         {memory.length > 0 && (
           <table className="data-table w-full">
-            <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+            <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-border">
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnSubject")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnKind")}</th>
               <th className="py-2 pr-4 font-medium w-20">{t("settings.knowledgeMemoryColumnPriority")}</th>
@@ -56,14 +56,14 @@ export function KnowledgeMemoryPane() {
               <th className="py-2 pr-4 font-medium">{t("settings.knowledgeMemoryColumnBody")}</th>
             </tr></thead>
             <tbody>{memory.map((m) => (
-              <tr key={m.id} className="border-b border-sky-light/30 last:border-0 align-top">
+              <tr key={m.id} className="border-b border-border-2 last:border-0 align-top">
                 <td className="py-2 pr-4 text-ink text-xs"><div className="font-medium">{m.subject}</div>
                 <div className="mt-0.5 text-[10px] text-ink-soft font-mono">#{m.id} · {m.source}</div></td>
                 <td className="py-2 pr-4 text-xs">{m.completed_at ? (
-                  <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
+                  <span className="inline-flex items-center text-[10px] bg-success-soft text-success border border-success-soft rounded px-1.5 py-0.5">
                     {t("settings.knowledgeMemoryCompleted")} · {formatDateOnly(m.completed_at)}</span>
                 ) : (
-                  <span className={`inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 ${m.kind === "fact" ? "bg-sky-pale/40 text-ink-soft border-sky-light/40" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                  <span className={`inline-flex items-center text-[10px] border rounded px-1.5 py-0.5 ${m.kind === "fact" ? "bg-sky-soft text-ink-soft border-border" : "bg-warning-soft text-warning border-warning-soft"}`}>
                     {m.kind === "fact" ? t("settings.knowledgeMemoryKindFact") : t("settings.knowledgeMemoryKindQuickNote")}</span>
                 )}</td>
                 <td className="py-2 pr-4 text-xs text-ink-soft whitespace-nowrap">

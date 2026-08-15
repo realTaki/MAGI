@@ -42,23 +42,23 @@ function TokenUsageBlock({ uid }: { uid: number }) {
     { label: "累计", data: query.data.total },
   ];
   return (
-    <div className="mt-3 pt-3 border-t border-sky-light/20">
-      <div className="text-[10px] uppercase tracking-wider text-ink-soft mb-2">
+    <div className="mt-3 pt-3 border-t border-border">
+      <div className="text-[10px] uppercase tracking-wider text-ink-3 mb-2">
         Token 用量{t(query.data.timezone ? ` · ${query.data.timezone}` : "")}
       </div>
       <div className="grid grid-cols-3 gap-2">
         {periods.map((p) => (
-          <div key={p.label} className="rounded border border-sky-light/20 bg-white/60 p-2 text-center">
-            <div className="text-[10px] text-ink-soft">{p.label}</div>
+          <div key={p.label} className="rounded border border-border bg-surface-2 p-2 text-center">
+            <div className="text-[10px] text-ink-3">{p.label}</div>
             <div className="text-sm font-mono font-medium text-ink mt-0.5">
               {formatTokenCount(p.data.input_tokens + p.data.output_tokens)}
             </div>
-            <div className="flex justify-center gap-2 text-[10px] text-ink-soft/60 mt-0.5">
+            <div className="flex justify-center gap-2 text-[10px] text-ink-3 mt-0.5">
               <span>↘{formatTokenCount(p.data.input_tokens)}</span>
               <span>↗{formatTokenCount(p.data.output_tokens)}</span>
             </div>
             {p.data.call_count > 0 && (
-              <div className="text-[10px] text-ink-soft/40 mt-0.5">{p.data.call_count} 条对话</div>
+              <div className="text-[10px] text-ink-3 mt-0.5">{p.data.call_count} 条对话</div>
             )}
           </div>
         ))}
@@ -94,14 +94,14 @@ export function KnowledgeContactsPane() {
       <div className="flex justify-end"><InfoTip text={t("settings.knowledgeContactsIntro")} /></div>
       <ConsoleCard title={t("settings.knowledgeContactsHeading")}>
         {loadError && <p className="form-error">✗ {loadError}</p>}
-        {isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {isLoading && <p className="text-sm text-ink-3">{t("settings.toolsLoading")}</p>}
         {!isLoading && contacts.length === 0 && !loadError && (
-          <p className="text-sm text-ink-soft">{t("settings.knowledgeContactsEmpty")}</p>
+          <p className="text-sm text-ink-3">{t("settings.knowledgeContactsEmpty")}</p>
         )}
         {contacts.length > 0 && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-3 border-b border-border">
                 <th className="py-2 pr-3 font-medium">{t("settings.knowledgeContactsColumnPerson")}</th>
                 <th className="py-2 pr-3 font-medium w-24">{t("settings.tableHeaderRole")}</th>
                 <th className="py-2 pr-3 font-medium w-40 hidden sm:table-cell">{t("settings.knowledgeContactsColumnLastSeen")}</th>
@@ -111,21 +111,21 @@ export function KnowledgeContactsPane() {
             <tbody>
               {contacts.map((c: ContactRow) => (
                 <Fragment key={c.id}>
-                  <tr className="border-b border-sky-light/20 hover:bg-sky-pale/10 transition-colors">
+                  <tr className="border-b border-border hover:bg-accent-soft transition-colors">
                     <td className="py-2.5 pr-3">
                       <span className="font-medium text-ink">{c.display_name || c.name}</span>
-                      <span className="text-ink-soft/40 font-mono text-[11px] ml-1.5">#{c.id}</span>
+                      <span className="text-ink-3 font-mono text-[11px] ml-1.5">#{c.id}</span>
                     </td>
                     <td className="py-2.5 pr-3">
                       {c.role && (
                         <span className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${
-                          c.role === "assigned" ? "bg-sky-100 text-sky-800" :
-                          "bg-ink-soft/10 text-ink-soft"
+                          c.role === "assigned" ? "bg-sky-soft text-sky-ink" :
+                          "bg-surface-2 text-ink-3"
                         }`}>{c.role}</span>
                       )}
                     </td>
                     <td className="py-2.5 pr-3 hidden sm:table-cell">
-                      <span className="text-xs text-ink-soft/60">{formatTimestamp(c.last_seen_at)}</span>
+                      <span className="text-xs text-ink-3">{formatTimestamp(c.last_seen_at)}</span>
                     </td>
                     <td className="py-2.5 text-right">
                       <button
@@ -134,8 +134,8 @@ export function KnowledgeContactsPane() {
                         title={t("settings.knowledgeContactsDetail")}
                         className={`p-1 rounded transition-colors ${
                           detailId === c.id
-                            ? "text-ocean bg-sky-pale/30"
-                            : "text-ink-soft hover:text-ink hover:bg-white/60"
+                            ? "text-accent-ink bg-accent-soft"
+                            : "text-ink-3 hover:text-ink hover:bg-surface-2"
                         }`}
                       >
                         <IconEye className="h-4 w-4" />
@@ -143,10 +143,10 @@ export function KnowledgeContactsPane() {
                     </td>
                   </tr>
                   {detailId === c.id && (
-                    <tr key={`${c.id}-detail`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                    <tr key={`${c.id}-detail`} className="border-b border-border bg-accent-soft">
                       <td colSpan={4} className="p-0">
                         <div className="px-4 py-3">
-                          <div className="flex items-center gap-2 text-xs text-ink-soft mb-2">
+                          <div className="flex items-center gap-2 text-xs text-ink-3 mb-2">
                             <span className="font-mono">#{c.id}</span>
                             <span>·</span>
                             <span>{c.source || "manual"}</span>
@@ -156,13 +156,13 @@ export function KnowledgeContactsPane() {
                           {notes.length > 0 ? (
                             <div className="space-y-2">
                               {notes.map((n) => (
-                                <div key={n.id} className="text-sm text-ink leading-relaxed border-l-2 border-sky-light/40 pl-3">
+                                <div key={n.id} className="text-sm text-ink leading-relaxed border-l-2 border-border pl-3">
                                   {n.note}
                                 </div>
                               ))}
                             </div>
                           ) : (
-                            <p className="text-sm text-ink-soft italic">
+                            <p className="text-sm text-ink-3 italic">
                               {t("settings.knowledgeContactsEmpty")}
                             </p>
                           )}

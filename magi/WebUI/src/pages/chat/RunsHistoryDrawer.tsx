@@ -53,7 +53,7 @@ export function RunsHistoryDrawer(props: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden">
+    <div className="modal-overlay overflow-hidden">
       {/* ``h-[calc(100vh-2rem)]`` (fixed) instead of
           ``max-h-…`` so the parent has an explicit
           height context for ``flex-1`` to expand into.
@@ -63,8 +63,8 @@ export function RunsHistoryDrawer(props: {
           just grow past the viewport. ``min-h-0`` on
           the body ensures the child can shrink
           regardless of bubble content height. */}
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full flex flex-col h-[calc(100vh-2rem)]">
-        <div className="px-6 py-4 border-b border-sky-light/40 flex items-center justify-between shrink-0">
+      <div className="modal-panel max-w-3xl w-full flex flex-col h-[calc(100vh-2rem)]">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
           <div className="flex flex-col min-w-0">
             <h3 className="text-base font-semibold text-ink truncate">
               {props.taskName}
@@ -81,7 +81,7 @@ export function RunsHistoryDrawer(props: {
             onClick={props.onClose}
             title="关闭"
             aria-label="关闭"
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-ink hover:bg-sky-pale/40 transition"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-ink hover:bg-surface-2 transition"
           >
             {/* Left-pointing arrow (←) reads as
                 "go back to the table" — matches the
@@ -121,8 +121,8 @@ export function RunsHistoryDrawer(props: {
                     className={
                       "rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words " +
                       (m.role === "user"
-                        ? "bg-sky-deep text-white"
-                        : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                        ? "bg-accent text-white"
+                        : "bg-surface-2 text-ink border border-border")
                     }
                   >
                     {/* The runner prepends a [task context]
@@ -161,10 +161,10 @@ export function RunsHistoryDrawer(props: {
                                 : r.status;
                         const statusColor =
                           r.status === "success"
-                            ? "text-emerald-700"
+                            ? "text-success"
                             : r.status === "failed"
-                              ? "text-rose-700"
-                              : "text-sky-700";
+                              ? "text-danger"
+                              : "text-accent";
                         return (
                           <>
                             <span className={statusColor + " font-medium"}>
