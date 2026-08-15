@@ -16,18 +16,18 @@ router = APIRouter(tags=["runtime-proxy"])
 def _runtime_url(bus, magi_id: int) -> str:
     """Resolve the upstream URL for the chosen MAGI's runtime.
 
-    Phase 2 — delegates to :class:`RuntimeRegistryService` for the
-    platform-neutral endpoint descriptor instead of forging
-    ``f"http://{deployment_name}:42069"`` from the ORM row.
-    Falls back to the legacy ``bus.magis.root_runtime_url`` for the
-    root-runtime case so K8s behaviour stays bit-identical.
+    Looks up the runtime row in the MAGIS ``runtime_state_book`` and uses
+    its ``base_url``. Falls back to ``bus.magis_book.root_runtime_url``
+    for K8s service-DNS compatibility when the row is missing.
     """
-    endpoint = bus.registry_book.resolve_endpoint(magi_id)
-    if endpoint is not None:
-        return endpoint.base_url
-    root_url = bus.magis_book.root_runtime_url(magi_id)
-    if root_url is not None:
-        return root_url
+    if bus.runtime_state_book is not None:
+        runtime = bus.runtime_state_book.get(runtime_id=magi_id)
+        if runtime is not None and runtime.base_url:
+            return runtime.base_url
+    if bus.magis_book is not None:
+        root_url = bus.magis_book.root_runtime_url(magi_id)
+        if root_url is not None:
+            return root_url
     raise MagiHTTPException(
         status_code=409,
         code="runtime.not_running",
