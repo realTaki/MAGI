@@ -77,23 +77,24 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
 `BaseRecordMixin` 提供。它是唯一的数据库主键；所有物理外键均引用目标表的
 `id`。通用读取、删除和内部关联以这个整数 ID 为准。
 
-### 3.2 业务键与 UID
+### 3.2 业务键
 
 业务需要的身份不再充当主键：
 
-- `uid: String(26)`：仅在记录需要跨进程、跨 API、跨 Job 载荷或公开 URL 的
-  稳定不透明身份时声明；必须 `unique=True`、`nullable=False`。Task、TaskRun、
-  Conversation 与 Message 属于这一类。
+- 需要跨进程、跨 API、跨 Job 载荷或公开 URL 的稳定身份，使用领域明确的
+  唯一键，例如 `conversation_id`、`task_id`、`message_id`、`run_id`；必须
+  `unique=True`、`nullable=False`。不得以缺乏领域语义的通用 `uid` 取代它们。
 - `name` / `key`：保留为业务唯一键或检索键，添加对应 `UniqueConstraint`，
   但不是主键。
 - 依附其他记录的一对一业务关系使用语义化的整数外键，例如
   `membership_id UNIQUE REFERENCES magis_memberships(id)`，而不是让
   `runtime_id` 兼任本表主键与外键。
 
-因此，现有字符串 `tasks.id`、`task_runs.id`、`chat_conversations.conversation_id`
-和消息幂等键必须迁移为 `uid`（或明确的业务唯一字段）；原有 `task_id`、
-`conversation_id` 等关联列改为整数外键。对外 API 和异步 Job 若需要稳定标识，
-传递 `uid`，进入 Book 后解析为内部 `id`。
+因此，现有字符串 `tasks.id`、`task_runs.id` 必须分别迁移为明确的业务唯一键，
+如 `task_id`、`run_id`；`chat_conversations.conversation_id` 保留为会话业务键。
+子表的物理关系使用语义化的整数外键，例如 `conversation_row_id`、
+`task_row_id`，指向父表 `id`。对外 API 和异步 Job 传递业务键，进入 Book 后
+解析为内部 `id`。
 
 ## 4. 时间规则
 
@@ -143,7 +144,7 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
   `extend_existing`。
 - 所有 library Row 继承 `BaseRecordMixin`，所有持久化 DTO 继承 `BaseRecord`。
 - 所有 library 表均具有自增 `id`、`created_at` 和 `updated_at`；没有字符串时间列。
-- 所有物理外键均指向整数 `id`；每个 `uid`、`name` 或 `key` 的唯一性由明确约束
+- 所有物理外键均指向整数 `id`；每个领域业务键、`name` 或 `key` 的唯一性由明确约束
   表达。
 - `rg` 不再找到业务代码中的手写 ISO 时间写入；时间 JSON 输出只经 `to_iso()`。
 - Alembic 基线、SQLite 与 PostgreSQL 建表结果一致，并通过完整测试套件。
@@ -151,7 +152,7 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
 ## 7. 收益与代价
 
 收益是一个固定的认知模型：每张表都有相同的内部身份与审计时间，关系均为整数
-外键，公开身份显式为 `uid`，时间在唯一边界序列化。新 Book 只需声明业务字段，
+外键，公开身份显式为领域业务键，时间在唯一边界序列化。新 Book 只需声明业务字段，
 BaseBook 的自动映射保持有效。
 
 代价是身份模型与时间存储的广泛替换，尤其涉及 Conversation、Task、Job 与 API。

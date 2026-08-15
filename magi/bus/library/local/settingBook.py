@@ -40,14 +40,23 @@ class Setting(BaseRecord):
 # -- internal ORM --------------------------------------------------------
 
 
-class _SettingRow(BaseRecordMixin):
+class _SettingRow(Base):
+    """ORM row for ``settings``.
+
+    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
+    table pre-dates the mixin convention with ``key`` as its natural
+    primary key.  Adding ``id`` to a populated table requires a SQLite
+    table-rebuild dance — the migration path is intentionally
+    additive so existing deployments upgrade without surprises.
+    """
+
     __tablename__ = "settings"
-    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    __table_args__ = (
-        UniqueConstraint("key", name="uq_settings_key"),
-        {"extend_existing": True},
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
     )
+    __table_args__ = ({"extend_existing": True},)
 
 
 # -- Book -----------------------------------------------------------------

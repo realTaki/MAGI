@@ -142,11 +142,11 @@ onboarding。以后只需执行 `magi start`，它会保留现有状态并恢复
 
 **k8s-dev** 会在本地启动一个 `kind` 集群并部署第一个开发 MAGI 节点。
 宿主机只需要 Docker。脚本会按需下载固定版本的 `kind` 与 `kubectl`、
-构建镜像、创建集群，并以后端 reload 与 Vite HMR 部署开发节点。
+构建镜像、创建集群，并以 Vite HMR 部署开发节点；后端代码改动后显式重启 Pod。
 开发部署会挂载：
 
 ```text
-宿主仓库                                   → /app/magi     源码热加载
+宿主仓库                                   → /app/magi     源码挂载（后端改动后重启 Runtime）
 workspace PVC（挂到容器根 /）              → /MAGI_Citizens/<name>  (由 HOST_WORKSPACE_DIR=/ + MAGI_NAME 推导)
 MAGIS 公共工作区 PVC                        → /magis
 ```

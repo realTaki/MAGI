@@ -20,7 +20,6 @@ parallel to the ``action_items`` refactor).
 
 from __future__ import annotations
 
-import dataclasses
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -46,7 +45,7 @@ from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
-def _new_uid() -> str:
+def _new_task_id() -> str:
     """Mint a compact opaque identity for API and job boundaries."""
 
     return uuid.uuid4().hex[:26]
@@ -157,7 +156,7 @@ class Task(BaseRecord):
     structured form — there's one schedule, not two.
     """
 
-    uid: str  # 跨 API / Job 使用的稳定任务身份
+    task_id: str  # 跨 API / Job 使用的稳定任务身份
     name: str  # 任务唯一名
     prompt: str  # 触发后执行的 prompt
     source: TaskSource  # 来源（user/proactive）
@@ -169,7 +168,7 @@ class Task(BaseRecord):
     run_at: str | None = None  # 一次性触发时间（ISO 8601）
     tz: str = "UTC"  # 时区
     delivery_to: str | None = None  # 投递目标地址
-    conversation_id: int | None = None  # 关联的会话内部 ID
+    conversation_id: str | None = None  # 关联的会话业务 ID
 
     # --- user-task ownership ----------------------------------------------
     contact_id: int | None = None  # 所属联系人
@@ -183,16 +182,16 @@ class Task(BaseRecord):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TaskRun(BaseRecord):
-    uid: str  # 跨 API / Job 使用的稳定运行身份
-    task_id: int  # 所属任务内部 ID
+    run_id: str  # 跨 API / Job 使用的稳定运行身份
+    task_id: str  # 所属任务业务 ID
     manual: bool  # 是否用户/工具主动触发（True=API/UI/tool；False=cron/run_at）
-    started_at: datetime  # 开始时间
-    finished_at: datetime | None = None  # 结束时间
+    started_at: str  # 开始时间（JSON UTC）
+    finished_at: str | None = None  # 结束时间（JSON UTC）
     latency_ms: int | None = None  # 总耗时（毫秒）
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
     error: str | None = None  # 错误信息
     reply_excerpt: str | None = None  # 回复摘要
-    conversation_id: int | None = None  # 关联的会话内部 ID
+    conversation_id: str | None = None  # 关联的会话业务 ID
 
 
 # -- internal ORM --------------------------------------------------------
@@ -205,7 +204,7 @@ class _TaskRow(BaseRecordMixin):
     # module is imported first wins, and the other must opt-in.
     __table_args__ = {"extend_existing": True}
 
-    uid: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
+    task_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[TaskSource] = mapped_column(
@@ -236,7 +235,7 @@ class _TaskRow(BaseRecordMixin):
         String(128),
         nullable=True,
     )
-    conversation_id: Mapped[int | None] = mapped_column(
+    conversation_row_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -275,9 +274,9 @@ class _TaskRow(BaseRecordMixin):
 class _TaskRunRow(BaseRecordMixin):
     __tablename__ = "task_runs"
 
-    uid: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
-    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
-    conversation_id: Mapped[int | None] = mapped_column(
+    run_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
+    task_row_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    conversation_row_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="SET NULL"), nullable=True
     )
     manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -288,7 +287,7 @@ class _TaskRunRow(BaseRecordMixin):
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    __table_args__ = (Index("ix_task_runs_task_started", "task_id", "started_at"),)
+    __table_args__ = (Index("ix_task_runs_task_started", "task_row_id", "started_at"),)
 
 
 # -- Books ---------------------------------------------------------------
@@ -310,7 +309,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
     def get(self, *, task_id: str) -> Task | None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
+            row = s.scalar(select(_TaskRow).where(_TaskRow.task_id == task_id))
             return self._row_to_dto(row) if row else None
 
     def list_by_user(self, *, contact_id: int) -> list[Task]:
@@ -450,8 +449,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 raise ValueError(f"run_at {canonical!r} is in the past: {e}") from None
             kwargs["run_at"] = canonical
         with self._session() as s:
-            if "uid" not in kwargs or not kwargs["uid"]:
-                kwargs["uid"] = _new_uid()
+            if "task_id" not in kwargs or not kwargs["task_id"]:
+                kwargs["task_id"] = _new_task_id()
             row = _TaskRow(
                 source=source,
                 **kwargs,
@@ -483,7 +482,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.uid == task_id,
+                    _TaskRow.task_id == task_id,
                     _TaskRow.contact_id == contact_id,
                 )
             )
@@ -516,7 +515,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.uid == task_id,
+                    _TaskRow.task_id == task_id,
                     _TaskRow.contact_id == contact_id,
                     _TaskRow.source == TaskSource.USER,
                 )
@@ -542,7 +541,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.uid == task_id,
+                    _TaskRow.task_id == task_id,
                     _TaskRow.contact_id == contact_id,
                     _TaskRow.source == TaskSource.USER,
                 )
@@ -673,7 +672,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     existing.conversation_id = conversation_id
                 s.commit()
                 s.refresh(existing)
-                return existing.uid, True
+                return existing.task_id, True
 
             # Insert path — single session, single
             # transaction. The write invariants above
@@ -681,7 +680,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             # ``add()`` would have built.
             now = utcnow_naive()
             insert = _TaskRow(
-                uid=_new_uid(),
+                task_id=_new_task_id(),
                 name=name,
                 prompt=prompt,
                 cron=cron,
@@ -697,7 +696,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.add(insert)
             s.commit()
             s.refresh(insert)
-            return insert.uid, False
+            return insert.task_id, False
 
     def _validate_write_invariants(
         self,
@@ -748,7 +747,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         *,
         task_id: str,
         manual: bool,
-        uid: str | None = None,
+        run_id: str | None = None,
     ) -> TaskRun:
         """Insert a task_runs row, write task.last_run_at.
 
@@ -757,15 +756,15 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         与 :class:`~magi.bus.guild.runTaskJob.RunTaskJob.manual`
         同构。
         """
-        new_uid = uid or _new_uid()
+        new_run_id = run_id or _new_task_id()
         started_at = utcnow_naive()
         with self._session() as s:
-            task = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
+            task = s.scalar(select(_TaskRow).where(_TaskRow.task_id == task_id))
             if task is None:
-                raise ValueError(f"unknown task uid {task_id!r}")
+                raise ValueError(f"unknown task_id {task_id!r}")
             run_row = _TaskRunRow(
-                uid=new_uid,
-                task_id=task.id,
+                run_id=new_run_id,
+                task_row_id=task.id,
                 manual=manual,
                 started_at=started_at,
                 status=TaskRunStatus.RUNNING.value,
@@ -783,7 +782,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     def mark_run_at_consumed(self, *, task_id: str) -> None:
         """One-shot run_at: set enabled=0 after successful fire."""
         with self._session() as s:
-            task = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
+            task = s.scalar(select(_TaskRow).where(_TaskRow.task_id == task_id))
             if task is None:
                 return
             task.enabled = 0
@@ -810,26 +809,9 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
     dto_cls = TaskRun
 
-    def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
-        """Map a ``task_runs`` row to its :class:`TaskRun` DTO.
-
-        Kept as an override (rather than falling back to
-        :meth:`BaseBook._row_to_dto`) because ``started_at`` /
-        ``finished_at`` must stay native ``datetime`` — the base
-        method converts ``datetime`` values to ISO strings, but
-        :class:`TaskRun` exposes them as ``datetime`` fields.
-        ``status`` and ``manual`` are native-typed columns
-        (``enum_column`` / ``Boolean``) and need no conversion.
-        """
-        kwargs: dict = {}
-        for f in dataclasses.fields(self.dto_cls):
-            if hasattr(row, f.name):
-                kwargs[f.name] = getattr(row, f.name)
-        return self.dto_cls(**kwargs)
-
-    def get(self, *, uid: str) -> TaskRun | None:
+    def get(self, *, run_id: str) -> TaskRun | None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.uid == uid))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.run_id == run_id))
             return self._row_to_dto(row) if row else None
 
     def add(self, **kwargs) -> TaskRun:
@@ -843,7 +825,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     def complete(
         self,
         *,
-        uid: str,
+        run_id: str,
         status: TaskRunStatus | str,
         error: str | None = None,
         reply_excerpt: str | None = None,
@@ -863,7 +845,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         """
         normalised = status if isinstance(status, TaskRunStatus) else TaskRunStatus(status)
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.uid == uid))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.run_id == run_id))
             if row is None:
                 return
             row.status = normalised
@@ -1067,7 +1049,7 @@ def preset_to_cron(
 # ── run_at path — one-shot tasks ───────────────────────────────────────
 
 
-def validate_run_at(raw: str) -> str:
+def validate_run_at(raw: str) -> datetime:
     """Validate the ``run_at`` field for a one-shot task.
 
     Accepts any ISO 8601 timestamp that ``datetime.fromisoformat``
@@ -1075,12 +1057,10 @@ def validate_run_at(raw: str) -> str:
     are interpreted as UTC, matching the project's "UTC in
     DB" convention.
 
-    Returns the **canonical** ISO string (rounded-to-second,
-    UTC ``Z`` suffix) so two operators who write
+    Returns a naive UTC ``datetime`` so two operators who write
     ``"2026-08-01T07:30:00+00:00"`` and
     ``"2026-08-01T15:30:00+08:00"`` both end up storing the
-    same row. ``apscheduler.DateTrigger`` accepts the
-    returned string verbatim.
+    same row. The Book stores this native value in its ``DateTime`` column.
 
     The ``Z`` suffix (rather than ``+00:00``) matches the
     project-wide convention used by
@@ -1102,12 +1082,11 @@ def validate_run_at(raw: str) -> str:
     except ValueError as e:
         raise ValueError(f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}") from None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    # UTC ``Z`` suffix, not ``+00:00`` — see docstring.
-    return parsed.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return parsed
+    return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
-def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> str:
+def validate_run_at_future(run_at: datetime, *, now: datetime | None = None) -> datetime:
     """Reject past-time ``run_at`` so a silently-dropped
     apscheduler job never reaches the DB.
 
@@ -1126,18 +1105,17 @@ def validate_run_at_future(run_at_iso: str, *, now: datetime | None = None) -> s
     Returns the input unchanged on success. Raises
     :class:`ValueError` with the parsed value + server "now".
     """
-    parsed = datetime.fromisoformat(run_at_iso)
-    server_now = now or datetime.now(UTC)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+    server_now = now or utcnow_naive()
+    if server_now.tzinfo is not None:
+        server_now = server_now.astimezone(UTC).replace(tzinfo=None)
     grace_seconds = 60
-    if parsed <= server_now - timedelta(seconds=grace_seconds):
+    if run_at <= server_now - timedelta(seconds=grace_seconds):
         raise ValueError(
-            f"run_at must be in the future (got {run_at_iso!r}; "
+            f"run_at must be in the future (got {run_at!r}; "
             f"server now is {server_now.isoformat(timespec='seconds')}; "
             f"past-time jobs are silently dropped by apscheduler)"
         )
-    return run_at_iso
+    return run_at
 
 
 __all__ = [

@@ -10,24 +10,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import String, select
+from sqlalchemy import String, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
-@dataclass(frozen=True, slots=True)
-class ControlSetting:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ControlSetting(BaseRecord):
     key: str  # 配置键
     value: str  # 配置值
 
 
-class _ControlSettingRow(Base):
+class _ControlSettingRow(BaseRecordMixin):
     __tablename__ = "control_settings"
 
-    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
     value: Mapped[str] = mapped_column(String, nullable=False)
+    __table_args__ = (UniqueConstraint("key", name="uq_control_settings_key"),)
 
 
 class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
@@ -36,12 +37,12 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
 
     def get(self, *, key: str) -> str | None:
         with self._session() as session:
-            row = session.get(_ControlSettingRow, key)
+            row = session.scalar(select(_ControlSettingRow).where(_ControlSettingRow.key == key))
             return row.value if row else None
 
     def set(self, *, key: str, value: str) -> ControlSetting:
         with self._session() as session:
-            row = session.get(_ControlSettingRow, key)
+            row = session.scalar(select(_ControlSettingRow).where(_ControlSettingRow.key == key))
             if row is None:
                 row = _ControlSettingRow(key=key, value=value)
                 session.add(row)
@@ -52,7 +53,7 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
 
     def delete(self, *, key: str) -> bool:
         with self._session() as session:
-            row = session.get(_ControlSettingRow, key)
+            row = session.scalar(select(_ControlSettingRow).where(_ControlSettingRow.key == key))
             if row is None:
                 return False
             session.delete(row)

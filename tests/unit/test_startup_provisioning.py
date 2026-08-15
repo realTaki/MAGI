@@ -24,7 +24,12 @@ from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
 from magi.startup import runtime
-from magi.startup.config import DEFAULT_MAGI_NAME, ConfigurationError, StartupConfig
+from magi.startup.config import (
+    DEFAULT_MAGI_NAME,
+    ConfigurationError,
+    StartupConfig,
+    StartupContext,
+)
 from magi.startup.provision import create_node, init_first_magi
 from magi.startup.spec import load_runtime_spec
 
@@ -274,7 +279,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
     assert "a2a_jobs" not in set(inspect(bus._local_factory.engine).get_table_names())
 
 
-def test_reload_app_factory_repairs_schema_before_runtime_context_is_exposed(
+def test_runtime_app_creation_repairs_schema_before_runtime_context_is_exposed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -287,33 +292,49 @@ def test_reload_app_factory_repairs_schema_before_runtime_context_is_exposed(
     with bus._local_factory.engine.begin() as connection:
         connection.execute(text("DROP TABLE action_items"))
 
-    runtime._publish_runtime_config(config)
-    app = runtime.create_runtime_app_from_environment()
+    startup = runtime._startup_context(config)
+    context = runtime.RuntimeContext.create(startup)
+    app = runtime._create_runtime_app(context)
 
     assert "action_items" in set(inspect(app.state.bus._local_factory.engine).get_table_names())
 
 
-def test_run_magi_uses_import_factory_for_uvicorn_reload(
+def test_run_magi_serves_the_in_process_runtime_app_without_reload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _first_config(tmp_path)
-    spec = init_first_magi(config)
+    startup = StartupContext(
+        host_workspace_dir=tmp_path,
+        workspace_dir=tmp_path / "MAGI_Citizens" / DEFAULT_MAGI_NAME,
+        magi_name=DEFAULT_MAGI_NAME,
+        magi_id="1",
+        magis_name="genesis",
+        magis_database_url="sqlite:///magis.db",
+        private_database_url="sqlite:///magi.db",
+        is_first_magi=True,
+        runtime_port=42123,
+    )
     captured: dict[str, object] = {}
+    app = object()
 
     def _run(app, **kwargs) -> None:
         captured["app"] = app
         captured.update(kwargs)
 
     monkeypatch.setattr(runtime.uvicorn, "run", _run)
-    monkeypatch.setattr(runtime, "_reload_enabled", lambda: True)
+    monkeypatch.setattr(runtime, "_startup_context", lambda _config: startup)
+    monkeypatch.setattr(runtime.RuntimeContext, "create", lambda _startup: object())
+    monkeypatch.setattr(runtime, "_create_runtime_app", lambda _context: app)
+    monkeypatch.setattr(runtime, "mark_registry_stopped", lambda _config: None)
 
     runtime.run_magi(config)
 
-    assert captured["app"] == "magi.startup.runtime:create_runtime_app_from_environment"
-    assert captured["factory"] is True
-    assert captured["reload"] is True
-    assert captured["port"] == spec.runtime_port
+    assert captured["app"] is app
+    assert "factory" not in captured
+    assert "reload" not in captured
+    assert "reload_dirs" not in captured
+    assert captured["port"] == startup.runtime_port
 
 
 # -- Initial schema: native-Enum + DateTime shape guarantees ---------------

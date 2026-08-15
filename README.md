@@ -177,11 +177,11 @@ The **k8s-dev path** starts a local `kind` cluster and the first
 development MAGI node. Docker is the only host prerequisite. The
 script downloads its pinned `kind` and `kubectl` tools locally
 when needed, builds the images, creates the cluster, and deploys
-the dev node with backend reload and Vite HMR. The dev deployment
-mounts:
+the dev node with Vite HMR. Backend source changes take effect after an
+explicit Pod restart. The dev deployment mounts:
 
 ```text
-host repository                                  → /app/magi   source hot reload
+host repository                                  → /app/magi   source mount (restart Runtime after backend edits)
 workspace PVC (mounted at the container root /) → /MAGI_Citizens/<name>  (derived from HOST_WORKSPACE_DIR=/ + MAGI_NAME)
 MAGIS public workspace (PVC)                     → /magis
 ```

@@ -1,12 +1,8 @@
-"""Fail-fast behaviour when a Runtime is mid-restart.
+"""Fail-fast behaviour when a Runtime is unresponsive.
 
-``magi node run`` serves a Runtime under a Uvicorn reload supervisor
-(:func:`magi.startup.runtime._reload_enabled` defaults to on), and the
-*supervisor* — not the worker — owns the listening socket.  A worker
-restart therefore does not look like "connection refused" to the
-control plane; it looks like "connected, then silence", because the
-kernel keeps completing handshakes into a backlog nobody is accepting
-from.
+An unavailable Runtime does not always look like "connection refused" to the
+control plane.  It can look like "connected, then silence" when a listener
+or network path accepts the handshake but never returns an HTTP response.
 
 That distinction is the whole point of this module.  A flat
 ``timeout=30.0`` is invisible in the healthy case and turns every
@@ -46,10 +42,8 @@ from magi.channels.api.runtime_http import (
 def _deaf_listener():
     """A bound, listening socket that never calls ``accept()``.
 
-    This is a restarting Uvicorn worker as seen from the client side:
-    the reload supervisor still holds the listening socket, so
-    ``connect()`` returns immediately and the request then hangs
-    waiting for a worker that has not finished booting.
+    This models an unresponsive Runtime as seen from the client side:
+    ``connect()`` returns immediately and the request then hangs forever.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -260,10 +254,9 @@ def _browser_request() -> Request:
     )
 
 
-async def test_proxy_answers_503_instead_of_stalling_on_a_restart(monkeypatch) -> None:
-    """The browser-visible contract: a Runtime cycling under its reload
-    supervisor produces an immediate, labelled 503 — not a minute of
-    silence that an ingress reports as an unattributable 504."""
+async def test_proxy_answers_503_instead_of_stalling_on_an_unresponsive_runtime(monkeypatch) -> None:
+    """The browser-visible contract is an immediate, labelled 503 — not a
+    minute of silence that an ingress reports as an unattributable 504."""
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
     monkeypatch.setattr(runtime_proxy, "get_bus", lambda _request: MagicMock())
 

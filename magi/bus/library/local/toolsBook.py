@@ -28,22 +28,21 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class ToolCatalogState:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolCatalogState(BaseRecord):
     """Singleton catalog-state row DTO."""
 
-    id: int  # 单例行主键
     revision: int  # catalog 单调递增版本号
     snapshot_hash: str  # 当前快照的指纹哈希
 
 
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ToolDefinition(BaseRecord):
     """LLM-contract DTO — the tool as the agent sees it.
 
     This is the **only** public DTO for tool definitions.  It is used
@@ -64,7 +63,7 @@ class ToolDefinition:
     revision: int = 0  # 所属 catalog 版本号
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ToolCatalogSnapshot:
     """Observable state after an atomic catalog replacement."""
 
@@ -76,18 +75,16 @@ class ToolCatalogSnapshot:
 # -- internal ORM --------------------------------------------------------
 
 
-class _ToolCatalogStateRow(Base):
+class _ToolCatalogStateRow(BaseRecordMixin):
     __tablename__ = "tool_catalog_state"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
-class _ToolDefinitionRow(Base):
+class _ToolDefinitionRow(BaseRecordMixin):
     __tablename__ = "tool_definitions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
     #: Deprecated duplicate of ``spec_json``; kept for schema compatibility

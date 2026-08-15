@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    DateTime,
     JSON,
     ForeignKey,
     Index,
@@ -36,7 +37,7 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base
+from magi.bus.db.base import utcnow_naive
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 logger = logging.getLogger("magi.bus.library.local.conversationBook")
@@ -103,25 +104,22 @@ def _truncate_inbound(text: str, max_chars: int) -> tuple[str, bool, int]:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Conversation(BaseRecord):
-    conversation_id: str  # 会话主键（Crockford ULID 字符串）
+    conversation_id: str  # 跨 API / Job 使用的稳定会话身份
     delivery_address: str  # 渠道内的目标地址（如 tg chat_id）
     contact_id: int  # 会话所属联系人 ID
     channel: str  # 来源渠道（tg/webui/...）
     title: str | None = None  # 会话标题（auto-titled 或用户设置）
     summary: str | None = None  # cumulative compaction summary（auto-compact 生成）
-    last_compaction_at: str | None = None  # 上次自动压缩的 ISO 时间
-    created_at: str | None = None  # 创建时间
-    updated_at: str | None = None  # 最近活动时间
+    last_compaction_at: str | None = None  # 上次自动压缩时间（JSON UTC）
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Message(BaseRecord):
-    id: int  # 主键（自增）
     conversation_id: str  # 所属会话 ID
     message_id: str  # 生产方幂等键（ULID）
     role: str  # 消息角色（user/assistant/system/tool）
     text: str  # 消息正文
-    ts: str  # 消息时间戳（ISO 8601）
+    ts: str  # 消息时间戳（JSON UTC）
     archived: int = 0  # 1=被自动压缩归档
     content_blocks: list[dict[str, Any]] | None = None  # 富内容块（tool_use 等）
     llm_attempt_id: str | None = None  # 关联的 LLM 调用 ID（用于去重）
@@ -298,38 +296,34 @@ class ResolvedHit:
 class _ConversationRow(BaseRecordMixin):
     __tablename__ = "chat_conversations"
 
-    conversation_id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
     delivery_address: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(16), nullable=False)
     title: Mapped[str | None] = mapped_column(String(80), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    last_compaction_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
-    updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    last_compaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class _MessageRow(BaseRecordMixin):
     __tablename__ = "chat_messages"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    conversation_id: Mapped[str] = mapped_column(
-        String(26),
-        ForeignKey("chat_conversations.conversation_id", ondelete="CASCADE"),
+    conversation_row_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     message_id: Mapped[str] = mapped_column(String(26), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    ts: Mapped[str] = mapped_column(String(32), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (
-        Index("ix_chat_messages_conversation_archived", "conversation_id", "archived", "id"),
-        UniqueConstraint("conversation_id", "message_id", name="uq_chat_messages_conv_msg"),
+        Index("ix_chat_messages_conversation_archived", "conversation_row_id", "archived", "id"),
+        UniqueConstraint("conversation_row_id", "message_id", name="uq_chat_messages_conv_msg"),
     )
 
 
@@ -487,10 +481,8 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         ``set_summary``, …).
         """
         import uuid
-        from datetime import datetime
 
-        now = datetime.now(UTC).isoformat()
-        conversation_id = uuid.uuid4().hex[:16]
+        conversation_id = uuid.uuid4().hex[:26]
         with self._session() as s:
             row = _ConversationRow(
                 conversation_id=conversation_id,
@@ -498,8 +490,6 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 contact_id=contact_id,
                 channel=channel,
                 title=title,
-                created_at=now,
-                updated_at=now,
             )
             s.add(row)
             s.commit()
@@ -520,7 +510,6 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             raise ValueError("peer_magi_id must be positive")
 
         import hashlib
-        from datetime import datetime
 
         delivery_address = f"a2a:{peer_magi_id}"
         conversation_id = hashlib.sha256(delivery_address.encode()).hexdigest()[:26]
@@ -529,15 +518,12 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
             )
             if row is None:
-                now = datetime.now(UTC).isoformat()
                 row = _ConversationRow(
                     conversation_id=conversation_id,
                     delivery_address=delivery_address,
                     contact_id=0,
                     channel="a2a",
                     title=f"A2A with MAGI {peer_magi_id}",
-                    created_at=now,
-                    updated_at=now,
                 )
                 s.add(row)
                 try:
@@ -626,8 +612,6 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         append group is all-or-nothing. Returns the list of
         persisted :class:`Message` rows in insertion order.
         """
-        from datetime import datetime
-
         # D.22: verify conversation ownership and channel match.
         conversation = self.get_for_owner(contact_id=contact_id, conversation_id=conversation_id)
         if conversation is None:
@@ -637,8 +621,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         if conversation.channel != channel:
             raise ChannelMismatchError(conversation.channel)
 
-        now = datetime.now(UTC).isoformat()
-        self.touch(conversation_id=conversation_id, updated_at=now)
+        self.touch(conversation_id=conversation_id)
 
         message_book = MessageBook(self._factory)
         persisted: list[Message] = []
@@ -687,14 +670,14 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             include_archived=include_archived,
         )
 
-    def touch(self, *, conversation_id: str, updated_at: str) -> None:
+    def touch(self, *, conversation_id: str, updated_at: datetime | None = None) -> None:
         with self._session() as s:
             row = s.scalar(
                 select(_ConversationRow).where(_ConversationRow.conversation_id == conversation_id)
             )
             if row is None:
                 return
-            row.updated_at = updated_at
+            row.updated_at = updated_at or utcnow_naive()
             s.commit()
 
     def set_title_if_null(
@@ -715,9 +698,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         to another writer that already set a title), or ``None`` when
         no matching row was found.
         """
-        from magi.bus.db.base import utcnow_naive
-
-        now = utcnow_naive().isoformat() + "Z"
+        now = utcnow_naive()
         with self._session() as s:
             stmt = (
                 update(_ConversationRow)
@@ -758,9 +739,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         cross-contact defence. Returns the updated DTO, or ``None`` if
         the conversation no longer exists.
         """
-        from magi.bus.db.base import utcnow_naive
-
-        now = utcnow_naive().isoformat() + "Z"
+        now = utcnow_naive()
         with self._session() as s:
             stmt = (
                 update(_ConversationRow)
@@ -800,13 +779,11 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         width and the PATCH body's ``max_length``. Returns the updated DTO,
         or ``None`` when no matching row exists.
         """
-        from magi.bus.db.base import utcnow_naive
-
         if title is not None:
             title = title.strip()
             if len(title) > 80:
                 title = title[:80]
-        now = utcnow_naive().isoformat() + "Z"
+        now = utcnow_naive()
         with self._session() as s:
             stmt = (
                 update(_ConversationRow)
