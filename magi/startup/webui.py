@@ -212,6 +212,18 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     ``MAGI_WEBUI_PORT`` is set by the detached launcher and the Kind dev
     overlay. Production keeps the canonical :data:`WEBUI_PORT` default;
     the override lets Vite own 42069 while its proxied API runs on 8000.
+
+    Foreground-mode lifecycle (mirrors :func:`start_webui`):
+
+    1. Claim ``<host_workspace>/run/webui.pid`` with ``os.getpid()``
+       so ``magi webui stop`` can find this process.  Refuse to start
+       if the file points at a still-alive PID.
+    2. Install SIGTERM/SIGINT handlers that unlink the PID file.  The
+       handler runs once even if uvicorn re-raises the signal.
+
+    Unlike :func:`magi.startup.runtime.run_magi`, no extra cleanup is
+    wired: the WebUI does not own a ``runtime_state`` row, so SIGTERM
+    only needs to drop the PID file.
     """
     import uvicorn
 
@@ -236,7 +248,13 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     app = create_control_app(context=ControlContext(bus=bus))
     port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
     host = os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    pid_path = resolve_webui_pid_path(config.host_workspace_dir)
+    claim_pid_file(pid_path)
+    cleanup = install_lifecycle_handlers(pid_path)
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    finally:
+        cleanup.run_once()
 
 
 # ----------------------------------------------------------------------

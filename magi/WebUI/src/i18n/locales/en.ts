@@ -172,6 +172,7 @@ export default {
     knowledgeContactsLoadFailed: "Failed to load contacts",
     knowledgeContactsDetail: "View details",
     knowledgeContactsNoRole: "— (none)",
+    knowledgeContactsOrphaned: "Departed",
     knowledgeMemoryHeading: "Memory",
     knowledgeMemoryIntro: "MAGI's own memory — long-lived facts (fact) and in-flight work (quick_note). Each row is something the LLM recorded in conversation.",
     knowledgeMemoryColumnSubject: "Subject",
