@@ -43,11 +43,11 @@ export function SettingsSecurityCard() {
   return (
     <ConsoleCard title="Two-factor verification">
       {enabled ? (
-        <p className="text-sm text-emerald-700">✓ IM verification is enabled for this administrator.</p>
+        <p className="text-sm text-success">✓ IM verification is enabled for this administrator.</p>
       ) : (
         <div className="space-y-3 max-w-md">
-          <p className="text-sm text-ink-soft">Local access remains available, but IM verification is required before you can add administrators or assigned users.</p>
-          <label className="block text-sm font-medium text-sky-deep">Telegram chat ID</label>
+          <p className="text-sm text-ink-3">Local access remains available, but IM verification is required before you can add administrators or assigned users.</p>
+          <label className="block text-sm font-medium text-accent-ink">Telegram chat ID</label>
           <input className="form-input w-full" inputMode="numeric" value={tgid} onChange={(event) => setTgid(event.target.value)} />
           {!sent ? (
             <button type="button" className="btn btn-primary" disabled={busy || !/^-?\d+$/.test(tgid.trim())} onClick={send}>{busy ? "Sending…" : "Send verification code"}</button>
@@ -59,7 +59,7 @@ export function SettingsSecurityCard() {
           )}
         </div>
       )}
-      {message && <p className="mt-3 text-sm text-ink-soft">{message}</p>}
+      {message && <p className="mt-3 text-sm text-ink-3">{message}</p>}
     </ConsoleCard>
   );
 }

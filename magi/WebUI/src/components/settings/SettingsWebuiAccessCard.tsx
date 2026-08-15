@@ -4,7 +4,7 @@ import ConsoleCard from "../ConsoleCard";
 export function SettingsWebuiAccessCard() {
   return (
     <ConsoleCard title="MAGIS administrators">
-      <p className="text-sm text-ink-soft">
+      <p className="text-sm text-ink-3">
         Administrator management is available after IM two-factor verification is enabled.
         Local Contact records never grant MAGIS administrator authority.
       </p>

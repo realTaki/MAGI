@@ -147,9 +147,9 @@ export function SettingsChannelsCard(props: {
 
                   {/* Bot token field — shown when TG is enabled but no token */}
                   {showTokenField && (
-                    <tr key={`${ch.name}-token`} className="border-b border-sky-light/20 bg-amber-50/30">
+                    <tr key={`${ch.name}-token`} className="border-b border-border-2 bg-warning-soft">
                       <td colSpan={3} className="p-3">
-                        <p className="text-xs text-amber-700 mb-2">
+                        <p className="text-xs text-warning mb-2">
                           {t("settings.channelTgNoToken")}
                         </p>
                         <BotTokenField
@@ -166,7 +166,7 @@ export function SettingsChannelsCard(props: {
 
                   {/* Bot token re-set field */}
                   {editingToken && ch.name === "tg" && ch.has_credentials && (
-                    <tr key={`${ch.name}-edit`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                    <tr key={`${ch.name}-edit`} className="border-b border-border-2 bg-sky-soft">
                       <td colSpan={3} className="p-3">
                         <BotTokenField
                           runtimeTarget
