@@ -5,7 +5,4 @@ metadata:
   labels:
     app.kubernetes.io/name: magi
     app.kubernetes.io/component: node
-data:
-  # The only env var the node code still reads.  Everything else
-  # is hardcoded in magi/constants.py or lives in the SQLite DB.
-  MAGI_RELOAD: "0"
+data: {}

@@ -1,5 +1,0 @@
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: magi-magis-1-genesis-workspace
-$patch: delete

@@ -40,11 +40,11 @@ class BaseBook[RowT, DtoT]:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BaseRecord:
-    """所有公开持久化记录共有的 JSON-safe DTO 字段。"""
+    """所有公开持久化记录共有的 DTO 字段。"""
 
     id: int
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class BaseRecordMixin(Base):
@@ -65,9 +65,9 @@ class BaseRecordMixin(Base):
 DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字段的默认值
 排序冲突，DTO 一律使用具名构造。
 
-`BaseBook._row_to_dto()` 是 ORM 时间到 JSON-safe DTO 时间的唯一通用出口。
-它使用统一的 `to_iso()` 生成带 `Z` 的 UTC 字符串；Book、API、worker 与业务
-逻辑不得自行调用 `isoformat()` 来构造对外时间。
+`BaseBook._row_to_dto()` 不转换时间：ORM Row 与 DTO 均保留同一个 naive UTC
+`datetime`。FastAPI 的标准 JSON 编码只负责传输；WebUI 在展示层按用户时区和格式
+需求转换。Book、API、worker 与业务逻辑不得自行调用 `isoformat()`。
 
 ## 3. 身份与外键规则
 
@@ -112,10 +112,10 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
   删除字符串存储方式，必要时将 `ts` 重命名为语义明确的 `occurred_at`。
 - 代码不得存储 `datetime.now(UTC).isoformat()`、`isoformat() + "Z"` 或任何
   时间字符串；外部输入 ISO 字符串必须在入口通过唯一的解析函数归一为 naive UTC。
-- `to_iso()` 只接受 `datetime | None`，并在 DTO/JSON 边界输出带 `Z` 的 UTC
-  字符串；不再把字符串作为内部时间值透传。
+- 后端 DTO 与 API 模型不手工格式化时间；JSON 编码层传输标准 ISO 时间，前端负责
+  人类可读的时区和格式转换。
 
-这保留 JSON 所必需的一次序列化，但消除业务逻辑中的重复 ISO 转换和时区格式漂移。
+这消除后端业务代码中的重复 ISO 转换和时区格式漂移。
 
 ## 5. 实施边界
 
