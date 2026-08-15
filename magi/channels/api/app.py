@@ -21,6 +21,7 @@ Subsequent checkpoints layer on:
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -53,6 +54,18 @@ class _SpaFallback(StaticFiles):
     which is exactly what action-item ``target_url``s do today.
     """
 
+    def __init__(
+        self,
+        *,
+        directory: str | os.PathLike[str],
+        html: bool = False,
+        check_dir: bool = True,
+    ) -> None:
+        # Explicit ``__init__`` so Pylance resolves ``directory`` /
+        # ``html`` against our subclass (Starlette's parent signature
+        # otherwise leaks through as unknown to the type checker).
+        super().__init__(directory=directory, html=html, check_dir=check_dir)
+
     async def get_response(self, path, scope):  # type: ignore[override]
         try:
             return await super().get_response(path, scope)
@@ -61,8 +74,11 @@ class _SpaFallback(StaticFiles):
                 raise
             # Real file miss → serve the SPA shell so the client-side
             # router can take over and parse ``?tab=...`` etc.
-            directory = Path(self.directory) if isinstance(self.directory, str) else self.directory
-            index = directory / "index.html"
+            # ``self.directory`` is guaranteed non-None by Starlette's
+            # ``check_dir`` flow (constructor raises if it's None / missing).
+            directory = self.directory
+            assert directory is not None, "StaticFiles directory must be set"
+            index = Path(directory) / "index.html"
             if index.is_file():
                 return FileResponse(str(index), media_type="text/html")
             raise
