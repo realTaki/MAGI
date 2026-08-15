@@ -33,7 +33,13 @@ from magi.startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,
 )
-from magi.startup.process import is_alive, read_pid, reap_orphan_listener
+from magi.startup.process import (
+    claim_pid_file,
+    install_lifecycle_handlers,
+    is_alive,
+    read_pid,
+    reap_orphan_listener,
+)
 
 if TYPE_CHECKING:
     from magi.bus import Bus
