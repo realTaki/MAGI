@@ -78,7 +78,7 @@ def test_messages_book_add_truncates_over_cap(factory, seed_conversation):
 
 def test_messages_book_add_honors_lowered_cap(factory, seed_conversation):
     settings_book = MagicMock()
-    settings_book.get.return_value = "2000"  # within clamp range
+    settings_book.get_value.return_value = "2000"  # within clamp range
     mbook = MessageBook(factory, settings_book=settings_book)
     m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text='y' * 5000)))
     assert m.text is not None
@@ -116,13 +116,13 @@ def test_resolve_max_input_chars_clamps_garbage():
     from magi.bus.library.local.conversationBook import _resolve_max_input_chars
 
     sb = MagicMock()
-    sb.get.return_value = "not-a-number"
+    sb.get_value.return_value = "not-a-number"
     assert _resolve_max_input_chars(sb) == 8_000
 
-    sb.get.return_value = "50"  # below MIN
+    sb.get_value.return_value = "50"  # below MIN
     assert _resolve_max_input_chars(sb) == 1_000
 
-    sb.get.return_value = "999_999_999"  # above MAX
+    sb.get_value.return_value = "999_999_999"  # above MAX
     assert _resolve_max_input_chars(sb) == 100_000
 
 

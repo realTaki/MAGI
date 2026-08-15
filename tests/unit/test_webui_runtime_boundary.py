@@ -43,7 +43,7 @@ def test_selected_session_keeps_shared_admin_and_local_projection_distinct() -> 
     from magi.channels.api.auth import _sign_selected_session, resolve_session
 
     bus = MagicMock()
-    bus.settings_book.get.return_value = "test-signing-secret"
+    bus.settings_book.get_value.return_value = "test-signing-secret"
     token = _sign_selected_session(
         bus, magi_id=7, contact_id=3, magis_admin_id=11, tgid=987654321,
         display_name="Operator", admin=True, assigned=False, two_factor=True,

@@ -147,7 +147,7 @@ def _make_bus(**overrides) -> Mock:
     bus.token_usage_book.add = Mock()
 
     bus.settings_book = Mock()
-    bus.settings_book.get = Mock(return_value=None)
+    bus.settings_book.get_value = Mock(return_value=None)
 
     bus.memberships_book = None
 

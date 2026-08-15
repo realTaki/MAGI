@@ -61,7 +61,7 @@ def runtime_instruction_block(bus: Bus, *, magi_id: int | None = None) -> str:
         settings = getattr(bus, "settings_book", None)
         if settings is not None:
             try:
-                raw = settings.get(key="instruction")
+                raw = settings.get_value(key="instruction")
                 if raw:
                     personal = raw
             except Exception:

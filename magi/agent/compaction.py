@@ -119,13 +119,13 @@ async def maybe_compact(
         return None
 
     try:
-        keep_raw = bus.settings_book.get(key="system.compact_keep_recent")
+        keep_raw = bus.settings_book.get_value(key="system.compact_keep_recent")
         keep = _clamp_int(keep_raw, _DEFAULT_KEEP_RECENT, _MIN_KEEP_RECENT, _MAX_KEEP_RECENT)
-        window_raw = bus.settings_book.get(key="system.compact_context_window")
+        window_raw = bus.settings_book.get_value(key="system.compact_context_window")
         context_window = _clamp_int(
             window_raw, _DEFAULT_CONTEXT_WINDOW, _MIN_CONTEXT_WINDOW, _MAX_CONTEXT_WINDOW
         )
-        pct_raw = bus.settings_book.get(key="system.compact_threshold_pct")
+        pct_raw = bus.settings_book.get_value(key="system.compact_threshold_pct")
         threshold_pct = _clamp_int(
             pct_raw, _DEFAULT_THRESHOLD_PCT, _MIN_THRESHOLD_PCT, _MAX_THRESHOLD_PCT
         )

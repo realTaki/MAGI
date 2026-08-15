@@ -202,19 +202,36 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
     # -- 异步队列 ----------------------------------------------------------
 
+    def _validate_publish(self, job: JobT) -> None:
+        """Validate a job before it is enqueued.
+
+        Subclasses own domain / context invariants — checks that
+        need a session or another Book (cross-record route proof,
+        cross-channel guard, …) — and override this hook where
+        needed. Structural checks that only read the job's own
+        fields belong in the dataclass's ``__post_init__`` instead.
+
+        The hook must not open or commit a separate transaction;
+        the publishing transaction opens after it returns.
+        """
+
     def publish(self, job: JobT) -> int:
         """Enqueue a new PENDING row and return its database-generated ``job_id``.
 
-        Default impl: copy every dataclass field whose name is also a
-        column on :attr:`job_model` (skipping ``job_id`` /
-        ``attempts`` which :class:`BaseJob` owns), insert, commit.
+        Default impl: validate, then copy every dataclass field whose
+        name is also a column on :attr:`job_model` (skipping
+        ``job_id`` / ``attempts`` which :class:`BaseJob` owns),
+        insert, commit.
 
         Subclasses that need pre-insert side effects (cross-channel
         guard, derived columns, idempotency lookup, external
         settings write) override :meth:`publish` and call
         :meth:`_build_pending_row` after their checks — the
-        dataclass→row copy itself stays generic.
+        dataclass→row copy itself stays generic. An overridden
+        :meth:`publish` does not funnel through this default, so it
+        must invoke :meth:`_validate_publish` itself.
         """
+        self._validate_publish(job)
         with self._session() as s:
             row = self._build_pending_row(job)
             s.add(row)

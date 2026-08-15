@@ -237,7 +237,7 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
             conversations_book=boards.target_conversations,
             messages_book=boards.target_messages,
             delivery_job_board=Mock(),
-            settings_book=SimpleNamespace(get=lambda **_kwargs: None),
+                settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         ),
         magi_id=boards.target.id,
     )  # type: ignore[arg-type]
@@ -488,7 +488,7 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
         a2a_request_job_board=request_board,
         a2a_notify_job_board=notify_board,
         delivery_job_board=delivery_board,
-        settings_book=SimpleNamespace(get=lambda **_kwargs: None),
+        settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         agent_job_board=Mock(),
     )
     worker = AgentWorker(bus, magi_id=12)  # type: ignore[arg-type]
@@ -539,7 +539,7 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
             a2a_request_job_board=requests,
             a2a_notify_job_board=notifies,
             delivery_job_board=delivery_board,
-            settings_book=SimpleNamespace(get=lambda **_kwargs: None),
+            settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         ),
         magi_id=target.id,
     )  # type: ignore[arg-type]

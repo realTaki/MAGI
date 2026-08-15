@@ -53,7 +53,7 @@ def _make_bus(*, sbook: ConversationBook, mbook: MessageBook) -> MagicMock:
     bus.conversations_book = sbook
     bus.messages_book = mbook
     # No settings persisted → defaults apply.
-    bus.settings_book.get.return_value = None
+    bus.settings_book.get_value.return_value = None
     # compaction_prompt() is read inside call_llm_for_summary; mock it
     # so the test doesn't depend on the file prompt.
     bus.prompt_book = MagicMock()
@@ -90,7 +90,7 @@ async def test_maybe_compact_archives_and_persists_summary(
         mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user' if i % 2 == 0 else 'assistant', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    bus.settings_book.get.side_effect = lambda key: {
+    bus.settings_book.get_value.side_effect = lambda key: {
         "system.compact_keep_recent": 8,
         "system.compact_context_window": 16_000,
         "system.compact_threshold_pct": 50,
@@ -139,7 +139,7 @@ async def test_maybe_compact_uses_prior_summary(monkeypatch, seed_conversation, 
         mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1700, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    bus.settings_book.get.side_effect = lambda key: {
+    bus.settings_book.get_value.side_effect = lambda key: {
         "system.compact_keep_recent": 8,
         "system.compact_context_window": 16_000,
         "system.compact_threshold_pct": 50,
@@ -213,7 +213,7 @@ async def test_maybe_compact_returns_none_on_summary_failure(
         mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 1200, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    bus.settings_book.get.side_effect = lambda key: {
+    bus.settings_book.get_value.side_effect = lambda key: {
         "system.compact_keep_recent": 8,
         "system.compact_context_window": 16_000,
         "system.compact_threshold_pct": 50,
@@ -250,7 +250,7 @@ async def test_maybe_compact_shrinks_tail_to_fit_budget(
         mbook.get(mbook.add(Message(conversation_id=cid, message_id=f'm{i:03d}', role='user', text='x' * 2000, ts=datetime(2026, 8, 5, 0, 0, i))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    bus.settings_book.get.side_effect = lambda key: {
+    bus.settings_book.get_value.side_effect = lambda key: {
         "system.compact_keep_recent": 20,
         "system.compact_context_window": 16_000,
         "system.compact_threshold_pct": 50,
@@ -298,7 +298,7 @@ async def test_maybe_compact_keeps_at_least_one_when_summary_fills_budget(
     mbook.get(mbook.add(Message(conversation_id=cid, message_id='m001', role='user', text='x' * 100, ts=datetime(2026, 8, 5, 0, 0, 1))))
 
     bus = _make_bus(sbook=sbook, mbook=mbook)
-    bus.settings_book.get.side_effect = lambda key: {
+    bus.settings_book.get_value.side_effect = lambda key: {
         "system.compact_keep_recent": 5,
         "system.compact_context_window": 16_000,
         "system.compact_threshold_pct": 50,

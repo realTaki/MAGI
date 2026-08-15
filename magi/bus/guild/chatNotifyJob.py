@@ -149,14 +149,9 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         enqueues a turn (channel intake *and* internal steering
         republishes) goes through here:
 
-          1. D.22 cross-channel guard — refuses the publish if the
-             conversation exists and was created on a different
-             channel (raises :class:`ChannelMismatchError`). Reads the
-             typed ``contact_id`` / ``channel`` / ``conversation_id``
-             fields on the ChatNotifyJob, so any caller gets the same
-             protection. Skipped when ``contact_id is None`` (task
-             path with no contact), no ``conversations_book`` (legacy
-             / tests), or no channel (misconfigured job).
+          1. D.22 cross-channel guard — see :meth:`_validate_publish`.
+             Refuses the publish if the conversation exists and was
+             created on a different channel.
           2. Enqueue the chatNotifyJob row.
           3. Stamp ``contacts.last_seen_at`` (best-effort — a failure
              is logged and swallowed so a transient ``contact_book``
@@ -180,31 +175,9 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
 
         Returns the *job_id* of the published job (Board-generated).
         """
-        contact_id = job.contact_id
+        self._validate_publish(job)
         channel = job.channel
         conversation_id = job.conversation_id or ""
-        if (
-            contact_id is not None
-            and self._conversations_book is not None
-            and channel
-        ):
-            try:
-                cid_int = int(contact_id)
-            except (TypeError, ValueError):
-                cid_int = None
-            if cid_int is not None:
-                conversation = self._conversations_book.get_for_owner(
-                    contact_id=cid_int, conversation_id=conversation_id
-                )
-                if (
-                    conversation is not None
-                    and conversation.channel != channel
-                ):
-                    from magi.bus.library.local.conversationBook import (
-                        ChannelMismatchError,
-                    )
-
-                    raise ChannelMismatchError(conversation.channel)
         with self._session() as s:
             row = self._build_pending_row(job)
             s.add(row)
@@ -231,6 +204,31 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
                     job_id,
                 )
         return job_id
+
+    def _validate_publish(self, job: ChatNotifyJob) -> None:
+        """D.22 cross-channel guard.
+
+        Refuses the publish if the conversation exists and was created
+        on a different channel (raises :class:`ChannelMismatchError`).
+        Skipped when ``contact_id`` is None (task path with no contact),
+        there is no ``conversations_book`` (legacy / tests), or the job
+        carries no ``channel`` (misconfigured).
+        """
+        contact_id = job.contact_id
+        channel = job.channel
+        if contact_id is None or self._conversations_book is None or not channel:
+            return
+        try:
+            cid_int = int(contact_id)
+        except (TypeError, ValueError):
+            return
+        conversation = self._conversations_book.get_for_owner(
+            contact_id=cid_int, conversation_id=job.conversation_id or ""
+        )
+        if conversation is not None and conversation.channel != channel:
+            from magi.bus.library.local.conversationBook import ChannelMismatchError
+
+            raise ChannelMismatchError(conversation.channel)
 
     def _stamp_last_seen(self, job: ChatNotifyJob) -> None:
         """Best-effort ``last_seen_at`` update keyed on ``job.contact_id``.

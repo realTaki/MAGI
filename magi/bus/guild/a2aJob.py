@@ -88,6 +88,10 @@ class A2ARequestJob(BaseJob):
     text: str = ""  # 请求正文
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("A2A request text is required")
+
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestResult(BaseJobResult):
@@ -117,6 +121,10 @@ class A2ANotifyJob(BaseJob):
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     text: str = ""  # 通知正文
+
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("A2A notification text is required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,8 +211,8 @@ def _validate_route(
         raise ValueError("source_magi_id and target_magi_id are required")
     if source_magi_id == target_magi_id:
         raise ValueError("A2A cannot target the sending MAGI")
-    source = memberships.get(magi_id=source_magi_id)
-    target = memberships.get(magi_id=target_magi_id)
+    source = memberships.get(source_magi_id)
+    target = memberships.get(target_magi_id)
     if source is None or target is None:
         raise LookupError("A2A source or target MAGI does not exist")
     if source.magis_id != target.magis_id:
@@ -287,14 +295,16 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: A2ARequestJob) -> int:
-        if not job.text.strip():
-            raise ValueError("A2A request text is required")
+    def _validate_publish(self, job: A2ARequestJob) -> None:
+        """Prove the route exists and stays inside one MAGIS."""
         _validate_route(
             self._memberships_book,
             source_magi_id=job.source_magi_id,
             target_magi_id=job.target_magi_id,
         )
+
+    def publish(self, job: A2ARequestJob) -> int:
+        self._validate_publish(job)
         with self._session() as s:
             row = _A2ARequestRow(
                 source_magi_id=job.source_magi_id,
@@ -433,14 +443,16 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: A2ANotifyJob) -> int:
-        if not job.text.strip():
-            raise ValueError("A2A notification text is required")
+    def _validate_publish(self, job: A2ANotifyJob) -> None:
+        """Prove the route exists and stays inside one MAGIS."""
         _validate_route(
             self._memberships_book,
             source_magi_id=job.source_magi_id,
             target_magi_id=job.target_magi_id,
         )
+
+    def publish(self, job: A2ANotifyJob) -> int:
+        self._validate_publish(job)
         with self._session() as s:
             row = _A2ANotifyRow(
                 source_magi_id=job.source_magi_id,

@@ -131,8 +131,13 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
             session.commit()
             return row.id
 
-    def get_by_id(self, record_id: int) -> RecordT | None:
-        """Read one DTO by its database-local primary key."""
+    def get(self, record_id: int) -> RecordT | None:
+        """Read one DTO by its database-local primary key.
+
+        Business-key lookups belong in explicitly named methods such as
+        ``get_by_conversation_id``. This keeps the unqualified ``get``
+        contract identical for every database-backed Book.
+        """
 
         with self._session() as session:
             row = session.get(self.model_cls, record_id)

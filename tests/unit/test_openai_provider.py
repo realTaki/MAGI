@@ -861,7 +861,7 @@ def _make_bus(*, name: str | None, api_key: str | None, model: str | None) -> Ma
     if model is not None:
         settings[PROVIDER_MODEL_KEY] = model
 
-    bus.settings_book.get = MagicMock(side_effect=lambda *, key: settings.get(key))
+    bus.settings_book.get_value = MagicMock(side_effect=lambda *, key: settings.get(key))
     bus.settings_book.set = MagicMock(
         side_effect=lambda *, key, value: settings.__setitem__(key, value)
     )

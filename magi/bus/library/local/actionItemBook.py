@@ -11,9 +11,11 @@ Schema for the ``action_items`` table.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import Strict, StringConstraints
 
 from sqlalchemy import (
     Boolean,
@@ -25,8 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record, record
 
 # -- public dataclass ----------------------------------------------------
 
@@ -84,7 +86,7 @@ _TARGET_URL_MAX = 500
 _COMPLETION_NOTE_MAX = 500
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class ActionItem(BaseRecord):
     """A to-do surfaced to an operator in the dashboard.
 
@@ -96,32 +98,18 @@ class ActionItem(BaseRecord):
     and LLM tool both consume.
     """
 
-    contact_id: int  # 所属联系人 ID
-    title: str  # 待办标题
-    description: str | None = None  # 详细描述
-    target_url: str | None = None  # 跳转目标 URL
+    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
+    title: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]  # 待办标题
+    description: Annotated[str, Strict(), StringConstraints(max_length=1000)] | None = None
+    target_url: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
     priority: ActionPriority = ActionPriority.NORMAL  # 优先级（normal/high）
-    due_date: datetime | None = None  # 截止日期
+    due_date: Annotated[datetime, Strict()] | None = None  # 截止日期
     source: ActionSource = ActionSource.PROACTIVE  # 来源（user/proactive）
-    completed_at: datetime | None = None  # 完成时间（None=未完成）
-    completion_note: str | None = None  # 完成备注
-    dismissed: bool = False  # 是否已被 dismiss（隐藏但未完成）
-
-    def to_dict(self) -> dict:
-        """Wire-shape for JSON serialisation.
-
-        Mirrors DTO
-        so the WebUI API and the LLM tool see the same field
-        names they saw pre-migration.
-
-        No timestamp coercion here: ``BaseBook._row_to_dto`` has
-        already rendered every ``datetime`` column through
-        :func:`~magi.bus.library.base.to_iso`, so the three
-        timestamp fields are ISO-8601 ``Z`` strings by the time
-        this runs.
-        """
-        return asdict(self)
-
+    completed_at: Annotated[datetime, Strict()] | None = None  # 完成时间（None=未完成）
+    completion_note: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
+    dismissed: Annotated[bool, Strict()] = False  # 是否已被 dismiss（隐藏但未完成）
 
 # -- internal ORM --------------------------------------------------------
 
@@ -180,22 +168,14 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     explicitly so the audit trail reflects who caused
     the write.
 
-    Timestamp serialisation is inherited: ``BaseBook._row_to_dto``
-    renders every ``datetime`` column through
-    :func:`~magi.bus.library.base.to_iso` (ISO-8601 with a
-    trailing ``Z``). This Book used to override the mapper solely
-    to get that ``Z``; the base now does it for all 18 Books.
+    Timestamp mapping is inherited: ``BaseBook._row_to_dto`` keeps every
+    ``datetime`` column intact. This Book has no special serialisation path.
     """
 
     model_cls = _ActionItemRow
-    dto_cls = ActionItem
+    record_cls = ActionItem
 
     # -- single-row reads -------------------------------------------------
-
-    def get(self, *, item_id: int) -> ActionItem | None:
-        with self._session() as s:
-            row = s.scalar(select(_ActionItemRow).where(_ActionItemRow.id == item_id))
-            return self._row_to_dto(row) if row else None
 
     # Note: a ``has_open(contact_id, kind)`` exists-check that lived
     # here previously has been removed. Idempotency-on-first-
@@ -264,76 +244,6 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
             return [self._row_to_dto(r) for r in rows]
 
     # -- writes -----------------------------------------------------------
-
-    def add(
-        self,
-        *,
-        contact_id: int,
-        title: str,
-        description: str | None = None,
-        target_url: str | None = None,
-        priority: ActionPriority = ActionPriority.NORMAL,
-        due_date: datetime | None = None,
-        source: ActionSource = ActionSource.PROACTIVE,
-    ) -> ActionItem:
-        """Insert one action item row.
-
-        Owns all write invariants: title non-empty + ≤200
-        chars, description ≤1000, target_url ≤500, ``priority``
-        in :class:`ActionPriority`, ``source`` in
-        :class:`ActionSource`. Every caller — chat-driven
-        tool, dashboard API, proactive policy, future agent
-        loop — gets the same validation without each path
-        re-implementing length checks.
-
-        Callers pass ``source=`` explicitly — chat-driven
-        tools pass :data:`ActionSource.USER`, proactive policies
-        pass :data:`ActionSource.PROACTIVE`. The default
-        (:data:`ActionSource.PROACTIVE`) is the safe side: a
-        writer that forgets to tag is treated as system
-        action, which is non-repudiable.
-
-        Raises :class:`ValueError` on invariant violation;
-        translators (the tool worker, the dashboard route
-        handler) catch and surface as ``is_error=True`` /
-        4xx.
-        """
-        if not title or not title.strip():
-            raise ValueError("title must be a non-empty string")
-        if len(title) > _TITLE_MAX:
-            raise ValueError(f"title length {len(title)} exceeds maximum {_TITLE_MAX}")
-        if description is not None and len(description) > _DESCRIPTION_MAX:
-            raise ValueError(
-                f"description length {len(description)} exceeds maximum {_DESCRIPTION_MAX}"
-            )
-        if target_url is not None and len(target_url) > _TARGET_URL_MAX:
-            raise ValueError(
-                f"target_url length {len(target_url)} exceeds maximum {_TARGET_URL_MAX}"
-            )
-        if priority not in ActionPriority:
-            raise ValueError(
-                f"priority must be one of "
-                f"{sorted(p.value for p in ActionPriority)!r}, got {priority!r}"
-            )
-        if source not in ActionSource:
-            raise ValueError(
-                f"source must be one of "
-                f"{sorted(s.value for s in ActionSource)!r}, got {source!r}"
-            )
-        with self._session() as s:
-            row = _ActionItemRow(
-                contact_id=contact_id,
-                title=title,
-                description=description,
-                target_url=target_url,
-                priority=priority,
-                due_date=due_date,
-                source=source,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
 
     def complete(
         self,

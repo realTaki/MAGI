@@ -59,14 +59,14 @@ def provision_node_storage(
         allow_unprovisioned=True,
     )
     bus.messages_book.ensure_fts()
-    if not bus.settings_book.get(key="auth.signing_key"):
+    if not bus.settings_book.get_value(key="auth.signing_key"):
         bus.settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
     # ``channels.enabled`` is the runtime's single source of truth for which
     # channel workers to start. WebUI is required for the operator dashboard;
     # A2A is MAGIS-internal durable work and is not a channel worker.
     from magi.bus.library.local.tasksBook import Channel
 
-    if not bus.settings_book.get(key="channels.enabled"):
+    if not bus.settings_book.get_value(key="channels.enabled"):
         # Use :data:`Channel` enum values rather than string literals
         # so renaming the enum keeps the persisted default in sync.
         bus.settings_book.set(

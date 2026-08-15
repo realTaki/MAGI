@@ -73,7 +73,7 @@ async def test_successful_delivery_calls_submit_result_with_success():
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
-    w.bus.settings_book.get = MagicMock(return_value=None)  # default depth
+    w.bus.settings_book.get_value = MagicMock(return_value=None)  # default depth
 
     async def deliver(job):
         delivered.append(job)
@@ -109,7 +109,7 @@ async def test_failed_delivery_calls_submit_result_with_failure():
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
     w.bus.delivery_job_board.submit_result = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
-    w.bus.settings_book.get = MagicMock(return_value=None)
+    w.bus.settings_book.get_value = MagicMock(return_value=None)
 
     async def failing_deliver(job):
         raise RuntimeError("TG API timeout")
@@ -144,7 +144,7 @@ async def test_skips_job_with_wrong_channel():
     w.bus.delivery_job_board.claim_for_channel = _claim_sequence(wrong_job)
     w.bus.delivery_job_board.release = MagicMock()
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
-    w.bus.settings_book.get = MagicMock(return_value=None)
+    w.bus.settings_book.get_value = MagicMock(return_value=None)
 
     async def deliver(job):
         delivered.append(job)
@@ -176,7 +176,7 @@ async def test_backpressure_throttle_skips_claim():
         side_effect=AssertionError("claim_for_channel should not be called under backpressure"),
     )
     w.bus.delivery_job_board.pending_count = MagicMock(return_value=5000)
-    w.bus.settings_book.get = MagicMock(return_value="10")  # max_depth=10
+    w.bus.settings_book.get_value = MagicMock(return_value="10")  # max_depth=10
 
     async def deliver(job):
         pass

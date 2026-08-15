@@ -79,7 +79,7 @@ record_id = book.add(record)
 
 调用方构造未持久化的 `BaseRecord` 子类；`BaseBook.add(record)` 在一个事务中创建
 Row 并仅返回数据库生成的内部 `int id`。它不是 DTO 工厂：如需完整记录，调用方明确
-使用 `get(...)`、`get_by_id(...)` 或 `list(...)` 回读。
+使用 `get(record_id)` 或 `list(...)` 回读。
 
 `id`、`created_at`、`updated_at` 均为 `init=False` 的数据库所有字段，调用方不能在
 Record 构造时指定。`BaseBook._row_to_dto()` 在读取持久化 Row 后内部回填它们。业务
@@ -91,6 +91,13 @@ Record 构造时指定。`BaseBook._row_to_dto()` 在读取持久化 Row 后内�
 `_validate_add(record)` / `_record_to_row_values(record, session)` 钩子；不得重新定义
 `add`。幂等创建、upsert 和其他复合业务操作保留领域明确的方法名，并在内部复用该写入
 契约。
+
+### 2.2 读取契约
+
+`BaseBook.get(record_id)` 是所有数据库 Book 按内部自增主键读取 DTO 的唯一实现；子类
+不得再为 `contact_id`、`memory_id` 等同一主键写重复的 `get`。业务键查询必须使用明确的
+名称，例如 `get_by_conversation_id`、`get_by_task_id` 和 `get_by_run_id`。键值表和单例状态
+不属于主键读取契约，分别使用 `get_value(key=...)`、`get_current()` 等含义明确的方法。
 
 ## 3. 身份与外键规则
 

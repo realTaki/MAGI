@@ -6,7 +6,6 @@ provides typed accessors for every prompt file the runtime emits:
 - ``soul.md``, ``fallback_persona.md`` — system-prompt persona
 - ``chat_titles.md``, ``compaction.md`` — sub-task system prompts
 - ``context/*.md`` — system-prompt block templates
-- ``bot_replies.yaml`` — Telegram bot reply templates
 - ``task_presets/*.yaml`` — bundled proactive task templates
   (keyed by ``key`` field)
 
@@ -18,7 +17,6 @@ Usage via ``Bus``::
 
     bus = open_bus(...)
     soul = bus.prompt_book.soul()
-    replies = bus.prompt_book.bot_replies()
     presets = bus.prompt_book.task_presets()
 
 Standalone (early bootstrap / testing)::
@@ -56,7 +54,7 @@ class WorkspaceSoul:
     """
 
     content: str  # SOUL.md 文本内容
-    mtime: str | None  # 文件 mtime（ISO 8601 UTC，fallback 时为 None）
+    mtime: datetime | None  # 文件 mtime（UTC，fallback 时为 None）
     is_fallback: bool  # True=使用了 bundled fallback
 
 
@@ -98,11 +96,7 @@ class PromptBook(BaseFileBook):
         path = self._soul_path()
         try:
             content = path.read_text(encoding="utf-8").strip()
-            mtime = (
-                datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-                .isoformat()
-                .replace("+00:00", "Z")
-            )
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
             return WorkspaceSoul(content=content, mtime=mtime, is_fallback=False)
         except FileNotFoundError:
             return WorkspaceSoul(
@@ -111,11 +105,10 @@ class PromptBook(BaseFileBook):
                 is_fallback=True,
             )
 
-    def write_workspace_soul(self, content: str) -> str:
+    def write_workspace_soul(self, content: str) -> datetime:
         """Atomically write *content* to workspace ``SOUL.md``.
 
-        Returns the new file's mtime as an ISO 8601 UTC string
-        (``Z`` suffix).
+        Returns the new file's naive UTC mtime.
         """
         path = self._soul_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,8 +129,7 @@ class PromptBook(BaseFileBook):
             except FileNotFoundError:
                 pass
             raise
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-        return mtime.isoformat().replace("+00:00", "Z")
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
 
     # -- persona (bundled, from FileShelf) ---------------------------------
 
@@ -202,24 +194,6 @@ class PromptBook(BaseFileBook):
         every turn — the operator toggles ``system.show_daily_note_prompt``.
         """
         return self._shelf.read_text("context/daily_note")
-
-    # -- structured templates -----------------------------------------------
-
-    def bot_replies(self) -> dict[str, str]:
-        """Return Telegram bot reply templates as ``{template_id: text}``.
-
-        Reads and parses ``bot_replies.yaml``.  Values use
-        ``str.format()`` placeholders; callers interpolate.
-        """
-        data = self._shelf.read("bot_replies")
-        if not isinstance(data, dict):
-            raise ValueError(f"bot_replies.yaml must be a mapping; got {type(data).__name__}")
-        out: dict[str, str] = {}
-        for key, value in data.items():
-            if not isinstance(value, str):
-                raise ValueError(f"bot_replies.yaml key {key!r} is not a string template")
-            out[key] = value
-        return out
 
     # -- task presets -------------------------------------------------------
 

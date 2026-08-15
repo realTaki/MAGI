@@ -152,7 +152,7 @@ def build_system_prompt(
 
     # 6. Current chatter — this contact's profile + notes.
     try:
-        contact = bus.contacts_book.get(contact_id=contact_id)
+        contact = bus.contacts_book.get(contact_id)
         notes = bus.contact_notes_book.list_for_contact(contact_id=contact_id) if contact else None
         contact_block = _format_contact_block(contact, notes)
     except Exception:

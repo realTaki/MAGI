@@ -14,7 +14,7 @@ from magi.channels.api.channels import list_channels
 @pytest.mark.asyncio
 async def test_channel_list_keeps_unimplemented_channels_stopped() -> None:
     bus = MagicMock()
-    bus.settings_book.get.return_value = '["webui"]'
+    bus.settings_book.get_value.return_value = '["webui"]'
     registry = MagicMock()
     registry.is_running.return_value = False
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(workers=registry)))
