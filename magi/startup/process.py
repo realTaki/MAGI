@@ -27,8 +27,9 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from magi.startup.config import StartupConfig
@@ -272,10 +273,110 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
         logger.warning("mark_registry_stopped: registry write failed", exc_info=True)
 
 
+# ----------------------------------------------------------------------
+# Foreground lifecycle (shared by run_magi + run_webui_foreground)
+# ----------------------------------------------------------------------
+
+
+def claim_pid_file(pid_path: Path) -> None:
+    """Write ``os.getpid()`` into ``pid_path``; refuse if a live run is on record.
+
+    Mirrors the PID-file half of :func:`magi.startup.local.start_magi`
+    so the foreground and detached paths are interchangeable from the
+    operator's perspective.  A stale PID file pointing at a dead PID
+    is overwritten without complaint — same PID-reuse caveat.
+
+    The ``current == existing`` short-circuit handles the detach case:
+    :func:`magi.startup.local.start_magi` writes the supervisor's PID
+    before spawning the foreground subprocess; that subprocess is the
+    supervisor itself when reload is off, so re-claiming its own PID
+    is not a conflict.
+    """
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = read_pid(pid_path)
+    current = os.getpid()
+    if existing is not None and is_alive(existing) and existing != current:
+        raise RuntimeError(
+            f"already running (pid={existing}, pid_file={pid_path})"
+        )
+    pid_path.write_text(str(current), encoding="utf-8")
+
+
+@dataclass(slots=True)
+class PidCleanup:
+    """Best-effort PID-file cleanup fired by SIGTERM/SIGINT.
+
+    Unlinks ``pid_path`` and, optionally, calls ``extra_cleanup`` so
+    per-process bookkeeping (e.g. flipping ``runtime_state`` to
+    ``STOPPED`` for a MAGI runtime) can share the same signal hook.
+
+    Failures are logged at WARNING and never re-raised — cleanup must
+    not block the process from exiting.
+    """
+
+    pid_path: Path
+    extra_cleanup: Callable[[], None] | None = None
+    fired: bool = field(default=False, init=False)
+
+    def run_once(self) -> None:
+        """Synchronous entry point used by the ``finally`` in foreground runs."""
+        if self.fired:
+            return
+        self.fired = True
+        try:
+            self.pid_path.unlink(missing_ok=True)
+        except Exception:
+            logger.warning(
+                "pid cleanup: failed to unlink pid file %s",
+                self.pid_path,
+                exc_info=True,
+            )
+        if self.extra_cleanup is not None:
+            try:
+                self.extra_cleanup()
+            except Exception:
+                logger.warning("pid cleanup: extra_cleanup raised", exc_info=True)
+
+    def handle(self, signum: int, frame) -> None:
+        """Signal-handler entry point.  Chains through to the OS default after."""
+        self.run_once()
+        # Let uvicorn's own SIGTERM/SIGINT handling proceed so the
+        # asyncio loop shuts down.  Re-raising the default action is
+        # the documented way to chain through from inside a Python
+        # signal handler.
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        # SIGTERM: explicitly reference the default handler so uvicorn
+        # observes the signal — importing ``signal.default_int_handler``
+        # has the import-time side effect of registering it.
+        signal.default_int_handler  # noqa: B018
+
+
+def install_lifecycle_handlers(
+    pid_path: Path,
+    *,
+    extra_cleanup: Callable[[], None] | None = None,
+) -> PidCleanup:
+    """Install SIGTERM/SIGINT handlers that unlink ``pid_path`` and call ``extra_cleanup``.
+
+    Returns the :class:`PidCleanup` instance so the caller can also
+    invoke :meth:`PidCleanup.run_once` from a ``finally`` block when
+    uvicorn returns without a signal (e.g. KeyboardInterrupt inside the
+    asyncio loop that uvicorn swallows).
+    """
+    cleanup = PidCleanup(pid_path=pid_path, extra_cleanup=extra_cleanup)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, cleanup.handle)
+    return cleanup
+
+
 __all__ = [
     "read_pid",
     "is_alive",
     "find_listener_on_port",
     "reap_orphan_listener",
     "mark_registry_stopped",
+    "claim_pid_file",
+    "PidCleanup",
+    "install_lifecycle_handlers",
 ]

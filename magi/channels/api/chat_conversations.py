@@ -219,24 +219,31 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
 
 
 def _resolve_contact_id(request: Request) -> int:
-    """Resolve the cookie's ``magi_session`` value to the
-    current contact's id.
+    """Resolve the current caller's contact id.
 
-    D.24: the cookie carries the **contact_id** (stringified
-    int) — not a per-channel delivery address. This
-    helper is the single place that translates "what's
-    in the cookie" into "who is the caller" for the
-    rest of the chat_conversations router. Raises
-    ``chat.unknown_sender`` 401 if the cookie is
-    missing or unparseable — same code as chat.py so
-    the frontend's friendly message covers both
-    endpoints.
+    Mirrors :func:`magi.channels.api.auth_gates.admin_gate`'s two-leg
+    strategy:
+
+    1. **Proxy leg** — when the request carries a signed WebUI proxy
+       envelope (``X-MAGI-Proxy-*``), trust the HMAC and use the
+       operator identity it asserts.
+    2. **Cookie leg** — fallback for direct-runtime callers that
+       present a ``magi_session`` cookie (legacy internal callers
+       that haven't gone through the WebUI proxy).
+
+    Raises ``chat.unknown_sender`` 401 only when neither leg yields
+    an identity — same code as chat.py so the frontend's friendly
+    message covers both endpoints.
     """
+    from magi.channels.api.auth_gates import _proxy_identity
     from magi.channels.api.auth import resolve_session
-
-    raw = request.cookies.get("magi_session") or ""
     from magi.channels.api.dependencies import get_bus
 
+    proxy = _proxy_identity(request)
+    if proxy is not None:
+        return int(proxy[0])
+
+    raw = request.cookies.get("magi_session") or ""
     session = resolve_session(get_bus(request), raw)
     if session is None:
         raise MagiHTTPException(

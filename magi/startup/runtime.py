@@ -49,7 +49,12 @@ from magi.startup.config import (
     StartupContext,
 )
 from magi.startup.paths import resolve_private_database_url, resolve_runtime_pid_path
-from magi.startup.process import is_alive, mark_registry_stopped, read_pid
+from magi.startup.process import (
+    PidCleanup,
+    claim_pid_file,
+    install_lifecycle_handlers,
+    mark_registry_stopped,
+)
 from magi.startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
@@ -237,8 +242,11 @@ def run_magi(config: StartupConfig) -> None:
     startup = _startup_context(config)
     _publish_runtime_config(config)
     pid_path = resolve_runtime_pid_path(startup.workspace_dir)
-    _claim_pid_file(pid_path)
-    _install_lifecycle_handlers(config, pid_path)
+    claim_pid_file(pid_path)
+    cleanup = install_lifecycle_handlers(
+        pid_path,
+        extra_cleanup=lambda: mark_registry_stopped(config),
+    )
     try:
         reload = _reload_enabled()
         reload_dirs = _reload_dirs() if reload else None
@@ -255,13 +263,37 @@ def run_magi(config: StartupConfig) -> None:
         # Cleanup if uvicorn returns without a signal (e.g. KeyboardInterrupt
         # inside the asyncio loop that uvicorn swallows).  The signal
         # handler is a no-op the second time around (``fired`` flag).
-        _ForegroundCleanup(config=config, pid_path=pid_path).run_once()
+        cleanup.run_once()
 
 
 def _claim_pid_file(pid_path: Path) -> None:
-    """Write ``os.getpid()`` into ``pid_path``; refuse if a live run is on record.
+    """Deprecated thin wrapper — see :func:`magi.startup.process.claim_pid_file`."""
+    claim_pid_file(pid_path)
 
-    Mirrors :func:`magi.startup.local.start_magi` so the foreground and
+
+def _install_lifecycle_handlers(
+    config: StartupConfig,
+    pid_path: Path,
+) -> PidCleanup:
+    """Deprecated thin wrapper — see :func:`magi.startup.process.install_lifecycle_handlers`."""
+    return install_lifecycle_handlers(
+        pid_path,
+        extra_cleanup=lambda: mark_registry_stopped(config),
+    )
+
+
+class _ForegroundCleanup(PidCleanup):
+    """Deprecated alias — kept so existing imports keep resolving.
+
+    Use :class:`magi.startup.process.PidCleanup` directly with
+    ``extra_cleanup`` for new code.
+    """
+
+    def __init__(self, config: StartupConfig, pid_path: Path) -> None:  # noqa: D401
+        super().__init__(
+            pid_path=pid_path,
+            extra_cleanup=lambda: mark_registry_stopped(config),
+        )
     detached paths are interchangeable from the operator's perspective.
     A stale PID file pointing at a dead PID is overwritten without
     complaint — same PID-reuse caveat as the detached path.
@@ -280,66 +312,6 @@ def _claim_pid_file(pid_path: Path) -> None:
             f"runtime already running (pid={existing}, pid_file={pid_path})"
         )
     pid_path.write_text(str(current), encoding="utf-8")
-
-
-def _install_lifecycle_handlers(
-    config: StartupConfig,
-    pid_path: Path,
-) -> None:
-    """Install SIGTERM/SIGINT cleanup.  Idempotent across re-entrant signals."""
-    cleanup = _ForegroundCleanup(config=config, pid_path=pid_path)
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, cleanup.handle)
-
-
-@dataclass(slots=True)
-class _ForegroundCleanup:
-    """Best-effort cleanup fired by SIGTERM/SIGINT during foreground runs.
-
-    Unlinks the PID file and flips ``runtime_state`` to ``STOPPED`` so
-    the singleton WebUI's ``/api/auth/available-magi`` view stays
-    accurate.  Failures are logged at WARNING and never re-raised —
-    registry writes must not block the process from exiting.
-    """
-
-    config: StartupConfig
-    pid_path: Path
-    fired: bool = False
-
-    def run_once(self) -> None:
-        """Synchronous entry point used by the ``finally`` in :func:`run_magi`."""
-        if self.fired:
-            return
-        self.fired = True
-        self._cleanup()
-
-    def handle(self, signum: int, frame) -> None:
-        """Signal handler entry point.  Re-raises the default action after cleanup."""
-        self.run_once()
-        # Let uvicorn's own SIGTERM/SIGINT handling proceed so the
-        # asyncio loop shuts down.  Raising the default handler from
-        # inside a Python signal handler is the documented way to
-        # chain through to the OS default (or prior handler).
-        if signum == signal.SIGINT:
-            raise KeyboardInterrupt
-        # SIGTERM: raise the default so uvicorn observes the signal.
-        signal.default_int_handler  # noqa: B018  (import-time side effect)
-
-    def _cleanup(self) -> None:
-        try:
-            self.pid_path.unlink(missing_ok=True)
-        except Exception:
-            logger.warning(
-                "foreground cleanup: failed to unlink pid file %s",
-                self.pid_path,
-                exc_info=True,
-            )
-        try:
-            mark_registry_stopped(self.config)
-        except Exception:
-            logger.warning(
-                "foreground cleanup: mark_registry_stopped raised", exc_info=True
-            )
 
 
 # ----------------------------------------------------------------------

@@ -61,10 +61,16 @@ class _SpaFallback(StaticFiles):
         html: bool = False,
         check_dir: bool = True,
     ) -> None:
-        # Explicit ``__init__`` so Pylance resolves ``directory`` /
-        # ``html`` against our subclass (Starlette's parent signature
-        # otherwise leaks through as unknown to the type checker).
-        super().__init__(directory=directory, html=html, check_dir=check_dir)
+        # Starlette's parent ``StaticFiles.__init__`` keeps ``directory``
+        # as the raw string and indexes it with ``self.directory / ...``
+        # in the hot path. That breaks for ``str`` inputs the moment the
+        # SPA fallback looks up ``index.html``; coerce to ``Path`` here
+        # so ``get_response`` can do its ``self.directory / "index.html"``
+        # without raising ``TypeError``.
+        from pathlib import Path
+
+        directory_path = Path(directory) if not isinstance(directory, Path) else directory
+        super().__init__(directory=directory_path, html=html, check_dir=check_dir)
 
     async def get_response(self, path, scope):  # type: ignore[override]
         try:

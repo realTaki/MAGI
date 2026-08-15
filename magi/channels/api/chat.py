@@ -182,29 +182,35 @@ async def send_chat(
             detail="text must not be empty",
         )
 
-    # D.24: the cookie's value IS the contact_id. The
-    # auth gate already proved it's a live admin operator;
-    # ``_resolve_caller_credentials`` re-checks the row
-    # exists and surfaces the operator's role for the
-    # agent-loop tool menu filter. LLM credentials are
-    # resolved inside the actor step via the
-    # factory. The cookie is the cross-channel identity;
-    # the per-channel delivery address (TG chat id) is
-    # looked up separately by the channel dispatcher
-    # (D.28) below — WebUI doesn't need it for send / read
-    # but we stamp it on the conversation row for cross-channel
-    # tooling.
+    # D.24: identity resolution mirrors chat_conversations. Two legs:
+    # (1) signed WebUI proxy envelope → trust the HMAC, use the
+    #     operator identity the proxy asserted; (2) ``magi_session``
+    #     cookie → fallback for direct-runtime callers (legacy
+    #     internal callers that haven't gone through the WebUI proxy).
+    # ``_resolve_caller_credentials`` re-checks the row exists and
+    # surfaces the operator's role for the agent-loop tool menu filter.
+    # LLM credentials are resolved inside the actor step via the
+    # factory. The cookie / proxy id is the cross-channel identity;
+    # the per-channel delivery address (TG chat id) is looked up
+    # separately by the channel dispatcher (D.28) below — WebUI
+    # doesn't need it for send / read but we stamp it on the
+    # conversation row for cross-channel tooling.
+    from magi.channels.api.auth_gates import _proxy_identity
     from magi.channels.api.auth import resolve_session
 
-    cookie_raw = request.cookies.get("magi_session", "")
-    session = resolve_session(bus, cookie_raw)
-    if session is None:
-        raise MagiHTTPException(
-            status_code=401,
-            code="chat.unknown_sender",
-            detail="no signed-in contact",
-        )
-    cookie_contact_id = int(session["contact_id"])
+    proxy = _proxy_identity(request)
+    if proxy is not None:
+        cookie_contact_id = int(proxy[0])
+    else:
+        cookie_raw = request.cookies.get("magi_session", "")
+        session = resolve_session(bus, cookie_raw)
+        if session is None:
+            raise MagiHTTPException(
+                status_code=401,
+                code="chat.unknown_sender",
+                detail="no signed-in contact",
+            )
+        cookie_contact_id = int(session["contact_id"])
     contact_id = _resolve_caller_credentials(bus, cookie_contact_id)
     # D.24: per-channel delivery address stamped on the
     # conversation row's ``delivery_address`` column (renamed
