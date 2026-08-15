@@ -112,10 +112,15 @@ class ControlSecret:
     name: str  # secret 名称（PK）
     secret_hash: bytes  # 哈希值
     salt: bytes  # 哈希盐
-    created_at: datetime  # 创建时间
-
-
-# -- internal ORM --------------------------------------------------------
+    # Raw secret value — populated alongside ``secret_hash`` once the
+    # ``0002_add_control_secret_value`` migration ran on this MAGIS
+    # store. The WebUI / Runtime proxy HMAC needs the raw bytes to
+    # derive the per-session signing key; storing them hashed would
+    # make the control plane unable to mint / verify proxy signatures.
+    # Older deployments (pre-migration) only have ``secret_hash`` +
+    # ``salt`` and will fall back to the bootstrap file at startup.
+    secret_value: bytes | None = None
+    created_at: datetime = None  # type: ignore[assignment]
 
 
 class _RuntimeRow(Base):
@@ -164,6 +169,10 @@ class _ControlSecretRow(Base):
     name: Mapped[str] = mapped_column(String(100), primary_key=True)
     secret_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # ``0002_add_control_secret_value`` migration adds this column.
+    # Nullable so legacy rows survive the upgrade — old rows will have
+    # NULL here and the lookup path falls back to the bootstrap file.
+    secret_value: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
@@ -452,6 +461,43 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
         with self._session() as s:
             rows = s.scalars(select(_ControlSecretRow)).all()
             return [self._row_to_dto(r) for r in rows]
+
+    def upsert(
+        self,
+        *,
+        name: str,
+        secret_hash: bytes,
+        salt: bytes,
+        secret_value: bytes,
+        now: datetime | None = None,
+    ) -> ControlSecret:
+        """Insert or update the bootstrap secret for one control name.
+
+        ``secret_value`` is the raw bytes the WebUI / Runtime proxy HMAC
+        is keyed on. ``secret_hash`` + ``salt`` are kept for audit /
+        verification symmetry with the rest of the auth surface.
+        """
+        from magi.common import utcnow_naive
+
+        ts = now or utcnow_naive()
+        with self._session() as s:
+            row = s.scalar(select(_ControlSecretRow).where(_ControlSecretRow.name == name))
+            if row is None:
+                row = _ControlSecretRow(
+                    name=name,
+                    secret_hash=secret_hash,
+                    salt=salt,
+                    secret_value=secret_value,
+                    created_at=ts,
+                )
+                s.add(row)
+            else:
+                row.secret_hash = secret_hash
+                row.salt = salt
+                row.secret_value = secret_value
+            s.flush()
+            s.commit()
+        return self.get(name=name)  # type: ignore[return-value]
 
 
 __all__ = [
