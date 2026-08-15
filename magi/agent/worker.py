@@ -936,19 +936,19 @@ class AgentWorker(RuntimeWorker):
     # -- settings helpers ----------------------------------------------------
 
     async def _read_max_iterations(self) -> int:
-        raw = await self.call(self.bus.settings_book.get, key="agent.max_iterations")
+        raw = await self.call(self.bus.settings_book.get_value, key="agent.max_iterations")
         return _coerce_int(raw, _DEFAULT_MAX_ITERATIONS)
 
     async def _read_max_tokens(self) -> int:
-        raw = await self.call(self.bus.settings_book.get, key="agent.max_tokens")
+        raw = await self.call(self.bus.settings_book.get_value, key="agent.max_tokens")
         return _coerce_int(raw, _DEFAULT_MAX_TOKENS)
 
     async def _read_tool_wait(self) -> float:
-        raw = await self.call(self.bus.settings_book.get, key="agent.tool_wait_seconds")
+        raw = await self.call(self.bus.settings_book.get_value, key="agent.tool_wait_seconds")
         return _coerce_float(raw, _DEFAULT_TOOL_WAIT_SECONDS)
 
     async def _read_llm_timeout(self) -> float:
-        raw = await self.call(self.bus.settings_book.get, key="agent.llm_timeout_seconds")
+        raw = await self.call(self.bus.settings_book.get_value, key="agent.llm_timeout_seconds")
         return _coerce_float(raw, _DEFAULT_LLM_TIMEOUT_SECONDS)
 
 

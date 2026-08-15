@@ -292,11 +292,11 @@ def _validate_runtime_identity(startup: StartupContext, bus: Bus) -> None:
     magi_id = _to_magi_id(startup.magi_id)
     if magi_id is None or bus.memberships_book is None:
         raise RuntimeError("runtime identity is missing from the provisioned MAGIS store")
-    if bus.memberships_book.get(magi_id=magi_id) is None:
+    if bus.memberships_book.get(magi_id) is None:
         raise RuntimeError(f"runtime identity {startup.magi_id!r} is not registered in MAGIS")
 
     runtimes = bus.runtime_state_book
-    runtime = runtimes.get(runtime_id=magi_id) if runtimes is not None else None
+    runtime = runtimes.get_by_runtime_id(runtime_id=magi_id) if runtimes is not None else None
     if runtime is None:
         raise RuntimeError(f"runtime {magi_id} has no provisioned control-plane record")
     if runtime.port_in_use_since is None:
@@ -348,7 +348,7 @@ def _build_channels(
         return list(required)
 
     try:
-        raw = bus.settings_book.get(key="channels.enabled")
+        raw = bus.settings_book.get_value(key="channels.enabled")
         if raw:
             parsed = json.loads(raw)
             if isinstance(parsed, list):

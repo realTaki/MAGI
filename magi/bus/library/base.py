@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime
+from typing import cast, dataclass_transform
 
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +42,39 @@ class BaseRecord:
         """
 
         return dataclasses.asdict(self)
+
+
+@dataclass_transform(
+    kw_only_default=True,
+    frozen_default=True,
+    field_specifiers=(dataclasses.field, Field),
+)
+def record[RecordT: BaseRecord](cls: type[RecordT]) -> type[RecordT]:
+    """Declare a validated, immutable persisted DTO.
+
+    Library Record classes use this instead of the standard-library
+    ``@dataclass``.  Field constraints live inline in ``Annotated`` types and
+    are checked at construction, before a Book opens a transaction.  The
+    default coercion policy intentionally accepts matching ``StrEnum`` values
+    such as ``"high"`` and stores the canonical enum member; fields that must
+    reject coercion use ``Annotated[..., Strict()]`` explicitly.
+
+    ``@dataclass_transform`` mirrors the marker on ``pydantic.dataclasses.
+    dataclass`` so type checkers still infer the generated ``__init__`` for
+    classes decorated with ``@record`` (the marker is not inherited through
+    this wrapper otherwise).
+    """
+
+    return cast(
+        type[RecordT],
+        pydantic_dataclass(
+            cls,
+            frozen=True,
+            slots=True,
+            kw_only=True,
+            config=ConfigDict(extra="forbid", validate_default=True),
+        ),
+    )
 
 
 class BaseRecordMixin(Base):

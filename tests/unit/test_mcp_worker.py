@@ -37,10 +37,11 @@ import pytest
 from magi.bus.bootstrap import Bus
 from magi.bus.db import EngineFactory
 from magi.bus.db.file import FileShelf
+from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.guild import (
     MCPKind,
-    McpServerChangedJob,
-    mcpServerChangedJobBoard,
+    ChangeMCPServerJob,
+    changeMCPServerJobBoard,
 )
 from magi.bus.guild.base import JobStatus
 from magi.bus.library.file.promptBook import PromptBook
@@ -91,11 +92,11 @@ def _build_bus(tmp_path) -> Bus:
     worker needs (the test never exercises the rest of the
     composition root)."""
     factory = EngineFactory(f"sqlite:///{tmp_path}/mcp-worker.db")
-    factory.create_all()
+    synchronise_schema(factory, scope=LOCAL_SCOPE)
     settings_book = SettingBook(factory)
     mcp_book = McpServerBook(factory)
     tool_book = ToolDefinitionBook(factory)
-    board = mcpServerChangedJobBoard(factory)
+    board = changeMCPServerJobBoard(factory)
     # ``Bus.prompt_book`` is now non-Optional (B1: bootstrap fails
     # loudly on a missing prompts bundle), so the fixture must hand a
     # real PromptBook to the constructor even when the test never
@@ -118,7 +119,7 @@ def _build_bus(tmp_path) -> Bus:
         tool_definitions_book=tool_book,
         tool_catalog_book=None,  # type: ignore[arg-type]
         mcp_servers_book=mcp_book,
-        mcp_server_changed_job_board=board,
+        change_mcp_server_job_board=board,
         prompt_book=prompt_book,
         tool_job_board=None,  # type: ignore[arg-type]
         agent_job_board=None,  # type: ignore[arg-type]
@@ -297,14 +298,14 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
     # Bootstrap had no rows — Book is empty.
     assert bus.mcp_servers_book.get_by_name(name="gmail") is None
 
-    job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(
+    job_id = bus.change_mcp_server_job_board.publish(
+        ChangeMCPServerJob(
             kind=MCPKind.ADDED,
             server_name="gmail",
             server=_dto("gmail", command="mcp-gmail"),
         )
     )
-    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
+    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -316,7 +317,7 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
     # no old, so just connected).
     assert "gmail" in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
+    result = bus.change_mcp_server_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -342,8 +343,8 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
     await worker.on_start()
     assert worker.connections_view()["gmail"] is old
 
-    job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(
+    job_id = bus.change_mcp_server_job_board.publish(
+        ChangeMCPServerJob(
             kind=MCPKind.UPDATED,
             server_name="gmail",
             server=_dto(
@@ -354,7 +355,7 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
             ),
         )
     )
-    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
+    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
     await worker._handle_change(claimed)
 
     # Both connection stubs were used (old disconnect, new
@@ -371,7 +372,7 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
     discovered = {t.name for t in (tool_registry._injected.get("mcp") or [])}
     assert discovered == {"gmail__search", "gmail__send"}
 
-    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
+    result = bus.change_mcp_server_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -392,10 +393,10 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
     assert "gmail" in worker.connections_view()
     assert bus.mcp_servers_book.get_by_name(name="gmail") is not None
 
-    job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(kind=MCPKind.DELETED, server_name="gmail")
+    job_id = bus.change_mcp_server_job_board.publish(
+        ChangeMCPServerJob(kind=MCPKind.DELETED, server_name="gmail")
     )
-    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
+    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -405,7 +406,7 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
     assert bus.mcp_servers_book.get_by_name(name="gmail") is None
     assert tool_registry._injected.get("mcp") == []
 
-    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
+    result = bus.change_mcp_server_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -428,14 +429,14 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
     await worker.on_start()
     assert "gmail" in worker.connections_view()
 
-    job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(
+    job_id = bus.change_mcp_server_job_board.publish(
+        ChangeMCPServerJob(
             kind=MCPKind.TOGGLED,
             server_name="gmail",
             new_enabled=False,
         )
     )
-    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
+    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
     await worker._handle_change(claimed)
 
     # Worker updated the Book and dropped the connection.
@@ -444,7 +445,7 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
     assert row.enabled is False
     assert "gmail" not in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
+    result = bus.change_mcp_server_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -471,14 +472,14 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
     await worker.on_start()
     assert "gmail" not in worker.connections_view()
 
-    job_id = bus.mcp_server_changed_job_board.publish(
-        McpServerChangedJob(
+    job_id = bus.change_mcp_server_job_board.publish(
+        ChangeMCPServerJob(
             kind=MCPKind.TOGGLED,
             server_name="gmail",
             new_enabled=True,
         )
     )
-    claimed = await asyncio.to_thread(bus.mcp_server_changed_job_board.claim)
+    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
     await worker._handle_change(claimed)
 
     row = bus.mcp_servers_book.get_by_name(name="gmail")
@@ -486,7 +487,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
     assert row.enabled is True
     assert "gmail" in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
+    result = bus.change_mcp_server_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -500,7 +501,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 # the DB CHECK constraint rejects unknown kinds at INSERT time, so
 # the worker's defensive ``else: error = "unknown change kind"``
 # branch can no longer be reached from a published job. The
-# enforcement now lives in :class:`magi.bus.guild.mcpServerChangedJob._McpServerChangedRow`'s
+# enforcement now lives in :class:`magi.bus.guild.changeMCPServerJob._ChangeMCPServerRow`'s
 # column type, not the worker — see the StrEnum/SAEnum migration
 # docs.
 

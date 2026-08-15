@@ -139,8 +139,8 @@ class Task(BaseRecord):
 
     - ``cron`` — a 5-field cron string for RECURRING tasks.
       Consumed verbatim by apscheduler's ``CronTrigger``.
-    - ``run_at`` — an ISO 8601 timestamp for ONE-SHOT tasks.
-      Consumed verbatim by apscheduler's ``DateTrigger``.
+    - ``run_at`` — a naive-UTC ``datetime`` for ONE-SHOT tasks.
+      Consumed directly by apscheduler's ``DateTrigger``.
 
     Conversion from the LLM-facing structured form
     (``frequency`` / ``hour`` / ``minute`` / ``day_of_*``)
@@ -402,16 +402,15 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             # invariant for the type checker (and trips loudly if
             # someone breaks the XOR later).
             assert run_at_val is not None
-            # ``run_at`` path: ISO-parse + canonicalise (so
-            # "+08:00" / "Z" / naive UTC all land on the same
-            # canonical string in SQLite) + reject past times
+            # ``run_at`` is already a ``datetime`` by the Record contract;
+            # canonicalise aware values to naive UTC and reject past times
             # so an apscheduler ``DateTrigger`` that would
             # silently drop the job never reaches the DB.
             assert run_at_val is not None
             try:
                 canonical = validate_run_at(run_at_val)
             except ValueError as e:
-                raise ValueError(f"run_at is not a valid ISO 8601 timestamp: {e}") from None
+                raise ValueError(f"run_at is not a valid datetime: {e}") from None
             try:
                 validate_run_at_future(canonical)
             except ValueError as e:
@@ -593,12 +592,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         across prompt edits); the caller-supplied one
         sticks only on the insert path.
 
-        ``run_at`` is canonicalised (ISO 8601 parsed + UTC
-        normalised) here on BOTH branches so a writer that
-        passes "2026-08-01T07:30:00+00:00" and another
-        that passes "2026-08-01T15:30:00+08:00" both end
-        up updating the same row to the same canonical
-        string. Past-time ``run_at`` is rejected on both
+        ``run_at`` is canonicalised to naive UTC on BOTH branches. Past-time
+        ``run_at`` is rejected on both
         branches — an apscheduler job that would silently
         drop at fire-time never reaches the DB regardless
         of whether the path is update or insert.
@@ -616,7 +611,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             try:
                 canonical_run_at = validate_run_at(run_at)
             except ValueError as e:
-                raise ValueError(f"run_at is not a valid ISO 8601 timestamp: {e}") from None
+                raise ValueError(f"run_at is not a valid datetime: {e}") from None
             try:
                 validate_run_at_future(canonical_run_at)
             except ValueError as e:
@@ -894,7 +889,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
 # in their own module (``taskSchedule.py``); they merged in here
 # because every caller — the ``schedule_task`` LLM tool, the
 # WebUI's "next fire" preview, the API layer — goes through the
-# same shape (cron string OR ISO ``run_at``) and the Book is the
+# same shape (cron string OR ``datetime`` ``run_at``) and the Book is the
 # canonical owner of the schema. Co-locating the helpers with
 # the Book means there's one import for both the CRUD primitives
 # and the schedule validators.
@@ -1058,12 +1053,11 @@ def preset_to_cron(
 
 
 def validate_run_at(raw: str | datetime) -> datetime:
-    """Validate the ``run_at`` field for a one-shot task.
+    """Normalize a one-shot ``run_at`` value to naive UTC ``datetime``.
 
-    Accepts any ISO 8601 timestamp that ``datetime.fromisoformat``
-    can parse — offset-aware or naive UTC. Naive timestamps
-    are interpreted as UTC, matching the project's "UTC in
-    DB" convention.
+    This is an ingress-boundary helper: it accepts an ISO-8601 string from an
+    HTTP/tool payload or a ``datetime`` from backend code. Persisted ``Task``
+    Records only accept ``datetime``. Naive timestamps are interpreted as UTC.
 
     Returns a naive UTC ``datetime`` so two operators who write
     ``"2026-08-01T07:30:00+00:00"`` and

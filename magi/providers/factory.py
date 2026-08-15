@@ -81,9 +81,9 @@ def get_provider(*, bus: Bus, model: str | None = None) -> LLMProvider:
     LLMError
         provider 不在已知列表里。
     """
-    provider_name = bus.settings_book.get(key=PROVIDER_NAME_KEY)
-    api_key = bus.settings_book.get(key=PROVIDER_API_KEY_KEY)
-    effective_model = model or bus.settings_book.get(key=PROVIDER_MODEL_KEY)
+    provider_name = bus.settings_book.get_value(key=PROVIDER_NAME_KEY)
+    api_key = bus.settings_book.get_value(key=PROVIDER_API_KEY_KEY)
+    effective_model = model or bus.settings_book.get_value(key=PROVIDER_MODEL_KEY)
 
     if not provider_name:
         raise LLMNotConfiguredError("no LLM provider configured; set provider.name in settings")

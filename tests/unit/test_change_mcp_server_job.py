@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from magi.bus.db import EngineFactory
+from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.guild import (
     MCPKind,
     ChangeMCPServerJob,
@@ -25,7 +26,7 @@ from magi.bus.library.local.mcpServerBook import McpServer
 @pytest.fixture
 def factory():
     f = EngineFactory("sqlite:///:memory:")
-    f.create_all()
+    synchronise_schema(f, scope=LOCAL_SCOPE)
     return f
 
 

@@ -386,7 +386,7 @@ def _seed_control_secret_from_db_or_file(
         return  # best-effort; we still have the file-backed value in env
     if bus.control_secrets_book is None:
         return
-    existing = bus.control_secrets_book.get(name=magis_name)
+    existing = bus.control_secrets_book.get_by_name(name=magis_name)
     if existing is not None and existing.secret_value:
         return  # someone else already mirrored
     import hashlib
@@ -417,7 +417,7 @@ def _read_control_secret(*, host_workspace_dir: Path, magis_name: str) -> str | 
         magis_url=resolve_magis_database_url(host_workspace_dir, magis_name),
     )
     if bus is not None and bus.control_secrets_book is not None:
-        row = bus.control_secrets_book.get(name=magis_name)
+        row = bus.control_secrets_book.get_by_name(name=magis_name)
         if row is not None and row.secret_value:
             return row.secret_value.decode("utf-8")
     if secret_path.exists():

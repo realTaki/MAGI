@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from magi.bus.db import EngineFactory
 from magi.bus.db.base import utcnow_naive
+from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.guild.base import JobStatus
 from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJobBoard
 
@@ -18,7 +19,7 @@ from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJob
 @pytest.fixture
 def board(tmp_path) -> deliveryJobBoard:
     factory = EngineFactory(f"sqlite:///{tmp_path / 'delivery.sqlite'}")
-    factory.create_all()
+    synchronise_schema(factory, scope=LOCAL_SCOPE)
     return deliveryJobBoard(factory)
 
 

@@ -33,7 +33,7 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     root = magis.get_root()
     if root is None:
         root_id = magis.add(Magis(name=root_name))
-        root = magis.get(magis_id=root_id)
+        root = magis.get(root_id)
         if root is None:
             raise RuntimeError(f"MAGIS row {root_id} disappeared after insert")
     adam_role = roles.find(magis_id=root.id, name="ADAM")
@@ -44,7 +44,7 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
             instruction=DEFAULT_ROLE_INSTRUCTIONS["ADAM"],
             is_reserved=True,
         ))
-        adam_role = roles.get(role_id=role_id)
+        adam_role = roles.get(role_id)
         if adam_role is None:
             raise RuntimeError(f"ADAM role row {role_id} disappeared after insert")
     member = next(
@@ -57,7 +57,7 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     )
     if member is None:
         member_id = memberships.add(MagisMembership(magis_id=root.id, role_id=adam_role.id))
-        member = memberships.get(magi_id=member_id)
+        member = memberships.get(member_id)
         if member is None:
             raise RuntimeError(f"ADAM membership row {member_id} disappeared after insert")
     magis.set_adam(magis_id=root.id, adam_id=member.id)
@@ -72,7 +72,7 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     an ``assigned`` Contact merely to make WebUI login work.
     """
 
-    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
+    membership = bus.memberships_book.get(magi_id) if bus.memberships_book else None
     if membership is None or bus.magis_admins_book is None:
         raise RuntimeError("MAGIS admin registry unavailable")
     from magi.bus.library.magis import MagisAdmin
@@ -83,7 +83,7 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
         admin_id = bus.magis_admins_book.add(
             MagisAdmin(name="admin", magis_id=membership.magis_id)
         )
-        existing = bus.magis_admins_book.get(admin_id=admin_id)
+        existing = bus.magis_admins_book.get(admin_id)
         if existing is None:
             raise RuntimeError(f"MAGIS admin row {admin_id} disappeared after insert")
     projection = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=existing.id)
@@ -117,7 +117,7 @@ def _ensure_control_secret(*, path, bus, magis_name: str) -> str:
     if book is None:
         raise RuntimeError("MAGIS control_secrets_book unavailable; cannot seed secret")
 
-    existing = book.get(name=magis_name)
+    existing = book.get_by_name(name=magis_name)
     if existing is not None and existing.secret_value:
         value = existing.secret_value.decode("utf-8")
         _ensure_secret_file(path=path, value=value)
@@ -193,7 +193,7 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     _register_local_runtime(bus=bus, runtime_id=magi_id, config=config, port=RUNTIME_PORT)
     if bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
-    existing_state = bus.runtime_state_book.get(runtime_id=magi_id)
+    existing_state = bus.runtime_state_book.get_by_runtime_id(runtime_id=magi_id)
     if existing_state is None or existing_state.port_in_use_since is None:
         bus.runtime_state_book.allocate_port(runtime_id=magi_id, port=RUNTIME_PORT)
     _ensure_control_secret(
@@ -257,7 +257,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     eva_role = roles.find(magis_id=root.id, name="EVA")
     if eva_role is None:
         eva_role_id = roles.add(MagisRole(magis_id=root.id, name="EVA", is_reserved=True))
-        eva_role = roles.get(role_id=eva_role_id)
+        eva_role = roles.get(eva_role_id)
         if eva_role is None:
             raise RuntimeError(f"EVA role row {eva_role_id} disappeared after insert")
 
@@ -283,7 +283,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         magis_url=magis_url,
     )
     membership_id = memberships.add(MagisMembership(magis_id=root.id, role_id=eva_role.id))
-    membership = memberships.get(magi_id=membership_id)
+    membership = memberships.get(membership_id)
     if membership is None:
         raise RuntimeError(f"membership row {membership_id} disappeared after insert")
     _register_local_runtime(

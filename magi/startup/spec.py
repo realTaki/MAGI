@@ -95,7 +95,7 @@ def load_runtime_spec(bus, magi_name: str, *, magis_database_url: str) -> Runtim
     # runtime_id, which is the single cross-table lookup that ties the
     # ``runtime_state`` row back to its parent MAGIS.
     magis_id = _resolve_magis_id(bus, runtime.runtime_id)
-    magis = bus.magis_book.get(magis_id=magis_id) if bus.magis_book is not None else None
+    magis = bus.magis_book.get(magis_id) if bus.magis_book is not None else None
     if magis is None:
         raise ConfigurationError(
             f"MAGI {magi_name!r} references unknown MAGIS id={magis_id}"
@@ -122,7 +122,7 @@ def _resolve_magis_id(bus, runtime_id: int) -> int:
     """Find the MAGIS that owns ``runtime_id`` via the membership book."""
     if bus.memberships_book is None:
         raise ConfigurationError("memberships book unavailable")
-    membership = bus.memberships_book.get(magi_id=runtime_id)
+    membership = bus.memberships_book.get(runtime_id)
     if membership is None:
         raise ConfigurationError(
             f"runtime_id={runtime_id} has no MAGIS membership"
