@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from fastapi import Request
@@ -58,7 +57,7 @@ def test_selected_session_keeps_shared_admin_and_local_projection_distinct() -> 
 
 
 def test_runtime_app_has_no_spa_or_browser_login_routes() -> None:
-    app = create_runtime_app(context=SimpleNamespace(bus=MagicMock(), workers=MagicMock(spec=WorkerRegistry)))
+    app = create_runtime_app(bus=MagicMock(), workers=MagicMock(spec=WorkerRegistry))
     paths = {route.path for route in app.routes if hasattr(route, "path")}
     assert "/api/auth/available-magi" not in paths
     assert "/" not in paths

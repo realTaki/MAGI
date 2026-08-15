@@ -84,3 +84,31 @@ def test_bus_does_not_depend_on_startup() -> None:
         "(magi.startup); the bus layer should reach for its own "
         "resource resolvers:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_channels_do_not_import_startup_entry_points() -> None:
+    """``channels`` is downstream of ``startup``, never the other way around.
+
+    The runtime entry point (``run_magi``), the local supervisor
+    (``start_magi``), the CLI parser, and the WebUI supervisor each
+    own a process lifecycle.  Channels code must depend on those only
+    by injection — never by importing the constructor.  ``WorkerRegistry``
+    is explicitly allowed because the channel layer's wiring needs to
+    type-annotate the injected instance; it does not spawn or start one.
+    """
+    forbidden = (
+        "magi.startup.runtime",   # run_magi / RuntimeContext.create
+        "magi.startup.local",     # start_magi / stop_magi / restart_magi
+        "magi.startup.cli",       # main() / build_parser()
+        "magi.startup.webui",     # run_webui_foreground / ControlContext / start_webui
+    )
+    offenders: list[str] = []
+    for path in (MAGI_ROOT / "channels").rglob("*.py"):
+        for module, lineno in _imports(path):
+            if any(module == root or module.startswith(root + ".") for root in forbidden):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    assert not offenders, (
+        "channels must not reach back into startup entry points "
+        "(composition-root constructors); inject the constructed "
+        "instances instead:\n  " + "\n  ".join(offenders)
+    )

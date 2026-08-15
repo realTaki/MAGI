@@ -34,8 +34,7 @@ from magi.channels.api import auth, contacts, magi, magis
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.startup.runtime import RuntimeContext
-    from magi.startup.webui import ControlContext
+    from magi.channels.api.control_context import ControlContext
     from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.channels.api")
@@ -311,11 +310,16 @@ def create_app(
     return app
 
 
-def create_runtime_app(*, context: RuntimeContext) -> FastAPI:
-    """Factory for the internal API served by every MAGI runtime."""
+def create_runtime_app(*, bus: "Bus", workers: "WorkerRegistry") -> FastAPI:
+    """Factory for the internal API served by every MAGI runtime.
+
+    Both arguments are explicit: this module never reaches back into
+    ``magi.startup`` to construct them — the composition root injects
+    the already-built ``RuntimeContext`` here as its constituent parts.
+    """
     return create_app(
-        bus=context.bus,
-        workers=context.workers,
+        bus=bus,
+        workers=workers,
         include_spa=False,
         include_control_routes=False,
     )

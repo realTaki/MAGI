@@ -66,13 +66,6 @@ class WebUIStatus:
     log_stderr: str
 
 
-@dataclass(frozen=True, slots=True)
-class ControlContext:
-    """Read/open-only control capability for the singleton WebUI process."""
-
-    bus: Bus
-
-
 # ----------------------------------------------------------------------
 # Local lifecycle
 # ----------------------------------------------------------------------
@@ -218,6 +211,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
 
     from magi.bus import open_control_bus
     from magi.channels.api.app import create_control_app
+    from magi.channels.api.control_context import ControlContext
     from magi.startup.spec import load_runtime_spec
 
     root_workspace = config.host_workspace_dir / "MAGI_Citizens" / "eva-000"
@@ -361,7 +355,6 @@ __all__ = [
     "DEFAULT_WEBUI_PORT",
     "DEFAULT_WEBUI_HOST",
     "WebUIStatus",
-    "ControlContext",
     "start_webui",
     "stop_webui",
     "ensure_webui_running",

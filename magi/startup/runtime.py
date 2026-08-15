@@ -198,7 +198,7 @@ def create_runtime_app_from_environment():
 
     from magi.channels.api.app import create_runtime_app
 
-    app = create_runtime_app(context=context)
+    app = create_runtime_app(bus=context.bus, workers=context.workers)
 
     @asynccontextmanager
     async def _runtime_lifespan(_app):
