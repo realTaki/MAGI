@@ -424,6 +424,40 @@ def _reload_dirs() -> list[str]:
     return [str(Path(magi.__file__).resolve().parent)]
 
 
+def _maybe_start_watchdog() -> asyncio.Task | None:
+    """Start the systemd watchdog ping task iff ``$WATCHDOG_USEC`` is set.
+
+    Returns the :class:`asyncio.Task` so the caller can cancel it on
+    shutdown, or ``None`` when no watchdog is active.  Outside systemd
+    this is a no-op — the runtime can be launched with ``python -m magi
+    node run`` and behave the same as it always did.
+
+    Ping interval is half the watchdog window per sd_notify(3) — a
+    missed tick is detectable within one watchdog cycle.
+    """
+    usec = systemd_notify.watchdog_usec()
+    if usec is None or usec <= 0:
+        return None
+    interval = max(1.0, (usec / 1_000_000.0) / 2.0)
+
+    async def _loop() -> None:
+        # First ping straight away so a hung startup fails fast instead
+        # of waiting a full watchdog cycle for systemd to notice.
+        systemd_notify.watchdog_ping()
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                return
+            systemd_notify.watchdog_ping()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    return loop.create_task(_loop(), name="magi.watchdog")
+
+
 __all__ = [
     "RuntimeContext",
     "create_runtime_app_from_environment",

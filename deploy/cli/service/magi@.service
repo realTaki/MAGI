@@ -11,12 +11,17 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# ``Type=notify`` so the runtime acks with ``sd_notify(READY=1)`` and
+# arms the watchdog.  WatchdogSec=30s pairs with a 15 s ping inside
+# ``run_magi``; one missed ping is tolerable, two trigger a SIGABRT.
+Type=notify
+NotifyAccess=main
 Environment=HOST_WORKSPACE_DIR=__DATA_ROOT__
 Environment=MAGI_NAME=__SLUG__
 ExecStart=__MAGI_BIN__ node run --foreground --name __SLUG__
 Restart=on-failure
 RestartSec=5
+WatchdogSec=30s
 # Allow writing only into the MAGI data root.
 ProtectSystem=strict
 ProtectHome=read-only
