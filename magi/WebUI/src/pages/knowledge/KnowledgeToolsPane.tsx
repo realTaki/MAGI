@@ -38,27 +38,27 @@ export function KnowledgeToolsPane() {
       <InfoTip text={t("settings.toolsBuiltInTip")} />
       <ConsoleCard title={t("settings.toolsBuiltInHeading")}>
         {toolsLoadError && <p className="form-error">✗ {toolsLoadError}</p>}
-        {toolsQuery.isLoading && <p className="text-sm text-ink-soft">{t("settings.toolsLoading")}</p>}
+        {toolsQuery.isLoading && <p className="text-sm text-ink-3">{t("settings.toolsLoading")}</p>}
         {!toolsQuery.isLoading && builtin.length === 0 && !toolsLoadError && (
-          <p className="text-sm text-ink-soft">{t("settings.toolsBuiltInEmpty")}</p>
+          <p className="text-sm text-ink-3">{t("settings.toolsBuiltInEmpty")}</p>
         )}
         {builtin.length > 0 && (
           <table className="data-table w-full">
-            <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+            <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-3 border-b border-border">
               <th className="py-2 pr-4 font-medium">{t("settings.toolsName")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.toolsDescription")}</th>
               <th className="py-2 pr-4 font-medium">{t("settings.toolsAllowedRoles")}</th>
             </tr></thead>
             <tbody>{builtin.map((tool) => (
-              <tr key={tool.name} className="border-b border-sky-light/30 last:border-0">
+              <tr key={tool.name} className="border-b border-border-2 last:border-0">
                 <td className="py-2 pr-4 text-ink font-mono text-xs">{tool.name}</td>
-                <td className="py-2 pr-4 text-ink-soft text-xs">{tool.description}</td>
+                <td className="py-2 pr-4 text-ink-3 text-xs">{tool.description}</td>
                 <td className="py-2 pr-4 text-xs">
                   {tool.allowed_roles.length === 0 ? (
-                    <span className="italic text-ink-soft">{t("settings.toolsAllowedRolesAll")}</span>
+                    <span className="italic text-ink-3">{t("settings.toolsAllowedRolesAll")}</span>
                   ) : (
                     <span className="flex flex-wrap gap-1">{tool.allowed_roles.map((role) => (
-                      <span key={role} className="inline-block rounded border border-sky-light/60 bg-sky-pale/40 px-1.5 py-0.5 font-mono text-[10px] text-ink">{role}</span>
+                      <span key={role} className="inline-block rounded border border-border bg-sky-soft px-1.5 py-0.5 font-mono text-[10px] text-ink">{role}</span>
                     ))}</span>
                   )}
                 </td>

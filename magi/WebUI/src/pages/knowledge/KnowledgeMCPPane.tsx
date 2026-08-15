@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../../components/ConsoleCard";
 import { InfoTip } from "../../components/InfoTip";
+import Toggle from "../../components/Toggle";
 import { IconDelete, IconEdit, IconEye } from "../../components/icons";
 import { useT } from "../../i18n/index";
 import { apiFetch, qk } from "../../lib/queryClient";
@@ -249,7 +250,7 @@ function McpServerManager() {
       {loadError && <p className="form-error mb-3">{loadError}</p>}
 
       {addOpen && (
-        <div className="mb-5 rounded-lg border border-sky-light/40 bg-sky-pale/10 p-3">
+        <div className="mb-5 rounded-lg border border-border bg-sky-soft p-3">
           {addError && <p className="form-error mb-3">{addError}</p>}
           <ServerFormFields
             mode="add" draft={addDraft}
@@ -271,7 +272,7 @@ function McpServerManager() {
       <div className="overflow-x-auto">
         <table className="data-table w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+            <tr className="text-left text-xs uppercase tracking-wider text-ink-3 border-b border-border">
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnName")}</th>
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnType")}</th>
               <th className="py-2 pr-3 font-medium">{t("settings.mcpColumnEndpoint")}</th>
@@ -295,7 +296,7 @@ function McpServerManager() {
                 detailName === s.name && serverToolsQuery.isFetching;
               if (isEdit && editDraft) {
                 return (
-                  <tr key={s.name} className="border-b border-sky-light/30 bg-sky-pale/20">
+                  <tr key={s.name} className="border-b border-border bg-sky-soft">
                     <td colSpan={5} className="py-3 pr-3">
                       {editError && <p className="form-error mb-2">{editError}</p>}
                       <ServerFormFields
@@ -322,22 +323,21 @@ function McpServerManager() {
               }
               return (
                 <Fragment key={s.name}>
-                  <tr className="border-b border-sky-light/30 hover:bg-sky-pale/10 transition-colors">
+                  <tr className="border-b border-border hover:bg-sky-soft transition-colors">
                     <td className="py-2 pr-3 font-mono text-xs">{s.name}</td>
-                    <td className="py-2 pr-3 text-xs text-ink-soft">{s.connection_type}</td>
-                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-soft">
+                    <td className="py-2 pr-3 text-xs text-ink-3">{s.connection_type}</td>
+                    <td className="py-2 pr-3 font-mono text-[11px] text-ink-3">
                       {s.connection_type === "stdio"
                         ? `${s.command ?? "—"}${s.args.length ? " " + s.args.join(" ") : ""}`
                         : s.url ?? "—"}
                     </td>
                     <td className="py-2 pr-3">
-                      <label className={`relative inline-flex items-center ${toggleMut.isPending ? "cursor-wait opacity-50" : "cursor-pointer"}`}>
-                          <input type="checkbox" className="sr-only peer"
-                            checked={s.enabled}
-                            disabled={toggleMut.isPending}
-                            onChange={() => { void onToggle(s); }} />
-                          <div className="w-8 h-5 bg-ink-soft/20 rounded-full peer peer-checked:bg-ocean peer-focus:ring-2 peer-focus:ring-sky-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-3" />
-                        </label>
+                      <Toggle
+                        checked={s.enabled}
+                        disabled={toggleMut.isPending}
+                        onChange={() => { void onToggle(s); }}
+                        ariaLabel={`Toggle ${s.name}`}
+                      />
                     </td>
                     <td className="py-2 pr-3 text-right">
                       <div className="flex items-center justify-end gap-0.5">
@@ -345,49 +345,49 @@ function McpServerManager() {
                           onClick={() => setDetailName(detailName === s.name ? null : s.name)}
                           title={t("settings.mcpShowTools")}
                           className={`p-1 rounded transition-colors ${
-                            detailName === s.name ? "text-ocean bg-sky-pale/30" : "text-ink-soft hover:text-ink hover:bg-white/60"
+                            detailName === s.name ? "text-sky-ink bg-sky-soft" : "text-ink-3 hover:text-ink-2 hover:bg-surface-2"
                           }`}>
                           <IconEye className="h-4 w-4" />
                         </button>
                         <button type="button" onClick={() => startEdit(s)} title={t("common.edit")}
-                          className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                          className="p-1 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors">
                           <IconEdit className="h-4 w-4" />
                         </button>
                         <button type="button" onClick={() => { void onDelete(s.name); }}
                           title={t("common.delete")}
-                          className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                          className="p-1 rounded text-ink-3 hover:text-danger hover:bg-surface-2 transition-colors">
                           <IconDelete className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
                   </tr>
                   {detailName === s.name && (
-                    <tr key={`${s.name}-tools`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                    <tr key={`${s.name}-tools`} className="border-b border-border bg-sky-soft">
                       <td colSpan={5} className="p-0">
                         <div className="px-4 py-2 text-xs">
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[10px] uppercase tracking-wider text-ink-soft font-medium">
+                            <span className="text-[10px] uppercase tracking-wider text-ink-3 font-medium">
                               {t("settings.mcpToolsHeader")}
                             </span>
                             {!serverToolsLoading && !serverToolsQuery.error && (
-                              <span className="inline-block rounded bg-sky-pale/60 text-ink-soft text-[10px] font-mono px-1.5 py-px">
+                              <span className="inline-block rounded bg-sky-soft text-ink-3 text-[10px] font-mono px-1.5 py-px">
                                 {serverTools.length}
                               </span>
                             )}
-                            <span className="flex-1 border-t border-sky-light/40" />
+                            <span className="flex-1 border-t border-border" />
                           </div>
                           {serverToolsLoading ? (
-                            <span className="text-ink-soft italic">{t("common.loading")}</span>
+                            <span className="text-ink-3 italic">{t("common.loading")}</span>
                           ) : serverToolsQuery.error ? (
                             <span className="form-error">✗ {(serverToolsQuery.error as Error).message}</span>
                           ) : serverTools.length === 0 ? (
-                            <span className="text-ink-soft italic">{t("settings.mcpNoTools")}</span>
+                            <span className="text-ink-3 italic">{t("settings.mcpNoTools")}</span>
                           ) : (
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                               {serverTools.map((tool) => (
                                 <span key={tool.name} className="inline-flex items-center gap-1">
                                   <span className="font-mono text-[11px] text-ink">{tool.name}</span>
-                                  <span className="text-ink-soft/60">{tool.description}</span>
+                                  <span className="text-ink-3/60">{tool.description}</span>
                                 </span>
                               ))}
                             </div>
@@ -400,7 +400,7 @@ function McpServerManager() {
               );
             })}
             {servers.length === 0 && (
-              <tr><td colSpan={5} className="py-6 text-ink-soft text-sm text-center">
+              <tr><td colSpan={5} className="py-6 text-ink-3 text-sm text-center">
                 {t("settings.mcpEmpty")}
               </td></tr>
             )}
@@ -493,14 +493,14 @@ type KvEditorProps = {
 function KvEditor({ label, rows, onChange, keyPlaceholder, valuePlaceholder }: KvEditorProps) {
   const t = useT();
   return (
-    <div className="rounded border border-sky-light/40 bg-white/50 p-2">
+    <div className="rounded border border-border bg-surface-2 p-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs uppercase tracking-wider text-ink-soft">{label}</span>
+        <span className="text-xs uppercase tracking-wider text-ink-3">{label}</span>
         <button type="button"
           onClick={() => onChange([...rows, { id: nextKvId(), key: "", value: "" }])}
-          className="text-xs text-sky-700 hover:text-sky-900">+ {t("common.add")}</button>
+          className="text-xs text-accent hover:text-accent-ink">+ {t("common.add")}</button>
       </div>
-      {rows.length === 0 && <p className="text-[11px] text-ink-soft italic py-1">—</p>}
+      {rows.length === 0 && <p className="text-[11px] text-ink-3 italic py-1">—</p>}
       <div className="space-y-1">
         {rows.map((r) => (
           <div key={r.id} className="flex items-center gap-1">
@@ -511,7 +511,7 @@ function KvEditor({ label, rows, onChange, keyPlaceholder, valuePlaceholder }: K
               type="password" value={r.value} placeholder={valuePlaceholder}
               onChange={(e) => onChange(rows.map((x) => x.id === r.id ? { ...x, value: e.target.value } : x))} />
             <button type="button" onClick={() => onChange(rows.filter((x) => x.id !== r.id))}
-              className="p-1 text-ink-soft hover:text-rose-600" title={t("common.delete")}>
+              className="p-1 text-ink-3 hover:text-danger" title={t("common.delete")}>
               <IconDelete className="h-3.5 w-3.5" />
             </button>
           </div>
