@@ -145,7 +145,7 @@ def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_bo
     )] == [("user", "Please review the integration.")]
 
     boards.target_requests.submit_result(
-        key=job_id,
+        job_id=job_id,
         result=A2ARequestResult(
             job_id=job_id,
             status=JobStatus.COMPLETED,
@@ -161,12 +161,12 @@ def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_bo
         ("assistant", "Integration is sound."),
     ]
 
-    result = boards.source_requests.get_result(key=job_id)
+    result = boards.source_requests.get_result(job_id=job_id)
     assert result is not None
     assert result.content == "Integration is sound."
     # Repeated polling observes the same durable result but does not repeat
     # the source-side transcript event.
-    assert boards.source_requests.get_result(key=job_id) is not None
+    assert boards.source_requests.get_result(job_id=job_id) is not None
     assert [(m.role, m.text) for m in _peer_messages(
         boards.source_conversations,
         boards.source_messages,
@@ -217,7 +217,7 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
     )
     assert boards.target_requests.claim_for_target(magi_id=boards.target.id) is not None
     boards.target_requests.submit_result(
-        key=first_id,
+        job_id=first_id,
         result=A2ARequestResult(
             job_id=first_id,
             status=JobStatus.COMPLETED,
@@ -294,17 +294,17 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
     assert claimed is not None
     assert claimed.job_id == job_id
     assert claimed.source_magi_id == source.id
-    assert requests.get_result(key=job_id) is None
+    assert requests.get_result(job_id=job_id) is None
 
     requests.submit_result(
-        key=job_id,
+        job_id=job_id,
         result=A2ARequestResult(
             job_id=job_id,
             status=JobStatus.COMPLETED,
             content="The plan builds cleanly.",
         ),
     )
-    result = requests.get_result(key=job_id)
+    result = requests.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
     assert result.content == "The plan builds cleanly."
@@ -312,10 +312,10 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
 
     # A terminal request can never be overwritten by another response.
     requests.submit_result(
-        key=job_id,
+        job_id=job_id,
         result=A2ARequestResult(job_id=job_id, status=JobStatus.COMPLETED, content="different"),
     )
-    assert requests.get_result(key=job_id).content == "The plan builds cleanly."
+    assert requests.get_result(job_id=job_id).content == "The plan builds cleanly."
 
 
 def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> None:
@@ -331,9 +331,9 @@ def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> 
     claimed = notifies.claim_for_target(magi_id=target.id)
     assert claimed is not None
     assert claimed.job_id == job_id
-    notifies.submit_result(key=job_id, result=A2ANotifyResult(job_id=job_id, status=JobStatus.COMPLETED))
-    assert notifies.get_result(key=job_id).status == JobStatus.COMPLETED
-    assert notifies.get_result(key=job_id).error_code is None
+    notifies.submit_result(job_id=job_id, result=A2ANotifyResult(job_id=job_id, status=JobStatus.COMPLETED))
+    assert notifies.get_result(job_id=job_id).status == JobStatus.COMPLETED
+    assert notifies.get_result(job_id=job_id).error_code is None
 
 
 def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
@@ -368,7 +368,7 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
         )
     )
     assert requests.claim_for_target(magi_id=target.id) is None
-    result = requests.get_result(key=expired_id)
+    result = requests.get_result(job_id=expired_id)
     assert result is not None
     assert result.status == JobStatus.FAILED
     assert result.error_code == "a2a_timeout"
@@ -556,7 +556,7 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
     worker._process = complete_once  # type: ignore[method-assign]
     await worker._run()
 
-    result = requests.get_result(key=request_id)
+    result = requests.get_result(job_id=request_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
     assert result.content == "Collaboration completed."

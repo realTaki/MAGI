@@ -74,7 +74,7 @@ class _FakeToolDef:
 
 @dataclass
 class _FakeLLMResult:
-    job_id: str = "llm-1"
+    job_id: int = 1
     status: JobStatus = JobStatus.COMPLETED
     response: dict | None = None
     error: str | None = None
@@ -208,7 +208,7 @@ async def test_tool_loop_completes():
     bus.llm_job_board.get_result.side_effect = [llm1, llm2]
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1",
+        job_id=1,
         status=JobStatus.COMPLETED,
         content="result",
         tool_call_id="tc-1",
@@ -252,7 +252,7 @@ async def test_steering_injected():
     bus.llm_job_board.get_result.side_effect = [llm1, llm2]
 
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1",
+        job_id=1,
         status=JobStatus.COMPLETED,
         content="result",
         tool_call_id="tc-1",
@@ -263,7 +263,7 @@ async def test_steering_injected():
         contact_id=42,
         text="Also check this please.",
     )
-    object.__setattr__(steer_job, "job_id", "steer-1")  # init=False，frozen 下回填
+    object.__setattr__(steer_job, "job_id", 1)  # init=False，frozen 下回填
     bus.agent_job_board.claim_for_steering.side_effect = [steer_job, None, None]
 
     ctx = RunContext(
@@ -283,8 +283,8 @@ async def test_steering_injected():
     from magi.bus.guild.chatNotifyJob import ChatNotifyResult
 
     bus.agent_job_board.submit_result.assert_any_call(
-        key="steer-1",
-        result=ChatNotifyResult(job_id="steer-1", status=JobStatus.COMPLETED),
+        job_id=1,
+        result=ChatNotifyResult(job_id=1, status=JobStatus.COMPLETED),
     )
 
 
@@ -409,7 +409,7 @@ async def test_max_iterations_exceeded():
     # always returns a tool_use → never terminates naturally
     bus.llm_job_board.get_result.return_value = llm
     bus.tool_job_board.get_result.return_value = RunToolResult(
-        job_id="tj-1",
+        job_id=1,
         status=JobStatus.COMPLETED,
         content="r",
         tool_call_id="tc-1",

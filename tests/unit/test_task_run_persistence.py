@@ -27,6 +27,7 @@ def factory():
     # left dangling and the INSERT below fails.
     from magi.bus.library.local.contactBook import ContactBook  # noqa: F401
     from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
+    from magi.bus.library.magis.membershipBook import MagisMembershipBook  # noqa: F401
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
@@ -86,27 +87,27 @@ class TestRecordRunStart:
         _ = task_run_book
         task = _make_test_task(task_book, task_book._factory, "task_rt1")
         run = task_book.record_run_start(
-            task_id=task.id,
+        task_id=task.task_id,
             manual=False,
         )
         assert run is not None
-        assert run.task_id == task.id
+        assert run.task_id == task.task_id
         assert run.manual is False
         assert run.status == "running"
 
         # Verify task.last_run_at was updated
-        updated = task_book.get(task_id=task.id)
+        updated = task_book.get(task_id=task.task_id)
         assert updated is not None
         assert updated.last_run_at is not None
 
     def test_run_id_can_be_provided(self, task_book):
         task = _make_test_task(task_book, task_book._factory, "task_rt2")
         run = task_book.record_run_start(
-            task_id=task.id,
+            task_id=task.task_id,
             manual=True,
-            id="my_run_42",
+            run_id="my_run_42",
         )
-        assert run.id == "my_run_42"
+        assert run.run_id == "my_run_42"
 
 
 class TestMarkRunAtConsumed:
@@ -136,8 +137,8 @@ class TestMarkRunAtConsumed:
         )
         assert task.enabled == 1
 
-        task_book.mark_run_at_consumed(task_id=task.id)
-        updated = task_book.get(task_id=task.id)
+        task_book.mark_run_at_consumed(task_id=task.task_id)
+        updated = task_book.get(task_id=task.task_id)
         assert updated is not None
         assert updated.enabled == 0
 
@@ -203,17 +204,17 @@ class TestListAllEnabledForWorkers:
             created_at=now,
             updated_at=now,
         )
-        task_book.disable(task_id=t.id, contact_id=uid)
+        task_book.disable(task_id=t.task_id, contact_id=uid)
 
         tasks = task_book.list_all_enabled_for_workers()
-        task_ids = {t.id for t in tasks}
-        assert t.id not in task_ids
+        task_ids = {t.task_id for t in tasks}
+        assert t.task_id not in task_ids
 
 
 class TestReapStale:
     def test_flips_stuck_running_rows_to_failed(self, task_book, task_run_book):
         task = _make_test_task(task_book, task_book._factory, "task_stale")
-        run = task_book.record_run_start(task_id=task.id, manual=False)
+        run = task_book.record_run_start(task_id=task.task_id, manual=False)
 
         # Simulate stale by backdating started_at
         from datetime import datetime, timedelta
@@ -232,14 +233,14 @@ class TestReapStale:
         n = task_run_book.reap_stale(older_than_seconds=300)
         assert n == 1
 
-        reaped = task_run_book.get(id=run.id)
+        reaped = task_run_book.get(run_id=run.run_id)
         assert reaped is not None
         assert reaped.status == "failed"
         assert reaped.error == "abandoned by previous worker"
 
     def test_ignores_recent_running_rows(self, task_book, task_run_book):
         task = _make_test_task(task_book, task_book._factory, "task_recent")
-        task_book.record_run_start(task_id=task.id, manual=False)
+        task_book.record_run_start(task_id=task.task_id, manual=False)
 
         n = task_run_book.reap_stale(older_than_seconds=300)
         assert n == 0  # should be too recent

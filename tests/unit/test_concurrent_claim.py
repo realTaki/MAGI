@@ -109,7 +109,7 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
             from magi.bus.guild.runTaskJob import RunTaskResult
 
             board.submit_result(
-                key=job.job_id, result=RunTaskResult(job_id=job.job_id, status=JobStatus.COMPLETED)
+                job_id=job.job_id, result=RunTaskResult(job_id=job.job_id, status=JobStatus.COMPLETED)
             )
         with lock:
             claimed_per_thread.append(own)
@@ -157,7 +157,7 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
                 break
             own.add(job.job_id)
             board.submit_result(
-                key=job.job_id,
+                job_id=job.job_id,
                 result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
         with lock:

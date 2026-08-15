@@ -69,13 +69,13 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
 
     # Verify result
     board.submit_result(
-        key=jid,
+        job_id=jid,
         result=DeliveryResult(
             job_id=jid,
             status=JobStatus.COMPLETED,
         ),
     )
-    result = board.get_result(key=jid)
+    result = board.get_result(job_id=jid)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 

@@ -82,7 +82,7 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     job_id = board.publish(
         McpServerChangedJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
     )
-    assert isinstance(job_id, str) and job_id
+    assert isinstance(job_id, int) and job_id > 0
     # The row landed in the table.
     from sqlalchemy import select
 
@@ -100,14 +100,8 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     assert row.server_payload["command"] == "mcp-gmail"
 
 
-def test_publish_mints_a_fresh_job_id_per_call(board):
-    """Board owns ``job_id`` — two consecutive publishes get two distinct IDs.
-
-    Earlier the Board accepted a caller-supplied ``job_id`` for
-    cross-system idempotency. Now that idempotency is gone at this
-    scale (see :class:`BaseJob`), every publish must mint a fresh
-    uuid so retries / fan-out don't accidentally dedupe.
-    """
+def test_publish_assigns_distinct_auto_incrementing_job_ids(board):
+    """Each publish receives a distinct database-generated primary key."""
     first = board.publish(
         McpServerChangedJob(
             kind=MCPKind.UPDATED,
@@ -122,8 +116,7 @@ def test_publish_mints_a_fresh_job_id_per_call(board):
             server=_gmail_dto(),
         )
     )
-    assert first != second
-    assert len(first) == 32  # uuid.uuid4().hex
+    assert (first, second) == (1, 2)
 
 
 def test_claim_returns_none_when_empty(board):
@@ -146,10 +139,10 @@ def test_claim_then_submit_result_round_trip(board):
     assert claimed.job_id == job_id
 
     board.submit_result(
-        key=job_id,
+        job_id=job_id,
         result=McpServerChangedResult(job_id=job_id, status=JobStatus.COMPLETED, error=None),
     )
-    result = board.get_result(key=job_id)
+    result = board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
     assert result.error is None
@@ -175,10 +168,10 @@ def test_submit_result_records_error(board):
     job_id = board.publish(McpServerChangedJob(kind=MCPKind.DELETED, server_name="gmail"))
     board.claim()
     board.submit_result(
-        key=job_id,
+        job_id=job_id,
         result=McpServerChangedResult(job_id=job_id, status=JobStatus.FAILED, error="boom"),
     )
-    result = board.get_result(key=job_id)
+    result = board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.FAILED
     assert result.error == "boom"

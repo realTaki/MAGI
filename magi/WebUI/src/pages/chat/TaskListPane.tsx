@@ -197,7 +197,7 @@ export default function TaskListPane() {
   async function deleteTask(t: TaskRow) {
     if (!confirm(`确定删除任务「${t.name}」？此操作不可撤销。`)) return;
     try {
-      await deleteMut.mutateAsync(t.id);
+      await deleteMut.mutateAsync(t.task_id);
     } catch {
       // Error surfaces on the next refetch.
     }
@@ -206,40 +206,40 @@ export default function TaskListPane() {
   async function runNow(t: TaskRow) {
     setRunningTasks((prev) => {
       const next = new Map(prev);
-      next.set(t.id, "__pending__");
+      next.set(t.task_id, "__pending__");
       return next;
     });
     let job_id: string;
     try {
-      const r = await fetch(`/api/tasks/${t.id}/run`, {
+      const r = await fetch(`/api/tasks/${t.task_id}/run`, {
         method: "POST",
         credentials: "include",
       });
       if (!r.ok) throw new Error(`Run failed: ${r.status}`);
-      const out = (await r.json()) as { job_id: string };
-      job_id = out.job_id;
+      const out = (await r.json()) as { job_id: number };
+      job_id = String(out.job_id);
     } catch {
       setRunningTasks((prev) => {
-        if (!prev.has(t.id) || prev.get(t.id) !== "__pending__") {
+        if (!prev.has(t.task_id) || prev.get(t.task_id) !== "__pending__") {
           return prev;
         }
         const next = new Map(prev);
-        next.delete(t.id);
+        next.delete(t.task_id);
         return next;
       });
       return;
     }
     setRunningTasks((prev) => {
-      if (!prev.has(t.id)) return prev;
+      if (!prev.has(t.task_id)) return prev;
       const next = new Map(prev);
-      next.set(t.id, job_id);
+      next.set(t.task_id, job_id);
       return next;
     });
   }
 
   async function toggleEnabled(t: TaskRow) {
     try {
-      const r = await fetch(`/api/tasks/${t.id}`, {
+      const r = await fetch(`/api/tasks/${t.task_id}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -253,7 +253,7 @@ export default function TaskListPane() {
   }
 
   function startEdit(t: TaskRow) {
-    setEditingId(t.id);
+    setEditingId(t.task_id);
     setDrawerOpen(true);
   }
 
@@ -263,7 +263,7 @@ export default function TaskListPane() {
   }
 
   function openRuns(t: TaskRow) {
-    setRunsForId(t.id);
+    setRunsForId(t.task_id);
   }
 
   const rowHandlers: RowHandlers = {
@@ -323,12 +323,12 @@ export default function TaskListPane() {
 
       {runsForId && (() => {
         const allRows = rows ?? [];
-        const t = allRows.find((row) => row.id === runsForId);
+        const t = allRows.find((row) => row.task_id === runsForId);
         if (!t) return null;
         return (
           <RunsHistoryDrawer
             taskName={t.name}
-            taskId={t.id}
+            taskId={t.task_id}
             conversationId={t.conversation_id ?? null}
             onClose={() => setRunsForId(null)}
           />
@@ -397,7 +397,7 @@ function TaskSection({
             <tbody>
               {rows.map((t) => (
                 <TaskRowView
-                  key={t.id}
+                  key={t.task_id}
                   task={t}
                   handlers={handlers}
                 />
@@ -418,7 +418,7 @@ function TaskRowView({
   task: TaskRow;
   handlers: RowHandlers;
 }) {
-  const isRunning = handlers.runningTasks.has(t.id);
+  const isRunning = handlers.runningTasks.has(t.task_id);
   return (
     <tr
       className={

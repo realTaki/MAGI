@@ -595,11 +595,11 @@ export default function ChatTab() {
   const queryClientForChat = useQueryClient();
   const sendChatMut = useMutation({
     mutationFn: (vars: { text: string; conversationId: string | null }) =>
-      apiFetch<{ job_id: string; status: string; conversation_id: string }>("/api/chat/send", {
+      apiFetch<{ job_id: number; status: string; conversation_id: string }>("/api/chat/send", {
         method: "POST",
         body: { text: vars.text, conversation_id: vars.conversationId },
       }),
-    onSuccess: (data: { job_id: string; status: string; conversation_id: string }, vars: { text: string; conversationId: string | null }) => {
+    onSuccess: (data: { job_id: number; status: string; conversation_id: string }, vars: { text: string; conversationId: string | null }) => {
       if (data.conversation_id !== vars.conversationId) {
         setConversationId(data.conversation_id);
         localStorage.setItem(CONVERSATION_STORAGE_KEY, data.conversation_id);
@@ -909,4 +909,3 @@ export default function ChatTab() {
 // available for newlines (chat-style). The Send button is
 // disabled while a request is in flight so the user can't
 // double-submit.
-

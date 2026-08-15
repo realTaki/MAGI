@@ -67,7 +67,7 @@ def test_channel_claim_exhaustion_uses_shared_retry_policy(
             session.commit()
 
     assert board.claim_for_channel(channel="webui") is None
-    result = board.get_result(key=job_id)
+    result = board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.FAILED
     assert result.error == f"job exhausted after {board.max_attempts} attempt(s)"

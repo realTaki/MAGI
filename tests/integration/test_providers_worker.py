@@ -205,7 +205,7 @@ def _install_counter(bus: Bus, fake: FakeProvider) -> dict[str, int]:
 
 async def _wait_for_result(
     bus: Bus,
-    job_id: str,
+    job_id: int,
     *,
     timeout: float = 5.0,
     poll: float = 0.05,
@@ -213,14 +213,14 @@ async def _wait_for_result(
     """Poll ``bus.llm_job_board.get_result`` until the job settles or times out."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        result = await asyncio.to_thread(bus.llm_job_board.get_result, key=job_id)
+        result = await asyncio.to_thread(bus.llm_job_board.get_result, job_id=job_id)
         if result is not None:
             return result
         await asyncio.sleep(poll)
     return None
 
 
-def _enqueue_simple(bus: Bus, *, content: str = "hello") -> str:
+def _enqueue_simple(bus: Bus, *, content: str = "hello") -> int:
     """Publish a minimal chat job (no tools, no streaming)."""
     return bus.llm_job_board.publish(
         CallLLMJob(

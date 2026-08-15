@@ -18,12 +18,13 @@ from magi.bus.db.engine import EngineFactory
 class BaseRecord:
     """Common JSON-safe fields for every persisted library DTO.
 
-    ``id`` is the database-local identity.  Time values deliberately remain
-    ``datetime`` throughout the database, Book and API layers; presentation
-    formatting belongs to the frontend.
+    ``id`` is database-owned local identity. Callers cannot supply it when
+    constructing a DTO; Books fill it from a persisted row. Time values
+    deliberately remain ``datetime`` throughout the database, Book and API
+    layers; presentation formatting belongs to the frontend.
     """
 
-    id: int = 0
+    id: int = dataclasses.field(default=0, init=False)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -75,9 +76,16 @@ class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
         return self._factory.session()
 
     def _row_to_dto(self, row: RowT) -> DtoT:
-        kwargs: dict = {}
+        init_kwargs: dict = {}
+        database_values: dict = {}
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
-                kwargs[f.name] = val
-        return self.dto_cls(**kwargs)
+                if f.init:
+                    init_kwargs[f.name] = val
+                else:
+                    database_values[f.name] = val
+        dto = self.dto_cls(**init_kwargs)
+        for name, value in database_values.items():
+            object.__setattr__(dto, name, value)
+        return dto

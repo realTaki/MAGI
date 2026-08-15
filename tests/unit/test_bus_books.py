@@ -63,6 +63,14 @@ def contact_id(factory):
     return c.id
 
 
+def test_base_record_id_is_book_owned() -> None:
+    """The auto-increment primary key cannot be supplied by DTO callers."""
+    contact = Contact(name="Unpersisted")
+    assert contact.id == 0
+    with pytest.raises(TypeError, match="unexpected keyword argument 'id'"):
+        Contact(name="Unpersisted", id=1)
+
+
 # -- SettingBook --------------------------------------------------------
 
 
@@ -392,7 +400,7 @@ def test_conversation_and_message(factory):
         message_id="m1",
         role="user",
         text="hi",
-        ts="2026-08-05T00:00:01Z",
+        ts=datetime(2026, 8, 5, 0, 0, 1),
     )
     assert isinstance(m, Message)
     msgs = mbook.list_for_conversation(conversation_id=s.conversation_id)
@@ -912,7 +920,7 @@ def test_task_book_add_rejects_unknown_source(factory):
     book = TaskBook(factory)
     with pytest.raises(ValueError, match="source must be one of"):
         book.add(
-            id="t-bad",
+            task_id="t-bad",
             name="bad",
             prompt="x",
             cron="0 0 * * *",
@@ -941,7 +949,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # ``name`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="name must be a non-empty"):
         book.add(
-            id="t1",
+            task_id="t1",
             name="",
             prompt="p",
             cron="0 0 * * *",
@@ -952,7 +960,7 @@ def test_task_book_add_invariants(factory, contact_id):
         )
     with pytest.raises(ValueError, match="name must be a non-empty"):
         book.add(
-            id="t2",
+            task_id="t2",
             name="   ",
             prompt="p",
             cron="0 0 * * *",
@@ -965,7 +973,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # ``name`` over the column cap is rejected.
     with pytest.raises(ValueError, match="name length"):
         book.add(
-            id="t3",
+            task_id="t3",
             name="n" * 121,
             prompt="p",
             cron="0 0 * * *",
@@ -978,7 +986,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # ``prompt`` empty / whitespace-only is rejected.
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
         book.add(
-            id="t4",
+            task_id="t4",
             name="ok",
             prompt="",
             cron="0 0 * * *",
@@ -989,7 +997,7 @@ def test_task_book_add_invariants(factory, contact_id):
         )
     with pytest.raises(ValueError, match="prompt must be a non-empty"):
         book.add(
-            id="t5",
+            task_id="t5",
             name="ok",
             prompt="   ",
             cron="0 0 * * *",
@@ -1002,7 +1010,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # ``prompt`` over the cap is rejected.
     with pytest.raises(ValueError, match="prompt length"):
         book.add(
-            id="t6",
+            task_id="t6",
             name="ok",
             prompt="p" * 8001,
             cron="0 0 * * *",
@@ -1015,7 +1023,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # ``target_channel`` outside the closed enum is rejected.
     with pytest.raises(ValueError, match="target_channel must be one of"):
         book.add(
-            id="t7",
+            task_id="t7",
             name="ok",
             prompt="p",
             cron="0 0 * * *",
@@ -1028,7 +1036,7 @@ def test_task_book_add_invariants(factory, contact_id):
     # All closed-set values pass.
     for ch in ("webui", "tg", "scheduled"):
         row = book.add(
-            id=f"t-ch-{ch}",
+                task_id=f"t-ch-{ch}",
             name=f"task-{ch}",
             prompt="p",
             cron="0 0 * * *",
@@ -1041,7 +1049,7 @@ def test_task_book_add_invariants(factory, contact_id):
 
     # Happy path lands a row.
     happy = book.add(
-        id="happy",
+        task_id="happy",
         name="ok-name",
         prompt="ok-prompt",
         cron="0 9 * * *",
@@ -1095,7 +1103,7 @@ def test_task_source_enum_values():
     cid = cbook.add(name="fixture").id
     book = TaskBook(ef)
     row = book.add(
-        id="src-enum",
+        task_id="src-enum",
         name="src-enum",
         prompt="p",
         cron="0 0 * * *",
@@ -1115,7 +1123,7 @@ def test_task_source_enum_values():
     # Raw string form (legacy callers) is also accepted via the
     # back-compat alias and returns the same enum.
     raw = book.add(
-        id="src-raw",
+        task_id="src-raw",
         name="src-raw",
         prompt="p",
         cron="0 0 * * *",
@@ -1155,7 +1163,7 @@ def test_task_source_enum_values():
     cid = cbook.add(name="fixture").id
     book = TaskBook(ef)
     row = book.add(
-        id="src-enum",
+        task_id="src-enum",
         name="src-enum",
         prompt="p",
         cron="0 0 * * *",
@@ -1175,7 +1183,7 @@ def test_task_source_enum_values():
     # Raw string form (legacy callers) is also accepted via the
     # back-compat alias and returns the same enum.
     raw = book.add(
-        id="src-raw",
+        task_id="src-raw",
         name="src-raw",
         prompt="p",
         cron="0 0 * * *",
@@ -1198,7 +1206,7 @@ def test_task_book_schedule_xor(factory, contact_id):
     # Both set — rejected.
     with pytest.raises(ValueError, match="exactly one of cron"):
         book.add(
-            id="both",
+            task_id="both",
             name="both",
             prompt="p",
             cron="0 9 * * *",
@@ -1212,7 +1220,7 @@ def test_task_book_schedule_xor(factory, contact_id):
     # Neither set — rejected.
     with pytest.raises(ValueError, match="exactly one of cron"):
         book.add(
-            id="neither",
+            task_id="neither",
             name="neither",
             prompt="p",
             contact_id=contact_id,
@@ -1223,7 +1231,7 @@ def test_task_book_schedule_xor(factory, contact_id):
 
     # run_at alone — accepted (one-shot).
     once = book.add(
-        id="once",
+        task_id="once",
         name="once",
         prompt="p",
         run_at="2026-12-31T00:00:00Z",
@@ -1232,7 +1240,7 @@ def test_task_book_schedule_xor(factory, contact_id):
         created_at=datetime(1970, 1, 1),
         updated_at=datetime(1970, 1, 1),
     )
-    assert once.run_at == "2026-12-31T00:00:00Z"
+    assert once.run_at == datetime(2026, 12, 31)
     assert once.cron is None
 
 
@@ -1244,7 +1252,7 @@ def test_task_book_rejects_invalid_cron(factory, contact_id):
     book = TaskBook(factory)
     with pytest.raises(ValueError, match="cron is not a valid expression"):
         book.add(
-            id="badcron",
+            task_id="badcron",
             name="badcron",
             prompt="p",
             cron="not a cron",
@@ -1267,7 +1275,7 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
 
     # System preset (contact_id=None): visible to both uids.
     book.add(
-        id="sys-preset",
+        task_id="sys-preset",
         name="system",
         prompt="p",
         cron="0 9 * * *",
@@ -1278,7 +1286,7 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
     )
     # User-private preset for contact_id only.
     book.add(
-        id="priv-preset",
+        task_id="priv-preset",
         name="private",
         prompt="p",
         cron="0 10 * * *",
@@ -1291,11 +1299,11 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
 
     # contact_id sees BOTH (system + own private).
     own = book.list_proactive_tasks(contact_id=contact_id)
-    assert {t.id for t in own} == {"sys-preset", "priv-preset"}
+    assert {t.task_id for t in own} == {"sys-preset", "priv-preset"}
 
     # other_id sees only the system preset.
     other = book.list_proactive_tasks(contact_id=other_id)
-    assert {t.id for t in other} == {"sys-preset"}
+    assert {t.task_id for t in other} == {"sys-preset"}
 
 
 # -- HookSignoffBook --------------------------------------------------
@@ -1390,7 +1398,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
         )
 
     # ``get_by_name`` lookup helper.
-    assert book.get_by_name(name="daily-brief").id == task_id_1
+    assert book.get_by_name(name="daily-brief").task_id == task_id_1
     assert book.get_by_name(name="nonexistent") is None
 
 

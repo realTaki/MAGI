@@ -91,7 +91,7 @@ export type EvaRuntimeRow = {
 // -- tasks ------------------------------------------------------------------
 
 export type TaskRow = {
-  id: string; name: string; prompt: string;
+  id: number; task_id: string; name: string; prompt: string;
   target_channel: "webui" | "tg";
   delivery_to: string | null; enabled: boolean;
   conversation_id: string | null;
@@ -728,7 +728,8 @@ export function useChatConversation(conversationId: string | null) {
 // -- tasks (per-item + mutations) -----------------------------------------
 
 export type TaskOut = {
-  id: string;
+  id: number;
+  task_id: string;
   name: string;
   prompt: string;
   cron: string;
@@ -809,7 +810,7 @@ export function useRunTaskNow() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (taskId: string) =>
-      apiFetch<{ job_id: string }>(
+      apiFetch<{ job_id: number }>(
         `/api/tasks/${encodeURIComponent(taskId)}/run`,
         { method: "POST" },
       ),

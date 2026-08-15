@@ -23,21 +23,13 @@ from magi.bus.library.local.tasksBook import (
 def test_validate_run_at_accepts_offset_aware_iso() -> None:
     raw = "2026-08-01T15:30:00+08:00"
     out = validate_run_at(raw)
-    # v3 contract: canonicalise to the UTC trailing-Z form so two
-    # operators writing the same instant in different offsets collapse
-    # to the same row.
-    assert out == "2026-08-01T07:30:00Z"
-    assert dt.datetime.fromisoformat(out).astimezone(dt.UTC) == dt.datetime(
-        2026, 8, 1, 7, 30, tzinfo=dt.UTC
-    )
+    assert out == dt.datetime(2026, 8, 1, 7, 30)
 
 
 def test_validate_run_at_naive_iso_treated_as_utc() -> None:
     raw = "2026-08-01T15:30:00"
     out = validate_run_at(raw)
-    parsed = dt.datetime.fromisoformat(out)
-    assert parsed.tzinfo is not None
-    assert parsed.astimezone(dt.UTC) == dt.datetime(2026, 8, 1, 15, 30, tzinfo=dt.UTC)
+    assert out == dt.datetime(2026, 8, 1, 15, 30)
 
 
 def test_validate_run_at_rejects_empty_garbage() -> None:
@@ -47,12 +39,9 @@ def test_validate_run_at_rejects_empty_garbage() -> None:
 
 
 def test_validate_run_at_normalises_whitespace() -> None:
-    # ``validate_run_at`` trims whitespace AND canonicalises to the
-    # UTC trailing-Z form (per the v3 contract — see the docstring
-    # of ``validate_run_at`` in tasksBook.py). 15:30 in UTC+8 is
-    # 07:30 UTC.
+    # ``validate_run_at`` trims whitespace and normalises to naive UTC.
     out = validate_run_at("  2026-08-01T15:30:00+08:00  ")
-    assert out == "2026-08-01T07:30:00Z"
+    assert out == dt.datetime(2026, 8, 1, 7, 30)
 
 
 # -- TaskWorker run_at consumption ------------------------------------------
@@ -65,9 +54,9 @@ def test_worker_should_fire_run_at_once():
 
     @dataclass
     class FakeTask:
-        id: str = "t_runat"
+        task_id: str = "t_runat"
         cron: str | None = None
-        run_at: str | None = None
+        run_at: datetime | None = None
         enabled: int = 1
 
     mock_bus = MagicMock()
@@ -81,14 +70,14 @@ def test_worker_should_fire_run_at_once():
 
     w = TaskWorker(mock_bus)
 
-    past = (datetime.now(dt.UTC) - timedelta(minutes=5)).isoformat()
+    past = (datetime.now(dt.UTC) - timedelta(minutes=5)).replace(tzinfo=None)
     task = FakeTask(run_at=past)
 
     # First time: should fire
     assert w._should_fire(task, datetime.now(dt.UTC)) is True
 
     # Record a fire
-    w._next_fire[task.id] = datetime.now(dt.UTC)
+    w._next_fire[task.task_id] = datetime.now(dt.UTC).replace(tzinfo=None)
 
     # Second time: should NOT fire (already fired)
     assert w._should_fire(task, datetime.now(dt.UTC)) is False
@@ -109,7 +98,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     # contact so the INSERT below doesn't trip it.
     contact_id = ContactBook(f).add(name="test-contact", role=Role.ASSIGNED).id
 
-    future = (datetime.now(dt.UTC) + timedelta(hours=1)).isoformat()
+    future = (datetime.now(dt.UTC) + timedelta(hours=1)).replace(tzinfo=None)
     now = datetime.now(dt.UTC).replace(tzinfo=None)
 
     task = tb.add(
@@ -125,8 +114,8 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     )
     assert task.enabled == 1
 
-    tb.mark_run_at_consumed(task_id=task.id)
-    updated = tb.get(task_id=task.id)
+    tb.mark_run_at_consumed(task_id=task.task_id)
+    updated = tb.get(task_id=task.task_id)
     assert updated is not None
     assert updated.enabled == 0
 
@@ -135,38 +124,36 @@ def test_mark_run_at_consumed_sets_enabled_zero():
 
 
 def test_validate_run_at_future_accepts_clear_future() -> None:
-    out = validate_run_at_future("2099-01-01T00:00:00+00:00")
-    assert out == "2099-01-01T00:00:00+00:00"
+    out = validate_run_at_future(datetime(2099, 1, 1))
+    assert out == datetime(2099, 1, 1)
 
 
 def test_validate_run_at_future_rejects_clear_past() -> None:
     with pytest.raises(ValueError) as exc_info:
-        validate_run_at_future("2020-01-01T00:00:00+00:00")
+        validate_run_at_future(datetime(2020, 1, 1))
     assert "in the future" in str(exc_info.value)
 
 
 def test_validate_run_at_future_respects_grace_window() -> None:
-    server_now = datetime.now(dt.UTC)
-    near_past = (server_now - timedelta(seconds=30)).isoformat(timespec="seconds")
+    server_now = datetime.now(dt.UTC).replace(tzinfo=None)
+    near_past = server_now - timedelta(seconds=30)
     validate_run_at_future(near_past)
-    far_past = (server_now - timedelta(seconds=90)).isoformat(timespec="seconds")
+    far_past = server_now - timedelta(seconds=90)
     with pytest.raises(ValueError):
         validate_run_at_future(far_past)
 
 
 def test_validate_run_at_future_uses_explicit_now() -> None:
-    fixed_now = datetime(2099, 6, 1, 12, 0, 0, tzinfo=dt.UTC)
-    past = (fixed_now - timedelta(minutes=5)).isoformat(timespec="seconds")
+    fixed_now = datetime(2099, 6, 1, 12, 0, 0)
+    past = fixed_now - timedelta(minutes=5)
     with pytest.raises(ValueError):
         validate_run_at_future(past, now=fixed_now)
-    future = (fixed_now + timedelta(days=1)).isoformat(timespec="seconds")
+    future = fixed_now + timedelta(days=1)
     validate_run_at_future(future, now=fixed_now)
 
 
 def test_validate_run_at_future_handles_naive_input() -> None:
-    server_now = datetime.now(dt.UTC)
-    naive_future = (
-        (server_now + timedelta(hours=1)).replace(tzinfo=None).isoformat(timespec="seconds")
-    )
+    server_now = datetime.now(dt.UTC).replace(tzinfo=None)
+    naive_future = server_now + timedelta(hours=1)
     out = validate_run_at_future(naive_future)
     assert out == naive_future

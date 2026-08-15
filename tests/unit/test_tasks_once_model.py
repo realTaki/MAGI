@@ -23,7 +23,10 @@ Three surface groups:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from pydantic import ValidationError
 
 from magi.channels.api.errors import MagiHTTPException
 from magi.channels.api.tasks import (
@@ -46,7 +49,7 @@ def test_task_in_accepts_once_with_offset_run_at() -> None:
         run_at="2026-08-01T15:30:00+08:00",
     )
     assert payload.frequency == "once"
-    assert payload.run_at == "2026-08-01T15:30:00+08:00"
+    assert payload.run_at == datetime(2026, 8, 1, 15, 30, tzinfo=timezone(timedelta(hours=8)))
 
 
 def test_task_in_naive_run_at_is_kept_verbatim() -> None:
@@ -59,7 +62,7 @@ def test_task_in_naive_run_at_is_kept_verbatim() -> None:
         frequency="once",
         run_at="2026-08-01T12:00:00",
     )
-    assert payload.run_at == "2026-08-01T12:00:00"
+    assert payload.run_at == datetime(2026, 8, 1, 12)
 
 
 # -- cross-field invariant (route preamble reimplemented inline) ----------
@@ -111,17 +114,16 @@ def test_cron_frequency_with_run_at_is_rejected_by_route_check() -> None:
 # -- scheduling layer: _schedule -------------------------------------------
 
 
-def test_render_once_returns_empty_cron_and_iso_run_at() -> None:
+def test_render_once_returns_empty_cron_and_datetime_run_at() -> None:
     payload = TaskIn(
         name="x",
         prompt="y",
         frequency="once",
         run_at="2026-08-01T15:30:00+08:00",
     )
-    cron, run_at_iso = _schedule(payload)
+    cron, run_at = _schedule(payload)
     assert cron is None
-    # v3 contract: 15:30 in UTC+8 → 07:30 UTC, canonical trailing-Z.
-    assert run_at_iso == "2026-08-01T07:30:00Z"
+    assert run_at == datetime(2026, 8, 1, 7, 30)
 
 
 def test_render_once_normalises_naive_run_at_to_utc_offset() -> None:
@@ -131,25 +133,19 @@ def test_render_once_normalises_naive_run_at_to_utc_offset() -> None:
         frequency="once",
         run_at="2026-08-01T12:00:00",
     )
-    cron, run_at_iso = _schedule(payload)
+    cron, run_at = _schedule(payload)
     assert cron is None
-    # v3 contract: canonicalise to UTC trailing-Z form (per
-    # ``validate_run_at`` docstring — see tasksBook.py).
-    assert run_at_iso == "2026-08-01T12:00:00Z"
+    assert run_at == datetime(2026, 8, 1, 12)
 
 
-def test_render_once_rejects_bad_run_at_with_400() -> None:
-    payload = TaskIn(
-        name="bad-stamp",
-        prompt="x",
-        frequency="once",
-        run_at="not-a-date",
-    )
-    with pytest.raises(MagiHTTPException) as exc_info:
-        _schedule(payload)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.code == "validation.run_at"
-    assert "not-a-date" in exc_info.value.detail
+def test_task_in_rejects_bad_run_at_at_the_api_boundary() -> None:
+    with pytest.raises(ValidationError):
+        TaskIn(
+            name="bad-stamp",
+            prompt="x",
+            frequency="once",
+            run_at="not-a-date",
+        )
 
 
 def test_render_cron_presets_unchanged_by_once_branch() -> None:
@@ -163,9 +159,9 @@ def test_render_cron_presets_unchanged_by_once_branch() -> None:
         hour=9,
         minute=0,
     )
-    cron, run_at_iso = _schedule(payload)
+    cron, run_at = _schedule(payload)
     assert cron == "0 9 * * *"
-    assert run_at_iso is None
+    assert run_at is None
 
 
 # -- TaskOut serializer contract -------------------------------------------
@@ -176,28 +172,30 @@ def test_task_out_carries_run_at_field() -> None:
     ``run_at``. The render cell picks the branch by
     which is populated."""
     out = TaskOut(
-        id="T" + "0" * 25,
+        id=1,
+        task_id="once-task-id",
         name="once-task",
         prompt="x",
         cron="",
-        run_at="2026-08-01T15:30:00+08:00",
+        run_at=datetime(2026, 8, 1, 7, 30),
         delivery_to="new",
         tz="Asia/Shanghai",
         target_channel="webui",
         contact_id=1,
         enabled=True,
         conversation_id="task-once",
-        created_at="2026-07-20T12:00:00Z",
-        updated_at="2026-07-20T12:00:00Z",
+        created_at=datetime(2026, 7, 20, 12),
+        updated_at=datetime(2026, 7, 20, 12),
     )
-    assert out.run_at == "2026-08-01T15:30:00+08:00"
+    assert out.run_at == datetime(2026, 8, 1, 7, 30)
 
 
 def test_task_out_run_at_is_optional_for_cron_rows() -> None:
     """Cron-only rows carry ``run_at=None``. No
     leakage."""
     out = TaskOut(
-        id="T" + "0" * 25,
+        id=1,
+        task_id="cron-task-id",
         name="cron-task",
         prompt="x",
         cron="0 9 * * *",
@@ -208,8 +206,8 @@ def test_task_out_run_at_is_optional_for_cron_rows() -> None:
         contact_id=1,
         enabled=True,
         conversation_id="task-cron",
-        created_at="2026-07-20T12:00:00Z",
-        updated_at="2026-07-20T12:00:00Z",
+        created_at=datetime(2026, 7, 20, 12),
+        updated_at=datetime(2026, 7, 20, 12),
     )
     assert out.run_at is None
     assert out.cron == "0 9 * * *"

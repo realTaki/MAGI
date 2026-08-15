@@ -317,7 +317,7 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
     # no old, so just connected).
     assert "gmail" in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -372,7 +372,7 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
     discovered = {t.name for t in (tool_registry._injected.get("mcp") or [])}
     assert discovered == {"gmail__search", "gmail__send"}
 
-    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -406,7 +406,7 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
     assert bus.mcp_servers_book.get_by_name(name="gmail") is None
     assert tool_registry._injected.get("mcp") == []
 
-    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -445,7 +445,7 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
     assert row.enabled is False
     assert "gmail" not in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 
@@ -487,7 +487,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
     assert row.enabled is True
     assert "gmail" in worker.connections_view()
 
-    result = bus.mcp_server_changed_job_board.get_result(key=job_id)
+    result = bus.mcp_server_changed_job_board.get_result(job_id=job_id)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
 

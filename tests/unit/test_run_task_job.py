@@ -23,15 +23,13 @@ def board():
 
 
 def test_publish_returns_job_id(board):
-    """publish returns a non-empty hex job_id."""
+    """publish returns a database-generated integer job_id."""
     job = RunTaskJob(
         task_id="task_abc",
         manual=True,
     )
     jid = board.publish(job)
-    assert isinstance(jid, str)
-    assert len(jid) > 0
-    assert jid != ""
+    assert jid == 1
 
 
 def test_claim_returns_published_job(board):
@@ -55,10 +53,10 @@ def test_submit_result_success(board):
     assert claim is not None
 
     board.submit_result(
-        key=jid,
+        job_id=jid,
         result=RunTaskResult(job_id=jid, status=JobStatus.COMPLETED),
     )
-    result = board.get_result(key=jid)
+    result = board.get_result(job_id=jid)
     assert result is not None
     assert result.status == JobStatus.COMPLETED
     assert result.error is None
@@ -71,13 +69,25 @@ def test_submit_result_failure(board):
     assert claim is not None
 
     board.submit_result(
-        key=jid,
+        job_id=jid,
         result=RunTaskResult(job_id=jid, status=JobStatus.FAILED, error="task not found"),
     )
-    result = board.get_result(key=jid)
+    result = board.get_result(job_id=jid)
     assert result is not None
     assert result.status == JobStatus.FAILED
     assert result.error == "task not found"
+
+
+def test_submit_result_key_owns_the_primary_key(board):
+    """The result payload cannot overwrite the auto-incrementing job key."""
+    jid = board.publish(RunTaskJob(task_id="task_key", manual=True))
+    assert board.claim() is not None
+
+    board.submit_result(job_id=jid, result=RunTaskResult(status=JobStatus.COMPLETED))
+
+    result = board.get_result(job_id=jid)
+    assert result is not None
+    assert result.job_id == jid
 
 
 def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
@@ -143,6 +153,6 @@ def test_max_attempts_exhausted(board):
     exhausted_claim = board.claim()
     assert exhausted_claim is None  # exhausted, no longer claimable
 
-    result = board.get_result(key=jid)
+    result = board.get_result(job_id=jid)
     assert result is not None
     assert result.status == JobStatus.FAILED

@@ -140,7 +140,7 @@ Durable runtime rules (enforced by the architecture guard):
 4. Worker completion is written back through the corresponding Job Board.
 5. A terminal committed result outranks a streamed delta.
 6. `/api/chat/send` is asynchronous: it returns `202 Accepted` with a
-   `job_id` (the `chat_notify_jobs` natural key) and the `conversation_id`; clients
+   `job_id` (the `chat_notify_jobs` auto-incrementing primary key) and the `conversation_id`; clients
    consume progress and final state through the durable job / SSE path.
 
 ## Important paths

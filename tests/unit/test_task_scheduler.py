@@ -36,9 +36,9 @@ def test_should_fire_cron_coalesce_equivalent():
 
     @dataclass
     class FakeTask:
-        id: str = "t1"
+        task_id: str = "t1"
         cron: str = "0 * * * *"  # every hour at :00
-        run_at: str | None = None
+        run_at: datetime | None = None
         enabled: int = 1
 
     mock_bus = MagicMock()
@@ -56,7 +56,7 @@ def test_should_fire_cron_coalesce_equivalent():
     assert w._should_fire(task, now) is True
 
     # Record a fire
-    w._next_fire[task.id] = now
+    w._next_fire[task.task_id] = now.replace(tzinfo=None)
 
     # Immediately after: should NOT fire again (coalesce)
     assert w._should_fire(task, now) is False
