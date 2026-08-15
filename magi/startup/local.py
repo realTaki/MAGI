@@ -32,7 +32,7 @@ from magi.startup.paths import (
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
-from magi.startup.process import find_listener_on_port, is_alive, read_pid
+from magi.startup.process import is_alive, read_pid, reap_orphan_listener
 from magi.startup.spec import load_runtime_spec
 
 logger = logging.getLogger("magi.startup.local")
@@ -95,7 +95,7 @@ def start_magi(
         # Stale PID file — drop it so the fresh spawn can claim the slot.
         pid_path.unlink(missing_ok=True)
 
-    _reap_orphan_worker(spec.runtime_port)
+    reap_orphan_listener(spec.runtime_port, label="MAGI orphan worker")
 
     env = _build_subprocess_env(config)
     argv = _build_subprocess_argv(config)
@@ -294,37 +294,6 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 # ----------------------------------------------------------------------
 # helpers
 # ----------------------------------------------------------------------
-
-
-def _reap_orphan_worker(port: int) -> None:
-    """Kill any process still listening on ``port`` that has no PID-file owner.
-
-    A uvicorn supervisor crash (most commonly: a reload-storm after
-    editing source files while the dev runtime is running) leaves its
-    child worker holding the runtime socket with no PID file pointing
-    at it.  Without this sweep the next :func:`start_magi` would bind-fail
-    and silently strand the slot.  SIGKILL is intentional — the orphan
-    is already in a bad state and we want the port released *now*, not
-    after a graceful drain that the worker may never attempt.
-    """
-    orphan = find_listener_on_port(port)
-    if orphan is None:
-        return
-    print(
-        f"orphan worker pid={orphan} holds port {port}; killing before respawn",
-        file=sys.stderr,
-    )
-    try:
-        os.kill(orphan, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    # Wait up to 2 s for the kernel to actually release the socket;
-    # SIGKILL is synchronous but the FD teardown can lag the signal.
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline:
-        if find_listener_on_port(port) is None:
-            return
-        time.sleep(0.05)
 
 
 def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:

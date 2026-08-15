@@ -7,19 +7,20 @@ to answer "is that process still up?". These helpers are that
 pattern's whole surface; they lived duplicated (byte-identical) in
 both modules until this module claimed them.
 
-Deliberately narrow: no spawning, no signalling, no path resolution
-(that's :mod:`magi.startup.paths`). Just "read the file", "is this
-PID live", and "who is holding this port" — so both supervisors
-agree on what a stale PID file means and can recover from the
-uvicorn reload-storm case (supervisor dies, worker orphans and
-keeps the runtime socket open).
+Deliberately narrow: no spawning, no path resolution (that's
+:mod:`magi.startup.paths`). Signals are scoped to a single
+purpose — the orphan-worker recovery that both supervisors need so
+they survive the uvicorn reload-storm failure mode (supervisor dies,
+worker orphans and keeps the runtime socket open).
 """
 
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -162,4 +163,38 @@ def _find_listener_on_port_macos(port: int) -> int | None:
     return None
 
 
-__all__ = ["read_pid", "is_alive", "find_listener_on_port"]
+def reap_orphan_listener(port: int, *, label: str = "orphan worker") -> int | None:
+    """SIGKILL any orphan still listening on ``port``; return the PID we killed.
+
+    A uvicorn supervisor crash (most commonly: a reload-storm after
+    editing source files while the dev runtime is running) leaves its
+    child worker holding the runtime socket with no PID file pointing
+    at it.  Without this sweep the next spawn would bind-fail and
+    silently strand the slot.  SIGKILL is intentional — the orphan is
+    already in a bad state and we want the port released *now*, not
+    after a graceful drain that the worker may never attempt.
+
+    Returns ``None`` if no orphan was found; otherwise the killed PID.
+    Waits up to 2 s for the kernel to actually release the socket,
+    since FD teardown can lag the signal.
+    """
+    orphan = find_listener_on_port(port)
+    if orphan is None:
+        return None
+    print(
+        f"{label} pid={orphan} holds port {port}; killing before respawn",
+        file=sys.stderr,
+    )
+    try:
+        os.kill(orphan, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if find_listener_on_port(port) is None:
+            return orphan
+        time.sleep(0.05)
+    return orphan
+
+
+__all__ = ["read_pid", "is_alive", "find_listener_on_port", "reap_orphan_listener"]

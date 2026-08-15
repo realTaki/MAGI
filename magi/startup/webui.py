@@ -33,7 +33,7 @@ from magi.startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,
 )
-from magi.startup.process import is_alive, read_pid
+from magi.startup.process import is_alive, read_pid, reap_orphan_listener
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -104,6 +104,10 @@ def start_webui(
                 file=sys.stderr,
             )
             return f"http://127.0.0.1:{port}"
+        # Stale PID file — drop it before we try to claim the slot.
+        pid_path.unlink(missing_ok=True)
+
+    reap_orphan_listener(port, label="WebUI orphan worker")
 
     env = _build_webui_env(config, port)
     argv = [sys.executable, "-m", "magi", "webui", "run", "--foreground"]
@@ -238,6 +242,33 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
 # ----------------------------------------------------------------------
 # helpers
 # ----------------------------------------------------------------------
+
+
+def _reap_orphan_worker(port: int) -> None:
+    """Kill any orphan worker still listening on the WebUI port.
+
+    Mirror of :func:`magi.startup.local._reap_orphan_worker` for the
+    WebUI supervisor: a uvicorn reload storm (or the supervisor
+    crashing for any other reason) leaves the worker listening with
+    no PID-file owner, which would otherwise block the next spawn
+    with ``Address already in use``.
+    """
+    orphan = find_listener_on_port(port)
+    if orphan is None:
+        return
+    print(
+        f"WebUI orphan worker pid={orphan} holds port {port}; killing before respawn",
+        file=sys.stderr,
+    )
+    try:
+        os.kill(orphan, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if find_listener_on_port(port) is None:
+            return
+        time.sleep(0.05)
 
 
 def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
