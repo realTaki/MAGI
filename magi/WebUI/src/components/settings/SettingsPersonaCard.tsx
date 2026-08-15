@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
+import Notice from "../Notice";
 import { useT } from "../../i18n/index";
 import { useResetSoul, useSoul, useUpdateSoul } from "../../lib/queries";
 
@@ -163,9 +164,7 @@ export function SettingsPersonaCard() {
       {loadError && <p className="form-error mt-3">✗ {loadError}</p>}
 
       {isFallback && !loadError && (
-        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {t("persona.fallbackBanner")}
-        </div>
+        <Notice tone="warning">{t("persona.fallbackBanner")}</Notice>
       )}
 
       {/* Single editable textarea.
@@ -177,7 +176,7 @@ export function SettingsPersonaCard() {
           their last edit has been committed. */}
       <div className="mt-4">
         {dirty && (
-          <p className="text-[10px] text-amber-700 mb-1">{t("persona.dirty")}</p>
+          <p className="text-[10px] text-warning mb-1">{t("persona.dirty")}</p>
         )}
         <textarea
           value={draftContent}
@@ -186,7 +185,7 @@ export function SettingsPersonaCard() {
           spellCheck={false}
           className={
             "mt-2 form-input w-full text-sm font-mono leading-relaxed py-2 px-3 resize-y " +
-            (overLimit ? "border-rose-400 focus:border-rose-500" : "")
+            (overLimit ? "border-danger focus:border-danger" : "")
           }
           style={{ minHeight: "260px", maxHeight: "520px" }}
         />
@@ -194,9 +193,9 @@ export function SettingsPersonaCard() {
           <span
             className={
               overLimit
-                ? "text-rose-600 font-medium"
+                ? "text-danger font-medium"
                 : nearLimit
-                  ? "text-amber-700"
+                  ? "text-warning"
                   : "text-ink-soft"
             }
           >
@@ -215,9 +214,9 @@ export function SettingsPersonaCard() {
       </div>
 
       {saveError && <p className="form-error mt-3">✗ {saveError}</p>}
-      {savedNotice && <p className="mt-3 text-xs text-emerald-700">✓ {savedNotice}</p>}
+      {savedNotice && <p className="mt-3 text-xs text-success">✓ {savedNotice}</p>}
 
-      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-sky-light/40">
+      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border">
         <button
           type="button"
           onClick={save}

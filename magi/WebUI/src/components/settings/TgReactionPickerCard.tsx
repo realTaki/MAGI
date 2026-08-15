@@ -115,11 +115,11 @@ function ReactionRow(props: {
   const picked = props.data?.current ?? "";
   return (
     <div className={"mt-4 " + (props.className ?? "")}>
-      <div className="text-sm font-medium text-sky-deep mb-2">
+      <div className="text-sm font-medium text-accent-ink mb-2">
         {props.label}
       </div>
       {props.isLoading && choices.length === 0 ? (
-        <p className="text-xs text-ink-soft">Loading…</p>
+        <p className="text-xs text-ink-3">Loading…</p>
       ) : (
         <div className="flex flex-wrap gap-2">
           {choices.map((emoji) => {
@@ -132,8 +132,8 @@ function ReactionRow(props: {
                 className={
                   "w-10 h-10 rounded-full text-xl flex items-center justify-center transition " +
                   (selected
-                    ? "ring-2 ring-sky-deep bg-sky-pale/50"
-                    : "ring-1 ring-sky-light/40 hover:bg-sky-pale/20")
+                    ? "ring-2 ring-accent bg-accent-soft"
+                    : "ring-1 ring-border hover:bg-surface-2")
                 }
                 aria-pressed={selected}
                 title={emoji}
