@@ -338,7 +338,7 @@ def create_app(
         # is served the SPA shell.
         app.mount(
             "/",
-            _SpaFallback(dist=spa_dist),
+            _SpaFallback(directory=str(spa_dist), html=True),
             name="spa",
         )
         logger.info("SPA mounted", extra={"path": str(spa_dist)})
