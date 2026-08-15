@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +48,8 @@ from magi.startup.config import (
     StartupConfig,
     StartupContext,
 )
-from magi.startup.paths import resolve_private_database_url
+from magi.startup.paths import resolve_private_database_url, resolve_runtime_pid_path
+from magi.startup.process import is_alive, mark_registry_stopped, read_pid
 from magi.startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
@@ -215,20 +217,122 @@ def run_magi(config: StartupConfig) -> None:
     The ASGI application must be an import-string factory for Uvicorn to
     supervise code changes.  On every spawned/reloaded child, the factory
     above synchronises the database before it starts workers or serves HTTP.
+
+    Foreground-mode lifecycle (mirrors :func:`magi.startup.local.start_magi`):
+
+    1. Claim ``<workspace>/run/magi.pid`` with ``os.getpid()`` so
+       ``magi node stop`` can find this process.  Refuse to start if
+       the file points at a still-alive PID.
+    2. Install SIGTERM/SIGINT handlers that unlink the PID file and
+       flip ``runtime_state.observed_state`` to ``STOPPED`` via
+       :func:`magi.startup.process.mark_registry_stopped`.  The
+       handler runs once even if uvicorn re-raises the signal.
+
+    Under ``reload=True`` the PID file records the **supervisor**
+    (this process), not the worker — workers come and go across
+    reloads and are owned by uvicorn.  ``magi node stop`` killing the
+    supervisor releases the listening socket via uvicorn's own
+    signal handling.
     """
     startup = _startup_context(config)
     _publish_runtime_config(config)
-    reload = _reload_enabled()
-    reload_dirs = _reload_dirs() if reload else None
-    uvicorn.run(
-        "magi.startup.runtime:create_runtime_app_from_environment",
-        factory=True,
-        host=_RUNTIME_HOST,
-        port=startup.runtime_port,
-        log_level=_DEFAULT_LOG_LEVEL,
-        reload=reload,
-        reload_dirs=reload_dirs,
-    )
+    pid_path = resolve_runtime_pid_path(startup.workspace_dir)
+    _claim_pid_file(pid_path)
+    _install_lifecycle_handlers(config, pid_path)
+    try:
+        reload = _reload_enabled()
+        reload_dirs = _reload_dirs() if reload else None
+        uvicorn.run(
+            "magi.startup.runtime:create_runtime_app_from_environment",
+            factory=True,
+            host=_RUNTIME_HOST,
+            port=startup.runtime_port,
+            log_level=_DEFAULT_LOG_LEVEL,
+            reload=reload,
+            reload_dirs=reload_dirs,
+        )
+    finally:
+        # Cleanup if uvicorn returns without a signal (e.g. KeyboardInterrupt
+        # inside the asyncio loop that uvicorn swallows).  The signal
+        # handler is a no-op the second time around (``fired`` flag).
+        _ForegroundCleanup(config=config, pid_path=pid_path).run_once()
+
+
+def _claim_pid_file(pid_path: Path) -> None:
+    """Write ``os.getpid()`` into ``pid_path``; refuse if a live run is on record.
+
+    Mirrors :func:`magi.startup.local.start_magi` so the foreground and
+    detached paths are interchangeable from the operator's perspective.
+    A stale PID file pointing at a dead PID is overwritten without
+    complaint — same PID-reuse caveat as the detached path.
+    """
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = read_pid(pid_path)
+    if existing is not None and is_alive(existing):
+        raise RuntimeError(
+            f"runtime already running (pid={existing}, pid_file={pid_path})"
+        )
+    pid_path.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _install_lifecycle_handlers(
+    config: StartupConfig,
+    pid_path: Path,
+) -> None:
+    """Install SIGTERM/SIGINT cleanup.  Idempotent across re-entrant signals."""
+    cleanup = _ForegroundCleanup(config=config, pid_path=pid_path)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, cleanup.handle)
+
+
+@dataclass(slots=True)
+class _ForegroundCleanup:
+    """Best-effort cleanup fired by SIGTERM/SIGINT during foreground runs.
+
+    Unlinks the PID file and flips ``runtime_state`` to ``STOPPED`` so
+    the singleton WebUI's ``/api/auth/available-magi`` view stays
+    accurate.  Failures are logged at WARNING and never re-raised —
+    registry writes must not block the process from exiting.
+    """
+
+    config: StartupConfig
+    pid_path: Path
+    fired: bool = False
+
+    def run_once(self) -> None:
+        """Synchronous entry point used by the ``finally`` in :func:`run_magi`."""
+        if self.fired:
+            return
+        self.fired = True
+        self._cleanup()
+
+    def handle(self, signum: int, frame) -> None:
+        """Signal handler entry point.  Re-raises the default action after cleanup."""
+        self.run_once()
+        # Let uvicorn's own SIGTERM/SIGINT handling proceed so the
+        # asyncio loop shuts down.  Raising the default handler from
+        # inside a Python signal handler is the documented way to
+        # chain through to the OS default (or prior handler).
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt
+        # SIGTERM: raise the default so uvicorn observes the signal.
+        signal.default_int_handler  # noqa: B018  (import-time side effect)
+
+    def _cleanup(self) -> None:
+        try:
+            self.pid_path.unlink(missing_ok=True)
+        except Exception:
+            logger.warning(
+                "foreground cleanup: failed to unlink pid file %s",
+                self.pid_path,
+                exc_info=True,
+            )
+        try:
+            mark_registry_stopped(self.config)
+        except Exception:
+            logger.warning(
+                "foreground cleanup: mark_registry_stopped raised", exc_info=True
+            )
 
 
 # ----------------------------------------------------------------------

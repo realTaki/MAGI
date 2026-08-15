@@ -7,6 +7,11 @@ to answer "is that process still up?". These helpers are that
 pattern's whole surface; they lived duplicated (byte-identical) in
 both modules until this module claimed them.
 
+Also owns :func:`mark_registry_stopped`, the best-effort helper that
+flips the singleton WebUI's view of a MAGI runtime to ``STOPPED``
+once its process exits — shared by the detached ``stop_magi`` path
+and the foreground ``run_magi`` SIGTERM/SIGINT cleanup hook.
+
 Deliberately narrow: no spawning, no path resolution (that's
 :mod:`magi.startup.paths`). Signals are scoped to a single
 purpose — the orphan-worker recovery that both supervisors need so
@@ -16,12 +21,17 @@ worker orphans and keeps the runtime socket open).
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from magi.startup.config import StartupConfig
 
 
 def read_pid(pid_path: Path) -> int | None:
@@ -197,4 +207,75 @@ def reap_orphan_listener(port: int, *, label: str = "orphan worker") -> int | No
     return orphan
 
 
-__all__ = ["read_pid", "is_alive", "find_listener_on_port", "reap_orphan_listener"]
+# ----------------------------------------------------------------------
+# Registry reconciliation (shared by detached stop + foreground cleanup)
+# ----------------------------------------------------------------------
+
+
+logger = logging.getLogger("magi.startup.process")
+
+
+def mark_registry_stopped(config: "StartupConfig") -> None:
+    """Flip ``runtime_state`` to STOPPED for one MAGI — best-effort.
+
+    Called from :func:`magi.startup.local.stop_magi` after the
+    detached subprocess exits, and from the ``run_magi`` SIGTERM/SIGINT
+    handler so a foreground-launched runtime also reconciles the
+    singleton WebUI's ``/api/auth/available-magi`` view.
+
+    Best-effort by design: if the MAGIS store isn't reachable, the
+    spec can't be parsed, or the runtime row is missing, this is a
+    no-op.  The next ``start_magi`` path reconciles via
+    :meth:`set_desired_state` / :meth:`set_observed_state` on its
+    own, so a registry-write failure here never strands the slot.
+    """
+    from magi.startup.paths import resolve_magis_control_dir
+    from magi.startup.spec import load_runtime_spec
+
+    try:
+        spec = load_runtime_spec(config.workspace_dir)
+    except Exception:
+        logger.warning("mark_registry_stopped: failed to load runtime spec", exc_info=True)
+        return
+    try:
+        magi_id = int(spec.magi_id)
+    except (TypeError, ValueError):
+        return
+
+    try:
+        from magi.bus.bootstrap import open_control_bus
+        from magi.bus.db.base import utcnow_naive
+        from magi.bus.library.magis.runtimeBook import (
+            RuntimeDesiredState,
+            RuntimeObservedState,
+        )
+
+        control_dir = str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name))
+        bus = open_control_bus(control_dir=control_dir, magis_url=spec.magis_database_url)
+    except Exception:
+        logger.warning("mark_registry_stopped: failed to open control bus", exc_info=True)
+        return
+
+    runtimes = bus.runtime_state_book
+    if runtimes is None:
+        return
+    try:
+        runtimes.set_desired_state(runtime_id=magi_id, desired_state=RuntimeDesiredState.STOPPED)
+        runtimes.set_observed_state(
+            runtime_id=magi_id,
+            observed_state=RuntimeObservedState.STOPPED,
+            stopped_at=utcnow_naive(),
+        )
+    except Exception:
+        # Reconciliation is best-effort; do not mask the caller's
+        # exit status on a registry write failure.
+        logger.warning("mark_registry_stopped: registry write failed", exc_info=True)
+
+
+__all__ = [
+    "read_pid",
+    "is_alive",
+    "find_listener_on_port",
+    "reap_orphan_listener",
+    "mark_registry_stopped",
+]

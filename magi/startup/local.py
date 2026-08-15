@@ -209,54 +209,15 @@ def restart_magi(*, config: StartupConfig) -> int:
 
 
 def _mark_registry_stopped(config: StartupConfig) -> None:
-    """Flip ``runtime_state`` to STOPPED for this MAGI.
+    """Thin wrapper kept for any legacy callers.
 
-    Called from :func:`stop_magi` after the process exits so the
-    singleton WebUI's ``/api/auth/available-magi`` endpoint stops
-    offering this runtime as a login target.  Best-effort: if the
-    MAGIS store isn't reachable or the runtime row is missing, the
-    ``start_magi`` path will still reconcile via
-    :meth:`set_desired_state` / :meth:`set_observed_state` on the
-    next launch.
+    New code should import :func:`magi.startup.process.mark_registry_stopped`
+    directly — the implementation now lives there so the foreground
+    ``run_magi`` SIGTERM/SIGINT handler can share it.
     """
-    try:
-        spec = load_runtime_spec(config.workspace_dir)
-    except Exception:
-        return
-    magi_id_raw = spec.magi_id
-    try:
-        magi_id = int(magi_id_raw)
-    except (TypeError, ValueError):
-        return
+    from magi.startup.process import mark_registry_stopped
 
-    try:
-        from magi.bus.bootstrap import open_control_bus
-        from magi.bus.db.base import utcnow_naive
-        from magi.bus.library.magis.runtimeBook import (
-            RuntimeDesiredState,
-            RuntimeObservedState,
-        )
-
-        control_dir = str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name))
-        magis_url = spec.magis_database_url
-        bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
-    except Exception:
-        return
-
-    runtimes = bus.runtime_state_book
-    if runtimes is None:
-        return
-    try:
-        runtimes.set_desired_state(runtime_id=magi_id, desired_state=RuntimeDesiredState.STOPPED)
-        runtimes.set_observed_state(
-            runtime_id=magi_id,
-            observed_state=RuntimeObservedState.STOPPED,
-            stopped_at=utcnow_naive(),
-        )
-    except Exception:
-        # Reconciliation is best-effort; do not mask stop_magi's
-        # exit status on a registry write failure.
-        pass
+    mark_registry_stopped(config)
 
 
 # ----------------------------------------------------------------------
