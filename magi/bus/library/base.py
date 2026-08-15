@@ -9,7 +9,10 @@ import dataclasses
 from datetime import UTC, datetime
 from typing import ClassVar, Protocol, TypeVar, overload
 
-from magi.bus.db.base import Base
+from sqlalchemy import DateTime, Integer
+from sqlalchemy.orm import Mapped, mapped_column
+
+from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.db.engine import EngineFactory
 
 RowT = TypeVar("RowT", bound=Base)
@@ -33,23 +36,41 @@ class _Dataclass(Protocol):
 DtoT = TypeVar("DtoT", bound=_Dataclass)
 
 
-# ``to_iso`` is called from two very different contexts:
-#
-# - ``_row_to_dto`` passes a ``datetime`` and wants back ``str`` so it can
-#   write the field directly onto the DTO dataclass.
-# - ``TaskOut``/``TaskRunOut`` (the API wire form) wants the same string,
-#   but Pylance can't narrow ``datetime | str | None -> str | None`` down
-#   to ``str`` at the call site, so the build-time signature reports
-#   ``reportArgumentType`` against the ``str`` field. The overloads below
-#   let the type checker infer the exact return shape per input shape
-#   without forcing every caller to add ``# type: ignore`` or ``cast``.
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class BaseRecord:
+    """Common JSON-safe fields for every persisted library DTO.
+
+    ``id`` is the database-local identity. The string timestamps are the DTO
+    boundary: ORM rows keep ``datetime`` values and :class:`BaseBook`
+    serialises them exactly once through :func:`to_iso`.
+    """
+
+    id: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class BaseRecordMixin(Base):
+    """The single ORM record shape shared by all library tables."""
+
+    __abstract__ = True
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+    )
+
+
+# ``to_iso`` is the only database-time -> JSON-time boundary.  ORM rows
+# always carry ``datetime``; strings must be parsed at ingress instead.
 @overload
 def to_iso(value: datetime) -> str: ...
 @overload
-def to_iso(value: str) -> str: ...
-@overload
 def to_iso(value: None) -> None: ...
-def to_iso(value: datetime | str | None) -> str | None:
+def to_iso(value: datetime | None) -> str | None:
     """ISO-8601 UTC string with an explicit trailing ``Z``.
 
     Every ``DateTime`` column in bus stores **naive UTC**
@@ -63,18 +84,24 @@ def to_iso(value: datetime | str | None) -> str | None:
     Aware datetimes are converted to UTC first, so the output shape
     is identical regardless of which path produced the value.
 
-    Pass-through for ``str`` / ``None``: callers that hand back an
-    already-serialised value (or a DTO built by hand rather than by
-    :meth:`BaseBook._row_to_dto`) don't have to know which path
-    they're on.
+    ``None`` is preserved for nullable business timestamps. Strings are
+    intentionally rejected: ISO text belongs at the API boundary, never in
+    an ORM row or internal Book call.
     """
     if value is None:
         return None
-    if isinstance(value, str):
-        return value
     if value.tzinfo is None:
         return value.isoformat() + "Z"
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def parse_iso_utc_naive(value: str) -> datetime:
+    """Parse an external ISO-8601 timestamp into naive UTC for ORM storage."""
+
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
 class BaseBook[RowT: Base, DtoT: _Dataclass]:

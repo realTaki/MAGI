@@ -43,19 +43,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
-def _new_task_id() -> str:
-    """Mint a fresh task primary key.
+def _new_uid() -> str:
+    """Mint a compact opaque identity for API and job boundaries."""
 
-    Uses the ``task_<uuid-hex>`` format. Not a ULID — the
-    column is ``String(26)`` for forward compat, but existing
-    production data uses 38-char ``task_<hex>`` rows. We
-    keep that shape so live data + test fixtures don't have
-    to widen the column.
-    """
-    return f"task_{uuid.uuid4().hex}"
+    return uuid.uuid4().hex[:26]
 
 
 # -- public enums --------------------------------------------------------
@@ -135,8 +129,8 @@ PROMPT_MAX = 8000
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Task:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Task(BaseRecord):
     """Unified task definition — user-created OR preset template.
 
     The ``source`` field discriminates:
@@ -163,7 +157,7 @@ class Task:
     structured form — there's one schedule, not two.
     """
 
-    id: str  # 任务主键（task_<hex>）
+    uid: str  # 跨 API / Job 使用的稳定任务身份
     name: str  # 任务唯一名
     prompt: str  # 触发后执行的 prompt
     source: TaskSource  # 来源（user/proactive）
@@ -175,7 +169,7 @@ class Task:
     run_at: str | None = None  # 一次性触发时间（ISO 8601）
     tz: str = "UTC"  # 时区
     delivery_to: str | None = None  # 投递目标地址
-    conversation_id: str | None = None  # 关联的会话 ID
+    conversation_id: int | None = None  # 关联的会话内部 ID
 
     # --- user-task ownership ----------------------------------------------
     contact_id: int | None = None  # 所属联系人
@@ -185,14 +179,12 @@ class Task:
     last_run_at: datetime | None = None  # 最近一次触发时间
     last_status: TaskRunStatus | None = None  # 最近一次状态
     last_error: str | None = None  # 最近一次的错误信息
-    created_at: datetime = dataclasses.field(default_factory=utcnow_naive)  # 创建时间
-    updated_at: datetime = dataclasses.field(default_factory=utcnow_naive)  # 最近更新时间
 
 
-@dataclass(frozen=True, slots=True)
-class TaskRun:
-    id: str  # 运行记录主键
-    task_id: str  # 所属任务 ID
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TaskRun(BaseRecord):
+    uid: str  # 跨 API / Job 使用的稳定运行身份
+    task_id: int  # 所属任务内部 ID
     manual: bool  # 是否用户/工具主动触发（True=API/UI/tool；False=cron/run_at）
     started_at: datetime  # 开始时间
     finished_at: datetime | None = None  # 结束时间
@@ -200,20 +192,20 @@ class TaskRun:
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
     error: str | None = None  # 错误信息
     reply_excerpt: str | None = None  # 回复摘要
-    conversation_id: str | None = None  # 关联的会话 ID
+    conversation_id: int | None = None  # 关联的会话内部 ID
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _TaskRow(Base):
+class _TaskRow(BaseRecordMixin):
     __tablename__ = "tasks"
     # ``scheduleTaskNotify`` (in ``magi.bus.guild``) registers
     # the same Table for its fire-and-forget path; whichever
     # module is imported first wins, and the other must opt-in.
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[str] = mapped_column(String(26), primary_key=True)
+    uid: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[TaskSource] = mapped_column(
@@ -234,7 +226,7 @@ class _TaskRow(Base):
 
     # --- schedule (cron XOR run_at, never both) ----------------------------
     cron: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    run_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     tz: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -244,8 +236,8 @@ class _TaskRow(Base):
         String(128),
         nullable=True,
     )
-    conversation_id: Mapped[str | None] = mapped_column(
-        ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"),
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -266,12 +258,6 @@ class _TaskRow(Base):
         enum_column(TaskRunStatus), nullable=True
     )
     last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
-    )
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_tasks_name"),
@@ -286,13 +272,13 @@ class _TaskRow(Base):
     )
 
 
-class _TaskRunRow(Base):
+class _TaskRunRow(BaseRecordMixin):
     __tablename__ = "task_runs"
 
-    id: Mapped[str] = mapped_column(String(26), primary_key=True)
-    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
-    conversation_id: Mapped[str | None] = mapped_column(
-        ForeignKey("chat_conversations.conversation_id", ondelete="SET NULL"), nullable=True
+    uid: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_conversations.id", ondelete="SET NULL"), nullable=True
     )
     manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -324,7 +310,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
     def get(self, *, task_id: str) -> Task | None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
+            row = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
             return self._row_to_dto(row) if row else None
 
     def list_by_user(self, *, contact_id: int) -> list[Task]:
@@ -464,12 +450,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 raise ValueError(f"run_at {canonical!r} is in the past: {e}") from None
             kwargs["run_at"] = canonical
         with self._session() as s:
-            # ``id`` is a String PK (per the legacy ``task_<hex>`` shape
-            # carried forward from the old bus). The Book mints it
-            # when the caller didn't pass one — same as ``upsert_by_name``
-            # does.
-            if "id" not in kwargs or not kwargs["id"]:
-                kwargs["id"] = _new_task_id()
+            if "uid" not in kwargs or not kwargs["uid"]:
+                kwargs["uid"] = _new_uid()
             row = _TaskRow(
                 source=source,
                 **kwargs,
@@ -501,7 +483,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.id == task_id,
+                    _TaskRow.uid == task_id,
                     _TaskRow.contact_id == contact_id,
                 )
             )
@@ -534,7 +516,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.id == task_id,
+                    _TaskRow.uid == task_id,
                     _TaskRow.contact_id == contact_id,
                     _TaskRow.source == TaskSource.USER,
                 )
@@ -560,7 +542,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         with self._session() as s:
             row = s.scalar(
                 select(_TaskRow).where(
-                    _TaskRow.id == task_id,
+                    _TaskRow.uid == task_id,
                     _TaskRow.contact_id == contact_id,
                     _TaskRow.source == TaskSource.USER,
                 )
@@ -691,7 +673,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     existing.conversation_id = conversation_id
                 s.commit()
                 s.refresh(existing)
-                return existing.id, True
+                return existing.uid, True
 
             # Insert path — single session, single
             # transaction. The write invariants above
@@ -699,7 +681,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             # ``add()`` would have built.
             now = utcnow_naive()
             insert = _TaskRow(
-                id=_new_task_id(),
+                uid=_new_uid(),
                 name=name,
                 prompt=prompt,
                 cron=cron,
@@ -711,13 +693,11 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 contact_id=contact_id,
                 enabled=enabled,
                 source=TaskSource.USER,
-                created_at=now,
-                updated_at=now,
             )
             s.add(insert)
             s.commit()
             s.refresh(insert)
-            return insert.id, False
+            return insert.uid, False
 
     def _validate_write_invariants(
         self,
@@ -768,7 +748,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         *,
         task_id: str,
         manual: bool,
-        id: str | None = None,
+        uid: str | None = None,
     ) -> TaskRun:
         """Insert a task_runs row, write task.last_run_at.
 
@@ -777,20 +757,21 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         与 :class:`~magi.bus.guild.runTaskJob.RunTaskJob.manual`
         同构。
         """
-        new_id = id or uuid.uuid4().hex
+        new_uid = uid or _new_uid()
         started_at = utcnow_naive()
         with self._session() as s:
+            task = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
+            if task is None:
+                raise ValueError(f"unknown task uid {task_id!r}")
             run_row = _TaskRunRow(
-                id=new_id,
-                task_id=task_id,
+                uid=new_uid,
+                task_id=task.id,
                 manual=manual,
                 started_at=started_at,
                 status=TaskRunStatus.RUNNING.value,
             )
             s.add(run_row)
-            task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
-            if task is not None:
-                task.last_run_at = started_at
+            task.last_run_at = started_at
             s.commit()
             s.refresh(run_row)
         # ``self.dto_cls`` is ``Task``, not ``TaskRun`` — convert the
@@ -802,7 +783,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     def mark_run_at_consumed(self, *, task_id: str) -> None:
         """One-shot run_at: set enabled=0 after successful fire."""
         with self._session() as s:
-            task = s.scalar(select(_TaskRow).where(_TaskRow.id == task_id))
+            task = s.scalar(select(_TaskRow).where(_TaskRow.uid == task_id))
             if task is None:
                 return
             task.enabled = 0
@@ -846,9 +827,9 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
                 kwargs[f.name] = getattr(row, f.name)
         return self.dto_cls(**kwargs)
 
-    def get(self, *, id: str) -> TaskRun | None:
+    def get(self, *, uid: str) -> TaskRun | None:
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.uid == uid))
             return self._row_to_dto(row) if row else None
 
     def add(self, **kwargs) -> TaskRun:
@@ -862,7 +843,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     def complete(
         self,
         *,
-        id: str,
+        uid: str,
         status: TaskRunStatus | str,
         error: str | None = None,
         reply_excerpt: str | None = None,
@@ -882,7 +863,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         """
         normalised = status if isinstance(status, TaskRunStatus) else TaskRunStatus(status)
         with self._session() as s:
-            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == id))
+            row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.uid == uid))
             if row is None:
                 return
             row.status = normalised

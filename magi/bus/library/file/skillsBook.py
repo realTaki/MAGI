@@ -106,7 +106,7 @@ class SkillNotFound(SkillBookError):
     """Raised by :meth:`SkillsBook.read_body` when *name* is unknown."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SkillMeta:
     """One row in the registry.
 
@@ -134,7 +134,7 @@ class SkillMeta:
     metadata: dict[str, str] | None = None  # 自定义元数据
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SkillBody:
     """Result of :meth:`SkillsBook.read_body` — content + provenance.
 

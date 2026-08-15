@@ -28,13 +28,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class McpServer:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class McpServer(BaseRecord):
     """One operator-configured MCP server.
 
     ``id`` is the autoincrement PK inherited from the bus
@@ -49,7 +49,6 @@ class McpServer:
     the secret values masked at the API layer.
     """
 
-    id: int  # 自增主键
     name: str  # 操作员面向的唯一名（PK）
     connection_type: str  # 连接类型（stdio/sse/streamable_http）
     command: str | None = None  # stdio 启动命令
@@ -61,8 +60,6 @@ class McpServer:
     connect_timeout: float | None = None  # 连接超时（None=使用全局默认值）
     execute_timeout: float | None = None  # 工具调用执行超时
     sse_read_timeout: float | None = None  # SSE 流读取超时
-    created_at: str | None = None  # 创建时间（ISO 8601）
-    updated_at: str | None = None  # 最近更新时间（ISO 8601）
 
     # Preserved on the row but not exposed on the DTO: the
     # ``config`` JSON blob is reserved for future read-only
@@ -74,11 +71,10 @@ class McpServer:
 # -- internal ORM --------------------------------------------------------
 
 
-class _McpServerRow(Base):
+class _McpServerRow(BaseRecordMixin):
     __tablename__ = "mcp_servers"
     __table_args__ = {"extend_existing": True}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # ``name`` is the operator-facing id and the PK. It
     # is unique but NOT a SQLAlchemy ``primary_key`` because
     # SQLite refuses autoincrement on composite primary keys.
@@ -131,18 +127,6 @@ class _McpServerRow(Base):
         JSON,
         nullable=False,
         default=dict,
-    )
-
-    created_at: Mapped[DateTime] = mapped_column(
-        DateTime,
-        default=utcnow_naive,
-        nullable=False,
-    )
-    updated_at: Mapped[DateTime] = mapped_column(
-        DateTime,
-        default=utcnow_naive,
-        onupdate=utcnow_naive,
-        nullable=False,
     )
 
     # ``name`` is unique per operator; this is the contract the

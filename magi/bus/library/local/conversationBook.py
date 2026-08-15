@@ -37,7 +37,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 logger = logging.getLogger("magi.bus.library.local.conversationBook")
 
@@ -101,8 +101,8 @@ def _truncate_inbound(text: str, max_chars: int) -> tuple[str, bool, int]:
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Conversation:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Conversation(BaseRecord):
     conversation_id: str  # 会话主键（Crockford ULID 字符串）
     delivery_address: str  # 渠道内的目标地址（如 tg chat_id）
     contact_id: int  # 会话所属联系人 ID
@@ -114,8 +114,8 @@ class Conversation:
     updated_at: str | None = None  # 最近活动时间
 
 
-@dataclass(frozen=True, slots=True)
-class Message:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Message(BaseRecord):
     id: int  # 主键（自增）
     conversation_id: str  # 所属会话 ID
     message_id: str  # 生产方幂等键（ULID）
@@ -127,7 +127,7 @@ class Message:
     llm_attempt_id: str | None = None  # 关联的 LLM 调用 ID（用于去重）
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SearchHit:
     """One row of chat-history FTS5 search output.
 
@@ -214,7 +214,7 @@ class ChannelMismatchError(ValueError):
         self.conversation_channel = conversation_channel
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ConversationMessage:
     """Input shape for :meth:`ConversationBook.append_messages`.
 
@@ -229,7 +229,7 @@ class ConversationMessage:
     message_id: str  # 生产方幂等键
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ConversationSummary:
     """Lightweight projection of :class:`Conversation` for the
     list-endpoint (``GET /api/chat/conversations``).
@@ -251,7 +251,7 @@ class ConversationSummary:
     title: str | None = None  # 会话标题
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ResolvedHit:
     """A search hit after cross-contact validation + context fetch.
 
@@ -295,7 +295,7 @@ class ResolvedHit:
 # -- internal ORM --------------------------------------------------------
 
 
-class _ConversationRow(Base):
+class _ConversationRow(BaseRecordMixin):
     __tablename__ = "chat_conversations"
 
     conversation_id: Mapped[str] = mapped_column(String(26), primary_key=True)
@@ -309,7 +309,7 @@ class _ConversationRow(Base):
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
 
 
-class _MessageRow(Base):
+class _MessageRow(BaseRecordMixin):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

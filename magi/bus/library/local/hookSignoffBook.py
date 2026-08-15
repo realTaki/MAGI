@@ -22,38 +22,34 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class HookSignoff:
-    id: int  # 主键（自增）
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HookSignoff(BaseRecord):
     subject_type: str  # 触发 hook 的对象类型
     subject_id: str  # 触发 hook 的对象 ID
     hook_point: str  # hook 触发点名称
     plugin_id: str  # 接收 signoff 的插件 ID
     status: str = "pending"  # 状态（pending/done/failed）
     payload: dict[str, Any] | None = None  # 附加负载
-    created_at: datetime | None = None  # 创建时间
     dispatched_at: datetime | None = None  # 派发时间
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _HookSignoffRow(Base):
+class _HookSignoffRow(BaseRecordMixin):
     __tablename__ = "hook_signoffs"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     subject_type: Mapped[str] = mapped_column(String(64), nullable=False)
     subject_id: Mapped[str] = mapped_column(String(64), nullable=False)
     hook_point: Mapped[str] = mapped_column(String(64), nullable=False)
     plugin_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 

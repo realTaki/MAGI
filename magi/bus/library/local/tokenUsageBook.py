@@ -20,14 +20,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class TokenUsage:
-    id: int  # 主键（自增）
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TokenUsage(BaseRecord):
     contact_id: int  # 发起调用的联系人 ID
     llm_attempt_id: str | None  # 关联的 LLM 调用 ID
     provider: str  # LLM 提供方
@@ -36,16 +35,14 @@ class TokenUsage:
     output_tokens: int  # 输出 token 数
     cost_usd: float  # 费用（以微美元为单位存储在 int 列）
     extra: dict[str, Any] | None = None  # 额外上下文（缓存命中率等）
-    created_at: datetime | None = None  # 记录创建时间
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _TokenUsageRow(Base):
+class _TokenUsageRow(BaseRecordMixin):
     __tablename__ = "token_usage"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False
     )
@@ -60,7 +57,6 @@ class _TokenUsageRow(Base):
         default=0,  # stored as micros (int) — see runner
     )
     extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
 # -- Book ----------------------------------------------------------------

@@ -26,7 +26,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
@@ -84,8 +84,8 @@ _TARGET_URL_MAX = 500
 _COMPLETION_NOTE_MAX = 500
 
 
-@dataclass(frozen=True, slots=True)
-class ActionItem:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ActionItem(BaseRecord):
     """A to-do surfaced to an operator in the dashboard.
 
     Frozen DTO returned to callers; the Book maps every ORM
@@ -96,7 +96,6 @@ class ActionItem:
     and LLM tool both consume.
     """
 
-    id: int  # 主键（自增）
     contact_id: int  # 所属联系人 ID
     title: str  # 待办标题
     description: str | None = None  # 详细描述
@@ -104,7 +103,6 @@ class ActionItem:
     priority: ActionPriority = ActionPriority.NORMAL  # 优先级（normal/high）
     due_date: datetime | None = None  # 截止日期
     source: ActionSource = ActionSource.PROACTIVE  # 来源（user/proactive）
-    created_at: datetime | None = None  # 创建时间
     completed_at: datetime | None = None  # 完成时间（None=未完成）
     completion_note: str | None = None  # 完成备注
     dismissed: bool = False  # 是否已被 dismiss（隐藏但未完成）
@@ -128,10 +126,9 @@ class ActionItem:
 # -- internal ORM --------------------------------------------------------
 
 
-class _ActionItemRow(Base):
+class _ActionItemRow(BaseRecordMixin):
     __tablename__ = "action_items"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # ``SET NULL`` mirrors the previous policy: removing an
     # operator leaves the row as an orphan rather than wiping
     # action history. Re-binding is handled by the caller.
@@ -160,11 +157,6 @@ class _ActionItemRow(Base):
         enum_column(ActionSource),
         nullable=False,
         default=ActionSource.PROACTIVE,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=utcnow_naive,
-        nullable=False,
     )
     # Null = still open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

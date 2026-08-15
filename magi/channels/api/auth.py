@@ -36,16 +36,73 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 
 def _signing_key(bus: Bus) -> bytes:
+    # Control-plane mode (WebUI talking to its MAGIS-managed runtimes):
+    # the session signing key is derived from ``MAGI_CONTROL_SECRET``.
+    # Three sources are tried in order — env var (fast path, set by
+    # the launcher scripts and by ``run_webui_foreground`` self-seed),
+    # the ``bus.control_secrets`` row (persistent DB source of truth
+    # post-``0002_add_control_secret_value``), then the bootstrap file
+    # (legacy / k8s ConfigMap-style secret mounts). Silently falling
+    # back to ``bus.settings_book['auth.signing_key']`` here would
+    # crash the proxy with ``no such table: settings`` because the
+    # WebUI bus is bound to the MAGIS store, not the node's SQLite.
     if control_store.enabled():
         secret = os.environ.get("MAGI_CONTROL_SECRET")
-        if secret:
-            return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
+        if not secret and bus.control_secrets_book is not None:
+            row = bus.control_secrets_book.get(name=_control_secret_name(bus))
+            if row is not None and row.secret_value:
+                secret = row.secret_value.decode("utf-8")
+        if not secret:
+            secret = _read_control_secret_from_bootstrap_file(bus)
+        if not secret:
+            raise RuntimeError(
+                "MAGI_CONTROL_SECRET is required when running under a MAGIS "
+                "control plane — neither env, ``bus.control_secrets`` row, nor "
+                "the bootstrap file have it. Run `magi init` to reprovision, or "
+                "export MAGI_CONTROL_SECRET in the shell before launching the WebUI."
+            )
+        return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
+    # Standalone / per-node mode (e.g. k8s pod running its own control bus
+    # directly, no shared MAGIS). The signing key is stored in the
+    # node's ``settings`` table, freshly generated if absent so first-boot
+    # sign-in still works.
     raw = bus.settings_book.get(key="auth.signing_key")
     if raw:
         return hashlib.sha256(raw.encode() + b"magi-session-signing").digest()
     import secrets
 
     return secrets.token_bytes(32)
+
+
+def _control_secret_name(bus: Bus) -> str:
+    """Resolve the MAGIS-name under which ``control_secrets`` is keyed."""
+    getter = getattr(bus, "magis_name", None)
+    if isinstance(getter, str) and getter:
+        return getter
+    return os.environ.get("MAGIS_NAME", "default")
+
+
+def _read_control_secret_from_bootstrap_file(bus: Bus) -> str | None:
+    """Last-resort bootstrap-file reader for the control secret.
+
+    Opens the MAGIS control directory by walking ``bus``'s persisted
+    metadata (``control_dir`` if the bus exposes it, otherwise
+    ``$HOST_WORKSPACE_DIR/MAGI_Societies/$MAGIS_NAME/control``) and
+    reads ``control-secret``. Returns ``None`` if no file exists.
+    """
+    import os
+    from pathlib import Path
+
+    control_dir = getattr(bus, "control_dir", None)
+    if not control_dir:
+        host_ws = Path(os.environ.get("HOST_WORKSPACE_DIR", "/root/.magi"))
+        magis_name = os.environ.get("MAGIS_NAME", "default")
+        control_dir = host_ws / "MAGI_Societies" / magis_name / "control"
+    path = Path(control_dir) / "control-secret"
+    if not path.exists():
+        return None
+    value = path.read_text(encoding="utf-8").strip()
+    return value or None
 
 
 def _optional_int(value: object) -> int | None:

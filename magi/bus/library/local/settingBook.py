@@ -22,36 +22,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, select
+from sqlalchemy import DateTime, String, Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Setting:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Setting(BaseRecord):
     key: str  # 配置键
     value: str  # 配置值（字符串）
-    updated_at: datetime | None = None  # 最近更新时间
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _SettingRow(Base):
+class _SettingRow(BaseRecordMixin):
     __tablename__ = "settings"
-    # ``setSettingNotify`` (in ``magi.bus.guild``) registers the
-    # same Table for its fire-and-forget path; whichever module is
-    # imported first wins, and the other must opt-in.
-    __table_args__ = {"extend_existing": True}
-
-    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_settings_key"),
+        {"extend_existing": True},
     )
 
 
@@ -207,7 +202,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         return self.get(key="system.timezone") or "UTC"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class MCPTimeout:
     """The three MCP connection timeout knobs."""
 

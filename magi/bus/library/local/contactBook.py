@@ -33,7 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 class NoteKind(StrEnum):
     """Note-kind discriminator stored on ``ContactNote.kind``.
@@ -92,8 +92,8 @@ _DAILY_NOTE_MAX_BYTES = 32 * 1024
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Contact:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Contact(BaseRecord):
     """Per-MAGI operator record.
 
     ``role`` is the MAGI-local role tag (``assigned`` /
@@ -106,7 +106,6 @@ class Contact:
     :meth:`magi.tools.base.Tool.gate`.
     """
 
-    id: int  # 主键（自增）
     name: str  # 联系人唯一名
     display_name: str | None = None  # 显示名
     role: Role = Role.GUEST  # MAGI 本地角色（assigned/guest）
@@ -115,8 +114,6 @@ class Contact:
     # deliberately not a foreign key because the two stores are independent.
     magis_admin_id: int | None = None
     last_seen_at: datetime | None = None  # 最近活跃时间
-    created_at: datetime | None = None  # 创建时间
-    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
@@ -133,14 +130,12 @@ class Contact:
         return asdict(self)
 
 
-@dataclass(frozen=True, slots=True)
-class ContactNote:
-    id: int  # 主键（自增）
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ContactNote(BaseRecord):
     contact_id: int  # 所属联系人 ID
     note: str  # 笔记正文
     kind: NoteKind = NoteKind.PERMANENT  # 笔记类型（permanent/daily）
     note_date: datetime | None = None  # 日记所属日期
-    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
@@ -157,35 +152,26 @@ class ContactNote:
 # -- internal ORM --------------------------------------------------------
 
 
-class _ContactRow(Base):
+class _ContactRow(BaseRecordMixin):
     __tablename__ = "contacts"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120))
     role: Mapped[Role] = mapped_column(enum_column(Role), nullable=False, default=Role.GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
 
-class _ContactNoteRow(Base):
+class _ContactNoteRow(BaseRecordMixin):
     __tablename__ = "contact_notes"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[NoteKind] = mapped_column(enum_column(NoteKind), nullable=False, default=NoteKind.PERMANENT)
     note_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
 
 # -- Books ---------------------------------------------------------------

@@ -15,6 +15,6 @@ Subpackages
   (magis, membership, runtime, auth_credential, control)
 """
 
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecordMixin
 
 __all__ = ["BaseBook"]

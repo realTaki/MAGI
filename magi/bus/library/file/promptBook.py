@@ -47,7 +47,7 @@ from magi.bus.library.file.base import BaseFileBook
 logger = logging.getLogger("magi.bus.promptBook")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class WorkspaceSoul:
     """Result of reading the workspace ``SOUL.md``.
 

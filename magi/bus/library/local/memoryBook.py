@@ -13,7 +13,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, selec
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
 class MemoryKind(StrEnum):
@@ -55,17 +55,14 @@ _BODY_MAX = 8 * 1024
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Memory:
-    id: int  # 主键（自增）
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Memory(BaseRecord):
     contact_id: int  # 所属联系人 ID
     kind: MemoryKind  # 记忆类型（fact/quick_note）
     subject: str  # 简短标题
     body: str  # 完整内容
     priority: int = 3  # 优先级（1..5，越大越重要）
     completed_at: datetime | None = None  # 完成时间（None=未完成）
-    created_at: datetime | None = None  # 创建时间
-    updated_at: datetime | None = None  # 最近更新时间
 
     def to_dict(self) -> dict:
         """Wire-shape for JSON serialisation.
@@ -81,7 +78,7 @@ class Memory:
 # -- internal ORM --------------------------------------------------------
 
 
-class _MemoryRow(Base):
+class _MemoryRow(BaseRecordMixin):
     __tablename__ = "memory_entries"
     # ``rememberNotify`` (in ``magi.bus.guild``) registers a Table
     # with the same name; whichever module is imported first wins and
@@ -92,7 +89,6 @@ class _MemoryRow(Base):
         {"extend_existing": True},
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
@@ -101,10 +97,6 @@ class _MemoryRow(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
 
 # -- Book -----------------------------------------------------------------
