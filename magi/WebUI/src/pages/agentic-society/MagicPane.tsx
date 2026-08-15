@@ -207,6 +207,11 @@ export function MagicPane() {
                       className="form-input"
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      onBlur={() => {
+                        if (form.name !== (m.name || "")) {
+                          void saveName(m);
+                        }
+                      }}
                     />
                   ) : (
                     m.name || `#${m.id}`
@@ -239,14 +244,9 @@ export function MagicPane() {
                 <td className="py-2">{m.runtime?.observed_state || "draft"}</td>
                 <td className="py-2 text-right whitespace-nowrap">
                   {editing === m.id ? (
-                    <>
-                      <button className="btn btn-primary text-xs" onClick={() => void saveName(m)}>
-                        {t("common.save")}
-                      </button>
-                      <button className="btn btn-secondary text-xs ml-1" onClick={() => setEditing(null)}>
-                        {t("common.cancel")}
-                      </button>
-                    </>
+                    <button className="btn btn-secondary text-xs" onClick={() => setEditing(null)}>
+                      {t("common.cancel")}
+                    </button>
                   ) : (
                     <>
                       <button
@@ -324,9 +324,9 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
     : t("magic.providerHelpNotReady");
   return (
     <div className="flex flex-col gap-1 min-w-[20rem]">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <select
-          className="form-input"
+          className="form-input min-w-[7rem]"
           value={draft.provider}
           onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
           disabled={!isReady}
@@ -334,7 +334,7 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
           {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <input
-          className="form-input"
+          className="form-input flex-1 min-w-[10rem]"
           type="password"
           placeholder={magic.api_key_set ? t("magic.providerKeyPlaceholderReplace") : t("magic.providerKeyPlaceholderSet")}
           value={draft.api_key}
@@ -342,14 +342,14 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
           disabled={!isReady}
         />
         <input
-          className="form-input"
+          className="form-input flex-1 min-w-[8rem]"
           placeholder={t("magic.providerModelPlaceholder")}
           value={draft.model}
           onChange={(e) => setDraft({ ...draft, model: e.target.value })}
           disabled={!isReady}
         />
         <button
-          className="btn btn-primary text-xs"
+          className="btn btn-primary text-xs whitespace-nowrap"
           onClick={onSave}
           disabled={!isReady}
           title={help}
