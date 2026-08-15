@@ -214,13 +214,13 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._stamp_last_seen(job)
         if self._messages_book is not None:
             try:
-                from magi.bus.library.local.conversationBook import Message
+                from magi.bus.library.local.conversationBook import Message, _new_semantic_id
 
                 self._messages_book.add(Message(
                     conversation_id=conversation_id,
                     role="user",
                     text=job.text,
-                    message_id=message_id,
+                    message_id=message_id or _new_semantic_id(),
                 ))
             except Exception:
                 logger.exception(

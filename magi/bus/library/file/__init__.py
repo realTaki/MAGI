@@ -10,7 +10,7 @@ Public surface:
 - :class:`PromptBook`   — typed accessors for every bundled prompt
   (soul / fallback_persona / chat_title_prompt / compaction_prompt /
   memory_block_template / contact_block_template /
-  skills_block_template / daily_note_prompt / bot_replies /
+  skills_block_template / daily_note_prompt /
   task_presets) plus generic ``get`` / ``get_structured`` / ``list``
   / ``exists``.
 """

@@ -161,12 +161,12 @@ class _McpServerChangedRow(BaseJobRowMixin):
 def _dump_server(server: McpServer) -> dict[str, Any]:
     """Serialise a :class:`McpServer` DTO to a JSON-safe dict.
 
-    Includes every DTO field (including the auto-increment ``id``
-    and the timestamps) so the Worker can re-upsert without
-    losing anything.
+    Only carries the business fields the Worker needs to re-upsert
+    via :meth:`McpServerBook.upsert`. The DB-owned ``id`` and audit
+    timestamps are deliberately omitted — ``upsert`` locates the row
+    by ``name`` and lets the ORM (re)assign those values.
     """
     return {
-        "id": server.id,
         "name": server.name,
         "connection_type": server.connection_type,
         "command": server.command,
@@ -178,8 +178,6 @@ def _dump_server(server: McpServer) -> dict[str, Any]:
         "connect_timeout": server.connect_timeout,
         "execute_timeout": server.execute_timeout,
         "sse_read_timeout": server.sse_read_timeout,
-        "created_at": server.created_at,
-        "updated_at": server.updated_at,
         "config": dict(server.config),
     }
 
@@ -188,7 +186,7 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
     """Inverse of :func:`_dump_server`."""
     from magi.bus.library.local.mcpServerBook import McpServer
 
-    server = McpServer(
+    return McpServer(
         name=payload["name"],
         connection_type=payload["connection_type"],
         command=payload.get("command"),
@@ -202,10 +200,6 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
         sse_read_timeout=payload.get("sse_read_timeout"),
         config=dict(payload.get("config") or {}),
     )
-    object.__setattr__(server, "id", int(payload.get("id", 0) or 0))
-    object.__setattr__(server, "created_at", payload.get("created_at"))
-    object.__setattr__(server, "updated_at", payload.get("updated_at"))
-    return server
 
 
 # -- Board ---------------------------------------------------------------

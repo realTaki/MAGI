@@ -34,17 +34,17 @@ mixin。
 ```python
 # magi/bus/library/base.py
 
-class BaseBook[RowT, DtoT]:
-    """Book 的 Session、Row -> DTO 映射和按内部 id 的通用行为。"""
+class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
+    """Book 的 Session、DTO/Row 映射及通用新增、读取行为。"""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class BaseRecord:
     """所有公开持久化记录共有的 DTO 字段。"""
 
-    id: int
-    created_at: datetime
-    updated_at: datetime
+    id: int = field(default=0, init=False)
+    created_at: datetime | None = field(default=None, init=False)
+    updated_at: datetime | None = field(default=None, init=False)
 
 
 class BaseRecordMixin(Base):
@@ -68,6 +68,29 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
 `BaseBook._row_to_dto()` 不转换时间：ORM Row 与 DTO 均保留同一个 naive UTC
 `datetime`。FastAPI 的标准 JSON 编码只负责传输；WebUI 在展示层按用户时区和格式
 需求转换。Book、API、worker 与业务逻辑不得自行调用 `isoformat()`。
+
+### 2.1 新增命令契约
+
+所有 library Book 只有一个普通新增入口，由基类实现：
+
+```python
+record_id = book.add(record)
+```
+
+调用方构造未持久化的 `BaseRecord` 子类；`BaseBook.add(record)` 在一个事务中创建
+Row 并仅返回数据库生成的内部 `int id`。它不是 DTO 工厂：如需完整记录，调用方明确
+使用 `get(...)`、`get_by_id(...)` 或 `list(...)` 回读。
+
+`id`、`created_at`、`updated_at` 均为 `init=False` 的数据库所有字段，调用方不能在
+Record 构造时指定。`BaseBook._row_to_dto()` 在读取持久化 Row 后内部回填它们。业务
+键（如 `conversation_id`、`task_id`）属于 Record 的正常输入字段；需要自动生成时由
+其 DTO 的 `default_factory` 生成，不能改用数据库内部 `id`。
+
+`BaseBook` 默认按同名 DTO 字段写入同名 ORM 列。字段需要领域校验、业务键到物理外键
+解析或编码（例如 `conversation_id -> conversation_row_id`、MCP JSON 列）时，子类仅覆写
+`_validate_add(record)` / `_record_to_row_values(record, session)` 钩子；不得重新定义
+`add`。幂等创建、upsert 和其他复合业务操作保留领域明确的方法名，并在内部复用该写入
+契约。
 
 ## 3. 身份与外键规则
 
@@ -112,8 +135,8 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
   删除字符串存储方式，必要时将 `ts` 重命名为语义明确的 `occurred_at`。
 - 代码不得存储 `datetime.now(UTC).isoformat()`、`isoformat() + "Z"` 或任何
   时间字符串；外部输入 ISO 字符串必须在入口通过唯一的解析函数归一为 naive UTC。
-- 后端 DTO 与 API 模型不手工格式化时间；JSON 编码层传输标准 ISO 时间，前端负责
-  人类可读的时区和格式转换。
+- 后端 DTO 与 API 模型不手工格式化时间；FastAPI 和工具结果等传输边界集中编码标准
+  ISO 时间，前端负责人类可读的时区和格式转换。
 
 这消除后端业务代码中的重复 ISO 转换和时区格式漂移。
 
@@ -126,7 +149,7 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
 “不保留兼容”不等于忽略现有消费者。所有引用旧主键、外键或时间字符串的调用点
 必须同步更新，包括：
 
-- 各 Book 的方法签名、查询、约束与 DTO；
+- 各 Book 的 `add(record) -> int` 签名、查询、约束与 DTO；
 - library 与 guild 间的 Job 载荷和外键；
 - Conversation、Task、TaskRun、Message 的关联、幂等与 FTS 逻辑；
 - API 路由、请求/响应模型、WebUI 调用方与工具层；
