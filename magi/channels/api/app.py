@@ -61,7 +61,8 @@ class _SpaFallback(StaticFiles):
                 raise
             # Real file miss → serve the SPA shell so the client-side
             # router can take over and parse ``?tab=...`` etc.
-            index = self.directory / "index.html"
+            directory = Path(self.directory) if isinstance(self.directory, str) else self.directory
+            index = directory / "index.html"
             if index.is_file():
                 return FileResponse(str(index), media_type="text/html")
             raise
