@@ -44,6 +44,7 @@ filtering.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -81,9 +82,9 @@ class MemoryOut(BaseModel):
     # never expire) and for in-flight quick_note rows; set
     # for completed quick_note rows. The UI uses this to
     # render the "已完成 · YYYY-MM-DD" suffix.
-    completed_at: str | None = None
-    created_at: str
-    updated_at: str
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class MemoryListOut(BaseModel):

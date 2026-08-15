@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import datetime
 from typing import Annotated
 
 import httpx
@@ -53,7 +54,7 @@ class RuntimeOut(BaseModel):
     workspace_claim_name: str | None = None
     credential_secret_name: str | None = None
     last_error: str | None = None
-    updated_at: str = ""
+    updated_at: datetime | None = None
 
 
 class MagiOut(BaseModel):
@@ -64,8 +65,8 @@ class MagiOut(BaseModel):
     api_key_last4: str | None = None
     memberships: list[MembershipBrief]
     runtime: RuntimeOut | None = None
-    created_at: str = ""
-    updated_at: str = ""
+    created_at: datetime
+    updated_at: datetime
 
 
 class MagiCreate(BaseModel):
@@ -121,11 +122,7 @@ def _runtime_out(runtime) -> RuntimeOut | None:
             desired_state="draft",
             observed_state="draft",
             deployment_name=runtime.backend_ref,
-            updated_at=(
-                runtime.updated_at.isoformat()
-                if hasattr(runtime.updated_at, "isoformat")
-                else str(runtime.updated_at or "")
-            ),
+            updated_at=runtime.updated_at,
         )
     desired = getattr(runtime.desired_state, "value", runtime.desired_state)
     observed = getattr(runtime.observed_state, "value", runtime.observed_state)
@@ -141,11 +138,7 @@ def _runtime_out(runtime) -> RuntimeOut | None:
         desired_state=desired,
         observed_state=observed,
         deployment_name=runtime.backend_ref,
-        updated_at=(
-            runtime.updated_at.isoformat()
-            if hasattr(runtime.updated_at, "isoformat")
-            else str(runtime.updated_at or "")
-        ),
+        updated_at=runtime.updated_at,
     )
 
 
@@ -173,16 +166,8 @@ def _magi_out(bus: Bus, membership) -> MagiOut:
             )
         ],
         runtime=_runtime_out(runtime),
-        created_at=(
-            membership.created_at.isoformat()
-            if hasattr(membership.created_at, "isoformat")
-            else str(membership.created_at or "")
-        ),
-        updated_at=(
-            membership.updated_at.isoformat()
-            if hasattr(membership.updated_at, "isoformat")
-            else str(membership.updated_at or "")
-        ),
+        created_at=membership.created_at,
+        updated_at=membership.updated_at,
     )
 
 
@@ -299,7 +284,14 @@ def create_magi(payload: MagiCreate, _admin: AdminGate, bus: BusDep) -> MagiOut:
         raise MagiHTTPException(
             400, "validation.magi_role", "role must belong to the selected MAGIS"
         )
-    membership = bus.memberships_book.add(magis_id=payload.magis_id, role_id=role.id)
+    from magi.bus.library.magis.membershipBook import MagisMembership
+
+    membership_id = bus.memberships_book.add(
+        MagisMembership(magis_id=payload.magis_id, role_id=role.id)
+    )
+    membership = bus.memberships_book.get(magi_id=membership_id)
+    if membership is None:
+        raise RuntimeError(f"membership row {membership_id} disappeared after insert")
     # The identity is valid immediately.  A runtime is provisioned separately
     # by the node lifecycle; the control row keeps the display label while
     # that provisioning is pending.  Creating it for every identity also

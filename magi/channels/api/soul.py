@@ -27,6 +27,8 @@ I/O in the API layer.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import logging
 
 from fastapi import APIRouter
@@ -61,7 +63,7 @@ class SoulReadResponse(BaseModel):
     """
 
     content: str
-    modified_at: str | None
+    modified_at: datetime | None
     is_bundled_fallback: bool
 
 
@@ -70,7 +72,7 @@ class SoulUpdateRequest(BaseModel):
 
 
 class SoulUpdateResponse(BaseModel):
-    modified_at: str
+    modified_at: datetime
 
 
 # -- endpoints ---------------------------------------------------------

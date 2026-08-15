@@ -83,8 +83,8 @@ class MAGISOut(BaseModel):
     instruction: str
     child_count: int = 0
     member_count: int = 0
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class MAGISCreate(BaseModel):
@@ -161,18 +161,6 @@ class MAGISAdminCreate(BaseModel):
 # -- Conversion helpers -------------------------------------------------
 
 
-def _iso(value: datetime | str | None) -> str:
-    """Normalise a Book timestamp to an ISO-8601 string.
-
-    ``Magis`` declares ``datetime | None``, but some Book backends
-    (and test doubles) already hand back pre-formatted strings, so
-    accept either rather than assuming ``.isoformat()`` exists.
-    """
-    if value is None:
-        return ""
-    return value.isoformat() if isinstance(value, datetime) else str(value)
-
-
 def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
     return MAGISOut(
         id=view.id,
@@ -188,8 +176,8 @@ def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
         member_count=len(bus.memberships_book.list_for_magis(magis_id=view.id))
         if bus.memberships_book
         else 0,
-        created_at=_iso(view.created_at),
-        updated_at=_iso(view.updated_at),
+        created_at=view.created_at,
+        updated_at=view.updated_at,
     )
 
 
@@ -215,7 +203,7 @@ def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
     )
 
 
-def _admin_out(bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
+def _admin_out(_bus: Bus, view: MagisAdmin) -> MAGISAdminOut:
     return MAGISAdminOut(
         id=view.id,
         magis_id=view.magis_id,
@@ -320,11 +308,16 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
         _magis_or_404(bus, payload.parent_id)
         _require_managed(bus, payload.parent_id)
     try:
-        view = _magis_book(bus).add(
+        from magi.bus.library.magis.magisBook import Magis
+
+        magis_id = _magis_book(bus).add(Magis(
             name=payload.name,
             instruction=payload.instruction,
             parent_id=payload.parent_id,
-        )
+        ))
+        view = _magis_book(bus).get(magis_id=magis_id)
+        if view is None:
+            raise RuntimeError(f"MAGIS row {magis_id} disappeared after insert")
     except LookupError as exc:
         raise MagiHTTPException(404, "not_found.magis", str(exc)) from exc
     except ValueError as exc:
@@ -335,12 +328,14 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
     from magi.bus.library.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS
 
     for role_name in ("ADAM", "EVA"):
-        _roles_book(bus).add(
+        from magi.bus.library.magis.membershipBook import MagisRole
+
+        _roles_book(bus).add(MagisRole(
             magis_id=view.id,
             name=role_name,
             instruction=DEFAULT_ROLE_INSTRUCTIONS[role_name],
             is_reserved=True,
-        )
+        ))
     return _magis_out(bus, view)
 
 
@@ -396,11 +391,16 @@ def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, bus: BusD
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        view = _roles_book(bus).add(
+        from magi.bus.library.magis.membershipBook import MagisRole
+
+        role_id = _roles_book(bus).add(MagisRole(
             magis_id=magis_id,
             name=payload.name,
             instruction=payload.instruction,
-        )
+        ))
+        view = _roles_book(bus).get(role_id=role_id)
+        if view is None:
+            raise RuntimeError(f"role row {role_id} disappeared after insert")
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     return _role_out(view)
@@ -472,11 +472,16 @@ def create_membership(
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        view = _memberships_book(bus).add(
+        from magi.bus.library.magis.membershipBook import MagisMembership
+
+        membership_id = _memberships_book(bus).add(MagisMembership(
             magis_id=magis_id,
             role_id=payload.role_id,
             responsibility=payload.responsibility,
-        )
+        ))
+        view = _memberships_book(bus).get(magi_id=membership_id)
+        if view is None:
+            raise RuntimeError(f"membership row {membership_id} disappeared after insert")
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     return _membership_out(bus, view)
@@ -564,11 +569,16 @@ def add_magis_admin(
             "Enable IM two-factor verification before adding a MAGIS administrator",
         )
     try:
-        view = _admins_book(bus).add(
+        from magi.bus.library.magis.magisBook import MagisAdmin
+
+        admin_id = _admins_book(bus).add(MagisAdmin(
             magis_id=magis_id,
             name=payload.name,
             tgid=payload.tgid,
-        )
+        ))
+        view = _admins_book(bus).get(admin_id=admin_id)
+        if view is None:
+            raise RuntimeError(f"MAGIS admin row {admin_id} disappeared after insert")
         # This endpoint runs in the MAGI whose local data the Settings page
         # manages.  The projection is local ownership only; it is not the
         # source of the just-created MAGIS authority.

@@ -87,7 +87,7 @@ class ChannelWorker(RuntimeWorker):
                     getattr(job, "channel", None),
                 )
                 try:
-                    await self.call(self.bus.delivery_job_board.release, key=job.job_id)
+                    await self.call(self.bus.delivery_job_board.release, job_id=job.job_id)
                 except Exception:
                     pass
                 continue
@@ -96,7 +96,7 @@ class ChannelWorker(RuntimeWorker):
                 await deliver_fn(job)
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
-                    key=job.job_id,
+                    job_id=job.job_id,
                     result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
                 )
                 self.succeeded()
@@ -105,7 +105,7 @@ class ChannelWorker(RuntimeWorker):
                 logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
-                    key=job.job_id,
+                    job_id=job.job_id,
                     result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
                 )
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from magi.bus.guild.runTaskJob import RunTaskJob
-from magi.bus.library.local.tasksBook import preset_to_cron, validate_run_at
+from magi.bus.library.local.tasksBook import Task, preset_to_cron, validate_run_at
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
@@ -26,7 +26,7 @@ class TaskIn(BaseModel):
     minute: int = Field(default=0, ge=0, le=59)
     day_of_week: int | None = Field(default=None, ge=0, le=6)
     day_of_month: int | None = Field(default=None, ge=1, le=31)
-    run_at: str | None = None
+    run_at: datetime | None = None
     target_channel: Literal["webui", "tg"] = "webui"
     delivery_to: str | None = None
 
@@ -40,7 +40,8 @@ class TaskPatch(BaseModel):
 
 
 class TaskOut(BaseModel):
-    id: str
+    id: int
+    task_id: str
     name: str
     prompt: str
     cron: str | None
@@ -56,16 +57,17 @@ class TaskOut(BaseModel):
 
 
 class RunResponse(BaseModel):
-    job_id: str
+    job_id: int
 
 
 class TaskRunOut(BaseModel):
-    id: str
+    id: int
+    run_id: str
     task_id: str
     manual: bool
     status: str
-    started_at: str
-    finished_at: str | None = None
+    started_at: datetime
+    finished_at: datetime | None = None
     error: str | None = None
 
 
@@ -81,13 +83,12 @@ def _owner(request: Request, admin: AdminGate) -> int:
 def _out(task) -> TaskOut:
     """Render the wire form of a Task — Pydantic ``TaskOut``.
 
-    The Book stores timestamps as native ``DateTime``; the API contract
-    is the existing ``"YYYY-MM-DDTHH:MM:SSZ"`` string. ``to_iso`` lives
-    here (the wire boundary), not in :meth:`TaskBook._row_to_dto`, so
-    the in-process DTO type decouples from the on-the-wire format.
+    Time values remain ``datetime``. FastAPI handles transport encoding;
+    timezone and display formatting belong to the frontend.
     """
     return TaskOut(
         id=task.id,
+        task_id=task.task_id,
         name=task.name,
         prompt=task.prompt,
         cron=task.cron,
@@ -103,7 +104,7 @@ def _out(task) -> TaskOut:
     )
 
 
-def _schedule(payload: TaskIn) -> tuple[str | None, str | None]:
+def _schedule(payload: TaskIn) -> tuple[str | None, datetime | None]:
     if payload.frequency == "once":
         if not payload.run_at:
             raise MagiHTTPException(
@@ -160,7 +161,7 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
         delivery_address=delivery_to or "",
     )
     try:
-        task = bus.tasks_book.add(
+        task_record = Task(
             name=payload.name,
             prompt=payload.prompt,
             cron=cron,
@@ -171,6 +172,10 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
             conversation_id=conversation_id,
             tz=bus.settings_book.get(key="system.timezone") or "UTC",
         )
+        bus.tasks_book.add(task_record)
+        task = bus.tasks_book.get(task_id=task_record.task_id)
+        if task is None:
+            raise RuntimeError(f"task {task_record.task_id} disappeared after insert")
     except ValueError as exc:
         raise MagiHTTPException(400, "validation.task", str(exc)) from exc
     return _out(task)
@@ -211,7 +216,7 @@ def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep)
     # run shares the same conversation and we have a single source
     # of truth.
     job_id = bus.run_task_job_board.publish(
-        RunTaskJob(task_id=task.id, manual=True)
+        RunTaskJob(task_id=task.task_id, manual=True)
     )
     return RunResponse(job_id=job_id)
 

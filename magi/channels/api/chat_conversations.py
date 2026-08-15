@@ -25,6 +25,7 @@ directly.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
@@ -51,7 +52,7 @@ router = APIRouter(tags=["chat_conversations"])
 class ConversationMessageOut(BaseModel):
     message_id: str
     role: str
-    ts: str
+    ts: datetime
     text: str
 
 
@@ -82,12 +83,21 @@ class ConversationMessagesPage(BaseModel):
 
 
 class ConversationOut(BaseModel):
+    """Wire shape for one conversation row.
+
+    ``created_at`` / ``updated_at`` are typed ``datetime | None``
+    to match :class:`magi.bus.library.local.conversationBook.Conversation`'s
+    ``BaseRecord`` mixin (which leaves them as ``None`` until the row
+    is persisted). The DB schema (via :class:`BaseRecordMixin`) is
+    non-nullable in practice, but Python-side optionality keeps the
+    dataclass ↔ Pydantic contract honest.
+    """
     conversation_id: str
     delivery_address: str
     contact_id: int
     channel: str
-    created_at: str
-    updated_at: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     # D.7: operator-set or LLM-generated title. ``None`` means
     # "no title yet" — the sidebar falls back to ``preview``.
     title: str | None = None
@@ -97,9 +107,9 @@ class ConversationOut(BaseModel):
 
 class ConversationSummaryOut(BaseModel):
     conversation_id: str
-    created_at: str
+    created_at: datetime | None = None
     created_by_contact_id: int
-    updated_at: str
+    updated_at: datetime | None = None
     message_count: int
     preview: str
     # D.7: same field as ``Conversation.title`` — list-endpoint
@@ -152,12 +162,8 @@ def _conversation_to_out(
         delivery_address=s.delivery_address,
         contact_id=s.contact_id,
         channel=s.channel,
-        # ``Conversation`` declares these Optional (defensive default in the
-        # dataclass), but real DB rows always populate them — emit ""
-        # only as a last-resort fallback so the API consumer can
-        # distinguish "missing" from "epoch zero".
-        created_at=s.created_at or "",
-        updated_at=s.updated_at or "",
+        created_at=s.created_at,
+        updated_at=s.updated_at,
         schema_version=schema_version,
         # D.7: thread the (optional) title through.
         title=s.title,
@@ -235,8 +241,8 @@ def _resolve_contact_id(request: Request) -> int:
     an identity — same code as chat.py so the frontend's friendly
     message covers both endpoints.
     """
-    from magi.channels.api.auth_gates import _proxy_identity
     from magi.channels.api.auth import resolve_session
+    from magi.channels.api.auth_gates import _proxy_identity
     from magi.channels.api.dependencies import get_bus
 
     proxy = _proxy_identity(request)
@@ -306,12 +312,13 @@ def create_conversation(
     # ``contact_id`` — the ``conversation_id`` is owned by
     # :meth:`ConversationBook.add`.
     delivery_address = _delivery_address_for_contact_id(request, contact_id)
-    sess = bus.conversations_book.add(
+    record = Conversation(
         delivery_address=delivery_address,
         contact_id=contact_id,
         channel=Channel.WEBUI,
     )
-    return CreateConversationResponse(conversation_id=sess.conversation_id)
+    bus.conversations_book.add(record)
+    return CreateConversationResponse(conversation_id=record.conversation_id)
 
 
 @router.get(

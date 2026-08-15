@@ -106,8 +106,8 @@ class PeriodUsage:
     input_tokens: int
     output_tokens: int
     call_count: int
-    period_start: str  # ISO 8601
-    period_end: str
+    period_start: datetime
+    period_end: datetime
 
 
 def _aggregate_period(
@@ -139,8 +139,8 @@ def _aggregate_period(
         input_tokens=int(in_sum or 0),
         output_tokens=int(out_sum or 0),
         call_count=int(calls or 0),
-        period_start=bounds.start.isoformat(),
-        period_end=bounds.end.isoformat(),
+        period_start=bounds.start,
+        period_end=bounds.end,
     )
 
 
@@ -151,8 +151,8 @@ class PeriodUsageOut(BaseModel):
     input_tokens: int
     output_tokens: int
     call_count: int
-    period_start: str
-    period_end: str
+    period_start: datetime
+    period_end: datetime
 
 
 class TokenUsageOut(BaseModel):

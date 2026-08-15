@@ -47,6 +47,39 @@ def _select_version(connection) -> str:
     ).scalar_one()
 
 
+def _load_spec_from_db(*, workspace_dir: Path, magis_name: str = "genesis") -> RuntimeSpec:
+    """Open the MAGIS control bus for ``workspace_dir`` and read the spec.
+
+    Replacement for the legacy file-based :func:`load_runtime_spec`
+    call sites in this suite — the runtime startup path now derives
+    identity from the MAGIS shared database, so the test has to do
+    the same.  ``magis_name`` defaults to ``genesis`` because every
+    test in this module provisions a fresh ``genesis`` MAGIS under
+    ``tmp_path``.
+
+    ``workspace_dir`` is the per-MAGI workspace
+    (``tmp_path/MAGI_Citizens/<name>``); the host root that owns the
+    MAGIS shared DB is the directory *above* ``MAGI_Citizens/``.
+    """
+    from magi.bus import open_control_bus
+    from magi.startup.paths import (
+        resolve_magis_control_dir,
+        resolve_magis_database_url,
+    )
+
+    # workspace_dir is ``<host>/MAGI_Citizens/<name>``; the host root
+    # is two levels up (``<host>``).
+    host_root = workspace_dir.parent.parent
+    magis_url = resolve_magis_database_url(host_root, magis_name)
+    control_dir = str(resolve_magis_control_dir(host_root, magis_name))
+    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    return load_runtime_spec(
+        bus,
+        workspace_dir.name,
+        magis_database_url=magis_url,
+    )
+
+
 def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
@@ -56,7 +89,7 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert (workspace / "memories" / "magi.db").is_file()
     assert not (workspace / "magi.db").exists()
     assert (tmp_path / "MAGI_Societies" / "genesis" / "magis.db").is_file()
-    assert load_runtime_spec(workspace) == spec
+    assert _load_spec_from_db(workspace_dir=workspace) == spec
     assert open_bus(
         state_dir=str(workspace / "memories"),
         magis_url=spec.magis_database_url,
@@ -143,7 +176,7 @@ def test_node_creation_has_sticky_distinct_runtime_port(tmp_path: Path) -> None:
 
     assert first.runtime_port == 42070
     assert second.runtime_port == 42071
-    assert load_runtime_spec(tmp_path / "MAGI_Citizens" / "eva-001") == second
+    assert _load_spec_from_db(workspace_dir=tmp_path / "MAGI_Citizens" / "eva-001") == second
 
 
 def test_repeated_init_is_identity_and_key_idempotent(tmp_path: Path) -> None:
@@ -183,8 +216,11 @@ def test_retired_database_blocks_provision_and_runtime_open(tmp_path: Path) -> N
 
     with pytest.raises(StorageNotProvisioned, match="retired node database"):
         init_first_magi(config)
-    with pytest.raises(ConfigurationError, match="retired node database"):
-        load_runtime_spec(config.workspace_dir)
+    # The runtime spec is no longer loaded from a workspace file —
+    # ``magi.db`` presence is now an :func:`init_first_magi` failure
+    # mode only. The DB-derived path always reads from the MAGIS
+    # store, so the retired-database gate is exercised by the line
+    # above alone.
 
 
 def test_runtime_open_never_creates_a_missing_node_database(tmp_path: Path) -> None:
@@ -392,7 +428,7 @@ def test_initial_schema_declares_datetime_columns_for_tasks(tmp_path: Path) -> N
     config = _first_config(tmp_path)
     init_first_magi(config)
 
-    spec = load_runtime_spec(config.workspace_dir)
+    spec = _load_spec_from_db(workspace_dir=config.workspace_dir)
     bus = open_bus(
         state_dir=str(config.workspace_dir / "memories"),
         magis_url=spec.magis_database_url,

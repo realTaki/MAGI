@@ -51,6 +51,7 @@ sends ``""`` and the server treats that as "clear".
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Response
@@ -94,8 +95,8 @@ class McpServerOut(BaseModel):
     env_set: dict[str, bool] = {}
     headers: dict[str, str] = {}
     headers_set: dict[str, bool] = {}
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class McpServerIn(BaseModel):

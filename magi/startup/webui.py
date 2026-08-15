@@ -350,20 +350,53 @@ def _seed_control_secret_from_db_or_file(
     :func:`magi.channels.api.auth._signing_key`, which still keys off
     the env var). Called by the foreground launcher before uvicorn
     binds so the proxy signature path is ready at the first request.
+
+    When the DB row is missing but the bootstrap file exists, the
+    file's value is mirrored into the DB so future launches don't
+    need the file. When both are missing, ``magi init`` is required.
     """
     secret = _read_control_secret(
         host_workspace_dir=host_workspace_dir, magis_name=magis_name
     )
     if secret:
         os.environ["MAGI_CONTROL_SECRET"] = secret
-    else:
-        secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
+        return
+
+    # DB miss — fall back to the bootstrap file and mirror it into the
+    # DB so the next launch can self-load.
+    secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
+    if not secret_path.exists():
         raise RuntimeError(
             f"MAGI_CONTROL_SECRET is not set and neither the DB row "
             f"({magis_name!r} in control_secrets) nor the bootstrap file "
             f"({secret_path}) is present. Run `magi init` to (re)provision the "
             f"MAGIS control secret, or export MAGI_CONTROL_SECRET in the shell."
         )
+    value = secret_path.read_text(encoding="utf-8").strip()
+    os.environ["MAGI_CONTROL_SECRET"] = value
+    try:
+        from magi.bus import open_control_bus
+        bus = open_control_bus(
+            control_dir=str(secret_path.parent),
+            magis_url=resolve_magis_database_url(host_workspace_dir, magis_name),
+        )
+    except Exception:
+        return  # best-effort; we still have the file-backed value in env
+    if bus.control_secrets_book is None:
+        return
+    existing = bus.control_secrets_book.get(name=magis_name)
+    if existing is not None and existing.secret_value:
+        return  # someone else already mirrored
+    import hashlib
+    import secrets
+    salt = secrets.token_bytes(16)
+    secret_hash = hashlib.sha256(value.encode("utf-8") + salt).digest()
+    bus.control_secrets_book.upsert(
+        name=magis_name,
+        secret_hash=secret_hash,
+        salt=salt,
+        secret_value=value.encode("utf-8"),
+    )
 
 
 def _read_control_secret(*, host_workspace_dir: Path, magis_name: str) -> str | None:

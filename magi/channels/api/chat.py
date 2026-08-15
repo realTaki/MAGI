@@ -31,7 +31,6 @@ defensive ceiling on top.
 from __future__ import annotations
 
 import logging
-from datetime import UTC
 
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
@@ -56,13 +55,6 @@ router = APIRouter(tags=["chat"])
 # the truncation so the operator can see it happened.
 _MAX_INPUT_CHARS = 8000
 _MAX_OUTPUT_CHARS = 4000
-
-
-def _utcnow_iso() -> str:
-    """Return the current UTC time as an ISO 8601 string."""
-    from datetime import datetime
-
-    return datetime.now(UTC).isoformat()
 
 
 def new_conversation_id() -> str:
@@ -136,7 +128,7 @@ class ChatSendRequest(BaseModel):
 
 
 class ChatSendResponse(BaseModel):
-    job_id: str
+    job_id: int
     status: str = "accepted"
     # Always returned so the frontend can stash it on a
     # fresh chat. For an existing-conversation send it equals
@@ -195,8 +187,8 @@ async def send_chat(
     # separately by the channel dispatcher (D.28) below — WebUI
     # doesn't need it for send / read but we stamp it on the
     # conversation row for cross-channel tooling.
-    from magi.channels.api.auth_gates import _proxy_identity
     from magi.channels.api.auth import resolve_session
+    from magi.channels.api.auth_gates import _proxy_identity
 
     proxy = _proxy_identity(request)
     if proxy is not None:
@@ -273,11 +265,14 @@ async def send_chat(
         # callers never pass it (see :meth:`ConversationBook.add`
         # docstring). The new id comes back on the returned
         # ``Conversation`` below.
-        sess = store.add(
+        from magi.bus.library.local.conversationBook import Conversation
+
+        sess = Conversation(
             contact_id=contact_id,
             channel=Channel.WEBUI,
             delivery_address=tg_im_id,
         )
+        store.add(sess)
         conversation_id = sess.conversation_id
 
     # D.22 cross-channel guard + chat_messages write + chatNotifyJob

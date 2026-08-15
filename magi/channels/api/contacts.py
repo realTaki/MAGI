@@ -16,6 +16,7 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -23,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from magi.bus import Bus
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskJob
-from magi.bus.library.local import Role
+from magi.bus.library.local import Contact, Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -49,17 +50,6 @@ _CONTACT_ROLES: frozenset[str] = frozenset(r.value for r in Role)
 _VALID_LOCAL_ROLES: tuple[str, ...] = tuple(r.value for r in Role)
 
 
-# -- helpers ----------------------------------------------------------------
-
-
-def _iso(dt) -> str:
-    if dt is None:
-        return ""
-    if isinstance(dt, str):
-        return dt
-    return dt.isoformat().replace("+00:00", "Z")
-
-
 # -- response / payload shapes ----------------------------------------------
 
 
@@ -71,9 +61,9 @@ class ContactOut(BaseModel):
     tgid: int | None = None
     notes: str = ""
     notes_count: int = 0
-    last_seen_at: str = ""
-    created_at: str = ""
-    updated_at: str = ""
+    last_seen_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ContactListOut(BaseModel):
@@ -254,12 +244,15 @@ def create_contact(
             code="conflict.tgid_already_bound",
             detail=f"tgid {payload.tgid} is already bound",
         )
-    view = bus.contacts_book.add(
+    record_id = bus.contacts_book.add(Contact(
         name=name,
         display_name=payload.display_name,
         role=payload.role,
         tgid=payload.tgid,
-    )
+    ))
+    view = bus.contacts_book.get(contact_id=record_id)
+    if view is None:
+        raise RuntimeError(f"contact row {record_id} disappeared after insert")
 
     # Preset seed hook — fires only when the contact was
     # *created* as ``assigned`` from the start. The
@@ -305,8 +298,8 @@ class NoteOut(BaseModel):
     id: int
     contact_id: int
     note: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class NoteListOut(BaseModel):

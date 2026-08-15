@@ -1,12 +1,12 @@
 """BaseBook — 数据簿基类，自动映射 ORM → dataclass。
 
-子类提供 model_cls / dto_cls 两个类属性即可。
+子类提供 model_cls / record_cls 两个类属性即可。
 """
 
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -14,19 +14,20 @@ from sqlalchemy.orm import Mapped, mapped_column
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.db.engine import EngineFactory
 
+
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class BaseRecord:
     """Common JSON-safe fields for every persisted library DTO.
 
-    ``id`` is database-owned local identity. Callers cannot supply it when
-    constructing a DTO; Books fill it from a persisted row. Time values
-    deliberately remain ``datetime`` throughout the database, Book and API
-    layers; presentation formatting belongs to the frontend.
+    ``id`` and audit timestamps are database-owned. Callers cannot supply
+    them when constructing a DTO; Books fill them from a persisted row. Time
+    values deliberately remain ``datetime`` throughout the database, Book and
+    API layers; presentation formatting belongs to the frontend.
     """
 
     id: int = dataclasses.field(default=0, init=False)
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime | None = dataclasses.field(default=None, init=False)
+    updated_at: datetime | None = dataclasses.field(default=None, init=False)
 
     def to_dict(self) -> dict:
         """Return the DTO's transport-ready field mapping.
@@ -54,20 +55,11 @@ class BaseRecordMixin(Base):
     )
 
 
-def parse_iso_utc_naive(value: str) -> datetime:
-    """Parse an external ISO-8601 timestamp into naive UTC for ORM storage."""
-
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        return parsed
-    return parsed.astimezone(UTC).replace(tzinfo=None)
-
-
-class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
-    """子类设置 model_cls / dto_cls，自动处理 Session 和映射。"""
+class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
+    """子类设置 model_cls / record_cls，自动处理 Session 和映射。"""
 
     model_cls: type[RowT]
-    dto_cls: type[DtoT]
+    record_cls: type[RecordT]
 
     def __init__(self, factory: EngineFactory):
         self._factory = factory
@@ -75,17 +67,73 @@ class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
     def _session(self):
         return self._factory.session()
 
-    def _row_to_dto(self, row: RowT) -> DtoT:
+    def _row_to_dto(self, row: RowT) -> RecordT:
         init_kwargs: dict = {}
         database_values: dict = {}
-        for f in dataclasses.fields(self.dto_cls):
+        for f in dataclasses.fields(self.record_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
                 if f.init:
                     init_kwargs[f.name] = val
                 else:
                     database_values[f.name] = val
-        dto = self.dto_cls(**init_kwargs)
+        dto = self.record_cls(**init_kwargs)
         for name, value in database_values.items():
             object.__setattr__(dto, name, value)
         return dto
+
+    def _validate_add(self, record: RecordT) -> None:
+        """Validate a new record before it is persisted.
+
+        Subclasses own domain invariants and override this hook where needed.
+        They must not open or commit a separate transaction.
+        """
+
+    def _record_to_row_values(self, record: RecordT, _session) -> dict:
+        """Map an input DTO to ORM constructor values.
+
+        The default applies to Books whose DTO field names map one-to-one to
+        model columns. Books with semantic references or encoded storage
+        columns override the hook and may use the supplied session to resolve
+        those references.
+        """
+
+        values: dict = {}
+        unmapped: list[str] = []
+        for field in dataclasses.fields(record):
+            if not field.init:
+                continue
+            if not hasattr(self.model_cls, field.name):
+                unmapped.append(field.name)
+                continue
+            values[field.name] = getattr(record, field.name)
+        if unmapped:
+            raise TypeError(
+                f"{type(self).__name__} must map DTO-only fields explicitly: "
+                f"{', '.join(unmapped)}"
+            )
+        return values
+
+    def add(self, record: RecordT) -> int:
+        """Persist a new DTO and return its database-generated row ID.
+
+        ``add`` is deliberately a command: callers supply the complete
+        unpersisted record and receive only the generated primary key. Use
+        ``get`` / ``list`` for DTO reads.
+        """
+
+        if record.id != 0:
+            raise ValueError("add() accepts only an unpersisted record (id must be 0)")
+        self._validate_add(record)
+        with self._session() as session:
+            row = self.model_cls(**self._record_to_row_values(record, session))
+            session.add(row)
+            session.commit()
+            return row.id
+
+    def get_by_id(self, record_id: int) -> RecordT | None:
+        """Read one DTO by its database-local primary key."""
+
+        with self._session() as session:
+            row = session.get(self.model_cls, record_id)
+            return self._row_to_dto(row) if row is not None else None

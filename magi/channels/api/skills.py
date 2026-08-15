@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -82,7 +83,7 @@ class SkillOut(BaseModel):
 class SkillBodyOut(BaseModel):
     name: str
     content: str
-    modified_at: str
+    modified_at: datetime
     truncated: bool
 
 
@@ -163,7 +164,6 @@ def get_skill_body(
         raise MagiHTTPException(
             status_code=500, code="skill.read_failed", detail="read failed"
         ) from exc
-    mtime = body.mtime.isoformat().replace("+00:00", "Z")
     return SkillBodyOut(
-        name=name, content=body.content, modified_at=mtime, truncated=body.truncated
+        name=name, content=body.content, modified_at=body.mtime, truncated=body.truncated
     )
