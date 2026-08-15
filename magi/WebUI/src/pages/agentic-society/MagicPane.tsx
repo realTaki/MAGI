@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import ConsoleCard from "../../components/ConsoleCard";
-import { IconDelete, IconEdit } from "../../components/icons";
+import { IconDelete, IconEdit, IconPlay, IconStop } from "../../components/icons";
 import { useT } from "../../i18n/index";
 import { qk } from "../../lib/queryClient";
 import { useMagic, useMagis, type MAGICRow, type MagisRow } from "../../lib/queries";
@@ -262,11 +262,17 @@ export function MagicPane() {
                       </button>
                       {m.memberships.length > 0 && (
                         <button
-                          className="btn btn-secondary text-xs ml-1"
+                          className="p-1 ml-1 text-ink-2 hover:text-ink hover:bg-surface-2 rounded-md transition disabled:opacity-40 disabled:cursor-not-allowed"
                           disabled={busy === m.id}
+                          title={m.runtime?.desired_state === "running" ? t("common.stop") : t("common.start")}
+                          aria-label={m.runtime?.desired_state === "running" ? t("common.stop") : t("common.start")}
                           onClick={() => void lifecycle(m, m.runtime?.desired_state === "running" ? "stop" : "start")}
                         >
-                          {m.runtime?.desired_state === "running" ? t("common.stop") : t("common.start")}
+                          {m.runtime?.desired_state === "running" ? (
+                            <IconStop className="h-4 w-4" />
+                          ) : (
+                            <IconPlay className="h-4 w-4" />
+                          )}
                         </button>
                       )}
                       <button

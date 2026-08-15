@@ -183,6 +183,20 @@ export const IconEdit = ({ className }: IconProps) => (
   </Icon>
 );
 
+// Play triangle — runtime "start" affordance for a stopped agent.
+export const IconPlay = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M6 4l14 8-14 8V4z" />
+  </Icon>
+);
+
+// Solid square — runtime "stop" affordance for a running agent.
+export const IconStop = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <rect x="6" y="6" width="12" height="12" rx="1" />
+  </Icon>
+);
+
 // Trash — row-level "delete" affordance in data tables.
 export const IconDelete = ({ className }: IconProps) => (
   <Icon className={className}>
