@@ -32,7 +32,7 @@ from magi.startup.paths import (
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
 )
-from magi.startup.process import is_alive, read_pid
+from magi.startup.process import find_listener_on_port, is_alive, read_pid
 from magi.startup.spec import load_runtime_spec
 
 logger = logging.getLogger("magi.startup.local")
@@ -75,6 +75,12 @@ def start_magi(
     Refuses to spawn if a live PID file already exists for the same
     workspace.  Per plan §21 the Runtime's port is hardcoded; the
     parent probes the child on the same loopback port.
+
+    Recovers from the uvicorn reload-storm failure mode: a crashed
+    supervisor leaves its worker listening on the runtime port with
+    no PID-file owner.  Before spawning we sweep the port for such an
+    orphan and SIGKILL it, so a developer can re-run ``magi start``
+    after editing source files without manually killing stale workers.
     """
     spec = load_runtime_spec(config.workspace_dir)
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
@@ -86,6 +92,10 @@ def start_magi(
                 file=sys.stderr,
             )
             return 1
+        # Stale PID file — drop it so the fresh spawn can claim the slot.
+        pid_path.unlink(missing_ok=True)
+
+    _reap_orphan_worker(spec.runtime_port)
 
     env = _build_subprocess_env(config)
     argv = _build_subprocess_argv(config)
@@ -284,6 +294,37 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 # ----------------------------------------------------------------------
 # helpers
 # ----------------------------------------------------------------------
+
+
+def _reap_orphan_worker(port: int) -> None:
+    """Kill any process still listening on ``port`` that has no PID-file owner.
+
+    A uvicorn supervisor crash (most commonly: a reload-storm after
+    editing source files while the dev runtime is running) leaves its
+    child worker holding the runtime socket with no PID file pointing
+    at it.  Without this sweep the next :func:`start_magi` would bind-fail
+    and silently strand the slot.  SIGKILL is intentional — the orphan
+    is already in a bad state and we want the port released *now*, not
+    after a graceful drain that the worker may never attempt.
+    """
+    orphan = find_listener_on_port(port)
+    if orphan is None:
+        return
+    print(
+        f"orphan worker pid={orphan} holds port {port}; killing before respawn",
+        file=sys.stderr,
+    )
+    try:
+        os.kill(orphan, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    # Wait up to 2 s for the kernel to actually release the socket;
+    # SIGKILL is synchronous but the FD teardown can lag the signal.
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if find_listener_on_port(port) is None:
+            return
+        time.sleep(0.05)
 
 
 def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:

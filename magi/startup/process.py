@@ -3,18 +3,23 @@
 Both local supervisors — :mod:`magi.startup.local` (one process per
 MAGI) and :mod:`magi.startup.webui` (the single WebUI process) —
 follow the same pattern: write a PID file on spawn, then read it back
-to answer "is that process still up?". These two helpers are that
+to answer "is that process still up?". These helpers are that
 pattern's whole surface; they lived duplicated (byte-identical) in
 both modules until this module claimed them.
 
 Deliberately narrow: no spawning, no signalling, no path resolution
-(that's :mod:`magi.startup.paths`). Just "read the file" and "is this
-PID live", so both supervisors agree on what a stale PID file means.
+(that's :mod:`magi.startup.paths`). Just "read the file", "is this
+PID live", and "who is holding this port" — so both supervisors
+agree on what a stale PID file means and can recover from the
+uvicorn reload-storm case (supervisor dies, worker orphans and
+keeps the runtime socket open).
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -57,4 +62,104 @@ def is_alive(pid: int) -> bool:
         return False
 
 
-__all__ = ["read_pid", "is_alive"]
+def find_listener_on_port(port: int) -> int | None:
+    """Return the PID of a process listening on ``port`` on loopback, or ``None``.
+
+    Used to recover from a uvicorn reload storm: the supervisor dies,
+    its worker keeps the runtime socket open, the PID file points at
+    the dead supervisor. The next ``start_*`` would otherwise fail
+    with "Address already in use" because nothing sees the orphan.
+
+    Implementation:
+      - Linux: parse ``/proc/net/tcp`` (LISTEN state, port in hex),
+        then walk ``/proc/<pid>/fd/*`` to find a process holding the
+        matching socket inode.  Zero external dependencies.
+      - macOS: shell out to ``lsof`` (the only sane option without
+        root + kernel tracing).  Returns ``None`` if ``lsof`` is
+        missing or times out.
+      - Other platforms: ``None`` (the Windows install path uses
+        service-manager supervision, not this hot-recovery loop).
+    """
+    if sys.platform == "linux":
+        return _find_listener_on_port_linux(port)
+    if sys.platform == "darwin":
+        return _find_listener_on_port_macos(port)
+    return None
+
+
+# ----------------------------------------------------------------------
+# platform helpers
+# ----------------------------------------------------------------------
+
+
+_LISTEN_STATE = "0A"  # TCP_ESTABLISHED in /proc/net/tcp state column
+
+
+def _find_listener_on_port_linux(port: int) -> int | None:
+    target_hex = f"{port:04X}"
+
+    inodes: set[int] = set()
+    try:
+        with open("/proc/net/tcp") as f:
+            next(f, None)  # skip header
+            for line in f:
+                parts = line.split()
+                if len(parts) < 10:
+                    continue
+                if parts[3] != _LISTEN_STATE:
+                    continue
+                if not parts[1].endswith(f":{target_hex}"):
+                    continue
+                inodes.add(int(parts[9]))
+    except (OSError, ValueError):
+        return None
+    if not inodes:
+        return None
+
+    try:
+        pid_names = os.listdir("/proc")
+    except OSError:
+        return None
+    for pid_name in pid_names:
+        if not pid_name.isdigit():
+            continue
+        fd_dir = f"/proc/{pid_name}/fd"
+        try:
+            fd_names = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for fd_name in fd_names:
+            try:
+                link = os.readlink(f"{fd_dir}/{fd_name}")
+            except OSError:
+                continue
+            if not link.startswith("socket:["):
+                continue
+            try:
+                inode = int(link[len("socket:["):-1])
+            except ValueError:
+                continue
+            if inode in inodes:
+                return int(pid_name)
+    return None
+
+
+def _find_listener_on_port_macos(port: int) -> int | None:
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if line.isdigit():
+            return int(line)
+    return None
+
+
+__all__ = ["read_pid", "is_alive", "find_listener_on_port"]
