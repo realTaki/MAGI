@@ -50,7 +50,7 @@ export function SettingsAgentCard() {
     >
       <div className="mt-6 space-y-8">
         <ToolLoopSection />
-        <div className="border-t border-sky-light/40" />
+        <div className="border-t border-border" />
         <CompactSection />
       </div>
     </ConsoleCard>
@@ -147,10 +147,10 @@ function ToolLoopSection() {
 
       {saveError && <p className="form-error mt-3">✗ {saveError}</p>}
       {savedNotice && (
-        <p className="mt-3 text-xs text-emerald-700">✓ {savedNotice}</p>
+        <p className="mt-3 text-xs text-success">✓ {savedNotice}</p>
       )}
 
-      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-sky-light/40">
+      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border">
         <button
           type="button"
           onClick={save}
@@ -333,10 +333,10 @@ function CompactSection() {
 
       {saveError && <p className="form-error mt-3">✗ {saveError}</p>}
       {savedNotice && (
-        <p className="mt-3 text-xs text-emerald-700">✓ {savedNotice}</p>
+        <p className="mt-3 text-xs text-success">✓ {savedNotice}</p>
       )}
 
-      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-sky-light/40">
+      <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border">
         <button
           type="button"
           onClick={save}

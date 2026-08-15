@@ -9,7 +9,7 @@ export function KnowledgeConnectorsPane() {
     <div className="space-y-4">
       <div className="flex justify-end"><InfoTip text={t("settings.knowledgeConnectorsHint")} /></div>
       <ConsoleCard title={t("settings.knowledgeConnectorsHeading")}>
-        <p className="text-sm text-ink-soft">{t("settings.knowledgeConnectorsHint")}</p>
+        <p className="text-sm text-ink-3">{t("settings.knowledgeConnectorsHint")}</p>
       </ConsoleCard>
     </div>
   );

@@ -147,13 +147,13 @@ export function MagicPane() {
         </button>
       }
     >
-      <p className="text-xs text-ink-soft mb-3">
+      <p className="text-xs text-ink-3 mb-3">
         {t("magic.createHelp")}
       </p>
       {message && <p className="form-error mb-3">{message}</p>}
       {error && <p className="form-error mb-3">{String(error)}</p>}
       {open && (
-        <div className="grid gap-2 sm:grid-cols-4 mb-4 p-3 rounded border border-sky-light/40">
+        <div className="grid gap-2 sm:grid-cols-4 mb-4 p-3 rounded border border-border">
           <input
             className="form-input"
             placeholder={t("magic.createNamePlaceholder")}
@@ -200,7 +200,7 @@ export function MagicPane() {
           </thead>
           <tbody>
             {magic.map((m) => (
-              <tr key={m.id} className="border-t border-sky-light/30 align-top">
+              <tr key={m.id} className="border-t border-border align-top">
                 <td className="py-2 font-medium">
                   {editing === m.id ? (
                     <input
@@ -216,7 +216,7 @@ export function MagicPane() {
                   {m.memberships.length ? (
                     m.memberships.map((x) => `${x.magis_name} (${x.role_name})`).join(", ")
                   ) : (
-                    <em className="text-ink-soft">{t("magic.unassigned")}</em>
+                    <em className="text-ink-3">{t("magic.unassigned")}</em>
                   )}
                 </td>
                 <td className="py-2">
@@ -230,10 +230,10 @@ export function MagicPane() {
                   ) : m.api_key_set ? (
                     <span>
                       {m.provider || "—"}
-                      <span className="text-ink-soft text-xs ml-1">···{m.api_key_last4}</span>
+                      <span className="text-ink-3 text-xs ml-1">···{m.api_key_last4}</span>
                     </span>
                   ) : (
-                    <em className="text-ink-soft">{t("magic.notConfigured")}</em>
+                    <em className="text-ink-3">{t("magic.notConfigured")}</em>
                   )}
                 </td>
                 <td className="py-2">{m.runtime?.observed_state || "draft"}</td>
@@ -287,7 +287,7 @@ export function MagicPane() {
             ))}
             {!magic.length && (
               <tr>
-                <td colSpan={5} className="py-6 text-center text-ink-soft">
+                <td colSpan={5} className="py-6 text-center text-ink-3">
                   {t("magic.empty")}
                 </td>
               </tr>
@@ -357,7 +357,7 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
           {t("magic.providerSave")}
         </button>
       </div>
-      {!isReady && <span className="text-xs text-ink-soft">{help}</span>}
+      {!isReady && <span className="text-xs text-ink-3">{help}</span>}
     </div>
   );
 }

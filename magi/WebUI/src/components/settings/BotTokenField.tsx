@@ -127,7 +127,7 @@ export function BotTokenField(props: {
       </div>
 
       {testState === "success" && (
-        <p className="text-sm text-emerald-700">
+        <p className="text-sm text-success">
           {t("settings.botTokenVerified")}<span className="font-mono">@{username}</span>
         </p>
       )}
@@ -167,7 +167,7 @@ export function BotTokenField(props: {
         <button
           type="button"
           onClick={props.onCancel}
-          className="text-xs text-ink-soft hover:text-sky-deep transition"
+          className="text-xs text-accent hover:text-accent-ink transition"
         >
           {t("settings.botTokenCancel")}
         </button>

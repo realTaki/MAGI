@@ -134,10 +134,10 @@ export function MagisPane() {
         }
       >
         {loadError && <p className="form-error mb-3">{loadError}</p>}
-        {magisQuery.isLoading && <p className="text-sm text-ink-soft">{t("common.loading")}</p>}
+        {magisQuery.isLoading && <p className="text-sm text-ink-3">{t("common.loading")}</p>}
 
         {createOpen && (
-          <div className="mb-5 rounded-lg border border-sky-light/40 bg-sky-pale/10 p-3">
+          <div className="mb-5 rounded-lg border border-border bg-sky-soft p-3">
             {createError && <p className="form-error mb-2">{createError}</p>}
             <div className="flex items-center gap-2">
               <select className="form-input text-sm py-1.5 px-3" value={createParentId} onChange={(e) => setCreateParentId(e.target.value)}>
@@ -152,12 +152,12 @@ export function MagisPane() {
         )}
 
         {!magisQuery.isLoading && magis.length === 0 && (
-          <p className="text-sm text-ink-soft">{t("magis.empty")}</p>
+          <p className="text-sm text-ink-3">{t("magis.empty")}</p>
         )}
         {magis.length > 0 && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-3 border-b border-border">
                 <th className="py-2 pr-3 font-medium w-2/5">{t("magis.columnName")}</th>
                 <th className="py-2 pr-3 font-medium w-16">ID</th>
                 <th className="py-2 pr-3 font-medium w-1/5">Adam</th>
@@ -172,7 +172,7 @@ export function MagisPane() {
                 const prefix = r.depth > 0 ? "└ ".padStart(r.depth * 2 + 1, " ") : "";
                 return (
                   <Fragment key={r.id}>
-                    <tr className={`border-b border-sky-light/20 transition-colors ${isEdit ? "bg-sky-pale/20" : "hover:bg-sky-pale/10"}`}>
+                    <tr className={`border-b border-border-2 transition-colors ${isEdit ? "bg-accent-soft" : "hover:bg-surface-2"}`}>
                     {isEdit ? (
                       <td className="py-2 pr-3" colSpan={5}>
                         <div className="flex items-center gap-2">
@@ -181,32 +181,32 @@ export function MagisPane() {
                             {parentOptions.map((o) => (<option key={o.id} value={String(o.id)}>{o.name}</option>))}
                           </select>
                           <button type="button" disabled={saving} onClick={() => { void submitEdit(r.id); }} title={t("common.save")}
-                            className="p-1 rounded text-emerald-600 hover:text-emerald-800 hover:bg-white/60 transition-colors disabled:opacity-30">
+                            className="p-1 rounded text-success hover:text-success hover:bg-surface-2 transition-colors disabled:opacity-30">
                             {saving ? <span className="text-[10px]">…</span> : <IconCheck className="h-4 w-4" />}
                           </button>
                           <button type="button" onClick={cancelEdit} title={t("common.cancel")}
-                            className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                            className="p-1 rounded text-ink-3 hover:text-ink hover:bg-surface-2 transition-colors">
                             <IconX className="h-4 w-4" />
                           </button>
-                          {editError && <span className="text-xs text-rose-600">{editError}</span>}
+                          {editError && <span className="text-xs text-danger">{editError}</span>}
                         </div>
                       </td>
                     ) : (
                       <>
                         <td className="py-2.5 pr-3">
-                          <span className="text-ocean/30 font-mono text-[11px] mr-1.5">{prefix}</span>
+                          <span className="text-sky-ink/30 font-mono text-[11px] mr-1.5">{prefix}</span>
                           <span className="font-medium text-ink">{r.name}</span>
                         </td>
-                        <td className="py-2.5 pr-3 font-mono text-[11px] text-ink-soft/40">#{r.id}</td>
+                        <td className="py-2.5 pr-3 font-mono text-[11px] text-ink-3/40">#{r.id}</td>
                         <td className="py-2.5 pr-3">
                           {adam ? (
-                            <span className="text-xs text-ink-soft">{adam.name || `#${adam.id}`}</span>
+                            <span className="text-xs text-ink-3">{adam.name || `#${adam.id}`}</span>
                           ) : (
-                            <span className="text-xs text-ink-soft/30">—</span>
+                            <span className="text-xs text-ink-3/30">—</span>
                           )}
                         </td>
                         <td className="py-2.5 pr-3 text-right">
-                          <span className="text-xs text-ink-soft">{r.member_count || "—"}</span>
+                          <span className="text-xs text-ink-3">{r.member_count || "—"}</span>
                         </td>
                         <td className="py-2.5">
                           <div className="flex items-center gap-0.5 justify-end">
@@ -216,20 +216,20 @@ export function MagisPane() {
                                 title={t("magis.showChildren")}
                                 className={`p-1 rounded transition-colors ${
                                   detailId === r.id
-                                    ? "text-ocean bg-sky-pale/30"
-                                    : "text-ink-soft hover:text-ink hover:bg-white/60"
+                                    ? "text-accent bg-accent-soft"
+                                    : "text-ink-3 hover:text-ink hover:bg-surface-2"
                                 }`}
                               >
                                 <IconEye className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            <button type="button" onClick={() => setDetailId(detailId === r.id ? null : r.id)} className="text-xs text-sky-700 px-1">Manage</button>
+                            <button type="button" onClick={() => setDetailId(detailId === r.id ? null : r.id)} className="text-xs text-accent px-1">Manage</button>
                             <button type="button" onClick={() => startEdit(r)} title={t("common.edit")}
-                              className="p-1 rounded text-ink-soft hover:text-ink hover:bg-white/60 transition-colors">
+                              className="p-1 rounded text-ink-3 hover:text-ink hover:bg-surface-2 transition-colors">
                               <IconEdit className="h-3.5 w-3.5" />
                             </button>
                             <button type="button" onClick={() => { void del(r.id, r.name); }} title={t("common.delete")}
-                              className="p-1 rounded text-ink-soft hover:text-rose-600 hover:bg-white/60 transition-colors">
+                              className="p-1 rounded text-ink-3 hover:text-danger hover:bg-surface-2 transition-colors">
                               <IconDelete className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -238,10 +238,10 @@ export function MagisPane() {
                     )}
                   </tr>
                   {detailId === r.id && r.child_count > 0 && (
-                    <tr key={`${r.id}-children`} className="border-b border-sky-light/20 bg-sky-pale/10">
+                    <tr key={`${r.id}-children`} className="border-b border-border-2 bg-surface-2">
                       <td colSpan={5} className="p-0">
-                        <div className="px-4 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
-                          <span className="text-ink-soft/60">{t("magis.columnChildren")}:</span>
+                        <div className="px-4 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+                          <span className="text-ink-3/60">{t("magis.columnChildren")}:</span>
                           {(childrenByParent.get(r.id) ?? []).map((ch) => (
                             <span key={ch.id} className="font-medium text-ink">{ch.name}</span>
                           ))}

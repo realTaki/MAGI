@@ -12,6 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ConsoleCard from "../ConsoleCard";
 import { InfoTip } from "../InfoTip";
+import Toggle from "../Toggle";
 import { useT } from "../../i18n/index";
 import { apiFetch } from "../../lib/queryClient";
 import { BotTokenField } from "./BotTokenField";
@@ -42,9 +43,9 @@ function Badge({ status }: { status: "on" | "off" | "coming" | "no-creds" }) {
     case "off":
       return <span className="status-pill status-pill--disconnected text-[10px]">{t("settings.statusDisconnected")}</span>;
     case "coming":
-      return <span className="text-[10px] text-ink-soft bg-sky-pale/40 border border-sky-light/40 rounded px-1.5 py-0.5">{t("settings.statusComingSoon")}</span>;
+      return <span className="text-[10px] text-ink-soft bg-sky-soft border border-sky-soft rounded px-1.5 py-0.5">{t("settings.statusComingSoon")}</span>;
     case "no-creds":
-      return <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{t("settings.channelNoCredentials")}</span>;
+      return <span className="text-[10px] text-warning bg-warning-soft border border-warning-soft rounded px-1.5 py-0.5">{t("settings.channelNoCredentials")}</span>;
   }
 }
 
@@ -110,7 +111,7 @@ export function SettingsChannelsCard(props: {
 
               return (
                 <Fragment key={ch.name}>
-                  <tr key={ch.name} className="border-b border-sky-light/20 last:border-0">
+                  <tr key={ch.name} className="border-b border-border-2 last:border-0">
                     <td className="py-2.5 pr-3">
                       <span className="font-medium text-ink">{ch.label}</span>
                     </td>
@@ -129,24 +130,18 @@ export function SettingsChannelsCard(props: {
                         <button
                           type="button"
                           onClick={() => setEditingToken((v) => !v)}
-                          className="text-xs text-sky-700 hover:text-sky-deep transition mr-3"
+                          className="text-xs text-accent hover:text-accent-ink transition mr-3"
                         >
                           {editingToken ? t("common.cancel") : t("settings.btnReSet")}
                         </button>
                       )}
                       {/* Toggle switch */}
-                      <label
-                        className={`relative inline-flex items-center ${canToggle ? "cursor-pointer" : "cursor-not-allowed opacity-40"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="sr-only peer"
-                          checked={ch.enabled}
-                          disabled={!canToggle}
-                          onChange={() => toggle(ch)}
-                        />
-                        <div className="w-8 h-5 bg-ink-soft/20 rounded-full peer peer-checked:bg-ocean peer-focus:ring-2 peer-focus:ring-sky-300 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:after:translate-x-3" />
-                      </label>
+                      <Toggle
+                        checked={ch.enabled}
+                        disabled={!canToggle}
+                        onChange={() => toggle(ch)}
+                        ariaLabel={ch.label}
+                      />
                     </td>
                   </tr>
 
