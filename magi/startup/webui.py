@@ -35,6 +35,7 @@ from magi.startup.paths import (
 )
 from magi.startup.process import (
     claim_pid_file,
+    find_listener_on_port,
     install_lifecycle_handlers,
     is_alive,
     read_pid,

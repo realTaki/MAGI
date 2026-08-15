@@ -26,6 +26,7 @@ Per plan §21, ``reload`` is mode-aware (see :func:`_reload_enabled`):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -54,6 +55,7 @@ from magi.startup.process import (
     install_lifecycle_handlers,
     mark_registry_stopped,
 )
+from magi.startup import systemd_notify
 from magi.startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
@@ -246,6 +248,12 @@ def run_magi(config: StartupConfig) -> None:
         pid_path,
         extra_cleanup=lambda: mark_registry_stopped(config),
     )
+    # systemd watchdog: only active when ``$WATCHDOG_USEC`` is set
+    # by the unit (``WatchdogSec=`` in the .service file).  In every
+    # other launch path (CLI, k8s, dev tunnel) the helper is a no-op
+    # so we never need to special-case the supervisor.  The ping
+    # interval is half the watchdog window per sd_notify(3).
+    watchdog_task = _maybe_start_watchdog()
     try:
         reload = _reload_enabled()
         reload_dirs = _reload_dirs() if reload else None
@@ -259,6 +267,9 @@ def run_magi(config: StartupConfig) -> None:
             reload_dirs=reload_dirs,
         )
     finally:
+        systemd_notify.announce_stopping()
+        if watchdog_task is not None:
+            watchdog_task.cancel()
         # Cleanup if uvicorn returns without a signal (e.g. KeyboardInterrupt
         # inside the asyncio loop that uvicorn swallows).  The signal
         # handler is a no-op the second time around (``fired`` flag).
