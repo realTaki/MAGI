@@ -333,9 +333,10 @@ def _open_with_dirs(
     magis_factory = build_magis_factory(magis_url) if magis_url else None
     # Schema synchronisation is the bootstrap barrier: do this before any
     # Book/JobBoard exists, and therefore before workers or HTTP handlers can
-    # query the database.  A uvicorn reload starts a new RuntimeContext and
-    # passes this barrier again.
+    # query the database. Every explicit Runtime restart passes this barrier
+    # again.
     from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+    from magi.bus.db.schema_drift_fix import apply_schema_drift_fixes
 
     local_scope = MAGIS_SCOPE if local_provision_scope == "magis" else LOCAL_SCOPE
     if (
@@ -349,6 +350,17 @@ def _open_with_dirs(
         local_scope == MAGIS_SCOPE and local_factory.url == magis_factory.url
     ):
         synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
+
+    # Legacy tables pre-date :class:`BaseRecordMixin` and therefore
+    # lack ``created_at`` even though the ORM mapper declares it.
+    # :func:`apply_schema_drift_fixes` issues idempotent
+    # ``ALTER TABLE … ADD COLUMN`` statements once per database
+    # lifetime, then SQLAlchemy queries stop raising
+    # ``no such column`` errors.  Runs against both stores so the
+    # MAGIS shared DB picks up any drift there too.
+    apply_schema_drift_fixes(local_factory.engine)
+    if magis_factory is not None and local_factory is not magis_factory:
+        apply_schema_drift_fixes(magis_factory.engine)
 
     # ---- local books -------------------------------------------------------
     settings_book = SettingBook(local_factory)

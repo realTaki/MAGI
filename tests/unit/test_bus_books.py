@@ -121,9 +121,7 @@ def test_memory_book_full_lifecycle(factory, contact_id):
       * ``update`` only accepts ``subject``/``body``/``priority``
       * ``complete`` is idempotent — second call leaves
         ``completed_at`` untouched
-      * timestamps on the DTO are ISO-8601 ``Z`` strings
-        (via :func:`to_iso`), matching the
-        ``api/memory.py`` wire contract
+      * timestamps on the DTO remain native ``datetime`` values
     """
     from datetime import datetime
 
@@ -157,15 +155,8 @@ def test_memory_book_full_lifecycle(factory, contact_id):
 
     fetched = book.get(memory_id=created.id)
     assert fetched is not None
-    # ISO-Z wire shape.
-    assert isinstance(fetched.completed_at, str)
-    assert fetched.completed_at.endswith("Z")
-    # Round-trip the parsed value back to a string and
-    # confirm equality — guards against accidental
-    # format drift between the column default and the
-    # to_iso normalisation.
-    parsed = datetime.fromisoformat(fetched.completed_at.replace("Z", "+00:00"))
-    assert parsed.isoformat().startswith(first_completed_at[:16])
+    assert isinstance(fetched.completed_at, datetime)
+    assert fetched.completed_at == first_completed_at
 
 
 def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
@@ -839,14 +830,12 @@ def test_task_book_lifecycle(factory, contact_id):
     # via ``preset_to_cron`` before reaching the Book),
     # no contact_id.
     preset = tbook.add(
-        id="p1",
+        task_id="p1",
         name="Daily-preset",
         prompt="preset prompt",
         cron="0 9 * * *",
         target_channel="webui",
         source=TaskSource.PROACTIVE,
-        created_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
-        updated_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
     )
     assert isinstance(preset, Task)
     assert preset.source == TaskSource.PROACTIVE
@@ -857,15 +846,13 @@ def test_task_book_lifecycle(factory, contact_id):
     # User task row: source=TaskSource.USER, cron string,
     # owned by a contact.
     t = tbook.add(
-        id="t1",
+        task_id="t1",
         name="MyTask",
         prompt="do",
         cron="0 9 * * *",
         contact_id=contact_id,
         target_channel="webui",
         source=TaskSource.USER,
-        created_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
-        updated_at=datetime.fromisoformat("2026-08-05T00:00:00Z").replace(tzinfo=None),
     )
     assert isinstance(t, Task)
     assert t.source == TaskSource.USER
@@ -874,19 +861,19 @@ def test_task_book_lifecycle(factory, contact_id):
     # list_by_user: only TaskSource.USER rows owned by contact_id.
     owned = tbook.list_by_user(contact_id=contact_id)
     assert len(owned) == 1
-    assert owned[0].id == "t1"
+    assert owned[0].task_id == "t1"
 
     # list_proactive_tasks: contact_id-scoped; system preset
     # (contact_id IS NULL) visible to every contact_id.
     presets = tbook.list_proactive_tasks(contact_id=contact_id)
     assert len(presets) == 1
-    assert presets[0].id == "p1"
+    assert presets[0].task_id == "p1"
     assert presets[0].source == TaskSource.PROACTIVE
 
     # list_enabled: per-user only — same contact_id.
     enabled = tbook.list_enabled(contact_id=contact_id)
     assert len(enabled) == 1
-    assert enabled[0].id == "t1"
+    assert enabled[0].task_id == "t1"
 
     # disable is owner-scoped: other contact_id returns False.
     other_id = contact_id + 999
@@ -901,19 +888,19 @@ def test_task_book_lifecycle(factory, contact_id):
     # Run lifecycle — unchanged.
     rbook = TaskRunBook(factory)
     r = rbook.add(
-        id="r1",
         task_id="t1",
+        run_id="r1",
         manual=1,
         started_at=datetime.fromisoformat("2026-08-05T09:00:00Z").replace(tzinfo=None),
         status="running",
     )
     assert isinstance(r, TaskRun)
     rbook.complete(
-        id="r1",
+        run_id="r1",
         status="success",
         finished_at=datetime.fromisoformat("2026-08-05T09:01:00Z").replace(tzinfo=None),
     )
-    assert rbook.get(id="r1").status == "success"
+    assert rbook.get(run_id="r1").status == "success"
 
 
 def test_task_book_add_rejects_unknown_source(factory):

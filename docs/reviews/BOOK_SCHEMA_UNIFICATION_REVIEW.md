@@ -6,7 +6,7 @@ permalink: /insights/book-schema-unification/
 
 # Book 层 Schema 统一方案
 
-> **状态：已决策，待实施**（2026-08-15）
+> **状态：已实施**（2026-08-15）
 >
 > 本文覆盖此前的 review 提案。实施时不保留旧 schema、旧数据格式或旧的
 > 字符串主键兼容路径；所有受影响的 Row、Book、Job、API、WebUI 与测试必须
@@ -23,8 +23,8 @@ Row、以及负责 CRUD 的 Book。`BaseBook` 已统一 Session 管理和 Row �
 `datetime.now(UTC).isoformat()` 等多种时间表示。这使外键语义不一致，也让
 时间序列化散落在业务代码中。
 
-目标不是只做样板去重，而是建立唯一、可预测的记录模型：数据库内部统一以
-整数关系和 `datetime` 工作；JSON 边界才产生 ISO-8601 字符串。
+目标不是只做样板去重，而是建立唯一、可预测的记录模型：数据库内部、Book DTO 与
+API 模型统一以整数关系和 `datetime` 工作；JSON 传输由框架编码，展示格式只由前端决定。
 
 ## 2. 已决策的模型
 
@@ -146,7 +146,8 @@ DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字
 - 所有 library 表均具有自增 `id`、`created_at` 和 `updated_at`；没有字符串时间列。
 - 所有物理外键均指向整数 `id`；每个领域业务键、`name` 或 `key` 的唯一性由明确约束
   表达。
-- `rg` 不再找到业务代码中的手写 ISO 时间写入；时间 JSON 输出只经 `to_iso()`。
+- `rg` 不再找到业务代码中的手写 ISO 时间写入或展示格式化；后端 API 模型直接传递
+  `datetime`，由前端负责时区和人类可读格式。
 - Alembic 基线、SQLite 与 PostgreSQL 建表结果一致，并通过完整测试套件。
 
 ## 7. 收益与代价

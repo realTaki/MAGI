@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
-from typing import ClassVar, Protocol, TypeVar, overload
+from typing import ClassVar, Protocol, TypeVar
 
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -62,37 +62,6 @@ class BaseRecordMixin(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
-
-
-# ``to_iso`` is retained only for legacy API call sites while they are being
-# removed.  Book DTOs never call it: ORM rows and DTOs share ``datetime``.
-@overload
-def to_iso(value: datetime) -> str: ...
-@overload
-def to_iso(value: None) -> None: ...
-def to_iso(value: datetime | None) -> str | None:
-    """ISO-8601 UTC string with an explicit trailing ``Z``.
-
-    Every ``DateTime`` column in bus stores **naive UTC**
-    (``utcnow_naive`` is the column default everywhere). Emitting
-    those through a bare ``datetime.isoformat()`` produces a string
-    with no timezone marker, which every JSON consumer — the WebUI,
-    the LLM tool layer, ``new Date(...)`` in the browser — is
-    entitled to read as *local* time. The ``Z`` makes the UTC
-    contract explicit on the wire.
-
-    Aware datetimes are converted to UTC first, so the output shape
-    is identical regardless of which path produced the value.
-
-    ``None`` is preserved for nullable business timestamps. Strings are
-    intentionally rejected: ISO text belongs at the API boundary, never in
-    an ORM row or internal Book call.
-    """
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.isoformat() + "Z"
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def parse_iso_utc_naive(value: str) -> datetime:
