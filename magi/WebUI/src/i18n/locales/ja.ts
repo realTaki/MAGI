@@ -18,6 +18,8 @@ export default {
     remove: "削除",
     confirmRemove: "本当に削除しますか？",
     actions: "操作",
+    start: "起動",
+    stop: "停止",
   },
   landing: {
     tagline: "エージェントの群れ、あなたが定義する。",

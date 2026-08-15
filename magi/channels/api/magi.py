@@ -150,6 +150,12 @@ def _runtime_out(runtime) -> RuntimeOut | None:
 
 
 def _magi_out(bus: Bus, membership) -> MagiOut:
+    """Build a sync ``MagiOut`` without provider info.
+
+    Provider settings live on the runtime's private ``settings_book``,
+    which the control plane cannot read directly; callers that need
+    them populated must use :func:`_magi_out_with_provider` instead.
+    """
     magis = bus.magis_book.get(magis_id=membership.magis_id) if bus.magis_book else None
     role = bus.roles_book.get(role_id=membership.role_id) if bus.roles_book else None
     runtime = (
@@ -180,6 +186,79 @@ def _magi_out(bus: Bus, membership) -> MagiOut:
     )
 
 
+async def _fetch_runtime_provider(
+    runtime_base_url: str,
+    *,
+    magi_id: int,
+) -> tuple[str | None, bool, str | None] | None:
+    """HMAC-signed ``GET /api/magi/self/provider`` against one runtime.
+
+    Returns ``(provider, api_key_set, api_key_last4)`` on success, or
+    ``None`` when the runtime is unreachable / refused the call.  The
+    control plane needs this because provider settings live on each
+    runtime's private ``settings_book`` (per-node SQLite), not on the
+    MAGIS shared store.
+
+    Errors are intentionally swallowed: a missing / dead runtime must
+    not break the surrounding ``list_magi`` response — the row will
+    show ``provider=null`` / ``api_key_set=false`` and the operator can
+    fix the runtime out-of-band.
+    """
+    headers = build_proxy_headers(
+        method="GET",
+        path_and_query="/api/magi/self/provider",
+        target_id=magi_id,
+        operator_id=0,
+        operator_name="webui-magi-list",
+        tgid=None,
+        magis_admin_id=1,
+        admin=True,
+        assigned=True,
+        two_factor=False,
+    )
+    try:
+        async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
+            response = await client.get(runtime_base_url + "/api/magi/self/provider", headers=headers)
+    except (httpx.HTTPError, OSError) as exc:
+        logger.debug(
+            "magi/self/provider fetch failed for magi_id=%s (%s): %s",
+            magi_id, runtime_base_url, exc,
+        )
+        return None
+    if response.is_error:
+        return None
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    return (
+        data.get("provider"),
+        bool(data.get("api_key_set")),
+        data.get("api_key_last4"),
+    )
+
+
+async def _magi_out_with_provider(bus: Bus, membership) -> MagiOut:
+    """Async variant of :func:`_magi_out` that also fills provider fields.
+
+    Provider info is fetched from the live runtime via HMAC-signed
+    proxy when ``observed_state in {starting, started}``; otherwise the
+    fields fall back to ``None`` / ``False`` so the row reflects the
+    current state truthfully.
+    """
+    out = _magi_out(bus, membership)
+    runtime = (
+        bus.runtime_state_book.get(runtime_id=membership.id)
+        if bus.runtime_state_book
+        else None
+    )
+    if runtime is not None and runtime.base_url and runtime.observed_state in {"starting", "started"}:
+        fetched = await _fetch_runtime_provider(runtime.base_url, magi_id=membership.id)
+        if fetched is not None:
+            out.provider, out.api_key_set, out.api_key_last4 = fetched
+    return out
+
+
 def _membership_or_404(bus: Bus, magi_id: int):
     membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
     if membership is None:
@@ -193,14 +272,16 @@ def _default_eva_role(bus: Bus, magis_id: int):
 
 
 @router.get("/magi", response_model=list[MagiOut])
-def list_magi(_admin: AdminGate, bus: BusDep) -> list[MagiOut]:
+async def list_magi(_admin: AdminGate, bus: BusDep) -> list[MagiOut]:
     memberships = []
     if bus.magis_book and bus.memberships_book:
         served = _served_direct_magis_id(bus)
         for magis in bus.magis_book.list_all():
             if served is None or magis.id == served:
                 memberships.extend(bus.memberships_book.list_for_magis(magis_id=magis.id))
-    return [_magi_out(bus, item) for item in memberships]
+    # Provider fields require an async fetch per MAGI; gather them
+    # concurrently so the list call stays O(1) in wall-clock time.
+    return list(await asyncio.gather(*[_magi_out_with_provider(bus, m) for m in memberships]))
 
 
 @router.post("/magi", response_model=MagiOut, status_code=201)
@@ -239,13 +320,13 @@ def create_magi(payload: MagiCreate, _admin: AdminGate, bus: BusDep) -> MagiOut:
 
 
 @router.get("/magi/{magi_id}", response_model=MagiOut)
-def get_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> MagiOut:
+async def get_magi(magi_id: int, _admin: AdminGate, bus: BusDep) -> MagiOut:
     _require_visible(bus, magi_id)
-    return _magi_out(bus, _membership_or_404(bus, magi_id))
+    return await _magi_out_with_provider(bus, _membership_or_404(bus, magi_id))
 
 
 @router.patch("/magi/{magi_id}", response_model=MagiOut)
-def update_magi(magi_id: int, payload: MagiUpdate, _admin: AdminGate, bus: BusDep) -> MagiOut:
+async def update_magi(magi_id: int, payload: MagiUpdate, _admin: AdminGate, bus: BusDep) -> MagiOut:
     _require_visible(bus, magi_id)
     if bus.runtime_state_book is None:
         raise MagiHTTPException(503, "runtime.unavailable", "runtime registry is unavailable")
@@ -254,7 +335,7 @@ def update_magi(magi_id: int, payload: MagiUpdate, _admin: AdminGate, bus: BusDe
         raise MagiHTTPException(
             409, "runtime.not_provisioned", "MAGI has no control runtime record"
         )
-    return _magi_out(bus, _membership_or_404(bus, magi_id))
+    return await _magi_out_with_provider(bus, _membership_or_404(bus, magi_id))
 
 
 def _set_lifecycle(bus: Bus, *, magi_id: int, desired_state: RuntimeDesiredState) -> RuntimeOut:

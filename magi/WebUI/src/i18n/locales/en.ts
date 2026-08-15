@@ -18,6 +18,8 @@ export default {
     remove: "Remove",
     confirmRemove: "Are you sure you want to remove this?",
     actions: "Actions",
+    start: "Start",
+    stop: "Stop",
   },
   landing: {
     tagline: "MAGI Societies, defined by you.",

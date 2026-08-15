@@ -18,6 +18,8 @@ export default {
     remove: "移除",
     confirmRemove: "确定要移除这一项吗？",
     actions: "操作",
+    start: "启动",
+    stop: "停止",
   },
   landing: {
     tagline: "智能体集群，由你定义。",
