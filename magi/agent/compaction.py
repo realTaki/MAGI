@@ -277,7 +277,7 @@ async def call_llm_for_summary(
         max_tokens=1024,
     )
     key = bus.llm_job_board.publish(job)
-    result = await bus.llm_job_board.wait_for_result(key=key, timeout=wait_seconds)
+    result = await bus.llm_job_board.wait_for_result(job_id=key, timeout=wait_seconds)
     if result is None:
         logger.warning("compact: provider job timed out")
         return None

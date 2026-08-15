@@ -71,7 +71,7 @@ class RunContext:
     cancelled: bool = False
     a2a_kind: str | None = None
     a2a_source_magi_id: int | None = None
-    a2a_job_id: str | None = None
+    a2a_job_id: int | None = None
     # The current claimed A2A text is normally already the final user row in
     # the local transcript.  Keep it separately as a resilience fallback if
     # that best-effort transcript write was unavailable.
@@ -164,7 +164,7 @@ class AgentWorker(RuntimeWorker):
                 and conversation_id
                 and conversation_id in self._active_conversations
             ):
-                await self.call(self.bus.agent_job_board.release, key=job.job_id)
+                await self.call(self.bus.agent_job_board.release, job_id=job.job_id)
                 continue
 
             # new run
@@ -227,7 +227,7 @@ class AgentWorker(RuntimeWorker):
                 if source == "chat":
                     await self.call(
                         self.bus.agent_job_board.submit_result,
-                        key=job.job_id,
+                        job_id=job.job_id,
                         result=ChatNotifyResult(
                             job_id=job.job_id,
                             status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -253,7 +253,7 @@ class AgentWorker(RuntimeWorker):
                         )
                         await self.call(
                             board.submit_result,
-                            key=job.job_id,
+                            job_id=job.job_id,
                             result=A2ARequestResult(
                                 job_id=job.job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -273,7 +273,7 @@ class AgentWorker(RuntimeWorker):
                         # StrEnum contract isn't violated.
                         await self.call(
                             board.submit_result,
-                            key=job.job_id,
+                            job_id=job.job_id,
                             result=A2ANotifyResult(
                                 job_id=job.job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -546,7 +546,7 @@ class AgentWorker(RuntimeWorker):
 
     # -- LLM wait ------------------------------------------------------------
 
-    async def _wait_for_llm(self, job_id: str) -> CallLLMResult | None:
+    async def _wait_for_llm(self, job_id: int) -> CallLLMResult | None:
         # ``get_result`` is a one-shot query that returns ``None`` the
         # instant the result row does not exist yet — wrapping it in
         # ``asyncio.wait_for`` only enforces an upper bound, so the
@@ -558,7 +558,7 @@ class AgentWorker(RuntimeWorker):
         timeout = await self._read_llm_timeout()
         try:
             result = await self.bus.llm_job_board.wait_for_result(
-                key=job_id,
+                job_id=job_id,
                 timeout=timeout,
                 poll_interval=0.05,
             )
@@ -683,10 +683,10 @@ class AgentWorker(RuntimeWorker):
 
     async def _publish_effects(
         self, split: _SplitJobs
-    ) -> tuple[dict[str, str], dict[str, str], dict[str, Any]]:
+    ) -> tuple[dict[str, int], dict[str, int], dict[str, Any]]:
         """Publish effects and return tool, request, and immediate notify results."""
-        tool_ids: dict[str, str] = {}
-        request_ids: dict[str, str] = {}
+        tool_ids: dict[str, int] = {}
+        request_ids: dict[str, int] = {}
         notify_results: dict[str, Any] = {}
         for tj in split.tool_jobs:
             jid = await self.call(self.bus.tool_job_board.publish, tj)
@@ -721,13 +721,13 @@ class AgentWorker(RuntimeWorker):
     async def _gather_all(
         self,
         ctx: RunContext,
-        tool_ids: dict[str, str],  # tool_call_id → job_id
-        request_ids: dict[str, str],
+        tool_ids: dict[str, int],  # tool_call_id → job_id
+        request_ids: dict[str, int],
         notify_results: dict[str, Any],
     ) -> _GatherResult | None:
         deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
-        tool_timeout: dict[str, str] = dict(tool_ids)  # tc_id → job_id (copy to mutate)
-        a2a_timeout: dict[str, str] = dict(request_ids)
+        tool_timeout: dict[str, int] = dict(tool_ids)  # tc_id → job_id (copy to mutate)
+        a2a_timeout: dict[str, int] = dict(request_ids)
         tool_results: dict[str, Any] = {}
         a2a_results: dict[str, Any] = dict(notify_results)
         steering_parts: list[str] = []
@@ -750,7 +750,7 @@ class AgentWorker(RuntimeWorker):
 
                     await self.call(
                         self.bus.agent_job_board.submit_result,
-                        key=steer.job_id,
+                        job_id=steer.job_id,
                         result=ChatNotifyResult(
                             job_id=steer.job_id,
                             status=JobStatus.COMPLETED,
@@ -759,7 +759,7 @@ class AgentWorker(RuntimeWorker):
 
             # tool results
             for tc_id, job_id in list(tool_timeout.items()):
-                r = await self.call(self.bus.tool_job_board.get_result, key=job_id)
+                r = await self.call(self.bus.tool_job_board.get_result, job_id=job_id)
                 if r is not None:
                     tool_results[tc_id] = r
                     del tool_timeout[tc_id]
@@ -767,7 +767,7 @@ class AgentWorker(RuntimeWorker):
             # a2a results
             for tc_id, inv_id in list(a2a_timeout.items()):
                 board = self.bus.a2a_request_job_board
-                r = await self.call(board.get_result, key=inv_id) if board is not None else None
+                r = await self.call(board.get_result, job_id=inv_id) if board is not None else None
                 if r is not None:
                     a2a_results[tc_id] = r
                     del a2a_timeout[tc_id]
@@ -936,15 +936,11 @@ class AgentWorker(RuntimeWorker):
         return _coerce_float(raw, _DEFAULT_LLM_TIMEOUT_SECONDS)
 
 
-async def submit_agent_message(bus: Bus, message: Any) -> str:
+async def submit_agent_message(bus: Bus, message: Any) -> int:
     from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 
     job = ChatNotifyJob(
-        # ``job_id`` is Board-owned; publish() overwrites whatever
-        # is here with :meth:`BaseJobBoard.new_job_id`. The cross-
-        # message correlation that the previous ``event_id``/
-        # ``uuid.uuid4().hex`` fallback was attempting is no longer
-        # a concern at this scale.
+        # ``job_id`` is database-owned and is filled after publish().
         conversation_id=getattr(message, "conversation_id", None) or "",
         text=getattr(message, "text", ""),
         channel=getattr(message, "channel", ""),
