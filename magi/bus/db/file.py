@@ -234,7 +234,6 @@ class FileShelf:
 
         shelf = FileShelf(Path("/var/magi/prompts"))
         soul = shelf.read_text("soul")            # → str  (auto-detects .md)
-        replies = shelf.read("bot_replies")       # → dict (auto-detects .yaml)
 
     The shelf is **process-local** (in-memory cache + ``threading.Lock``).
     Cross-process changes are picked up naturally via the mtime/size check.

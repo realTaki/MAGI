@@ -17,7 +17,7 @@ short repository transaction.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
@@ -115,39 +115,12 @@ class Contact(BaseRecord):
     magis_admin_id: int | None = None
     last_seen_at: datetime | None = None  # 最近活跃时间
 
-    def to_dict(self) -> dict:
-        """Wire-shape for JSON serialisation.
-
-        Mirrors the ``ContactView`` field names
-        (``admin`` / ``notes`` / ``source`` fields are
-        gone — admin authority moved to MAGIS, notes/source live on
-        ``ContactNoteBook``). Timestamp fields are ISO-8601
-        ``Z`` strings by the time this runs because
-        :meth:`BaseBook._row_to_dto` already passed each
-        ``datetime`` column through
-        :func:`~magi.bus.library.base.to_iso`.
-        """
-        return asdict(self)
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ContactNote(BaseRecord):
     contact_id: int  # 所属联系人 ID
     note: str  # 笔记正文
     kind: NoteKind = NoteKind.PERMANENT  # 笔记类型（permanent/daily）
     note_date: datetime | None = None  # 日记所属日期
-
-    def to_dict(self) -> dict:
-        """Wire-shape for JSON serialisation.
-
-        Mirrors the ``NoteView`` field names so
-        the WebUI API and the LLM tool see the same shape
-        they saw pre-migration. Timestamp fields are ISO-8601
-        ``Z`` strings via
-        :meth:`BaseBook._row_to_dto`.
-        """
-        return asdict(self)
-
 
 # -- internal ORM --------------------------------------------------------
 

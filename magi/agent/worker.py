@@ -333,7 +333,7 @@ class AgentWorker(RuntimeWorker):
 
                 llm_job = await self._build_llm_job(ctx)
                 if llm_job is None:
-                    ctx.final_reply = await self._fallback_reply()
+                    ctx.final_reply = self._fallback_reply()
                     await self._publish_delivery(ctx)
                     return
 
@@ -903,12 +903,12 @@ class AgentWorker(RuntimeWorker):
             msg["content_blocks"] = blocks
         return msg
 
-    async def _fallback_reply(self) -> str:
-        try:
-            replies = await self.call(self.bus.prompt_book.bot_replies)
-            return replies.get("agent_no_credentials", "(no credentials)")
-        except Exception:
-            return "(no credentials)"
+    def _fallback_reply(self) -> str:
+        # LLM credentials are missing for this contact. The WebUI chat
+        # endpoint surfaces the same condition as a 403 before the agent
+        # runs; this path covers TG contacts whose provider was removed
+        # after binding.
+        return "你的账号还没设置 LLM provider 和 API key，去 MAGI WebUI 的「Contacts」里把自己的档案补上吧。"
 
     # -- cancel --------------------------------------------------------------
 

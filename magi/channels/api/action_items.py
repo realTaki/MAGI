@@ -47,10 +47,6 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from magi.channels.api.auth_gates import AdminGate
-
-# ``_iso`` is the timestamp helper ``contacts`` uses for the same
-# payload shape; import it from there rather than redefining.
-from magi.channels.api.contacts import _iso
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
@@ -63,11 +59,6 @@ router = APIRouter(tags=["action_items"])
 
 
 def _serialize(a) -> ActionItemOut:
-    # ``_iso`` collapses ``None`` to ``""`` (used by contacts); restore
-    # the wire-level ``None`` for completion timestamp so the dashboard
-    # can distinguish "not done yet" from "done at the epoch".
-    completed_at = _iso(a.completed_at) or None
-    due_date = _iso(a.due_date) or None
     return ActionItemOut(
         id=a.id,
         contact_id=a.contact_id,
@@ -75,10 +66,10 @@ def _serialize(a) -> ActionItemOut:
         description=a.description,
         target_url=a.target_url,
         priority=a.priority,
-        due_date=due_date,
+        due_date=a.due_date,
         source=a.source,
-        created_at=_iso(a.created_at) or "",
-        completed_at=completed_at,
+        created_at=a.created_at,
+        completed_at=a.completed_at,
         completion_note=a.completion_note,
         dismissed=a.dismissed,
     )
@@ -91,10 +82,10 @@ class ActionItemOut(BaseModel):
     description: str | None = None
     target_url: str | None = None
     priority: str = "normal"
-    due_date: str | None = None
+    due_date: datetime | None = None
     source: str = "system"
-    created_at: str
-    completed_at: str | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
     completion_note: str | None = None
     dismissed: bool = False
 
@@ -106,7 +97,7 @@ class ActionItemListOut(BaseModel):
     clock skew is rare but not impossible."""
 
     items: list[ActionItemOut]
-    server_time: str
+    server_time: datetime
 
 
 class ActionItemCompleteRequest(BaseModel):
@@ -188,7 +179,7 @@ def list_action_items(
     )
     return ActionItemListOut(
         items=[_serialize(r) for r in rows],
-        server_time=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        server_time=datetime.now(UTC).replace(tzinfo=None),
     )
 
 

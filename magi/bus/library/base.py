@@ -7,34 +7,12 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
-from typing import ClassVar, Protocol, TypeVar
 
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
 from magi.bus.db.engine import EngineFactory
-
-RowT = TypeVar("RowT", bound=Base)
-
-
-class _Dataclass(Protocol):
-    """Structural Protocol for ``@dataclasses.dataclass``-decorated classes.
-
-    ``dataclasses.fields()`` types its argument as
-    ``DataclassInstance | type[DataclassInstance]``; without this
-    bound, Pylance sees ``type[DtoT]`` (a TypeVar with no upper
-    bound) as ``type[Any]`` and rejects the call. Binding DtoT to
-    this Protocol makes the class satisfy the dataclass shape
-    structurally without forcing every subclass to inherit from a
-    concrete base.
-    """
-
-    __dataclass_fields__: ClassVar[dict]
-
-
-DtoT = TypeVar("DtoT", bound=_Dataclass)
-
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class BaseRecord:
@@ -48,6 +26,17 @@ class BaseRecord:
     id: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    def to_dict(self) -> dict:
+        """Return the DTO's transport-ready field mapping.
+
+        Values deliberately retain their native types, including ``datetime``;
+        the API transport is responsible for JSON encoding and the frontend
+        for presentation formatting.  A record with a genuinely different
+        public projection may override this method locally.
+        """
+
+        return dataclasses.asdict(self)
 
 
 class BaseRecordMixin(Base):
@@ -73,7 +62,7 @@ def parse_iso_utc_naive(value: str) -> datetime:
     return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
-class BaseBook[RowT: Base, DtoT: _Dataclass]:
+class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
     """子类设置 model_cls / dto_cls，自动处理 Session 和映射。"""
 
     model_cls: type[RowT]

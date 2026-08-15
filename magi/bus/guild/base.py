@@ -54,10 +54,9 @@ class JobStatus(StrEnum):
 class BaseJob:
     """所有 Job dataclass 的公共基类。
 
-    承载 ``job_id``（行级唯一标识；声明为 ``init=False``，caller
-    无法在 ``Job(...)`` 构造里传它——publish-side
-    :meth:`BaseJobBoard.publish` 用 :meth:`BaseJobBoard.new_job_id`
-    强写，claim-side 通过 :meth:`BaseJobBoard._map_row` 把行级
+    承载 ``job_id``（行级自增主键；声明为 ``init=False``，caller
+    无法在 ``Job(...)`` 构造里传它——数据库在 publish-side insert 时
+    生成，claim-side 通过 :meth:`BaseJobBoard._map_row` 把行级
     ``job_id`` 回填给调用方）。保留这个字段是因为 worker 拿到
     claim 结果后通过它调 :meth:`BaseJobBoard.submit_result` /
     :meth:`release`（它们以 ``job_id`` 作业务键）。
@@ -74,14 +73,14 @@ class BaseJob:
     跟在有默认字段之后」的规则。
     """
 
-    job_id: str = dataclasses.field(default="", init=False)  # Board-owned; publish 强写、claim 回填
+    job_id: int = dataclasses.field(default=0, init=False)  # DB-owned; publish 后生成、claim 回填
 
 
 @dataclass(frozen=True, slots=True)
 class BaseJobResult:
     """所有 Result dataclass 的公共基类。
 
-    承载队列语义字段：``job_id``（业务键）、``status``
+    承载队列语义字段：``job_id``（主键回读值）、``status``
     （Result 业务终态，取 :class:`JobStatus` 子集
     :attr:`JobStatus.COMPLETED` / :attr:`JobStatus.FAILED`，由
     :meth:`BaseJobBoard._read_result_from_job` 从 row.status
@@ -97,7 +96,7 @@ class BaseJobResult:
     的用法（如 ``A2ARequestResult().error_code is None``）。
     """
 
-    job_id: str = ""  # 对应 job 的业务键（即 job_id）
+    job_id: int = 0  # 对应 job 的主键
     status: JobStatus = JobStatus.COMPLETED  # Result 业务终态（PENDING 由 Result 视角不承载）
     error: str | None = None  # 失败时的人类可读错误文案（成功路径保持 None）
 
@@ -109,13 +108,14 @@ class BaseJobRowMixin(Base):
     表（SA 不会建 ``base_job_row_mixin`` 这种无意义表），但 MRO 中
     已经携带 ``Base``，所以子类只需要 ``class _XxxJobRow(BaseJobRowMixin)``
     就能挂到同一份 ``Base.metadata`` 上。每个 ``_XxxJobRow`` 通过
-    这个单继承获得 11 个队列控制列，只声明自己的业务列。
+    这个单继承获得 10 个队列控制列，只声明自己的业务列。
     """
 
     __abstract__ = True
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    job_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # ``job_id`` 是唯一的 Job 标识：数据库生成的自增主键。Board 是
+    # 操作上下文，因此不要求不同 Job 表之间的数值全局唯一。
+    job_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Result-side error description. Width 1024 covers every realistic
     # worker / provider / runner failure message (~10× what we'd ever
     # want a UI to display); the value aligns with the inherited
@@ -178,15 +178,6 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     def _session(self):
         return self._factory.session()
 
-    # -- ID 生成 -----------------------------------------------------------
-
-    @staticmethod
-    def new_job_id() -> str:
-        """生成新的 Job ID（hex 字符串）。"""
-        import uuid  # local import keeps the base module light and avoids
-        # pulling in :mod:`uuid` for callers that never publish.
-        return uuid.uuid4().hex
-
     @staticmethod
     def _map_row(row, cls):
         """ORM 行 → dataclass 自动映射（按字段名匹配）。
@@ -211,8 +202,8 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
 
     # -- 异步队列 ----------------------------------------------------------
 
-    def publish(self, job: JobT) -> str:
-        """Enqueue a new PENDING row and return its freshly minted ``job_id``.
+    def publish(self, job: JobT) -> int:
+        """Enqueue a new PENDING row and return its database-generated ``job_id``.
 
         Default impl: copy every dataclass field whose name is also a
         column on :attr:`job_model` (skipping ``job_id`` /
@@ -234,23 +225,20 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     def _build_pending_row(self, job: JobT) -> RowT:
         """Build a new PENDING row by mirroring dataclass fields onto columns.
 
-        :class:`BaseJobRowMixin`'s Board-owned defaults (a fresh
-        ``new_job_id()`` and ``JobStatus.PENDING``) are written into the
-        row constructor; the dataclass copy loop below skips every
-        ``init=False`` field (e.g. :attr:`BaseJob.job_id`) so the
-        dataclass-side defaults don't clobber the Board-owned values,
+        The row is created as ``PENDING``; SQLite/PostgreSQL assigns its
+        auto-incrementing ``job_id`` during ``flush``. The dataclass copy
+        loop below skips every ``init=False`` field (e.g.
+        :attr:`BaseJob.job_id`) so the dataclass-side default does not
+        clobber the database-owned value,
         and copies everything else verbatim. A dataclass field typed
         ``int | None`` with ``None`` will land as ``NULL`` and fail
         against a ``NOT NULL`` column with the appropriate DB error.
         """
-        row = self.job_model(
-            job_id=self.new_job_id(),
-            status=JobStatus.PENDING,
-        )
+        row = self.job_model(status=JobStatus.PENDING)
         for f in dataclasses.fields(job):
             if not f.init:
-                # Board-owned（如 BaseJob.job_id 的 init=False）：值已由
-                # 上行 row 构造器写入，跳过，避免 dataclass 默认值覆盖。
+                # DB-owned（如 BaseJob.job_id 的 init=False）：跳过，避免
+                # dataclass 默认值覆盖数据库生成的主键。
                 continue
             if hasattr(row, f.name):
                 setattr(row, f.name, getattr(job, f.name))
@@ -262,18 +250,18 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             s.commit()
             return self._map_row(row, self.job_cls) if row else None
 
-    def submit_result(self, *, key: str, result: ResultT) -> None:
-        """提交结果，key 为 job_id。"""
+    def submit_result(self, *, job_id: int, result: ResultT) -> None:
+        """提交指定 ``job_id`` 的结果。"""
         with self._session() as s:
-            self._submit(s, key=key, result=result)
+            self._submit(s, job_id=job_id, result=result)
             s.commit()
 
-    def get_result(self, *, key: str) -> ResultT | None:
-        """轮询结果，key 为 job_id。"""
+    def get_result(self, *, job_id: int) -> ResultT | None:
+        """轮询指定 ``job_id`` 的结果。"""
         with self._session() as s:
-            return self._get_result(s, key=key)
+            return self._get_result(s, job_id=job_id)
 
-    def release(self, *, key: str) -> None:
+    def release(self, *, job_id: int) -> None:
         """Release a claimed job back to *pending*.
 
         Used by AgentWorker when ``_run()`` claims a ChatNotifyJob for a
@@ -283,7 +271,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         """
         with self._session() as s:
             row = s.scalar(
-                select(self.job_model).where(getattr(self.job_model, "job_id") == key)
+                select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
             )
             if row is None:
                 return
@@ -297,11 +285,11 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     async def wait_for_result(
         self,
         *,
-        key: str,
+        job_id: int,
         timeout: float = 5.0,
         poll_interval: float = 0.05,
     ) -> ResultT | None:
-        """Block until the worker submits a result for *key* or *timeout* elapses.
+        """Block until the worker submits a result for *job_id* or *timeout* elapses.
 
         Useful for callers that need to confirm a write reached
         the durable side before reporting success to the LLM /
@@ -320,13 +308,13 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while True:
-            # ``get_result``'s ``key`` is keyword-only, so we can't
+            # ``get_result``'s ``job_id`` is keyword-only, so we can't
             # pass it positionally through ``run_in_executor``'s
             # ``*args``. Wrap in a lambda so Pylance sees a no-arg
-            # callable and the runtime forwards ``key=key`` correctly.
+            # callable and the runtime forwards ``job_id=job_id`` correctly.
             result = await loop.run_in_executor(
                 None,
-                lambda: self.get_result(key=key),
+                lambda: self.get_result(job_id=job_id),
             )
             if result is not None:
                 return result
@@ -440,7 +428,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 ),
             )
             where_clauses: list[ColumnElement[bool]] = [
-                self.job_model.id == candidate.id,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.job_id == candidate.job_id,  # type: ignore[reportAttributeAccessIssue]
                 invariant,
             ]
             if extra_where:
@@ -457,7 +445,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             if getattr(result, "rowcount", 0) == 1:
                 # Reload the fresh row so the caller sees the
                 # post-UPDATE values (leased_until, attempts, …).
-                fresh = session.get(self.job_model, candidate.id)  # type: ignore[reportAttributeAccessIssue]
+                fresh = session.get(self.job_model, candidate.job_id)  # type: ignore[reportAttributeAccessIssue]
                 return fresh
             # Lost the race — try the next candidate.
             session.rollback()
@@ -498,7 +486,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             .where(*where_clauses)
             .order_by(
                 self.job_model.created_at,  # type: ignore[reportAttributeAccessIssue]
-                self.job_model.id,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.job_id,  # type: ignore[reportAttributeAccessIssue]
             )
             .limit(1)
         )
@@ -527,7 +515,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
                 values[field.name] = getattr(result, field.name)
 
         where_clauses: list[ColumnElement[bool]] = [
-            self.job_model.id == candidate.id,  # type: ignore[reportAttributeAccessIssue]
+            self.job_model.job_id == candidate.job_id,  # type: ignore[reportAttributeAccessIssue]
             self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
             self.job_model.attempts >= self.max_attempts,  # type: ignore[reportAttributeAccessIssue]
             self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
@@ -539,9 +527,9 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         )
         return getattr(update_result, "rowcount", 0) == 1
 
-    def _submit(self, session: Session, *, key: str, result: ResultT) -> None:
+    def _submit(self, session: Session, *, job_id: int, result: ResultT) -> None:
         row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, "job_id") == key)
+            select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
         )
         if row is None:
             return
@@ -551,9 +539,9 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
             row.completed_at = now  # type: ignore[reportAttributeAccessIssue]
         self._write_result_to_job(row, result)
 
-    def _get_result(self, session: Session, *, key: str) -> ResultT | None:
+    def _get_result(self, session: Session, *, job_id: int) -> ResultT | None:
         row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, "job_id") == key)
+            select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
         )
         if row is None or getattr(row, "status", "") not in (JobStatus.COMPLETED, JobStatus.FAILED):
             return None
@@ -562,18 +550,21 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
     # -- Result 映射工具 ----------------------------------------------------
 
     def _write_result_to_job(self, row: RowT, result: ResultT) -> None:
-        """将 result dataclass 的字段写回 ORM 行（跳过 ``status``，由
-        :meth:`_submit` 显式编码到 row.status）。"""
+        """将 result dataclass 的业务字段写回 ORM 行。
+
+        ``job_id`` 已经在 :meth:`_submit` 选择了唯一的 Job 行，因此
+        ``job_id`` 仅是 result 的回读信息，绝不能由调用方改写主键；
+        ``status`` 同样由 :meth:`_submit` 显式编码到 row.status。
+        """
         for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
-            if f.name == "status":
+            if f.name in ("status", "job_id"):
                 continue
             if hasattr(row, f.name):
                 setattr(row, f.name, getattr(result, f.name))
 
     def _read_result_from_job(self, row: RowT) -> ResultT:
         """从 ORM 行重建 result dataclass。"""
-        key_val = getattr(row, "job_id", None)
-        key_val = str(key_val) if key_val is not None else ""
+        key_val = getattr(row, "job_id", 0)
         kwargs: dict = {
             "job_id": key_val,
             "status": getattr(row, "status"),
@@ -593,8 +584,7 @@ class BaseJobBoard[RowT: Base, JobT: BaseJob, ResultT: BaseJobResult]:
         避免未来某个 Result 子类异常地不带该字段时硬写抛
         ``TypeError``。
         """
-        key_val = getattr(row, "job_id", None)
-        key_val = str(key_val) if key_val is not None else ""
+        key_val = getattr(row, "job_id", 0)
         kwargs: dict = {
             "job_id": key_val,
             "status": JobStatus.FAILED,

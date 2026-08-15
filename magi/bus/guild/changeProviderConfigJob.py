@@ -111,7 +111,7 @@ class changeProviderConfigJobBoard(
         super().__init__(factory)
         self._settings_book = settings_book
 
-    def publish(self, job: ChangeProviderConfigJob) -> str:
+    def publish(self, job: ChangeProviderConfigJob) -> int:
         # 1. 把配置写入 settings_book（调用方不需要记住这步）。
         if self._settings_book is not None:
             self._write_to_settings(job)
@@ -121,7 +121,6 @@ class changeProviderConfigJobBoard(
         #    an in-place model swap (only model set).
         with self._session() as s:
             row = _ChangeProviderConfigRow(
-                job_id=self.new_job_id(),
                 status=JobStatus.PENDING,
                 provider=job.provider,
                 api_key=job.api_key,
