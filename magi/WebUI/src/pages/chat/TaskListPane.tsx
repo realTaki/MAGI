@@ -364,12 +364,12 @@ function TaskSection({
 }) {
   return (
     <div className="surface overflow-hidden flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-sky-light/30">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-border">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-ink">{title}</h3>
             {rows && rows.length > 0 && (
-              <span className="text-[10px] uppercase tracking-wider text-ink-soft font-mono rounded bg-sky-pale/40 px-1.5 py-0.5">
+              <span className="text-[10px] uppercase tracking-wider text-ink-soft font-mono rounded bg-accent-soft px-1.5 py-0.5">
                 {rows.length}
               </span>
             )}
@@ -386,7 +386,7 @@ function TaskSection({
         <div className="max-h-[40vh] overflow-y-auto">
           <table className="data-table w-full">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-sky-light/40">
+              <tr className="text-left text-xs uppercase tracking-wider text-ink-soft border-b border-border">
                 <th className="py-2 pr-4 font-medium">名称</th>
                 <th className="py-2 pr-4 font-medium">周期</th>
                 <th className="py-2 pr-4 font-medium">Channel</th>
@@ -422,7 +422,7 @@ function TaskRowView({
   return (
     <tr
       className={
-        "border-b border-sky-light/30 last:border-0 " +
+        "border-b border-border last:border-0 " +
         (t.enabled ? "" : "opacity-60")
       }
     >
@@ -432,7 +432,7 @@ function TaskRowView({
             type="button"
             onClick={() => handlers.onOpenRuns(t)}
             title="点击查看运行历史"
-            className="text-left font-medium text-ink hover:text-sky-deep underline-offset-2 hover:underline cursor-pointer"
+            className="text-left font-medium text-ink hover:text-accent-ink underline-offset-2 hover:underline cursor-pointer"
           >
             {t.name}
           </button>
@@ -441,7 +441,7 @@ function TaskRowView({
             onClick={() => handlers.onEdit(t)}
             title="编辑任务"
             aria-label="编辑任务"
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-sky-deep hover:bg-sky-pale/40 transition"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-ink-soft hover:text-accent-ink hover:bg-accent-soft transition"
           >
             <svg
               width="16"
@@ -460,7 +460,7 @@ function TaskRowView({
             </svg>
           </button>
           {t.consecutive_failures > 0 && (
-            <span className="text-[10px] text-amber-700">
+            <span className="text-[10px] text-warning">
               ⚠ 已失败 {t.consecutive_failures} 次
             </span>
           )}
@@ -498,17 +498,17 @@ function TaskRowView({
       </td>
       <td className="py-2 pr-4 text-xs">
         {isRunning ? (
-          <span className="inline-flex items-center gap-1.5 text-sky-700">
-            <span className="inline-block h-3 w-3 rounded-full border-2 border-sky-300 border-t-sky-700 animate-spin" />
+          <span className="inline-flex items-center gap-1.5 text-accent">
+            <span className="inline-block h-3 w-3 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
             执行中…
           </span>
         ) : t.last_status ? (
           <span
             className={
               t.last_status === "success"
-                ? "text-emerald-700"
+                ? "text-success"
                 : t.last_status === "failed"
-                  ? "text-rose-700"
+                  ? "text-danger"
                   : "text-ink-soft"
             }
           >
@@ -522,7 +522,7 @@ function TaskRowView({
           <span className="text-ink-soft">—</span>
         )}
         {t.last_error && (
-          <p className="text-[10px] text-rose-700 mt-0.5 truncate max-w-[200px]" title={t.last_error}>
+          <p className="text-[10px] text-danger mt-0.5 truncate max-w-[200px]" title={t.last_error}>
             {t.last_error}
           </p>
         )}

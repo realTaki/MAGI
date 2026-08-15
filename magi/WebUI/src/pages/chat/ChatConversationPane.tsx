@@ -93,7 +93,7 @@ export function ChatConversationPane(props: {
               type="button"
               disabled={props.loadingOlder}
               onClick={props.onLoadOlder}
-              className="text-xs text-sky-700 hover:text-sky-deep disabled:opacity-50 transition"
+              className="text-xs text-accent hover:text-accent-ink disabled:opacity-50 transition"
             >
               {props.loadingOlder
                 ? t("common.loading")
@@ -119,8 +119,8 @@ export function ChatConversationPane(props: {
               className={
                 "max-w-[80%] min-w-0 break-all rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap " +
                 (m.role === "user"
-                  ? "bg-sky-deep text-white"
-                  : "bg-sky-pale/60 text-ink border border-sky-light/40")
+                  ? "bg-accent text-white"
+                  : "bg-sky-soft text-ink border border-border")
               }
             >
               {m.text}
@@ -130,7 +130,7 @@ export function ChatConversationPane(props: {
 
         {props.sending && (
           <div className="flex justify-start">
-            <div className="rounded-2xl bg-sky-pale/60 text-ink-soft border border-sky-light/40 px-4 py-2.5 text-sm flex items-center gap-2">
+            <div className="rounded-2xl bg-sky-soft text-ink-soft border border-border px-4 py-2.5 text-sm flex items-center gap-2">
               <span>{t("chat.sending")}</span>
               <span className="inline-flex gap-1">
                 <span className="animate-pulse">·</span>
@@ -143,7 +143,7 @@ export function ChatConversationPane(props: {
 
         {props.error && (
           <div className="text-center">
-            <p className="text-sm text-rose-600">
+            <p className="text-sm text-danger">
               {props.error.code === "chat.llm_credentials_required"
                 ? t("chat.errorCredentials")
                 : props.error.code === "chat.unknown_sender"
@@ -156,13 +156,13 @@ export function ChatConversationPane(props: {
 
       {/* Input composer — hidden for read-only cross-channel sessions */}
       {props.readonly ? (
-        <div className="shrink-0 pt-3 border-t border-sky-light/30">
+        <div className="shrink-0 pt-3 border-t border-border">
           <p className="text-xs text-ink-soft text-center">
             {t("chat.readonlyHint").replace("{channel}", props.channelLabel ?? "?")}
           </p>
         </div>
       ) : (
-        <div className="shrink-0 pt-3 border-t border-sky-light/30">
+        <div className="shrink-0 pt-3 border-t border-border">
           <div className="flex gap-2">
             <textarea
               ref={inputRef}

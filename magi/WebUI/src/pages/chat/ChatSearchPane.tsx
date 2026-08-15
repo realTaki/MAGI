@@ -52,6 +52,7 @@ import {
   type ChatConversationList,
   type ChatSearchResult,
 } from "../../lib/queries";
+import Notice from "../../components/Notice";
 
 // One row of the search result list. Mirrors the
 // backend's ``SearchHit`` shape (see
@@ -210,14 +211,14 @@ export default function ChatSearchPane({ onOpen }: Props) {
     // shorter viewports. Matching the chat / task panes'
     // pattern keeps the layout consistent across tabs.
     <div className="flex flex-col h-full min-h-0">
-      <div className="px-6 py-3 border-b border-sky-light/40">
+      <div className="px-6 py-3 border-b border-border">
         <h2 className="text-base font-semibold text-ink">{t("chatSearch.title")}</h2>
         <p className="mt-1 text-xs text-ink-soft">
           {inSearchMode ? t("chatSearch.emptyHintSearch") : t("chatSearch.emptyHintBrowse")}
         </p>
       </div>
 
-      <div className="px-6 py-3 border-b border-sky-light/40">
+      <div className="px-6 py-3 border-b border-border">
         <input
           type="search"
           value={query}
@@ -225,7 +226,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
           placeholder={t("chatSearch.searchPlaceholder")}
           autoFocus
           aria-label={t("chatSearch.searchAria")}
-          className="w-full px-3 py-2 rounded-md border border-sky-light/60 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-ocean/40"
+          className="w-full px-3 py-2 rounded-md border border-border bg-surface text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
         />
       </div>
 
@@ -239,8 +240,8 @@ export default function ChatSearchPane({ onOpen }: Props) {
               </p>
             )}
             {!searchLoading && searchError && (
-              <div className="mt-12 px-4 py-3 rounded-md bg-amber-50 border border-amber-200">
-                <p className="text-sm text-amber-800">{searchError}</p>
+              <div className="mt-12">
+                <Notice tone="warning">{searchError}</Notice>
               </div>
             )}
             {!searchLoading && !searchError && searchData && searchData.items.length === 0 && (
@@ -266,8 +267,8 @@ export default function ChatSearchPane({ onOpen }: Props) {
         {!inSearchMode && (
           <>
             {browseError && (
-              <div className="mb-4 px-4 py-3 rounded-md bg-amber-50 border border-amber-200">
-                <p className="text-sm text-amber-800">{browseError}</p>
+              <div className="mb-4">
+                <Notice tone="warning">{browseError}</Notice>
               </div>
             )}
 
@@ -329,7 +330,7 @@ function SearchHitRow({
   const t = useT();
   return (
     <li
-      className="rounded-lg border border-sky-light/40 bg-white/60 hover:bg-white transition cursor-pointer"
+      className="rounded-lg border border-border bg-surface hover:bg-surface-2 transition cursor-pointer"
       onClick={() => onOpen(hit.conversation_id)}
       role="button"
       tabIndex={0}
@@ -345,7 +346,7 @@ function SearchHitRow({
           <h3 className="text-sm font-medium text-ink truncate">
             {hit.title ?? hit.conversation_id.slice(0, 13) + "…"}
           </h3>
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-soft border border-sky-light/40 rounded px-1.5 py-0.5">
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-soft border border-border rounded px-1.5 py-0.5">
             {hit.role === "user"
               ? t("chatSearch.roleUser")
               : hit.role === "assistant"
@@ -381,7 +382,7 @@ function ConversationSummaryRow({
   const displayTitle = summary.title ?? summary.preview ?? "(空对话)";
   return (
     <li
-      className="rounded-lg border border-sky-light/40 bg-white/60 hover:bg-white transition cursor-pointer"
+      className="rounded-lg border border-border bg-surface hover:bg-surface-2 transition cursor-pointer"
       onClick={() => onOpen(summary.conversation_id)}
       role="button"
       tabIndex={0}
@@ -397,7 +398,7 @@ function ConversationSummaryRow({
           <h3 className="text-sm font-medium text-ink truncate">
             {displayTitle}
           </h3>
-          <span className="shrink-0 text-[10px] text-ink-soft border border-sky-light/40 rounded px-1.5 py-0.5">
+          <span className="shrink-0 text-[10px] text-ink-soft border border-border rounded px-1.5 py-0.5">
             {t("chatSearch.messageCount").replace("{count}", String(summary.message_count))}
           </span>
         </div>
