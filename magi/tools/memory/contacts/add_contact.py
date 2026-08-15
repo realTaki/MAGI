@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from magi.bus.library.local.contactBook import Contact, ContactNote
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact")
@@ -101,12 +102,15 @@ class AddContactTool(Tool):
             return ToolResult.err("name is required (non-empty string)")
         role = kwargs.get("role") or "guest"
         try:
-            contact = ctx.bus.contacts_book.add(
+            record_id = ctx.bus.contacts_book.add(Contact(
                 name=name,
                 display_name=kwargs.get("display_name"),
                 role=role,
                 tgid=kwargs.get("tgid"),
-            )
+            ))
+            contact = ctx.bus.contacts_book.get(contact_id=record_id)
+            if contact is None:
+                raise RuntimeError(f"contact row {record_id} disappeared after insert")
         except ValueError as e:
             # ``contacts_book.add`` owns write invariants
             # (non-empty name, name uniqueness, role enum
@@ -127,10 +131,13 @@ class AddContactTool(Tool):
             # "initial_note": ...}`` payload so the LLM
             # doesn't have to thread two tool results.
             try:
-                note = ctx.bus.contact_notes_book.add(
+                note_id = ctx.bus.contact_notes_book.add(ContactNote(
                     contact_id=contact.id,
                     note=str(initial_note),
-                )
+                ))
+                note = ctx.bus.contact_notes_book.get(note_id=note_id)
+                if note is None:
+                    raise RuntimeError(f"contact note {note_id} disappeared after insert")
             except ValueError as e:
                 # Contact row was created — surface the
                 # note-validation failure but keep the

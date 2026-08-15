@@ -32,7 +32,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.bus.library.local.actionItemBook import ActionPriority, ActionSource
+from magi.bus.library.local.actionItemBook import ActionItem, ActionPriority, ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.add_action_item")
@@ -169,7 +169,7 @@ class AddActionItemTool(Tool):
                     )
 
         try:
-            item = ctx.bus.action_items_book.add(
+            item_id = ctx.bus.action_items_book.add(ActionItem(
                 contact_id=int(ctx.contact_id),
                 title=title,
                 description=description,
@@ -177,7 +177,10 @@ class AddActionItemTool(Tool):
                 priority=priority,
                 due_date=due_date,
                 source=source,
-            )
+            ))
+            item = ctx.bus.action_items_book.get(item_id=item_id)
+            if item is None:
+                raise RuntimeError(f"action item {item_id} disappeared after insert")
         except ValueError as e:
             # Book owns the write invariants (title
             # non-empty, length caps, enum membership for

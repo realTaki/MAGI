@@ -40,21 +40,54 @@ logger = logging.getLogger("magi.bus.schema_drift_fix")
 # ``0001_init_runtime_state``) pre-date the mixin so the table
 # never needs a synthetic ``id``.
 _LEGACY_MISSING_COLUMNS: dict[str, dict[str, str]] = {
-    "chat_conversations": {"created_at": "CURRENT_TIMESTAMP"},
-    "tool_definitions": {"created_at": "CURRENT_TIMESTAMP"},
-    "tool_catalog_state": {"created_at": "CURRENT_TIMESTAMP"},
-    "contact_notes": {"created_at": "CURRENT_TIMESTAMP"},
-    "chat_messages": {"created_at": "CURRENT_TIMESTAMP"},
-    "task_runs": {"created_at": "CURRENT_TIMESTAMP"},
+    # ``created_at`` defaults to the SQLite epoch so the column can be
+    # ``NOT NULL`` from the moment it's added — SQLite refuses
+    # ``CURRENT_TIMESTAMP`` as an ``ADD COLUMN`` default because it's a
+    # non-constant expression.  Existing rows get the sentinel; new
+    # rows overwrite it on insert (the ORM mapper supplies the
+    # real timestamp via ``BaseRecordMixin.created_at``).
+    "chat_conversations": {"created_at": "'1970-01-01 00:00:00'"},
+    "tool_definitions": {"created_at": "'1970-01-01 00:00:00'"},
+    "tool_catalog_state": {"created_at": "'1970-01-01 00:00:00'"},
+    "contact_notes": {"created_at": "'1970-01-01 00:00:00'"},
+    "chat_messages": {"created_at": "'1970-01-01 00:00:00'"},
+    "task_runs": {"created_at": "'1970-01-01 00:00:00'"},
+    # The runtime_state row carries an explicit FK back to the MAGIS
+    # memberships row that owns the EVA's identity.  The
+    # ``runtime_id`` PK remains canonical, but the ORM mapper
+    # declares the FK as a separate column; pre-existing stores
+    # migrated from earlier versions need the column added.
+    # ``runtime_id`` doubles as the FK value during this one-time
+    # backfill so every existing row gets a valid membership_row_id.
+    "runtime_state": {"membership_row_id": "runtime_id"},
 }
+
+
+def _table_exists(engine, table: str) -> bool:
+    """Return True if ``table`` is a real physical table on this connection.
+
+    SQLAlchemy's :func:`inspect` defaults to the ORM ``MetaData``
+    registry, which is empty in our deployment (tables are created
+    by :func:`magi.bus.db.schema.synchronise_schema` without ever
+    being registered on ``Base.metadata``).  ``inspector.has_table``
+    would always return False; ``get_table_names()`` queries
+    ``sqlite_master`` directly instead.
+    """
+    inspector = inspect(engine)
+    try:
+        return table in inspector.get_table_names()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _column_exists(engine, table: str, column: str) -> bool:
     """Return True if ``table`` already has ``column`` in its physical schema."""
     inspector = inspect(engine)
-    if not inspector.has_table(table):
+    try:
+        cols = inspector.get_columns(table)
+    except Exception:  # noqa: BLE001
         return False
-    return any(c["name"] == column for c in inspector.get_columns(table))
+    return any(c["name"] == column for c in cols)
 
 
 def apply_schema_drift_fixes(engine) -> int:
@@ -77,7 +110,7 @@ def apply_schema_drift_fixes(engine) -> int:
         return 0
     issued = 0
     for table, missing in _LEGACY_MISSING_COLUMNS.items():
-        if not _column_exists(engine, table, "*"):
+        if not _table_exists(engine, table):
             # Table missing entirely — leave schema creation
             # to :func:`magi.bus.db.schema.synchronise_schema`.
             continue

@@ -408,7 +408,7 @@ class ToolsWorker(RuntimeWorker):
         #    ourselves.
         await self.call(
             self.bus.tool_job_board.submit_result,
-            key=job.job_id,
+            job_id=job.job_id,
             result=_to_result(job, result),
         )
 
@@ -426,7 +426,7 @@ class ToolsWorker(RuntimeWorker):
         try:
             await self.call(
                 self.bus.tool_job_board.submit_result,
-                key=job.job_id,
+                job_id=job.job_id,
                 result=RunToolResult(
                     job_id=job.job_id,
                     status=JobStatus.FAILED,

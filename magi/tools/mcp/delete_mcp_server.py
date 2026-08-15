@@ -67,7 +67,7 @@ class DeleteMcpServerTool(Tool):
         )
 
         result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
-            key=job_id,
+            job_id=job_id,
         )
         if result is None:
             return ToolResult.err(

@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from magi.bus.library.local.contactBook import ContactNote
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact_note")
@@ -86,10 +87,13 @@ class AddContactNoteTool(Tool):
             return ToolResult.err(f"contact {contact_id!r} not found")
 
         try:
-            row = ctx.bus.contact_notes_book.add(
+            note_id = ctx.bus.contact_notes_book.add(ContactNote(
                 contact_id=contact_id,
                 note=note,
-            )
+            ))
+            row = ctx.bus.contact_notes_book.get(note_id=note_id)
+            if row is None:
+                raise RuntimeError(f"contact note {note_id} disappeared after insert")
         except ValueError as e:
             # ``contact_notes_book.add`` owns the
             # non-empty-after-strip and length-cap

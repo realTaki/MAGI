@@ -42,13 +42,10 @@ def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
     """Return a new :class:`McpServer` reflecting *kwargs* overlaid on *current*.
 
     Only the fields explicitly listed in *kwargs* get overwritten;
-    everything else carries over from *current*. ``id`` is reset
-    to 0 so the Worker treats it as an upsert-by-name — the Book
-    ignores ``id`` on the upsert path anyway (it looks up by
-    ``name``).
+    everything else carries over from *current*. Database-owned identity
+    and audit fields are not part of a new write request.
     """
     return McpServer(
-        id=0,
         name=current.name,
         connection_type=kwargs.get("connection_type", current.connection_type),
         command=kwargs.get("command", current.command),
@@ -211,7 +208,7 @@ class UpdateMcpServerTool(Tool):
             )
 
         result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
-            key=job_id,
+            job_id=job_id,
         )
         if result is None:
             return ToolResult.err(

@@ -47,13 +47,10 @@ def _build_server(
 ) -> McpServer:
     """Build a fully-populated :class:`McpServer` DTO from tool kwargs.
 
-    The ``id`` / timestamps / ``config`` fields are filled with
-    inert defaults — the Worker re-upserts with the real values
-    once the autoincrement kicks in. :class:`McpServer` is
-    ``frozen``, so this is a one-shot constructor call.
+    Database-owned ``id`` and audit timestamps are intentionally absent;
+    the Book owns them when the Worker persists this request.
     """
     return McpServer(
-        id=0,
         name=name,
         connection_type=connection_type,
         command=command,
@@ -196,7 +193,7 @@ class AddMcpServerTool(Tool):
         # gets immediate feedback. ``None`` means the worker
         # hasn't answered yet (DB blip / poll lag).
         result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
-            key=job_id,
+            job_id=job_id,
         )
         if result is None:
             return ToolResult.err(

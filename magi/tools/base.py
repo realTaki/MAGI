@@ -41,6 +41,7 @@ import functools
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -97,6 +98,18 @@ class ToolContext:
 _MAX_CONTENT = 8 * 1024
 
 
+def _tool_json_default(value: object) -> object:
+    """Encode transport-only values at the tool-result boundary.
+
+    Books retain native ``datetime`` values; the LLM tool envelope is text,
+    so this is the one central place that turns them into JSON scalars.
+    """
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 @dataclass(frozen=True, slots=True)
 class ToolResult:
     """A provider-valid result emitted by a tool worker.
@@ -124,7 +137,7 @@ class ToolResult:
         Output over :data:`_MAX_CONTENT` is cut with a visible
         ``…(truncated)`` marker.
         """
-        body = json.dumps(payload, indent=2, ensure_ascii=False)
+        body = json.dumps(payload, indent=2, ensure_ascii=False, default=_tool_json_default)
         if len(body) > _MAX_CONTENT:
             body = body[:_MAX_CONTENT] + "\n…(truncated)"
         return cls(content=body, is_error=False)

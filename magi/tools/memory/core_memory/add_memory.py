@@ -36,6 +36,7 @@ import logging
 from typing import Any
 
 from magi.bus.library.local.memoryBook import (
+    Memory,
     MemoryKind,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult
@@ -128,13 +129,16 @@ class AddMemoryTool(Tool):
         if ctx.bus is None:
             return ToolResult.err("bus not available")
         try:
-            view = ctx.bus.memory_book.add(
+            record_id = ctx.bus.memory_book.add(Memory(
                 contact_id=int(ctx.contact_id),
                 kind=kwargs["kind"],
                 subject=kwargs["subject"],
                 body=kwargs["body"],
                 priority=kwargs.get("priority", 3),
-            )
+            ))
+            view = ctx.bus.memory_book.get(memory_id=record_id)
+            if view is None:
+                raise RuntimeError(f"memory row {record_id} disappeared after insert")
         except ValueError as e:
             return ToolResult.err(f"add_memory failed: {e}")
         logger.info(
