@@ -124,6 +124,18 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
         Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
 
 
+def test_record_datetime_fields_reject_iso_strings() -> None:
+    """Backend Records keep time values as ``datetime``, never ISO strings."""
+    with pytest.raises(ValueError, match="valid datetime"):
+        Message(
+            conversation_id="conversation",
+            message_id="message",
+            role="user",
+            text="hello",
+            ts="2026-08-15T12:00:00Z",  # type: ignore[arg-type]
+        )
+
+
 def test_memory_book_list_by_owner(factory, contact_id):
     from magi.bus.library.local.contactBook import ContactBook
 
@@ -191,12 +203,8 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     assert book.get(m.id) is None
 
 
-def test_memory_book_add_invariants(factory, contact_id):
-    """The Book owns write invariants so every caller
-    path (LLM-driven tool, dashboard API, future agent
-    loop) gets the same validation without each
-    re-implementing length checks. Each violation
-    raises :class:`ValueError`."""
+def test_memory_record_constraints(factory, contact_id):
+    """Memory field constraints run while the DTO is constructed."""
     import pytest
 
     book = MemoryBook(factory)
@@ -235,9 +243,8 @@ def test_memory_book_add_invariants(factory, contact_id):
         book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority='3')))
 
 
-def test_memory_book_update_invariants(factory, contact_id):
-    """``update`` runs the same validators as ``add``
-    for each field that is touched."""
+def test_memory_book_update_reuses_record_constraints(factory, contact_id):
+    """Partial updates validate through a candidate ``Memory`` Record."""
     import pytest
 
     book = MemoryBook(factory)
@@ -622,14 +629,8 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
-def test_action_item_book_add_invariants(factory, contact_id):
-    """The Book owns write invariants — title non-empty,
-    column-length caps, enum membership — so every caller
-    path gets the same validation without re-implementing
-    them. Each violation must raise ``ValueError`` (the
-    tool worker / dashboard API catch and surface as
-    ``is_error=True`` / 4xx).
-    """
+def test_action_item_record_constraints(factory, contact_id):
+    """ActionItem field constraints run before ``Book.add`` is called."""
     book = ActionItemBook(factory)
 
     # Empty / whitespace-only title is rejected.
@@ -830,19 +831,15 @@ def test_task_book_add_rejects_unknown_source(factory):
         book.get(book.add(Task(task_id='t-bad', name='bad', prompt='x', cron='0 0 * * *', contact_id=1, target_channel='webui', source='system-external-thing')))
 
 
-def test_task_book_add_invariants(factory, contact_id):
-    """Write invariants the Book owns so any caller
-    (LLM-driven tool, dashboard API, future agent loop)
-    gets the same validation:
+def test_task_record_constraints(factory, contact_id):
+    """Task Record field constraints enforce:
 
     * ``name`` non-empty + ≤120 chars (mirrors ``String(120)``)
     * ``prompt`` non-empty + ≤8000 chars
     * ``target_channel`` in the closed :class:`ChannelEnum`
     * ``source`` in :attr:`TaskSource`
 
-    Each violation raises ``ValueError`` for the caller to
-    translate (``ToolResult.err`` for the LLM tool, 4xx for
-    the dashboard route).
+    Construction raises ``ValidationError`` (a ``ValueError`` subclass).
     """
     book = TaskBook(factory)
 
@@ -1064,7 +1061,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
 
     # Book invariants still fire via the insert branch —
     # inserting a third task with bad data raises.
-    with pytest.raises(ValueError, match="prompt must be a non-empty"):
+    with pytest.raises(ValueError, match="validation error"):
         book.upsert_by_name(
             name="bad",
             prompt="",

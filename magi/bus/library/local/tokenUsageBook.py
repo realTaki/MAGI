@@ -5,13 +5,11 @@ Schema for the ``token_usage`` table.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
+from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
     JSON,
-    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -19,21 +17,20 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class TokenUsage(BaseRecord):
-    contact_id: int  # 发起调用的联系人 ID
-    llm_attempt_id: str | None  # 关联的 LLM 调用 ID
-    provider: str  # LLM 提供方
-    model: str  # 使用的模型
-    input_tokens: int  # 输入 token 数
-    output_tokens: int  # 输出 token 数
-    cost_usd: float  # 费用（以微美元为单位存储在 int 列）
+    contact_id: Annotated[int, Strict()]
+    llm_attempt_id: Annotated[str, Strict(), StringConstraints(max_length=128)] | None = None
+    provider: Annotated[str, Strict(), StringConstraints(max_length=32)]
+    model: Annotated[str, Strict(), StringConstraints(max_length=128)]
+    input_tokens: Annotated[int, Strict(), Field(ge=0)]
+    output_tokens: Annotated[int, Strict(), Field(ge=0)]
+    cost_usd: Annotated[float, Strict(), Field(ge=0)] = 0.0
     extra: dict[str, Any] | None = None  # 额外上下文（缓存命中率等）
 
 
@@ -64,7 +61,7 @@ class _TokenUsageRow(BaseRecordMixin):
 
 class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
     model_cls = _TokenUsageRow
-    dto_cls = TokenUsage
+    record_cls = TokenUsage
 
     def list_for_owner(self, *, contact_id: int) -> list[TokenUsage]:
         with self._session() as s:
@@ -74,34 +71,5 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
                 .order_by(_TokenUsageRow.created_at.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def add(
-        self,
-        *,
-        contact_id: int,
-        provider: str,
-        model: str,
-        input_tokens: int,
-        output_tokens: int,
-        llm_attempt_id: str | None = None,
-        cost_usd: float = 0.0,
-        extra: dict[str, Any] | None = None,
-    ) -> TokenUsage:
-        with self._session() as s:
-            row = _TokenUsageRow(
-                contact_id=contact_id,
-                llm_attempt_id=llm_attempt_id,
-                provider=provider,
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cost_usd=cost_usd,
-                extra=extra,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
-
 
 __all__ = ["TokenUsage", "TokenUsageBook", "_TokenUsageRow"]

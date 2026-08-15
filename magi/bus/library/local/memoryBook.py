@@ -5,15 +5,16 @@ Schema for the ``memory_entries`` table.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
+from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 
 class MemoryKind(StrEnum):
@@ -42,38 +43,21 @@ class MemoryKind(StrEnum):
     QUICK_NOTE = "quick_note"
 
 
-# Column-length invariants. Mirror the ORM column
-# declarations (``String(200)`` / ``Text``) and the
-# 8 KiB body cap the old service enforced. The Book
-# owns the writes so every caller (LLM-driven tool,
-# dashboard API, future agent loop) gets the same
-# validation without each re-implementing length checks.
-_SUBJECT_MAX = 200
-_BODY_MAX = 8 * 1024
-
-
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Memory(BaseRecord):
-    contact_id: int  # 所属联系人 ID
+    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
     kind: MemoryKind  # 记忆类型（fact/quick_note）
-    subject: str  # 简短标题
-    body: str  # 完整内容
-    priority: int = 3  # 优先级（1..5，越大越重要）
-    completed_at: datetime | None = None  # 完成时间（None=未完成）
-
-    def to_dict(self) -> dict:
-        """Wire-shape for JSON serialisation.
-
-        ``BaseBook._row_to_dto`` already renders every
-        ``datetime`` column through :func:`to_iso`, so
-        the timestamp fields are ISO-8601 ``Z`` strings
-        by the time this runs.
-        """
-        return asdict(self)
-
+    subject: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]  # 简短标题
+    body: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8 * 1024)
+    ]  # 完整内容
+    priority: Annotated[int, Strict(), Field(ge=1, le=5)] = 3
+    completed_at: Annotated[datetime, Strict()] | None = None  # 完成时间（None=未完成）
 
 # -- internal ORM --------------------------------------------------------
 
@@ -104,33 +88,7 @@ class _MemoryRow(BaseRecordMixin):
 
 class MemoryBook(BaseBook[_MemoryRow, Memory]):
     model_cls = _MemoryRow
-    dto_cls = Memory
-
-    @staticmethod
-    def _validate_subject(subject: str) -> str:
-        if not isinstance(subject, str) or not subject.strip():
-            raise ValueError("subject must be a non-empty string")
-        if len(subject) > _SUBJECT_MAX:
-            raise ValueError(f"subject length {len(subject)} exceeds maximum {_SUBJECT_MAX}")
-        return subject.strip()
-
-    @staticmethod
-    def _validate_body(body: str) -> str:
-        if not isinstance(body, str) or not body.strip():
-            raise ValueError("body must be a non-empty string")
-        if len(body) > _BODY_MAX:
-            raise ValueError(f"body length {len(body)} exceeds maximum {_BODY_MAX}")
-        return body.strip()
-
-    @staticmethod
-    def _validate_priority(priority: int) -> None:
-        if not isinstance(priority, int) or not 1 <= priority <= 5:
-            raise ValueError("priority must be 1..5")
-
-    def get(self, *, memory_id: int) -> Memory | None:
-        with self._session() as s:
-            row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = Memory
 
     def list_by_owner(self, *, contact_id: int) -> list[Memory]:
         with self._session() as s:
@@ -140,45 +98,6 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
                 .order_by(_MemoryRow.created_at.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def add(
-        self,
-        *,
-        contact_id: int,
-        kind: MemoryKind,
-        subject: str,
-        body: str,
-        priority: int = 3,
-    ) -> Memory:
-        """Insert a memory row after enforcing write invariants.
-
-        Raises :class:`ValueError` on invariant violation
-        (subject / body non-empty, length caps, ``kind``
-        in :class:`MemoryKind`, ``priority`` 1..5).
-        The tool worker / dashboard API catch and surface
-        as ``is_error=True`` / 4xx.
-        """
-        subject = self._validate_subject(subject)
-        body = self._validate_body(body)
-        if kind not in MemoryKind:
-            raise ValueError(
-                f"kind must be one of "
-                f"{sorted(k.value for k in MemoryKind)!r}, got {kind!r}"
-            )
-        self._validate_priority(priority)
-
-        with self._session() as s:
-            row = _MemoryRow(
-                contact_id=contact_id,
-                kind=kind,
-                subject=subject,
-                body=body,
-                priority=priority,
-            )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
 
     def complete(self, *, memory_id: int) -> Memory:
         """Mark an ongoing memory as done, idempotently.
@@ -215,23 +134,24 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         is missing, :class:`ValueError` on any supplied
         field that violates the validator.
         """
-        if subject is not None:
-            subject = self._validate_subject(subject)
-        if body is not None:
-            body = self._validate_body(body)
-        if priority is not None:
-            self._validate_priority(priority)
-
         with self._session() as s:
             row = s.get(_MemoryRow, memory_id)
             if row is None:
                 raise LookupError(f"memory row {memory_id} not found")
+            candidate = Memory(
+                contact_id=row.contact_id,
+                kind=row.kind,
+                subject=subject if subject is not None else row.subject,
+                body=body if body is not None else row.body,
+                priority=priority if priority is not None else row.priority,
+                completed_at=row.completed_at,
+            )
             if subject is not None:
-                row.subject = subject
+                row.subject = candidate.subject
             if body is not None:
-                row.body = body
+                row.body = candidate.body
             if priority is not None:
-                row.priority = priority
+                row.priority = candidate.priority
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)

@@ -81,12 +81,8 @@ class Role(StrEnum):
     GUEST = "guest"
 
 
-# Column-length invariants — mirror the ORM column
-# declarations (``String(120)`` / ``Text``) and the
-# per-row ``contact_notes`` size cap. The Book enforces them
-# so every caller (chat-driven tool, dashboard route, future
-# agent loop) gets the same validation without each path
-# re-implementing length checks.
+# Command-specific truncation caps for append-only note operations. New
+# ``Contact`` / ``ContactNote`` records validate their own field shapes.
 _NOTE_MAX_BYTES = 8 * 1024
 _DAILY_NOTE_MAX_BYTES = 32 * 1024
 

@@ -20,18 +20,16 @@ that tuple instead of inventing keys out of band.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, UniqueConstraint, select
+from sqlalchemy import String, Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Setting(BaseRecord):
     key: str  # 配置键
     value: str  # 配置值（字符串）
@@ -40,23 +38,13 @@ class Setting(BaseRecord):
 # -- internal ORM --------------------------------------------------------
 
 
-class _SettingRow(Base):
-    """ORM row for ``settings``.
-
-    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
-    table pre-dates the mixin convention with ``key`` as its natural
-    primary key.  Adding ``id`` to a populated table requires a SQLite
-    table-rebuild dance — the migration path is intentionally
-    additive so existing deployments upgrade without surprises.
-    """
+class _SettingRow(BaseRecordMixin):
+    """ORM row for ``settings`` with ``key`` as a business unique key."""
 
     __tablename__ = "settings"
-    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive
-    )
-    __table_args__ = ({"extend_existing": True},)
+    __table_args__ = (UniqueConstraint("key", name="uq_settings_key"), {"extend_existing": True})
 
 
 # -- Book -----------------------------------------------------------------
@@ -120,9 +108,9 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     )
 
     model_cls = _SettingRow
-    dto_cls = Setting
+    record_cls = Setting
 
-    def get(self, *, key: str) -> str | None:
+    def get_value(self, *, key: str) -> str | None:
         with self._session() as s:
             row = s.scalar(select(_SettingRow).where(_SettingRow.key == key))
             return row.value if row else None
@@ -178,15 +166,15 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         """
         return MCPTimeout(
             connect_timeout=self._read_float(
-                self.get(key="mcp.connect_timeout"),
+                self.get_value(key="mcp.connect_timeout"),
                 connect_default,
             ),
             execute_timeout=self._read_float(
-                self.get(key="mcp.execute_timeout"),
+                self.get_value(key="mcp.execute_timeout"),
                 execute_default,
             ),
             sse_read_timeout=self._read_float(
-                self.get(key="mcp.sse_read_timeout"),
+                self.get_value(key="mcp.sse_read_timeout"),
                 sse_default,
             ),
         )
@@ -201,14 +189,14 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             return default
 
     def show_daily_note(self) -> bool:
-        return self._read_bool(self.get(key="system.show_daily_note"), default=True)
+        return self._read_bool(self.get_value(key="system.show_daily_note"), default=True)
 
     def show_daily_note_prompt(self) -> bool:
-        return self._read_bool(self.get(key="system.show_daily_note_prompt"), default=False)
+        return self._read_bool(self.get_value(key="system.show_daily_note_prompt"), default=False)
 
     def system_timezone(self) -> str:
         """Return the configured system timezone, defaulting to ``"UTC"``."""
-        return self.get(key="system.timezone") or "UTC"
+        return self.get_value(key="system.timezone") or "UTC"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

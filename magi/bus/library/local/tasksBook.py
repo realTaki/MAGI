@@ -21,12 +21,13 @@ parallel to the ``action_items`` refactor).
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -39,10 +40,11 @@ from sqlalchemy import (
     or_,
     select,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.local.conversationBook import _ConversationRow
 
 
 def _new_task_id() -> str:
@@ -116,19 +118,10 @@ class TaskRunStatus(StrEnum):
     FAILED = "failed"
 
 
-# Column-length invariants. Mirror the ORM column
-# declarations (``String(120)`` / ``Text``). The Book
-# enforces them so every caller — chat-driven tool,
-# dashboard API, future agent loop — gets the same
-# validation without re-implementing length checks.
-NAME_MAX = 120
-PROMPT_MAX = 8000
-
-
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class Task(BaseRecord):
     """Unified task definition — user-created OR preset template.
 
@@ -156,42 +149,46 @@ class Task(BaseRecord):
     structured form — there's one schedule, not two.
     """
 
-    task_id: str  # 跨 API / Job 使用的稳定任务身份
-    name: str  # 任务唯一名
-    prompt: str  # 触发后执行的 prompt
-    source: TaskSource  # 来源（user/proactive）
+    task_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_task_id)
+    name: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+    ]  # 任务唯一名
+    prompt: Annotated[
+        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
+    ]  # 触发后执行的 prompt
+    source: TaskSource = TaskSource.USER  # 来源（user/proactive）
     target_channel: ChannelEnum  # 投递渠道（tg/webui/scheduled）
-    enabled: int = 1  # 1=启用，0=禁用
+    enabled: Annotated[int, Strict(), Field(ge=0, le=1)] = 1
 
     # --- schedule (cron XOR run_at, never both) ---------------------------
-    cron: str | None = None  # 周期表达式（5 字段）
-    run_at: str | None = None  # 一次性触发时间（ISO 8601）
-    tz: str = "UTC"  # 时区
-    delivery_to: str | None = None  # 投递目标地址
-    conversation_id: str | None = None  # 关联的会话业务 ID
+    cron: Annotated[str, Strict()] | None = None  # 周期表达式（5 字段）
+    run_at: Annotated[datetime, Strict()] | None = None
+    tz: Annotated[str, Strict()] = "UTC"
+    delivery_to: Annotated[str, Strict()] | None = None
+    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] | None = None
 
     # --- user-task ownership ----------------------------------------------
-    contact_id: int | None = None  # 所属联系人
+    contact_id: Annotated[int, Strict()] | None = None
 
     # --- user-task runtime bookkeeping ------------------------------------
-    consecutive_failures: int = 0  # 连续失败次数
-    last_run_at: datetime | None = None  # 最近一次触发时间
+    consecutive_failures: Annotated[int, Strict(), Field(ge=0)] = 0
+    last_run_at: Annotated[datetime, Strict()] | None = None
     last_status: TaskRunStatus | None = None  # 最近一次状态
-    last_error: str | None = None  # 最近一次的错误信息
+    last_error: Annotated[str, Strict()] | None = None
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class TaskRun(BaseRecord):
-    run_id: str  # 跨 API / Job 使用的稳定运行身份
-    task_id: str  # 所属任务业务 ID
-    manual: bool  # 是否用户/工具主动触发（True=API/UI/tool；False=cron/run_at）
-    started_at: str  # 开始时间（JSON UTC）
-    finished_at: str | None = None  # 结束时间（JSON UTC）
-    latency_ms: int | None = None  # 总耗时（毫秒）
+    run_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_task_id)
+    task_id: Annotated[str, Strict(), StringConstraints(max_length=26)]
+    manual: Annotated[bool, Strict()]
+    started_at: Annotated[datetime, Strict()] = field(default_factory=utcnow_naive)
+    finished_at: Annotated[datetime, Strict()] | None = None
+    latency_ms: Annotated[int, Strict(), Field(ge=0)] | None = None
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
-    error: str | None = None  # 错误信息
-    reply_excerpt: str | None = None  # 回复摘要
-    conversation_id: str | None = None  # 关联的会话业务 ID
+    error: Annotated[str, Strict()] | None = None
+    reply_excerpt: Annotated[str, Strict()] | None = None
+    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] | None = None
 
 
 # -- internal ORM --------------------------------------------------------
@@ -239,6 +236,7 @@ class _TaskRow(BaseRecordMixin):
         ForeignKey("chat_conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    conversation: Mapped[_ConversationRow | None] = relationship(lazy="joined")
 
     # --- user-task ownership -----------------------------------------------
     contact_id: Mapped[int | None] = mapped_column(
@@ -286,6 +284,8 @@ class _TaskRunRow(BaseRecordMixin):
     status: Mapped[TaskRunStatus] = mapped_column(enum_column(TaskRunStatus), nullable=False)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    task: Mapped[_TaskRow] = relationship(lazy="joined")
+    conversation: Mapped[_ConversationRow | None] = relationship(lazy="joined")
 
     __table_args__ = (Index("ix_task_runs_task_started", "task_row_id", "started_at"),)
 
@@ -305,9 +305,16 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     """
 
     model_cls = _TaskRow
-    dto_cls = Task
+    record_cls = Task
 
-    def get(self, *, task_id: str) -> Task | None:
+    def _row_to_dto(self, row: _TaskRow) -> Task:
+        dto = super()._row_to_dto(row)
+        if row.conversation is None:
+            return dto
+        object.__setattr__(dto, "conversation_id", row.conversation.conversation_id)
+        return dto
+
+    def get_by_task_id(self, *, task_id: str) -> Task | None:
         with self._session() as s:
             row = s.scalar(select(_TaskRow).where(_TaskRow.task_id == task_id))
             return self._row_to_dto(row) if row else None
@@ -368,54 +375,16 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def add(self, *, source: TaskSource = TaskSource.USER, **kwargs) -> Task:
-        """Insert one task row.
-
-        Owns the write invariants applicable to *any* task:
-        ``name`` non-empty + ≤120 chars, ``prompt`` non-empty
-        + ≤8000 chars, ``target_channel`` in the closed
-        :class:`ChannelEnum` set, ``source`` in
-        :class:`TaskSource`, schedule is exactly one of
-        ``cron`` (validated via apscheduler) or ``run_at``
-        (validated as ISO 8601 + canonicalised + must be
-        in the future). Every caller — chat-driven tool,
-        dashboard API, future agent loop — gets the same
-        validation without re-implementing length checks
-        or schedule parsing.
-
-        Callers pass ``source=`` explicitly: chat-driven tools
-        pass :attr:`TaskSource.USER`, preset bundlers pass
-        :attr:`TaskSource.PROACTIVE`. The default
-        (:attr:`TaskSource.USER`) is the safe side: a writer that
-        forgets to tag is treated as a user task, which can be
-        edited by its owner.
-
-        Raises :class:`ValueError` on invariant violation;
-        translators (the tool worker, the dashboard route
-        handler) catch and surface as ``is_error=True`` /
-        4xx.
-
-        Note: per-frequency / per-preset translation
-        (``frequency`` → ``cron``) lives at the input
-        boundary (the LLM tool's structured-form → cron
-        conversion happens BEFORE this method); this Book
-        only sees the canonical ``cron`` or ``run_at``
-        shape and validates IT.
-        """
-        self._validate_write_invariants(
-            name=kwargs.get("name") or "",
-            prompt=kwargs.get("prompt") or "",
-            target_channel=kwargs.get("target_channel"),
-            source=source,
-        )
+    def _validate_add(self, record: Task) -> None:
+        """Validate the DTO accepted by the generic ``BaseBook.add``."""
         # Schedule is one shape, not two — ``cron`` XOR
         # ``run_at``, never both, never neither. Validation
         # runs HERE (at the Book boundary) so any caller —
         # chat-driven tool, dashboard API, future agent loop
         # — gets the same parse + future-check without
         # re-implementing them at every entry point.
-        cron_val = kwargs.get("cron")
-        run_at_val = kwargs.get("run_at")
+        cron_val = record.cron
+        run_at_val = record.run_at
         if (cron_val is None) == (run_at_val is None):
             raise ValueError(
                 "exactly one of cron (recurring) or run_at "
@@ -447,18 +416,37 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 validate_run_at_future(canonical)
             except ValueError as e:
                 raise ValueError(f"run_at {canonical!r} is in the past: {e}") from None
-            kwargs["run_at"] = canonical
-        with self._session() as s:
-            if "task_id" not in kwargs or not kwargs["task_id"]:
-                kwargs["task_id"] = _new_task_id()
-            row = _TaskRow(
-                source=source,
-                **kwargs,
+
+    def _record_to_row_values(self, record: Task, session) -> dict:
+        run_at = validate_run_at(record.run_at) if record.run_at is not None else None
+        conversation_row_id = None
+        if record.conversation_id is not None:
+            conversation = session.scalar(
+                select(_ConversationRow).where(
+                    _ConversationRow.conversation_id == record.conversation_id
+                )
             )
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+            if conversation is None:
+                raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
+            conversation_row_id = conversation.id
+        return {
+            "task_id": record.task_id,
+            "name": record.name,
+            "prompt": record.prompt,
+            "source": record.source,
+            "target_channel": record.target_channel,
+            "enabled": record.enabled,
+            "cron": record.cron,
+            "run_at": run_at,
+            "tz": record.tz,
+            "delivery_to": record.delivery_to,
+            "conversation_row_id": conversation_row_id,
+            "contact_id": record.contact_id,
+            "consecutive_failures": record.consecutive_failures,
+            "last_run_at": record.last_run_at,
+            "last_status": record.last_status,
+            "last_error": record.last_error,
+        }
 
     def disable(self, *, task_id: str, contact_id: int) -> bool:
         """Disable a task — owner-only.
@@ -522,16 +510,26 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             )
             if row is None:
                 return None
-            values = {
-                "name": changes.get("name", row.name),
-                "prompt": changes.get("prompt", row.prompt),
-                "target_channel": changes.get("target_channel", row.target_channel),
-            }
-            self._validate_write_invariants(source=TaskSource.USER, **values)
-            for key, value in changes.items():
-                setattr(row, key, value)
-            if (row.cron is None) == (row.run_at is None):
-                raise ValueError("exactly one of cron or run_at must be set")
+            candidate = Task(
+                task_id=row.task_id,
+                name=changes.get("name", row.name),
+                prompt=changes.get("prompt", row.prompt),
+                source=row.source,
+                target_channel=changes.get("target_channel", row.target_channel),
+                enabled=changes.get("enabled", row.enabled),
+                cron=changes.get("cron", row.cron),
+                run_at=changes.get("run_at", row.run_at),
+                tz=changes.get("tz", row.tz),
+                delivery_to=changes.get("delivery_to", row.delivery_to),
+                contact_id=row.contact_id,
+                consecutive_failures=row.consecutive_failures,
+                last_run_at=row.last_run_at,
+                last_status=row.last_status,
+                last_error=row.last_error,
+            )
+            self._validate_add(candidate)
+            for key in allowed:
+                setattr(row, key, getattr(candidate, key))
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)
@@ -570,7 +568,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         name: str,
         prompt: str,
         cron: str | None,
-        run_at: str | None,
+        run_at: datetime | None,
         delivery_to: str | None,
         target_channel: ChannelEnum,
         contact_id: int,
@@ -613,7 +611,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         # caller (LLM tool, dashboard API, future agent
         # loop) gets the same parse + future-check on
         # BOTH the update and insert branches.
-        canonical_run_at: str | None = None
+        canonical_run_at: datetime | None = None
         if run_at is not None:
             try:
                 canonical_run_at = validate_run_at(run_at)
@@ -636,109 +634,80 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             raise ValueError(
                 "exactly one of cron (recurring) or run_at (one-shot) must be set; got both None"
             )
-        # Length / enum invariants are enforced by
-        # :meth:`add`; this primitive shares the same
-        # validation contract on the insert branch — we
-        # duplicate the tiny check block rather than call
-        # ``add()`` here, because the outer session is
-        # already open and a nested ``add()`` session would
-        # trip SQLite's "transaction within a transaction"
-        # guard.
-        self._validate_write_invariants(
+        candidate = Task(
             name=name,
             prompt=prompt,
-            target_channel=target_channel,
             source=TaskSource.USER,
+            target_channel=target_channel,
+            enabled=enabled,
+            cron=cron,
+            run_at=canonical_run_at,
+            tz=tz,
+            delivery_to=delivery_to,
+            conversation_id=conversation_id,
+            contact_id=contact_id,
         )
         with self._session() as s:
-            existing = s.scalar(select(_TaskRow).where(_TaskRow.name == name))
+            existing = s.scalar(select(_TaskRow).where(_TaskRow.name == candidate.name))
             if existing is not None:
-                existing.prompt = prompt
-                existing.cron = cron
-                existing.run_at = canonical_run_at
-                existing.delivery_to = delivery_to
+                existing.prompt = candidate.prompt
+                existing.cron = candidate.cron
+                existing.run_at = candidate.run_at
+                existing.delivery_to = candidate.delivery_to
                 # Pylance narrows ``ChannelEnum`` (a ``StrEnum``) to ``str`` at the
                 # assignment site even though ``target_channel`` is declared
                 # ``ChannelEnum`` — at runtime SQLAlchemy coerces via
                 # ``values_callable``, so the assignment is sound.
-                existing.target_channel = target_channel  # type: ignore[reportAttributeAccessIssue]
-                existing.enabled = enabled
-                existing.contact_id = contact_id
+                existing.target_channel = candidate.target_channel  # type: ignore[reportAttributeAccessIssue]
+                existing.enabled = candidate.enabled
+                existing.contact_id = candidate.contact_id
                 # Preserve the existing ``conversation_id`` for
                 # continuity across prompt edits. Update-
                 # path only — insert path uses the caller-
                 # supplied value.
-                if existing.conversation_id is None:
-                    existing.conversation_id = conversation_id
+                if existing.conversation_row_id is None:
+                    conversation = s.scalar(
+                        select(_ConversationRow).where(
+                            _ConversationRow.conversation_id == candidate.conversation_id
+                        )
+                    )
+                    if conversation is None:
+                        raise ValueError(f"unknown conversation_id {candidate.conversation_id!r}")
+                    existing.conversation_row_id = conversation.id
                 s.commit()
                 s.refresh(existing)
                 return existing.task_id, True
+
+            conversation = s.scalar(
+                select(_ConversationRow).where(
+                    _ConversationRow.conversation_id == candidate.conversation_id
+                )
+            )
+            if conversation is None:
+                raise ValueError(f"unknown conversation_id {candidate.conversation_id!r}")
 
             # Insert path — single session, single
             # transaction. The write invariants above
             # already passed; this is the same row that
             # ``add()`` would have built.
-            now = utcnow_naive()
             insert = _TaskRow(
-                task_id=_new_task_id(),
-                name=name,
-                prompt=prompt,
-                cron=cron,
-                run_at=canonical_run_at,
-                delivery_to=delivery_to,
-                conversation_id=conversation_id,
-                tz=tz,
-                target_channel=target_channel,
-                contact_id=contact_id,
-                enabled=enabled,
-                source=TaskSource.USER,
+                task_id=candidate.task_id,
+                name=candidate.name,
+                prompt=candidate.prompt,
+                cron=candidate.cron,
+                run_at=candidate.run_at,
+                delivery_to=candidate.delivery_to,
+                conversation_row_id=conversation.id,
+                tz=candidate.tz,
+                target_channel=candidate.target_channel,
+                contact_id=candidate.contact_id,
+                enabled=candidate.enabled,
+                source=candidate.source,
             )
             s.add(insert)
             s.commit()
             s.refresh(insert)
             return insert.task_id, False
-
-    def _validate_write_invariants(
-        self,
-        *,
-        name: str,
-        prompt: str,
-        target_channel: str | None,
-        source: TaskSource | str,
-    ) -> None:
-        """Length / enum checks shared by :meth:`add` and
-        :meth:`upsert_by_name`. Lives in one place so a
-        future invariant (column-width cap change, new
-        enum member) only needs to land once.
-
-        The schedule-specific validation (cron XOR run_at,
-        cron expression validity, run_at ISO + future
-        check) lives directly in the callers since the
-        two branches need to differ slightly (update
-        doesn't need cron XOR run_at because the existing
-        row already satisfied it).
-        """
-        if not name or not str(name).strip():
-            raise ValueError("name must be a non-empty string")
-        if len(str(name)) > NAME_MAX:
-            raise ValueError(f"name length {len(str(name))} exceeds maximum {NAME_MAX}")
-        if not prompt or not str(prompt).strip():
-            raise ValueError("prompt must be a non-empty string")
-        if len(str(prompt)) > PROMPT_MAX:
-            raise ValueError(f"prompt length {len(str(prompt))} exceeds maximum {PROMPT_MAX}")
-        if target_channel is not None and target_channel not in ChannelEnum:
-            raise ValueError(
-                f"target_channel must be one of "
-                f"{sorted(c.value for c in ChannelEnum)!r}, "
-                f"got {target_channel!r}"
-            )
-        # Both ``ChannelEnum`` and ``TaskSource`` are ``StrEnum`` so
-        # ``in`` works for enum members and matching raw strings alike.
-        if source not in TaskSource:
-            raise ValueError(
-                f"source must be one of "
-                f"{sorted(s.value for s in TaskSource)!r}, got {source!r}"
-            )
 
     # -- v2.0: worker-facing methods -------------------------------------
 
@@ -765,6 +734,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             run_row = _TaskRunRow(
                 run_id=new_run_id,
                 task_row_id=task.id,
+                conversation_row_id=task.conversation_row_id,
                 manual=manual,
                 started_at=started_at,
                 status=TaskRunStatus.RUNNING.value,
@@ -773,7 +743,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             task.last_run_at = started_at
             s.commit()
             s.refresh(run_row)
-        # ``self.dto_cls`` is ``Task``, not ``TaskRun`` — convert the
+        # ``self.record_cls`` is ``Task``, not ``TaskRun`` — convert the
         # run row via the ``TaskRunBook`` so the field set matches.
         # Sharing the same ``magis_factory`` keeps both Books on the
         # same session/connection scope.
@@ -807,20 +777,58 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
 class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
-    dto_cls = TaskRun
+    record_cls = TaskRun
 
-    def get(self, *, run_id: str) -> TaskRun | None:
+    def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
+        task = row.task
+        if task is None:
+            raise ValueError(f"task run {row.id} references missing task row {row.task_row_id}")
+        task_run = TaskRun(
+            run_id=row.run_id,
+            task_id=task.task_id,
+            manual=row.manual,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            latency_ms=row.latency_ms,
+            status=row.status,
+            error=row.error,
+            reply_excerpt=row.reply_excerpt,
+            conversation_id=(row.conversation.conversation_id if row.conversation else None),
+        )
+        object.__setattr__(task_run, "id", row.id)
+        object.__setattr__(task_run, "created_at", row.created_at)
+        object.__setattr__(task_run, "updated_at", row.updated_at)
+        return task_run
+
+    def get_by_run_id(self, *, run_id: str) -> TaskRun | None:
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.run_id == run_id))
             return self._row_to_dto(row) if row else None
 
-    def add(self, **kwargs) -> TaskRun:
-        with self._session() as s:
-            row = _TaskRunRow(**kwargs)
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
+    def _record_to_row_values(self, record: TaskRun, session) -> dict:
+        task = session.scalar(select(_TaskRow).where(_TaskRow.task_id == record.task_id))
+        if task is None:
+            raise ValueError(f"unknown task_id {record.task_id!r}")
+        conversation_row_id = task.conversation_row_id
+        if record.conversation_id is not None:
+            conversation = session.scalar(
+                select(_ConversationRow).where(_ConversationRow.conversation_id == record.conversation_id)
+            )
+            if conversation is None:
+                raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
+            conversation_row_id = conversation.id
+        return {
+            "run_id": record.run_id,
+            "task_row_id": task.id,
+            "conversation_row_id": conversation_row_id,
+            "manual": record.manual,
+            "started_at": record.started_at,
+            "finished_at": record.finished_at,
+            "latency_ms": record.latency_ms,
+            "status": record.status,
+            "error": record.error,
+            "reply_excerpt": record.reply_excerpt,
+        }
 
     def complete(
         self,
@@ -1049,7 +1057,7 @@ def preset_to_cron(
 # ── run_at path — one-shot tasks ───────────────────────────────────────
 
 
-def validate_run_at(raw: str) -> datetime:
+def validate_run_at(raw: str | datetime) -> datetime:
     """Validate the ``run_at`` field for a one-shot task.
 
     Accepts any ISO 8601 timestamp that ``datetime.fromisoformat``
@@ -1062,25 +1070,21 @@ def validate_run_at(raw: str) -> datetime:
     ``"2026-08-01T15:30:00+08:00"`` both end up storing the
     same row. The Book stores this native value in its ``DateTime`` column.
 
-    The ``Z`` suffix (rather than ``+00:00``) matches the
-    project-wide convention used by
-    :mod:`magi.bus.library.local.actionItemBook`,
-    :mod:`magi.bus.library.local.sessionBook`, and
-    the WebUI's serializer — every wire shape in MAGI uses
-    trailing ``Z`` for UTC, never ``+00:00``.
-
     Raises ``ValueError`` on any parse failure.
 
     Note: this helper does NOT enforce "must be in the
     future" — see :func:`validate_run_at_future`.
     """
-    if not isinstance(raw, str) or not raw.strip():
-        raise ValueError("run_at must be a non-empty ISO 8601 string")
-    candidate = raw.strip()
-    try:
-        parsed = datetime.fromisoformat(candidate)
-    except ValueError as e:
-        raise ValueError(f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}") from None
+    if isinstance(raw, datetime):
+        parsed = raw
+    else:
+        if not isinstance(raw, str) or not raw.strip():
+            raise ValueError("run_at must be a non-empty ISO 8601 string")
+        candidate = raw.strip()
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except ValueError as e:
+            raise ValueError(f"run_at {raw!r} is not a parseable ISO 8601 timestamp: {e}") from None
     if parsed.tzinfo is None:
         return parsed
     return parsed.astimezone(UTC).replace(tzinfo=None)
@@ -1112,7 +1116,7 @@ def validate_run_at_future(run_at: datetime, *, now: datetime | None = None) -> 
     if run_at <= server_now - timedelta(seconds=grace_seconds):
         raise ValueError(
             f"run_at must be in the future (got {run_at!r}; "
-            f"server now is {server_now.isoformat(timespec='seconds')}; "
+            f"server now is {server_now!s}; "
             f"past-time jobs are silently dropped by apscheduler)"
         )
     return run_at

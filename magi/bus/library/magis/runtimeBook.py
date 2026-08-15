@@ -44,7 +44,6 @@ from enum import StrEnum
 from typing import Annotated
 
 from pydantic import Strict, StringConstraints
-
 from sqlalchemy import (
     Boolean,
     DateTime,

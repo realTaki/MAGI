@@ -41,7 +41,6 @@ from __future__ import annotations
 from typing import Annotated
 
 from pydantic import Strict, StringConstraints
-
 from sqlalchemy import BigInteger, ForeignKey, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 

@@ -9,10 +9,10 @@ Schema for the ``hook_signoffs`` table.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
+from pydantic import Strict
 from sqlalchemy import (
     JSON,
     DateTime,
@@ -21,13 +21,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
 # -- public dataclass ----------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@record
 class HookSignoff(BaseRecord):
     subject_type: str  # 触发 hook 的对象类型
     subject_id: str  # 触发 hook 的对象 ID
@@ -35,7 +34,7 @@ class HookSignoff(BaseRecord):
     plugin_id: str  # 接收 signoff 的插件 ID
     status: str = "pending"  # 状态（pending/done/failed）
     payload: dict[str, Any] | None = None  # 附加负载
-    dispatched_at: datetime | None = None  # 派发时间
+    dispatched_at: Annotated[datetime, Strict()] | None = None
 
 
 # -- internal ORM --------------------------------------------------------
@@ -64,12 +63,7 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
     """
 
     model_cls = _HookSignoffRow
-    dto_cls = HookSignoff
-
-    def get(self, *, signoff_id: int) -> HookSignoff | None:
-        with self._session() as s:
-            row = s.scalar(select(_HookSignoffRow).where(_HookSignoffRow.id == signoff_id))
-            return self._row_to_dto(row) if row else None
+    record_cls = HookSignoff
 
     def list_pending(self) -> list[HookSignoff]:
         with self._session() as s:

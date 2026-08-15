@@ -72,16 +72,8 @@ class ActionPriority(StrEnum):
 # default mix.
 _COMPLETED_VISIBLE_DAYS = 7
 
-# Column-length invariants. Mirror the ORM column
-# declarations (``String(200)`` / ``String(1000)`` /
-# ``String(500)``) and the ``completion_note`` /
-# ``description`` business caps. The Book enforces them so
-# every caller — chat-driven tool, dashboard API, proactive
-# policy, future agent loop — gets the same validation
-# without each path re-implementing length checks.
-_TITLE_MAX = 200
-_DESCRIPTION_MAX = 1000
-_TARGET_URL_MAX = 500
+# ``ActionItem`` declares its field constraints inline; this cap remains for
+# command-specific validation in ``complete(note=...)``.
 _COMPLETION_NOTE_MAX = 500
 
 

@@ -8,8 +8,6 @@ store, on both SQLite and PostgreSQL backends.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlalchemy import String, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
