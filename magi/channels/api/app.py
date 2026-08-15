@@ -197,7 +197,13 @@ def create_app(
         app.include_router(runtime_proxy.router, prefix="/api")
         spa_dist = _find_spa_dist() if include_spa else None
         if spa_dist is not None:
-            app.mount("/", StaticFiles(directory=str(spa_dist), html=True), name="spa")
+            # See ``_SpaFallback`` docstring — Starlette's
+            # ``StaticFiles(html=True)`` does NOT fallback arbitrary
+            # client-side routes (``/dashboard``, ``/chat/123``) to the
+            # SPA shell; it only swaps ``index.html`` when a .html
+            # request misses. Without this catch-all, every
+            # ``<a href="/internal-link">`` does a hard nav that 404s.
+            app.mount("/", _SpaFallback(directory=str(spa_dist), html=True), name="spa")
         return app
     # Target-scoped login is owned by the MAGI runtime.  The singleton WebUI
     # calls it with a target-bound internal signature before a browser session
