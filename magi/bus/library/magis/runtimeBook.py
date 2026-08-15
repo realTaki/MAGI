@@ -55,7 +55,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
 class RuntimeDesiredState(StrEnum):
@@ -76,8 +76,8 @@ class RuntimeObservedState(StrEnum):
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Runtime:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Runtime(BaseRecord):
     runtime_id: int  # 主键（同时是 per-MAGI 身份标识）
     backend_kind: str  # 后端类型（local/k8s）
     desired_state: RuntimeDesiredState  # 期望状态（started/stopped）
@@ -107,8 +107,8 @@ class Runtime:
     restored: bool = False  # 是否已被恢复
 
 
-@dataclass(frozen=True, slots=True)
-class ControlSecret:
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ControlSecret(BaseRecord):
     name: str  # secret 名称（PK）
     secret_hash: bytes  # 哈希值
     salt: bytes  # 哈希盐
@@ -124,6 +124,15 @@ class ControlSecret:
 
 
 class _RuntimeRow(Base):
+    """ORM row for ``runtime_state``.
+
+    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
+    table pre-dates the mixin convention with ``runtime_id`` as its
+    primary key. Switching to ``id`` PK would orphan existing rows on
+    upgrade; the migration path is intentionally additive so the
+    table shape stays stable.
+    """
+
     __tablename__ = "runtime_state"
 
     runtime_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -164,6 +173,16 @@ class _RuntimeRow(Base):
 
 
 class _ControlSecretRow(Base):
+    """Single-row MAGIS control secret store keyed by MAGIS name.
+
+    Stays on :class:`Base` (not :class:`BaseRecordMixin`) because the
+    table pre-dates the mixin convention with ``name`` as its primary
+    key. Switching to ``id`` PK would orphan existing rows on upgrade;
+    the migration path is intentionally additive (see alembic
+    ``0002_add_control_secret_value``) so the table shape stays
+    stable.
+    """
+
     __tablename__ = "control_secrets"
 
     name: Mapped[str] = mapped_column(String(100), primary_key=True)
@@ -186,6 +205,25 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
     def get(self, *, runtime_id: int) -> Runtime | None:
         with self._session() as s:
             row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
+            return self._row_to_dto(row) if row else None
+
+    def get_by_backend_ref(self, *, backend_ref: str) -> Runtime | None:
+        """Return the runtime row whose operator-facing ``backend_ref`` matches.
+
+        The WebUI / CLI uses ``backend_ref`` as the canonical
+        ``magi_name`` — the same slug the operator types as
+        ``magi node run --name <name>``.  Cross-table lookups that
+        only know ``magi_name`` (e.g. :mod:`magi.startup.spec`) need
+        this to recover the row without scanning.
+
+        Returned as a single :class:`Runtime` DTO, not a list: there
+        is only ever one row per ``backend_ref`` (the column is not
+        a primary key but the provisioning path enforces uniqueness).
+        """
+        with self._session() as s:
+            row = s.scalar(
+                select(_RuntimeRow).where(_RuntimeRow.backend_ref == backend_ref)
+            )
             return self._row_to_dto(row) if row else None
 
     def list_all(self) -> list[Runtime]:
@@ -477,8 +515,6 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
         is keyed on. ``secret_hash`` + ``salt`` are kept for audit /
         verification symmetry with the rest of the auth surface.
         """
-        from magi.common import utcnow_naive
-
         ts = now or utcnow_naive()
         with self._session() as s:
             row = s.scalar(select(_ControlSecretRow).where(_ControlSecretRow.name == name))

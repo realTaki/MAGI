@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from magi.bus.guild.runTaskJob import RunTaskJob
-from magi.bus.library.base import to_iso
 from magi.bus.library.local.tasksBook import preset_to_cron, validate_run_at
 from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
@@ -44,15 +44,15 @@ class TaskOut(BaseModel):
     name: str
     prompt: str
     cron: str | None
-    run_at: str | None
+    run_at: datetime | None
     delivery_to: str | None
     tz: str
     target_channel: str
     contact_id: int | None
     enabled: bool
     conversation_id: str | None
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class RunResponse(BaseModel):
@@ -98,8 +98,8 @@ def _out(task) -> TaskOut:
         contact_id=task.contact_id,
         enabled=bool(task.enabled),
         conversation_id=task.conversation_id,
-        created_at=to_iso(task.created_at),
-        updated_at=to_iso(task.updated_at),
+        created_at=task.created_at,
+        updated_at=task.updated_at,
     )
 
 

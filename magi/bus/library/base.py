@@ -40,14 +40,14 @@ DtoT = TypeVar("DtoT", bound=_Dataclass)
 class BaseRecord:
     """Common JSON-safe fields for every persisted library DTO.
 
-    ``id`` is the database-local identity. The string timestamps are the DTO
-    boundary: ORM rows keep ``datetime`` values and :class:`BaseBook`
-    serialises them exactly once through :func:`to_iso`.
+    ``id`` is the database-local identity.  Time values deliberately remain
+    ``datetime`` throughout the database, Book and API layers; presentation
+    formatting belongs to the frontend.
     """
 
     id: int = 0
-    created_at: str = ""
-    updated_at: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class BaseRecordMixin(Base):
@@ -64,8 +64,8 @@ class BaseRecordMixin(Base):
     )
 
 
-# ``to_iso`` is the only database-time -> JSON-time boundary.  ORM rows
-# always carry ``datetime``; strings must be parsed at ingress instead.
+# ``to_iso`` is retained only for legacy API call sites while they are being
+# removed.  Book DTOs never call it: ORM rows and DTOs share ``datetime``.
 @overload
 def to_iso(value: datetime) -> str: ...
 @overload
@@ -121,8 +121,5 @@ class BaseBook[RowT: Base, DtoT: _Dataclass]:
         for f in dataclasses.fields(self.dto_cls):
             if hasattr(row, f.name):
                 val = getattr(row, f.name)
-                if isinstance(val, datetime):
-                    kwargs[f.name] = to_iso(val)
-                else:
-                    kwargs[f.name] = val
+                kwargs[f.name] = val
         return self.dto_cls(**kwargs)

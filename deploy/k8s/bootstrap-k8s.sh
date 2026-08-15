@@ -4,11 +4,10 @@
 # downloaded into deploy/.tools when absent; never installed system-wide
 # or via sudo.
 #
-# This is the **production** deployment path. Two related paths live
-# alongside it:
+# This is the Kubernetes deployment path. The CLI alternative lives alongside
+# it:
 #
 #   deploy/k8s/bootstrap-k8s.sh          ← this file
-#   deploy/k8s-dev/bootstrap-k8s-dev.sh  ← single-node kind dev cluster
 #   deploy/cli/                        ← non-container openclaw-style
 set -euo pipefail
 

@@ -14,14 +14,12 @@ It does **not**:
 - Spawn subprocesses (use :mod:`magi.startup.local`).
 - Create Kubernetes resources (use :mod:`magi.startup.kubernetes`).
 - Manage the WebUI (use :mod:`magi.startup.webui`).
-- Read or mutate environment variables at runtime.
+- Select its host, port, or reload behaviour from environment variables.
 - Allow runtime-side port / host configuration (plan §21).
 
-Per plan §21, ``reload`` is mode-aware (see :func:`_reload_enabled`):
-
-- ``MAGI_DEV_RELOAD=1/0`` — per-invocation override (highest priority)
-- ``MAGI_RELOAD=1/0`` — deploy-configured (k8s ConfigMaps, Dockerfiles)
-- Default (neither set) — **on** everywhere
+The Runtime is deliberately one process for its whole lifetime.  Source
+changes take effect after an explicit process restart; there is no Uvicorn
+reload supervisor in any deployment mode.
 """
 
 from __future__ import annotations
@@ -31,7 +29,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -41,21 +38,19 @@ from magi.bus.library.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
+from magi.startup import systemd_notify
 from magi.startup.config import (
     DEFAULT_LOG_LEVEL,
     RUNTIME_HOST,
-    RUNTIME_PORT,
     StartupConfig,
     StartupContext,
 )
 from magi.startup.paths import resolve_private_database_url, resolve_runtime_pid_path
 from magi.startup.process import (
-    PidCleanup,
     claim_pid_file,
     install_lifecycle_handlers,
     mark_registry_stopped,
 )
-from magi.startup import systemd_notify
 from magi.startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
@@ -71,7 +66,6 @@ logger = logging.getLogger("magi.startup.runtime")
 # isolated from any network listener on the host.
 
 _RUNTIME_HOST: str = RUNTIME_HOST
-_RUNTIME_PORT: int = RUNTIME_PORT
 _DEFAULT_LOG_LEVEL: str = DEFAULT_LOG_LEVEL
 
 
@@ -134,10 +128,36 @@ class RuntimeContext:
 
 
 def _startup_context(config: StartupConfig) -> StartupContext:
-    """Resolve one provisioned node before its ASGI app is built."""
-    spec = load_runtime_spec(config.workspace_dir)
+    """Resolve one provisioned node before its ASGI app is built.
+
+    Identity is derived from the MAGIS shared database — see
+    :func:`magi.startup.spec.load_runtime_spec` for the cross-table
+    lookup that ties ``runtime_state.backend_ref`` back to its parent
+    MAGIS row.  The MAGIS URL is reconstructed from
+    ``host_workspace_dir`` + ``magis_name``; ``resolve_magis_database_url``
+    is the single path-aware helper for that.
+    """
+    from magi.bus import open_control_bus
+    from magi.startup.paths import (
+        resolve_magis_control_dir,
+        resolve_magis_database_url,
+    )
+
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
+    control_dir = str(
+        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
+    )
+    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    spec = load_runtime_spec(
+        bus, config.magi_name, magis_database_url=magis_url
+    )
     if spec.magi_name != config.magi_name:
-        raise RuntimeError(f"runtime spec belongs to {spec.magi_name!r}, not {config.magi_name!r}")
+        raise RuntimeError(
+            f"MAGIS registry row reports {spec.magi_name!r}, "
+            f"not {config.magi_name!r}"
+        )
     return StartupContext(
         host_workspace_dir=config.host_workspace_dir,
         workspace_dir=config.workspace_dir,
@@ -151,13 +171,12 @@ def _startup_context(config: StartupConfig) -> StartupContext:
     )
 
 
-def _publish_runtime_config(config: StartupConfig) -> None:
-    """Make the explicitly selected node available to a reload child.
+def _configure_runtime_environment(config: StartupConfig, *, magi_id: str) -> None:
+    """Expose the resolved runtime identity to proxy-auth dependencies.
 
-    Uvicorn's reload supervisor imports the ASGI factory in a fresh Python
-    process.  Its only stable input channel is the child environment, so copy
-    the already-resolved CLI configuration there before the supervisor starts.
-    The runtime spec remains the source of identity and database URLs.
+    The provisioned runtime spec remains authoritative.  These environment
+    values are only consumed by components that cannot receive the startup
+    context directly, notably proxy-auth verification.
     """
     os.environ["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
     os.environ["MAGI_NAME"] = config.magi_name
@@ -166,43 +185,15 @@ def _publish_runtime_config(config: StartupConfig) -> None:
         os.environ.pop("MAGIS_DATABASE_URL", None)
     else:
         os.environ["MAGIS_DATABASE_URL"] = config.magis_database_url
-    # ``MAGI_ID`` is only set when the CLI passed ``--magi-id``;
-    # the single-machine ``magi node run`` path reads it from
-    # the workspace's ``runtime.json`` instead. Fall back so
-    # the spawned child can still see its identity.
-    spec_magi_id = load_runtime_spec(config.workspace_dir).magi_id
-    effective_magi_id = config.magi_id or spec_magi_id
-    if effective_magi_id:
-        os.environ["MAGI_ID"] = effective_magi_id
-        # The webui's proxy layer signs every request with
-        # ``MAGI_CONTROL_SECRET`` plus the target runtime id;
-        # the runtime verifies that ``X-MAGI-Proxy-Target``
-        # matches its own ``MAGI_RUNTIME_ID``. The single-
-        # machine install needs both. (K8s sets this on the
-        # pod via the deployment manifest; the local CLI
-        # path was missing it.)
-        os.environ["MAGI_RUNTIME_ID"] = effective_magi_id
-    else:
-        os.environ.pop("MAGI_ID", None)
-        os.environ.pop("MAGI_RUNTIME_ID", None)
+    os.environ["MAGI_ID"] = magi_id
+    # The webui's proxy layer signs every request with
+    # ``MAGI_CONTROL_SECRET`` plus the target runtime id; the runtime verifies
+    # that ``X-MAGI-Proxy-Target`` matches its own ``MAGI_RUNTIME_ID``.
+    os.environ["MAGI_RUNTIME_ID"] = magi_id
 
 
-def create_runtime_app_from_environment():
-    """Uvicorn reload factory for one MAGI Runtime API.
-
-    Constructing :class:`RuntimeContext` runs the BUS schema barrier before
-    the FastAPI app or any worker becomes available.  The app lifespan then
-    owns worker start/stop, which means every Uvicorn reload gets a fresh,
-    correctly ordered lifecycle.
-    """
-    config = StartupConfig.from_env()
-    # ``run_magi`` already publishes ``MAGI_RUNTIME_ID`` /
-    # ``MAGI_ID`` before invoking uvicorn. Re-publish here
-    # defensively so a process that bypasses ``run_magi``
-    # (e.g. ``magi webui`` shells, IDE runners) still has
-    # the env the proxy-auth header check expects.
-    _publish_runtime_config(config)
-    context = RuntimeContext.create(_startup_context(config))
+def _create_runtime_app(context: RuntimeContext):
+    """Build the Runtime API with workers owned by its lifespan."""
 
     from magi.channels.api.app import create_runtime_app
 
@@ -218,11 +209,7 @@ def create_runtime_app_from_environment():
 
 
 def run_magi(config: StartupConfig) -> None:
-    """Run one MAGI with a real Uvicorn reload supervisor when enabled.
-
-    The ASGI application must be an import-string factory for Uvicorn to
-    supervise code changes.  On every spawned/reloaded child, the factory
-    above synchronises the database before it starts workers or serves HTTP.
+    """Run one MAGI Runtime until it is explicitly stopped or restarted.
 
     Foreground-mode lifecycle (mirrors :func:`magi.startup.local.start_magi`):
 
@@ -234,14 +221,14 @@ def run_magi(config: StartupConfig) -> None:
        :func:`magi.startup.process.mark_registry_stopped`.  The
        handler runs once even if uvicorn re-raises the signal.
 
-    Under ``reload=True`` the PID file records the **supervisor**
-    (this process), not the worker — workers come and go across
-    reloads and are owned by uvicorn.  ``magi node stop`` killing the
-    supervisor releases the listening socket via uvicorn's own
-    signal handling.
+    The PID file records this single runtime process, so ``magi node stop``
+    and ``magi node restart`` always address the process that owns the
+    listening socket.
     """
     startup = _startup_context(config)
-    _publish_runtime_config(config)
+    _configure_runtime_environment(config, magi_id=startup.magi_id)
+    context = RuntimeContext.create(startup)
+    app = _create_runtime_app(context)
     pid_path = resolve_runtime_pid_path(startup.workspace_dir)
     claim_pid_file(pid_path)
     cleanup = install_lifecycle_handlers(
@@ -255,16 +242,11 @@ def run_magi(config: StartupConfig) -> None:
     # interval is half the watchdog window per sd_notify(3).
     watchdog_task = _maybe_start_watchdog()
     try:
-        reload = _reload_enabled()
-        reload_dirs = _reload_dirs() if reload else None
         uvicorn.run(
-            "magi.startup.runtime:create_runtime_app_from_environment",
-            factory=True,
+            app,
             host=_RUNTIME_HOST,
             port=startup.runtime_port,
             log_level=_DEFAULT_LOG_LEVEL,
-            reload=reload,
-            reload_dirs=reload_dirs,
         )
     finally:
         systemd_notify.announce_stopping()
@@ -381,49 +363,6 @@ def _build_channels(
     return list(required)
 
 
-# ----------------------------------------------------------------------
-# HTTP serve
-# ----------------------------------------------------------------------
-
-
-def _reload_enabled() -> bool:
-    """Mode-aware reload toggle.
-
-    Resolution order:
-
-    1. ``MAGI_DEV_RELOAD=1`` or ``0`` — per-invocation override for dev
-       workflows (highest priority).
-    2. ``MAGI_RELOAD=1`` or ``0`` — deploy-configured signal (k8s
-       ConfigMaps, Dockerfiles).  Production base sets ``"0"``; dev
-       overlays override to ``"1"``.
-    3. Default (neither set) — **on** everywhere.  CLI / local and
-       unconfigured K8s deployments both get hot reload.
-    """
-    # 1. Per-invocation dev override
-    dev = os.environ.get("MAGI_DEV_RELOAD")
-    if dev == "1":
-        return True
-    if dev == "0":
-        return False
-
-    # 2. Deploy-configured signal (k8s ConfigMaps, Dockerfiles)
-    cfg = os.environ.get("MAGI_RELOAD")
-    if cfg == "1":
-        return True
-    if cfg == "0":
-        return False
-
-    # 3. Default — on
-    return True
-
-
-def _reload_dirs() -> list[str]:
-    """Resolve uvicorn's reload directory — the package root."""
-    import magi
-
-    return [str(Path(magi.__file__).resolve().parent)]
-
-
 def _maybe_start_watchdog() -> asyncio.Task | None:
     """Start the systemd watchdog ping task iff ``$WATCHDOG_USEC`` is set.
 
@@ -460,6 +399,5 @@ def _maybe_start_watchdog() -> asyncio.Task | None:
 
 __all__ = [
     "RuntimeContext",
-    "create_runtime_app_from_environment",
     "run_magi",
 ]

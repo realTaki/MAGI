@@ -210,9 +210,9 @@ def get_webui_status(*, config: StartupConfig) -> WebUIStatus:
 def run_webui_foreground(*, config: StartupConfig) -> None:
     """Run the control service without creating node storage or workers.
 
-    ``MAGI_WEBUI_PORT`` is set by the detached launcher and the Kind dev
-    overlay. Production keeps the canonical :data:`WEBUI_PORT` default;
-    the override lets Vite own 42069 while its proxied API runs on 8000.
+    ``MAGI_WEBUI_PORT`` is set by the detached launcher when an internal
+    caller needs a non-default port. Production keeps the canonical
+    :data:`WEBUI_PORT` default.
 
     Foreground-mode lifecycle (mirrors :func:`start_webui`):
 
@@ -231,20 +231,37 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     from magi.bus import open_control_bus
     from magi.channels.api.app import create_control_app
     from magi.channels.api.control_context import ControlContext
-    from magi.startup.spec import load_runtime_spec
 
-    root_workspace = config.host_workspace_dir / "MAGI_Citizens" / "eva-000"
-    spec = load_runtime_spec(root_workspace)
+    # The WebUI is bound to a MAGIS, not a single runtime — derive its
+    # MAGIS connection from the canonical CLI/env inputs instead of
+    # reading a per-workspace cache that no longer exists.
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
     # Control routes use the shared MAGIS Books.  Preserve that mode for an
     # explicitly foreground-launched WebUI too, not only for its detached
     # child process.
-    os.environ["MAGIS_DATABASE_URL"] = spec.magis_database_url
+    os.environ["MAGIS_DATABASE_URL"] = magis_url
+    # ``MAGI_CONTROL_SECRET`` is required for the proxy signature on every
+    # forwarded ``/api/runtime/<id>/...`` request (see
+    # :mod:`magi.channels.api.proxy_auth`). The detached launcher sets it
+    # via :func:`_build_webui_env`; this foreground path inherits the
+    # parent shell's env only if the operator remembered to export it.
+    # The DB-stored value (``bus.control_secrets``) is the runtime
+    # source of truth post-``0002_add_control_secret_value``; the file
+    # remains as a bootstrap fallback for one-off tools and the legacy
+    # launcher path. We try DB first, then file, then raise.
+    if not os.environ.get("MAGI_CONTROL_SECRET"):
+        _seed_control_secret_from_db_or_file(
+            host_workspace_dir=config.host_workspace_dir,
+            magis_name=config.magis_name,
+        )
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.
     bus = open_control_bus(
-        control_dir=str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name)),
-        magis_url=spec.magis_database_url,
+        control_dir=str(resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)),
+        magis_url=magis_url,
     )
     app = create_control_app(context=ControlContext(bus=bus))
     port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
@@ -267,10 +284,9 @@ def _reap_orphan_worker(port: int) -> None:
     """Kill any orphan worker still listening on the WebUI port.
 
     Mirror of :func:`magi.startup.local._reap_orphan_worker` for the
-    WebUI supervisor: a uvicorn reload storm (or the supervisor
-    crashing for any other reason) leaves the worker listening with
-    no PID-file owner, which would otherwise block the next spawn
-    with ``Address already in use``.
+    WebUI process recovery: a crash can leave a child listening with no
+    PID-file owner, which would otherwise block the next spawn with
+    ``Address already in use``.
     """
     orphan = find_listener_on_port(port)
     if orphan is None:
@@ -293,9 +309,8 @@ def _reap_orphan_worker(port: int) -> None:
 def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     """Build the env passed to the detached ``magi webui`` subprocess.
 
-    Plan §15 — the WebUI owns the operator-facing port.  Reload is
-    hardcoded off in production (plan §21): no ``MAGI_RELOAD`` knob
-    escapes this subprocess.
+    Plan §15 — the WebUI owns the operator-facing port. Runtime reload is not
+    configurable, so no reload knob escapes this subprocess.
     """
     env = os.environ.copy()
     env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
@@ -312,14 +327,87 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     # The webui signs proxy requests to the runtime via
     # ``MAGI_CONTROL_SECRET`` (HMAC over the request line +
     # selected MAGI). The single-machine install provisions
-    # the secret at ``init_first_magi`` time; thread it into
+    # the secret at ``init_first_magi`` time and persists it both
+    # to ``bus.control_secrets`` (source of truth) and the
+    # ``control-secret`` file (bootstrap fallback). Thread it into
     # the detached webui's env so the proxy layer can sign.
-    secret_path = resolve_magis_control_dir(
-        config.host_workspace_dir, config.magis_name
-    ) / "control-secret"
-    if secret_path.exists():
-        env["MAGI_CONTROL_SECRET"] = secret_path.read_text(encoding="utf-8").strip()
+    secret = _read_control_secret(
+        host_workspace_dir=config.host_workspace_dir,
+        magis_name=config.magis_name,
+    )
+    if secret:
+        env["MAGI_CONTROL_SECRET"] = secret
     return env
+
+
+def _seed_control_secret_from_db_or_file(
+    *, host_workspace_dir: Path, magis_name: str
+) -> None:
+    """Self-inject ``MAGI_CONTROL_SECRET`` into the process env.
+
+    Mirrors :func:`_read_control_secret` but mutates ``os.environ`` so
+    the value is visible to every downstream subsystem (especially
+    :func:`magi.channels.api.auth._signing_key`, which still keys off
+    the env var). Called by the foreground launcher before uvicorn
+    binds so the proxy signature path is ready at the first request.
+    """
+    secret = _read_control_secret(
+        host_workspace_dir=host_workspace_dir, magis_name=magis_name
+    )
+    if secret:
+        os.environ["MAGI_CONTROL_SECRET"] = secret
+    else:
+        secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
+        raise RuntimeError(
+            f"MAGI_CONTROL_SECRET is not set and neither the DB row "
+            f"({magis_name!r} in control_secrets) nor the bootstrap file "
+            f"({secret_path}) is present. Run `magi init` to (re)provision the "
+            f"MAGIS control secret, or export MAGI_CONTROL_SECRET in the shell."
+        )
+
+
+def _read_control_secret(*, host_workspace_dir: Path, magis_name: str) -> str | None:
+    """Read the raw control secret, DB first, file fallback.
+
+    Opens a transient MAGIS control bus purely to read the
+    ``control_secrets`` row. Falls back to the bootstrap file for
+    pre-migration deployments whose ``secret_value`` column is NULL.
+    Synchronises the schema first so the ``0002_add_control_secret_value``
+    column exists on the target DB before we issue the SELECT — a fresh
+    checkout on a stale DB will otherwise crash with ``no such column``.
+    """
+    secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
+    bus = _open_control_bus_with_schema_synced(
+        control_dir=secret_path.parent,
+        magis_url=resolve_magis_database_url(host_workspace_dir, magis_name),
+    )
+    if bus is not None and bus.control_secrets_book is not None:
+        row = bus.control_secrets_book.get(name=magis_name)
+        if row is not None and row.secret_value:
+            return row.secret_value.decode("utf-8")
+    if secret_path.exists():
+        value = secret_path.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    return None
+
+
+def _open_control_bus_with_schema_synced(*, control_dir, magis_url) -> "Bus | None":
+    """Open the MAGIS control bus with schema migration applied first.
+
+    Delegates to :func:`magi.bus.open_control_bus`, which already
+    runs :func:`magi.bus.db.schema.synchronise_schema` on the MAGIS
+    store before handing the bus back. Returns ``None`` on any failure
+    so the caller can fall through to the bootstrap-file path.
+    """
+    try:
+        from magi.bus import open_control_bus
+    except Exception:
+        return None
+    try:
+        return open_control_bus(control_dir=str(control_dir), magis_url=magis_url)
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------------

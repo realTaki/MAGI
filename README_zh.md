@@ -122,13 +122,12 @@ PostgreSQL 与公共工作区资源。
 
 ## 快速开始
 
-按你的场景选一条部署路径。三种路径都同等支持并位于 `deploy/` 下，
+按你的场景选一条部署路径。两种路径都同等支持并位于 `deploy/` 下，
 所有启动代码都收口在 `magi.startup`：
 
 | 场景 | 路径 | 入口 |
 | --- | --- | --- |
 | 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`（安装、初始化并启动） |
-| 我在迭代 k8s 模块化方案 | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 **单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker，也没有 k8s），
@@ -139,21 +138,6 @@ MAGI Society **Genesis**（让 `eva-000` 担任 ADAM），并启动 Runtime 与 
 onboarding。以后只需执行 `magi start`，它会保留现有状态并恢复未运行的服务。需要新 MAGI 时，运行
 `magi node create --name eva-001`、`magi node run --name eva-001` 即可；
 每个新 MAGI 都是独立 OS 进程。
-
-**k8s-dev** 会在本地启动一个 `kind` 集群并部署第一个开发 MAGI 节点。
-宿主机只需要 Docker。脚本会按需下载固定版本的 `kind` 与 `kubectl`、
-构建镜像、创建集群，并以 Vite HMR 部署开发节点；后端代码改动后显式重启 Pod。
-开发部署会挂载：
-
-```text
-宿主仓库                                   → /app/magi     源码挂载（后端改动后重启 Runtime）
-workspace PVC（挂到容器根 /）              → /MAGI_Citizens/<name>  (由 HOST_WORKSPACE_DIR=/ + MAGI_NAME 推导)
-MAGIS 公共工作区 PVC                        → /magis
-```
-
-K8s Pod **不传** `HOST_WORKSPACE_DIR`：路径解析器检测到
-`KUBERNETES_SERVICE_HOST` 后默认宿主根为 `/`；PVC 挂到容器根后，
-`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导并直接落到 PVC 上。
 
 已有 Kubernetes 集群或生产式部署可使用：
 

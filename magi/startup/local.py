@@ -29,8 +29,10 @@ from typing import Literal
 from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
     resolve_magis_control_dir,
+    resolve_magis_database_url,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
+    resolve_runtime_state_path,
 )
 from magi.startup.process import is_alive, read_pid, reap_orphan_listener
 from magi.startup.spec import load_runtime_spec
@@ -76,13 +78,11 @@ def start_magi(
     workspace.  Per plan §21 the Runtime's port is hardcoded; the
     parent probes the child on the same loopback port.
 
-    Recovers from the uvicorn reload-storm failure mode: a crashed
-    supervisor leaves its worker listening on the runtime port with
-    no PID-file owner.  Before spawning we sweep the port for such an
-    orphan and SIGKILL it, so a developer can re-run ``magi start``
-    after editing source files without manually killing stale workers.
+    Before spawning we sweep the runtime port for an orphan listener left by
+    a crashed process, so ``magi start`` can recover without manually killing
+    stale workers.
     """
-    spec = load_runtime_spec(config.workspace_dir)
+    spec = _load_spec_from_db(config)
     pid_path = resolve_runtime_pid_path(config.workspace_dir)
     if pid_path.exists():
         existing = read_pid(pid_path)
@@ -96,6 +96,11 @@ def start_magi(
         pid_path.unlink(missing_ok=True)
 
     reap_orphan_listener(spec.runtime_port, label="MAGI orphan worker")
+    # One-shot cleanup of the legacy ``runtime.json`` cache.  Identity
+    # now flows from the MAGIS shared database (see spec.py); the
+    # file was the duplicate state we are retiring.
+    legacy_state_path = resolve_runtime_state_path(config.workspace_dir)
+    legacy_state_path.unlink(missing_ok=True)
 
     env = _build_subprocess_env(config)
     argv = _build_subprocess_argv(config)
@@ -257,11 +262,35 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 # ----------------------------------------------------------------------
 
 
+def _load_spec_from_db(config: StartupConfig):
+    """Resolve :class:`RuntimeSpec` from the MAGIS shared database.
+
+    Mirrors :func:`magi.startup.runtime._startup_context`'s setup so the
+    detached `magi node run` path reads the same identity the foreground
+    factory reads.  The MAGIS URL is reconstructed from
+    ``host_workspace_dir`` + ``magis_name`` via
+    :func:`paths.resolve_magis_database_url` so we never need a file
+    cache to bootstrap.
+    """
+    from magi.bus import open_control_bus
+
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
+    control_dir = str(
+        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
+    )
+    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    return load_runtime_spec(
+        bus, config.magi_name, magis_database_url=magis_url
+    )
+
+
 def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
     """Build the env passed to the detached ``magi node run`` subprocess.
 
-    Plan §21 — only the four startup-contract inputs are propagated;
-    no ``MAGI_PORT`` / ``MAGI_RELOAD`` knobs leak into the child.
+    Plan §21 — only the startup-contract inputs are propagated; runtime host,
+    port, and reload behaviour are not operator-configurable.
     """
     env = os.environ.copy()
     env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
@@ -275,15 +304,20 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
     # HMAC over the request line + selected MAGI; that HMAC
     # needs the same shared secret the webui uses. The
     # single-machine install provisions it under the MAGIS
-    # control dir at init time; thread it into the node child
-    # so the proxy layer can sign-verify inbound requests.
-    control_secret_path = resolve_magis_control_dir(
-        config.host_workspace_dir, config.magis_name
-    ) / "control-secret"
-    if control_secret_path.exists():
-        env["MAGI_CONTROL_SECRET"] = control_secret_path.read_text(
-            encoding="utf-8"
-        ).strip()
+    # control dir at init time and persists it both to
+    # ``bus.control_secrets`` (source of truth post-
+    # ``0002_add_control_secret_value``) and the
+    # ``control-secret`` file (bootstrap fallback). Thread the
+    # shared secret into the node child so the proxy layer can
+    # sign-verify inbound requests.
+    from magi.startup.webui import _read_control_secret
+
+    secret = _read_control_secret(
+        host_workspace_dir=config.host_workspace_dir,
+        magis_name=config.magis_name,
+    )
+    if secret:
+        env["MAGI_CONTROL_SECRET"] = secret
     return env
 
 

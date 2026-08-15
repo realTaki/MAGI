@@ -11,7 +11,6 @@ Wire format per sd_notify(3):
     "READY=1\n"        — service finished startup
     "WATCHDOG=1\n"     — keepalive tick
     "STOPPING=1\n"     — clean shutdown about to begin
-    "RELOADING=1\n"    — uvicorn reload fired; expect a brief stall
 
 All frames are written to ``$NOTIFY_SOCKET`` as a single ``SOCK_DGRAM``
 message; the socket is unlinked at process exit.
@@ -73,11 +72,6 @@ def announce_ready() -> None:
     notify("READY=1")
 
 
-def announce_reloading() -> None:
-    """Tell systemd uvicorn just fired its reload — expect a brief stall."""
-    notify("RELOADING=1")
-
-
 def announce_stopping() -> None:
     """Tell systemd the service is about to exit cleanly."""
     notify("STOPPING=1")
@@ -90,7 +84,6 @@ def watchdog_ping() -> None:
 
 __all__ = [
     "announce_ready",
-    "announce_reloading",
     "announce_stopping",
     "notify",
     "watchdog_ping",

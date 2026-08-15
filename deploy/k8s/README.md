@@ -5,23 +5,14 @@
 合使用，**不** 包含源码映射——容器内 `/app/magi` 由镜像提供，
 不挂载宿主机目录。
 
-`deploy/` 共有三种部署方式：
+`deploy/` 共有两种部署方式：
 
 | 目录 | 形态 | 用途 |
 | --- | --- | --- |
 | [deploy/cli/](../cli/) | 单机非容器（CLI） | openclaw 风格一键本地启动 |
-| [deploy/k8s-dev/](../k8s-dev/) | k8s 单机（kind dev） | 调试 k8s 模块化方案 |
 | `deploy/k8s/` ← 当前 | k8s 生产 | 把现有集群当生产环境使用 |
 
-kind dev 集群在 `deploy/k8s-dev/` 单独维护；它仍复用本目录的
-`base/` 节点模板，但额外叠加了：
-
-- `kind.yaml` 单节点 kind 配置；
-- `control-dev/` 把 WebUI 切到 Vite HMR + 源码 `/mnt/magi` 挂载；
-- `overlays/dev-eva00/` 把 magi-node 切到 `magi:dev` 镜像 + 源码挂载。
-
-请把上面的本地开发场景放到 `deploy/k8s-dev/`，本目录只保留生产
-配置。
+本目录只保留镜像化的标准 Kubernetes 配置，不包含源码映射或 Vite。
 
 ## 目录结构
 
@@ -122,7 +113,7 @@ images:
     newTag: 0.1.0
 ```
 
-不要在 Kubernetes 中使用 `deploy/Dockerfile.dev`。Kubernetes 应使用生产镜像：
+Kubernetes 应使用唯一的生产镜像：
 
 - React 静态文件已经构建到镜像；
 - Python 源码位于镜像内的 `/app/magi`；
@@ -291,9 +282,8 @@ EVA Bob    → eva-bob-magi-workspace PVC → /workspace
 Kubernetes Pod **不传** `HOST_WORKSPACE_DIR`。Pod 启动时
 `magi.startup.paths` 通过 `KUBERNETES_SERVICE_HOST` 检测 K8s 模式，
 默认 `HOST_WORKSPACE_DIR=/`；PVC 挂载到容器根 `/`，workspace 推导为
-`/MAGI_Citizens/<name>`。非生产部署（`deploy/cli/` 单机 CLI、
-`deploy/k8s-dev/` kind dev）虽然底层是宿主目录，但应用看到的目录树与
-生产 PVC 完全一致：
+`/MAGI_Citizens/<name>`。CLI 单机部署虽然底层是宿主目录，但应用看到的
+目录树与生产 PVC 完全一致：
 
 ```text
 # 生产 (K8s)
@@ -304,9 +294,6 @@ PVC /magis                                          直属 MAGIS 公共
 ~/.magi/MAGI_Citizens/<slug>/workspace/             per-MAGI 私有
 ~/.magi/MAGI_Societies/<magis_id>-<slug>/           直属 MAGIS 公共
 
-# k8s-dev (deploy/k8s-dev/)
-~/.magi/MAGI_Citizens/<slug>/workspace/             per-MAGI 私有 (hostPath)
-~/.magi/MAGI_Societies/<magis_id>-<slug>/           直属 MAGIS 公共 (hostPath)
 ```
 
 容器内布局保持一致：

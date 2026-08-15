@@ -15,8 +15,8 @@ and the foreground ``run_magi`` SIGTERM/SIGINT cleanup hook.
 Deliberately narrow: no spawning, no path resolution (that's
 :mod:`magi.startup.paths`). Signals are scoped to a single
 purpose — the orphan-worker recovery that both supervisors need so
-they survive the uvicorn reload-storm failure mode (supervisor dies,
-worker orphans and keeps the runtime socket open).
+they can recover from a crashed process that leaves a listener orphaned on the
+runtime socket.
 """
 
 from __future__ import annotations
@@ -30,6 +30,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from magi.startup.config import StartupConfig
 
 if TYPE_CHECKING:
     from magi.startup.config import StartupConfig
@@ -77,10 +80,10 @@ def is_alive(pid: int) -> bool:
 def find_listener_on_port(port: int) -> int | None:
     """Return the PID of a process listening on ``port`` on loopback, or ``None``.
 
-    Used to recover from a uvicorn reload storm: the supervisor dies,
-    its worker keeps the runtime socket open, the PID file points at
-    the dead supervisor. The next ``start_*`` would otherwise fail
-    with "Address already in use" because nothing sees the orphan.
+    Used to recover from a crashed process that keeps the runtime socket open
+    while its PID file points at a dead parent. The next ``start_*`` would
+    otherwise fail with "Address already in use" because nothing sees the
+    orphan.
 
     Implementation:
       - Linux: parse ``/proc/net/tcp`` (LISTEN state, port in hex),
@@ -177,13 +180,11 @@ def _find_listener_on_port_macos(port: int) -> int | None:
 def reap_orphan_listener(port: int, *, label: str = "orphan worker") -> int | None:
     """SIGKILL any orphan still listening on ``port``; return the PID we killed.
 
-    A uvicorn supervisor crash (most commonly: a reload-storm after
-    editing source files while the dev runtime is running) leaves its
-    child worker holding the runtime socket with no PID file pointing
-    at it.  Without this sweep the next spawn would bind-fail and
-    silently strand the slot.  SIGKILL is intentional — the orphan is
-    already in a bad state and we want the port released *now*, not
-    after a graceful drain that the worker may never attempt.
+    A crashed process can leave a child holding the runtime socket with no PID
+    file pointing at it. Without this sweep the next spawn would bind-fail and
+    silently strand the slot. SIGKILL is intentional — the orphan is already
+    in a bad state and we want the port released *now*, not after a graceful
+    drain that the worker may never attempt.
 
     Returns ``None`` if no orphan was found; otherwise the killed PID.
     Waits up to 2 s for the kernel to actually release the socket,
@@ -225,36 +226,41 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
     singleton WebUI's ``/api/auth/available-magi`` view.
 
     Best-effort by design: if the MAGIS store isn't reachable, the
-    spec can't be parsed, or the runtime row is missing, this is a
-    no-op.  The next ``start_magi`` path reconciles via
-    :meth:`set_desired_state` / :meth:`set_observed_state` on its
-    own, so a registry-write failure here never strands the slot.
+    registry row is missing, or any of the cross-table lookups
+    fail, this is a no-op.  The next ``start_magi`` path reconciles
+    via :meth:`set_desired_state` / :meth:`set_observed_state` on
+    its own, so a registry-write failure here never strands the slot.
     """
-    from magi.startup.paths import resolve_magis_control_dir
+    from magi.startup.paths import (
+        resolve_magis_control_dir,
+        resolve_magis_database_url,
+    )
     from magi.startup.spec import load_runtime_spec
+    from magi.bus.db.base import utcnow_naive
+    from magi.bus.library.magis.runtimeBook import (
+        RuntimeDesiredState,
+        RuntimeObservedState,
+    )
 
     try:
-        spec = load_runtime_spec(config.workspace_dir)
+        magis_url = config.magis_database_url or resolve_magis_database_url(
+            config.host_workspace_dir, config.magis_name
+        )
+        control_dir = str(
+            resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
+        )
+        from magi.bus.bootstrap import open_control_bus
+
+        bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+        spec = load_runtime_spec(
+            bus, config.magi_name, magis_database_url=magis_url
+        )
     except Exception:
         logger.warning("mark_registry_stopped: failed to load runtime spec", exc_info=True)
         return
     try:
         magi_id = int(spec.magi_id)
     except (TypeError, ValueError):
-        return
-
-    try:
-        from magi.bus.bootstrap import open_control_bus
-        from magi.bus.db.base import utcnow_naive
-        from magi.bus.library.magis.runtimeBook import (
-            RuntimeDesiredState,
-            RuntimeObservedState,
-        )
-
-        control_dir = str(resolve_magis_control_dir(config.host_workspace_dir, spec.magis_name))
-        bus = open_control_bus(control_dir=control_dir, magis_url=spec.magis_database_url)
-    except Exception:
-        logger.warning("mark_registry_stopped: failed to open control bus", exc_info=True)
         return
 
     runtimes = bus.runtime_state_book
@@ -289,8 +295,7 @@ def claim_pid_file(pid_path: Path) -> None:
     The ``current == existing`` short-circuit handles the detach case:
     :func:`magi.startup.local.start_magi` writes the supervisor's PID
     before spawning the foreground subprocess; that subprocess is the
-    supervisor itself when reload is off, so re-claiming its own PID
-    is not a conflict.
+    foreground process itself, so re-claiming its own PID is not a conflict.
     """
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     existing = read_pid(pid_path)

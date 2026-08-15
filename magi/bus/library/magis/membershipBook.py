@@ -44,7 +44,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 from magi.bus.library.local.settingBook import SettingBook
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
@@ -57,28 +57,22 @@ DEFAULT_ROLE_INSTRUCTIONS = {
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class MagisRole:
-    id: int  # 角色主键
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MagisRole(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     name: str  # 角色名（ADAM/EVA/...）
     instruction: str = ""  # 角色描述/职责说明
     is_reserved: bool = False  # 是否为保留角色（ADAM/EVA）
-    created_at: datetime | None = None  # 创建时间
-    updated_at: datetime | None = None  # 最近更新时间
 
 
-@dataclass(frozen=True, slots=True)
-class MagisMembership:
-    id: int  # 主键（同时是 per-MAGI 身份标识）
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MagisMembership(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     role_id: int  # 绑定的角色 ID
     responsibility: str = ""  # 协作职责说明（对外可见）
-    created_at: datetime | None = None  # 创建时间
-    updated_at: datetime | None = None  # 最近更新时间
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class MagisCollaborationMember:
     """Public collaborator card rendered into an Agent's MAGIS directory."""
 
@@ -91,28 +85,22 @@ class MagisCollaborationMember:
 # -- internal ORM --------------------------------------------------------
 
 
-class _MagisRoleRow(Base):
+class _MagisRoleRow(BaseRecordMixin):
     __tablename__ = "magis_roles"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_reserved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
     __table_args__ = (UniqueConstraint("magis_id", "name", name="uq_magis_roles_magis_name"),)
 
 
-class _MagisMembershipRow(Base):
+class _MagisMembershipRow(BaseRecordMixin):
     __tablename__ = "magis_memberships"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -120,10 +108,6 @@ class _MagisMembershipRow(Base):
         ForeignKey("magis_roles.id", ondelete="RESTRICT"), nullable=False
     )
     responsibility: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
 
 # -- Books ---------------------------------------------------------------

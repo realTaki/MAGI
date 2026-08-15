@@ -11,7 +11,7 @@ from magi.startup.paths import (
     resolve_magis_database_path,
     resolve_magis_database_url,
 )
-from magi.startup.spec import RuntimeSpec, write_runtime_spec
+from magi.startup.spec import RuntimeSpec
 
 
 def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
@@ -76,20 +76,58 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     return existing.id
 
 
-def _ensure_control_secret(path) -> str:
+def _ensure_control_secret(*, path, bus, magis_name: str) -> str:
+    """Provision the MAGIS control secret and persist it in two places.
+
+    The DB row in ``bus.control_secrets`` is the runtime source of
+    truth — every WebUI / Runtime process reads from there. The
+    ``control-secret`` file is kept as a bootstrap-friendly backup
+    for one-off command-line tooling and the legacy launcher code
+    path; it is rewritten whenever this function mints a new value.
+
+    Existing DB rows are left in place (operator-driven rotation
+    lives elsewhere) but a missing file is repaired to match the DB
+    value so the two stay in sync.
+    """
+    import hashlib
     import os
     import secrets
 
-    if path.exists():
-        value = path.read_text(encoding="utf-8").strip()
-        if value:
-            return value
+    book = bus.control_secrets_book
+    if book is None:
+        raise RuntimeError("MAGIS control_secrets_book unavailable; cannot seed secret")
+
+    existing = book.get(name=magis_name)
+    if existing is not None and existing.secret_value:
+        value = existing.secret_value.decode("utf-8")
+        _ensure_secret_file(path=path, value=value)
+        return value
+
     value = secrets.token_urlsafe(32)
+    salt = secrets.token_bytes(16)
+    secret_hash = hashlib.sha256(value.encode("utf-8") + salt).digest()
+    book.upsert(
+        name=magis_name,
+        secret_hash=secret_hash,
+        salt=salt,
+        secret_value=value.encode("utf-8"),
+    )
+    _ensure_secret_file(path=path, value=value)
+    return value
+
+
+def _ensure_secret_file(*, path, value: str) -> None:
+    import os
+
+    existing = ""
+    if path.exists():
+        existing = path.read_text(encoding="utf-8").strip()
+    if existing == value:
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value, encoding="utf-8")
     if os.name == "posix":
         os.chmod(path, 0o600)
-    return value
 
 
 def _register_local_runtime(*, bus, runtime_id: int, config: StartupConfig, port: int) -> None:
@@ -139,7 +177,9 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     if existing_state is None or existing_state.port_in_use_since is None:
         bus.runtime_state_book.allocate_port(runtime_id=magi_id, port=RUNTIME_PORT)
     _ensure_control_secret(
-        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name) / "control-secret"
+        path=resolve_magis_control_dir(config.host_workspace_dir, config.magis_name) / "control-secret",
+        bus=bus,
+        magis_name=config.magis_name,
     )
     spec = RuntimeSpec(
         magi_name=DEFAULT_MAGI_NAME,
@@ -149,7 +189,9 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
         runtime_port=RUNTIME_PORT,
         is_first_magi=True,
     )
-    write_runtime_spec(config.workspace_dir, spec)
+    # Identity now lives in the MAGIS runtime_state / magis tables; the
+    # ``RuntimeSpec`` returned here is reconstructed on demand by
+    # :func:`magi.startup.spec.load_runtime_spec` from those rows.
     return spec
 
 
@@ -229,7 +271,9 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         runtime_port=port,
         is_first_magi=False,
     )
-    write_runtime_spec(node_config.workspace_dir, spec)
+    # Identity is durable in the MAGIS runtime_state / magis rows; the
+    # returned ``RuntimeSpec`` is reconstructed on demand from those by
+    # :func:`magi.startup.spec.load_runtime_spec`.
     return spec
 
 

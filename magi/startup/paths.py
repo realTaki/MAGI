@@ -163,10 +163,17 @@ def resolve_magis_control_dir(host_workspace_dir: Path, magis_name: str = "genes
 
 
 def resolve_runtime_state_path(workspace_dir: Path) -> Path:
-    """Path to ``runtime.json`` — persisted identity record.
+    """Path to ``runtime.json`` — legacy per-workspace identity cache.
 
-    Contains ``{"magi_id": ..., "magis_database_url": ...}``.
-    Used to detect workspace identity conflicts (§22.2).
+    Retained as a path resolver only; the runtime startup path no
+    longer reads or writes this file.  Identity is now derived from
+    the MAGIS shared database via :func:`magi.startup.spec.load_runtime_spec`.
+
+    The legacy file (when present in an existing workspace) is
+    ignored at startup and removed by the one-time cleanup hook in
+    :func:`magi.startup.local.start_magi` once the new path is
+    confirmed working.  Until then, the resolver stays so the
+    cleanup can locate the file deterministically.
     """
     return workspace_dir / "runtime.json"
 

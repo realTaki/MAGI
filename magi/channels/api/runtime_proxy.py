@@ -109,16 +109,15 @@ async def proxy_runtime(
     upstream_base = _runtime_url(get_bus(request), magi_id)
     # ``PROXY_TIMEOUT`` deliberately keeps a 60-second read budget for
     # the handful of endpoints that block on third parties (MCP tool
-    # discovery), which makes it useless as a restart detector: a
-    # Runtime cycling under its reload supervisor keeps the listening
-    # socket open, so the forwarded request would connect and then
-    # stall for the full minute. Probe first — see
+    # discovery), which makes it useless as an availability detector:
+    # an unresponsive Runtime can accept the connection yet stall the
+    # forwarded request for the full minute. Probe first — see
     # :func:`runtime_is_live`.
     if not await runtime_is_live(upstream_base):
         raise MagiHTTPException(
             status_code=503,
             code="runtime.unreachable",
-            detail="Selected MAGI runtime is restarting or unreachable",
+            detail="Selected MAGI runtime is unavailable or unreachable",
         )
     try:
         async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:

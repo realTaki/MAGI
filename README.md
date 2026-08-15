@@ -150,14 +150,13 @@ plus the shared-database and public workspace resources for a MAGIS when needed.
 
 ## Quick start
 
-Pick the deployment that matches your situation. All three are equally
-supported and live under `deploy/`. All startup code paths converge on
+Pick the deployment that matches your situation. Both paths are supported and
+live under `deploy/`. All startup code paths converge on
 `magi.startup`:
 
 | Situation | Path | Entry point |
 | --- | --- | --- |
 | I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` (installs, initializes, and starts MAGI) |
-| I'm iterating on the k8s modular approach | [deploy/k8s-dev/](deploy/k8s-dev/) | `./deploy/k8s-dev/bootstrap-k8s-dev.sh` |
 | I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
 
 The **single-machine path** is the fastest way to take MAGI for a
@@ -172,24 +171,6 @@ two-factor verification from Settings before adding administrators or assigned
 users. Afterwards, `magi start` safely preserves the existing Society and
 recovers services that are not running. Each new MAGI is a separate
 process: `magi node create --name eva-001`, then `magi node run --name eva-001`.
-
-The **k8s-dev path** starts a local `kind` cluster and the first
-development MAGI node. Docker is the only host prerequisite. The
-script downloads its pinned `kind` and `kubectl` tools locally
-when needed, builds the images, creates the cluster, and deploys
-the dev node with Vite HMR. Backend source changes take effect after an
-explicit Pod restart. The dev deployment mounts:
-
-```text
-host repository                                  → /app/magi   source mount (restart Runtime after backend edits)
-workspace PVC (mounted at the container root /) → /MAGI_Citizens/<name>  (derived from HOST_WORKSPACE_DIR=/ + MAGI_NAME)
-MAGIS public workspace (PVC)                     → /magis
-```
-
-`HOST_WORKSPACE_DIR` is not set in K8s Pods — the path resolver detects
-`KUBERNETES_SERVICE_HOST` and defaults the host root to `/`; the PVC
-mounts the container root, so the derived `MAGI_Citizens/<name>` lands
-on the volume.
 
 For an existing cluster or a production-style deployment, use the
 k8s production path:

@@ -45,7 +45,7 @@ from sqlalchemy import BigInteger, DateTime, ForeignKey, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.library.base import BaseBook
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 AUTH_MODE_LOCAL_NO_2FA = "local_no_2fa"
 AUTH_MODE_IM_2FA_ENABLED = "im_2fa_enabled"
@@ -63,34 +63,28 @@ ALL_ADMIN_AUTH_MODES = frozenset(
 # -- public dataclasses --------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Magis:
-    id: int  # MAGIS 主键
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Magis(BaseRecord):
     name: str  # MAGIS 唯一名
     parent_id: int | None = None  # 父 MAGIS ID（根节点为 NULL）
     adam_id: int | None = None  # ADAM MAGI 的身份 ID
     instruction: str = ""  # MAGIS 默认指令
-    created_at: datetime | None = None  # 创建时间
-    updated_at: datetime | None = None  # 最近更新时间
 
 
-@dataclass(frozen=True, slots=True)
-class MagisAdmin:
-    id: int  # 主键
+@dataclass(frozen=True, slots=True, kw_only=True)
+class MagisAdmin(BaseRecord):
     magis_id: int  # 授权作用的 MAGIS ID
     name: str  # 管理员显示名
     tgid: int | None = None  # 已绑定 Telegram 验证地址
     auth_mode: str = AUTH_MODE_LOCAL_NO_2FA
-    created_at: datetime | None = None  # 授权时间
 
 
 # -- internal ORM --------------------------------------------------------
 
 
-class _MagisRow(Base):
+class _MagisRow(BaseRecordMixin):
     __tablename__ = "magis"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("magis.id", ondelete="RESTRICT"), nullable=True
@@ -99,16 +93,11 @@ class _MagisRow(Base):
         ForeignKey("magis_memberships.id", ondelete="SET NULL"), nullable=True
     )
     instruction: Mapped[str] = mapped_column(default="", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
-    )
 
 
-class _MagisAdminRow(Base):
+class _MagisAdminRow(BaseRecordMixin):
     __tablename__ = "magis_admins"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )
@@ -117,7 +106,6 @@ class _MagisAdminRow(Base):
     auth_mode: Mapped[str] = mapped_column(
         String(32), nullable=False, default=AUTH_MODE_LOCAL_NO_2FA
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow_naive, nullable=False)
 
 
 # -- Books ---------------------------------------------------------------

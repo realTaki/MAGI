@@ -1,14 +1,9 @@
 """Timeout policy for control-plane → MAGI Runtime HTTP calls.
 
-Every call the WebUI control plane makes into a Runtime crosses a
-process boundary that can disappear mid-request: ``magi node run``
-serves the Runtime under a Uvicorn reload supervisor
-(:func:`magi.startup.runtime._reload_enabled` defaults to **on**), and
-the *supervisor* — not the worker — owns the listening socket.  While a
-worker restarts, the socket stays in ``LISTEN`` with its backlog
-intact, so the client's ``connect()`` succeeds immediately and then
-blocks waiting for a reply that nobody is going to write until the new
-worker finishes booting.
+Every call the WebUI control plane makes into a Runtime crosses a process
+boundary that can stop or become unresponsive mid-request.  A TCP listener
+can accept a connection but fail to answer — for example while a process is
+wedged or an upstream network path is unhealthy.
 
 A flat ``timeout=30.0`` turns that window into a 30-second hang.  Behind
 a tunnel or ingress whose own gateway timeout is shorter, the browser
@@ -70,8 +65,8 @@ RELAY_TIMEOUT = httpx.Timeout(connect=2.0, read=30.0, write=10.0, pool=2.0)
 PROXY_TIMEOUT = httpx.Timeout(connect=2.0, read=60.0, write=10.0, pool=2.0)
 
 # The liveness probe itself. ``/health`` touches no I/O, so a healthy
-# Runtime answers in single-digit milliseconds either way; the two
-# seconds exist purely to bound the reload window.
+# Runtime answers in single-digit milliseconds either way; two seconds bound
+# the window before an unavailable runtime is reported to the caller.
 LIVENESS_TIMEOUT = httpx.Timeout(2.0)
 
 
@@ -81,16 +76,13 @@ async def runtime_is_live(base_url: str) -> bool:
     Used as a pre-flight before forwarding a request whose own read
     budget is too generous to double as a restart detector.  ``/health``
     is unauthenticated and does no I/O, which is what makes it usable
-    here: during a reload it hangs on exactly the same accept queue as
-    the real request would, so a two-second timeout converts a
-    60-second stall into an immediate 503.
+    here: when the process or its path is unresponsive it hangs just like the
+    real request would, so a two-second timeout converts a 60-second stall
+    into an immediate 503.
 
-    This narrows the failure window rather than closing it — a reload
-    that begins in the milliseconds between the probe and the forwarded
-    request still stalls that one request for the full read budget.
-    Closing it completely would require the Runtime to drain its
-    listening socket on shutdown, which the reload supervisor owns and
-    we do not.
+    This narrows the failure window rather than closing it — the Runtime can
+    still become unavailable in the milliseconds between the probe and the
+    forwarded request.
 
     The client is a module-level singleton so connection setup (TCP
     handshake on localhost is sub-millisecond, but the SSL context and
@@ -119,8 +111,7 @@ def _probe_client() -> httpx.AsyncClient:
 
     Lazily constructed so tests that import this module without ever
     calling ``runtime_is_live`` do not open an HTTP client they cannot
-    close.  The singleton lifetime is the process lifetime; on uvicorn
-    reload the new process gets a fresh client.
+    close.  The singleton lifetime is the process lifetime.
     """
     global _CLIENT
     if _CLIENT is None:
