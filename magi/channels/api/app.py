@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import FileResponse
 
 from magi import __version__
 from magi.channels.api import auth, contacts, magi, magis
@@ -38,6 +40,31 @@ if TYPE_CHECKING:
     from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.channels.api")
+
+
+class _SpaFallback(StaticFiles):
+    """StaticFiles with a real SPA shell fallback.
+
+    Starlette's ``StaticFiles(html=True)`` only swaps ``index.html`` in
+    when a request *for a .html path* misses. It does NOT fallback
+    arbitrary client-side routes (``/dashboard``, ``/chat/123``) to
+    the SPA shell. Those would otherwise 404 on a hard navigation
+    (e.g. a link rendered with ``<a href>`` instead of the SPA router),
+    which is exactly what action-item ``target_url``s do today.
+    """
+
+    async def get_response(self, path, scope):  # type: ignore[override]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            # Real file miss → serve the SPA shell so the client-side
+            # router can take over and parse ``?tab=...`` etc.
+            index = self.directory / "index.html"
+            if index.is_file():
+                return FileResponse(str(index), media_type="text/html")
+            raise
 
 # In-container path the Dockerfile uses. In dev (vite dev), we look
 # for the WebUI build output inside the magi/ folder; if not present
@@ -295,9 +322,17 @@ def create_app(
     # vite dev (on the same :42069) serves the UI itself.
     spa_dist = _find_spa_dist() if include_spa else None
     if spa_dist is not None:
+        # StaticFiles(html=True) only serves ``index.html`` when a .html
+        # is requested and missing — it does NOT fallback arbitrary
+        # client-side routes (e.g. ``/dashboard``, ``/chat/123``) to
+        # the SPA shell. Anything ``<a href="/internal-link">`` does a
+        # full-page nav that lands here and would 404 without an
+        # explicit catch-all. Wire one up: anything GET that did not
+        # match an API router and is not a real file in ``spa_dist``
+        # is served the SPA shell.
         app.mount(
             "/",
-            StaticFiles(directory=str(spa_dist), html=True),
+            _SpaFallback(dist=spa_dist),
             name="spa",
         )
         logger.info("SPA mounted", extra={"path": str(spa_dist)})

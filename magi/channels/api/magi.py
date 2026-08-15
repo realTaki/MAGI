@@ -14,9 +14,12 @@ different MAGI's node-local settings.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
@@ -25,6 +28,10 @@ from magi.bus.library.magis.runtimeBook import RuntimeDesiredState
 from magi.channels.api.auth_gates import admin_gate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
+from magi.channels.api.proxy_auth import build_proxy_headers
+from magi.channels.api.runtime_http import PROXY_TIMEOUT
+
+logger = logging.getLogger("magi.api.magi")
 
 router = APIRouter(tags=["magi"])
 self_router = APIRouter(tags=["magi"])
