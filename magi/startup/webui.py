@@ -26,7 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from magi.startup.config import WEBUI_HOST, WEBUI_PORT, StartupConfig
+from magi.startup.config import WEBUI_PORT, StartupConfig
 from magi.startup.paths import (
     resolve_magis_control_dir,
     resolve_magis_database_url,
@@ -45,6 +45,13 @@ logger = logging.getLogger("magi.startup.webui")
 # DEFAULT_WEBUI_PORT`` keep working while the canonical constant lives in
 # :mod:`magi.startup.config`.  Plan §21 — port is hardcoded.
 DEFAULT_WEBUI_PORT: int = WEBUI_PORT
+
+# WebUI bind host — overridable per-deploy via the ``MAGI_WEBUI_HOST``
+# environment variable.  CLI / single-machine installs default to
+# loopback (only the operator's own browser should reach it); Kubernetes
+# deployments set ``MAGI_WEBUI_HOST=0.0.0.0`` so the ClusterIP / NodePort
+# can forward traffic into the pod.
+DEFAULT_WEBUI_HOST: str = "127.0.0.1"
 
 
 @dataclass(frozen=True)
@@ -75,7 +82,7 @@ def start_webui(
     *,
     config: StartupConfig,
     port: int = DEFAULT_WEBUI_PORT,
-    host: str = WEBUI_HOST,
+    host: str | None = None,
 ) -> str:
     """Spawn the singleton WebUI subprocess; return its URL.
 
@@ -83,8 +90,11 @@ def start_webui(
     when explicitly recovering the singleton (e.g. after a crash).
     ``port`` is hardcoded by :data:`WEBUI_PORT`; the parameter is
     retained for tests / future tunability but the CLI does not expose
-    it (plan §21).
+    it (plan §21).  ``host`` is resolved from ``MAGI_WEBUI_HOST`` (or
+    :data:`DEFAULT_WEBUI_HOST`); only used for display URL / logging,
+    the actual bind happens in :func:`run_webui_foreground`.
     """
+    host = host or os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
     pid_path = resolve_webui_pid_path(config.host_workspace_dir)
     if pid_path.exists():
         existing = read_pid(pid_path)
@@ -221,7 +231,8 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     )
     app = create_control_app(context=ControlContext(bus=bus))
     port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
-    uvicorn.run(app, host=WEBUI_HOST, port=port, log_level="info")
+    host = os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 # ----------------------------------------------------------------------
@@ -238,11 +249,12 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     """
     env = os.environ.copy()
     env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
-    # Pass the resolved WebUI port + host explicitly so the child does
-    # not have to re-read MAGIC_DEFAULTS.  Plan §21 forbids operator
-    # configurability — these are internal-only communication.
+    # Pass the resolved WebUI port explicitly so the child does not have
+    # to re-read MAGIC_DEFAULTS.  Plan §21 forbids operator configurability
+    # — this is internal-only communication.  ``MAGI_WEBUI_HOST`` is
+    # propagated via ``os.environ.copy()`` (k8s yaml sets it explicitly;
+    # CLI defaults to loopback in the child).
     env["MAGI_WEBUI_PORT"] = str(port)
-    env["MAGI_WEBUI_HOST"] = WEBUI_HOST
     env["MAGIS_DATABASE_URL"] = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
@@ -316,6 +328,7 @@ def delete_webui_resources(*, config: StartupConfig) -> None:
 
 __all__ = [
     "DEFAULT_WEBUI_PORT",
+    "DEFAULT_WEBUI_HOST",
     "WebUIStatus",
     "ControlContext",
     "start_webui",

@@ -44,9 +44,12 @@ RUNTIME_HOST: str = "127.0.0.1"
 # only thing the operator can reach).
 RUNTIME_PORT: int = 42070
 
-# Singleton WebUI bind defaults — the only externally reachable
-# surface (plan §21).
-WEBUI_HOST: str = "0.0.0.0"
+# Singleton WebUI port — the only externally reachable surface in K8s
+# (plan §21).  The bind host is *not* a constant: it is resolved at
+# runtime from ``MAGI_WEBUI_HOST`` (default ``127.0.0.1``).  Kubernetes
+# deployments set the env to ``0.0.0.0`` so the ClusterIP / NodePort can
+# forward traffic into the pod; CLI / single-machine installs leave it
+# unset and stay loopback-only.
 WEBUI_PORT: int = 42069
 
 # Default log level used until the bus setting ``system.log_level``
@@ -252,7 +255,6 @@ __all__ = [
     # constants
     "RUNTIME_HOST",
     "RUNTIME_PORT",
-    "WEBUI_HOST",
     "WEBUI_PORT",
     "DEFAULT_LOG_LEVEL",
 ]

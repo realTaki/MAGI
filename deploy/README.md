@@ -33,6 +33,7 @@
 | 后端热重载 | 否 | 是（Uvicorn + Vite HMR） | 否 |
 | 源码映射 | 否 | 是（`/mnt/magi/magi`） | 否 |
 | WebUI 端口 | 42069（Adam）/ 42070+（EVA） | 42069（kind NodePort 30069） | 42069（需 port-forward） |
+| WebUI 绑定 | `127.0.0.1`（默认 loopback） | `0.0.0.0`（K8s `MAGI_WEBUI_HOST`） | `0.0.0.0`（K8s `MAGI_WEBUI_HOST`） |
 | 持久化 | `~/.magi/MAGI_Citizens/<name>/memories/magi.db` | `~/.magi/MAGI_Citizens/eva-000/memories/magi.db`（hostPath） | PVC `/MAGI_Citizens/<name>/memories/magi.db` |
 | 注册成服务 | 是（每 MAGI 独立 systemd unit） | 否 | 否 |
 | 唯一前置 | Python 3.12+ | Docker + kind | 现有 k8s 集群 |
@@ -66,3 +67,12 @@ deploy/
 - CLI 进程：`HOST_WORKSPACE_DIR`（默认 `~/.magi`）+ `MAGI_NAME`。
   不存在硬编码的 `/workspace` 路径。`magi/startup/paths.py` 是唯一暴露
   路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。
+
+WebUI 绑定 host 由 `MAGI_WEBUI_HOST` 决定：
+- K8s Pod：`deploy/k8s/control/webui-deployment.yaml` 显式传
+  `MAGI_WEBUI_HOST=0.0.0.0`，让 ClusterIP / NodePort 能把外部流量转进
+  pod。容器自己的 network namespace 隔离下，绑 `0.0.0.0` 只在 pod 内可见，
+  不会泄漏到节点其它接口。
+- CLI 进程：默认 `127.0.0.1`（loopback），仅同机 operator 的浏览器能
+  访问。如需把 WebUI 暴露给同网段其它机器（例如开发期临时端口转发），
+  可在启动前 `export MAGI_WEBUI_HOST=0.0.0.0` 后再 `magi start`。

@@ -248,11 +248,13 @@ def ensure_webui_deployment(*, config: StartupConfig) -> dict[str, Any]:
 
 
 def ensure_webui_service(*, config: StartupConfig) -> dict[str, Any]:
-    """External Service for the singleton WebUI.
+    """Internal Service for the singleton WebUI.
 
-    Plan §15 — ``LoadBalancer`` is correct because this *is* the
-    operator-facing surface.  ``port`` / ``targetPort`` forward to the
-    WebUI port, never the Runtime port.
+    Plan §15 — this is the operator-facing surface, but the canonical
+    deployment uses a ``ClusterIP`` plus a NodePort / port-forward, not
+    a cloud LoadBalancer (matches ``deploy/k8s/control/webui-service.yaml``).
+    ``port`` / ``targetPort`` forward to the WebUI port, never the
+    Runtime port.
     """
     _ = config
     name = _webui_resource_name()
@@ -263,7 +265,7 @@ def ensure_webui_service(*, config: StartupConfig) -> dict[str, Any]:
             "kind": "Service",
             "metadata": {"name": name, "namespace": ns},
             "spec": {
-                "type": "LoadBalancer",
+                "type": "ClusterIP",
                 "selector": {"app": "magi-webui"},
                 "ports": [
                     {

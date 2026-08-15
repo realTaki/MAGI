@@ -42,6 +42,12 @@ spec:
                   key: MAGI_CONTROL_SECRET
             - name: MAGI_ROOT_RUNTIME_URL
               value: http://magi:42070
+            # WebUI is the operator-facing surface in this Pod; the
+            # ClusterIP Service forwards traffic into the container, so
+            # it must bind all interfaces. CLI / single-machine installs
+            # leave this unset and default to loopback (127.0.0.1).
+            - name: MAGI_WEBUI_HOST
+              value: "0.0.0.0"
           ports:
             - name: http
               containerPort: 42069
