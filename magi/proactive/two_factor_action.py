@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from magi.bus.library.local.actionItemBook import (
+    ActionItem,
     ActionItemBook,
     ActionPriority,
     ActionSource,
@@ -44,14 +45,14 @@ def reconcile_for_admin(
         return changed
     if open_rows:
         return False
-    book.add(
+    book.add(ActionItem(
         contact_id=contact_id,
         title=TITLE,
         description=DESCRIPTION,
         target_url=TARGET_URL,
         priority=ActionPriority.HIGH,
         source=ActionSource.PROACTIVE,
-    )
+    ))
     return True
 
 

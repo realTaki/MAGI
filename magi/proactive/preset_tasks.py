@@ -106,7 +106,9 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
                 kwargs["cron"] = cron_val
             else:
                 kwargs["run_at"] = run_at_val
-            bus.tasks_book.add(**kwargs)
+            from magi.bus.library.local.tasksBook import Task
+
+            bus.tasks_book.add(Task(**kwargs))
         except ValueError as exc:
             _submit_failure(
                 bus, job, f"tasks_book.add rejected preset {job.preset_key!r}: {exc}"
@@ -208,14 +210,14 @@ def _read_system_timezone(bus: Bus) -> str:
 
 def _submit_success(
     bus: Bus,
-    job: "SeedPresetTaskJob",
+    job: SeedPresetTaskJob,
 ) -> None:
     try:
         result = SeedPresetTaskResult(
             job_id=job.job_id,
             status=JobStatus.COMPLETED,
         )
-        bus.seed_preset_task_job_board.submit_result(key=job.job_id, result=result)
+        bus.seed_preset_task_job_board.submit_result(job_id=job.job_id, result=result)
     except Exception:
         # Mirror _submit_failure: a result-submission error must not
         # propagate out of the Worker — the preset row (if any) is
@@ -229,7 +231,7 @@ def _submit_success(
 
 def _submit_failure(
     bus: Bus,
-    job: "SeedPresetTaskJob",
+    job: SeedPresetTaskJob,
     error: str,
 ) -> None:
     try:
@@ -239,7 +241,7 @@ def _submit_failure(
             error=error[:8000],
         )
         bus.seed_preset_task_job_board.submit_result(
-            key=job.job_id,
+            job_id=job.job_id,
             result=result,
         )
     except Exception:

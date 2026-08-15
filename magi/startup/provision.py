@@ -18,8 +18,11 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     """Create one MAGIS root and its sole ADAM membership if absent."""
     from magi.bus.library.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
+        Magis,
         MagisBook,
+        MagisMembership,
         MagisMembershipBook,
+        MagisRole,
         MagisRoleBook,
     )
 
@@ -27,15 +30,23 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     roles = MagisRoleBook(factory)
     memberships = MagisMembershipBook(factory)
     root_name = "Genesis" if magis_name == "genesis" else magis_name
-    root = magis.get_root() or magis.add(name=root_name)
+    root = magis.get_root()
+    if root is None:
+        root_id = magis.add(Magis(name=root_name))
+        root = magis.get(magis_id=root_id)
+        if root is None:
+            raise RuntimeError(f"MAGIS row {root_id} disappeared after insert")
     adam_role = roles.find(magis_id=root.id, name="ADAM")
     if adam_role is None:
-        adam_role = roles.add(
+        role_id = roles.add(MagisRole(
             magis_id=root.id,
             name="ADAM",
             instruction=DEFAULT_ROLE_INSTRUCTIONS["ADAM"],
             is_reserved=True,
-        )
+        ))
+        adam_role = roles.get(role_id=role_id)
+        if adam_role is None:
+            raise RuntimeError(f"ADAM role row {role_id} disappeared after insert")
     member = next(
         (
             item
@@ -45,7 +56,10 @@ def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
         None,
     )
     if member is None:
-        member = memberships.add(magis_id=root.id, role_id=adam_role.id)
+        member_id = memberships.add(MagisMembership(magis_id=root.id, role_id=adam_role.id))
+        member = memberships.get(magi_id=member_id)
+        if member is None:
+            raise RuntimeError(f"ADAM membership row {member_id} disappeared after insert")
     magis.set_adam(magis_id=root.id, adam_id=member.id)
     return member.id
 
@@ -61,10 +75,17 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
     if membership is None or bus.magis_admins_book is None:
         raise RuntimeError("MAGIS admin registry unavailable")
+    from magi.bus.library.magis import MagisAdmin
+
     grants = bus.magis_admins_book.list_for_magis(magis_id=membership.magis_id)
     existing = next((admin for admin in grants if admin.name == "admin"), None)
     if existing is None:
-        existing = bus.magis_admins_book.add(name="admin", magis_id=membership.magis_id)
+        admin_id = bus.magis_admins_book.add(
+            MagisAdmin(name="admin", magis_id=membership.magis_id)
+        )
+        existing = bus.magis_admins_book.get(admin_id=admin_id)
+        if existing is None:
+            raise RuntimeError(f"MAGIS admin row {admin_id} disappeared after insert")
     projection = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=existing.id)
     if projection is None:
         # This is not an assigned user.  It merely anchors the MAGIS admin's
@@ -90,7 +111,6 @@ def _ensure_control_secret(*, path, bus, magis_name: str) -> str:
     value so the two stay in sync.
     """
     import hashlib
-    import os
     import secrets
 
     book = bus.control_secrets_book
@@ -208,7 +228,13 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         config.host_workspace_dir, config.magis_name
     )
     from magi.bus import open_control_bus
-    from magi.bus.library.magis import MagisBook, MagisMembershipBook, MagisRoleBook
+    from magi.bus.library.magis import (
+        MagisBook,
+        MagisMembership,
+        MagisMembershipBook,
+        MagisRole,
+        MagisRoleBook,
+    )
 
     node_config = replace(config, magis_database_url=magis_url)
     control_bus = open_control_bus(
@@ -230,7 +256,10 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         )
     eva_role = roles.find(magis_id=root.id, name="EVA")
     if eva_role is None:
-        eva_role = roles.add(magis_id=root.id, name="EVA", is_reserved=True)
+        eva_role_id = roles.add(MagisRole(magis_id=root.id, name="EVA", is_reserved=True))
+        eva_role = roles.get(role_id=eva_role_id)
+        if eva_role is None:
+            raise RuntimeError(f"EVA role row {eva_role_id} disappeared after insert")
 
     if control_bus.runtime_state_book is None:
         raise RuntimeError("MAGIS port allocation service unavailable")
@@ -253,7 +282,10 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         state_dir=str(node_config.workspace_dir / "memories"),
         magis_url=magis_url,
     )
-    membership = memberships.add(magis_id=root.id, role_id=eva_role.id)
+    membership_id = memberships.add(MagisMembership(magis_id=root.id, role_id=eva_role.id))
+    membership = memberships.get(magi_id=membership_id)
+    if membership is None:
+        raise RuntimeError(f"membership row {membership_id} disappeared after insert")
     _register_local_runtime(
         bus=control_bus,
         runtime_id=membership.id,

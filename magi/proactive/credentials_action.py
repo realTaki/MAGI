@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from magi.bus.library.local.actionItemBook import ActionItemBook
 
-from magi.bus.library.local.actionItemBook import ActionSource
+from magi.bus.library.local.actionItemBook import ActionItem, ActionSource
 
 logger = logging.getLogger("magi.proactive.credentials_action")
 
@@ -83,13 +83,13 @@ def ensure_for_admin(
     ]
     if completed:
         return False
-    book.add(
+    book.add(ActionItem(
         contact_id=admin_id,
         title=spec.title,
         description=spec.description,
         target_url=spec.target_url,
         source=ActionSource.PROACTIVE,
-    )
+    ))
     logger.info(
         "credentials_nudge: inserted for admin=%s (title=%r)",
         admin_id,

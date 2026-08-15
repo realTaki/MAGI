@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.library.local.contactBook import Contact, ContactNote
+from magi.bus.library.local.contactBook import Contact, ContactNote, Role
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact")
@@ -100,7 +100,13 @@ class AddContactTool(Tool):
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
             return ToolResult.err("name is required (non-empty string)")
-        role = kwargs.get("role") or "guest"
+        role_str = kwargs.get("role") or "guest"
+        try:
+            role = Role(role_str)
+        except ValueError:
+            return ToolResult.err(
+                f"role must be one of {sorted(r.value for r in Role)!r}, got {role_str!r}"
+            )
         try:
             record_id = ctx.bus.contacts_book.add(Contact(
                 name=name,

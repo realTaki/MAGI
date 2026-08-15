@@ -229,7 +229,7 @@ class ProvidersWorker(RuntimeWorker):
         try:
             await self.call(
                 self.bus.change_provider_config_job_board.submit_result,
-                key=job.job_id,
+                job_id=job.job_id,
                 result=result,
             )
         except Exception:  # noqa: BLE001
@@ -429,7 +429,7 @@ class ProvidersWorker(RuntimeWorker):
             stream_key=result_dict.get("stream_key") or "",
         )
         try:
-            await self.call(self.bus.llm_job_board.submit_result, key=job.job_id, result=result)
+            await self.call(self.bus.llm_job_board.submit_result, job_id=job.job_id, result=result)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit llm result for %s",
@@ -554,14 +554,16 @@ class ProvidersWorker(RuntimeWorker):
         }
         provider = model.split(":")[0] if model else "unknown"
         try:
-            book.add(
+            from magi.bus.library.local.tokenUsageBook import TokenUsage
+
+            book.add(TokenUsage(
                 contact_id=job.contact_id or 0,
                 provider=provider,
                 model=model or "",
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 extra=extra or None,
-            )
+            ))
         except Exception:  # noqa: BLE001
             logger.exception("providers worker: failed to record token usage for %s", job.job_id)
 
@@ -581,7 +583,7 @@ class ProvidersWorker(RuntimeWorker):
             error_code=error_code,
         )
         try:
-            await self.call(self.bus.llm_job_board.submit_result, key=job.job_id, result=result)
+            await self.call(self.bus.llm_job_board.submit_result, job_id=job.job_id, result=result)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit failure for %s",
