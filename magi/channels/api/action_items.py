@@ -63,6 +63,11 @@ router = APIRouter(tags=["action_items"])
 
 
 def _serialize(a) -> ActionItemOut:
+    # ``_iso`` collapses ``None`` to ``""`` (used by contacts); restore
+    # the wire-level ``None`` for completion timestamp so the dashboard
+    # can distinguish "not done yet" from "done at the epoch".
+    completed_at = _iso(a.completed_at) or None
+    due_date = _iso(a.due_date) or None
     return ActionItemOut(
         id=a.id,
         contact_id=a.contact_id,
@@ -70,10 +75,10 @@ def _serialize(a) -> ActionItemOut:
         description=a.description,
         target_url=a.target_url,
         priority=a.priority,
-        due_date=_iso(a.due_date),
+        due_date=due_date,
         source=a.source,
         created_at=_iso(a.created_at) or "",
-        completed_at=_iso(a.completed_at),
+        completed_at=completed_at,
         completion_note=a.completion_note,
         dismissed=a.dismissed,
     )

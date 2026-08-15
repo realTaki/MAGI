@@ -535,7 +535,7 @@ function TaskRowView({
             disabled={!t.enabled}
             title="立刻跑"
             aria-label="立刻跑"
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition disabled:text-sky-light/50 disabled:cursor-not-allowed"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-accent hover:text-accent-ink hover:bg-accent-soft transition disabled:text-ink-soft/50 disabled:cursor-not-allowed"
           >
             ▶
           </button>
@@ -544,7 +544,7 @@ function TaskRowView({
             onClick={() => handlers.onToggle(t)}
             title={t.enabled ? "停用" : "启用"}
             aria-label={t.enabled ? "停用" : "启用"}
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-accent hover:text-accent-ink hover:bg-accent-soft transition"
           >
             {t.enabled ? "⏸" : "▶▶"}
           </button>
@@ -553,7 +553,7 @@ function TaskRowView({
             onClick={() => handlers.onOpenRuns(t)}
             title="查看日志"
             aria-label="查看日志"
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-sky-700 hover:text-sky-deep hover:bg-sky-pale/40 transition"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-accent hover:text-accent-ink hover:bg-accent-soft transition"
           >
             💬
           </button>
@@ -562,7 +562,7 @@ function TaskRowView({
             onClick={() => handlers.onDelete(t)}
             title="删除"
             aria-label="删除"
-            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-rose-700 hover:text-rose-900 hover:bg-rose-50 transition"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-danger hover:text-danger hover:bg-danger-soft transition"
           >
             🗑
           </button>

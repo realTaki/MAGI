@@ -183,7 +183,7 @@ export default function ActionItemsPane() {
   if (error && data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
+        <div className="px-6 py-3 border-b border-border flex items-center gap-2">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
           <InfoTip text={t("actionItems.description")} />
         </div>
@@ -197,7 +197,7 @@ export default function ActionItemsPane() {
   if (data === null) {
     return (
       <div className="p-8 flex flex-col h-[560px]">
-        <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
+        <div className="px-6 py-3 border-b border-border flex items-center gap-2">
           <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
           <InfoTip text={t("actionItems.description")} />
         </div>
@@ -210,7 +210,7 @@ export default function ActionItemsPane() {
 
   return (
     <div className="flex flex-col h-[560px]">
-      <div className="px-6 py-3 border-b border-sky-light/40 flex items-center gap-2">
+      <div className="px-6 py-3 border-b border-border flex items-center gap-2">
         <h2 className="text-base font-semibold text-ink">{t("actionItems.title")}</h2>
         <InfoTip text={t("actionItems.description")} />
       </div>
@@ -224,13 +224,13 @@ export default function ActionItemsPane() {
           open.map((it) => (
             <div
               key={it.id}
-              className="rounded-lg border border-sky-light/40 bg-white/60 p-4 flex items-start gap-3"
+              className="rounded-lg border border-border bg-surface p-4 flex items-start gap-3"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-medium text-ink">{it.title}</h3>
                   {it.priority === "high" && (
-                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-700">
+                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-danger-soft text-danger">
                       {t("actionItems.priorityHigh")}
                     </span>
                   )}
@@ -241,7 +241,7 @@ export default function ActionItemsPane() {
                   </p>
                 )}
                 {it.due_date && (
-                  <p className={`mt-1 text-xs ${isOverdue(it.due_date) ? "text-red-600 font-medium" : "text-ink-soft"}`}>
+                  <p className={`mt-1 text-xs ${isOverdue(it.due_date) ? "text-danger font-medium" : "text-ink-soft"}`}>
                     {t("actionItems.dueDate")}: {formatDateOnly(it.due_date)}
                     {isOverdue(it.due_date) ? ` · ${t("actionItems.overdue")}` : ""}
                   </p>
@@ -281,7 +281,7 @@ export default function ActionItemsPane() {
                   className="text-xs text-ink-soft flex items-center justify-between gap-3 px-1"
                 >
                   <span className="truncate">{c.title}</span>
-                  <span className="shrink-0 text-ocean">
+                  <span className="shrink-0 text-accent-ink">
                     {c.completed_at && serverTime
                       ? formatRelative(c.completed_at, serverTime)
                       : ""}
