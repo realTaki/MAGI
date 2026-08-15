@@ -1,164 +1,158 @@
 ---
-title: Book 层 schema 统一与去重方案（Review）
-description: 盘点 magi/bus/library 各 Book 的 dataclass 与 Row 字段重复、时间戳与 ID 格式不统一的历史债，提出"放弃向后兼容、统一重写"的收敛方向与待决策项。
+title: Book 层 Schema 统一方案
+description: 已决策的 Book、Record 与时间/身份模型：三基类、统一自增 ID、按需 UID，以及全库 DateTime。
 permalink: /insights/book-schema-unification/
 ---
 
-# Book 层 schema 统一与去重方案（Review）
+# Book 层 Schema 统一方案
 
-> **状态：提案 / 待决策**（2026-08-15）
+> **状态：已决策，待实施**（2026-08-15）
 >
-> **结论方向**：放弃向后兼容，统一时间戳与 ID 格式，消除
-> dataclass/Row 之间的**横向重复**与跨表之间的**纵向重复**。
+> 本文覆盖此前的 review 提案。实施时不保留旧 schema、旧数据格式或旧的
+> 字符串主键兼容路径；所有受影响的 Row、Book、Job、API、WebUI 与测试必须
+> 在同一轮重写中切换到本文定义的模型。
 
-## 1. 问题陈述
+## 1. 背景与问题
 
-`magi/bus/library` 下 21 个 Book，每个文件都遵循同一套三件式结构：
+`magi.bus.library` 的 Book 已有清晰的三层边界：公开 dataclass DTO、内部 ORM
+Row、以及负责 CRUD 的 Book。`BaseBook` 已统一 Session 管理和 Row 到 DTO 的
+自动映射，但各表仍自行重复声明公共身份与审计字段。
 
-```text
-@dataclass(frozen=True, slots=True)   # 公开 DTO
-class Xxx: ...
+当前 schema 还同时存在自增整数、ULID 字符串、`key`、`name`、`runtime_id`
+等多种主键，以及 `DateTime`、ISO 字符串 `String(32)`、手写
+`datetime.now(UTC).isoformat()` 等多种时间表示。这使外键语义不一致，也让
+时间序列化散落在业务代码中。
 
-class _XxxRow(Base):                  # 内部 ORM
-    __tablename__ = "..."
-    ...
+目标不是只做样板去重，而是建立唯一、可预测的记录模型：数据库内部统一以
+整数关系和 `datetime` 工作；JSON 边界才产生 ISO-8601 字符串。
 
-class XxxBook(BaseBook[_XxxRow, Xxx]):  # CRUD
-    model_cls = _XxxRow
-    dto_cls = Xxx
-```
+## 2. 已决策的模型
 
-这套结构本身是统一的（`BaseBook` 已经吸收了 Session 管理和
-`_row_to_dto` 映射），但存在两类重复，且都源于同一笔历史债——
-**早期开发时没有统一字段格式**：
-
-1. **横向重复**：同一张表的 DTO 和 Row 字段几乎一一对应，每张表都要
-   手写两遍同一份字段清单。`BaseBook._row_to_dto` 已经用
-   `dataclasses.fields(dto_cls)` + `hasattr(row, f.name)` 按名字自动
-   映射，因此字段声明之间的"呼应"靠命名约定而非显式关系维持。
-2. **纵向重复**：`id`、`created_at`、`updated_at` 这类公共列在每张
-   表里各写一遍，而且**格式没有对齐**（见 §3 盘点）。这是"欠债"，不是
-   有意设计。
-
-对照 [`guild/base.py`](../../magi/bus/guild/base.py) 里
-`BaseJobRowMixin` 的先例——Job 层 10 个表共享 11 个队列控制列，通过一个
-`__abstract__` 基类兜住全部——library 层缺少一个对等的
-`BaseRecord` / DTO 基类。
-
-## 2. 目标
-
-**放弃向后兼容，直接重写，统一格式。**
-
-- **时间戳统一成一种**：naive UTC `DateTime` + `default=utcnow_naive`
-  （`created_at`）/ `onupdate=utcnow_naive`（`updated_at`）。
-- **ID 统一成一种**（方向见 §4 待决策，尚未定）。
-- 公共字段抽到 Row 侧一个 `BaseRecord` + dataclass 侧一个对应的 DTO
-  基类；每个 Book 只声明自己的**业务字段**，横向 + 纵向重复一起消掉。
-- "放弃向后兼容"意味着：旧 schema、旧数据、旧下游消费方一律不迁就，
-  以新标准为准。
-
-## 3. 现状盘点
-
-### 3.1 时间戳：三套约定 + 一个笔误
-
-| 表 | `created_at` | `updated_at` | 备注 |
-|----|-------------|-------------|------|
-| `memory_entries` | DateTime + default | DateTime + onupdate | 标准形态 ✅ |
-| `contacts` / `contact_notes` | DateTime + default | DateTime + onupdate | ✅ |
-| `magis` / `magis_admins` | DateTime + default | DateTime + onupdate | ✅ |
-| `magis_roles` / `magis_memberships` | DateTime + default | DateTime + onupdate | ✅ |
-| `mcp_servers` | DateTime + default | DateTime + onupdate | **标注笔误** `Mapped[DateTime]`（应为 `Mapped[datetime]`），且 `__table_args__` 重复声明两次 |
-| `action_items` | DateTime + default | —（无 updated_at） | 只有 created_at |
-| `hook_signoffs` | DateTime + default | — | 只有 created_at |
-| `token_usage` | DateTime + default | — | 只有 created_at |
-| `tasks` / `task_runs` | DateTime + default | DateTime + onupdate | ✅ |
-| `settings` | — | DateTime + onupdate | 只有 updated_at |
-| `chat_conversations` | **`String(32)`** | **`String(32)`** | ISO 字符串约定（含 `last_compaction_at`） |
-| `chat_messages` | —（`ts` 为 `String(32)`） | — | ISO 字符串约定 |
-| `runtime_state` | — | DateTime（**无 default**） | 由 `upsert`/`rename` 显式写 |
-| `control_secrets` | DateTime（**无 default**） | — | 预留表，无写入方 |
-
-**关键结论**：绝大多数时间戳已经是"标准形态"了；真正不统一的是
-`chat_conversations` / `chat_messages` 这套**刻意的 ISO 字符串约定**
-（`String(32)` + 写入方 `datetime.now(UTC).isoformat()`），它早于 bus
-的 naive DateTime 规范化，且 WebUI/API/search 下游已依赖这些字符串。
-这正是"欠债"最集中的地方。
-
-### 3.2 主键：五种形态
-
-| 形态 | 表 | 数量 |
-|------|----|------|
-| `id: int` 自增 | `memory_entries`, `token_usage`, `mcp_servers`, `contacts`, `contact_notes`, `action_items`, `tool_catalog_state`, `tool_definitions`, `hook_signoffs`, `magis`, `magis_admins`, `magis_roles`, `magis_memberships` | 12 |
-| `id: String(26)` ULID | `tasks`, `task_runs`；`chat_conversations` 用 `conversation_id String(26)` | 3 |
-| `key: String(255)` | `settings`, `control_settings` | 2 |
-| `runtime_id: int` 无自增 | `runtime_state` | 1 |
-| `name: String(100)` | `control_secrets` | 1 |
-
-**结论**：主键无法抽成一个笼统的 `BaseRecord`（`BaseJobRowMixin` 那种
-单继承兜底在这里不成立）；要么统一到一种形态（见 §4 决策），要么保持
-"业务主键各自声明、审计列抽基类"的混合。
-
-### 3.3 已知小问题（顺带修）
-
-- `_McpServerRow.created_at` 标注为 `Mapped[DateTime]`，应为
-  `Mapped[datetime]`（[`mcpServerBook.py:136`](../../magi/bus/library/local/mcpServerBook.py#L136)）。
-- `_McpServerRow.__table_args__` 声明了两次（79 行与 152 行），后者
-  覆盖前者，冗余。
-
-## 4. 待决策项
-
-以下三点未定，是重写方案的前置输入：
-
-1. **ID 统一成什么？**
-   - 选项 A：统一 `int` 自增主键（改动最小，但 `tasks`/`conversation`
-     这类已有 ULID 语义的表要放弃字符串 ID）。
-   - 选项 B：统一字符串 ULID `String(26)`（对齐 `tasks`/`conversation`
-     现状，但 12 张 int 表要迁移）。
-   - 选项 C：混合——审计列（`id`/`created_at`/`updated_at`）抽基类，
-     业务主键各自声明（不追求"一种 ID"）。
-2. **"放弃向后兼容"的边界**：旧 SQLite/PG 数据直接丢弃重建（不写
-   迁移），还是接受一次性迁移脚本搬存量？
-3. **重写范围**：全部 21 张表一次性统一，还是分波（先 local、后
-   magis、chat 的 ISO 字符串约定最后单独处理）？
-
-## 5. 建议方向（待决策后细化）
-
-一旦 §4 定了，推荐按此落地：
+整个 library 层只引入并使用以下三种基类；不拆分为多个 ID、创建时间或更新时间
+mixin。
 
 ```python
-# magi/bus/library/base.py（放在 BaseBook 旁）
+# magi/bus/library/base.py
 
-class CreatedAtMixin:
+class BaseBook[RowT, DtoT]:
+    """Book 的 Session、Row -> DTO 映射和按内部 id 的通用行为。"""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BaseRecord:
+    """所有公开持久化记录共有的 JSON-safe DTO 字段。"""
+
+    id: int
+    created_at: str
+    updated_at: str
+
+
+class BaseRecordMixin(Base):
+    """所有 library ORM Row 的唯一公共持久化骨架。"""
+
+    __abstract__ = True
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, nullable=False
     )
-
-class UpdatedAtMixin:
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False
     )
-
-# 若 §4 选 A：再抽 AutoIntIDMixin（int 自增主键）
-class AutoIntIDMixin:
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 ```
 
-- Row 侧通过多重继承组合：`class _MemoryRow(Base, AutoIntIDMixin, CreatedAtMixin, UpdatedAtMixin)`。
-- DTO 侧对应抽一个带 `id` / `created_at` / `updated_at` 的基类，业务
-  字段子类声明。
-- `BaseBook._row_to_dto` 无需改：已按字段名映射，mixin 带来的列会自动
-  对上同名 dataclass 字段。
-- chat 的 ISO 字符串约定若最终要统一，是**独立的、更大的改动**
-  （列类型 + 写入方 + 下游 + 存量迁移），建议与 mixin 抽取分开推进。
+每个 Row 直接继承 `BaseRecordMixin`，不再直接继承 `Base`；每个公开的持久化
+DTO 继承 `BaseRecord`。`kw_only=True` 让基类字段不会与子类业务字段的默认值
+排序冲突，DTO 一律使用具名构造。
 
-## 6. 收益与风险（诚实评估）
+`BaseBook._row_to_dto()` 是 ORM 时间到 JSON-safe DTO 时间的唯一通用出口。
+它使用统一的 `to_iso()` 生成带 `Z` 的 UTC 字符串；Book、API、worker 与业务
+逻辑不得自行调用 `isoformat()` 来构造对外时间。
 
-- **收益**：约 12 处 `id` + 13 处 `created_at` + 11 处 `updated_at`
-  的声明收拢到 2–3 个 mixin，列语义（naive UTC、default/onupdate）集中
-  到一处；新 Book 搭 Row 骨架更省事。
-- **风险**：每处样板原本仅 1–5 行，且附带表特定注释（如 `mcp_servers`
-  的"name 非 PK 因为 SQLite 拒绝复合主键自增"），抽 mixin 后需安置这些
-  上下文；多重继承对 Pylance 的 `Mapped` 列识别略吃力，需验证
-  `alembic diff` 无 schema 漂移后再铺开。
-- **定性**：锦上添花的重构，非欠债必还；真正"欠债"的是格式不统一
-  （尤其 chat 的 ISO 字符串约定），那部分的价值远大于 mixin 本身。
+## 3. 身份与外键规则
+
+### 3.1 内部 ID
+
+每张 library 表均有 `id: INTEGER PRIMARY KEY AUTOINCREMENT`，由
+`BaseRecordMixin` 提供。它是唯一的数据库主键；所有物理外键均引用目标表的
+`id`。通用读取、删除和内部关联以这个整数 ID 为准。
+
+### 3.2 业务键与 UID
+
+业务需要的身份不再充当主键：
+
+- `uid: String(26)`：仅在记录需要跨进程、跨 API、跨 Job 载荷或公开 URL 的
+  稳定不透明身份时声明；必须 `unique=True`、`nullable=False`。Task、TaskRun、
+  Conversation 与 Message 属于这一类。
+- `name` / `key`：保留为业务唯一键或检索键，添加对应 `UniqueConstraint`，
+  但不是主键。
+- 依附其他记录的一对一业务关系使用语义化的整数外键，例如
+  `membership_id UNIQUE REFERENCES magis_memberships(id)`，而不是让
+  `runtime_id` 兼任本表主键与外键。
+
+因此，现有字符串 `tasks.id`、`task_runs.id`、`chat_conversations.conversation_id`
+和消息幂等键必须迁移为 `uid`（或明确的业务唯一字段）；原有 `task_id`、
+`conversation_id` 等关联列改为整数外键。对外 API 和异步 Job 若需要稳定标识，
+传递 `uid`，进入 Book 后解析为内部 `id`。
+
+## 4. 时间规则
+
+数据库与 ORM 只有一种时间表示：**naive UTC `datetime` / SQLAlchemy
+`DateTime`**。唯一的“当前时间”入口是 `utcnow_naive()`。
+
+以下规则适用于所有表和所有业务时间字段，而不仅是审计列：
+
+- `created_at`、`updated_at` 由 `BaseRecordMixin` 提供，前者有默认值，后者有
+  默认值和 `onupdate`。
+- `started_at`、`finished_at`、`run_at`、`last_seen_at`、`last_compaction_at`
+  等业务时间均为 `datetime` / `DateTime`。
+- 现有 `chat_conversations` 的 `created_at` / `updated_at` /
+  `last_compaction_at`、`chat_messages.ts`、以及其他 `String(32)` 时间列必须
+  删除字符串存储方式，必要时将 `ts` 重命名为语义明确的 `occurred_at`。
+- 代码不得存储 `datetime.now(UTC).isoformat()`、`isoformat() + "Z"` 或任何
+  时间字符串；外部输入 ISO 字符串必须在入口通过唯一的解析函数归一为 naive UTC。
+- `to_iso()` 只接受 `datetime | None`，并在 DTO/JSON 边界输出带 `Z` 的 UTC
+  字符串；不再把字符串作为内部时间值透传。
+
+这保留 JSON 所必需的一次序列化，但消除业务逻辑中的重复 ISO 转换和时区格式漂移。
+
+## 5. 实施边界
+
+本次是全链路 schema 重写，不采用旧 schema 的兼容包装器，也不保留双写、旧列
+回退或旧字符串 ID 的读取分支。旧 SQLite / PostgreSQL 数据库按新的基线 schema
+重建；不为旧数据编写迁移脚本。
+
+“不保留兼容”不等于忽略现有消费者。所有引用旧主键、外键或时间字符串的调用点
+必须同步更新，包括：
+
+- 各 Book 的方法签名、查询、约束与 DTO；
+- library 与 guild 间的 Job 载荷和外键；
+- Conversation、Task、TaskRun、Message 的关联、幂等与 FTS 逻辑；
+- API 路由、请求/响应模型、WebUI 调用方与工具层；
+- 初始化基线、测试夹具和端到端测试。
+
+实施顺序应以引用关系而非目录分波：先建立三基类与时间转换边界，再重写被最多
+下游引用的 identity 链（Conversation/Message、Task/TaskRun、MAGIS runtime），
+随后迁移其余 Book，最后删除所有旧 schema 与转换残留。
+
+## 6. 顺带修复与验收
+
+- `_McpServerRow` 的时间类型标注使用 `Mapped[datetime]`，不使用
+  `Mapped[DateTime]`。
+- `_McpServerRow.__table_args__` 合并为一次声明，保留 `UniqueConstraint` 与
+  `extend_existing`。
+- 所有 library Row 继承 `BaseRecordMixin`，所有持久化 DTO 继承 `BaseRecord`。
+- 所有 library 表均具有自增 `id`、`created_at` 和 `updated_at`；没有字符串时间列。
+- 所有物理外键均指向整数 `id`；每个 `uid`、`name` 或 `key` 的唯一性由明确约束
+  表达。
+- `rg` 不再找到业务代码中的手写 ISO 时间写入；时间 JSON 输出只经 `to_iso()`。
+- Alembic 基线、SQLite 与 PostgreSQL 建表结果一致，并通过完整测试套件。
+
+## 7. 收益与代价
+
+收益是一个固定的认知模型：每张表都有相同的内部身份与审计时间，关系均为整数
+外键，公开身份显式为 `uid`，时间在唯一边界序列化。新 Book 只需声明业务字段，
+BaseBook 的自动映射保持有效。
+
+代价是身份模型与时间存储的广泛替换，尤其涉及 Conversation、Task、Job 与 API。
+这是有意承担的一次性重写成本；完成后不再维护任何旧 schema 或兼容路径。
