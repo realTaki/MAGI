@@ -266,54 +266,6 @@ def run_magi(config: StartupConfig) -> None:
         cleanup.run_once()
 
 
-def _claim_pid_file(pid_path: Path) -> None:
-    """Deprecated thin wrapper — see :func:`magi.startup.process.claim_pid_file`."""
-    claim_pid_file(pid_path)
-
-
-def _install_lifecycle_handlers(
-    config: StartupConfig,
-    pid_path: Path,
-) -> PidCleanup:
-    """Deprecated thin wrapper — see :func:`magi.startup.process.install_lifecycle_handlers`."""
-    return install_lifecycle_handlers(
-        pid_path,
-        extra_cleanup=lambda: mark_registry_stopped(config),
-    )
-
-
-class _ForegroundCleanup(PidCleanup):
-    """Deprecated alias — kept so existing imports keep resolving.
-
-    Use :class:`magi.startup.process.PidCleanup` directly with
-    ``extra_cleanup`` for new code.
-    """
-
-    def __init__(self, config: StartupConfig, pid_path: Path) -> None:  # noqa: D401
-        super().__init__(
-            pid_path=pid_path,
-            extra_cleanup=lambda: mark_registry_stopped(config),
-        )
-    detached paths are interchangeable from the operator's perspective.
-    A stale PID file pointing at a dead PID is overwritten without
-    complaint — same PID-reuse caveat as the detached path.
-
-    The ``current == existing`` short-circuit handles the detach case:
-    :func:`magi.startup.local.start_magi` writes the supervisor's PID
-    before spawning the foreground ``magi node run --foreground``
-    subprocess; that subprocess is the supervisor itself when reload
-    is off, so re-claiming its own PID is not a conflict.
-    """
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
-    existing = read_pid(pid_path)
-    current = os.getpid()
-    if existing is not None and is_alive(existing) and existing != current:
-        raise RuntimeError(
-            f"runtime already running (pid={existing}, pid_file={pid_path})"
-        )
-    pid_path.write_text(str(current), encoding="utf-8")
-
-
 # ----------------------------------------------------------------------
 # Bus wiring
 # ----------------------------------------------------------------------
