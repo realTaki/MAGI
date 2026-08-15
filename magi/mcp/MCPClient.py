@@ -148,13 +148,14 @@ class MCPTool(Tool):
         self._session = session
         self._execute_timeout = execute_timeout
 
-    async def run(self, _ctx: ToolContext, **kwargs: Any) -> ToolResult:
+    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
         """Forward the call to the MCP server.
 
         ``ctx`` is the project-local :class:`ToolContext`. The
         MCP wrapper ignores it (the upstream server has its own
         state); we accept it to satisfy the protocol.
         """
+        del ctx  # intentionally unused — MCP server keeps its own state
         try:
             async with asyncio.timeout(self._execute_timeout):
                 result = await self._session.call_tool(self._server_tool_name, arguments=kwargs)
@@ -247,7 +248,13 @@ class MCPServerConnection:
     execute_timeout: float | None = None
     sse_read_timeout: float | None = None
     # Mutable state populated by ``connect``.
-    session: ClientSession | None = None
+    # ``Any`` rather than ``ClientSession``: the SDK type is only
+    # available under ``TYPE_CHECKING`` and ``mcp`` lives in ``.venv``
+    # (excluded from Pyright's index + ``useLibraryCodeForTypes=false``),
+    # so an unresolved forward-ref here breaks the dataclass's inferred
+    # ``__init__`` signature. Runtime behaviour is unchanged — the
+    # annotation is a string under ``from __future__ import annotations``.
+    session: Any | None = None
     exit_stack: AsyncExitStack | None = None
     tools: list[MCPTool] = field(default_factory=list)
 

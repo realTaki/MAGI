@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.library.local import Role
+from magi.bus.library.local import Contact, Role
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
@@ -103,12 +103,15 @@ class TelegramWorker(ChannelWorker):
         if contact is None:
             await _send_stranger_reply(update, tgid, self.bus)
             return
-        contact_id, role = contact
+        contact_id, role, contact_name = contact
         if role != Role.ASSIGNED:
-            await update.effective_message.reply_text(f"TG ID: {tgid}. Ask your admin for access.")
+            await update.effective_message.reply_text(
+                f"你的账号（{contact_name}）不属于本 MAGI 服务范围。\n"
+                f"请联系 MAGI 管理员，或把你的 ID ({tgid}) 告诉他们以加入。"
+            )
             return
         if not text.strip():
-            await update.effective_message.reply_text("MAGI currently only handles text messages.")
+            await update.effective_message.reply_text("我暂时只支持文字消息，等 C4 加上多模态再试。")
             return
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         # The user message is persisted to ``chat_messages`` inside
@@ -150,7 +153,7 @@ class TelegramWorker(ChannelWorker):
             self._shutdown_event.set()
 
 
-def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str] | None:
+def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, str] | None:
     try:
         cid_int = int(tgid)
     except (TypeError, ValueError):
@@ -162,7 +165,8 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str] | None:
     # here.  MAGIS administrator identity lives on ``magis_admins`` and is
     # intentionally not inferred from a local Contact's TG binding; downstream
     # tool gating combines both via ``Tool.gate``.
-    return (contact.id, contact.role)
+    name = (contact.display_name or contact.name or f"stranger-{tgid[-5:]}").strip()
+    return (contact.id, contact.role, name)
 
 
 def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
@@ -194,12 +198,17 @@ async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
     try:
         if bus.contacts_book.get_by_telegram(tgid=cid_int) is None:
             bus.contacts_book.add(
-                name=name, display_name=display_name, role=Role.GUEST, tgid=cid_int
+                Contact(name=name, display_name=display_name, role=Role.GUEST, tgid=cid_int)
             )
     except Exception:
         pass
     await update.effective_message.reply_text(
-        f"Your Telegram ID is {tgid}. Ask your admin to add you."
+        "👋 Hi — you're not in MAGI's super-admin list yet.\n\n"
+        f"Your ID is: <code>{tgid}</code>\n\n"
+        "Please contact the MAGI admin and share this ID so they can add your "
+        "permissions. Once that's done, message me anything and I'll route you "
+        "to the right person.",
+        parse_mode="HTML",
     )
 
 

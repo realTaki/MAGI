@@ -44,7 +44,7 @@ class TaskWorker(RuntimeWorker):
                 tasks = await self.call(self.bus.tasks_book.list_all_enabled_for_workers)
             except Exception:
                 tasks = []
-            now = datetime.now(UTC)
+            now = datetime.now(UTC).replace(tzinfo=None)
             for task in tasks:
                 if self._stopping:
                     break
@@ -53,19 +53,20 @@ class TaskWorker(RuntimeWorker):
                         await self._fire_task(task, manual=False)
                         if task.run_at and not task.cron:
                             await self.call(
-                                self.bus.tasks_book.mark_run_at_consumed, task_id=task.id
+                                self.bus.tasks_book.mark_run_at_consumed, task_id=task.task_id
                             )
                     except Exception:
-                        logger.exception("TaskWorker: _fire_task failed for %s", task.id)
+                        logger.exception("TaskWorker: _fire_task failed for %s", task.task_id)
             self._last_poll_at = now
             await asyncio.sleep(self.poll_seconds)
 
     def _should_fire(self, task, now: datetime) -> bool:
+        if now.tzinfo is not None:
+            now = now.astimezone(UTC).replace(tzinfo=None)
         if not getattr(task, "enabled", 1):
             return False
         if task.run_at and not task.cron:
-            run_at = self._parse_datetime(task.run_at)
-            return run_at is not None and run_at <= now and self._next_fire.get(task.id) is None
+            return task.run_at <= now and self._next_fire.get(task.task_id) is None
         if task.cron:
             return self._should_fire_cron(task, now)
         return False
@@ -78,7 +79,7 @@ class TaskWorker(RuntimeWorker):
             prev_fire = cron_iter.get_prev(datetime)
         except (ValueError, KeyError):
             return False
-        last = self._next_fire.get(task.id)
+        last = self._next_fire.get(task.task_id)
         return last is None or (prev_fire and prev_fire > last)
 
     async def _fire_task(self, task, *, manual: bool = False) -> None:
@@ -91,7 +92,7 @@ class TaskWorker(RuntimeWorker):
         so every run accumulates into the same conversation and the
         caller can't accidentally strand a run in the wrong session.
         """
-        task_id = task.id
+        task_id = task.task_id
         # Contract guard: a task without ``conversation_id`` means
         # the create-path skipped ``create_task_conversation`` (or a
         # legacy row slipped through). Refuse to fire rather than
@@ -127,7 +128,7 @@ class TaskWorker(RuntimeWorker):
                 conversation_id=task.conversation_id,
             ),
         )
-        self._next_fire[task_id] = datetime.now(UTC)
+        self._next_fire[task_id] = datetime.now(UTC).replace(tzinfo=None)
 
     async def _handle_run_task_job(self, rj: RunTaskJob) -> None:
         from magi.bus.guild.runTaskJob import RunTaskResult
@@ -137,7 +138,7 @@ class TaskWorker(RuntimeWorker):
             if task is None:
                 await self.call(
                     self.bus.run_task_job_board.submit_result,
-                    key=rj.job_id,
+                    job_id=rj.job_id,
                     result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error="task not found"),
                 )
                 return
@@ -148,13 +149,13 @@ class TaskWorker(RuntimeWorker):
             await self._fire_task(task, manual=rj.manual)
             await self.call(
                 self.bus.run_task_job_board.submit_result,
-                key=rj.job_id,
+                job_id=rj.job_id,
                 result=RunTaskResult(job_id=rj.job_id, status=JobStatus.COMPLETED),
             )
         except Exception as exc:
             await self.call(
                 self.bus.run_task_job_board.submit_result,
-                key=rj.job_id,
+                job_id=rj.job_id,
                 result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
             )
 
@@ -166,7 +167,7 @@ class TaskWorker(RuntimeWorker):
         # ``_next_fire`` is typed ``dict[str, datetime]`` (invariant value
         # type — see :class:`RuntimeWorker`). Tasks that have never fired
         # (``last_run_at IS NULL``) carry no useful entry: a missing key
-        # and a ``None`` value both read as ``None`` via ``.get(task.id)``,
+        # and a ``None`` value both read as ``None`` via ``.get(task.task_id)``,
         # so dropping them keeps the runtime invariant without losing
         # information.
         #
@@ -174,7 +175,7 @@ class TaskWorker(RuntimeWorker):
         # ``is not None`` is explicit because midnight ``00:00:00``
         # datetimes are falsy and would otherwise be silently dropped.
         self._next_fire = {
-            t.id: t.last_run_at for t in tasks if t.last_run_at is not None
+            t.task_id: t.last_run_at for t in tasks if t.last_run_at is not None
         }
 
     async def _reap_stale_runs(self) -> None:
@@ -184,10 +185,3 @@ class TaskWorker(RuntimeWorker):
                 logger.info("TaskWorker: reaped %d stale task run(s)", n)
         except Exception:
             pass
-
-    @staticmethod
-    def _parse_datetime(s: str) -> datetime | None:
-        try:
-            return datetime.fromisoformat(s)
-        except (ValueError, TypeError):
-            return None

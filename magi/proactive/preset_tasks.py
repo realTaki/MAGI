@@ -15,6 +15,7 @@ disambiguate.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from magi.bus.guild.base import JobStatus
@@ -136,7 +137,7 @@ def _is_no_schedule(preset: dict) -> bool:
     return not (preset.get("frequency") or preset.get("cron") or preset.get("run_at"))
 
 
-def _resolve_schedule(preset: dict) -> tuple[str | None, str | None]:
+def _resolve_schedule(preset: dict) -> tuple[str | None, datetime | None]:
     """Parse ``preset`` into ``(cron, run_at)``. Returns ``(None, None)`` on invalid.
 
     Logged at WARNING so the operator sees the broken preset without

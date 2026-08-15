@@ -182,7 +182,11 @@ class McpWorker(RuntimeWorker):
             ok = await conn.connect(timeouts)
             return (server.name, conn if ok else None)
 
-        results = await asyncio.gather(
+        # Explicit annotation sidesteps a Pylance inference quirk
+        # in nested-closure coroutines: without it, ``results`` is
+        # narrowed to ``BaseException`` and the ``for ... in``
+        # below reports "object is not iterable".
+        results: list[tuple[str, MCPServerConnection | None]] = await asyncio.gather(
             *(_connect_one(srv) for srv in servers),
             return_exceptions=False,
         )
@@ -241,7 +245,7 @@ class McpWorker(RuntimeWorker):
         try:
             await self.call(
                 self.bus.mcp_server_changed_job_board.submit_result,
-                key=job.job_id,
+                job_id=job.job_id,
                 result=McpServerChangedResult(
                     job_id=job.job_id,
                     status=JobStatus.COMPLETED if success else JobStatus.FAILED,
