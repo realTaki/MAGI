@@ -165,6 +165,7 @@ class ProvidersWorker(RuntimeWorker):
             #    bus), but this is the future hook.
             cfg_job = await self.call(
                 self.bus.change_provider_config_job_board.claim,
+                worker_id=self.worker_id,
             )
             if cfg_job is not None:
                 await self._handle_config_job(cfg_job)
@@ -173,6 +174,7 @@ class ProvidersWorker(RuntimeWorker):
             # 2. Claim one LLM job.
             job = await self.call(
                 self.bus.llm_job_board.claim,
+                worker_id=self.worker_id,
             )
             if job is None:
                 await asyncio.sleep(self.poll_seconds)
@@ -230,6 +232,7 @@ class ProvidersWorker(RuntimeWorker):
             await self.call(
                 self.bus.change_provider_config_job_board.submit_result,
                 job_id=job.job_id,
+                worker_id=self.worker_id,
                 result=result,
             )
         except Exception:  # noqa: BLE001
@@ -429,7 +432,12 @@ class ProvidersWorker(RuntimeWorker):
             stream_key=result_dict.get("stream_key") or "",
         )
         try:
-            await self.call(self.bus.llm_job_board.submit_result, job_id=job.job_id, result=result)
+            await self.call(
+                self.bus.llm_job_board.submit_result,
+                job_id=job.job_id,
+                worker_id=self.worker_id,
+                result=result,
+            )
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit llm result for %s",
@@ -583,7 +591,12 @@ class ProvidersWorker(RuntimeWorker):
             error_code=error_code,
         )
         try:
-            await self.call(self.bus.llm_job_board.submit_result, job_id=job.job_id, result=result)
+            await self.call(
+                self.bus.llm_job_board.submit_result,
+                job_id=job.job_id,
+                worker_id=self.worker_id,
+                result=result,
+            )
         except Exception:  # noqa: BLE001
             logger.exception(
                 "providers worker: failed to submit failure for %s",

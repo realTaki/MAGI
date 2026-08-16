@@ -242,7 +242,7 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
     )
     worker = AgentWorker(
         SimpleNamespace(
-            agent_job_board=SimpleNamespace(claim=lambda: None),
+            agent_job_board=SimpleNamespace(claim=lambda **_kwargs: None),
             a2a_request_job_board=boards.target_requests,
             a2a_notify_job_board=boards.target_notifies,
             conversations_book=boards.target_conversations,
@@ -550,7 +550,7 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
     delivery_board = Mock()
     worker = AgentWorker(
         SimpleNamespace(
-            agent_job_board=SimpleNamespace(claim=lambda: None),
+            agent_job_board=SimpleNamespace(claim=lambda **_kwargs: None),
             a2a_request_job_board=requests,
             a2a_notify_job_board=notifies,
             delivery_job_board=delivery_board,

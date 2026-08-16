@@ -305,7 +305,9 @@ async def test_handle_change_added_writes_book_and_connects(bus, monkeypatch):
             server=_dto("gmail", command="mcp-gmail"),
         )
     )
-    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
+    claimed = await asyncio.to_thread(
+        bus.change_mcp_server_job_board.claim, worker_id=worker.worker_id
+    )
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -355,7 +357,9 @@ async def test_handle_change_updated_reloads_server(bus, monkeypatch):
             ),
         )
     )
-    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
+    claimed = await asyncio.to_thread(
+        bus.change_mcp_server_job_board.claim, worker_id=worker.worker_id
+    )
     await worker._handle_change(claimed)
 
     # Both connection stubs were used (old disconnect, new
@@ -396,7 +400,9 @@ async def test_handle_change_deleted_removes_book_row_and_connection(bus, monkey
     job_id = bus.change_mcp_server_job_board.publish(
         ChangeMCPServerJob(kind=MCPKind.DELETED, server_name="gmail")
     )
-    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
+    claimed = await asyncio.to_thread(
+        bus.change_mcp_server_job_board.claim, worker_id=worker.worker_id
+    )
     assert claimed is not None
     await worker._handle_change(claimed)
 
@@ -436,7 +442,9 @@ async def test_handle_change_toggled_disables_and_disconnects(bus, monkeypatch):
             new_enabled=False,
         )
     )
-    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
+    claimed = await asyncio.to_thread(
+        bus.change_mcp_server_job_board.claim, worker_id=worker.worker_id
+    )
     await worker._handle_change(claimed)
 
     # Worker updated the Book and dropped the connection.
@@ -479,7 +487,9 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
             new_enabled=True,
         )
     )
-    claimed = await asyncio.to_thread(bus.change_mcp_server_job_board.claim)
+    claimed = await asyncio.to_thread(
+        bus.change_mcp_server_job_board.claim, worker_id=worker.worker_id
+    )
     await worker._handle_change(claimed)
 
     row = bus.mcp_servers_book.get_by_name(name="gmail")

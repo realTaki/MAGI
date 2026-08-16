@@ -240,7 +240,7 @@ class changeMCPServerJobBoard(
         )
         return row.job_id
 
-    def claim(self) -> ChangeMCPServerJob | None:
+    def claim(self, *, worker_id: str) -> ChangeMCPServerJob | None:
         """Claim the next pending job, materialising the payload
         columns into the :class:`ChangeMCPServerJob` DTO.
 
@@ -248,8 +248,9 @@ class changeMCPServerJobBoard(
         ``server_payload`` → :class:`McpServer` and ``new_enabled``
         deserialisation so the Worker sees a fully populated DTO.
         """
+        worker_id = self._require_worker_id(worker_id)
         with self._session() as s:
-            row = self._claim(s)
+            row = self._claim(s, worker_id=worker_id)
             s.commit()
             if row is None:
                 return None
