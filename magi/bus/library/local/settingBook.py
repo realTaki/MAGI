@@ -91,9 +91,6 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         "system.timezone",  # 系统时区（IANA 名，默认 UTC）
         # Hard cap on tool-call iterations per agent run.
         "system.tool_max_iterations",  # 单次 Agent 调用的最大工具迭代次数
-        # Lease length for every BUS job board. Bootstrap owns the default;
-        # boards receive the configured value through composition.
-        "system.job_lease_seconds",
         # ------------------------------------------------------------------
         # Compaction policy (agent-worker-bus.md §6).
         # ------------------------------------------------------------------
@@ -185,60 +182,14 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
                 s.commit()
             return options
 
-    def mcp_timeout_config(
-        self,
-        *,
-        connect_default: float = 10.0,
-        execute_default: float = 60.0,
-        sse_default: float = 120.0,
-    ) -> MCPTimeout:
-        """Read the three MCP timeout settings with type coercion.
-
-        Each key is read as a string, coerced to ``float``, and
-        falls back to its default on missing / unparseable values.
-        """
-        return MCPTimeout(
-            connect_timeout=self._read_float(
-                self.get_value(key="mcp.connect_timeout"),
-                connect_default,
-            ),
-            execute_timeout=self._read_float(
-                self.get_value(key="mcp.execute_timeout"),
-                execute_default,
-            ),
-            sse_read_timeout=self._read_float(
-                self.get_value(key="mcp.sse_read_timeout"),
-                sse_default,
-            ),
-        )
-
-    @staticmethod
-    def _read_float(raw: str | None, default: float) -> float:
-        if raw is None:
-            return default
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            return default
-
     def system_timezone(self) -> str:
         """Return the configured system timezone, defaulting to ``"UTC"``."""
         return self.get_value(key="system.timezone") or "UTC"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class MCPTimeout:
-    """The three MCP connection timeout knobs."""
-
-    connect_timeout: float = 10.0  # 建立连接的超时（秒）
-    execute_timeout: float = 60.0  # 工具调用执行的超时（秒）
-    sse_read_timeout: float = 120.0  # SSE 流读取的超时（秒）
 
 
 __all__ = [
     "CHANNEL_OPTIONS_KEY",
     "Setting",
     "SettingBook",
-    "MCPTimeout",
     "_SettingRow",
 ]

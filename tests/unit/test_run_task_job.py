@@ -19,7 +19,7 @@ def board():
     """Fresh in-memory SQLite with runTaskJobBoard per test."""
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
-    return runTaskJobBoard(f, lease_seconds=60)
+    return runTaskJobBoard(f)
 
 
 def test_publish_returns_job_id(board):

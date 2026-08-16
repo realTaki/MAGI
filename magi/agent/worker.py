@@ -132,7 +132,6 @@ class AgentWorker(RuntimeWorker):
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25, magi_id: int | None = None) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
-        self._active_conversations: set[int] = set()
         self._in_flight: dict[int, asyncio.Event] = {}  # conversation_id → cancel_event
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
@@ -164,23 +163,6 @@ class AgentWorker(RuntimeWorker):
 
             conversation_id = getattr(job, "conversation_id", None) or 0
 
-            # steering — release back to board for _process to claim
-            if (
-                source == "chat"
-                and conversation_id
-                and conversation_id in self._active_conversations
-            ):
-                chat_job_id = job.job_id
-                await self.call(
-                    self.bus.agent_job_board.release,
-                    job_id=chat_job_id,
-                    worker_id=self.worker_id,
-                )
-                continue
-
-            # new run
-            if source == "chat":
-                self._active_conversations.add(conversation_id)
             is_a2a = source != "chat"
             a2a_inbound_text = ""
             if is_a2a:
@@ -232,8 +214,6 @@ class AgentWorker(RuntimeWorker):
                 ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
                 await self._publish_delivery(ctx)
             finally:
-                if source == "chat" and conversation_id:
-                    self._active_conversations.discard(conversation_id)
                 succeeded = ctx.final_error is None
                 if source == "chat":
                     chat_job_id = job.job_id

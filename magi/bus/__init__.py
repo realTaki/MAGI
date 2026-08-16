@@ -12,7 +12,7 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
     bus = open_bus(workspace_dir="/path/to/workspace", magis_url="...")
     worker = AgentWorker(bus=bus)    # 构造器注入
-    job = bus.tool_job_board.claim()
+    job = bus.tool_job_board.claim(worker_id="worker-1")
     adam = bus.memberships_book.get(1)  # ADAM = membership id=1
 
 需要具体的 Book / Job 类型时，直接从子模块导入::

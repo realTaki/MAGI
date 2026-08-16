@@ -82,13 +82,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.mcp.worker")
 
-#: Default per-server timeouts when the operator hasn't set
-#: ``mcp.*_timeout`` in the settings book. Mirrors the values
-#: the ``MCPTimeoutConfig`` defaults.
-_DEFAULT_CONNECT_TIMEOUT = 10.0
-_DEFAULT_EXECUTE_TIMEOUT = 60.0
-_DEFAULT_SSE_READ_TIMEOUT = 120.0
-
 #: How long the tool side waits for the worker to finish
 #: processing a change job before giving up. Generous enough
 #: for a stdio spawn + connect to settle; the worker's own
@@ -399,23 +392,17 @@ class McpWorker(RuntimeWorker):
         )
 
     def _timeouts_from_bus(self) -> MCPTimeoutConfig:
-        """Read the three MCP timeouts from the settings book.
+        """Return the canonical MCP timeout defaults.
 
-        Delegates to :meth:`SettingBook.mcp_timeout_config` which
-        handles key lookup, type coercion, and defaults.
+        MCP timeouts are an implementation detail of this subsystem;
+        the values live on :class:`~magi.mcp.MCPClient.MCPTimeoutConfig`
+        as field defaults rather than on the settings book.  This
+        helper exists so call sites read symmetrically with the
+        per-server row's optional overrides.
         """
         from magi.mcp.MCPClient import MCPTimeoutConfig
 
-        cfg = self.bus.settings_book.mcp_timeout_config(
-            connect_default=_DEFAULT_CONNECT_TIMEOUT,
-            execute_default=_DEFAULT_EXECUTE_TIMEOUT,
-            sse_default=_DEFAULT_SSE_READ_TIMEOUT,
-        )
-        return MCPTimeoutConfig(
-            connect_timeout=cfg.connect_timeout,
-            execute_timeout=cfg.execute_timeout,
-            sse_read_timeout=cfg.sse_read_timeout,
-        )
+        return MCPTimeoutConfig()
 
     def _reinject_tools(self) -> None:
         """Aggregate tools from every live connection + republish.

@@ -73,28 +73,6 @@ class MCPTimeoutConfig:
     sse_read_timeout: float = 120.0
 
 
-# -- timeout helpers -----------------------------------------------------
-#
-# These live in the loader because the worker (and the rest of the
-# subsystem) reaches for them through ``magi.mcp.MCPClient``. They
-# read through ``bus.settings_book.mcp_timeout_config()`` directly.
-
-
-def _defaults(settings_book: Any) -> MCPTimeoutConfig:
-    """Resolve MCP timeouts from settings_book, falling back to built-in defaults."""
-    if settings_book is None:
-        return MCPTimeoutConfig()
-    try:
-        cfg = settings_book.mcp_timeout_config()
-    except Exception:
-        return MCPTimeoutConfig()
-    return MCPTimeoutConfig(
-        connect_timeout=cfg.connect_timeout,
-        execute_timeout=cfg.execute_timeout,
-        sse_read_timeout=cfg.sse_read_timeout,
-    )
-
-
 # ────────────────────────────────────────────────────────────────── #
 # Tool wrapper — adapts an MCP tool to our :class:`Tool` protocol.
 # ────────────────────────────────────────────────────────────────── #
@@ -423,5 +401,4 @@ __all__ = [
     "MCPTimeoutConfig",
     "MCPServerConnection",
     "MCPTool",
-    "_defaults",
 ]

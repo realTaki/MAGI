@@ -32,7 +32,7 @@ def factory():
 
 @pytest.fixture
 def board(factory):
-    return changeMCPServerJobBoard(factory, lease_seconds=60)
+    return changeMCPServerJobBoard(factory)
 
 
 def _gmail_dto() -> McpServer:

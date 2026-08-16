@@ -57,14 +57,14 @@ def _fresh_factory(tmp_path: Path) -> EngineFactory:
 
 def _seed_run_tasks(f, *, count: int) -> list[str]:
     """Insert N pending RunTaskJobs; return their job_ids."""
-    board = runTaskJobBoard(f, lease_seconds=60)
+    board = runTaskJobBoard(f)
     ids = [board.publish(RunTaskJob(task_id=f"t_{i}")) for i in range(count)]
     return ids
 
 
 def _seed_delivery(f, *, channel: str, count: int) -> list[str]:
     """Insert N pending DeliveryJobs for *channel*; return job_ids."""
-    board = deliveryJobBoard(f, lease_seconds=60)
+    board = deliveryJobBoard(f)
     ids = [
         board.publish(DeliveryJob(channel=channel, text=f"#{i}", destination="x"))
         for i in range(count)
@@ -93,7 +93,7 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
     lock = threading.Lock()
 
     def worker() -> None:
-        board = runTaskJobBoard(f, lease_seconds=60)
+        board = runTaskJobBoard(f)
         worker_id = f"run-task-{threading.get_ident()}"
         own: set[str] = set()
         # Barrier so all threads start polling simultaneously.
@@ -151,7 +151,7 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
     lock = threading.Lock()
 
     def drain(channel: str, sink: list[set[str]]) -> None:
-        board = deliveryJobBoard(f, lease_seconds=60)
+        board = deliveryJobBoard(f)
         worker_id = f"delivery-{channel}-{threading.get_ident()}"
         own: set[str] = set()
         barrier.wait()
@@ -198,7 +198,7 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
     expired lease owner, while every loser observes no claim and polls later.
     """
     f = _fresh_factory(tmp_path)
-    board = runTaskJobBoard(f, lease_seconds=60)
+    board = runTaskJobBoard(f)
     jid = board.publish(RunTaskJob(task_id="lease_recovery"))
 
     # Force the lease into the past so the row qualifies for
@@ -231,7 +231,7 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
 
     def worker() -> None:
         nonlocal claimed_count
-        b = runTaskJobBoard(f, lease_seconds=60)
+        b = runTaskJobBoard(f)
         worker_id = f"lease-{threading.get_ident()}"
         barrier.wait()
         job = b.claim(worker_id=worker_id)

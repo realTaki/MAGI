@@ -96,7 +96,7 @@ def _build_bus(tmp_path) -> Bus:
     settings_book = SettingBook(factory)
     mcp_book = McpServerBook(factory)
     tool_book = ToolDefinitionBook(factory)
-    board = changeMCPServerJobBoard(factory, lease_seconds=60)
+    board = changeMCPServerJobBoard(factory)
     # ``Bus.prompt_book`` is now non-Optional (B1: bootstrap fails
     # loudly on a missing prompts bundle), so the fixture must hand a
     # real PromptBook to the constructor even when the test never
@@ -543,14 +543,3 @@ def test_timeouts_default_when_settings_unset(bus):
     assert cfg.connect_timeout == 10.0
     assert cfg.execute_timeout == 60.0
     assert cfg.sse_read_timeout == 120.0
-
-
-def test_timeouts_pick_up_settings_overrides(bus):
-    bus.settings_book.set(key="mcp.connect_timeout", value="3.5")
-    bus.settings_book.set(key="mcp.execute_timeout", value="42")
-    bus.settings_book.set(key="mcp.sse_read_timeout", value="100")
-    worker = McpWorker(bus=bus)
-    cfg = worker._timeouts_from_bus()
-    assert cfg.connect_timeout == 3.5
-    assert cfg.execute_timeout == 42.0
-    assert cfg.sse_read_timeout == 100.0

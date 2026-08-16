@@ -19,7 +19,7 @@ from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJob
 def board(tmp_path) -> deliveryJobBoard:
     factory = EngineFactory(f"sqlite:///{tmp_path / 'delivery.sqlite'}")
     synchronise_schema(factory, scope=LOCAL_SCOPE)
-    return deliveryJobBoard(factory, lease_seconds=60)
+    return deliveryJobBoard(factory)
 
 
 def test_claim_for_channel_never_claims_another_channel(board: deliveryJobBoard) -> None:
@@ -39,7 +39,7 @@ def test_claim_for_channel_never_claims_another_channel(board: deliveryJobBoard)
 
 def test_concurrent_channel_consumers_claim_a_job_once(board: deliveryJobBoard) -> None:
     board.publish(DeliveryJob(channel="webui", text="once"))
-    other_consumer = deliveryJobBoard(board._factory, lease_seconds=60)
+    other_consumer = deliveryJobBoard(board._factory)
     barrier = Barrier(2)
 
     def claim(candidate: deliveryJobBoard):

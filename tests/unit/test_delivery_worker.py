@@ -22,7 +22,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
-    board = deliveryJobBoard(f, lease_seconds=60)
+    board = deliveryJobBoard(f)
 
     # Publish a TG delivery job
     jid = board.publish(

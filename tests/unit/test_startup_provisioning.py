@@ -91,7 +91,6 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
         magis_url=spec.magis_database_url,
     )
     assert bus.settings_book.get_value(key="auth.signing_key")
-    assert bus.settings_book.get_value(key="system.job_lease_seconds") == "60"
     assert "a2a" in bus.settings_book.channel_options()
 
 

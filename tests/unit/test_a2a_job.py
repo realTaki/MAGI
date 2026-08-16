@@ -43,8 +43,8 @@ def boards(tmp_path):
         source,
         target,
         memberships,
-        a2aRequestJobBoard(factory, lease_seconds=60, memberships_book=memberships),
-        a2aNotifyBoard(factory, lease_seconds=60, memberships_book=memberships),
+        a2aRequestJobBoard(factory, memberships_book=memberships),
+        a2aNotifyBoard(factory, memberships_book=memberships),
     )
 
 
@@ -71,28 +71,24 @@ def transcript_boards(tmp_path):
 
     source_requests = a2aRequestJobBoard(
         magis_factory,
-        lease_seconds=60,
         memberships_book=memberships,
         messages_book=source_messages,
         conversations_book=source_conversations,
     )
     target_requests = a2aRequestJobBoard(
         magis_factory,
-        lease_seconds=60,
         memberships_book=memberships,
         messages_book=target_messages,
         conversations_book=target_conversations,
     )
     source_notifies = a2aNotifyBoard(
         magis_factory,
-        lease_seconds=60,
         memberships_book=memberships,
         messages_book=source_messages,
         conversations_book=source_conversations,
     )
     target_notifies = a2aNotifyBoard(
         magis_factory,
-        lease_seconds=60,
         memberships_book=memberships,
         messages_book=target_messages,
         conversations_book=target_conversations,

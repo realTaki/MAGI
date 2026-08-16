@@ -256,13 +256,12 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
     def __init__(
         self,
         factory: EngineFactory,
-        lease_seconds: int,
         *,
         memberships_book: MagisMembershipBook,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
-        super().__init__(factory, lease_seconds=lease_seconds)
+        super().__init__(factory)
         # Required, not optional: every publish must prove the route
         # exists and stays inside one MAGIS, so there is no degraded
         # "no book injected" mode to fall back to.
@@ -390,13 +389,12 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
     def __init__(
         self,
         factory: EngineFactory,
-        lease_seconds: int,
         *,
         memberships_book: MagisMembershipBook,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
-        super().__init__(factory, lease_seconds=lease_seconds)
+        super().__init__(factory)
         self._memberships_book = memberships_book
         self._messages_book = messages_book
         self._conversations_book = conversations_book

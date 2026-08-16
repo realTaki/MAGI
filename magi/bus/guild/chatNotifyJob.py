@@ -116,6 +116,11 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
     job_cls = ChatNotifyJob
     result_cls = ChatNotifyResult
 
+    # chatNotify 的 lease 比通用 60s 长: 单次 agent turn 通常要串多个
+    # LLM / 工具调用, 60s 内不一定完成 submit_result —— 提早被另一个
+    # worker 抢走会出现「同一轮对话被并发推进」的奇怪现象。
+    _lease_seconds = 300
+
     def __init__(
         self,
         factory,  # type: ignore[no-untyped-def]
@@ -123,9 +128,8 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         contact_book: ContactBook | None = None,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
-        lease_seconds: int,
     ) -> None:
-        super().__init__(factory, lease_seconds=lease_seconds)
+        super().__init__(factory)
         # ``contact_book`` is optional so unit tests can build a board
         # without the local contacts store; in that case the
         # ``last_seen_at`` stamp is silently skipped.

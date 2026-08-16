@@ -33,7 +33,6 @@ from magi.bus.library.local.memoryBook import (
 )
 from magi.bus.library.local.settingBook import (
     CHANNEL_OPTIONS_KEY,
-    MCPTimeout,
     Setting,
     SettingBook,
 )
@@ -77,7 +76,6 @@ __all__ = [
     "Role",
     "Conversation",
     "ConversationBook",
-    "MCPTimeout",
     "Setting",
     "SettingBook",
     "Task",
