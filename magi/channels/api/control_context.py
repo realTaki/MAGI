@@ -13,14 +13,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 if False:  # TYPE_CHECKING import-only — kept as a string for cycle safety
-    from magi.bus import Bus
+    from magi.bus import MagisBus
 
 
 @dataclass(frozen=True, slots=True)
 class ControlContext:
     """Read/open-only control capability for the singleton WebUI process."""
 
-    bus: "Bus"
+    bus: "MagisBus"
 
 
 __all__ = ["ControlContext"]

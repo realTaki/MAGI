@@ -102,7 +102,7 @@ def _build_bus(tmp_path) -> Bus:
     # real PromptBook to the constructor even when the test never
     # touches prompt text. Empty tmp_path shelf — fine, the worker
     # under test doesn't read prompts.
-    prompt_book = PromptBook(FileShelf(tmp_path / "prompts"), workspace_dir=tmp_path)
+    prompt_book = PromptBook(FileShelf(tmp_path / "prompts"))
     # The worker only touches these three attributes; the rest
     # of the Bus slots are unused and stay ``None`` (the
     # ``Bus`` dataclass uses ``object`` for everything but

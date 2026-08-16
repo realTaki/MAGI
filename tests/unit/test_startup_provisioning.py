@@ -18,7 +18,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from magi.bus import open_bus, open_control_bus
+from magi.bus import open_bus, open_magis_bus
 from magi.bus.db.engine import EngineFactory
 from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
@@ -61,18 +61,14 @@ def _load_spec_from_db(*, workspace_dir: Path, magis_name: str = "genesis") -> R
     (``tmp_path/MAGI_Citizens/<name>``); the host root that owns the
     MAGIS shared DB is the directory *above* ``MAGI_Citizens/``.
     """
-    from magi.bus import open_control_bus
-    from magi.startup.paths import (
-        resolve_magis_control_dir,
-        resolve_magis_database_url,
-    )
+    from magi.bus import open_magis_bus
+    from magi.startup.paths import resolve_magis_database_url
 
     # workspace_dir is ``<host>/MAGI_Citizens/<name>``; the host root
     # is two levels up (``<host>``).
     host_root = workspace_dir.parent.parent
     magis_url = resolve_magis_database_url(host_root, magis_name)
-    control_dir = str(resolve_magis_control_dir(host_root, magis_name))
-    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    bus = open_magis_bus(magis_url=magis_url)
     return load_runtime_spec(
         bus,
         workspace_dir.name,
@@ -89,6 +85,7 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert (workspace / "memories" / "magi.db").is_file()
     assert not (workspace / "magi.db").exists()
     assert (tmp_path / "MAGI_Societies" / "genesis" / "magis.db").is_file()
+    assert not (tmp_path / "MAGI_Societies" / "genesis" / "control").exists()
     assert _load_spec_from_db(workspace_dir=workspace) == spec
     bus = open_bus(
         state_dir=str(workspace / "memories"),
@@ -235,19 +232,16 @@ def test_runtime_open_never_creates_a_missing_node_database(tmp_path: Path) -> N
     assert not (state_dir / "magi.db").exists()
 
 
-def test_control_bus_uses_magis_store_without_opening_node_store(tmp_path: Path) -> None:
+def test_magis_bus_uses_only_the_magis_store(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
-    control_dir = tmp_path / "MAGI_Societies" / "genesis" / "control"
 
-    bus = open_control_bus(control_dir=str(control_dir), magis_url=spec.magis_database_url)
+    bus = open_magis_bus(magis_url=spec.magis_database_url)
 
-    assert bus._local_factory.url == spec.magis_database_url
-    assert bus._magis_factory is not None
-    # The per-MAGIS control directory is provisioned with its control secret;
-    # opening the control BUS must not touch the node-private database.
-    assert control_dir.is_dir()
-    assert bus.control_settings_book is not None
+    assert bus._magis_factory.url == spec.magis_database_url
+    assert not hasattr(bus, "_local_factory")
+    assert not hasattr(bus, "prompt_book")
+    assert not hasattr(bus, "skills_book")
     bus.control_settings_book.set(key="control.test", value="shared")
     assert bus.control_settings_book.get_value(key="control.test") == "shared"
     assert "settings" not in set(inspect(bus._magis_factory.engine).get_table_names())

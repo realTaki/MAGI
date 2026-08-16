@@ -32,6 +32,7 @@ import json as _json
 import logging
 import os
 import tempfile
+from datetime import UTC, datetime
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
@@ -577,6 +578,15 @@ class FileShelf:
             return True
         except (FileNotFoundError, PathError):
             return False
+
+    def modified_at(self, name: str) -> datetime:
+        """Return a file's modification time as naive UTC.
+
+        File-backed Books use this instead of reaching around the BUS to
+        inspect workspace paths directly.
+        """
+        path = self._resolve(name)
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
 
     def invalidate(self, name: str | None = None) -> None:
         """Force-evict cache entries.

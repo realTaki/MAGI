@@ -1,4 +1,4 @@
-"""SkillsBook — dual-root skill registry, file-backed.
+"""SkillsBook — workspace-managed skill registry, file-backed.
 
 Skills are directories containing a ``SKILL.md`` file. The book scans
 two roots at construction and merges them with operator-overrides-bundle
@@ -14,10 +14,8 @@ semantics:
     customised catalog). Resolved by the caller from
     :func:`magi.startup.paths.resolve_skills_dir` and passed in.
 
-Two roots, last-write-wins: an operator entry with the same ``name``
-as a bundle entry silently overrides it. That is the normal "I edited
-``web_lookup`` to fit my domain" flow — warning on every boot would
-be noise.
+The package bundle is used only to seed missing directories into a workspace.
+Runtime reads thereafter use the workspace root.
 
 Frontmatter shape (the bit between two ``---`` lines)::
 
@@ -386,7 +384,7 @@ def _process_skill_paths(
 
 
 class SkillsBook:
-    """Read-side registry for SKILL.md files across two roots.
+    """Read-side registry for workspace-managed SKILL.md files.
 
     Built on two :class:`~magi.bus.db.file.FileShelf` instances
     (bundle + operator). The shelves give us safe path resolution
@@ -411,7 +409,7 @@ class SkillsBook:
 
     def __init__(
         self,
-        bundle: FileShelf,
+        bundle: FileShelf | None,
         operator: FileShelf,
     ) -> None:
         self._bundle = bundle
@@ -560,7 +558,7 @@ class SkillsBook:
                 self._operator_fp = operator_fp
             return self._registry
 
-    def _root_fingerprint(self, shelf: FileShelf) -> tuple:
+    def _root_fingerprint(self, shelf: FileShelf | None) -> tuple:
         """Sorted tuple of ``(dir_name, mtime_ns, size)`` per SKILL.md.
 
         Missing root → ``()``. Missing/unreadable ``SKILL.md`` is
@@ -568,6 +566,8 @@ class SkillsBook:
         by :meth:`_scan_one` if the re-scan actually runs). ``iterdir``
         mid-write races are caught by :func:`OSError` → ``()``.
         """
+        if shelf is None:
+            return ()
         root = shelf.root
         if not root.is_dir():
             return ()
@@ -587,7 +587,7 @@ class SkillsBook:
             out.append((skill_dir.name, st.st_mtime_ns, st.st_size))
         return tuple(sorted(out))
 
-    def _scan_root(self, shelf: FileShelf, *, source: str) -> int:
+    def _scan_root(self, shelf: FileShelf | None, *, source: str) -> int:
         """Scan one shelf's root, register its skills, return count.
 
         Missing or non-directory root → 0 skills, logged at
@@ -595,6 +595,8 @@ class SkillsBook:
         yet is the common case on a fresh deploy — INFO, not WARN,
         so the boot log stays clean.
         """
+        if shelf is None:
+            return 0
         root = shelf.root
         if not root.exists():
             level = logger.info if source == "operator" else logger.warning
@@ -687,7 +689,11 @@ class SkillsBook:
         #     the conflict.
         if name in self._registry:
             existing = self._registry[name]
-            if source == "operator" and existing.path.is_relative_to(self._bundle.root):
+            if (
+                source == "operator"
+                and self._bundle is not None
+                and existing.path.is_relative_to(self._bundle.root)
+            ):
                 logger.debug(
                     "skills: operator %s overrides bundle %s for name %r",
                     skill_path,
@@ -750,24 +756,34 @@ def _resolve_bundle_skills_dir() -> Path:
 
 
 def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
-    """Construct the standard SkillsBook for a MAGI workspace.
+    """Seed missing defaults, then manage only ``<workspace>/skills/``.
 
-    Two roots:
-
-      - **bundle** — ``<magi>/skills/`` (image-shipped defaults,
-        resolved via :func:`_resolve_bundle_skills_dir`).
-      - **operator** — ``<workspace_dir>/skills/`` (the deployer's
-        customised catalog). Provisioning creates this root; opening a BUS
-        passes ``create_root=False`` so runtime startup cannot create it.
-
-    The factory is the public constructor used by
-    :func:`magi.bus.open_bus`. Tests that need
-    a custom layout should construct :class:`SkillsBook` directly
-    with explicit :class:`~magi.bus.db.file.FileShelf` instances.
+    Skills have no Worker owner, so BUS initialization performs their
+    idempotent package-to-workspace registration. Existing skill directories
+    are never overwritten.
     """
-    bundle_shelf = FileShelf(_resolve_bundle_skills_dir(), create_root=False)
+    _seed_default_skills(workspace_dir / "skills")
     operator_shelf = FileShelf(workspace_dir / "skills", create_root=False)
-    return SkillsBook(bundle_shelf, operator_shelf)
+    return SkillsBook(None, operator_shelf)
+
+
+def _seed_default_skills(workspace_skills_dir: Path) -> None:
+    """Copy each missing image-shipped skill directory into the workspace."""
+    import shutil
+
+    source_root = _resolve_bundle_skills_dir()
+    workspace_skills_dir.mkdir(parents=True, exist_ok=True)
+    if not source_root.is_dir():
+        logger.warning("skills: bundled defaults root %s is missing", source_root)
+        return
+    for source in source_root.iterdir():
+        if not source.is_dir() or not (source / _SKILL_FILENAME).is_file():
+            continue
+        target = workspace_skills_dir / source.name
+        if target.exists():
+            continue
+        shutil.copytree(source, target)
+        logger.info("skills: seeded default %s into %s", source.name, target)
 
 
 __all__ = [

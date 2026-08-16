@@ -164,8 +164,7 @@ class Bus:
     action_items_book: ActionItemBook  # ActionItemBook
     hook_signoffs_book: HookSignoffBook  # HookSignoffBook
 
-    # -- local: prompts (File-backed Book) ----------------------------------
-    # Always populated — see bootstrap._resolve_prompts_dir.
+    # -- local: prompts (workspace-backed File Book) ------------------------
 
     prompt_book: PromptBook
 
@@ -197,6 +196,25 @@ class Bus:
     control_settings_book: ControlSettingBook | None = None  # MAGIS control-plane KV
 
 
+@dataclass(frozen=True, slots=True)
+class MagisBus:
+    """Database-only facade for the singleton MAGIS control plane.
+
+    Unlike :class:`Bus`, this facade has no node-private SQLite database,
+    workspace, file shelves, workers, or stream hub.  It is the only facade
+    the WebUI and startup control operations may use.
+    """
+
+    magis_book: MagisBook
+    magis_admins_book: MagisAdminBook
+    memberships_book: MagisMembershipBook
+    roles_book: MagisRoleBook
+    runtime_state_book: RuntimeBook
+    control_secrets_book: ControlSecretBook
+    control_settings_book: ControlSettingBook
+    _magis_factory: EngineFactory = field(repr=False)
+
+
 # ---------------------------------------------------------------------------
 # public open entry point
 # ---------------------------------------------------------------------------
@@ -206,7 +224,6 @@ def open_bus(
     *,
     state_dir: str,
     magis_url: str | None = None,
-    prompts_dir: str | None = None,
 ) -> Bus:
     """Open a provisioned ``Bus`` with resolved paths.
 
@@ -214,9 +231,6 @@ def open_bus(
     after identity + database paths have been resolved.  Does NOT
     read environment variables or call auto-discovery — all paths
     are passed explicitly.
-
-    If *prompts_dir* is ``None``, the bundled ``magi/prompts/``
-    directory is auto-detected from the package location.
 
     Before returning the facade, this function synchronises all existing BUS
     stores.  That happens before any Book or JobBoard is constructed, so a
@@ -233,25 +247,39 @@ def open_bus(
     return _open_with_dirs(
         state_dir=state_dir,
         magis_url=magis_url,
-        prompts_dir=prompts_dir,
     )
 
 
-def open_control_bus(*, control_dir: str, magis_url: str) -> Bus:
-    """Open the singleton control-plane BUS without a node-private store.
+def open_magis_bus(*, magis_url: str) -> MagisBus:
+    """Open the database-only MAGIS control-plane facade.
 
-    The control plane persists its small operator-facing state in the already
-    provisioned MAGIS store.  ``control_dir`` is only the read-only file-book
-    root; it is never created here.  In particular, this function must not be
-    given a ``MAGI_Citizens/<name>/memories`` path.
+    The control plane has no workspace or file-backed state.  Its entire
+    durable boundary is the explicitly supplied MAGIS database URL.
     """
     if not magis_url:
         raise ValueError("control plane requires a MAGIS database URL")
-    return _open_with_dirs(
-        state_dir=control_dir,
-        magis_url=magis_url,
-        local_database_url=magis_url,
-        local_provision_scope="magis",
+    from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
+    from magi.bus.library.magis import (
+        ControlSecretBook,
+        ControlSettingBook,
+        MagisAdminBook,
+        MagisBook,
+        MagisMembershipBook,
+        MagisRoleBook,
+        RuntimeBook,
+    )
+
+    factory = build_magis_factory(magis_url)
+    synchronise_schema(factory, scope=MAGIS_SCOPE)
+    return MagisBus(
+        magis_book=MagisBook(factory),
+        magis_admins_book=MagisAdminBook(factory),
+        memberships_book=MagisMembershipBook(factory),
+        roles_book=MagisRoleBook(factory),
+        runtime_state_book=RuntimeBook(factory),
+        control_secrets_book=ControlSecretBook(factory),
+        control_settings_book=ControlSettingBook(factory),
+        _magis_factory=factory,
     )
 
 
@@ -259,10 +287,7 @@ def _open_with_dirs(
     *,
     state_dir: str,
     magis_url: str | None = None,
-    prompts_dir: str | None = None,
     allow_unprovisioned: bool = False,
-    local_database_url: str | None = None,
-    local_provision_scope: str = "local",
 ) -> Bus:
     """Wire the bus with explicit paths (for tests).
 
@@ -313,7 +338,7 @@ def _open_with_dirs(
 
     # ---- wire factories ----------------------------------------------------
     state_path = Path(state_dir)
-    if not allow_unprovisioned and local_database_url is None:
+    if not allow_unprovisioned:
         database_path = state_path / "magi.db"
         if not database_path.is_file():
             from magi.bus.provision import StorageNotProvisioned
@@ -321,11 +346,7 @@ def _open_with_dirs(
             raise StorageNotProvisioned(
                 f"node database is missing at {database_path}; run the explicit provisioning command"
             )
-    local_factory = (
-        EngineFactory(local_database_url)
-        if local_database_url is not None
-        else build_local_factory(state_dir)
-    )
+    local_factory = build_local_factory(state_dir)
 
     # Pure pass-through: caller is the composition root and owns path
     # resolution.  No env reads — ``magis_url=None`` simply means
@@ -337,17 +358,13 @@ def _open_with_dirs(
     # again.
     from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 
-    local_scope = MAGIS_SCOPE if local_provision_scope == "magis" else LOCAL_SCOPE
     if (
         magis_factory is not None
-        and local_scope == LOCAL_SCOPE
         and local_factory.url == magis_factory.url
     ):
         raise ValueError("MAGI-local and MAGIS stores must use distinct database URLs")
-    synchronise_schema(local_factory, scope=local_scope)
-    if magis_factory is not None and not (
-        local_scope == MAGIS_SCOPE and local_factory.url == magis_factory.url
-    ):
+    synchronise_schema(local_factory, scope=LOCAL_SCOPE)
+    if magis_factory is not None:
         synchronise_schema(magis_factory, scope=MAGIS_SCOPE)
 
     # ---- local books -------------------------------------------------------
@@ -366,11 +383,10 @@ def _open_with_dirs(
     action_items_book = ActionItemBook(local_factory)
     hook_signoffs_book = HookSignoffBook(local_factory)
 
-    # ---- prompt book (file-backed, not ORM) --------------------------------
+    # ---- prompt book (workspace-backed, not ORM) ---------------------------
     _workspace_dir = Path(state_dir).parent
-    _prompts_dir = _resolve_prompts_dir(prompts_dir)
-    prompt_shelf = FileShelf(_prompts_dir, create_root=False)
-    prompt_book = PromptBook(prompt_shelf, workspace_dir=_workspace_dir)
+    prompt_shelf = FileShelf(_workspace_dir / "prompts", create_root=False)
+    prompt_book = PromptBook(prompt_shelf)
 
     # ---- skills book (file-backed, two roots: bundle + operator) ---------
     skills_book = build_default_skills_book(_workspace_dir)
@@ -409,7 +425,7 @@ def _open_with_dirs(
         # substitute.
         memberships_book = MagisMembershipBook(
             magis_factory,
-            settings_book=(None if local_provision_scope == "magis" else settings_book),
+            settings_book=settings_book,
         )
         roles_book = MagisRoleBook(magis_factory)
         runtime_state_book = RuntimeBook(magis_factory)
@@ -440,8 +456,7 @@ def _open_with_dirs(
     # A2A is a BUS capability, rather than a channel-worker capability.  Its
     # option therefore belongs to BUS bootstrap; delivery/scheduler workers
     # register their own names when the runtime starts.
-    if local_provision_scope != "magis":
-        settings_book.register_channel(name="a2a")
+    settings_book.register_channel(name="a2a")
 
     # ---- assemble ----------------------------------------------------------
     return Bus(
@@ -482,75 +497,3 @@ def _open_with_dirs(
         _local_factory=local_factory,
         _magis_factory=magis_factory,
     )
-
-
-# ---------------------------------------------------------------------------
-# internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _resolve_prompts_dir(prompts_dir: str | None) -> Path:
-    """Resolve the bundled prompts directory.
-
-    If *prompts_dir* is explicitly provided, use it as-is.
-    Otherwise auto-detect from the ``magi`` package location.
-    Raises :class:`RuntimeError` if auto-detection fails — the
-    ``Bus.prompt_book`` invariant is "always populated", so a
-    missing prompts bundle is a startup failure the operator must
-    see, not a silently-degraded runtime state.
-    """
-    if prompts_dir is not None:
-        return Path(prompts_dir)
-
-    # Auto-detect: ``magi/prompts/`` relative to the magi package root.
-    # We check for ``soul.md`` (the one file every valid prompts bundle
-    # must contain) instead of just ``is_dir()`` to avoid picking up
-    # empty or bogus directories on ``sys.path``.
-    try:
-        import magi
-
-        candidate = Path(magi.__file__).resolve().parent / "prompts"
-        if candidate.is_dir() and (candidate / "soul.md").exists():
-            return candidate
-    except Exception:
-        pass
-
-    # Last resort: try relative to *this* file (``bus/bootstrap.py``).
-    # ``magi/bus/bootstrap.py`` → ``magi/`` → ``magi/prompts/``
-    try:
-        candidate = Path(__file__).resolve().parent.parent / "prompts"
-        if candidate.is_dir() and (candidate / "soul.md").exists():
-            return candidate
-    except Exception:
-        pass
-
-    raise RuntimeError(
-        "Could not locate the MAGI prompts bundle. Pass `prompts_dir=` "
-        "explicitly to bootstrap_bus(), or ensure the package is installed "
-        "with its bundled `magi/prompts/` directory intact "
-        "(expected to contain at least `soul.md`)."
-    )
-
-
-def _ensure_workspace_soul(workspace_dir: Path, prompts_dir: Path) -> None:
-    """Copy the bundled ``soul.md`` into *workspace_dir* if missing.
-
-    Idempotent — if ``<workspace>/SOUL.md`` already exists, this is
-    a no-op.  Previously this lived in :func:`magi.startup.paths.ensure_workspace`;
-    now it's part of the bus bootstrap so file seeding stays
-    alongside the bus composition that consumes those files.
-    """
-    soul = workspace_dir / "SOUL.md"
-    if soul.exists():
-        return
-
-    bundled = prompts_dir / "soul.md"
-    if bundled.is_file():
-        try:
-            workspace_dir.mkdir(parents=True, exist_ok=True)
-            soul.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
-            logger.info("SOUL.md seeded from %s", bundled)
-        except OSError:
-            logger.exception("Failed to seed SOUL.md from %s", bundled)
-    else:
-        logger.warning("Bundled soul.md missing at %s; SOUL.md not created", bundled)

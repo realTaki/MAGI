@@ -7,11 +7,9 @@ structured files through :class:`~magi.bus.db.file.FileShelf`.
 Public surface:
 
 - :class:`BaseFileBook` — abstract base with dunders + ``read(name)``
-- :class:`PromptBook`   — typed accessors for every bundled prompt
+- :class:`PromptBook`   — typed accessors for worker-seeded workspace prompts
   (soul / fallback_persona / chat_title_prompt / compaction_prompt /
-  memory_block_template / contact_block_template /
-  skills_block_template / daily_note_prompt /
-  task_presets) plus generic ``get`` / ``get_structured`` / ``list``
+  skills_block_template / task_presets) plus generic ``get`` / ``get_structured`` / ``list``
   / ``exists``.
 """
 

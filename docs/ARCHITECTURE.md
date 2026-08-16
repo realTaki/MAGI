@@ -24,13 +24,15 @@ user-facing documentation. They are the only supported names.
 | Public Python package | `magi.bus` |
 | Process-local facade | `Bus` (frozen dataclass returned by `open_bus`) |
 | Composition-root entry | `open_bus(state_dir=…, magis_url=…)` |
-| Control-plane entry | `open_control_bus(control_dir=…, magis_url=…)` |
+| Control-plane entry | `open_magis_bus(magis_url=…)` |
 | Durable CRUD / query API | **Book** (e.g. `conversations_book`, `messages_book`) |
 | Durable `publish → claim → submit_result` API | **Job Board** (e.g. `agent_job_board`) |
 | Ephemeral notification aid | `stream_hub` (not a source of truth) |
 
-There is no second bus, compatibility package, fallback singleton,
-dual-write path, or alternate BUS implementation. The retired
+`MagisBus` is deliberately narrower than a node `Bus`: it is a database-only
+control-plane facade, not a second node runtime or compatibility layer. There
+is no fallback singleton, dual-write path, or alternate node BUS
+implementation. The retired
 `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are banned by
 `tests/architecture/test_import_boundaries.py`.
 

@@ -152,11 +152,6 @@ def resolve_magis_database_url(host_workspace_dir: Path, magis_name: str = "gene
     return f"sqlite:///{db_path}"
 
 
-def resolve_magis_control_dir(host_workspace_dir: Path, magis_name: str = "genesis") -> Path:
-    """Return the sidecar control-file directory for one MAGIS."""
-    return resolve_magis_directory(host_workspace_dir, magis_name) / "control"
-
-
 # ------------------------------------------------------------------
 # runtime state
 # ------------------------------------------------------------------
@@ -324,10 +319,6 @@ def _resolve_workspace_root(
     return host_workspace_dir / "MAGI_Citizens" / magi_name
 
 
-def resolve_soul_path(workspace_dir: Path) -> Path:
-    return workspace_dir / "SOUL.md"
-
-
 # ------------------------------------------------------------------
 # public API
 # ------------------------------------------------------------------
@@ -344,7 +335,6 @@ __all__ = [
     # databases
     "resolve_magis_database_path",
     "resolve_magis_directory",
-    "resolve_magis_control_dir",
     "resolve_private_database_path",
     "resolve_private_database_url",
     "resolve_magis_database_url",
@@ -359,5 +349,4 @@ __all__ = [
     "resolve_skills_dir",
     "resolve_bundle_skills_dir",
     "resolve_memories_dir",
-    "resolve_soul_path",
 ]

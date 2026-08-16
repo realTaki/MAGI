@@ -1,8 +1,5 @@
-
-# Bundled proactive task templates. These records are synchronised into the
-# task_presets table whenever MAGI starts.  Edit this file during development;
-# do not edit SQLite directly.  Each key and id is stable because existing
-# per-user tasks retain a back-pointer to the preset that created them.
+# Default proactive task templates. Existing workspace records are never
+# overwritten by worker startup.
 presets:
   - id: "01J9HZ0000DAILYSTAND000UPBR"
     key: daily_standup_brief

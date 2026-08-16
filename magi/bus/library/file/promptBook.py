@@ -19,12 +19,12 @@ Usage via ``Bus``::
     soul = bus.prompt_book.soul()
     presets = bus.prompt_book.task_presets()
 
-Standalone (early bootstrap / testing)::
+Standalone (testing)::
 
     from magi.bus.db.file import FileShelf
     from magi.bus.library.file import PromptBook
 
-    shelf = FileShelf("/app/magi/prompts")
+    shelf = FileShelf("/workspace/prompts")
     book = PromptBook(shelf)
     print(book.soul())
 """
@@ -32,11 +32,8 @@ Standalone (early bootstrap / testing)::
 from __future__ import annotations
 
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 from magi.bus.db.file import FileShelf
@@ -47,56 +44,45 @@ logger = logging.getLogger("magi.bus.promptBook")
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WorkspaceSoul:
-    """Result of reading the workspace ``SOUL.md``.
+    """Result of reading the managed Agent persona.
 
     ``is_fallback`` is True when the workspace file is missing
     and the bundled fallback was returned instead.
     """
 
-    content: str  # SOUL.md 文本内容
+    content: str
     mtime: datetime | None  # 文件 mtime（UTC，fallback 时为 None）
     is_fallback: bool  # True=使用了 bundled fallback
 
 
 class PromptBook(BaseFileBook):
-    """Typed accessors for every bundled prompt file.
+    """Typed accessors for workspace-managed prompt files.
 
     Each method reads through :class:`FileShelf`, inheriting its
     hot-reload semantics.  These are methods (not properties) so
     callers are reminded that every invocation may trigger a
     ``stat()`` + potential re-read.
 
-    Workspace SOUL.md operations (``read_workspace_soul`` /
-    ``write_workspace_soul``) use atomic file I/O directly on the
-    workspace directory, not through the bundled FileShelf.
+    Each owning Worker seeds its defaults through :meth:`ensure` during
+    startup.  All later reads and writes stay inside this Book.
     """
 
-    _SOUL_FILENAME = "SOUL.md"
-
-    def __init__(self, shelf: FileShelf, *, workspace_dir: Path | None = None) -> None:
-        super().__init__(shelf)
-        self._workspace_dir = workspace_dir
-
-    # -- workspace SOUL (file I/O, not bundled FileShelf) --------------------
-
-    def _soul_path(self) -> Path:
-        if self._workspace_dir is None:
-            raise RuntimeError(
-                "PromptBook has no workspace_dir; workspace SOUL operations are unavailable"
-            )
-        return self._workspace_dir / self._SOUL_FILENAME
+    def ensure(self, name: str, value: Any, *, suffix: str) -> bool:
+        """Write a module default only when its managed record is absent."""
+        if self._shelf.exists(name):
+            return False
+        self._shelf.write(name, value, suffix=suffix)
+        return True
 
     def read_workspace_soul(self) -> WorkspaceSoul:
-        """Read the workspace ``SOUL.md``, falling back to bundled persona.
+        """Read the managed node persona, falling back to generic persona.
 
         Returns a :class:`WorkspaceSoul` with ``is_fallback=True`` and
-        the bundled ``fallback_persona.md`` content when the workspace
-        file is missing.
+        the generic fallback content when the managed record is missing.
         """
-        path = self._soul_path()
         try:
-            content = path.read_text(encoding="utf-8").strip()
-            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
+            content = self._shelf.read_text("agent/soul")
+            mtime = self._shelf.modified_at("agent/soul")
             return WorkspaceSoul(content=content, mtime=mtime, is_fallback=False)
         except FileNotFoundError:
             return WorkspaceSoul(
@@ -106,44 +92,32 @@ class PromptBook(BaseFileBook):
             )
 
     def write_workspace_soul(self, content: str) -> datetime:
-        """Atomically write *content* to workspace ``SOUL.md``.
+        """Atomically write *content* to the managed node persona.
 
         Returns the new file's naive UTC mtime.
         """
-        path = self._soul_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(
-            dir=str(path.parent),
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(content)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp_name, path)
-        except Exception:
-            try:
-                os.unlink(tmp_name)
-            except FileNotFoundError:
-                pass
-            raise
-        return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
+        self._shelf.write_text("agent/soul", content)
+        return self._shelf.modified_at("agent/soul")
 
-    # -- persona (bundled, from FileShelf) ---------------------------------
+    # -- agent prompts ------------------------------------------------------
 
     def soul(self) -> str:
-        """Return the bundled ``soul.md`` (the deployer's persona)."""
-        return self._shelf.read_text("soul")
+        """Return the active node persona."""
+        try:
+            return self._shelf.read_text("agent/soul")
+        except FileNotFoundError:
+            return self.default_soul()
+
+    def default_soul(self) -> str:
+        """Return the Agent Worker's immutable seed persona."""
+        return self._shelf.read_text("agent/defaults/soul")
 
     def fallback_persona(self) -> str:
         """Return ``fallback_persona.md`` — last-resort persona.
 
-        Used only when both the workspace's ``SOUL.md`` and the
-        bundled ``soul.md`` are missing.
+        Used only when the active node persona is missing.
         """
-        return self._shelf.read_text("fallback_persona")
+        return self._shelf.read_text("agent/defaults/fallback_persona")
 
     # -- sub-task system prompts --------------------------------------------
 
@@ -153,46 +127,23 @@ class PromptBook(BaseFileBook):
         Reads ``chat_titles.md``; used to summarise each session's
         first user message into a 3-5 word title.
         """
-        return self._shelf.read_text("chat_titles")
+        return self._shelf.read_text("agent/chat_titles")
 
     def compaction_prompt(self) -> str:
         """System prompt for the auto-compact worker.
 
         Reads ``compaction.md``.
         """
-        return self._shelf.read_text("compaction")
+        return self._shelf.read_text("agent/compaction")
 
     # -- system-prompt block templates --------------------------------------
-
-    def memory_block_template(self) -> str:
-        """The "Long-term memory" block header template.
-
-        Reads ``context/memory_block.md``.  The static header text
-        is this template; the per-entry rows are appended by
-        ``format_memory_block()`` at call time.
-        """
-        return self._shelf.read_text("context/memory_block")
-
-    def contact_block_template(self) -> str:
-        """The "Current chatter" block template.
-
-        Reads ``context/contact_block.md``.
-        """
-        return self._shelf.read_text("context/contact_block")
 
     def skills_block_template(self) -> str:
         """The "Available skills" block header template.
 
         Reads ``context/skills_block.md``.
         """
-        return self._shelf.read_text("context/skills_block")
-
-    def daily_note_prompt(self) -> str:
-        """The "Daily Note 记录指令" reference document.
-
-        Reads ``context/daily_note.md``.
-        """
-        return self._shelf.read_text("context/daily_note")
+        return self._shelf.read_text("agent/context/skills_block")
 
     # -- task presets -------------------------------------------------------
 
@@ -213,7 +164,7 @@ class PromptBook(BaseFileBook):
         ``enabled``.
         """
         out: dict[str, dict[str, Any]] = {}
-        for name in self._shelf.list("task_presets/*"):
+        for name in self._shelf.list("proactive/task_presets/*"):
             data = self._shelf.read(name)
             if not isinstance(data, dict):
                 raise ValueError(

@@ -14,7 +14,7 @@ Two problems followed:
    MAGIS DB removes both the file and the second step.
 
 This module exposes one entry point (:func:`load_runtime_spec`) that
-takes a connected :class:`magi.bus.Bus` and a ``magi_name``, and
+    takes a connected :class:`magi.bus.MagisBus` and a ``magi_name``, and
 returns the same :class:`RuntimeSpec` the old JSON loader returned —
 without writing or reading any on-disk cache.
 """
@@ -50,7 +50,7 @@ def load_runtime_spec(bus, magi_name: str, *, magis_database_url: str) -> Runtim
     """Resolve a runtime's identity from the MAGIS shared database.
 
     The bus must already be connected to a MAGIS store
-    (``open_control_bus``) and its ``runtime_state_book`` /
+    (``open_magis_bus``) and its ``runtime_state_book`` /
     ``magis_book`` must be available — both guaranteed by the
     provisioning-time bootstrap that ``magi init`` performs.
 

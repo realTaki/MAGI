@@ -20,7 +20,6 @@ def provision_node_storage(
     *,
     state_dir: str,
     magis_url: str | None,
-    prompts_dir: str | None = None,
 ):
     """Provision one fresh node store and its MAGIS store when supplied.
 
@@ -40,29 +39,21 @@ def provision_node_storage(
         )
 
     workspace_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("memories", "skills", "logs", "run"):
+    for name in ("memories", "prompts", "skills", "logs", "run"):
         (workspace_dir / name).mkdir(parents=True, exist_ok=True)
 
     # Importing and wiring Books registers all BUS-owned metadata before the
     # one explicit schema synchronisation below.
-    from magi.bus.bootstrap import (
-        _ensure_workspace_soul,
-        _open_with_dirs,
-        _resolve_prompts_dir,
-    )
+    from magi.bus.bootstrap import _open_with_dirs
 
     bus = _open_with_dirs(
         state_dir=str(state_path),
         magis_url=magis_url,
-        prompts_dir=prompts_dir,
         allow_unprovisioned=True,
     )
     bus.messages_book.ensure_fts()
     if not bus.settings_book.get_value(key="auth.signing_key"):
         bus.settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
-    resolved_prompts = _resolve_prompts_dir(prompts_dir)
-    if resolved_prompts is not None:
-        _ensure_workspace_soul(workspace_dir, resolved_prompts)
     return bus
 
 

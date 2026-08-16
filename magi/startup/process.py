@@ -231,10 +231,7 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
     via :meth:`set_desired_state` / :meth:`set_observed_state` on
     its own, so a registry-write failure here never strands the slot.
     """
-    from magi.startup.paths import (
-        resolve_magis_control_dir,
-        resolve_magis_database_url,
-    )
+    from magi.startup.paths import resolve_magis_database_url
     from magi.startup.spec import load_runtime_spec
     from magi.bus.db.base import utcnow_naive
     from magi.bus.library.magis.runtimeBook import (
@@ -246,12 +243,9 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
         magis_url = config.magis_database_url or resolve_magis_database_url(
             config.host_workspace_dir, config.magis_name
         )
-        control_dir = str(
-            resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
-        )
-        from magi.bus.bootstrap import open_control_bus
+        from magi.bus.bootstrap import open_magis_bus
 
-        bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+        bus = open_magis_bus(magis_url=magis_url)
         spec = load_runtime_spec(
             bus, config.magi_name, magis_database_url=magis_url
         )

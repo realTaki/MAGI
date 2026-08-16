@@ -145,6 +145,12 @@ class AgentWorker(RuntimeWorker):
         self._magi_id = magi_id
         self._claim_cursor = 0
 
+    async def on_start(self) -> None:
+        """Register AgentWorker-owned defaults before consuming turns."""
+        from magi.agent.prompt_defaults import ensure_agent_prompt_defaults
+
+        await self.call(ensure_agent_prompt_defaults, self.bus.prompt_book)
+
     # -- main loop -----------------------------------------------------------
 
     async def _run(self) -> None:

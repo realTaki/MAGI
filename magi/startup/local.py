@@ -28,7 +28,6 @@ from typing import Literal
 
 from magi.startup.config import ConfigurationError, StartupConfig
 from magi.startup.paths import (
-    resolve_magis_control_dir,
     resolve_magis_database_url,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
@@ -272,15 +271,12 @@ def _load_spec_from_db(config: StartupConfig):
     :func:`paths.resolve_magis_database_url` so we never need a file
     cache to bootstrap.
     """
-    from magi.bus import open_control_bus
+    from magi.bus import open_magis_bus
 
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
-    control_dir = str(
-        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
-    )
-    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    bus = open_magis_bus(magis_url=magis_url)
     return load_runtime_spec(
         bus, config.magi_name, magis_database_url=magis_url
     )
@@ -300,20 +296,16 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
         env["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id:
         env["MAGI_ID"] = str(config.magi_id)
-    # The runtime verifies webui-originated requests with
-    # HMAC over the request line + selected MAGI; that HMAC
-    # needs the same shared secret the webui uses. The
-    # single-machine install provisions it under the MAGIS
-    # control dir at init time and persists it both to
-    # ``bus.control_secrets`` (source of truth post-
-    # ``0002_add_control_secret_value``) and the
-    # ``control-secret`` file (bootstrap fallback). Thread the
-    # shared secret into the node child so the proxy layer can
-    # sign-verify inbound requests.
+    # The runtime verifies WebUI-originated requests with HMAC over the
+    # request line plus selected MAGI. The shared secret is durable MAGIS
+    # state; thread it into the node child for proxy verification.
     from magi.startup.webui import _read_control_secret
 
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
     secret = _read_control_secret(
-        host_workspace_dir=config.host_workspace_dir,
+        magis_url=magis_url,
         magis_name=config.magis_name,
     )
     if secret:

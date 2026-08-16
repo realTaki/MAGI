@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING
 
 from magi.startup.config import WEBUI_PORT, StartupConfig
 from magi.startup.paths import (
-    resolve_magis_control_dir,
     resolve_magis_database_url,
     resolve_webui_log_paths,
     resolve_webui_pid_path,
@@ -41,11 +40,6 @@ from magi.startup.process import (
     read_pid,
     reap_orphan_listener,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from magi.bus import Bus
 
 logger = logging.getLogger("magi.startup.webui")
 
@@ -230,7 +224,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     """
     import uvicorn
 
-    from magi.bus import open_control_bus
+    from magi.bus import open_magis_bus
     from magi.channels.api.app import create_control_app
     from magi.channels.api.control_context import ControlContext
 
@@ -249,22 +243,14 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     # :mod:`magi.channels.api.proxy_auth`). The detached launcher sets it
     # via :func:`_build_webui_env`; this foreground path inherits the
     # parent shell's env only if the operator remembered to export it.
-    # The DB-stored value (``bus.control_secrets``) is the runtime
-    # source of truth post-``0002_add_control_secret_value``; the file
-    # remains as a bootstrap fallback for one-off tools and the legacy
-    # launcher path. We try DB first, then file, then raise.
+    # The MAGIS database is the only persisted source of the secret. K8s
+    # deployments may inject the same value through ``MAGI_CONTROL_SECRET``.
     if not os.environ.get("MAGI_CONTROL_SECRET"):
-        _seed_control_secret_from_db_or_file(
-            host_workspace_dir=config.host_workspace_dir,
-            magis_name=config.magis_name,
-        )
+        _seed_control_secret_from_magis(magis_url=magis_url, magis_name=config.magis_name)
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.
-    bus = open_control_bus(
-        control_dir=str(resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)),
-        magis_url=magis_url,
-    )
+    bus = open_magis_bus(magis_url=magis_url)
     app = create_control_app(context=ControlContext(bus=bus))
     port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
     host = os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
@@ -329,12 +315,10 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     # The webui signs proxy requests to the runtime via
     # ``MAGI_CONTROL_SECRET`` (HMAC over the request line +
     # selected MAGI). The single-machine install provisions
-    # the secret at ``init_first_magi`` time and persists it both
-    # to ``bus.control_secrets`` (source of truth) and the
-    # ``control-secret`` file (bootstrap fallback). Thread it into
-    # the detached webui's env so the proxy layer can sign.
+    # the secret from the MAGIS control-secrets Book. Thread it into the
+    # detached WebUI's env so the proxy layer can sign requests.
     secret = _read_control_secret(
-        host_workspace_dir=config.host_workspace_dir,
+        magis_url=env["MAGIS_DATABASE_URL"],
         magis_name=config.magis_name,
     )
     if secret:
@@ -342,9 +326,7 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
     return env
 
 
-def _seed_control_secret_from_db_or_file(
-    *, host_workspace_dir: Path, magis_name: str
-) -> None:
+def _seed_control_secret_from_magis(*, magis_url: str, magis_name: str) -> None:
     """Self-inject ``MAGI_CONTROL_SECRET`` into the process env.
 
     Mirrors :func:`_read_control_secret` but mutates ``os.environ`` so
@@ -353,96 +335,38 @@ def _seed_control_secret_from_db_or_file(
     the env var). Called by the foreground launcher before uvicorn
     binds so the proxy signature path is ready at the first request.
 
-    When the DB row is missing but the bootstrap file exists, the
-    file's value is mirrored into the DB so future launches don't
-    need the file. When both are missing, ``magi init`` is required.
+    When the DB row is missing, provisioning is incomplete and startup fails.
     """
     secret = _read_control_secret(
-        host_workspace_dir=host_workspace_dir, magis_name=magis_name
+        magis_url=magis_url, magis_name=magis_name
     )
     if secret:
         os.environ["MAGI_CONTROL_SECRET"] = secret
         return
 
-    # DB miss — fall back to the bootstrap file and mirror it into the
-    # DB so the next launch can self-load.
-    secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
-    if not secret_path.exists():
-        raise RuntimeError(
-            f"MAGI_CONTROL_SECRET is not set and neither the DB row "
-            f"({magis_name!r} in control_secrets) nor the bootstrap file "
-            f"({secret_path}) is present. Run `magi init` to (re)provision the "
-            f"MAGIS control secret, or export MAGI_CONTROL_SECRET in the shell."
-        )
-    value = secret_path.read_text(encoding="utf-8").strip()
-    os.environ["MAGI_CONTROL_SECRET"] = value
-    try:
-        from magi.bus import open_control_bus
-        bus = open_control_bus(
-            control_dir=str(secret_path.parent),
-            magis_url=resolve_magis_database_url(host_workspace_dir, magis_name),
-        )
-    except Exception:
-        return  # best-effort; we still have the file-backed value in env
-    if bus.control_secrets_book is None:
-        return
-    existing = bus.control_secrets_book.get_by_name(name=magis_name)
-    if existing is not None and existing.secret_value:
-        return  # someone else already mirrored
-    import hashlib
-    import secrets
-    salt = secrets.token_bytes(16)
-    secret_hash = hashlib.sha256(value.encode("utf-8") + salt).digest()
-    bus.control_secrets_book.upsert(
-        name=magis_name,
-        secret_hash=secret_hash,
-        salt=salt,
-        secret_value=value.encode("utf-8"),
+    raise RuntimeError(
+        f"MAGI_CONTROL_SECRET is not set and MAGIS {magis_name!r} has no "
+        "control_secrets row. Run `magi init` to provision it, or inject the "
+        "secret through the deployment environment."
     )
 
 
-def _read_control_secret(*, host_workspace_dir: Path, magis_name: str) -> str | None:
-    """Read the raw control secret, DB first, file fallback.
+def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:
+    """Read the raw control secret from the MAGIS database.
 
-    Opens a transient MAGIS control bus purely to read the
-    ``control_secrets`` row. Falls back to the bootstrap file for
-    pre-migration deployments whose ``secret_value`` column is NULL.
-    Synchronises the schema first so the ``0002_add_control_secret_value``
-    column exists on the target DB before we issue the SELECT — a fresh
-    checkout on a stale DB will otherwise crash with ``no such column``.
+    Opens a transient MAGIS facade purely to read the ``control_secrets`` row.
     """
-    secret_path = resolve_magis_control_dir(host_workspace_dir, magis_name) / "control-secret"
-    bus = _open_control_bus_with_schema_synced(
-        control_dir=secret_path.parent,
-        magis_url=resolve_magis_database_url(host_workspace_dir, magis_name),
-    )
-    if bus is not None and bus.control_secrets_book is not None:
+    try:
+        from magi.bus import open_magis_bus
+
+        bus = open_magis_bus(magis_url=magis_url)
+    except Exception:
+        return None
+    if bus.control_secrets_book is not None:
         row = bus.control_secrets_book.get_by_name(name=magis_name)
         if row is not None and row.secret_value:
             return row.secret_value.decode("utf-8")
-    if secret_path.exists():
-        value = secret_path.read_text(encoding="utf-8").strip()
-        if value:
-            return value
     return None
-
-
-def _open_control_bus_with_schema_synced(*, control_dir, magis_url) -> "Bus | None":
-    """Open the MAGIS control bus with schema migration applied first.
-
-    Delegates to :func:`magi.bus.open_control_bus`, which already
-    runs :func:`magi.bus.db.schema.synchronise_schema` on the MAGIS
-    store before handing the bus back. Returns ``None`` on any failure
-    so the caller can fall through to the bootstrap-file path.
-    """
-    try:
-        from magi.bus import open_control_bus
-    except Exception:
-        return None
-    try:
-        return open_control_bus(control_dir=str(control_dir), magis_url=magis_url)
-    except Exception:
-        return None
 
 
 # ----------------------------------------------------------------------

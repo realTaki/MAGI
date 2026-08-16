@@ -1,6 +1,6 @@
-"""Soul editor — the WebUI surface for editing ``SOUL.md``.
+"""Soul editor — the WebUI surface for the managed Agent persona.
 
-The persona lives at ``<workspace_root>/SOUL.md`` and is
+The persona lives at ``<workspace_root>/prompts/agent/soul.md`` and is
 read on every chat turn by
 :meth:`magi.agent.system_prompt.read_soul`. There is one
 ``SOUL.md`` per **MAGI node** (ADAM container, EVA container) —
@@ -20,9 +20,8 @@ Who can edit it:
     roles (C6+) and have no business editing this node's
     persona.
 
-Reads and writes go through :meth:`PromptBook.read_workspace_soul`
-and :meth:`PromptBook.write_workspace_soul` — no direct filesystem
-I/O in the API layer.
+Reads and writes go through :class:`PromptBook` — no direct filesystem I/O
+in the API layer.
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ class SoulReadResponse(BaseModel):
 
     ``is_bundled_fallback`` is true when the workspace file is
     missing — the agent is then reading
-    ``prompts/fallback_persona.md``. The Settings UI uses the
+    generic managed fallback. The Settings UI uses the
     flag to surface a "using the generic fallback; save to
     customise" warning so the operator knows the persona they
     type is going somewhere real, not overwriting a bundled
@@ -82,8 +81,8 @@ class SoulUpdateResponse(BaseModel):
 def read_soul(_admin: AdminOrAssignedGate, bus: BusDep) -> SoulReadResponse:
     """Return the current persona text the agent reads.
 
-    When the workspace ``SOUL.md`` is missing the agent falls
-    back to ``prompts/fallback_persona.md`` — we mirror that
+    When the managed persona is missing the agent falls back to its
+    generic fallback — we mirror that
     behaviour here so the UI shows *what the agent is actually
     using*, not a phantom "the file is empty" state.
     """
@@ -101,7 +100,7 @@ def update_soul(
     _admin: AdminOrAssignedGate,
     bus: BusDep,
 ) -> SoulUpdateResponse:
-    """Persist the new persona text to ``SOUL.md``.
+    """Persist the new persona through ``PromptBook``.
 
     The file is rewritten atomically (via
     :meth:`PromptBook.write_workspace_soul`); the agent picks up
@@ -131,13 +130,8 @@ def reset_soul(
     _admin: AdminOrAssignedGate,
     bus: BusDep,
 ) -> SoulUpdateResponse:
-    """Reset the workspace ``SOUL.md`` to the bundled default.
-
-    Reads the immutable ``prompts/soul.md`` and writes it to
-    the workspace path. Same atomic-write as
-    :func:`update_soul`.
-    """
+    """Reset the managed persona to the AgentWorker default."""
     assert bus.prompt_book is not None
-    default = bus.prompt_book.soul()
+    default = bus.prompt_book.default_soul()
     modified_at = bus.prompt_book.write_workspace_soul(default)
     return SoulUpdateResponse(modified_at=modified_at)

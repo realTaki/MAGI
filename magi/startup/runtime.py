@@ -137,19 +137,15 @@ def _startup_context(config: StartupConfig) -> StartupContext:
     ``host_workspace_dir`` + ``magis_name``; ``resolve_magis_database_url``
     is the single path-aware helper for that.
     """
-    from magi.bus import open_control_bus
+    from magi.bus import open_magis_bus
     from magi.startup.paths import (
-        resolve_magis_control_dir,
         resolve_magis_database_url,
     )
 
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
-    control_dir = str(
-        resolve_magis_control_dir(config.host_workspace_dir, config.magis_name)
-    )
-    bus = open_control_bus(control_dir=control_dir, magis_url=magis_url)
+    bus = open_magis_bus(magis_url=magis_url)
     spec = load_runtime_spec(
         bus, config.magi_name, magis_database_url=magis_url
     )

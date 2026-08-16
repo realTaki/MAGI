@@ -46,10 +46,13 @@ class ProactiveWorker(RuntimeWorker):
         self._magi_id = magi_id
 
     async def on_start(self) -> None:
-        # 1. Bootstrap: Adam 检查 + admin credentials nudge
-        await self._bootstrap()
+        # 1. Register ProactiveWorker-owned default presets.
+        from magi.proactive.prompt_defaults import ensure_proactive_prompt_defaults
 
-        # 2. 启动主循环
+        await self.call(ensure_proactive_prompt_defaults, self.bus.prompt_book)
+
+        # 2. Bootstrap: Adam 检查 + admin credentials nudge
+        await self._bootstrap()
 
     # ------------------------------------------------------------------
     # main loop
