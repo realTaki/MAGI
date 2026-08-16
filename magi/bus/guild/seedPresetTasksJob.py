@@ -14,9 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
-
 
 # -- public dataclasses --------------------------------------------------
 
