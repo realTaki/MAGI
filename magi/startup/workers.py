@@ -6,7 +6,6 @@ import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from magi.bus.library.local.tasksBook import Channel
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
@@ -16,7 +15,7 @@ logger = logging.getLogger("magi.startup.workers")
 
 #: WebUI powers the operator dashboard and cannot be disabled. A2A is not a
 #: channel worker; AgentWorker consumes its MAGIS-shared boards directly.
-_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI.value})
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({"webui"})
 
 
 class WorkerRegistry:
@@ -39,10 +38,9 @@ class WorkerRegistry:
         from magi.tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
-        # The WebUI is started regardless of ``enabled_channels``. This is
-        # the composition-root-level counterpart to the ``channels.enabled``
-        # default written by :mod:`magi.bus.provision` and the runtime-side
-        # fallback in :func:`magi.startup.runtime._build_channels`.
+        # The WebUI is started regardless of ``enabled_channels``.  The
+        # runtime fallback in :func:`magi.startup.runtime._build_channels`
+        # provides that safe operator surface when no selection is persisted.
         enabled.update(_REQUIRED_CHANNELS)
         self._workers: dict[str, RuntimeWorker] = {
             "providers": ProvidersWorker(bus),
@@ -81,11 +79,20 @@ class WorkerRegistry:
 
     async def start(self) -> None:
         try:
+            # Capability discovery happens at runtime startup, before the
+            # enabled subset is evaluated.  This makes a newly installed TG
+            # adapter visible to the channel API even when it has no token
+            # yet and therefore has no running loop.
+            for name in ("task", "tg", "webui"):
+                worker = self._workers[name]
+                register = getattr(worker, "register_channel", None)
+                if register is not None:
+                    await register()
             for name in ("providers", "tools", "mcp", "agent"):
                 await self.start_worker(name)
             for name in ("task", "tg", "webui"):
-                aliases = {"task": {"task", "scheduled"}, "tg": {"tg", "telegram"}}
-                if self._enabled_channels & aliases.get(name, {name}):
+                aliases = {"task": {"task"}, "tg": {"tg"}}
+                if name == "task" or self._enabled_channels & aliases.get(name, {name}):
                     await self.start_worker(name)
             await self.start_worker("proactive")
         except Exception:

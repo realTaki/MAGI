@@ -331,7 +331,7 @@ def _build_channels(
     runtime convention — no ``MAGI_CHANNELS`` env var.
 
     If the setting is missing or unparseable, fall back to the
-    required-channel default (``[Channel.WEBUI]``).
+    required-channel default (``["webui"]``).
     This is the runtime-side counterpart to the provisioning
     default in :mod:`magi.bus.provision` — workspaces provisioned
     before that default was added still get the required
@@ -341,9 +341,7 @@ def _build_channels(
     """
     import json
 
-    from magi.bus.library.local.tasksBook import Channel
-
-    required = (Channel.WEBUI.value,)
+    required = ("webui",)
     if bus is None:
         return list(required)
 
