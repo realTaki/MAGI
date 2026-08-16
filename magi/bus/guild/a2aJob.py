@@ -176,9 +176,6 @@ class _A2ANotifyRow(BaseJobRowMixin):
         nullable=True,
         default=None,
     )
-    #: 对称预留 —— notify 当前无 ``get_result``（无 sender-wait 契约），
-    #: 字段保留以与 request 表结构一致。
-    result_claimed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 def _validate_route(
