@@ -175,7 +175,24 @@ HTTP PATCH 语义。部分请求由 API/工具层先读取 DTO，再使用
 
 这消除后端业务代码中的重复 ISO 转换和时区格式漂移。
 
-## 5. 实施边界
+## 5. 字符串规则
+
+所有字符串列统一使用 SQLAlchemy `Text`，不声明长度。这同时消除两类问题：
+
+- **magic number**：`String(16)` 到 `String(500)` 的随意长度没有业务约束含义，
+  是散落在 bus 层 22 个文件里的数字常量。
+- **双边界不一致**：SQLite 忽略 `VARCHAR(n)` 长度、PostgreSQL 强制，同一 schema
+  在两种后端上行为不同；`String(500)` 的 URL 等在 PG 上可能超长报错，而测试环境
+  全部是 SQLite，这类问题只在生产暴露。
+
+格式语义（如 ULID、SHA-256 hex）由列名 + 行内注释表达，不再依赖 VARCHAR 长度：
+`conversation_id` / `message_id` 标注 `# ULID`，`snapshot_hash` 标注
+`# sha256 hex`。
+
+enum 列不受影响：`enum_column` 使用 `SAEnum`（`magi.bus.db.base`），不是
+`String(n)`。
+
+## 6. 实施边界
 
 本次是全链路 schema 重写，不采用旧 schema 的兼容包装器，也不保留双写、旧列
 回退或旧字符串 ID 的读取分支。旧 SQLite / PostgreSQL 数据库按新的基线 schema
@@ -194,7 +211,7 @@ HTTP PATCH 语义。部分请求由 API/工具层先读取 DTO，再使用
 下游引用的 identity 链（Conversation/Message、Task/TaskRun、MAGIS runtime），
 随后迁移其余 Book，最后删除所有旧 schema 与转换残留。
 
-## 6. 顺带修复与验收
+## 7. 顺带修复与验收
 
 - `_McpServerRow` 的时间类型标注使用 `Mapped[datetime]`，不使用
   `Mapped[DateTime]`。
@@ -208,7 +225,7 @@ HTTP PATCH 语义。部分请求由 API/工具层先读取 DTO，再使用
   `datetime`，由前端负责时区和人类可读格式。
 - Alembic 基线、SQLite 与 PostgreSQL 建表结果一致，并通过完整测试套件。
 
-## 7. 收益与代价
+## 8. 收益与代价
 
 收益是一个固定的认知模型：每张表都有相同的内部身份与审计时间，关系均为整数
 外键，公开身份显式为领域业务键，时间在唯一边界序列化。新 Book 只需声明业务字段，

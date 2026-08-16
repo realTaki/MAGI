@@ -5,32 +5,32 @@ Schema for the ``token_usage`` table.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+import dataclasses
+from typing import Any
 
-from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
     JSON,
     ForeignKey,
     Integer,
-    String,
+    Text,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class TokenUsage(BaseRecord):
-    contact_id: Annotated[int, Strict()]
-    llm_attempt_id: Annotated[str, Strict(), StringConstraints(max_length=128)] | None = None
-    provider: Annotated[str, Strict(), StringConstraints(max_length=32)]
-    model: Annotated[str, Strict(), StringConstraints(max_length=128)]
-    input_tokens: Annotated[int, Strict(), Field(ge=0)]
-    output_tokens: Annotated[int, Strict(), Field(ge=0)]
-    cost_usd: Annotated[float, Strict(), Field(ge=0)] = 0.0
+    contact_id: int
+    llm_attempt_id: str | None = None
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float = 0.0
     extra: dict[str, Any] | None = None  # 额外上下文（缓存命中率等）
 
 
@@ -43,9 +43,9 @@ class _TokenUsageRow(BaseRecordMixin):
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False
     )
-    llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    provider: Mapped[str] = mapped_column(String(32), nullable=False)
-    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    llm_attempt_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     cost_usd: Mapped[float] = mapped_column(

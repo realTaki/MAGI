@@ -19,16 +19,14 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
     JSON,
     DateTime,
     ForeignKey,
     Index,
     Integer,
-    String,
     Text,
     UniqueConstraint,
     func,
@@ -40,7 +38,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from magi.bus.db.base import utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 logger = logging.getLogger("magi.bus.library.local.conversationBook")
 
@@ -48,87 +46,30 @@ logger = logging.getLogger("magi.bus.library.local.conversationBook")
 def _new_semantic_id() -> str:
     return uuid.uuid4().hex[:26]
 
-# -- inbound text cap ----------------------------------------------------
-#
-# Per-turn character cap applied at :meth:`MessageBook.add` to prevent a
-# single runaway turn from blowing past the LLM context budget and
-# breaking compaction's floor-of-1 guarantee (always keep the most
-# recent turn). Lives in this module because the cap is fundamentally
-# a *write-side* concern — the row is what compaction reads; the LLM
-# reads the row, not a chatNotifyJob payload.
-DEFAULT_CHAT_MAX_INPUT_CHARS = 8_000
-MIN_CHAT_MAX_INPUT_CHARS = 1_000
-MAX_CHAT_MAX_INPUT_CHARS = 100_000
-
-
-def _clamp_int(raw: str | None, default: int, minimum: int, maximum: int) -> int:
-    """Parse + clamp a settings value. Garbage / missing → default."""
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(maximum, value))
-
-
-def _resolve_max_input_chars(settings_book) -> int:
-    """Read ``system.chat_max_input_chars`` from a settings book, clamped.
-
-    Safe to call with ``None`` (returns the default). The clamp
-    range matches :mod:`magi.channels.api.system_settings` so the
-    API surface and the runtime read can never diverge.
-    """
-    if settings_book is None:
-        return DEFAULT_CHAT_MAX_INPUT_CHARS
-    try:
-        raw = settings_book.get_value(key="system.chat_max_input_chars")
-    except Exception:
-        return DEFAULT_CHAT_MAX_INPUT_CHARS
-    return _clamp_int(
-        raw,
-        DEFAULT_CHAT_MAX_INPUT_CHARS,
-        MIN_CHAT_MAX_INPUT_CHARS,
-        MAX_CHAT_MAX_INPUT_CHARS,
-    )
-
-
-def _truncate_inbound(text: str, max_chars: int) -> tuple[str, bool, int]:
-    """Truncate *text* to *max_chars* chars.
-
-    Returns ``(text, was_truncated, original_len)``. A no-op when
-    the text is already within budget — ``was_truncated`` is False
-    in that case.
-    """
-    if len(text) <= max_chars:
-        return text, False, len(text)
-    return text[:max_chars], True, len(text)
-
-
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Conversation(BaseRecord):
-    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_semantic_id)
-    delivery_address: Annotated[str, Strict(), StringConstraints(max_length=64)]
-    contact_id: Annotated[int, Strict()]
-    channel: Annotated[str, Strict(), StringConstraints(max_length=16)]
-    title: Annotated[str, Strict(), StringConstraints(strip_whitespace=True, max_length=80)] | None = None
-    summary: Annotated[str, Strict()] | None = None
-    last_compaction_at: Annotated[datetime, Strict()] | None = None
+    conversation_id: str = field(default_factory=_new_semantic_id)
+    delivery_address: str
+    contact_id: int
+    channel: str
+    title: str | None = None
+    summary: str | None = None
+    last_compaction_at: datetime | None = None
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Message(BaseRecord):
-    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)]
-    message_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_semantic_id)
-    role: Annotated[str, Strict(), StringConstraints(max_length=16)]
-    text: Annotated[str, Strict()]
-    ts: Annotated[datetime, Strict()] = field(default_factory=utcnow_naive)
-    archived: Annotated[int, Strict(), Field(ge=0, le=1)] = 0
+    conversation_id: str
+    message_id: str = field(default_factory=_new_semantic_id)
+    role: str
+    text: str
+    ts: datetime = field(default_factory=utcnow_naive)
+    archived: int = 0
     content_blocks: list[dict[str, Any]] | None = None  # 富内容块（tool_use 等）
-    llm_attempt_id: Annotated[str, Strict(), StringConstraints(max_length=128)] | None = None
+    llm_attempt_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -302,11 +243,11 @@ class ResolvedHit:
 class _ConversationRow(BaseRecordMixin):
     __tablename__ = "chat_conversations"
 
-    conversation_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
-    delivery_address: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    conversation_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)  # ULID
+    delivery_address: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    channel: Mapped[str] = mapped_column(String(16), nullable=False)
-    title: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_compaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -320,13 +261,13 @@ class _MessageRow(BaseRecordMixin):
         index=True,
     )
     conversation: Mapped[_ConversationRow] = relationship()
-    message_id: Mapped[str] = mapped_column(String(26), nullable=False)
-    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    message_id: Mapped[str] = mapped_column(Text, nullable=False)  # ULID
+    role: Mapped[str] = mapped_column(Text, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-    llm_attempt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    llm_attempt_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_chat_messages_conversation_archived", "conversation_row_id", "archived", "id"),
@@ -341,16 +282,8 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
     model_cls = _ConversationRow
     record_cls = Conversation
 
-    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
         super().__init__(factory)
-        # ``settings_book`` is optional so unit tests can build a
-        # ConversationBook with just a factory. When present, the
-        # cap is forwarded to any internal :class:`MessageBook` this
-        # book constructs (in :meth:`append_messages` and
-        # :meth:`get_messages_page`), so the persistent layer
-        # enforces the same cap that
-        # :meth:`chatNotifyBoard.publish` enforces on the LLM input.
-        self._settings_book = settings_book
 
     def get_by_conversation_id(self, *, conversation_id: str) -> Conversation | None:
         with self._session() as s:
@@ -760,14 +693,8 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
 
         Unlike :meth:`set_title_if_null` (the auto-title CAS primitive),
         this is an unconditional write — ``title=None`` clears the column.
-        The value is trimmed and clamped to 80 chars to match the column
-        width and the PATCH body's ``max_length``. Returns the updated DTO,
-        or ``None`` when no matching row exists.
+        Returns the updated DTO, or ``None`` when no matching row exists.
         """
-        if title is not None:
-            title = title.strip()
-            if len(title) > 80:
-                title = title[:80]
         now = utcnow_naive()
         with self._session() as s:
             stmt = (
@@ -792,7 +719,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             )
             return self._row_to_dto(row) if row else None
 
-    def delete(self, *, contact_id: int, conversation_id: str) -> bool:
+    def delete_owned(self, *, contact_id: int, conversation_id: str) -> bool:
         """Delete one owned conversation (and its messages via FK cascade).
 
         Idempotent — returns ``False`` (without error) when the row is
@@ -810,23 +737,16 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             )
             if row is None:
                 return False
-            s.delete(row)
-            s.commit()
-        return True
+            record_id = row.id
+        return self.delete(record_id)
 
 
 class MessageBook(BaseBook[_MessageRow, Message]):
     model_cls = _MessageRow
     record_cls = Message
 
-    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
         super().__init__(factory)
-        # ``settings_book`` is optional so unit tests can build a
-        # MessageBook with just a factory and skip the
-        # ``system.chat_max_input_chars`` cap. When present, the
-        # cap is applied on :meth:`add` so a single huge turn
-        # cannot break compaction's floor-of-1 guarantee.
-        self._settings_book = settings_book
 
     def _row_to_dto(self, row: _MessageRow) -> Message:
         conversation = row.conversation
@@ -890,7 +810,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         ``limit`` / ``offset`` are clamped by the caller — the route
         handler in :mod:`magi.channels.api.chat_conversations` does it inline
         because ``Query(ge=…, le=…)`` interacts badly with
-        ``from __future__ import annotations`` for some pydantic
+        ``from __future__ import annotations`` for some dataclass
         versions.
         """
         from sqlalchemy import func
@@ -932,24 +852,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         )
 
     def _record_to_row_values(self, record: Message, session) -> dict:
-        """Resolve the semantic conversation key and apply the inbound cap."""
-        # Per-turn cap: protect the persistent layer (and therefore
-        # compaction, which reads from here) from a single runaway
-        # turn. This is the single chokepoint for the cap — the
-        # chatNotifyJob does not need a parallel cap, since the LLM
-        # reads the truncated row via
-        # :func:`build_messages_from_conversation`, not a chatNotifyJob
-        # payload.
-        max_chars = _resolve_max_input_chars(self._settings_book)
-        text, was_truncated, original_len = _truncate_inbound(record.text, max_chars)
-        if was_truncated:
-            logger.warning(
-                "MessageBook.add: truncated %d→%d chars (cap=%d, role=%s)",
-                original_len,
-                max_chars,
-                max_chars,
-                record.role,
-            )
+        """Resolve the semantic conversation key without changing text."""
         conversation = session.scalar(
             select(_ConversationRow).where(_ConversationRow.conversation_id == record.conversation_id)
         )
@@ -959,7 +862,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             "conversation_row_id": conversation.id,
             "message_id": record.message_id or _new_semantic_id(),
             "role": record.role,
-            "text": text,
+            "text": record.text,
             "ts": record.ts or utcnow_naive(),
             "archived": record.archived,
             "content_blocks": record.content_blocks,

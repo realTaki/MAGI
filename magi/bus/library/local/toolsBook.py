@@ -20,19 +20,18 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Integer,
-    String,
     Text,
     UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ToolCatalogState(BaseRecord):
     """Singleton catalog-state row DTO."""
 
@@ -40,7 +39,7 @@ class ToolCatalogState(BaseRecord):
     snapshot_hash: str  # 当前快照的指纹哈希
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ToolDefinition(BaseRecord):
     """LLM-contract DTO — the tool as the agent sees it.
 
@@ -78,13 +77,13 @@ class _ToolCatalogStateRow(BaseRecordMixin):
     __tablename__ = "tool_catalog_state"
 
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    snapshot_hash: Mapped[str] = mapped_column(Text, nullable=False, default="")  # sha256 hex
 
 
 class _ToolDefinitionRow(BaseRecordMixin):
     __tablename__ = "tool_definitions"
 
-    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
     #: Deprecated duplicate of ``spec_json``; kept for schema compatibility
     #: but no longer written by ToolDefinitionBook.  New rows get NULL.
@@ -92,7 +91,7 @@ class _ToolDefinitionRow(BaseRecordMixin):
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
     # JSON-serialized list[str] or NULL (no role gate).
     allowed_roles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 

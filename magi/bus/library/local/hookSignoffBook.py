@@ -9,24 +9,24 @@ Schema for the ``hook_signoffs`` table.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Strict
 from sqlalchemy import (
     JSON,
     DateTime,
-    String,
+    Text,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class HookSignoff(BaseRecord):
     subject_type: str  # 触发 hook 的对象类型
     subject_id: str  # 触发 hook 的对象 ID
@@ -34,7 +34,7 @@ class HookSignoff(BaseRecord):
     plugin_id: str  # 接收 signoff 的插件 ID
     status: str = "pending"  # 状态（pending/done/failed）
     payload: dict[str, Any] | None = None  # 附加负载
-    dispatched_at: Annotated[datetime, Strict()] | None = None
+    dispatched_at: datetime | None = None
 
 
 # -- internal ORM --------------------------------------------------------
@@ -43,11 +43,11 @@ class HookSignoff(BaseRecord):
 class _HookSignoffRow(BaseRecordMixin):
     __tablename__ = "hook_signoffs"
 
-    subject_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    subject_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    hook_point: Mapped[str] = mapped_column(String(64), nullable=False)
-    plugin_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    subject_type: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[str] = mapped_column(Text, nullable=False)
+    hook_point: Mapped[str] = mapped_column(Text, nullable=False)
+    plugin_id: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

@@ -11,23 +11,21 @@ Schema for the ``action_items`` table.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import Strict, StringConstraints
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    String,
     Text,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
@@ -72,12 +70,7 @@ class ActionPriority(StrEnum):
 # default mix.
 _COMPLETED_VISIBLE_DAYS = 7
 
-# ``ActionItem`` declares its field constraints inline; this cap remains for
-# command-specific validation in ``complete(note=...)``.
-_COMPLETION_NOTE_MAX = 500
-
-
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class ActionItem(BaseRecord):
     """A to-do surfaced to an operator in the dashboard.
 
@@ -89,18 +82,16 @@ class ActionItem(BaseRecord):
     and LLM tool both consume.
     """
 
-    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
-    title: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
-    ]  # 待办标题
-    description: Annotated[str, Strict(), StringConstraints(max_length=1000)] | None = None
-    target_url: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
+    contact_id: int  # 所属联系人 ID
+    title: str  # 待办标题
+    description: str | None = None
+    target_url: str | None = None
     priority: ActionPriority = ActionPriority.NORMAL  # 优先级（normal/high）
-    due_date: Annotated[datetime, Strict()] | None = None  # 截止日期
+    due_date: datetime | None = None  # 截止日期
     source: ActionSource = ActionSource.PROACTIVE  # 来源（user/proactive）
-    completed_at: Annotated[datetime, Strict()] | None = None  # 完成时间（None=未完成）
-    completion_note: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
-    dismissed: Annotated[bool, Strict()] = False  # 是否已被 dismiss（隐藏但未完成）
+    completed_at: datetime | None = None  # 完成时间（None=未完成）
+    completion_note: str | None = None
+    dismissed: bool = False  # 是否已被 dismiss（隐藏但未完成）
 
 # -- internal ORM --------------------------------------------------------
 
@@ -115,13 +106,12 @@ class _ActionItemRow(BaseRecordMixin):
         ForeignKey("contacts.id", ondelete="SET NULL"),
         nullable=True,
     )
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
     # Optional longer text — surfaces under the title in the
-    # dashboard. ``Text`` rather than ``String(N)`` to match
-    # the column shape.
+    # dashboard. Free text, no length cap.
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # In-app deep-link target for the row's "go to" button.
-    target_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    target_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     priority: Mapped[ActionPriority] = mapped_column(
         enum_column(ActionPriority),
         nullable=False,
@@ -140,7 +130,7 @@ class _ActionItemRow(BaseRecordMixin):
     # Null = still open. The "I clicked 完成" stamp.
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Optional reason captured at complete-time.
-    completion_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    completion_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Distinct from completion: a dismissed row never claims
     # the underlying action was performed, but is hidden from
     # the open list just the same.
@@ -256,13 +246,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         overwrite the original note.
 
         Returns ``None`` when the row doesn't exist.
-        Raises :class:`ValueError` if ``note`` exceeds
-        :data:`COMPLETION_NOTE_MAX` characters.
         """
-        if note is not None and len(note) > _COMPLETION_NOTE_MAX:
-            raise ValueError(
-                f"completion_note length {len(note)} exceeds maximum {_COMPLETION_NOTE_MAX}"
-            )
         with self._session() as s:
             row = s.get(_ActionItemRow, action_item_id)
             if row is None:

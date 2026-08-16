@@ -31,10 +31,13 @@ from magi.bus.library.local.memoryBook import (
     MemoryBook,
     MemoryKind,
 )
-from magi.bus.library.local.settingBook import MCPTimeout, Setting, SettingBook
+from magi.bus.library.local.settingBook import (
+    CHANNEL_OPTIONS_KEY,
+    MCPTimeout,
+    Setting,
+    SettingBook,
+)
 from magi.bus.library.local.tasksBook import (
-    Channel,
-    ChannelEnum,
     Task,
     TaskBook,
     TaskRun,
@@ -56,8 +59,7 @@ __all__ = [
     "ActionItemBook",
     "ActionPriority",
     "ActionSource",
-    "Channel",
-    "ChannelEnum",
+    "CHANNEL_OPTIONS_KEY",
     "Contact",
     "ContactBook",
     "ContactNote",

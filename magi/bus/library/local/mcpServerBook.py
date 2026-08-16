@@ -10,26 +10,25 @@ is registered in a different import order.
 from __future__ import annotations
 
 import json
-from dataclasses import field
-from typing import Any, cast
+from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
     Float,
-    String,
     Text,
     UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 # -- public dataclass ----------------------------------------------------
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class McpServer(BaseRecord):
     """One operator-configured MCP server.
 
@@ -76,11 +75,11 @@ class _McpServerRow(BaseRecordMixin):
     # SQLite refuses autoincrement on composite primary keys.
     # The cross-ORM uniqueness contract lives in the
     # ``UniqueConstraint`` below.
-    name: Mapped[str] = mapped_column(String(64), nullable=False)
-    connection_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    connection_type: Mapped[str] = mapped_column(Text, nullable=False)
 
     # STDIO
-    command: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    command: Mapped[str | None] = mapped_column(Text, nullable=True)
     args_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -95,7 +94,7 @@ class _McpServerRow(BaseRecordMixin):
     )
 
     # URL-based (sse / streamable_http)
-    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
     headers_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
@@ -239,73 +238,6 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
             "config": record.config,
         }
 
-    def update(
-        self,
-        *,
-        server_id: int,
-        # ``connection_type`` and ``enabled`` are NOT NULL columns; the
-        # ``_UnsetType`` sentinel is the only legal "leave alone" value.
-        # Nullable columns also accept ``None`` to clear the value.
-        connection_type: str | _UnsetType = _UNSET,
-        command: str | None | _UnsetType = _UNSET,
-        args: list[str] | None | _UnsetType = _UNSET,
-        env: dict[str, str] | None | _UnsetType = _UNSET,
-        url: str | None | _UnsetType = _UNSET,
-        headers: dict[str, str] | None | _UnsetType = _UNSET,
-        enabled: bool | _UnsetType = _UNSET,
-        connect_timeout: float | None | _UnsetType = _UNSET,
-        execute_timeout: float | None | _UnsetType = _UNSET,
-        sse_read_timeout: float | None | _UnsetType = _UNSET,
-    ) -> None:
-        """In-place update of a row by numeric id.
-
-        Every column defaults to :data:`_UNSET` ("leave alone").
-        Pass ``None`` to clear the column (transport-type
-        switches rely on this to drop a stale ``command`` /
-        ``url`` etc.); pass a value to overwrite.
-
-        The :meth:`upsert` wrapper is the primary entry point
-        for full-row rewrites.
-        """
-        with self._session() as s:
-            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
-            if row is None:
-                return
-            if connection_type is not _UNSET:
-                # ``cast`` for Pylance — the ``is not _UNSET`` check
-                # already guarantees the type, but the singleton class
-                # pattern confuses the type checker so the union isn't
-                # narrowed automatically.
-                row.connection_type = cast(str, connection_type)
-            if command is not _UNSET:
-                row.command = cast("str | None", command)
-            if args is not _UNSET:
-                row.args_json = json.dumps(args or [])
-            if env is not _UNSET:
-                row.env_json = json.dumps(env or {})
-            if url is not _UNSET:
-                row.url = cast("str | None", url)
-            if headers is not _UNSET:
-                row.headers_json = json.dumps(headers or {})
-            if enabled is not _UNSET:
-                row.enabled = cast(bool, enabled)
-            if connect_timeout is not _UNSET:
-                row.connect_timeout = cast("float | None", connect_timeout)
-            if execute_timeout is not _UNSET:
-                row.execute_timeout = cast("float | None", execute_timeout)
-            if sse_read_timeout is not _UNSET:
-                row.sse_read_timeout = cast("float | None", sse_read_timeout)
-            s.commit()
-
-    def delete(self, *, server_id: int) -> bool:
-        with self._session() as s:
-            row = s.scalar(select(_McpServerRow).where(_McpServerRow.id == server_id))
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
-
     # -- convenience methods that the worker / future API use --------
 
     def upsert(
@@ -374,19 +306,18 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         new_connection_type = (
             connection_type if connection_type is not None else existing.connection_type
         )
-        self.update(
-            server_id=existing.id,
+        self.update(existing.with_changes(
             connection_type=connection_type,
             command=None if new_connection_type != "stdio" else command,
-            args=None if new_connection_type != "stdio" else args_list,
-            env=None if new_connection_type != "stdio" else env_dict,
+            args=() if new_connection_type != "stdio" else tuple(args_list),
+            env={} if new_connection_type != "stdio" else env_dict,
             url=None if new_connection_type == "stdio" else url,
-            headers=None if new_connection_type == "stdio" else headers_dict,
+            headers={} if new_connection_type == "stdio" else headers_dict,
             enabled=enabled,
             connect_timeout=connect_timeout,
             execute_timeout=execute_timeout,
             sse_read_timeout=sse_read_timeout,
-        )
+        ))
         return self.get_by_name(name=name)  # type: ignore[return-value]
 
     def delete_by_name(self, *, name: str) -> bool:
@@ -398,7 +329,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         existing = self.get_by_name(name=name)
         if existing is None:
             return False
-        return self.delete(server_id=existing.id)
+        return self.delete(existing.id)
 
     def toggle(self, *, name: str) -> McpServer | None:
         """Flip the ``enabled`` flag for a row by name.
@@ -410,23 +341,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         if existing is None:
             return None
         new_enabled = not existing.enabled
-        # ``_UNSET`` keeps every other column alone — ``None``
-        # would now mean "clear this field", which would
-        # wipe the connection_type / command / url on a
-        # simple enable-flip.
-        self.update(
-            server_id=existing.id,
-            connection_type=_UNSET,
-            command=_UNSET,
-            args=_UNSET,
-            env=_UNSET,
-            url=_UNSET,
-            headers=_UNSET,
-            enabled=new_enabled,
-            connect_timeout=_UNSET,
-            execute_timeout=_UNSET,
-            sse_read_timeout=_UNSET,
-        )
+        self.update(existing.with_changes(enabled=new_enabled))
         return self.get_by_name(name=name)
 
     # -- DTO mapping ----------------------------------------------------

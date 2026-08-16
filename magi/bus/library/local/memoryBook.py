@@ -5,16 +5,15 @@ Schema for the ``memory_entries`` table.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import Field, Strict, StringConstraints
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
 class MemoryKind(StrEnum):
@@ -46,18 +45,14 @@ class MemoryKind(StrEnum):
 # -- public dataclass ----------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class Memory(BaseRecord):
-    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
+    contact_id: int  # 所属联系人 ID
     kind: MemoryKind  # 记忆类型（fact/quick_note）
-    subject: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
-    ]  # 简短标题
-    body: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8 * 1024)
-    ]  # 完整内容
-    priority: Annotated[int, Strict(), Field(ge=1, le=5)] = 3
-    completed_at: Annotated[datetime, Strict()] | None = None  # 完成时间（None=未完成）
+    subject: str  # 简短标题
+    body: str  # 完整内容
+    priority: int = 3
+    completed_at: datetime | None = None  # 完成时间（None=未完成）
 
 # -- internal ORM --------------------------------------------------------
 
@@ -77,7 +72,7 @@ class _MemoryRow(BaseRecordMixin):
         ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False
     )
     kind: Mapped[MemoryKind] = mapped_column(enum_column(MemoryKind), nullable=False)
-    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -107,63 +102,12 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         returns the existing DTO untouched so the LLM
         tool can serialise the same shape either way.
         """
-        with self._session() as s:
-            row = s.get(_MemoryRow, memory_id)
-            if row is None:
-                raise LookupError(f"memory row {memory_id} not found")
-            if row.completed_at is None:
-                row.completed_at = utcnow_naive()
-                s.commit()
-                s.refresh(row)
-            return self._row_to_dto(row)
-
-    def update(
-        self,
-        *,
-        memory_id: int,
-        subject: str | None = None,
-        body: str | None = None,
-        priority: int | None = None,
-    ) -> Memory:
-        """Patch mutable fields after enforcing their invariants.
-
-        Only ``subject``, ``body`` and ``priority`` are
-        mutable — ``kind`` and ``contact_id`` are intentionally
-        frozen (delete + re-add if you need to change
-        those). Raises :class:`LookupError` if the row
-        is missing, :class:`ValueError` on any supplied
-        field that violates the validator.
-        """
-        with self._session() as s:
-            row = s.get(_MemoryRow, memory_id)
-            if row is None:
-                raise LookupError(f"memory row {memory_id} not found")
-            candidate = Memory(
-                contact_id=row.contact_id,
-                kind=row.kind,
-                subject=subject if subject is not None else row.subject,
-                body=body if body is not None else row.body,
-                priority=priority if priority is not None else row.priority,
-                completed_at=row.completed_at,
-            )
-            if subject is not None:
-                row.subject = candidate.subject
-            if body is not None:
-                row.body = candidate.body
-            if priority is not None:
-                row.priority = candidate.priority
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
-
-    def delete(self, *, memory_id: int) -> bool:
-        with self._session() as s:
-            row = s.scalar(select(_MemoryRow).where(_MemoryRow.id == memory_id))
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
+        record = self.get(memory_id)
+        if record is None:
+            raise LookupError(f"memory row {memory_id} not found")
+        if record.completed_at is None:
+            self.update(record.with_changes(completed_at=utcnow_naive()))
+        return self.get(memory_id)  # type: ignore[return-value]
 
 
 __all__ = [

@@ -17,16 +17,14 @@ short repository transaction.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import Strict, StringConstraints
 from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
-    String,
     Text,
     select,
     update,
@@ -34,7 +32,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
 class NoteKind(StrEnum):
@@ -81,16 +79,10 @@ class Role(StrEnum):
     GUEST = "guest"
 
 
-# Command-specific truncation caps for append-only note operations. New
-# ``Contact`` / ``ContactNote`` records validate their own field shapes.
-_NOTE_MAX_BYTES = 8 * 1024
-_DAILY_NOTE_MAX_BYTES = 32 * 1024
-
-
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class Contact(BaseRecord):
     """Per-MAGI operator record.
 
@@ -104,25 +96,21 @@ class Contact(BaseRecord):
     :meth:`magi.tools.base.Tool.gate`.
     """
 
-    name: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
-    ]  # 联系人唯一名
-    display_name: Annotated[str, Strict(), StringConstraints(strip_whitespace=True, max_length=120)] | None = None
+    name: str  # 联系人唯一名
+    display_name: str | None = None
     role: Role = Role.GUEST  # MAGI 本地角色（assigned/guest）
-    tgid: Annotated[int, Strict()] | None = None  # 绑定的 Telegram chat id（本地用户身份）
+    tgid: int | None = None  # 绑定的 Telegram chat id（本地用户身份）
     # Nullable projection link to the MAGIS-shared operator identity.  It is
     # deliberately not a foreign key because the two stores are independent.
-    magis_admin_id: Annotated[int, Strict()] | None = None
-    last_seen_at: Annotated[datetime, Strict()] | None = None  # 最近活跃时间
+    magis_admin_id: int | None = None
+    last_seen_at: datetime | None = None  # 最近活跃时间
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class ContactNote(BaseRecord):
-    contact_id: Annotated[int, Strict()]  # 所属联系人 ID
-    note: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8 * 1024)
-    ]  # 笔记正文
+    contact_id: int  # 所属联系人 ID
+    note: str  # 笔记正文
     kind: NoteKind = NoteKind.PERMANENT  # 笔记类型（permanent/daily）
-    note_date: Annotated[datetime, Strict()] | None = None  # 日记所属日期
+    note_date: datetime | None = None  # 日记所属日期
 
 # -- internal ORM --------------------------------------------------------
 
@@ -130,8 +118,8 @@ class ContactNote(BaseRecord):
 class _ContactRow(BaseRecordMixin):
     __tablename__ = "contacts"
 
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    display_name: Mapped[str | None] = mapped_column(String(120))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str | None] = mapped_column(Text)
     role: Mapped[Role] = mapped_column(enum_column(Role), nullable=False, default=Role.GUEST)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     magis_admin_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
@@ -193,7 +181,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 suffix += 1
             row = _ContactRow(
                 name=candidate,
-                display_name=(display_name or "").strip() or None,
+                display_name=display_name,
                 role=Role.GUEST,
                 magis_admin_id=magis_admin_id,
             )
@@ -231,8 +219,6 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             )
             if bound is not None:
                 raise ValueError("tgid already bound")
-        values["name"] = record.name.strip()
-        values["display_name"] = (record.display_name or "").strip() or None
         return values
 
     def list_all(self) -> list[Contact]:
@@ -315,30 +301,19 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def _record_to_row_values(self, record: ContactNote, session) -> dict:
-        values = super()._record_to_row_values(record, session)
-        values["note"] = record.note.strip()[:_NOTE_MAX_BYTES]
-        return values
-
     def update_note(self, *, note_id: int, note: str) -> ContactNote:
         """Replace a note row's body.
 
-        Owns the write invariants: ``note`` non-empty after
-        strip, content clamped to :data:`_NOTE_MAX_BYTES`.
         Raises :class:`LookupError` if ``note_id`` does
         not resolve — same exception the old service raised so
         the tool layer's ``LookupError → ToolResult.err``
         path stays in place.
         """
-        content = (note or "").strip()
-        if not content:
-            raise ValueError("note is required")
-        content = content[:_NOTE_MAX_BYTES]
         with self._session() as s:
             row = s.get(_ContactNoteRow, note_id)
             if row is None:
                 raise LookupError(f"contact_note {note_id!r} not found")
-            row.note = content
+            row.note = note
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)
@@ -383,23 +358,17 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
 
         One row per ``(contact_id, note_date)`` —
         ``kind=NoteKind.DAILY``. On a hit, the new line is
-        appended with a ``"\\n"`` separator and clamped to
-        :data:`_DAILY_NOTE_MAX_BYTES` (32 KB per row). On a
+        appended with a ``"\\n"`` separator. On a
         miss, a fresh row is inserted.
 
         ``note_date`` defaults to today's UTC midnight —
         callers passing an explicit date are back-filling a
         missed day; the Book stamps it verbatim.
 
-        Owns the write invariants: ``body_delta`` non-empty
-        after strip, per-row size cap. Raises
-        :class:`ValueError` if the parent contact id does
+        Raises :class:`ValueError` if the parent contact id does
         not resolve — same as :meth:`add`.
         """
-        content = (body_delta or "").strip()
-        if not content:
-            raise ValueError("body_delta is required")
-        content = content[:_DAILY_NOTE_MAX_BYTES]
+        content = body_delta
         if note_date is None:
             now = datetime.utcnow()
             note_date = datetime(now.year, now.month, now.day)
@@ -420,7 +389,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                 )
                 s.add(row)
             else:
-                row.note = (row.note + "\n" + content)[:_DAILY_NOTE_MAX_BYTES]
+                row.note = row.note + "\n" + content
             s.commit()
             s.refresh(row)
         return self._row_to_dto(row)

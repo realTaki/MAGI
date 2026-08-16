@@ -7,11 +7,9 @@ Two tables:
                   apart; both shapes share a single ORM row.
 - ``task_runs`` — one row per execution attempt.
 
-Also home to :class:`ChannelEnum` — the cross-package vocabulary
-for ``Task.target_channel`` (and the dispatcher's
-``delivery_channel``). Lives here because a task's *delivery
-target* IS a channel; the enum is the closed set of values
-``target_channel`` may take.
+``Task.target_channel`` is a persisted channel-name string.  Channel
+capabilities are registered dynamically in ``settings.channels.available``;
+this task domain must not own a stale closed Enum vocabulary.
 
 Schema for ``tasks`` + ``task_runs`` (collapsed from three
 tables to two by the proactive/user ``source`` discriminator,
@@ -21,20 +19,18 @@ parallel to the ``action_items`` refactor).
 from __future__ import annotations
 
 import uuid
-from dataclasses import field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, Strict, StringConstraints
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
-    String,
     Text,
     UniqueConstraint,
     or_,
@@ -43,7 +39,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 from magi.bus.library.local.conversationBook import _ConversationRow
 
 
@@ -51,37 +47,6 @@ def _new_task_id() -> str:
     """Mint a compact opaque identity for API and job boundaries."""
 
     return uuid.uuid4().hex[:26]
-
-
-# -- public enums --------------------------------------------------------
-
-
-class ChannelEnum(StrEnum):
-    """Closed set of values for ``Task.target_channel``.
-
-    A task's *delivery target* is a channel — the surface where
-    the fired reply surfaces to the operator. The ORM column is
-    ``String(16)`` (loose, not enum-enforced at the DB layer) so
-    legacy rows survive; new writes must use one of
-    these values. The dispatcher / channel adapters import this
-    enum rather than reaching for free-form strings.
-    """
-
-    TG = "tg"
-    """Telegram bot channel — operator's bound TG chat."""
-
-    WEBUI = "webui"
-    """WebUI chat console — operator's dashboard history."""
-
-    SCHEDULED = "scheduled"
-    """Internal scheduled-task channel — fires on a cron / run_at."""
-
-
-# Back-compat alias.  ``Channel`` is the historical name used by
-# the channel adapters and the agent runner; keeping it pointing
-# at the same class lets those modules migrate independently of
-# the tools layer.
-Channel = ChannelEnum
 
 
 # Provenance tag — propagated onto ``Task.source`` so the
@@ -121,7 +86,7 @@ class TaskRunStatus(StrEnum):
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Task(BaseRecord):
     """Unified task definition — user-created OR preset template.
 
@@ -149,46 +114,42 @@ class Task(BaseRecord):
     structured form — there's one schedule, not two.
     """
 
-    task_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_task_id)
-    name: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
-    ]  # 任务唯一名
-    prompt: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
-    ]  # 触发后执行的 prompt
+    task_id: str = field(default_factory=_new_task_id)
+    name: str  # 任务唯一名
+    prompt: str  # 触发后执行的 prompt
     source: TaskSource = TaskSource.USER  # 来源（user/proactive）
-    target_channel: ChannelEnum  # 投递渠道（tg/webui/scheduled）
-    enabled: Annotated[int, Strict(), Field(ge=0, le=1)] = 1
+    target_channel: str  # 投递渠道（由 settings.channels.available 注册）
+    enabled: int = 1
 
     # --- schedule (cron XOR run_at, never both) ---------------------------
-    cron: Annotated[str, Strict()] | None = None  # 周期表达式（5 字段）
-    run_at: Annotated[datetime, Strict()] | None = None
-    tz: Annotated[str, Strict()] = "UTC"
-    delivery_to: Annotated[str, Strict()] | None = None
-    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] | None = None
+    cron: str | None = None  # 周期表达式（5 字段）
+    run_at: datetime | None = None
+    tz: str = "UTC"
+    delivery_to: str | None = None
+    conversation_id: str | None = None
 
     # --- user-task ownership ----------------------------------------------
-    contact_id: Annotated[int, Strict()] | None = None
+    contact_id: int | None = None
 
     # --- user-task runtime bookkeeping ------------------------------------
-    consecutive_failures: Annotated[int, Strict(), Field(ge=0)] = 0
-    last_run_at: Annotated[datetime, Strict()] | None = None
+    consecutive_failures: int = 0
+    last_run_at: datetime | None = None
     last_status: TaskRunStatus | None = None  # 最近一次状态
-    last_error: Annotated[str, Strict()] | None = None
+    last_error: str | None = None
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TaskRun(BaseRecord):
-    run_id: Annotated[str, Strict(), StringConstraints(max_length=26)] = field(default_factory=_new_task_id)
-    task_id: Annotated[str, Strict(), StringConstraints(max_length=26)]
-    manual: Annotated[bool, Strict()]
-    started_at: Annotated[datetime, Strict()] = field(default_factory=utcnow_naive)
-    finished_at: Annotated[datetime, Strict()] | None = None
-    latency_ms: Annotated[int, Strict(), Field(ge=0)] | None = None
+    run_id: str = field(default_factory=_new_task_id)
+    task_id: str
+    manual: bool
+    started_at: datetime = field(default_factory=utcnow_naive)
+    finished_at: datetime | None = None
+    latency_ms: int | None = None
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
-    error: Annotated[str, Strict()] | None = None
-    reply_excerpt: Annotated[str, Strict()] | None = None
-    conversation_id: Annotated[str, Strict(), StringConstraints(max_length=26)] | None = None
+    error: str | None = None
+    reply_excerpt: str | None = None
+    conversation_id: str | None = None
 
 
 # -- internal ORM --------------------------------------------------------
@@ -201,17 +162,17 @@ class _TaskRow(BaseRecordMixin):
     # module is imported first wins, and the other must opt-in.
     __table_args__ = {"extend_existing": True}
 
-    task_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    task_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[TaskSource] = mapped_column(
         enum_column(TaskSource),
         nullable=False,
         default=TaskSource.USER,
     )
-    target_channel: Mapped[ChannelEnum] = mapped_column(
+    target_channel: Mapped[str] = mapped_column(
         "channel",
-        enum_column(ChannelEnum),
+        Text,
         nullable=False,
     )
     enabled: Mapped[int] = mapped_column(
@@ -221,15 +182,15 @@ class _TaskRow(BaseRecordMixin):
     )
 
     # --- schedule (cron XOR run_at, never both) ----------------------------
-    cron: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    cron: Mapped[str | None] = mapped_column(Text, nullable=True)
     run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     tz: Mapped[str] = mapped_column(
-        String(64),
+        Text,
         nullable=False,
         default="UTC",
     )
     delivery_to: Mapped[str | None] = mapped_column(
-        String(128),
+        Text,
         nullable=True,
     )
     conversation_row_id: Mapped[int | None] = mapped_column(
@@ -254,7 +215,7 @@ class _TaskRow(BaseRecordMixin):
     last_status: Mapped[TaskRunStatus | None] = mapped_column(
         enum_column(TaskRunStatus), nullable=True
     )
-    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_tasks_name"),
@@ -272,7 +233,7 @@ class _TaskRow(BaseRecordMixin):
 class _TaskRunRow(BaseRecordMixin):
     __tablename__ = "task_runs"
 
-    run_id: Mapped[str] = mapped_column(String(26), unique=True, nullable=False)
+    run_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     task_row_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     conversation_row_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="SET NULL"), nullable=True
@@ -282,8 +243,8 @@ class _TaskRunRow(BaseRecordMixin):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[TaskRunStatus] = mapped_column(enum_column(TaskRunStatus), nullable=False)
-    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    reply_excerpt: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reply_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     task: Mapped[_TaskRow] = relationship(lazy="joined")
     conversation: Mapped[_ConversationRow | None] = relationship(lazy="joined")
 
@@ -383,6 +344,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         # chat-driven tool, dashboard API, future agent loop
         # — gets the same parse + future-check without
         # re-implementing them at every entry point.
+        if not isinstance(record.target_channel, str) or not record.target_channel.strip():
+            raise ValueError("target_channel must be a non-empty channel name")
         cron_val = record.cron
         run_at_val = record.run_at
         if (cron_val is None) == (run_at_val is None):
@@ -479,76 +442,6 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.commit()
             return True
 
-    def update(self, *, task_id: str, contact_id: int, **changes) -> Task | None:
-        """Update an owned user task and return its DTO.
-
-        The public Book owns ownership checks and the same write invariants as
-        ``add``; HTTP routes only translate request shapes to canonical task
-        fields.
-        """
-        allowed = {
-            "name",
-            "prompt",
-            "cron",
-            "run_at",
-            "delivery_to",
-            "target_channel",
-            "enabled",
-            "tz",
-        }
-        unknown = set(changes) - allowed
-        if unknown:
-            raise ValueError(f"unsupported task fields: {sorted(unknown)!r}")
-        with self._session() as s:
-            row = s.scalar(
-                select(_TaskRow).where(
-                    _TaskRow.task_id == task_id,
-                    _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == TaskSource.USER,
-                )
-            )
-            if row is None:
-                return None
-            candidate = Task(
-                task_id=row.task_id,
-                name=changes.get("name", row.name),
-                prompt=changes.get("prompt", row.prompt),
-                source=row.source,
-                target_channel=changes.get("target_channel", row.target_channel),
-                enabled=changes.get("enabled", row.enabled),
-                cron=changes.get("cron", row.cron),
-                run_at=changes.get("run_at", row.run_at),
-                tz=changes.get("tz", row.tz),
-                delivery_to=changes.get("delivery_to", row.delivery_to),
-                contact_id=row.contact_id,
-                consecutive_failures=row.consecutive_failures,
-                last_run_at=row.last_run_at,
-                last_status=row.last_status,
-                last_error=row.last_error,
-            )
-            self._validate_add(candidate)
-            for key in allowed:
-                setattr(row, key, getattr(candidate, key))
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
-
-    def delete(self, *, task_id: str, contact_id: int) -> bool:
-        """Delete an owned user task without exposing a persistence session."""
-        with self._session() as s:
-            row = s.scalar(
-                select(_TaskRow).where(
-                    _TaskRow.task_id == task_id,
-                    _TaskRow.contact_id == contact_id,
-                    _TaskRow.source == TaskSource.USER,
-                )
-            )
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
-
     def get_by_name(self, *, name: str) -> Task | None:
         """Lookup-by-name helper.
 
@@ -567,9 +460,9 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         name: str,
         prompt: str,
         cron: str | None,
-        run_at: datetime | None,
+        run_at: str | datetime | None,
         delivery_to: str | None,
-        target_channel: ChannelEnum,
+        target_channel: str,
         contact_id: int,
         conversation_id: str,
         tz: str,
@@ -592,11 +485,14 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         across prompt edits); the caller-supplied one
         sticks only on the insert path.
 
-        ``run_at`` is canonicalised to naive UTC on BOTH branches. Past-time
-        ``run_at`` is rejected on both
-        branches — an apscheduler job that would silently
-        drop at fire-time never reaches the DB regardless
-        of whether the path is update or insert.
+        ``run_at`` accepts either an ISO-8601 string (from an
+        HTTP/tool payload) or a ``datetime`` (from backend
+        code) and is canonicalised to naive UTC on BOTH
+        branches via :func:`validate_run_at`. Past-time
+        ``run_at`` is rejected on both branches — an
+        apscheduler job that would silently drop at
+        fire-time never reaches the DB regardless of whether
+        the path is update or insert.
 
         Authorisation is the caller's responsibility (the
         LLM tool passes ``ctx.contact_id``; the API passes the
@@ -649,11 +545,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 existing.cron = candidate.cron
                 existing.run_at = candidate.run_at
                 existing.delivery_to = candidate.delivery_to
-                # Pylance narrows ``ChannelEnum`` (a ``StrEnum``) to ``str`` at the
-                # assignment site even though ``target_channel`` is declared
-                # ``ChannelEnum`` — at runtime SQLAlchemy coerces via
-                # ``values_callable``, so the assignment is sound.
-                existing.target_channel = candidate.target_channel  # type: ignore[reportAttributeAccessIssue]
+                existing.target_channel = candidate.target_channel
                 existing.enabled = candidate.enabled
                 existing.contact_id = candidate.contact_id
                 # Preserve the existing ``conversation_id`` for
@@ -1117,8 +1009,6 @@ def validate_run_at_future(run_at: datetime, *, now: datetime | None = None) -> 
 
 
 __all__ = [
-    "Channel",
-    "ChannelEnum",
     "CronFrequency",
     "Task",
     "TaskBook",
