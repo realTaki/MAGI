@@ -78,7 +78,7 @@ class CompleteMemoryTool(Tool):
         # The TOCTOU window is acceptable for the
         # single-writer chat tool (same comment as
         # ``complete_action_item``).
-        existing = ctx.bus.memory_book.get(memory_id=memory_id)
+        existing = ctx.bus.memory_book.get(memory_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"

@@ -185,7 +185,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         *,
         owner_contact_id: int,
         include_completed: bool,
-        source: str | None = None,
+        source: ActionSource | None = None,
         completed_visible_days: int = _COMPLETED_VISIBLE_DAYS,
     ) -> list[ActionItem]:
         """List an operator's action items.
@@ -208,12 +208,6 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                 _ActionItemRow.contact_id == owner_contact_id,
             )
             if source is not None:
-                if source not in ActionSource:
-                    raise ValueError(
-                        f"source must be one of "
-                        f"{sorted(s.value for s in ActionSource)!r} "
-                        f"or None, got {source!r}"
-                    )
                 stmt = stmt.where(_ActionItemRow.source == source)
             if not include_completed:
                 stmt = stmt.where(

@@ -18,7 +18,7 @@ worker composes.
 
     McpWorker (sole writer)
       ├─ reads from bus.mcp_servers_book   (bus McpServerBook)
-      ├─ writes McpServerChangedJob        (bus Job Board, payload
+      ├─ writes ChangeMCPServerJob         (bus Job Board, payload
       │                                     carries the full DTO)
       └─ injects discovered tools into
          magi.tools.registry.register_tools("mcp", ...)
@@ -28,7 +28,7 @@ The four CRUD tools (``add_mcp_server`` /
 ``list_mcp_servers`` / ``update_mcp_server`` /
 ``delete_mcp_server``) live in :mod:`magi.tools.mcp` and are
 registered as builtins by :mod:`magi.tools.registry`. They publish
-to ``bus.mcp_server_changed_job_board`` and wait for the worker
+to ``bus.change_mcp_server_job_board`` and wait for the worker
 to apply the change; the worker is the **only** writer to the
 Book so the LLM's view of the world and the live connections
 stay in sync.
@@ -52,7 +52,7 @@ Module layout
   API / LLM tools land in a follow-up PR.
 
 The data path that the WebUI / LLM manage tools write to is
-the bus ``McpServerBook`` (via ``McpServerChangedJob``);
+the bus ``McpServerBook`` (via ``ChangeMCPServerJob``);
 the Worker is the sole writer. The WebUI / ``McpService``-backed
 read paths still resolve through the same physical SQLite
 table (see ``magi/bus/library/local/mcpServerBook.py``).

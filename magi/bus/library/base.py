@@ -43,6 +43,19 @@ class BaseRecord:
 
         return dataclasses.asdict(self)
 
+    def with_changes[Self: "BaseRecord"](self: Self, /, **changes) -> Self:
+        """Return a validated replacement while retaining database-owned fields.
+
+        ``dataclasses.replace`` intentionally omits ``init=False`` fields;
+        that is correct for ordinary dataclasses, but would turn a persisted
+        Record back into an unpersisted one by dropping its ``id``.  This is
+        the sole supported way to prepare a Record for :meth:`BaseBook.update`.
+        """
+        replacement = dataclasses.replace(self, **changes)
+        for name in ("id", "created_at", "updated_at"):
+            object.__setattr__(replacement, name, getattr(self, name))
+        return replacement
+
 
 @dataclass_transform(
     kw_only_default=True,
@@ -178,3 +191,34 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
         with self._session() as session:
             row = session.get(self.model_cls, record_id)
             return self._row_to_dto(row) if row is not None else None
+
+    def update(self, record: RecordT) -> bool:
+        """Replace the persisted row identified by ``record.id``.
+
+        ``Record`` is deliberately a complete immutable value, rather than a
+        bag of optional PATCH fields.  Callers that start with a partial input
+        read the DTO, use :meth:`BaseRecord.with_changes`, then pass that complete
+        value here.  ``True`` means a row was replaced; ``False`` means its
+        database-local ID no longer exists.
+        """
+        if record.id <= 0:
+            raise ValueError("update() requires a persisted record (id must be positive)")
+        with self._session() as session:
+            row = session.get(self.model_cls, record.id)
+            if row is None:
+                return False
+            self._validate_add(record)
+            for name, value in self._record_to_row_values(record, session).items():
+                setattr(row, name, value)
+            session.commit()
+            return True
+
+    def delete(self, record_id: int) -> bool:
+        """Delete one row by its database-local ID, idempotently."""
+        with self._session() as session:
+            row = session.get(self.model_cls, record_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True

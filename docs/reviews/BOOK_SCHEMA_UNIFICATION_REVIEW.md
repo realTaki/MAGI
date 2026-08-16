@@ -35,7 +35,7 @@ mixin。
 # magi/bus/library/base.py
 
 class BaseBook[RowT: BaseRecordMixin, DtoT: BaseRecord]:
-    """Book 的 Session、DTO/Row 映射及通用新增、读取行为。"""
+    """Book 的 Session、DTO/Row 映射及通用 CRUD。"""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -101,7 +101,7 @@ Record 构造时指定。`BaseBook._row_to_dto()` 在读取持久化 Row 后内�
 `BaseBook` 默认按同名 DTO 字段写入同名 ORM 列。字段需要领域校验、业务键到物理外键
 解析或编码（例如 `conversation_id -> conversation_row_id`、MCP JSON 列）时，子类仅覆写
 `_validate_add(record)` / `_record_to_row_values(record, session)` 钩子；不得重新定义
-`add`。幂等创建、upsert 和其他复合业务操作保留领域明确的方法名，并在内部复用该写入
+标准 CRUD。幂等创建、upsert 和其他复合业务操作保留领域明确的方法名，并在内部复用该写入
 契约。
 
 ### 2.2 读取契约
@@ -110,6 +110,23 @@ Record 构造时指定。`BaseBook._row_to_dto()` 在读取持久化 Row 后内�
 不得再为 `contact_id`、`memory_id` 等同一主键写重复的 `get`。业务键查询必须使用明确的
 名称，例如 `get_by_conversation_id`、`get_by_task_id` 和 `get_by_run_id`。键值表和单例状态
 不属于主键读取契约，分别使用 `get_value(key=...)`、`get_current()` 等含义明确的方法。
+
+### 2.3 更新与删除契约
+
+```python
+updated = book.update(record)       # -> bool
+deleted = book.delete(record_id)    # -> bool
+```
+
+`update` 接受一个完整、已持久化的 Record，按其内部 `id` 替换同名字段并复用
+`_validate_add(record)`；`False` 表示该行已不存在。它不接收 `**changes`、`set_*` 标志或
+HTTP PATCH 语义。部分请求由 API/工具层先读取 DTO，再使用
+`record.with_changes(field=value)` 构造经过同一 DTO 校验、且保留数据库拥有的
+`id`/审计字段的完整 Record。
+
+标准 `delete(record_id)` 同样只按内部自增主键删除并返回是否存在。按业务键、所有权或
+级联语义的复合用例必须采用明确名称，例如 `delete_by_key`、`delete_owned`；它们先解析
+业务键，再复用标准删除，不得覆写 `delete`。
 
 ## 3. 身份与外键规则
 

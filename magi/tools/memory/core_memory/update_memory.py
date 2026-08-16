@@ -83,18 +83,21 @@ class UpdateMemoryTool(Tool):
         # ``row.contact_id == caller`` before any write fires.
         # Same TOCTOU comment as the action-item /
         # complete-memory tools.
-        existing = ctx.bus.memory_book.get(memory_id=memory_id)
+        existing = ctx.bus.memory_book.get(memory_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
         try:
-            view = ctx.bus.memory_book.update(
-                memory_id=memory_id,
-                subject=kwargs.get("subject"),
-                body=kwargs.get("body"),
-                priority=kwargs.get("priority"),
+            candidate = existing.with_changes(
+                subject=kwargs.get("subject", existing.subject),
+                body=kwargs.get("body", existing.body),
+                priority=kwargs.get("priority", existing.priority),
             )
+            if not ctx.bus.memory_book.update(candidate):
+                return ToolResult.err(f"memory {memory_id} no longer exists")
+            view = ctx.bus.memory_book.get(memory_id)
+            assert view is not None
         except LookupError as e:
             return ToolResult.err(str(e))
         except ValueError as e:

@@ -73,12 +73,12 @@ class DeleteMemoryTool(Tool):
         # ``not found / not owned`` without revealing
         # existence. Same TOCTOU comment as the action-item
         # / complete-memory tools.
-        existing = ctx.bus.memory_book.get(memory_id=memory_id)
+        existing = ctx.bus.memory_book.get(memory_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
-        existed = ctx.bus.memory_book.delete(memory_id=memory_id)
+        existed = ctx.bus.memory_book.delete(memory_id)
         logger.info(
             "delete_memory: row %s deleted by %s (existed=%s)",
             memory_id,

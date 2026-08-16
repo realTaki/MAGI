@@ -225,71 +225,15 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
 
     def _record_to_row_values(self, record: Contact, session) -> dict:
         values = super()._record_to_row_values(record, session)
-        normalized = record.name.strip()
-        existing = session.scalar(select(_ContactRow).where(_ContactRow.name == normalized))
-        if existing is not None:
-            raise ValueError(f"contact name {normalized!r} already exists")
-        values["name"] = normalized
+        if record.tgid is not None:
+            bound = session.scalar(
+                select(_ContactRow).where(_ContactRow.tgid == record.tgid, _ContactRow.id != record.id)
+            )
+            if bound is not None:
+                raise ValueError("tgid already bound")
+        values["name"] = record.name.strip()
         values["display_name"] = (record.display_name or "").strip() or None
         return values
-
-    def update(
-        self,
-        *,
-        contact_id: int,
-        name: str | None = None,
-        display_name: str | None = None,
-        role: Role | None = None,
-        tgid: int | None = None,
-        set_display_name: bool = False,
-        set_tgid: bool = False,
-    ) -> Contact | None:
-        """Update one contact and return its DTO.
-
-        Optional values are accompanied by explicit ``set_*`` flags where
-        ``None`` is a meaningful clear operation.  This keeps HTTP patch
-        semantics out of persistence while still exposing a complete public
-        Book operation.
-        """
-        with self._session() as s:
-            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
-            if row is None:
-                return None
-            if name is not None:
-                normalized = name.strip()
-                if not normalized:
-                    raise ValueError("name is required")
-                duplicate = s.scalar(
-                    select(_ContactRow).where(
-                        _ContactRow.name == normalized,
-                        _ContactRow.id != contact_id,
-                    )
-                )
-                if duplicate is not None:
-                    raise ValueError(f"contact name {normalized!r} already exists")
-                row.name = normalized
-            if set_display_name:
-                row.display_name = (display_name or "").strip() or None
-            if role is not None:
-                if role not in Role:
-                    raise ValueError(
-                        f"role must be one of {sorted(r.value for r in Role)!r}"
-                    )
-                row.role = role
-            if set_tgid:
-                if tgid is not None:
-                    duplicate = s.scalar(
-                        select(_ContactRow).where(
-                            _ContactRow.tgid == tgid,
-                            _ContactRow.id != contact_id,
-                        )
-                    )
-                    if duplicate is not None:
-                        raise ValueError("tgid already bound")
-                row.tgid = tgid
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
 
     def list_all(self) -> list[Contact]:
         with self._session() as s:
@@ -311,14 +255,12 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         ``magi/channels/api/tg_bindings.py`` through their explicit BUS
         dependency.
         """
-        with self._session() as s:
-            row = s.scalar(select(_ContactRow).where(_ContactRow.id == contact_id))
-            if row is None:
-                return None
-            row.tgid = tgid
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
+        record = self.get(contact_id)
+        if record is None:
+            return None
+        candidate = record.with_changes(tgid=tgid)
+        self.update(candidate)
+        return self.get(contact_id)
 
     def search(self, *, query: str, limit: int = 20) -> list[Contact]:
         """Case-insensitive substring search across name and notes.

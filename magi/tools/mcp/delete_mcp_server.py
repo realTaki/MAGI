@@ -4,7 +4,7 @@ Idempotent — silently succeeds if the server doesn't exist.
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It publishes a
-:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
 with ``kind="deleted"`` and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the delete + tear
 down the live connection. The Worker is the single writer — see
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import MCPKind, McpServerChangedJob
+from magi.bus.guild import MCPKind, ChangeMCPServerJob
 from magi.bus.guild.base import JobStatus
 from magi.tools.base import Tool, ToolContext, ToolResult
 
@@ -62,11 +62,11 @@ class DeleteMcpServerTool(Tool):
                 }
             )
 
-        job_id = ctx.bus.mcp_server_changed_job_board.publish(
-            McpServerChangedJob(kind=MCPKind.DELETED, server_name=name)
+        job_id = ctx.bus.change_mcp_server_job_board.publish(
+            ChangeMCPServerJob(kind=MCPKind.DELETED, server_name=name)
         )
 
-        result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
+        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:

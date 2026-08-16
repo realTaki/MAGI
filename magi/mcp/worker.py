@@ -67,9 +67,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from magi.bus.guild import (
-    MCPKind,
     ChangeMCPServerJob,
     ChangeMCPServerResult,
+    MCPKind,
 )
 from magi.bus.guild.base import JobStatus
 from magi.runtime_worker import RuntimeWorker
@@ -360,10 +360,7 @@ class McpWorker(RuntimeWorker):
         current = self.bus.mcp_servers_book.get_by_name(name=name)
         if current is None:
             return
-        self.bus.mcp_servers_book.update(
-            server_id=current.id,
-            enabled=enabled,
-        )
+        self.bus.mcp_servers_book.update(current.with_changes(enabled=enabled))
 
     # -- helpers ---------------------------------------------------------
 

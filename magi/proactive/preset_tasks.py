@@ -43,7 +43,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
     string the caller can show back to the operator.
     """
     try:
-        contact = bus.contacts_book.get(contact_id=job.contact_id)
+        contact = bus.contacts_book.get(job.contact_id)
         if contact is None:
             _submit_failure(bus, job, f"contact {job.contact_id} not found")
             return
@@ -201,7 +201,7 @@ def _load_presets(bus: Bus) -> dict:
 
 def _read_system_timezone(bus: Bus) -> str:
     try:
-        raw = bus.settings_book.get(key="system.timezone")
+        raw = bus.settings_book.get_value(key="system.timezone")
         if raw and isinstance(raw, str) and raw.strip():
             return raw.strip()
     except Exception:

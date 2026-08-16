@@ -178,7 +178,7 @@ class AddActionItemTool(Tool):
                 due_date=due_date,
                 source=source,
             ))
-            item = ctx.bus.action_items_book.get(item_id=item_id)
+            item = ctx.bus.action_items_book.get(item_id)
             if item is None:
                 raise RuntimeError(f"action item {item_id} disappeared after insert")
         except ValueError as e:

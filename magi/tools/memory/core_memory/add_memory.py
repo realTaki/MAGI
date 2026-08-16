@@ -136,7 +136,7 @@ class AddMemoryTool(Tool):
                 body=kwargs["body"],
                 priority=kwargs.get("priority", 3),
             ))
-            view = ctx.bus.memory_book.get(memory_id=record_id)
+            view = ctx.bus.memory_book.get(record_id)
             if view is None:
                 raise RuntimeError(f"memory row {record_id} disappeared after insert")
         except ValueError as e:

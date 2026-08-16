@@ -92,8 +92,8 @@ def test_setting_book_list_and_delete(factory):
     book.set(key="a", value="1")
     book.set(key="b", value="2")
     assert set(book.list_keys()) == {"a", "b"}
-    assert book.delete(key="a") is True
-    assert book.delete(key="nonexistent") is False
+    assert book.delete_by_key(key="a") is True
+    assert book.delete_by_key(key="nonexistent") is False
     assert book.list_keys() == ["b"]
 
 
@@ -155,7 +155,7 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     Pins the invariants the core-memory tools depend on:
 
       * ``add`` returns the database-generated ID; reads are explicit
-      * ``update`` only accepts ``subject``/``body``/``priority``
+      * ``update`` accepts one complete persisted Record
       * ``complete`` is idempotent — second call leaves
         ``completed_at`` untouched
       * timestamps on the DTO remain native ``datetime`` values
@@ -167,12 +167,14 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     assert isinstance(created, Memory)
     assert created.completed_at is None
 
-    updated = book.update(
-        memory_id=created.id,
+    candidate = created.with_changes(
         subject="ship the deal (closed)",
         body="signed by both parties",
         priority=4,
     )
+    assert book.update(candidate) is True
+    updated = book.get(created.id)
+    assert updated is not None
     assert updated.subject == "ship the deal (closed)"
     assert updated.body == "signed by both parties"
     assert updated.priority == 4
@@ -196,10 +198,10 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     ``delete_memory`` tool's caller depends on for
     idempotent LLM retries."""
     book = MemoryBook(factory)
-    assert book.delete(memory_id=99999) is False
+    assert book.delete(99999) is False
     # Real row still works.
     m = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='x', body='y')))
-    assert book.delete(memory_id=m.id) is True
+    assert book.delete(m.id) is True
     assert book.get(m.id) is None
 
 
@@ -252,27 +254,27 @@ def test_memory_book_update_reuses_record_constraints(factory, contact_id):
 
     # Empty subject via update is rejected.
     with pytest.raises(ValueError, match="validation error"):
-        book.update(memory_id=row.id, subject="   ")
+        row.with_changes(subject="   ")
 
     # Subject over 200 chars is rejected.
     with pytest.raises(ValueError, match="validation error"):
-        book.update(memory_id=row.id, subject="x" * 201)
+        row.with_changes(subject="x" * 201)
 
     # Empty body via update is rejected.
     with pytest.raises(ValueError, match="validation error"):
-        book.update(memory_id=row.id, body="   ")
+        row.with_changes(body="   ")
 
     # Body over 8 KiB is rejected.
     with pytest.raises(ValueError, match="validation error"):
-        book.update(memory_id=row.id, body="x" * (8 * 1024 + 1))
+        row.with_changes(body="x" * (8 * 1024 + 1))
 
     # ``priority`` outside 1..5 is rejected.
     with pytest.raises(ValueError, match="validation error"):
-        book.update(memory_id=row.id, priority=7)
+        row.with_changes(priority=7)
 
-    # Missing row → LookupError.
-    with pytest.raises(LookupError, match="memory row"):
-        book.update(memory_id=99999, subject="x")
+    # A record which disappeared between read and write is an idempotent miss.
+    object.__setattr__(row, "id", 99999)
+    assert book.update(row) is False
 
 
 def test_memory_book_complete_missing_id_raises_lookup(factory):
@@ -297,7 +299,9 @@ def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
     field round-trips through unchanged."""
     book = MemoryBook(factory)
     row = book.get(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
-    after = book.update(memory_id=row.id, priority=5)
+    assert book.update(row.with_changes(priority=5)) is True
+    after = book.get(row.id)
+    assert after is not None
     assert after.subject == "orig"
     assert after.body == "orig body"
     assert after.priority == 5

@@ -137,7 +137,7 @@ class ProactiveWorker(RuntimeWorker):
         memberships_book = getattr(self.bus, "memberships_book", None)
         if memberships_book is None:
             return None
-        membership = memberships_book.get(magi_id=magi_id)
+        membership = memberships_book.get(magi_id)
         if membership is None:
             return None
         return membership.magis_id
@@ -150,7 +150,7 @@ class ProactiveWorker(RuntimeWorker):
         magis_book = getattr(self.bus, "magis_book", None)
         if magis_book is None:
             return False
-        magis_node = magis_book.get(magis_id=magis_id)
+        magis_node = magis_book.get(magis_id)
         if magis_node is None:
             return False
         return magis_node.adam_id == magi_id

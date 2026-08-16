@@ -96,7 +96,7 @@ class CompleteActionItemTool(Tool):
         # ``get`` and ``complete`` is fine for the
         # single-writer chat tool; a future tx-scoped guard
         # would tighten it for multi-writer surfaces.
-        existing = ctx.bus.action_items_book.get(item_id=item_id)
+        existing = ctx.bus.action_items_book.get(item_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"action item {item_id} not found or not owned by the calling operator"

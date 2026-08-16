@@ -17,4 +17,4 @@ Subpackages
 
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
 
-__all__ = ["BaseBook", "BaseRecord", "BaseRecordMixin"]
+__all__ = ["BaseBook", "BaseRecord", "BaseRecordMixin", "record"]

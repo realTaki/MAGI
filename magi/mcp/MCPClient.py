@@ -63,7 +63,7 @@ class MCPTimeoutConfig:
     peer can't stall the agent loop forever.
 
     The worker fills these from
-    ``bus.settings_book.get("mcp.{connect,execute,sse_read}_timeout")``
+    ``bus.settings_book.get_value("mcp.{connect,execute,sse_read}_timeout")``
     at bootstrap time. When the value is unset or fails to
     parse, the worker falls back to the defaults below.
     """

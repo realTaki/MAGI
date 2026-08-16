@@ -82,7 +82,7 @@ class AddContactNoteTool(Tool):
         # reads as "tool.crashed"). We translate to a clean
         # ``is_error=True`` here so the LLM sees a
         # caller-fixable "contact_id N not found" message.
-        contact = ctx.bus.contacts_book.get(contact_id=contact_id)
+        contact = ctx.bus.contacts_book.get(contact_id)
         if contact is None:
             return ToolResult.err(f"contact {contact_id!r} not found")
 
@@ -91,7 +91,7 @@ class AddContactNoteTool(Tool):
                 contact_id=contact_id,
                 note=note,
             ))
-            row = ctx.bus.contact_notes_book.get(note_id=note_id)
+            row = ctx.bus.contact_notes_book.get(note_id)
             if row is None:
                 raise RuntimeError(f"contact note {note_id} disappeared after insert")
         except ValueError as e:

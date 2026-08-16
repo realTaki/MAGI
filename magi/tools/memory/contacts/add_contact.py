@@ -21,7 +21,7 @@ from the contact's local role.
 Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
 and ``ctx.bus.contact_notes_book`` — the Books own
-write invariants (name uniqueness, length caps,
+write invariants (length caps,
 empty-content rejection) and expose ``add(...)`` plus
 ``to_dict`` on the returned DTO. The legacy service at
 bus Book API is no longer
@@ -58,7 +58,7 @@ class AddContactTool(Tool):
             "name": {
                 "type": "string",
                 "description": (
-                    "Contact name (required, ≤120 chars, unique across the directory)."
+                    "Contact name (required, ≤120 chars)."
                 ),
             },
             "display_name": {
@@ -114,13 +114,13 @@ class AddContactTool(Tool):
                 role=role,
                 tgid=kwargs.get("tgid"),
             ))
-            contact = ctx.bus.contacts_book.get(contact_id=record_id)
+            contact = ctx.bus.contacts_book.get(record_id)
             if contact is None:
                 raise RuntimeError(f"contact row {record_id} disappeared after insert")
         except ValueError as e:
             # ``contacts_book.add`` owns write invariants
-            # (non-empty name, name uniqueness, role enum
-            # membership). Translate to a clean LLM-facing
+            # (non-empty name, role enum membership).
+            # Translate to a clean LLM-facing
             # error rather than letting it bubble to the
             # worker's "tool.crashed" envelope (which would
             # imply a programming error rather than a
@@ -141,7 +141,7 @@ class AddContactTool(Tool):
                     contact_id=contact.id,
                     note=str(initial_note),
                 ))
-                note = ctx.bus.contact_notes_book.get(note_id=note_id)
+                note = ctx.bus.contact_notes_book.get(note_id)
                 if note is None:
                     raise RuntimeError(f"contact note {note_id} disappeared after insert")
             except ValueError as e:
