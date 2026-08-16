@@ -18,16 +18,9 @@ write tool. Reads (no read tool yet — the system-prompt
 block is the read path for v0) would carry the same
 gate when added.
 
-Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
-— the Book owns the write invariants (kind membership
-in :class:`~magi.bus.library.local.memoryBook.MemoryKind`,
-subject non-empty + ≤200 chars, body non-empty + ≤8 KB,
-priority 1..5) and
-surfaces any violation as ``ValueError`` that we
-translate to ``ToolResult.err`` here. The bus
-service at bus Book API
-is no longer imported here.
+Bus plumbing: this tool talks to bus (:class:`magi.bus.Bus`) via
+``ctx.bus.memory_book``.  It validates its command vocabulary at ingress;
+the Book persists free text without imposing a second input policy.
 """
 
 from __future__ import annotations
@@ -114,24 +107,25 @@ class AddMemoryTool(Tool):
         **kwargs: Any,
     ) -> ToolResult:
         assert ctx.bus is not None, "require_bus should have caught this"
-        # Shape translation — kwargs → typed
-        # :meth:`MemoryBook.add` arguments. The Book
-        # owns the write invariants (subject non-empty
-        # + ≤200 chars, body non-empty + ≤8 KB,
-        # ``kind`` enum membership,
-        # ``priority`` 1..5) so we don't re-check
-        # them here. A violation raises ``ValueError``,
-        # which the worker catches and surfaces as
-        # ``is_error=True`` to the LLM.
-        missing = [k for k in ("kind", "subject", "body") if not kwargs.get(k)]
+        # Tool parameters are an ingress boundary. The Book deliberately
+        # persists unconstrained free text.
+        missing = [
+            key
+            for key in ("kind", "subject", "body")
+            if not isinstance(kwargs.get(key), str) or not kwargs[key].strip()
+        ]
         if missing:
             return ToolResult.err(f"add_memory requires fields: {', '.join(missing)}")
+        try:
+            kind = MemoryKind(kwargs["kind"])
+        except ValueError:
+            return ToolResult.err("add_memory kind must be 'fact' or 'quick_note'")
         if ctx.bus is None:
             return ToolResult.err("bus not available")
         try:
             record_id = ctx.bus.memory_book.add(Memory(
                 contact_id=int(ctx.contact_id),
-                kind=kwargs["kind"],
+                kind=kind,
                 subject=kwargs["subject"],
                 body=kwargs["body"],
                 priority=kwargs.get("priority", 3),

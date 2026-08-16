@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
@@ -73,7 +73,7 @@ class _RunTaskJobRow(BaseJobRowMixin):
     __tablename__ = "run_task_jobs"
     __table_args__ = {"extend_existing": True}
 
-    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     #: 是否用户/工具主动触发。``manual=True`` 跳过 since-recent
     #: 判定；``False`` 表示 cron / run_at 系统自触发。与
     #: :class:`~magi.bus.library.local.tasksBook.TaskRun.manual`

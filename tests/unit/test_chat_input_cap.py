@@ -1,26 +1,11 @@
-"""Unit tests for the inbound chat-text chokepoint.
+"""Unit tests for durable chat publication and unmodified BUS storage.
 
-Two concerns, **separated by layer**:
-
-  1. **Cap** (the ``system.chat_max_input_chars`` setting) — enforced
-     at :meth:`MessageBook.add` because the cap is fundamentally a
-     *write-side* concern. The LLM reads from ``chat_messages`` (the
-     post-cap row), not from a chatNotifyJob payload; the chatNotifyJob layer
-     therefore has no parallel cap to keep in sync.
-  2. **D.22 cross-channel guard + consolidated user-message write** —
-     :meth:`chatNotifyBoard.publish_chat` enforces the guard and writes
-     the user message to ``chat_messages`` at the same chokepoint as
-     the chatNotifyJob enqueue. Channels (TG / WebUI / Task) never reach
-     into ``messages_book`` directly.
-
-Helpers ``_truncate_inbound`` / ``_resolve_max_input_chars`` live
-in :mod:`magi.bus.library.local.conversationBook` (the Book that
-uses them).
+Input limits belong to API/channel entry points.  ``MessageBook`` persists
+the exact payload supplied by its caller; it must not implement a second
+character-count policy.
 """
 
 from __future__ import annotations
-
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -57,7 +42,7 @@ def seed_conversation(factory, contact_id):
 
 
 # ---------------------------------------------------------------------------
-# MessageBook.add — the single chokepoint for the cap
+# MessageBook.add preserves payload text
 # ---------------------------------------------------------------------------
 
 
@@ -67,30 +52,18 @@ def test_messages_book_add_noop_under_cap(factory, seed_conversation):
     assert m.text == "hi"
 
 
-def test_messages_book_add_truncates_over_cap(factory, seed_conversation):
-    """Over the cap → stored row is truncated."""
+def test_messages_book_add_preserves_long_text(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
     huge = "x" * 20_000
     m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text=huge)))
     assert m.text is not None
-    assert len(m.text) == 8_000  # default cap
+    assert m.text == huge
 
 
-def test_messages_book_add_honors_lowered_cap(factory, seed_conversation):
-    settings_book = MagicMock()
-    settings_book.get_value.return_value = "2000"  # within clamp range
-    mbook = MessageBook(factory, settings_book=settings_book)
-    m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text='y' * 5000)))
-    assert m.text is not None
-    assert len(m.text) == 2_000
-
-
-def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
+def test_messages_book_add_keeps_huge_turn_for_provider_budgeting(
     factory, contact_id
 ):
-    """End-to-end: even with a single huge turn, compaction's floor-of-1
-    works because the row stored is already capped.
-    """
+    """Compaction/provider code, not persistence, decides how to budget it."""
     sbook = ConversationBook(factory, settings_book=None)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.conversation_id
@@ -98,50 +71,7 @@ def test_messages_book_add_compaction_cant_be_broken_by_huge_turn(
     mbook.get(mbook.add(Message(conversation_id=cid, message_id='m_huge', role='user', text='x' * 50000)))
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 1
-    assert len(rows[0].text) == 8_000
-
-
-# ---------------------------------------------------------------------------
-# Module-private helpers in conversationBook
-# ---------------------------------------------------------------------------
-
-
-def test_resolve_max_input_chars_with_none_settings():
-    from magi.bus.library.local.conversationBook import _resolve_max_input_chars
-
-    assert _resolve_max_input_chars(None) == 8_000
-
-
-def test_resolve_max_input_chars_clamps_garbage():
-    from magi.bus.library.local.conversationBook import _resolve_max_input_chars
-
-    sb = MagicMock()
-    sb.get_value.return_value = "not-a-number"
-    assert _resolve_max_input_chars(sb) == 8_000
-
-    sb.get_value.return_value = "50"  # below MIN
-    assert _resolve_max_input_chars(sb) == 1_000
-
-    sb.get_value.return_value = "999_999_999"  # above MAX
-    assert _resolve_max_input_chars(sb) == 100_000
-
-
-def test_truncate_inbound_under():
-    from magi.bus.library.local.conversationBook import _truncate_inbound
-
-    text, was_truncated, original = _truncate_inbound("hello", 100)
-    assert text == "hello"
-    assert was_truncated is False
-    assert original == 5
-
-
-def test_truncate_inbound_over():
-    from magi.bus.library.local.conversationBook import _truncate_inbound
-
-    text, was_truncated, original = _truncate_inbound("x" * 200, 50)
-    assert len(text) == 50
-    assert was_truncated is True
-    assert original == 200
+    assert len(rows[0].text) == 50_000
 
 
 # ---------------------------------------------------------------------------
@@ -149,11 +79,7 @@ def test_truncate_inbound_over():
 # ---------------------------------------------------------------------------
 
 
-def test_publish_chat_does_not_cap_payload(factory, contact_id):
-    """The cap moved to MessageBook. The chatNotifyJob payload.text is the
-    *raw* user input — the LLM never reads it; compaction / LLM read
-    from messages_book, which is what truncates.
-    """
+def test_publish_chat_preserves_payload_in_book(factory, contact_id):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
@@ -176,9 +102,9 @@ def test_publish_chat_does_not_cap_payload(factory, contact_id):
     # raw text travels through the row, intact.
     assert job.text == huge
     assert job.channel == "tg"
-    # But messages_book row IS truncated (cap lives there).
+    # The stored row is equally unmodified; the provider boundary budgets it.
     rows = mbook.list_for_conversation(conversation_id=cid)
-    assert len(rows[0].text) == 8_000
+    assert rows[0].text == huge
 
 
 def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):

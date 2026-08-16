@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Boolean, String
+from sqlalchemy import JSON, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column
@@ -138,7 +138,7 @@ class _ChangeMCPServerRow(BaseJobRowMixin):
     __table_args__ = {"extend_existing": True}
 
     kind: Mapped[MCPKind] = mapped_column(enum_column(MCPKind), nullable=False)
-    server_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    server_name: Mapped[str] = mapped_column(Text, nullable=False)
 
     #: JSON-serialised :class:`McpServer` DTO. Populated for
     #: :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED`; ``None``

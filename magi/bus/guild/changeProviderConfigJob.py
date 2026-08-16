@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import utcnow_naive
@@ -87,9 +87,9 @@ class _ChangeProviderConfigRow(BaseJobRowMixin):
     # in-place ``provider.model`` swap (only ``model`` set).
     # All three are nullable so an incomplete change (``None``)
     # is preserved end-to-end.
-    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    api_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ── Board ──────────────────────────────────────────────────────────────────

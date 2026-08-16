@@ -141,11 +141,7 @@ async def test_add_memory_missing_required_field(
 async def test_add_memory_book_value_error_becomes_tool_error(
     ctx: ToolContext,
 ) -> None:
-    """The Book raises ``ValueError`` on invariant
-    violation (subject empty, priority out of range,
-    unknown kind/source) — the tool must translate
-    that to ``ToolResult.err`` so the LLM sees a
-    caller-fixable prompt, not a tool.crashed."""
+    """The Tool validates its own required fields and kind vocabulary."""
     tool = AddMemoryTool()
     # Empty subject.
     bad_subject = await tool.run(
@@ -165,16 +161,6 @@ async def test_add_memory_book_value_error_becomes_tool_error(
     )
     assert bad_kind.is_error is True
     assert "kind" in bad_kind.content
-    # Importance out of range.
-    bad_pri = await tool.run(
-        ctx,
-        kind="fact",
-        subject="ok",
-        body="ok",
-        priority=99,
-    )
-    assert bad_pri.is_error is True
-    assert "priority" in bad_pri.content
 
 
 @pytest.mark.asyncio
@@ -375,41 +361,33 @@ async def test_update_memory_rejects_cross_contact(
 
 
 @pytest.mark.asyncio
-async def test_update_memory_translates_value_error(
+async def test_update_memory_allows_unconstrained_free_text(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    """Book-side invariants (subject empty, priority
-    out of range, body over the cap) must surface as
-    LLM-facing ``ToolResult.err`` rather than crashing."""
+    """The memory tool does not impose DTO text or priority caps."""
     row = bus.memory_book.get(bus.memory_book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
     tool = UpdateMemoryTool()
 
-    # Empty subject.
-    bad_subj = await tool.run(
+    updated_subject = await tool.run(
         ctx,
         memory_id=row.id,
         subject="   ",
     )
-    assert bad_subj.is_error is True
-    assert "subject" in bad_subj.content
+    assert updated_subject.is_error is False
 
-    # Importance out of range.
-    bad_pri = await tool.run(
+    updated_priority = await tool.run(
         ctx,
         memory_id=row.id,
         priority=9,
     )
-    assert bad_pri.is_error is True
-    assert "priority" in bad_pri.content
+    assert updated_priority.is_error is False
 
-    # Body over the cap.
-    too_big = await tool.run(
+    updated_body = await tool.run(
         ctx,
         memory_id=row.id,
         body="x" * (8 * 1024 + 1),
     )
-    assert too_big.is_error is True
-    assert "body" in too_big.content
+    assert updated_body.is_error is False
 
 
 @pytest.mark.asyncio

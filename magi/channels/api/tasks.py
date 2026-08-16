@@ -167,7 +167,12 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
             cron=cron,
             run_at=run_at,
             delivery_to=delivery_to or "new",
-            target_channel=payload.target_channel,
+            # Boundary conversion: the wire contract stays strict
+            # (``Literal["webui", "tg"]``); ``Task`` owns the domain
+            # enum. ``Channel`` here is the public alias of
+            # ``ChannelEnum`` — ``Channel(value)`` maps the literal
+            # onto its member and can't fail for these values.
+            target_channel=Channel(payload.target_channel),
             contact_id=contact_id,
             conversation_id=conversation_id,
             tz=bus.settings_book.get_value(key="system.timezone") or "UTC",

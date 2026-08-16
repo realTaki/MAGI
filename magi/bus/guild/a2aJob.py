@@ -88,10 +88,6 @@ class A2ARequestJob(BaseJob):
     text: str = ""  # 请求正文
     deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
 
-    def __post_init__(self) -> None:
-        if not self.text.strip():
-            raise ValueError("A2A request text is required")
-
 
 @dataclass(frozen=True, slots=True)
 class A2ARequestResult(BaseJobResult):
@@ -121,10 +117,6 @@ class A2ANotifyJob(BaseJob):
     source_magi_id: int = 0  # 发送方 MAGI 身份
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     text: str = ""  # 通知正文
-
-    def __post_init__(self) -> None:
-        if not self.text.strip():
-            raise ValueError("A2A notification text is required")
 
 
 @dataclass(frozen=True, slots=True)

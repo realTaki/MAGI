@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from sqlalchemy import JSON, String
+from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column
@@ -77,14 +77,14 @@ class _ToolJobRow(BaseJobRowMixin):
     __tablename__ = "tool_jobs"
     __table_args__ = {"extend_existing": True}
 
-    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_name: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    tool_call_id: Mapped[str] = mapped_column(String(128), default="")
+    tool_call_id: Mapped[str] = mapped_column(Text, default="")
 
     # -- result-side columns (aligned with RunToolResult) -----------------
     # ``content`` stores the plain-text ToolResult.content (truncated to
     # 8 KB by the worker) — the only return payload, rendered for the LLM.
-    content: Mapped[str] = mapped_column(String(8192), nullable=False, default="")
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[ToolErrorCode] = mapped_column(
         enum_column(ToolErrorCode), nullable=False, default=ToolErrorCode.NONE
     )

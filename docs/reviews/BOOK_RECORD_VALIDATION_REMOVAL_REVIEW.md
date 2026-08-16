@@ -1,7 +1,7 @@
 # Book Record 去 Pydantic 与长度校验审计
 
 日期：2026-08-15  
-状态：待实施
+状态：核心迁移已实施（2026-08-15）
 
 ## 1. 本次决策
 
@@ -156,3 +156,17 @@ def record[RecordT: BaseRecord](cls: type[RecordT]) -> type[RecordT]:
 - API/Tool/Channel 的入口限制有对应测试；Provider 前有独立 token 策略或明确的 overflow
   错误处理。
 - 原有 Book、Task、MCP、MAGIS、A2A 回归测试通过。
+
+## 10. 本次实施结果
+
+已完成：
+
+- `BaseRecord`/`@record` 已回归标准库 dataclass，`magi.bus.library` 不再导入 Pydantic；
+- 所有 Library Record 已移除 Pydantic 字段包装与 BUS DTO 长度/strict 校验；
+- Message、ContactNote、ActionItem、Conversation 标题等持久化路径不再截断或静默 trim；
+- 已删除失效的全局 `system.chat_max_input_chars` 设置与 MessageBook 截断逻辑；
+- Book 测试改为验证映射、数据库约束与 Task 调度语义；Tool 测试改为验证入口自身的命令
+  形状和 vocabulary。
+
+尚未作为本次 Record/Book 迁移的一部分实现：Provider 调用前的真实 token 预算器。这是独立
+的 Agent/Provider 行为，当前仍由既有压缩和 Provider 错误路径处理，后续应单独设计和测试。

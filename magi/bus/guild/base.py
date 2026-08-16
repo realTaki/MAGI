@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import ClassVar
 
-from sqlalchemy import DateTime, Integer, String, and_, func, or_, select, update
+from sqlalchemy import DateTime, Integer, Text, and_, func, or_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -116,12 +116,10 @@ class BaseJobRowMixin(Base):
     # ``job_id`` 是唯一的 Job 标识：数据库生成的自增主键。Board 是
     # 操作上下文，因此不要求不同 Job 表之间的数值全局唯一。
     job_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # Result-side error description. Width 1024 covers every realistic
-    # worker / provider / runner failure message (~10× what we'd ever
-    # want a UI to display); the value aligns with the inherited
+    # Result-side error description. The value aligns with the inherited
     # :attr:`BaseJobResult.error` dataclass field, so subclasses don't
     # re-declare an ``error`` column just to match the result shape.
-    error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
     # lives in :func:`magi.bus.db.base.enum_column` so all 10 Job boards
@@ -139,7 +137,7 @@ class BaseJobRowMixin(Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow_naive, onupdate=utcnow_naive

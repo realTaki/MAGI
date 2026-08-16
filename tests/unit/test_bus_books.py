@@ -14,8 +14,6 @@ from magi.bus.db import EngineFactory
 from magi.bus.library.local import (
     ActionItem,
     ActionItemBook,
-    ActionPriority,
-    ActionSource,
     Channel,
     ChannelEnum,
     Contact,
@@ -291,11 +289,13 @@ def test_contact_note_book(factory):
     assert len(nbook.list_for_contact(contact_id=c.id)) == 1
 
 
-def test_contact_note_book_rejects_unknown_kind(factory):
+def test_contact_note_database_rejects_unknown_kind(factory):
+    from sqlalchemy.exc import IntegrityError
+
     cbook = ContactBook(factory)
     nbook = ContactNoteBook(factory)
     c = cbook.get(cbook.add(Contact(name='Bob')))
-    with pytest.raises(ValueError, match="validation error"):
+    with pytest.raises(IntegrityError):
         nbook.get(nbook.add(ContactNote(contact_id=c.id, note='x', kind='not-a-real-kind')))
 
 
@@ -575,68 +575,24 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     assert closed.completion_note.startswith("closed on someone else's behalf")
 
 
-def test_action_item_record_constraints(factory, contact_id):
-    """ActionItem field constraints run before ``Book.add`` is called."""
+def test_action_item_record_allows_free_text(factory, contact_id):
+    """Action-item text limits belong to API/tool entry points, not the DTO."""
     book = ActionItemBook(factory)
-
-    # Empty / whitespace-only title is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='')))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='   ')))
-
-    # Title over the column cap (200 chars) is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='x' * 201)))
-
-    # Description over 1000 chars is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', description='d' * 1001)))
-
-    # target_url over 500 chars is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', target_url='u' * 501)))
-
-    # priority must be in ALL_PRIORITIES.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', priority='urgent')))
-    # priority "normal" (default) and "high" both pass — raw
-    # strings and the enum member should be equivalent under
-    # StrEnum semantics.
-    a = book.get(book.add(ActionItem(contact_id=contact_id, title='a', priority=ActionPriority.NORMAL)))
-    assert a.priority == "normal"
-    b = book.get(book.add(ActionItem(contact_id=contact_id, title='b', priority='high')))
-    assert b.priority == "high"
-
-    # source must be in TaskSource.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(ActionItem(contact_id=contact_id, title='ok', source='system')))
-    c = book.get(book.add(ActionItem(contact_id=contact_id, title='c', source=ActionSource.USER)))
-    assert c.source == "user"
-    d = book.get(book.add(ActionItem(contact_id=contact_id, title='d', source='proactive')))
-    assert d.source == "proactive"
+    description = "d" * 2_000
+    item = book.get(book.add(ActionItem(contact_id=contact_id, title='   ', description=description)))
+    assert item is not None and item.title == '   ' and item.description == description
 
 
-def test_action_item_book_complete_note_invariant(factory, contact_id):
-    """``complete`` enforces ``completion_note`` ≤500 chars
-    regardless of who calls it (tool, API, future agent)."""
+def test_action_item_book_complete_accepts_free_text_note(factory, contact_id):
     book = ActionItemBook(factory)
     item = book.get(book.add(ActionItem(contact_id=contact_id, title='x')))
 
-    # Note at exactly the cap is fine.
     ok = book.complete(
         action_item_id=item.id,
-        note="n" * 500,
+        note="n" * 501,
     )
     assert ok is not None
-
-    # Note one over the cap raises.
-    item2 = book.get(book.add(ActionItem(contact_id=contact_id, title='y')))
-    with pytest.raises(ValueError, match="completion_note length"):
-        book.complete(
-            action_item_id=item2.id,
-            note="n" * 501,
-        )
+    assert ok.completion_note == "n" * 501
 
 
 # -- TokenUsageBook ----------------------------------------------------
@@ -766,62 +722,13 @@ def test_task_book_lifecycle(factory, contact_id):
     assert rbook.get_by_run_id(run_id="r1").status == "success"
 
 
-def test_task_book_add_rejects_unknown_source(factory):
-    """``source`` must be in :class:`TaskSource`. Mirrors the
-    ``actionItemBook.add`` precedent — keeps the closed-set
-    discipline even though the DB column is a loose
-    ``String(16)``.
-    """
+def test_task_record_allows_free_text_but_book_validates_schedule(factory, contact_id):
+    """Task DTO text is unconstrained; schedule semantics stay in the Book."""
     book = TaskBook(factory)
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t-bad', name='bad', prompt='x', cron='0 0 * * *', contact_id=1, target_channel='webui', source='system-external-thing')))
-
-
-def test_task_record_constraints(factory, contact_id):
-    """Task Record field constraints enforce:
-
-    * ``name`` non-empty + ≤120 chars (mirrors ``String(120)``)
-    * ``prompt`` non-empty + ≤8000 chars
-    * ``target_channel`` in the closed :class:`ChannelEnum`
-    * ``source`` in :attr:`TaskSource`
-
-    Construction raises ``ValidationError`` (a ``ValueError`` subclass).
-    """
-    book = TaskBook(factory)
-
-    # ``name`` empty / whitespace-only is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t1', name='', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t2', name='   ', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-
-    # ``name`` over the column cap is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t3', name='n' * 121, prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-
-    # ``prompt`` empty / whitespace-only is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t4', name='ok', prompt='', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t5', name='ok', prompt='   ', cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-
-    # ``prompt`` over the cap is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t6', name='ok', prompt='p' * 8001, cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
-
-    # ``target_channel`` outside the closed enum is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Task(task_id='t7', name='ok', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel='web')))
-
-    # All closed-set values pass.
-    for ch in ("webui", "tg", "scheduled"):
-        row = book.get(book.add(Task(task_id=f't-ch-{ch}', name=f'task-{ch}', prompt='p', cron='0 0 * * *', contact_id=contact_id, target_channel=ch)))
-        assert row.target_channel == ch
-
-    # Happy path lands a row.
-    happy = book.get(book.add(Task(task_id='happy', name='ok-name', prompt='ok-prompt', cron='0 9 * * *', contact_id=contact_id, target_channel='webui')))
-    assert happy.name == "ok-name"
-    assert happy.target_channel == "webui"
+    row = book.get(book.add(Task(task_id='t1', name='   ', prompt='p' * 9000, cron='0 0 * * *', contact_id=contact_id, target_channel='webui')))
+    assert row is not None and row.name == '   ' and len(row.prompt) == 9000
+    with pytest.raises(ValueError, match="exactly one"):
+        book.add(Task(task_id='t2', name='x', prompt='p', contact_id=contact_id, target_channel='webui'))
 
 
 def test_channel_enum_values():
@@ -1005,9 +912,8 @@ def test_task_book_upsert_by_name(factory, contact_id):
     assert row.target_channel == "tg"
     assert row.conversation_id == seed_cid  # sticky: NOT overwritten by 01DEF
 
-    # Book invariants still fire via the insert branch —
-    # inserting a third task with bad data raises.
-    with pytest.raises(ValueError, match="validation error"):
+    # The remaining Book invariant is foreign-key/semantic resolution.
+    with pytest.raises(ValueError, match="unknown conversation_id"):
         book.upsert_by_name(
             name="bad",
             prompt="",

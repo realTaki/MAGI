@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
@@ -99,13 +99,13 @@ class _ChatNotifyRow(BaseJobRowMixin):
     __tablename__ = "chat_notify_jobs"
     __table_args__ = {"extend_existing": True}
 
-    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # 会话 ID
+    conversation_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # 会话 ID
     # Turn input — formerly a single ``payload`` JSON blob. Split into
     # individual columns in migration 0011 so producers / consumers
     # see one field per attribute on :class:`ChatNotifyJob` (no
     # ``payload`` dict). The pre-migration rows had no value here.
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)  # 用户消息原文
-    channel: Mapped[str] = mapped_column(String(16), default="", nullable=False)  # 入站渠道
+    channel: Mapped[str] = mapped_column(Text, default="", nullable=False)  # 入站渠道
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 所属联系人
 
 

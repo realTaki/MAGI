@@ -62,19 +62,18 @@ class BaseRecordMixin(Base):
 ```
 
 每个 Row 直接继承 `BaseRecordMixin`，不再直接继承 `Base`；每个公开的持久化
-DTO 继承 `BaseRecord`。`@record` 是以 Pydantic dataclass 实现的统一 DTO 装饰器：它
-保留冻结、slots、具名构造和标准 dataclass 映射，同时执行直接声明在字段类型中的
-`Annotated` 约束。`kw_only=True` 让基类字段不会与子类业务字段的默认值排序冲突。
+DTO 继承 `BaseRecord`。`@record` 是统一的标准库 dataclass 装饰器：它保留冻结、slots、
+具名构造和标准 dataclass 映射。`kw_only=True` 让基类字段不会与子类业务字段的默认值
+排序冲突。
 
-字段自身的类型、长度、范围和枚举规范化必须在 Record 上声明，例如
-`title: Annotated[str, Strict(), StringConstraints(min_length=1, max_length=200)]`。
-这类规则在 DTO 构造时执行；Book 只保留涉及数据库、跨字段或操作语义的规则，例如
-外键归属、唯一性、任务的 cron/run_at XOR 和 cron 解析。
+Record 只声明持久化数据形状；类型、文本长度、展示 trim 和入口格式限制属于 API、
+Channel、Tool 等输入边界。Book 只保留涉及数据库、跨字段或操作语义的规则，例如外键
+归属、唯一性、任务的 cron/run_at XOR 和 cron 解析。
 
 ```python
 @record
 class ActionItem(BaseRecord):
-    title: Annotated[str, Strict(), StringConstraints(min_length=1, max_length=200)]
+    title: str
 ```
 
 `BaseBook._row_to_dto()` 不转换时间：ORM Row 与 DTO 均保留同一个 naive UTC

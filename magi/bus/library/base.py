@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime
-from typing import dataclass_transform
+
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,16 +52,6 @@ class BaseRecord:
         for name in ("id", "created_at", "updated_at"):
             object.__setattr__(replacement, name, getattr(self, name))
         return replacement
-
-
-@dataclass_transform(
-    kw_only_default=True,
-    frozen_default=True,
-    field_specifiers=(dataclasses.field,),
-)
-def record[RecordT: BaseRecord](cls: type[RecordT]) -> type[RecordT]:
-    """Declare an immutable persisted DTO with stdlib dataclasses only."""
-    return dataclasses.dataclass(cls, frozen=True, slots=True, kw_only=True)
 
 
 class BaseRecordMixin(Base):

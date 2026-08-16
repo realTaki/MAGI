@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
@@ -107,9 +107,9 @@ class _LLMJobRow(BaseJobRowMixin):
     tools: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     streaming: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    finish_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    stream_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    stream_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_code: Mapped[LLMErrorCode] = mapped_column(
         enum_column(LLMErrorCode), nullable=False, default=LLMErrorCode.NONE
     )

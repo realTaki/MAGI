@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import utcnow_naive
@@ -51,16 +51,10 @@ class _SeedPresetTaskJobRow(BaseJobRowMixin):
     __tablename__ = "seed_preset_tasks_jobs"
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    preset_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    preset_key: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # ``error`` column inherits ``String(1024)`` from
-    # :class:`~magi.bus.guild.base.BaseJobRowMixin`. This row used
-    # to declare ``Text`` here — the size was historically
-    # over-sized because every preset's failure description was
-    # stuffed onto one cell. With the result side
-    # (:class:`~magi.bus.guild.seedPresetTasksJob.SeedPresetTaskResult`)
-    # inheriting ``error`` from
-    # :class:`~magi.bus.guild.base.BaseJobResult`, 1024 is plenty.
+    # ``error`` column inherits ``Text`` from
+    # :class:`~magi.bus.guild.base.BaseJobRowMixin`.
 
 
 class seedPresetTaskJobBoard(

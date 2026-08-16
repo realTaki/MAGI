@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import utcnow_naive
@@ -66,14 +66,14 @@ class _DeliveryJobRow(BaseJobRowMixin):
     __tablename__ = "delivery_jobs"
     __table_args__ = {"extend_existing": True}
 
-    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
     # Delivery content — formerly a single ``payload`` JSON blob. First-class
     # typed columns on :class:`DeliveryJob` so producers / consumers see
     # one field per attribute (no ``payload`` dict).
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    conversation_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    destination: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    destination: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
