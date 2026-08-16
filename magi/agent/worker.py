@@ -411,7 +411,16 @@ class AgentWorker(RuntimeWorker):
                     await self._publish_delivery(ctx)
                     return
                 if result.status != JobStatus.COMPLETED:
-                    ctx.final_reply = "抱歉，回复生成失败，请稍后再试。"
+                    # Missing runtime credentials are an operator-actionable
+                    # failure, not a transient model error.  Keep the detail
+                    # on the durable chat-job result for diagnostics, while
+                    # delivering a safe, actionable message to the channel.
+                    from magi.bus.guild.callLLMJob import LLMErrorCode
+
+                    if getattr(result, "error_code", None) == LLMErrorCode.CREDENTIALS_REQUIRED:
+                        ctx.final_reply = self._fallback_reply()
+                    else:
+                        ctx.final_reply = "抱歉，回复生成失败，请稍后再试。"
                     ctx.final_error = ChatErrorCode.LLM_FAILED
                     ctx.final_error_detail = _llm_failure_detail(result)
                     await self._publish_delivery(ctx)
@@ -981,11 +990,10 @@ class AgentWorker(RuntimeWorker):
         return msg
 
     def _fallback_reply(self) -> str:
-        # LLM credentials are missing for this contact. The WebUI chat
-        # endpoint surfaces the same condition as a 403 before the agent
-        # runs; this path covers TG contacts whose provider was removed
-        # after binding.
-        return "你的账号还没设置 LLM provider 和 API key，去 MAGI WebUI 的「Contacts」里把自己的档案补上吧。"
+        # Provider configuration belongs to this MAGI runtime.  The same
+        # durable delivery path serves WebUI and channel users, so don't leak
+        # the underlying provider error or API-key details here.
+        return "这个 MAGI 还没设置 LLM provider 和 API key，请在 WebUI 的「Settings」中配置后重试。"
 
     # -- cancel --------------------------------------------------------------
 

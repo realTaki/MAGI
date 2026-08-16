@@ -189,6 +189,30 @@ async def test_single_turn_no_tools_delivers():
     # inside _process we only test side-effects are correct.
 
 
+@pytest.mark.asyncio
+async def test_missing_provider_delivers_actionable_reply() -> None:
+    """A failed CallLLMJob still becomes a channel delivery, never a blank chat."""
+    from magi.agent.worker import AgentWorker, RunContext
+    from magi.bus.guild.callLLMJob import LLMErrorCode
+
+    bus = _make_bus()
+    bus.llm_job_board.get_result.return_value = _fake_llm(
+        status=JobStatus.FAILED,
+        error_code=LLMErrorCode.CREDENTIALS_REQUIRED,
+        error="MAGI runtime has no LLM provider configured",
+    )
+    ctx = RunContext(contact_id=42, channel="webui", conversation_id=1)
+
+    await AgentWorker(bus=bus)._process(ctx)
+
+    assert ctx.final_error is not None
+    assert "Settings" in ctx.final_reply
+    delivery = bus.delivery_job_board.publish.call_args.args[0]
+    assert delivery.channel == "webui"
+    assert delivery.conversation_id == 1
+    assert delivery.text == ctx.final_reply
+
+
 # ---------------------------------------------------------------------------
 # Test 2: LLM returns tool_use → second LLM call → delivery
 # ---------------------------------------------------------------------------

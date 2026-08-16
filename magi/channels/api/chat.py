@@ -248,8 +248,12 @@ async def send_chat(
             channel="webui",
             delivery_address=tg_im_id,
         )
-        store.add(sess)
-        conversation_id = sess.id
+        # ``BaseBook.add`` returns the database-generated id; it does not
+        # mutate the immutable DTO passed to it.  Carry the returned id into
+        # the turn job (and consequently the transcript/delivery jobs).
+        # Reading ``sess.id`` here leaves it at its construction default (0),
+        # which makes the message FK write and WebUI delivery both fail.
+        conversation_id = store.add(sess)
 
     # D.22 cross-channel guard + chat_messages write + chatNotifyJob
     # enqueue are all consolidated inside

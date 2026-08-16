@@ -300,8 +300,10 @@ def create_conversation(
         contact_id=contact_id,
         channel="webui",
     )
-    bus.conversations_book.add(record)
-    return CreateConversationResponse(conversation_id=record.id)
+    # ``add`` is a command and returns the generated id.  ``record`` remains
+    # an immutable unpersisted DTO, so ``record.id`` is still 0 afterwards.
+    conversation_id = bus.conversations_book.add(record)
+    return CreateConversationResponse(conversation_id=conversation_id)
 
 
 @router.get(

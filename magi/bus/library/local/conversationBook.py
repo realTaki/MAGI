@@ -721,9 +721,20 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             )
             archived_filter = [] if include_archived else [_MessageRow.archived == 0]
 
-            page_rows = s.scalars(
-                base.where(*archived_filter).order_by(_MessageRow.id).limit(limit).offset(offset)
-            ).all()
+            # ``offset`` counts from the newest end: the WebUI first loads
+            # the current tail, then increments it to fetch older pages.
+            # Select in reverse order to apply that offset correctly, then
+            # reverse the bounded page before returning it to retain the
+            # public oldest-first rendering contract.
+            page_rows = list(
+                s.scalars(
+                    base.where(*archived_filter)
+                    .order_by(_MessageRow.id.desc())
+                    .limit(limit)
+                    .offset(offset)
+                ).all()
+            )
+            page_rows.reverse()
             total_active = (
                 s.scalar(
                     select(func.count())
@@ -743,11 +754,12 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 )
                 or 0
             )
-        return (
-            [self._row_to_dto(r) for r in page_rows],
-            int(total_active),
-            int(total_all),
-        )
+            # ``_row_to_dto`` reads ``row.conversation``.  It must run while
+            # the SQLAlchemy session is still open, otherwise the lazy
+            # relationship raises DetachedInstanceError for every non-empty
+            # page returned to the WebUI.
+            page_messages = [self._row_to_dto(row) for row in page_rows]
+        return (page_messages, int(total_active), int(total_all))
 
     def _record_to_row_values(self, record: Message, session) -> dict:
         """Map the DTO onto row columns; the conversation reference is direct."""
