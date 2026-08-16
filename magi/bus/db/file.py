@@ -32,11 +32,11 @@ import json as _json
 import logging
 import os
 import tempfile
-from datetime import UTC, datetime
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -233,7 +233,7 @@ class FileShelf:
 
     Construction::
 
-        shelf = FileShelf(Path("/var/magi/prompts"))
+        shelf = FileShelf(Path("/workspace/prompts"))
         soul = shelf.read_text("soul")            # → str  (auto-detects .md)
 
     The shelf is **process-local** (in-memory cache + ``threading.Lock``).

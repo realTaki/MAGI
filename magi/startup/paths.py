@@ -13,9 +13,10 @@ Layout (per refactor plan §7, §9):
     ├── MAGI_Citizens/
     │   ├── eva-000/
     │   │   ├── memories/magi.db  # private SQLite
-    │   │   ├── runtime.json      # runtime state (identity record)
-    │   │   ├── skills/           # SKILL.md files
-    │   │   ├── memories/         # memory subsystem data
+    │   │   ├── prompts/          # Worker-owned PromptBook files
+    │   │   │   ├── agent/
+    │   │   │   └── proactive/
+    │   │   ├── skills/           # BUS-seeded SKILL.md directories
     │   │   ├── logs/             # stdout / stderr
     │   │   │   ├── stdout.log
     │   │   │   └── stderr.log

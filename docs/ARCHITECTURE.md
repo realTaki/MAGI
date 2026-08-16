@@ -511,7 +511,7 @@ setting.
 | --- | --- | --- |
 | **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books (conversations, messages, memory, contacts, settings, tasks, tool catalog state, durable local job boards, delivery state) |
 | **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books (society tree, admins, memberships, roles, runtime-control records, singleton WebUI control settings) **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
-| **File-backed** | `magi/prompts/`, `<workspace>/skills/` | `PromptBook`, `SkillsBook` |
+| **File-backed** | `<workspace>/prompts/<owner>/…`, `<workspace>/skills/<name>/…` | `PromptBook`, `SkillsBook` |
 
 `magi.bus` owns the engine factories, table registration, and file-backed
 shelves for both scopes. No other package opens either database directly
@@ -528,6 +528,14 @@ therefore identify a per-MAGIS file. When `MAGIS_DATABASE_URL` is set, it
 is authoritative — PostgreSQL URLs identify a distinct database (e.g.
 `magis_42`) on a shared service. The BUS does not infer or silently reuse
 another MAGIS's URL.
+
+Package assets are first-run defaults, not a runtime read path. Each Worker
+seeds only the prompt records it owns through `PromptBook.ensure(...)` during
+its startup: `AgentWorker` owns `prompts/agent/`, and `ProactiveWorker` owns
+`prompts/proactive/`. Existing workspace records are never overwritten.
+Skills have no Worker owner, so `build_default_skills_book()` seeds missing
+package skill directories into `<workspace>/skills/` when the node BUS opens;
+afterward `SkillsBook` reads only that workspace directory.
 
 Schema materialisation is scoped: `synchronise_schema(local_factory,
 scope=LOCAL_SCOPE)` creates local Books and durable local job boards only

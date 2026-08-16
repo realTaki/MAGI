@@ -87,14 +87,14 @@ permalink: /business-flows/
    │   六块顺序固定 — SOUL → Instructions → Memory → Contact →
    │   Daily note → Skills
    │   ├─ SOUL = read_soul(bus) — bus.prompt_book.soul() 读 workspace
-   │   │   SOUL.md，否则回退到 bundled soul.md
+   │   │   prompts/agent/soul.md，否则回退到 AgentWorker 管理的默认 persona
    │   ├─ Instructions = runtime_instruction_block(bus, magi_id=...)
    │   │   — 含 personal instruction + team/role 层（从 MAGIS
    │   │   memberships_book 读）
    │   ├─ Memory = bus.memory_book.list_by_owner(contact_id)
    │   ├─ Contact = bus.contacts_book.get + contact_notes_book
    │   │   .list_for_contact + read_daily_note
-   │   └─ Skills = bus.skills_book.list()（file-backed，两根目录）
+   │   └─ Skills = bus.skills_book.list()（file-backed，workspace 管理目录）
    └─ tools = bus.tool_definitions_book.list_enabled(caller_role=contact.role)
 
 4. 工具循环 (AgentWorker._process 的 for _ in range(max_iterations))

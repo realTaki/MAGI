@@ -73,7 +73,7 @@ class ReadFileTool(Tool):
 
     description = (
         "Read the contents of a UTF-8 text file. ``path`` is "
-        'relative to the workspace root (e.g. ``"SOUL.md"`` '
+        'relative to the workspace root (e.g. ``"prompts/agent/soul.md"`` '
         'or ``"skills/calc.py"``). Use ``list_files`` first '
         "to discover files.\n\n"
         "Two read modes:\n"

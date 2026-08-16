@@ -36,7 +36,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from magi.bus.db.file import FileShelf
 from magi.bus.library.file.base import BaseFileBook
 
 logger = logging.getLogger("magi.bus.promptBook")

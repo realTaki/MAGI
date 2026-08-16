@@ -283,7 +283,7 @@ def create_app(
     app.include_router(memory.router, prefix="/api")
     # Soul editor — the persona text the agent loop reads as
     # the system prompt. Read/write/reset the workspace
-    # ``SOUL.md`` from the Settings tab.
+    # managed Agent persona from the Settings tab.
     from magi.channels.api import soul
 
     app.include_router(soul.router, prefix="/api")

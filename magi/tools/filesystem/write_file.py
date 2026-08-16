@@ -6,8 +6,8 @@ workspace root, absolute paths and ``..`` escapes are
 rejected before the write happens.
 
 Atomicity: write is via ``tempfile.mkstemp`` in the same
-directory, ``fsync``, then ``os.replace`` — mirroring the
-SOUL.md editor ([`magi/channels/api/soul.py`]).
+directory, ``fsync``, then ``os.replace`` — matching the
+PromptBook-backed persona editor ([`magi/channels/api/soul.py`]).
 A crash mid-write leaves the old file intact.
 
 Content cap: 256 KB. Larger writes are rejected — the
@@ -120,7 +120,7 @@ class WriteFileTool(Tool):
 
         try:
             # Atomic write: mkstemp in target's dir, write,
-            # fsync, rename. Mirrors SOUL.md editor.
+            # fsync, rename. Matches PromptBook's atomic persona write.
             fd, tmp_name = tempfile.mkstemp(
                 dir=str(target.parent),
                 prefix=f".{target.name}.",

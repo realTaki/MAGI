@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from importlib.resources import files
 
-
 _TEXT_DEFAULTS: tuple[tuple[str, str], ...] = (
     ("agent/defaults/soul", "soul.md"),
     ("agent/soul", "soul.md"),

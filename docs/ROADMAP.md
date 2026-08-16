@@ -49,7 +49,7 @@ Identifiers below follow the canonical names in
 
 | Item | Status | Notes |
 |---|---|---|
-| Per-MAGI `SOUL.md` | **Open** | `magi/channels/api/soul.py` edits one workspace-global `SOUL.md`. Storage shape undecided — see Open question 3. |
+| Per-MAGI persona | **Done** | `PromptBook` manages `<workspace>/prompts/agent/soul.md`; `AgentWorker` seeds its default without overwriting an existing record. |
 | Operator-facing memory edit / delete | **Later** | `magi/channels/api/memory.py` is deliberately read-only; add / update / complete / delete exist as LLM tools. Trigger: an operator needs to correct what the LLM stored. |
 | Contact lifecycle fields (email, status, quiet hours) | **Later** | Trigger: a channel needs quiet-hours or status gating before delivery. |
 
@@ -87,16 +87,13 @@ Decisions that block the **Open** items above.
    QR deep link generated from the WebUI?
 2. **WebSocket console payload** — what goes in each frame: token deltas,
    tool calls, raw content blocks, or a coarser per-turn state?
-3. **Per-MAGI `SOUL.md` storage** — a new Book / table, or a file under
-   `<workspace>/magis/<magi_id>/SOUL.md`? The file form keeps the
-   `PromptBook` shape; the row form makes it editable across runtimes.
-4. **Skill hot-reload mechanism** — inotify, or poll on a timer? Both are
+3. **Skill hot-reload mechanism** — inotify, or poll on a timer? Both are
    cheap; the question is whether an operator edit should take effect
    mid-turn or only between turns.
-5. **Encryption key distribution** — how does a deployer get the secret
+4. **Encryption key distribution** — how does a deployer get the secret
    into the container: file mount, env var, or a vault client? The
    encryption code cannot ship before this is settled.
-6. **Cross-channel conversation visibility** — reads intentionally do not
+5. **Cross-channel conversation visibility** — reads intentionally do not
    gate by channel, so a contact browses their Telegram history from the
    WebUI (writes are still guarded — see business-flows §3, D.22). Should
    the WebUI offer a "this channel only" toggle before the UI grows
