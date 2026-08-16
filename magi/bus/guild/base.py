@@ -37,7 +37,7 @@ class JobStatus(StrEnum):
     PENDING = "pending"        # 入队未 claim
     PROCESSING = "processing"  # 已 claim，worker 处理中
     COMPLETED = "completed"    # 业务成功（Result 视角 = SUCCEEDED）
-    FAILED = "failed"          # 业务失败 / 重试耗尽 / 过期
+    FAILED = "failed"          # worker 提交的业务失败
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -72,7 +72,7 @@ class BaseJobResult:
     归一化）、``error``（失败时的人类可读描述；成功路径下
     Result 通常不构造，走过 :meth:`BaseJobBoard._submit` 的快
     路径时 ``error`` 保持 ``None``）。子类只声明纯业务字段,
-    走 :meth:`BaseJobBoard._write_result_to_job` /
+    走 :meth:`BaseJobBoard._submit` /
     :meth:`BaseJobBoard._read_result_from_job` 的通用字段映射。
     这样「队列语义 vs 业务字段」的边界显式化，子类不再需要
     各自抄一遍 ``job_id`` / ``status`` / ``error``。
@@ -93,7 +93,7 @@ class BaseJobRowMixin(Base):
     表（SA 不会建 ``base_job_row_mixin`` 这种无意义表），但 MRO 中
     已经携带 ``Base``，所以子类只需要 ``class _XxxJobRow(BaseJobRowMixin)``
     就能挂到同一份 ``Base.metadata`` 上。每个 ``_XxxJobRow`` 通过
-    这个单继承获得 10 个队列控制列，只声明自己的业务列。
+    这个单继承获得队列控制列，只声明自己的业务列。
     """
 
     __abstract__ = True
@@ -482,7 +482,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
     def _get_result(self, session: Session, *, job_id: int) -> ResultT | None:
         row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
+            select(self.job_model).where(self.job_model.job_id == job_id)
         )
         if row is None or getattr(row, "status", "") not in (JobStatus.COMPLETED, JobStatus.FAILED):
             return None
@@ -490,25 +490,12 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
     # -- Result 映射工具 ----------------------------------------------------
 
-    def _write_result_to_job(self, row: RowT, result: ResultT) -> None:
-        """将 result dataclass 的业务字段写回 ORM 行。
-
-        ``job_id`` 已经在 :meth:`_submit` 选择了唯一的 Job 行，因此
-        ``job_id`` 仅是 result 的回读信息，绝不能由调用方改写主键；
-        ``status`` 同样由 :meth:`_submit` 显式编码到 row.status。
-        """
-        for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
-            if f.name in ("status", "job_id"):
-                continue
-            if hasattr(row, f.name):
-                setattr(row, f.name, getattr(result, f.name))
-
     def _read_result_from_job(self, row: RowT) -> ResultT:
         """从 ORM 行重建 result dataclass。"""
         key_val = getattr(row, "job_id", 0)
         kwargs: dict = {
             "job_id": key_val,
-            "status": getattr(row, "status"),
+            "status": row.status,
         }
         for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
             if f.name in ("status", "job_id"):

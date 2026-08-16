@@ -275,9 +275,9 @@ permalink: /business-flows/
 ChannelWorker._claim_delivery_loop(deliver_fn, channel_label):
   1. backpressure check（depth > settings["channels.delivery.max_queue_depth"]
      默认 1000；超过 → 每 channel 每分钟 1 次 warning + 5× poll_seconds 休眠）
-  2. delivery_job_board.claim() — 全局 FIFO（无 channel filter；
-     所有 channel worker 共享一张 board）
-  3. 检查 job.channel == 本 channel_label；不是则 release 给其他 worker
+  2. delivery_job_board.claim_for_channel(channel_label, worker_id) —
+     仅认领本 channel 的 FIFO job，并将 worker_id 写入租约
+  3. 其他 worker 不能提交或释放该租约；lease 过期后 job 可由另一 worker 认领
   4. deliver_fn(job) — 实际投递
      （TG → 原始 HTTP send_text_raw；
       WebUI → 写 messages_book；
@@ -285,8 +285,8 @@ ChannelWorker._claim_delivery_loop(deliver_fn, channel_label):
       Task → _fire_task → publish ChatNotifyJob，delivery 由下游 channel 处理）
   5. delivery_job_board.submit_result(DeliveryResult(success, error))
   6. 异常 → submit_result(success=False, error=str(exc)[:1024])
-     （**不**自己重试；BaseJobBoard._claim 负责 lease 过期后 re-lease，
-     上限 MAX_ATTEMPTS=3）
+     （BUS 不负责重试预算或自动失败；lease 过期后 job 保持在 board，
+     等待另一 worker 处理或由 worker 显式提交 FAILED）
 ```
 
 ### TG 出站实际投递 (`magi/channels/telegram/worker.py::_deliver_tg`)

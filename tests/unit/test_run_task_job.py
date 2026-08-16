@@ -107,8 +107,6 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     # Simulate lease expiry by manipulating leased_until
     from datetime import timedelta
 
-    from sqlalchemy import select
-
     from magi.bus.db.base import utcnow_naive
     from magi.bus.guild.runTaskJob import _RunTaskJobRow
 
@@ -133,8 +131,6 @@ def test_expired_lease_remains_claimable_without_bus_failure(board):
     board._lease_seconds = 1
 
     from datetime import timedelta
-
-    from sqlalchemy import select
 
     from magi.bus.db.base import utcnow_naive
     from magi.bus.guild.runTaskJob import _RunTaskJobRow

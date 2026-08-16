@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column, utcnow_naive
+from magi.bus.db.base import enum_column
 from magi.bus.guild.base import (
     BaseJob,
     BaseJobBoard,

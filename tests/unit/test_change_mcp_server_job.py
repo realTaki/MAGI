@@ -14,9 +14,9 @@ import pytest
 from magi.bus.db import EngineFactory
 from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.guild import (
-    MCPKind,
     ChangeMCPServerJob,
     ChangeMCPServerResult,
+    MCPKind,
     changeMCPServerJobBoard,
 )
 from magi.bus.guild.base import JobStatus

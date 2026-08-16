@@ -12,7 +12,6 @@ from sqlalchemy import select
 from magi.bus.db import EngineFactory
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
-from magi.bus.guild.base import JobStatus
 from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJobBoard
 
 

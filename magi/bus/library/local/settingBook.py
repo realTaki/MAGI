@@ -27,7 +27,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
-
 # Channel names are deliberately persisted strings, not a Python Enum.  A
 # worker advertises its capability as it comes online, so a new adapter does
 # not require a core-code vocabulary change before it can be selected.

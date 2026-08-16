@@ -197,9 +197,9 @@ For channels that do follow this template:
      and compare against `settings_book["channels.delivery.max_queue_depth"]`
      (default 1000); when exceeded, log once per channel per minute and
      sleep `5 × poll_seconds` before retrying.
-  2. **Claim** — `bus.delivery_job_board.claim()`.
-  3. **Release-if-mismatched** — if `job.channel != channel_label`, release
-     the job back to the board and let the matching worker claim it.
+  2. **Claim** — `bus.delivery_job_board.claim_for_channel(channel, worker_id)`.
+  3. **Lease ownership** — the durable row records `worker_id`; a stale worker
+     cannot submit or release a lease reclaimed by another worker.
   4. **Deliver** — invoke the caller-supplied `_deliver_<channel>` function.
   5. **Submit** — write `DeliveryResult(success, error)` back to the board.
 
@@ -213,8 +213,8 @@ Each outbound worker reduces to a `_deliver_<channel>` coroutine:
 
 The shared `ChannelWorker` template means per-channel workers never
 backpressure independently — depth is global per `channel` filter — and
-never retry themselves. Retry is owned by `BaseJobBoard._claim` (lease
-expiry → re-lease up to `MAX_ATTEMPTS=3` → mark exhausted).
+never retry themselves. An expired lease simply makes the job available to a
+later worker; only a worker may submit a business `FAILED` result.
 
 ## Bus facade
 

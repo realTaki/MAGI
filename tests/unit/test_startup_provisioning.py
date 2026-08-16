@@ -1,9 +1,9 @@
 """Regression coverage for explicit MAGI provisioning and runtime opening.
 
 The 2026.08 dev-mode collapse merged the alembic migration chain
-into a single ``0001_initial_schema.py`` per scope, so the suite
-no longer seeds partial revisions or simulates mid-flight renames.
-Tests now assert that a fresh BUS lands at ``0001_initial_schema``,
+into a single ``0001_initial_schema.py`` per scope, followed only by
+small forward revisions for persisted schema changes. The suite
+asserts that a fresh BUS lands at the current head,
 that the initial schema is the source of truth for column shapes
 (``DateTime``, native enum CHECK constraints, etc.), and that
 :sync:`synchronise_schema` is idempotent on re-open.
@@ -34,7 +34,7 @@ from magi.startup.provision import create_node, init_first_magi
 from magi.startup.spec import load_runtime_spec
 
 
-HEAD_REVISION = "0001_initial_schema"
+HEAD_REVISION = "0002_remove_job_attempts"
 
 
 def _first_config(root: Path) -> StartupConfig:
@@ -91,6 +91,7 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
         magis_url=spec.magis_database_url,
     )
     assert bus.settings_book.get_value(key="auth.signing_key")
+    assert bus.settings_book.get_value(key="system.job_lease_seconds") == "60"
     assert "a2a" in bus.settings_book.channel_options()
 
 

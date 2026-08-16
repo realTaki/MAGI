@@ -25,13 +25,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Text
+from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:

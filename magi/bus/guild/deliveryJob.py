@@ -6,13 +6,11 @@ agent 产出回复 → 入队 → worker 投递到渠道
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, Text
+from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 
 @dataclass(frozen=True, slots=True)
