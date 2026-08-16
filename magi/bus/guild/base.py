@@ -9,7 +9,6 @@ import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import ClassVar
 
 from sqlalchemy import DateTime, Integer, Text, and_, func, or_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -17,15 +16,6 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from magi.bus.db.base import Base, enum_column, utcnow_naive
 from magi.bus.db.engine import EngineFactory
-
-DEFAULT_LEASE_SECONDS = 60
-MAX_ATTEMPTS = 3
-#: Hard cap on candidate retries in :meth:`BaseJobBoard._cas_claim`.
-#: Bounds the loop when many workers race for the same hot row,
-#: matching the chatNotifyBoard ceiling. Without this cap a hot
-#: conversation could spin forever.
-MAX_ATTEMPTS_CANDIDATES = 10
-
 
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
@@ -60,11 +50,6 @@ class BaseJob:
     ``job_id`` 回填给调用方）。保留这个字段是因为 worker 拿到
     claim 结果后通过它调 :meth:`BaseJobBoard.submit_result` /
     :meth:`release`（它们以 ``job_id`` 作业务键）。
-
-    ``attempts`` 不在这里 — 它是行侧 :class:`BaseJobRowMixin` 的列
-    （已重试次数 / lease-recovery 观察值），调用方不该经由
-    dataclass 路径读写。Board 内部 :meth:`_cas_claim` /
-    :meth:`_mark_exhausted` 直接写行，不经过 Job dataclass。
 
     业务字段留给子类声明。
 
@@ -135,7 +120,6 @@ class BaseJobRowMixin(Base):
         nullable=False,
         default=JobStatus.PENDING,
     )
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     leased_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     leased_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
@@ -148,7 +132,8 @@ class BaseJobRowMixin(Base):
 
 class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]:
     """往返任务队列：publish 入队后可通过 claim 认领、submit_result 提交结果、
-    get_result 轮询结果，支持租约超时恢复和重试耗尽自动失败。
+    get_result 轮询结果。租约只决定 worker 的独占执行权；过期后任务可由
+    另一 worker 重新认领。BUS 不根据重试次数或租约超时替业务方写失败结果。
     """
 
     # Subclasses MUST set these — there is no default because the
@@ -160,16 +145,9 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
     job_model: type[RowT]
     job_cls: type[JobT]
     result_cls: type[ResultT]
-    #: Per-board retry ceiling. Defaults to the global
-    #: :data:`MAX_ATTEMPTS` (3). Boards whose domain tolerates more
-    #: retries (delivery against flaky channels, chat steering
-    #: under load) override this — see
-    #: :data:`magi.bus.guild.deliveryJob.MAX_DELIVERY_ATTEMPTS`.
-    #: Read by :meth:`_mark_exhausted` so exhaustion failures
-    #: respect the same ceiling as the CAS claim loop.
-    max_attempts: ClassVar[int] = MAX_ATTEMPTS
-
-    def __init__(self, factory: EngineFactory, lease_seconds: int = DEFAULT_LEASE_SECONDS):
+    def __init__(self, factory: EngineFactory, *, lease_seconds: int):
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
         self._factory = factory
         self._lease_seconds = lease_seconds
 
@@ -218,7 +196,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
         Default impl: validate, then copy every dataclass field whose
         name is also a column on :attr:`job_model` (skipping
-        ``job_id`` / ``attempts`` which :class:`BaseJob` owns),
+        ``job_id`` which :class:`BaseJob` owns),
         insert, commit.
 
         Subclasses that need pre-insert side effects (cross-channel
@@ -259,16 +237,23 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
                 setattr(row, f.name, getattr(job, f.name))
         return row
 
-    def claim(self) -> JobT | None:
+    def claim(self, *, worker_id: str) -> JobT | None:
+        """Claim one job for ``worker_id`` and record that lease owner."""
+        worker_id = self._require_worker_id(worker_id)
         with self._session() as s:
-            row = self._claim(s)
+            row = self._claim(s, worker_id=worker_id)
             s.commit()
             return self._map_row(row, self.job_cls) if row else None
 
-    def submit_result(self, *, job_id: int, result: ResultT) -> None:
-        """提交指定 ``job_id`` 的结果。"""
+    def submit_result(self, *, job_id: int, worker_id: str, result: ResultT) -> None:
+        """Submit a result only if ``worker_id`` still owns this job's lease.
+
+        A stale worker's result is deliberately ignored.  This is what keeps a
+        worker whose lease was reclaimed from overwriting the new owner's work.
+        """
+        worker_id = self._require_worker_id(worker_id)
         with self._session() as s:
-            self._submit(s, job_id=job_id, result=result)
+            self._submit(s, job_id=job_id, worker_id=worker_id, result=result)
             s.commit()
 
     def get_result(self, *, job_id: int) -> ResultT | None:
@@ -276,7 +261,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         with self._session() as s:
             return self._get_result(s, job_id=job_id)
 
-    def release(self, *, job_id: int) -> None:
+    def release(self, *, job_id: int, worker_id: str) -> None:
         """Release a claimed job back to *pending*.
 
         Used by AgentWorker when ``_run()`` claims a ChatNotifyJob for a
@@ -284,17 +269,17 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         is released so ``_process()`` can reclaim it as steering
         via ``claim_for_steering``.
         """
+        worker_id = self._require_worker_id(worker_id)
         with self._session() as s:
-            row = s.scalar(
-                select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
+            s.execute(
+                update(self.job_model)
+                .where(
+                    self.job_model.job_id == job_id,  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
+                    self.job_model.leased_by == worker_id,  # type: ignore[reportAttributeAccessIssue]
+                )
+                .values(status=JobStatus.PENDING, leased_by=None, leased_until=None)
             )
-            if row is None:
-                return
-            if getattr(row, "status", None) == JobStatus.PROCESSING:
-                row.status = JobStatus.PENDING  # type: ignore[reportAttributeAccessIssue]
-                row.leased_by = None  # type: ignore[reportAttributeAccessIssue]
-                row.leased_until = None  # type: ignore[reportAttributeAccessIssue]
-                row.attempts = max(0, getattr(row, "attempts", 0) - 1)  # type: ignore[reportAttributeAccessIssue]  # 不消耗重试次数
             s.commit()
 
     async def wait_for_result(
@@ -356,7 +341,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
     # -- 内部 --------------------------------------------------------------
 
-    def _claim(self, session: Session) -> RowT | None:
+    def _claim(self, session: Session, *, worker_id: str) -> RowT | None:
         """Default CAS-claim — no extra WHERE filter.
 
         Specialized boards (``deliveryJobBoard.claim_for_channel``,
@@ -365,7 +350,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         """
         return self._cas_claim(
             session,
-            owner=f"worker:{self.__class__.__name__}:{id(self)}",
+            owner=worker_id,
         )
 
     def _cas_claim(
@@ -397,75 +382,43 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         tag so lease diagnostics can attribute which worker is
         currently holding each row.
 
-        The loop is bounded by :data:`MAX_ATTEMPTS_CANDIDATES` so a
-        hot row doesn't spin forever; on exhaustion we return
-        ``None`` and let the caller decide what to do (retry on
-        the next poll, alert, etc.).
+        If another worker wins the CAS race this call returns ``None``.  The
+        caller's normal polling loop will try again; BUS deliberately does
+        not impose a candidate-retry budget.
         """
         # ``leased_by`` and ``started_at`` are both guaranteed by
         # :class:`BaseJobRowMixin`, so the claim path can set them
         # unconditionally.
         now = utcnow_naive()
         lease_until = now + timedelta(seconds=self._lease_seconds)
-        for _ in range(MAX_ATTEMPTS_CANDIDATES):
-            candidate = self._pick_candidate(
-                session,
-                now,
-                extra_where=extra_where,
-            )
-            if candidate is None:
-                return None
-            status = getattr(candidate, "status", "")
-            attempts = getattr(candidate, "attempts", 0)
-            # The candidate read is deliberately lock-free, therefore
-            # exhaustion must also be a conditional update. Another worker
-            # may have completed or renewed this lease after our read; do
-            # not overwrite that newer state with ``failed``.
-            if status == JobStatus.PROCESSING and attempts >= self.max_attempts:
-                if not self._mark_exhausted(
-                    session,
-                    candidate,
-                    now=now,
-                    extra_where=extra_where,
-                ):
-                    session.rollback()
-                continue
-            is_reclaim = status == JobStatus.PROCESSING
-            # Conditional UPDATE: same row, same status / lease invariants
-            # — atomic on SQLite. rowcount == 1 ⇒ we own the row; 0 ⇒
-            # another worker grabbed it first; retry with the next
-            # candidate.
-            invariant = or_(
-                self.job_model.status == JobStatus.PENDING,  # type: ignore[reportAttributeAccessIssue]
-                and_(
-                    self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
-                    self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
-                ),
-            )
-            where_clauses: list[ColumnElement[bool]] = [
-                self.job_model.job_id == candidate.job_id,  # type: ignore[reportAttributeAccessIssue]
-                invariant,
-            ]
-            if extra_where:
-                where_clauses.extend(extra_where)
-            values: dict = {
-                "status": JobStatus.PROCESSING,
-                "leased_until": lease_until,
-                "attempts": attempts + 1,
-                "leased_by": owner,
-            }
-            if not is_reclaim:
-                values["started_at"] = now
-            result = session.execute(update(self.job_model).where(*where_clauses).values(**values))
-            if getattr(result, "rowcount", 0) == 1:
-                # Reload the fresh row so the caller sees the
-                # post-UPDATE values (leased_until, attempts, …).
-                fresh = session.get(self.job_model, candidate.job_id)  # type: ignore[reportAttributeAccessIssue]
-                return fresh
-            # Lost the race — try the next candidate.
-            session.rollback()
-            now = utcnow_naive()
-            lease_until = now + timedelta(seconds=self._lease_seconds)
+        candidate = self._pick_candidate(session, now, extra_where=extra_where)
+        if candidate is None:
+            return None
+        is_reclaim = getattr(candidate, "status", "") == JobStatus.PROCESSING
+        invariant = or_(
+            self.job_model.status == JobStatus.PENDING,  # type: ignore[reportAttributeAccessIssue]
+            and_(
+                self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
+            ),
+        )
+        where_clauses: list[ColumnElement[bool]] = [
+            self.job_model.job_id == candidate.job_id,  # type: ignore[reportAttributeAccessIssue]
+            invariant,
+        ]
+        if extra_where:
+            where_clauses.extend(extra_where)
+        values: dict = {
+            "status": JobStatus.PROCESSING,
+            "leased_until": lease_until,
+            "leased_by": owner,
+        }
+        if not is_reclaim:
+            values["started_at"] = now
+        result = session.execute(update(self.job_model).where(*where_clauses).values(**values))
+        if getattr(result, "rowcount", 0) == 1:
+            return session.get(self.job_model, candidate.job_id)  # type: ignore[reportAttributeAccessIssue]
+        session.rollback()
         return None
 
     def _pick_candidate(
@@ -506,53 +459,26 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
             .limit(1)
         )
 
-    def _mark_exhausted(
-        self,
-        session: Session,
-        candidate: RowT,
-        *,
-        now: datetime,
-        extra_where: list[ColumnElement[bool]] | None,
-    ) -> bool:
-        """Atomically fail an expired lease that consumed all attempts.
-
-        Honours :attr:`max_attempts` so boards with a higher
-        per-board ceiling (e.g. ``deliveryJobBoard`` with
-        :data:`~magi.bus.guild.deliveryJob.MAX_DELIVERY_ATTEMPTS = 10`)
-        fail rows at their own threshold, not the generic 3.
-        """
-        result = self._make_exhausted_result(candidate)
-        values: dict[str, object] = {"status": JobStatus.FAILED}
-        if hasattr(self.job_model, "completed_at"):
-            values["completed_at"] = now
-        for field in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
-            if field.name != "status" and hasattr(self.job_model, field.name):
-                values[field.name] = getattr(result, field.name)
-
-        where_clauses: list[ColumnElement[bool]] = [
-            self.job_model.job_id == candidate.job_id,  # type: ignore[reportAttributeAccessIssue]
-            self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
-            self.job_model.attempts >= self.max_attempts,  # type: ignore[reportAttributeAccessIssue]
-            self.job_model.leased_until < now,  # type: ignore[reportAttributeAccessIssue]
-        ]
-        if extra_where:
-            where_clauses.extend(extra_where)
+    def _submit(self, session: Session, *, job_id: int, worker_id: str, result: ResultT) -> bool:
+        """CAS result submission guarded by the durable lease owner."""
+        now = utcnow_naive()
+        values: dict[str, object] = {
+            "status": JobStatus.COMPLETED if result.status == JobStatus.COMPLETED else JobStatus.FAILED,
+            "completed_at": now,
+        }
+        for f in dataclasses.fields(self.result_cls):  # type: ignore[reportArgumentType]
+            if f.name not in {"status", "job_id"} and hasattr(self.job_model, f.name):
+                values[f.name] = getattr(result, f.name)
         update_result = session.execute(
-            update(self.job_model).where(*where_clauses).values(**values)
+            update(self.job_model)
+            .where(
+                self.job_model.job_id == job_id,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
+                self.job_model.leased_by == worker_id,  # type: ignore[reportAttributeAccessIssue]
+            )
+            .values(**values)
         )
         return getattr(update_result, "rowcount", 0) == 1
-
-    def _submit(self, session: Session, *, job_id: int, result: ResultT) -> None:
-        row = session.scalar(
-            select(self.job_model).where(getattr(self.job_model, "job_id") == job_id)
-        )
-        if row is None:
-            return
-        now = utcnow_naive()
-        row.status = JobStatus.COMPLETED if result.status == JobStatus.COMPLETED else JobStatus.FAILED  # type: ignore[reportAttributeAccessIssue]
-        if hasattr(row, "completed_at"):
-            row.completed_at = now  # type: ignore[reportAttributeAccessIssue]
-        self._write_result_to_job(row, result)
 
     def _get_result(self, session: Session, *, job_id: int) -> ResultT | None:
         row = session.scalar(
@@ -591,21 +517,8 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
                 kwargs[f.name] = getattr(row, f.name)
         return self.result_cls(**kwargs)
 
-    def _make_exhausted_result(self, row: RowT) -> ResultT:
-        """构造一个"重试耗尽"的失败 Result。
-
-        ``error`` 是所有 Result 继承自 :class:`BaseJobResult` 的通用
-        字段，恒存在；``"error" in field_names`` 守卫保留作防御，
-        避免未来某个 Result 子类异常地不带该字段时硬写抛
-        ``TypeError``。
-        """
-        key_val = getattr(row, "job_id", 0)
-        kwargs: dict = {
-            "job_id": key_val,
-            "status": JobStatus.FAILED,
-        }
-        field_names = {f.name for f in dataclasses.fields(self.result_cls)}  # type: ignore[reportArgumentType]
-        attempts = getattr(row, "attempts", None)
-        if attempts is not None and "error" in field_names:
-            kwargs["error"] = f"job exhausted after {attempts} attempt(s)"
-        return self.result_cls(**kwargs)
+    @staticmethod
+    def _require_worker_id(worker_id: str) -> str:
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("worker_id must be a non-empty string")
+        return worker_id

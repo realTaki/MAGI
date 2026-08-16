@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from magi.bus.library.local.actionItemBook import ActionItem, ActionSource
 
 logger = logging.getLogger("magi.proactive.credentials_action")
+COMPLETED_VISIBLE_DAYS = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,7 @@ def ensure_for_admin(
         for row in book.list_actions(
             owner_contact_id=admin_id,
             include_completed=True,
+            completed_visible_days=COMPLETED_VISIBLE_DAYS,
             source=ActionSource.PROACTIVE,
         )
         if row.title == spec.title and row.completed_at is not None

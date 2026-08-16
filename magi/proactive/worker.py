@@ -65,6 +65,7 @@ class ProactiveWorker(RuntimeWorker):
             try:
                 job = await self.call(
                     self.bus.seed_preset_task_job_board.claim,
+                    worker_id=self.worker_id,
                 )
             except Exception:
                 logger.exception("proactive worker: claim failed")
@@ -74,7 +75,7 @@ class ProactiveWorker(RuntimeWorker):
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
-            await handle_seed_job(self.bus, job)
+            await handle_seed_job(self.bus, job, worker_id=self.worker_id)
 
     # ------------------------------------------------------------------
     # bootstrap

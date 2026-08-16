@@ -85,7 +85,7 @@ def test_publish_chat_preserves_payload_in_book(factory, contact_id):
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
     board = chatNotifyBoard(
-        factory, messages_book=mbook, conversations_book=sbook
+        factory, messages_book=mbook, conversations_book=sbook, lease_seconds=60
     )
 
     huge = "x" * 20_000
@@ -97,7 +97,7 @@ def test_publish_chat_preserves_payload_in_book(factory, contact_id):
             conversation_id=cid,
         )
     )
-    job = board.claim_for_steering(conversation_id=cid)
+    job = board.claim_for_steering(conversation_id=cid, worker_id="agent-a")
     # ChatNotifyJob is typed — no payload dict, no truncation flag. The
     # raw text travels through the row, intact.
     assert job.text == huge
@@ -120,6 +120,7 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
         factory,
         messages_book=mbook,
         conversations_book=sbook,
+        lease_seconds=60,
     )
 
     jid = board.publish(
@@ -132,7 +133,7 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     )
     assert jid
 
-    job = board.claim_for_steering(conversation_id=cid)
+    job = board.claim_for_steering(conversation_id=cid, worker_id="agent-a")
     assert job is not None
     assert job.text == "hello world"
     assert job.channel == "tg"
@@ -151,7 +152,7 @@ def test_publish_chat_writes_one_message_per_turn(factory, contact_id):
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
     board = chatNotifyBoard(
-        factory, messages_book=mbook, conversations_book=sbook
+        factory, messages_book=mbook, conversations_book=sbook, lease_seconds=60
     )
 
     board.publish(
@@ -184,7 +185,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
     board = chatNotifyBoard(
-        factory, messages_book=mbook, conversations_book=sbook
+        factory, messages_book=mbook, conversations_book=sbook, lease_seconds=60
     )
 
     from magi.bus.library.local.conversationBook import ChannelMismatchError
@@ -201,7 +202,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     assert exc.value.conversation_channel == "tg"
 
     # No chatNotifyJob, no message row — the guard fires before either write.
-    assert board.claim_for_steering(conversation_id=cid) is None
+    assert board.claim_for_steering(conversation_id=cid, worker_id="agent-a") is None
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 0
 
@@ -213,7 +214,7 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
     board = chatNotifyBoard(
-        factory, messages_book=mbook, conversations_book=sbook
+        factory, messages_book=mbook, conversations_book=sbook, lease_seconds=60
     )
 
     jid = board.publish(
@@ -235,7 +236,7 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=1, channel='tg')))
     cid = conv.id
     board = chatNotifyBoard(
-        factory, messages_book=mbook, conversations_book=sbook
+        factory, messages_book=mbook, conversations_book=sbook, lease_seconds=60
     )
 
     jid = board.publish(
@@ -256,7 +257,7 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
-    board = chatNotifyBoard(factory, messages_book=mbook)  # no conversations_book
+    board = chatNotifyBoard(factory, messages_book=mbook, lease_seconds=60)  # no conversations_book
 
     jid = board.publish(
         ChatNotifyJob(
@@ -285,7 +286,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     sbook = ConversationBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
-    board = chatNotifyBoard(factory, conversations_book=sbook)
+    board = chatNotifyBoard(factory, conversations_book=sbook, lease_seconds=60)
 
     job = ChatNotifyJob(
         conversation_id=cid,

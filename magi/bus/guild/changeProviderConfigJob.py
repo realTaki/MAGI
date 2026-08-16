@@ -107,8 +107,14 @@ class changeProviderConfigJobBoard(
     job_cls = ChangeProviderConfigJob
     result_cls = ChangeProviderConfigResult
 
-    def __init__(self, factory, *, settings_book: SettingBook | None = None):
-        super().__init__(factory)
+    def __init__(
+        self,
+        factory,
+        *,
+        settings_book: SettingBook | None = None,
+        lease_seconds: int,
+    ):
+        super().__init__(factory, lease_seconds=lease_seconds)
         self._settings_book = settings_book
 
     def publish(self, job: ChangeProviderConfigJob) -> int:

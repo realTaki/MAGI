@@ -92,6 +92,9 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         "system.timezone",  # 系统时区（IANA 名，默认 UTC）
         # Hard cap on tool-call iterations per agent run.
         "system.tool_max_iterations",  # 单次 Agent 调用的最大工具迭代次数
+        # Lease length for every BUS job board. Bootstrap owns the default;
+        # boards receive the configured value through composition.
+        "system.job_lease_seconds",
         # ------------------------------------------------------------------
         # Compaction policy (agent-worker-bus.md §6).
         # ------------------------------------------------------------------

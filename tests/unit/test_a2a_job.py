@@ -12,7 +12,6 @@ from magi.bus.db.base import utcnow_naive
 from magi.bus.db.engine import EngineFactory
 from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 from magi.bus.guild.a2aJob import (
-    A2AErrorCode,
     A2ANotifyJob,
     A2ANotifyResult,
     A2ARequestJob,
@@ -44,8 +43,8 @@ def boards(tmp_path):
         source,
         target,
         memberships,
-        a2aRequestJobBoard(factory, memberships_book=memberships),
-        a2aNotifyBoard(factory, memberships_book=memberships),
+        a2aRequestJobBoard(factory, lease_seconds=60, memberships_book=memberships),
+        a2aNotifyBoard(factory, lease_seconds=60, memberships_book=memberships),
     )
 
 
@@ -72,24 +71,28 @@ def transcript_boards(tmp_path):
 
     source_requests = a2aRequestJobBoard(
         magis_factory,
+        lease_seconds=60,
         memberships_book=memberships,
         messages_book=source_messages,
         conversations_book=source_conversations,
     )
     target_requests = a2aRequestJobBoard(
         magis_factory,
+        lease_seconds=60,
         memberships_book=memberships,
         messages_book=target_messages,
         conversations_book=target_conversations,
     )
     source_notifies = a2aNotifyBoard(
         magis_factory,
+        lease_seconds=60,
         memberships_book=memberships,
         messages_book=source_messages,
         conversations_book=source_conversations,
     )
     target_notifies = a2aNotifyBoard(
         magis_factory,
+        lease_seconds=60,
         memberships_book=memberships,
         messages_book=target_messages,
         conversations_book=target_conversations,
@@ -133,7 +136,9 @@ def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_bo
         peer_magi_id=boards.source.id,
     ) == []
 
-    claimed = boards.target_requests.claim_for_target(magi_id=boards.target.id)
+    claimed = boards.target_requests.claim_for_target(
+        magi_id=boards.target.id, worker_id="target-worker"
+    )
     assert claimed is not None
     assert [(m.role, m.text) for m in _peer_messages(
         boards.target_conversations,
@@ -143,6 +148,7 @@ def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_bo
 
     boards.target_requests.submit_result(
         job_id=job_id,
+        worker_id="target-worker",
         result=A2ARequestResult(
             job_id=job_id,
             status=JobStatus.COMPLETED,
@@ -189,7 +195,9 @@ def test_notify_publish_and_claim_write_their_respective_message_books(transcrip
         peer_magi_id=boards.target.id,
     )] == [("assistant", "The deployment window is open.")]
 
-    claimed = boards.target_notifies.claim_for_target(magi_id=boards.target.id)
+    claimed = boards.target_notifies.claim_for_target(
+        magi_id=boards.target.id, worker_id="target-worker"
+    )
     assert claimed is not None
     assert claimed.job_id == job_id
     assert [(m.role, m.text) for m in _peer_messages(
@@ -212,9 +220,12 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
             text="First request.",
         )
     )
-    assert boards.target_requests.claim_for_target(magi_id=boards.target.id) is not None
+    assert boards.target_requests.claim_for_target(
+        magi_id=boards.target.id, worker_id="target-worker"
+    ) is not None
     boards.target_requests.submit_result(
         job_id=first_id,
+        worker_id="target-worker",
         result=A2ARequestResult(
             job_id=first_id,
             status=JobStatus.COMPLETED,
@@ -249,7 +260,9 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
     async def claim_second_request():
         return (
             "a2a.request",
-            boards.target_requests.claim_for_target(magi_id=boards.target.id),
+            boards.target_requests.claim_for_target(
+                magi_id=boards.target.id, worker_id=worker.worker_id
+            ),
         )
 
     async def capture_context(ctx):
@@ -286,8 +299,8 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
         )
     )
 
-    assert requests.claim_for_target(magi_id=source.id) is None
-    claimed = requests.claim_for_target(magi_id=target.id)
+    assert requests.claim_for_target(magi_id=source.id, worker_id="source-worker") is None
+    claimed = requests.claim_for_target(magi_id=target.id, worker_id="target-worker")
     assert claimed is not None
     assert claimed.job_id == job_id
     assert claimed.source_magi_id == source.id
@@ -295,6 +308,7 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
 
     requests.submit_result(
         job_id=job_id,
+        worker_id="target-worker",
         result=A2ARequestResult(
             job_id=job_id,
             status=JobStatus.COMPLETED,
@@ -310,6 +324,7 @@ def test_request_is_targeted_and_returns_one_durable_response(boards) -> None:
     # A terminal request can never be overwritten by another response.
     requests.submit_result(
         job_id=job_id,
+        worker_id="target-worker",
         result=A2ARequestResult(job_id=job_id, status=JobStatus.COMPLETED, content="different"),
     )
     assert requests.get_result(job_id=job_id).content == "The plan builds cleanly."
@@ -324,16 +339,20 @@ def test_notify_is_reliably_consumed_but_has_no_sender_wait_contract(boards) -> 
             text="Deployment has completed.",
         )
     )
-    assert notifies.claim_for_target(magi_id=source.id) is None
-    claimed = notifies.claim_for_target(magi_id=target.id)
+    assert notifies.claim_for_target(magi_id=source.id, worker_id="source-worker") is None
+    claimed = notifies.claim_for_target(magi_id=target.id, worker_id="target-worker")
     assert claimed is not None
     assert claimed.job_id == job_id
-    notifies.submit_result(job_id=job_id, result=A2ANotifyResult(job_id=job_id, status=JobStatus.COMPLETED))
+    notifies.submit_result(
+        job_id=job_id,
+        worker_id="target-worker",
+        result=A2ANotifyResult(job_id=job_id, status=JobStatus.COMPLETED),
+    )
     assert notifies.get_result(job_id=job_id).status == JobStatus.COMPLETED
     assert notifies.get_result(job_id=job_id).error_code is None
 
 
-def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
+def test_route_is_scoped_to_one_magis_and_deadlines_remain_caller_policy(boards) -> None:
     source, target, memberships, requests, _notifies = boards
     with pytest.raises(ValueError, match="sending MAGI"):
         requests.publish(
@@ -366,14 +385,10 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
             deadline_at=utcnow_naive() - timedelta(seconds=1),
         )
     )
-    assert requests.claim_for_target(magi_id=target.id) is None
-    result = requests.get_result(job_id=expired_id)
-    assert result is not None
-    assert result.status == JobStatus.FAILED
-    assert result.error_code == "a2a_timeout"
-    # Round-trip through the Text column must come back as the enum,
-    # not a plain str — that's the whole point of the StrEnum migration.
-    assert result.error_code is A2AErrorCode.TIMEOUT
+    claimed = requests.claim_for_target(magi_id=target.id, worker_id="target-worker")
+    assert claimed is not None
+    assert claimed.job_id == expired_id
+    assert requests.get_result(job_id=expired_id) is None
 
 
 def test_result_defaults_to_none_error_code() -> None:

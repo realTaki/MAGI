@@ -142,7 +142,10 @@ class McpWorker(RuntimeWorker):
     async def _run(self) -> None:
         while not self._stopping:
             try:
-                job = await self.call(self.bus.change_mcp_server_job_board.claim)
+                job = await self.call(
+                    self.bus.change_mcp_server_job_board.claim,
+                    worker_id=self.worker_id,
+                )
             except Exception:
                 logger.exception("mcp worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
@@ -246,6 +249,7 @@ class McpWorker(RuntimeWorker):
             await self.call(
                 self.bus.change_mcp_server_job_board.submit_result,
                 job_id=job.job_id,
+                worker_id=self.worker_id,
                 result=ChangeMCPServerResult(
                     job_id=job.job_id,
                     status=JobStatus.COMPLETED if success else JobStatus.FAILED,

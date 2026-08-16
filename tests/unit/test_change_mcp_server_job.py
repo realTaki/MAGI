@@ -32,7 +32,7 @@ def factory():
 
 @pytest.fixture
 def board(factory):
-    return changeMCPServerJobBoard(factory)
+    return changeMCPServerJobBoard(factory, lease_seconds=60)
 
 
 def _gmail_dto() -> McpServer:
@@ -120,7 +120,7 @@ def test_publish_assigns_distinct_auto_incrementing_job_ids(board):
 
 
 def test_claim_returns_none_when_empty(board):
-    assert board.claim() is None
+    assert board.claim(worker_id="mcp-worker") is None
 
 
 def test_claim_then_submit_result_round_trip(board):
@@ -131,7 +131,7 @@ def test_claim_then_submit_result_round_trip(board):
             new_enabled=False,
         )
     )
-    claimed = board.claim()
+    claimed = board.claim(worker_id="mcp-worker")
     assert claimed is not None
     assert claimed.kind == "toggled"
     assert claimed.server_name == "gmail"
@@ -140,6 +140,7 @@ def test_claim_then_submit_result_round_trip(board):
 
     board.submit_result(
         job_id=job_id,
+        worker_id="mcp-worker",
         result=ChangeMCPServerResult(job_id=job_id, status=JobStatus.COMPLETED, error=None),
     )
     result = board.get_result(job_id=job_id)
@@ -154,7 +155,7 @@ def test_claim_round_trips_added_payload_into_dto(board):
     job_id = board.publish(
         ChangeMCPServerJob(kind=MCPKind.ADDED, server_name="gmail", server=_gmail_dto())
     )
-    claimed = board.claim()
+    claimed = board.claim(worker_id="mcp-worker")
     assert claimed is not None
     assert claimed.server is not None
     assert claimed.server.name == "gmail"
@@ -166,9 +167,10 @@ def test_claim_round_trips_added_payload_into_dto(board):
 
 def test_submit_result_records_error(board):
     job_id = board.publish(ChangeMCPServerJob(kind=MCPKind.DELETED, server_name="gmail"))
-    board.claim()
+    board.claim(worker_id="mcp-worker")
     board.submit_result(
         job_id=job_id,
+        worker_id="mcp-worker",
         result=ChangeMCPServerResult(job_id=job_id, status=JobStatus.FAILED, error="boom"),
     )
     result = board.get_result(job_id=job_id)

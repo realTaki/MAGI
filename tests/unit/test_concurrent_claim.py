@@ -57,14 +57,14 @@ def _fresh_factory(tmp_path: Path) -> EngineFactory:
 
 def _seed_run_tasks(f, *, count: int) -> list[str]:
     """Insert N pending RunTaskJobs; return their job_ids."""
-    board = runTaskJobBoard(f)
+    board = runTaskJobBoard(f, lease_seconds=60)
     ids = [board.publish(RunTaskJob(task_id=f"t_{i}")) for i in range(count)]
     return ids
 
 
 def _seed_delivery(f, *, channel: str, count: int) -> list[str]:
     """Insert N pending DeliveryJobs for *channel*; return job_ids."""
-    board = deliveryJobBoard(f)
+    board = deliveryJobBoard(f, lease_seconds=60)
     ids = [
         board.publish(DeliveryJob(channel=channel, text=f"#{i}", destination="x"))
         for i in range(count)
@@ -93,12 +93,13 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
     lock = threading.Lock()
 
     def worker() -> None:
-        board = runTaskJobBoard(f)
+        board = runTaskJobBoard(f, lease_seconds=60)
+        worker_id = f"run-task-{threading.get_ident()}"
         own: set[str] = set()
         # Barrier so all threads start polling simultaneously.
         barrier.wait()
         while True:
-            job = board.claim()
+            job = board.claim(worker_id=worker_id)
             if job is None:
                 break
             own.add(job.job_id)
@@ -109,7 +110,9 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
             from magi.bus.guild.runTaskJob import RunTaskResult
 
             board.submit_result(
-                job_id=job.job_id, result=RunTaskResult(job_id=job.job_id, status=JobStatus.COMPLETED)
+                job_id=job.job_id,
+                worker_id=worker_id,
+                result=RunTaskResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
         with lock:
             claimed_per_thread.append(own)
@@ -148,16 +151,18 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
     lock = threading.Lock()
 
     def drain(channel: str, sink: list[set[str]]) -> None:
-        board = deliveryJobBoard(f)
+        board = deliveryJobBoard(f, lease_seconds=60)
+        worker_id = f"delivery-{channel}-{threading.get_ident()}"
         own: set[str] = set()
         barrier.wait()
         while True:
-            job = board.claim_for_channel(channel=channel)
+            job = board.claim_for_channel(channel=channel, worker_id=worker_id)
             if job is None:
                 break
             own.add(job.job_id)
             board.submit_result(
                 job_id=job.job_id,
+                worker_id=worker_id,
                 result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
         with lock:
@@ -189,15 +194,11 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
     """A row whose lease is forced into the past must be reclaimed by
     *one* of N concurrent consumers, not N copies of itself.
 
-    Without the CAS pattern, every consumer's
-    ``SELECT ... FOR UPDATE SKIP LOCKED`` would happily read the
-    same row under SQLite WAL and we'd see ``attempts`` incremented
-    N times. With the CAS UPDATE, the second consumer's UPDATE
-    fails its ``WHERE attempts = ?`` check (now stale) and they
-    move on.
+    The conditional UPDATE is the lock: only one consumer may replace the
+    expired lease owner, while every loser observes no claim and polls later.
     """
     f = _fresh_factory(tmp_path)
-    board = runTaskJobBoard(f)
+    board = runTaskJobBoard(f, lease_seconds=60)
     jid = board.publish(RunTaskJob(task_id="lease_recovery"))
 
     # Force the lease into the past so the row qualifies for
@@ -216,7 +217,7 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
             .values(
                 status="processing",
                 leased_until=utcnow_naive() - timedelta(seconds=10),
-                attempts=1,
+                leased_by="abandoned-worker",
             )
         )
         s.commit()
@@ -225,23 +226,24 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
     thread_count = 6
     barrier = threading.Barrier(thread_count)
     claimed_count = 0
-    attempts_after: list[int] = []
+    owners_after: list[str | None] = []
     lock = threading.Lock()
 
     def worker() -> None:
         nonlocal claimed_count
-        b = runTaskJobBoard(f)
+        b = runTaskJobBoard(f, lease_seconds=60)
+        worker_id = f"lease-{threading.get_ident()}"
         barrier.wait()
-        job = b.claim()
+        job = b.claim(worker_id=worker_id)
         if job is not None and job.job_id == jid:
             with lock:
                 claimed_count += 1
-        # All threads inspect attempts to assert it only bumped once.
+        # All threads inspect the durable owner to assert it changed once.
         with b._session() as s:
             row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid))
             if row is not None:
                 with lock:
-                    attempts_after.append(int(row.attempts))
+                    owners_after.append(row.leased_by)
 
     with ThreadPoolExecutor(max_workers=thread_count) as pool:
         futures = [pool.submit(worker) for _ in range(thread_count)]
@@ -250,11 +252,6 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
 
     # Exactly one thread should have claimed the row.
     assert claimed_count == 1, f"expected 1 claim, got {claimed_count}"
-    # The post-race attempts value is the one the successful
-    # thread bumped (from 1 → 2). All threads saw this same final
-    # value — they did NOT each bump independently.
-    assert attempts_after, "no thread observed attempts; query bug"
-    assert set(attempts_after) == {2}, (
-        f"attempts observed across threads = {attempts_after}; expected {{2}} "
-        f"(CAS should only let one consumer bump)"
-    )
+    assert owners_after, "no thread observed lease owner; query bug"
+    assert len(set(owners_after)) == 1
+    assert owners_after[0] != "abandoned-worker"

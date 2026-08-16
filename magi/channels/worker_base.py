@@ -36,7 +36,9 @@ class ChannelWorker(RuntimeWorker):
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_name = self.channel_name
-        self.worker_id = f"{self.channel_name}-worker"
+        # Keep the channel readable while preserving instance identity for
+        # lease ownership when two adapters overlap during a restart.
+        self.worker_id = f"{self.channel_name}-{self.worker_id.rsplit('-', 1)[-1]}"
         self._queue_depth = 0
 
     async def register_channel(self) -> None:
@@ -76,6 +78,7 @@ class ChannelWorker(RuntimeWorker):
                 job = await self.call(
                     self.bus.delivery_job_board.claim_for_channel,
                     channel=channel_label,
+                    worker_id=self.worker_id,
                 )
             except Exception:
                 logger.exception("channels[%s]: claim failed", channel_label)
@@ -95,7 +98,11 @@ class ChannelWorker(RuntimeWorker):
                     getattr(job, "channel", None),
                 )
                 try:
-                    await self.call(self.bus.delivery_job_board.release, job_id=job.job_id)
+                    await self.call(
+                        self.bus.delivery_job_board.release,
+                        job_id=job.job_id,
+                        worker_id=self.worker_id,
+                    )
                 except Exception:
                     pass
                 continue
@@ -105,6 +112,7 @@ class ChannelWorker(RuntimeWorker):
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
                     job_id=job.job_id,
+                    worker_id=self.worker_id,
                     result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
                 )
                 self.succeeded()
@@ -114,6 +122,7 @@ class ChannelWorker(RuntimeWorker):
                 await self.call(
                     self.bus.delivery_job_board.submit_result,
                     job_id=job.job_id,
+                    worker_id=self.worker_id,
                     result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
                 )
 

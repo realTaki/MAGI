@@ -123,7 +123,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         contact_book: ContactBook | None = None,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
-        lease_seconds: int = 300,
+        lease_seconds: int,
     ) -> None:
         super().__init__(factory, lease_seconds=lease_seconds)
         # ``contact_book`` is optional so unit tests can build a board
@@ -247,7 +247,12 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
                 "chatNotifyBoard.publish: contact_book.touch failed for contact_id=%r", job.contact_id
             )
 
-    def claim_for_steering(self, *, conversation_id: int) -> ChatNotifyJob | None:
+    def claim_for_steering(
+        self,
+        *,
+        conversation_id: int,
+        worker_id: str,
+    ) -> ChatNotifyJob | None:
         """CAS-claim a ChatNotifyJob scoped to one conversation.
 
         设计 §2.5 + §5.2：AgentWorker 在 ``_gather_all`` 中每轮轮询调用，
@@ -264,7 +269,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         with self._session() as s:
             row = self._cas_claim(
                 s,
-                owner=f"steer:{conversation_id}:{id(self)}",
+                owner=self._require_worker_id(worker_id),
                 extra_where=[_ChatNotifyRow.conversation_id == conversation_id],
             )
             s.commit()

@@ -19,7 +19,7 @@ def board():
     """Fresh in-memory SQLite with runTaskJobBoard per test."""
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
-    return runTaskJobBoard(f)
+    return runTaskJobBoard(f, lease_seconds=60)
 
 
 def test_publish_returns_job_id(board):
@@ -35,7 +35,7 @@ def test_publish_returns_job_id(board):
 def test_claim_returns_published_job(board):
     """claim returns the job we just published with manual flag preserved."""
     board.publish(RunTaskJob(task_id="task_x", manual=False))
-    claim = board.claim()
+    claim = board.claim(worker_id="worker-a")
     assert claim is not None
     assert claim.task_id == "task_x"
     assert claim.manual is False
@@ -43,17 +43,18 @@ def test_claim_returns_published_job(board):
 
 def test_claim_returns_none_when_empty(board):
     """claim returns None when no pending jobs."""
-    assert board.claim() is None
+    assert board.claim(worker_id="worker-a") is None
 
 
 def test_submit_result_success(board):
     """submit_result marks job as completed and get_result returns it."""
     jid = board.publish(RunTaskJob(task_id="task_s", manual=True))
-    claim = board.claim()
+    claim = board.claim(worker_id="worker-a")
     assert claim is not None
 
     board.submit_result(
         job_id=jid,
+        worker_id="worker-a",
         result=RunTaskResult(job_id=jid, status=JobStatus.COMPLETED),
     )
     result = board.get_result(job_id=jid)
@@ -65,11 +66,12 @@ def test_submit_result_success(board):
 def test_submit_result_failure(board):
     """submit_result with success=False returns error info."""
     jid = board.publish(RunTaskJob(task_id="task_f", manual=True))
-    claim = board.claim()
+    claim = board.claim(worker_id="worker-a")
     assert claim is not None
 
     board.submit_result(
         job_id=jid,
+        worker_id="worker-a",
         result=RunTaskResult(job_id=jid, status=JobStatus.FAILED, error="task not found"),
     )
     result = board.get_result(job_id=jid)
@@ -81,9 +83,13 @@ def test_submit_result_failure(board):
 def test_submit_result_key_owns_the_primary_key(board):
     """The result payload cannot overwrite the auto-incrementing job key."""
     jid = board.publish(RunTaskJob(task_id="task_key", manual=True))
-    assert board.claim() is not None
+    assert board.claim(worker_id="worker-a") is not None
 
-    board.submit_result(job_id=jid, result=RunTaskResult(status=JobStatus.COMPLETED))
+    board.submit_result(
+        job_id=jid,
+        worker_id="worker-a",
+        result=RunTaskResult(status=JobStatus.COMPLETED),
+    )
 
     result = board.get_result(job_id=jid)
     assert result is not None
@@ -95,7 +101,7 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     # Short lease for fast test
     board._lease_seconds = 1
     jid = board.publish(RunTaskJob(task_id="task_a", manual=False))
-    first = board.claim()
+    first = board.claim(worker_id="worker-a")
     assert first is not None
 
     # Simulate lease expiry by manipulating leased_until
@@ -112,22 +118,17 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
             row.leased_until = utcnow_naive() - timedelta(seconds=10)
             s.commit()
 
-    second = board.claim()
+    second = board.claim(worker_id="worker-b")
     assert second is not None
     assert second.task_id == "task_a"
-    # ``attempts`` is row-internal bookkeeping (BaseJobRowMixin) — read it
-    # from the underlying row, not the dataclass (BaseJob no longer
-    # carries the field).
     with board._session() as s:
         row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == second.job_id))
         assert row is not None
-        assert row.attempts > 1, f"attempts should increment on re-claim; got {row.attempts}"
+        assert row.leased_by == "worker-b"
 
 
-def test_max_attempts_exhausted(board):
-    """After MAX_ATTEMPTS (3), claim marks job as failed and skips it."""
-    from magi.bus.guild.base import MAX_ATTEMPTS
-
+def test_expired_lease_remains_claimable_without_bus_failure(board):
+    """Lease recovery never lets BUS invent an exhausted/failed result."""
     jid = board.publish(RunTaskJob(task_id="task_ex", manual=False))
     board._lease_seconds = 1
 
@@ -138,10 +139,9 @@ def test_max_attempts_exhausted(board):
     from magi.bus.db.base import utcnow_naive
     from magi.bus.guild.runTaskJob import _RunTaskJobRow
 
-    for _ in range(MAX_ATTEMPTS + 1):
-        claim = board.claim()
-        if claim is None:
-            break
+    for worker_id in ("worker-a", "worker-b", "worker-c", "worker-d"):
+        claim = board.claim(worker_id=worker_id)
+        assert claim is not None
         # expire lease
         with board._session() as s:
             row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid))
@@ -149,10 +149,23 @@ def test_max_attempts_exhausted(board):
                 row.leased_until = utcnow_naive() - timedelta(seconds=10)
                 s.commit()
 
-    # After MAX_ATTEMPTS, job should be exhausted and claim returns None
-    exhausted_claim = board.claim()
-    assert exhausted_claim is None  # exhausted, no longer claimable
+    assert board.get_result(job_id=jid) is None
 
-    result = board.get_result(job_id=jid)
-    assert result is not None
-    assert result.status == JobStatus.FAILED
+
+def test_submit_result_ignores_a_worker_that_does_not_hold_the_lease(board):
+    jid = board.publish(RunTaskJob(task_id="task_owner", manual=True))
+    assert board.claim(worker_id="worker-a") is not None
+
+    board.submit_result(
+        job_id=jid,
+        worker_id="worker-b",
+        result=RunTaskResult(job_id=jid, status=JobStatus.COMPLETED),
+    )
+
+    assert board.get_result(job_id=jid) is None
+    board.submit_result(
+        job_id=jid,
+        worker_id="worker-a",
+        result=RunTaskResult(job_id=jid, status=JobStatus.COMPLETED),
+    )
+    assert board.get_result(job_id=jid) is not None

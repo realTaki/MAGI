@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine
 from contextlib import suppress
@@ -45,6 +46,10 @@ class RuntimeWorker(ABC):
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.bus = bus
         self.poll_seconds = poll_seconds
+        # The durable lease owner must identify this runtime instance, not a
+        # Board object or a worker class.  A restarted worker therefore cannot
+        # submit a stale result for a lease that a successor reclaimed.
+        self.worker_id = f"{self.worker_name}-{uuid.uuid4().hex}"
         self._task: asyncio.Task[None] | None = None
         self._children: set[asyncio.Task[Any]] = set()
         self._stopping = False

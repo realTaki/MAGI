@@ -26,7 +26,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
 from magi.bus.guild.base import (
-    DEFAULT_LEASE_SECONDS,
     BaseJob,
     BaseJobBoard,
     BaseJobResult,
@@ -77,15 +76,14 @@ class A2ARequestJob(BaseJob):
 
     由 ``a2aRequestJobBoard.publish`` 持久化到 ``a2a_request_jobs``；
     只有 ``target_magi_id`` 对应的 MAGI 通过 ``claim_for_target``
-    能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at``
-    到达后 worker 通过 ``a2aRequestJobBoard._expire_due`` 自动写
-    ``status="failed"`` + ``error_code=A2AErrorCode.TIMEOUT``。
+    能拿到这条 job，``source_magi_id`` 只作为审计字段。``deadline_at`` 是
+    调用方的业务约束；BUS 保留该字段但不会自行将 job 标为失败。
     """
 
     source_magi_id: int = 0  # 发送方 MAGI 身份（指向 magis_memberships.id）
     target_magi_id: int = 0  # 接收方 MAGI 身份（仅 target 可 claim）
     text: str = ""  # 请求正文
-    deadline_at: datetime | None = None  # 超时截止时间；到期自动失败
+    deadline_at: datetime | None = None  # 调用方定义的业务截止时间
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,13 +256,13 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
     def __init__(
         self,
         factory: EngineFactory,
-        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        lease_seconds: int,
         *,
         memberships_book: MagisMembershipBook,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
-        super().__init__(factory, lease_seconds)
+        super().__init__(factory, lease_seconds=lease_seconds)
         # Required, not optional: every publish must prove the route
         # exists and stays inside one MAGIS, so there is no degraded
         # "no book injected" mode to fall back to.
@@ -303,12 +301,11 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         )
         return job_id
 
-    def claim_for_target(self, *, magi_id: int) -> A2ARequestJob | None:
+    def claim_for_target(self, *, magi_id: int, worker_id: str) -> A2ARequestJob | None:
         with self._session() as s:
-            self._expire_due(s, target_magi_id=magi_id)
             row = self._cas_claim(
                 s,
-                owner=f"a2a-request:{magi_id}:{id(self)}",
+                owner=self._require_worker_id(worker_id),
                 extra_where=[_A2ARequestRow.target_magi_id == magi_id],
             )
             s.commit()
@@ -325,21 +322,17 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
         return job
 
-    def submit_result(self, *, job_id: int, result: A2ARequestResult) -> None:
-        """Complete a request once, and never overwrite expiry/failure."""
+    def submit_result(self, *, job_id: int, worker_id: str, result: A2ARequestResult) -> None:
+        """Complete a request only if this worker still owns its lease."""
         peer_magi_id: int | None = None
         with self._session() as s:
             row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if row is None:
                 return
-            self._expire_due(s, target_magi_id=row.target_magi_id)
-            s.refresh(row)
-            if row.status != JobStatus.PROCESSING:
-                s.commit()
-                return
-            self._submit(s, job_id=job_id, result=result)
+            submitted = self._submit(s, job_id=job_id, worker_id=self._require_worker_id(worker_id), result=result)
             s.commit()
-            peer_magi_id = row.source_magi_id
+            if submitted:
+                peer_magi_id = row.source_magi_id
         if peer_magi_id is not None:
             _record_transcript(
                 messages_book=self._messages_book,
@@ -358,8 +351,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if row is None:
                 return None
-            self._expire_due(s, target_magi_id=row.target_magi_id)
-            s.refresh(row)
             if row.status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
                 s.commit()
                 return None
@@ -389,26 +380,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
         return result
 
-    @staticmethod
-    def _expire_due(session, *, target_magi_id: int) -> None:
-        now = utcnow_naive()
-        session.execute(
-            update(_A2ARequestRow)
-            .where(
-                _A2ARequestRow.target_magi_id == target_magi_id,
-                _A2ARequestRow.deadline_at.is_not(None),
-                _A2ARequestRow.deadline_at <= now,
-                _A2ARequestRow.status.in_((JobStatus.PENDING, JobStatus.PROCESSING)),
-            )
-            .values(
-                status=JobStatus.FAILED,
-                error_code=A2AErrorCode.TIMEOUT,
-                error="A2A request deadline elapsed",
-                completed_at=now,
-            )
-        )
-
-
 class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult]):
     """Reliable one-way notification; publishers never wait for its result."""
 
@@ -419,13 +390,13 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
     def __init__(
         self,
         factory: EngineFactory,
-        lease_seconds: int = DEFAULT_LEASE_SECONDS,
+        lease_seconds: int,
         *,
         memberships_book: MagisMembershipBook,
         messages_book=None,  # type: ignore[no-untyped-def]
         conversations_book=None,  # type: ignore[no-untyped-def]
     ) -> None:
-        super().__init__(factory, lease_seconds)
+        super().__init__(factory, lease_seconds=lease_seconds)
         self._memberships_book = memberships_book
         self._messages_book = messages_book
         self._conversations_book = conversations_book
@@ -460,11 +431,11 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         )
         return job_id
 
-    def claim_for_target(self, *, magi_id: int) -> A2ANotifyJob | None:
+    def claim_for_target(self, *, magi_id: int, worker_id: str) -> A2ANotifyJob | None:
         with self._session() as s:
             row = self._cas_claim(
                 s,
-                owner=f"a2a-notify:{magi_id}:{id(self)}",
+                owner=self._require_worker_id(worker_id),
                 extra_where=[_A2ANotifyRow.target_magi_id == magi_id],
             )
             s.commit()

@@ -96,7 +96,7 @@ def _build_bus(tmp_path) -> Bus:
     settings_book = SettingBook(factory)
     mcp_book = McpServerBook(factory)
     tool_book = ToolDefinitionBook(factory)
-    board = changeMCPServerJobBoard(factory)
+    board = changeMCPServerJobBoard(factory, lease_seconds=60)
     # ``Bus.prompt_book`` is now non-Optional (B1: bootstrap fails
     # loudly on a missing prompts bundle), so the fixture must hand a
     # real PromptBook to the constructor even when the test never

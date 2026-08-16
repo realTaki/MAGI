@@ -22,7 +22,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
-    board = deliveryJobBoard(f)
+    board = deliveryJobBoard(f, lease_seconds=60)
 
     # Publish a TG delivery job
     jid = board.publish(
@@ -56,7 +56,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     worker._stopping = False
 
     # Claim the job
-    claim = board.claim()
+    claim = board.claim(worker_id=worker.worker_id)
     assert claim is not None
     assert claim.channel == "tg"
 
@@ -70,6 +70,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     # Verify result
     board.submit_result(
         job_id=jid,
+        worker_id=worker.worker_id,
         result=DeliveryResult(
             job_id=jid,
             status=JobStatus.COMPLETED,

@@ -65,11 +65,6 @@ class ActionPriority(StrEnum):
     NORMAL = "normal"
     HIGH = "high"
 
-# Default visibility window for completed rows when the caller
-# asks for ``include_completed=True``. Mirrors the dashboard's
-# default mix.
-_COMPLETED_VISIBLE_DAYS = 7
-
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class ActionItem(BaseRecord):
     """A to-do surfaced to an operator in the dashboard.
@@ -176,15 +171,15 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         owner_contact_id: int,
         include_completed: bool,
         source: ActionSource | None = None,
-        completed_visible_days: int = _COMPLETED_VISIBLE_DAYS,
+        completed_visible_days: int | None = None,
     ) -> list[ActionItem]:
         """List an operator's action items.
 
         ``include_completed=False`` returns only open,
         non-dismissed rows. ``include_completed=True`` also
-        surfaces rows completed/dismissed within the last
-        ``completed_visible_days`` days (matches the
-        dashboard's default mix).
+        surfaces rows completed/dismissed within the caller-supplied
+        ``completed_visible_days`` window. Visibility is caller policy, so
+        this Book deliberately has no BUS-wide default.
 
         ``source`` narrows to one provenance tag — pass
         :data:`ActionSource.USER` for the LLM tool menu (excludes
@@ -193,6 +188,8 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         views, or ``None`` for everything the operator
         owns.
         """
+        if include_completed and (completed_visible_days is None or completed_visible_days < 0):
+            raise ValueError("completed_visible_days is required when include_completed=True")
         with self._session() as s:
             stmt = select(_ActionItemRow).where(
                 _ActionItemRow.contact_id == owner_contact_id,

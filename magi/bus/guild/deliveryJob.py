@@ -7,23 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar
 
 from sqlalchemy import JSON, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import utcnow_naive
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
-
-#: Maximum delivery attempts before a row is marked failed.
-#: Distinct from :data:`magi.bus.guild.base.MAX_ATTEMPTS` (which
-#: gates the generic per-process retry ceiling at 3) — delivery
-#: needs more headroom for channel-side rate limits and reconnect
-#: loops. Read by :meth:`BaseJobBoard._mark_exhausted` and the
-#: ``is_reclaim`` branch of :meth:`BaseJobBoard._cas_claim` via
-#: ``BaseJobBoard.max_attempts``, which this board overrides on
-#: the next line.
-MAX_DELIVERY_ATTEMPTS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,12 +42,9 @@ class DeliveryJob(BaseJob):
 class DeliveryResult(BaseJobResult):
     """:class:`DeliveryJob` 的投递回执 — 渠道 worker 实际送出后写入。
 
-    重试预算 :data:`MAX_DELIVERY_ATTEMPTS` 用尽后由
-    :meth:`BaseJobBoard._mark_exhausted` 写成
-    :attr:`JobStatus.FAILED` 的失败 Result；正常路径下
-    :attr:`JobStatus.COMPLETED` 表示 SDK 已确认收到 / WS
-    已发送完毕。基类 ``error`` 字段在 :attr:`JobStatus.FAILED`
-    时填渠道 SDK 的错误文案或重试耗尽提示。
+    :attr:`JobStatus.COMPLETED` 表示 SDK 已确认收到 / WS 已发送完毕。
+    :attr:`JobStatus.FAILED` 仅由实际处理该 job 的 worker 提交；BUS 不会因
+    lease 重复或超时自行把 delivery 写成失败。
     """
 
 
@@ -81,12 +67,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
     job_model = _DeliveryJobRow
     job_cls = DeliveryJob
     result_cls = DeliveryResult
-    # Delivery needs more headroom than the generic 3 — flaky
-    # channels (Telegram rate limits, WebUI WS reconnects) often
-    # fail 4–5 times before settling.
-    max_attempts: ClassVar[int] = MAX_DELIVERY_ATTEMPTS
-
-    def claim_for_channel(self, *, channel: str) -> DeliveryJob | None:
+    def claim_for_channel(self, *, channel: str, worker_id: str) -> DeliveryJob | None:
         """CAS-claim the oldest pending delivery row scoped to *channel*.
 
         Replaces the previous "claim any, release mismatches" pattern
@@ -98,7 +79,7 @@ class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult
         with self._session() as s:
             row = self._cas_claim(
                 s,
-                owner=f"delivery:{channel}:{id(self)}",
+                owner=self._require_worker_id(worker_id),
                 extra_where=[_DeliveryJobRow.channel == channel],
             )
             s.commit()

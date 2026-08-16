@@ -20,6 +20,7 @@ from magi.bus.library.local.actionItemBook import ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.list_action_item")
+COMPLETED_VISIBLE_DAYS = 7
 
 
 class ListActionItemsTool(Tool):
@@ -78,6 +79,7 @@ class ListActionItemsTool(Tool):
             owner_contact_id=ct_id,
             include_completed=include_completed,
             source=ActionSource.USER,
+            completed_visible_days=COMPLETED_VISIBLE_DAYS if include_completed else None,
         )
         logger.info(
             "list_action_item: contact=%s include_completed=%s returned=%s",

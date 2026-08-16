@@ -66,6 +66,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.bus.bootstrap")
 
+JOB_LEASE_SECONDS_KEY = "system.job_lease_seconds"
+DEFAULT_JOB_LEASE_SECONDS = 60
+
+
+def _load_job_lease_seconds(settings_book: SettingBook) -> int:
+    """Read the BUS-wide lease policy, creating its default on first boot."""
+    raw = settings_book.get_value(key=JOB_LEASE_SECONDS_KEY)
+    if raw is None:
+        settings_book.set(key=JOB_LEASE_SECONDS_KEY, value=str(DEFAULT_JOB_LEASE_SECONDS))
+        return DEFAULT_JOB_LEASE_SECONDS
+    try:
+        lease_seconds = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{JOB_LEASE_SECONDS_KEY} must be a positive integer") from exc
+    if lease_seconds <= 0:
+        raise ValueError(f"{JOB_LEASE_SECONDS_KEY} must be a positive integer")
+    return lease_seconds
+
 
 @dataclass(frozen=True, slots=True)
 class Bus:
@@ -386,6 +404,7 @@ def _open_with_dirs(
 
     # ---- local books -------------------------------------------------------
     settings_book = SettingBook(local_factory)
+    job_lease_seconds = _load_job_lease_seconds(settings_book)
     conversations_book = ConversationBook(local_factory, settings_book=settings_book)
     messages_book = MessageBook(local_factory, settings_book=settings_book)
     memory_book = MemoryBook(local_factory)
@@ -416,19 +435,20 @@ def _open_with_dirs(
     # ---- local job boards ---------------------------------------------------
     agent_job_board = chatNotifyBoard(
         local_factory,
+        lease_seconds=job_lease_seconds,
         contact_book=contacts_book,
         messages_book=messages_book,
         conversations_book=conversations_book,
     )
-    tool_job_board = runToolJobBoard(local_factory)
-    llm_job_board = callLLMJobBoard(local_factory)
-    delivery_job_board = deliveryJobBoard(local_factory)
+    tool_job_board = runToolJobBoard(local_factory, lease_seconds=job_lease_seconds)
+    llm_job_board = callLLMJobBoard(local_factory, lease_seconds=job_lease_seconds)
+    delivery_job_board = deliveryJobBoard(local_factory, lease_seconds=job_lease_seconds)
     change_provider_config_job_board = changeProviderConfigJobBoard(
-        local_factory, settings_book=settings_book
+        local_factory, settings_book=settings_book, lease_seconds=job_lease_seconds
     )
-    change_mcp_server_job_board = changeMCPServerJobBoard(local_factory)
-    seed_preset_task_job_board = seedPresetTaskJobBoard(local_factory)
-    run_task_job_board = runTaskJobBoard(local_factory)
+    change_mcp_server_job_board = changeMCPServerJobBoard(local_factory, lease_seconds=job_lease_seconds)
+    seed_preset_task_job_board = seedPresetTaskJobBoard(local_factory, lease_seconds=job_lease_seconds)
+    run_task_job_board = runTaskJobBoard(local_factory, lease_seconds=job_lease_seconds)
 
     # ---- magis_book books -------------------------------------------------------
     if magis_factory is not None:
@@ -449,12 +469,14 @@ def _open_with_dirs(
         control_secrets_book = ControlSecretBook(magis_factory)
         a2a_request_job_board = a2aRequestJobBoard(
             magis_factory,
+            lease_seconds=job_lease_seconds,
             memberships_book=memberships_book,
             messages_book=messages_book,
             conversations_book=conversations_book,
         )
         a2a_notify_job_board = a2aNotifyBoard(
             magis_factory,
+            lease_seconds=job_lease_seconds,
             memberships_book=memberships_book,
             messages_book=messages_book,
             conversations_book=conversations_book,

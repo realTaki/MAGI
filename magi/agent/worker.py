@@ -171,7 +171,11 @@ class AgentWorker(RuntimeWorker):
                 and conversation_id in self._active_conversations
             ):
                 chat_job_id = job.job_id
-                await self.call(self.bus.agent_job_board.release, job_id=chat_job_id)
+                await self.call(
+                    self.bus.agent_job_board.release,
+                    job_id=chat_job_id,
+                    worker_id=self.worker_id,
+                )
                 continue
 
             # new run
@@ -236,6 +240,7 @@ class AgentWorker(RuntimeWorker):
                     await self.call(
                         self.bus.agent_job_board.submit_result,
                         job_id=chat_job_id,
+                        worker_id=self.worker_id,
                         result=ChatNotifyResult(
                             job_id=chat_job_id,
                             status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -263,6 +268,7 @@ class AgentWorker(RuntimeWorker):
                         await self.call(
                             board.submit_result,
                             job_id=a2a_request_job_id,
+                            worker_id=self.worker_id,
                             result=A2ARequestResult(
                                 job_id=a2a_request_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -284,6 +290,7 @@ class AgentWorker(RuntimeWorker):
                         await self.call(
                             board.submit_result,
                             job_id=a2a_notify_job_id,
+                            worker_id=self.worker_id,
                             result=A2ANotifyResult(
                                 job_id=a2a_notify_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
@@ -294,7 +301,9 @@ class AgentWorker(RuntimeWorker):
 
     async def _claim_next_turn(self) -> tuple[str | None, Any | None]:
         """Fairly claim local chat and MAGIS-shared A2A work."""
-        choices: list[tuple[str, Any]] = [("chat", self.bus.agent_job_board.claim)]
+        choices: list[tuple[str, Any]] = [
+            ("chat", lambda: self.bus.agent_job_board.claim(worker_id=self.worker_id))
+        ]
         # Bind to locals so Pylance keeps the ``is not None``
         # narrowing across the lambda boundary; ``self.bus.*`` and
         # ``self._magi_id`` would otherwise be re-typed as
@@ -307,14 +316,20 @@ class AgentWorker(RuntimeWorker):
             choices.append(
                 (
                     "a2a.request",
-                    lambda: request_board.claim_for_target(magi_id=magi_id),
+                    lambda: request_board.claim_for_target(
+                        magi_id=magi_id,
+                        worker_id=self.worker_id,
+                    ),
                 )
             )
         if magi_id is not None and notify_board is not None:
             choices.append(
                 (
                     "a2a.notify",
-                    lambda: notify_board.claim_for_target(magi_id=magi_id),
+                    lambda: notify_board.claim_for_target(
+                        magi_id=magi_id,
+                        worker_id=self.worker_id,
+                    ),
                 )
             )
         offset = self._claim_cursor % len(choices)
@@ -762,6 +777,7 @@ class AgentWorker(RuntimeWorker):
                 steer = await self.call(
                     self.bus.agent_job_board.claim_for_steering,
                     conversation_id=ctx.conversation_id,
+                    worker_id=self.worker_id,
                 )
                 if steer is not None:
                     text = steer.text or ""
@@ -773,6 +789,7 @@ class AgentWorker(RuntimeWorker):
                     await self.call(
                         self.bus.agent_job_board.submit_result,
                         job_id=chat_steer_job_id,
+                        worker_id=self.worker_id,
                         result=ChatNotifyResult(
                             job_id=chat_steer_job_id,
                             status=JobStatus.COMPLETED,

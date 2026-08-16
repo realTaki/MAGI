@@ -221,6 +221,7 @@ class ToolsWorker(RuntimeWorker):
             try:
                 job = await asyncio.to_thread(
                     self.bus.tool_job_board.claim,
+                    worker_id=self.worker_id,
                 )
             except Exception:
                 logger.exception("tools worker: claim failed")
@@ -403,12 +404,12 @@ class ToolsWorker(RuntimeWorker):
             )
             return
 
-        # 4. Submit the result. BaseJobBoard handles attempts ≥
-        #    MAX_ATTEMPTS automatically; we don't call retry()
-        #    ourselves.
+        # 4. Submit the result if this worker still owns the lease.  A lease
+        #    reclaimed by another worker makes this durable write a no-op.
         await self.call(
             self.bus.tool_job_board.submit_result,
             job_id=job.job_id,
+            worker_id=self.worker_id,
             result=_to_result(job, result),
         )
 
@@ -427,6 +428,7 @@ class ToolsWorker(RuntimeWorker):
             await self.call(
                 self.bus.tool_job_board.submit_result,
                 job_id=job.job_id,
+                worker_id=self.worker_id,
                 result=RunToolResult(
                     job_id=job.job_id,
                     status=JobStatus.FAILED,

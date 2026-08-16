@@ -13,6 +13,7 @@ from magi.bus.library.magis import AUTH_MODE_IM_2FA_ENABLED
 TITLE = "启用 IM 两步验证"
 DESCRIPTION = "绑定 Telegram 或其他 IM 验证通道，使用一次性验证码保护 MAGI 管理员登录。"
 TARGET_URL = "/dashboard?tab=settings&section=security"
+COMPLETED_VISIBLE_DAYS = 7
 
 
 def reconcile_for_admin(
@@ -29,6 +30,7 @@ def reconcile_for_admin(
         for item in book.list_actions(
             owner_contact_id=contact_id,
             include_completed=True,
+            completed_visible_days=COMPLETED_VISIBLE_DAYS,
             source=ActionSource.PROACTIVE,
         )
         if item.title == TITLE

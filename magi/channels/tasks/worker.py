@@ -42,7 +42,10 @@ class TaskWorker(RuntimeWorker):
         self._rehydrated = True
         while not self._stopping:
             try:
-                rj = await asyncio.to_thread(self.bus.run_task_job_board.claim)
+                rj = await asyncio.to_thread(
+                    self.bus.run_task_job_board.claim,
+                    worker_id=self.worker_id,
+                )
             except Exception:
                 rj = None
             if rj is not None:
@@ -147,6 +150,7 @@ class TaskWorker(RuntimeWorker):
                 await self.call(
                     self.bus.run_task_job_board.submit_result,
                     job_id=rj.job_id,
+                    worker_id=self.worker_id,
                     result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error="task not found"),
                 )
                 return
@@ -158,12 +162,14 @@ class TaskWorker(RuntimeWorker):
             await self.call(
                 self.bus.run_task_job_board.submit_result,
                 job_id=rj.job_id,
+                worker_id=self.worker_id,
                 result=RunTaskResult(job_id=rj.job_id, status=JobStatus.COMPLETED),
             )
         except Exception as exc:
             await self.call(
                 self.bus.run_task_job_board.submit_result,
                 job_id=rj.job_id,
+                worker_id=self.worker_id,
                 result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
             )
 

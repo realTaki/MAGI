@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("magi.proactive.preset_tasks")
 
 
-async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
+async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob, *, worker_id: str) -> None:
     """Claim + execute **one** :class:`SeedPresetTaskJob`.
 
     The job carries ``contact_id`` + ``preset_key``; the worker looks
@@ -47,27 +47,25 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
     try:
         contact = bus.contacts_book.get(job.contact_id)
         if contact is None:
-            _submit_failure(bus, job, f"contact {job.contact_id} not found")
+            _submit_failure(bus, job, worker_id, f"contact {job.contact_id} not found")
             return
 
         if contact.role != Role.ASSIGNED:
             # Caller dispatches per-preset regardless of role; the role
             # guard lives here so re-enabling a contact to non-ASSIGNED
             # doesn't accidentally seed its tasks.
-            _submit_success(bus, job)
+            _submit_success(bus, job, worker_id)
             return
 
         preset = _load_preset(bus, job.preset_key)
         if preset is None:
-            _submit_failure(
-                bus, job, f"preset {job.preset_key!r} not found in prompt_book"
-            )
+            _submit_failure(bus, job, worker_id, f"preset {job.preset_key!r} not found in prompt_book")
             return
 
         if not preset.get("enabled", True):
             # ``enabled=false`` is a silent no-op, not a failure —
             # operator explicitly disabled this preset, no action needed.
-            _submit_success(bus, job)
+            _submit_success(bus, job, worker_id)
             return
 
         contact_label = (contact.display_name or contact.name or f"contact {contact.id}").strip()
@@ -81,6 +79,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
             _submit_failure(
                 bus,
                 job,
+                worker_id,
                 f"preset {job.preset_key!r} schedule is invalid "
                 "(see worker log for the underlying parse error)",
             )
@@ -91,7 +90,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
         # Idempotent: already exists for the same contact → no-op success.
         existing = bus.tasks_book.get_by_name(name=task_name)
         if existing is not None and existing.contact_id == job.contact_id:
-            _submit_success(bus, job)
+            _submit_success(bus, job, worker_id)
             return
 
         try:
@@ -113,7 +112,10 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
             bus.tasks_book.add(Task(**kwargs))
         except ValueError as exc:
             _submit_failure(
-                bus, job, f"tasks_book.add rejected preset {job.preset_key!r}: {exc}"
+                bus,
+                job,
+                worker_id,
+                f"tasks_book.add rejected preset {job.preset_key!r}: {exc}",
             )
             return
 
@@ -123,11 +125,11 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
             job.contact_id,
             task_name,
         )
-        _submit_success(bus, job)
+        _submit_success(bus, job, worker_id)
 
     except Exception as exc:
         logger.exception("preset_tasks: seed job %s failed", job.job_id)
-        _submit_failure(bus, job, str(exc))
+        _submit_failure(bus, job, worker_id, str(exc))
 
 
 # --- helpers -----------------------------------------------------------------
@@ -228,18 +230,23 @@ def _read_system_timezone(bus: Bus) -> str:
 def _submit_success(
     bus: Bus,
     job: SeedPresetTaskJob,
+    worker_id: str,
 ) -> None:
     try:
         result = SeedPresetTaskResult(
             job_id=job.job_id,
             status=JobStatus.COMPLETED,
         )
-        bus.seed_preset_task_job_board.submit_result(job_id=job.job_id, result=result)
+        bus.seed_preset_task_job_board.submit_result(
+            job_id=job.job_id,
+            worker_id=worker_id,
+            result=result,
+        )
     except Exception:
         # Mirror _submit_failure: a result-submission error must not
         # propagate out of the Worker — the preset row (if any) is
-        # already committed, and the lease will time out + base will
-        # mark the row exhausted if we lose the result write.
+        # already committed, and an expired lease remains available for a
+        # later worker to reclaim.
         logger.exception(
             "preset_tasks: failed to submit seed success for %s",
             job.job_id,
@@ -249,6 +256,7 @@ def _submit_success(
 def _submit_failure(
     bus: Bus,
     job: SeedPresetTaskJob,
+    worker_id: str,
     error: str,
 ) -> None:
     try:
@@ -259,6 +267,7 @@ def _submit_failure(
         )
         bus.seed_preset_task_job_board.submit_result(
             job_id=job.job_id,
+            worker_id=worker_id,
             result=result,
         )
     except Exception:
