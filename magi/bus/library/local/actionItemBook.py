@@ -171,15 +171,18 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         owner_contact_id: int,
         include_completed: bool,
         source: ActionSource | None = None,
-        completed_visible_days: int | None = None,
+        completed_visible_days: int = 1,
     ) -> list[ActionItem]:
         """List an operator's action items.
 
         ``include_completed=False`` returns only open,
         non-dismissed rows. ``include_completed=True`` also
-        surfaces rows completed/dismissed within the caller-supplied
-        ``completed_visible_days`` window. Visibility is caller policy, so
-        this Book deliberately has no BUS-wide default.
+        surfaces rows completed/dismissed within the last
+        ``completed_visible_days`` days. Visibility is caller
+        policy, but the Book still ships a 1-day defensive
+        default so a caller that forgets the argument gets a
+        tight recent-history window instead of either an empty
+        list (zero days) or all of history (no cap).
 
         ``source`` narrows to one provenance tag — pass
         :data:`ActionSource.USER` for the LLM tool menu (excludes
@@ -188,8 +191,8 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
         views, or ``None`` for everything the operator
         owns.
         """
-        if include_completed and (completed_visible_days is None or completed_visible_days < 0):
-            raise ValueError("completed_visible_days is required when include_completed=True")
+        if completed_visible_days < 0:
+            raise ValueError("completed_visible_days must be non-negative")
         with self._session() as s:
             stmt = select(_ActionItemRow).where(
                 _ActionItemRow.contact_id == owner_contact_id,
@@ -202,7 +205,6 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                     _ActionItemRow.dismissed.is_(False),
                 )
             else:
-                assert completed_visible_days is not None
                 cutoff = utcnow_naive() - timedelta(days=completed_visible_days)
                 stmt = stmt.where(
                     (_ActionItemRow.completed_at.is_(None))

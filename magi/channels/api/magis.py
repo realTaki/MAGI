@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -176,8 +176,8 @@ def _magis_out(bus: Bus, view: Magis) -> MAGISOut:
         member_count=len(bus.memberships_book.list_for_magis(magis_id=view.id))
         if bus.memberships_book
         else 0,
-        created_at=view.created_at,
-        updated_at=view.updated_at,
+        created_at=cast(datetime, view.created_at),
+        updated_at=cast(datetime, view.updated_at),
     )
 
 

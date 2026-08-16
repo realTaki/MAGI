@@ -79,7 +79,7 @@ class ListActionItemsTool(Tool):
             owner_contact_id=ct_id,
             include_completed=include_completed,
             source=ActionSource.USER,
-            completed_visible_days=COMPLETED_VISIBLE_DAYS if include_completed else None,
+            completed_visible_days=COMPLETED_VISIBLE_DAYS,
         )
         logger.info(
             "list_action_item: contact=%s include_completed=%s returned=%s",
