@@ -25,7 +25,6 @@ from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class TokenUsage(BaseRecord):
     contact_id: int
-    llm_attempt_id: str | None = None
     provider: str
     model: str
     input_tokens: int
@@ -43,7 +42,6 @@ class _TokenUsageRow(BaseRecordMixin):
     contact_id: Mapped[int] = mapped_column(
         ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False
     )
-    llm_attempt_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)

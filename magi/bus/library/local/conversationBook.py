@@ -18,16 +18,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
-    JSON,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     Text,
-    UniqueConstraint,
     func,
     select,
     text,
@@ -61,12 +58,6 @@ class Message(BaseRecord):
     text: str
     ts: datetime = field(default_factory=utcnow_naive)
     archived: int = 0
-    content_blocks: list[dict[str, Any]] | None = None  # 富内容块（tool_use 等）
-    llm_attempt_id: str | None = None
-    #: 可选去重键 —— 唯一约束 ``(conversation_row_id, dedup_key)``
-    #: 承载幂等（PG/SQLite UNIQUE 均允许多个 NULL，普通消息不填即 NULL）。
-    #: A2A transcript 用它防重试/轮询重复写；普通 chat 消息不填。
-    dedup_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -261,14 +252,9 @@ class _MessageRow(BaseRecordMixin):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    content_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-    llm_attempt_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: 去重键（仅 A2A transcript 使用）——见 :class:`Message.dedup_key`。
-    dedup_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_chat_messages_conversation_archived", "conversation_row_id", "archived", "id"),
-        UniqueConstraint("conversation_row_id", "dedup_key", name="uq_chat_messages_conv_dedup"),
     )
 
 
@@ -723,8 +709,6 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             text=row.text,
             ts=row.ts,
             archived=row.archived,
-            content_blocks=row.content_blocks,
-            llm_attempt_id=row.llm_attempt_id,
         )
         object.__setattr__(message, "id", row.id)
         object.__setattr__(message, "created_at", row.created_at)
@@ -823,9 +807,6 @@ class MessageBook(BaseBook[_MessageRow, Message]):
             "text": record.text,
             "ts": record.ts or utcnow_naive(),
             "archived": record.archived,
-            "content_blocks": record.content_blocks,
-            "llm_attempt_id": record.llm_attempt_id,
-            "dedup_key": record.dedup_key,
         }
 
     def archive(self, *, message_id: int) -> None:

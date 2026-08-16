@@ -7,7 +7,6 @@ not a MAGI-local store.  A receiver claims only rows addressed to its own
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -22,7 +22,6 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
@@ -153,6 +152,9 @@ class _A2ARequestRow(BaseJobRowMixin):
         nullable=True,
         default=None,
     )
+    #: 结果是否已被 source 通过 :meth:`get_result` 认领过。首次认领时写
+    #: transcript，之后轮询不再重复写（替代旧的 dedup_key 幂等）。
+    result_claimed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class _A2ANotifyRow(BaseJobRowMixin):
@@ -174,6 +176,9 @@ class _A2ANotifyRow(BaseJobRowMixin):
         nullable=True,
         default=None,
     )
+    #: 对称预留 —— notify 当前无 ``get_result``（无 sender-wait 契约），
+    #: 字段保留以与 request 表结构一致。
+    result_claimed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 def _validate_route(
@@ -211,23 +216,11 @@ def _validate_route(
         raise ValueError("A2A source and target must belong to the same MAGIS")
 
 
-def _transcript_message_id(*, job_kind: str, job_id: int, event: str) -> str:
-    """Return a portable, deterministic 26-character producer ID.
-
-    ``chat_messages.message_id`` is unique per conversation and limited to
-    26 characters on PostgreSQL.  The stable ID makes lifecycle logging safe
-    across retries and repeated result polling without relaxing that schema
-    constraint.
-    """
-    return hashlib.sha256(f"{job_kind}:{job_id}:{event}".encode()).hexdigest()[:26]
-
-
 def _record_transcript(
     *,
     messages_book,
     conversations_book,
     peer_magi_id: int,
-    job_kind: str,
     job_id: int,
     event: str,
     role: str,
@@ -250,15 +243,10 @@ def _record_transcript(
             peer_magi_id=peer_magi_id
         )
         messages_book.add(Message(
-            conversation_id=conversation.conversation_id,
-            message_id=_transcript_message_id(job_kind=job_kind, job_id=job_id, event=event),
+            conversation_id=conversation.id,
             role=role,
             text=text,
         ))
-    except IntegrityError:
-        # The unique ``(conversation_id, message_id)`` index proves this
-        # lifecycle event was already recorded (e.g. a retry/poll race).
-        logger.debug("A2A transcript event already recorded: job=%s event=%s", job_id, event)
     except Exception:
         logger.exception("A2A transcript write failed: job=%s event=%s", job_id, event)
 
@@ -311,7 +299,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             messages_book=self._messages_book,
             conversations_book=self._conversations_book,
             peer_magi_id=job.target_magi_id,
-            job_kind="request",
             job_id=job_id,
             event="publish",
             role="assistant",
@@ -334,7 +321,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=job.source_magi_id,
-                job_kind="request",
                 job_id=job.job_id,
                 event="claim",
                 role="user",
@@ -362,7 +348,6 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=peer_magi_id,
-                job_kind="request",
                 job_id=job_id,
                 event="submit_result",
                 role="assistant",
@@ -370,6 +355,8 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
             )
 
     def get_result(self, *, job_id: int) -> A2ARequestResult | None:
+        peer_magi_id: int | None = None
+        first_claim = False
         with self._session() as s:
             row = s.scalar(select(_A2ARequestRow).where(_A2ARequestRow.job_id == job_id))
             if row is None:
@@ -380,18 +367,29 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
                 s.commit()
                 return None
             result = self._read_result_from_job(row)
+            # 首次认领 result 时置位并写 transcript；之后轮询只返回结果不再写
+            # （替代旧的 dedup_key 幂等 —— 见 _A2ARequestRow.result_claimed）。
+            claimed = s.execute(
+                update(_A2ARequestRow)
+                .where(
+                    _A2ARequestRow.job_id == job_id,
+                    _A2ARequestRow.result_claimed.is_(False),
+                )
+                .values(result_claimed=True)
+            )
+            first_claim = getattr(claimed, "rowcount", 0) == 1
             s.commit()
             peer_magi_id = row.target_magi_id
-        _record_transcript(
-            messages_book=self._messages_book,
-            conversations_book=self._conversations_book,
-            peer_magi_id=peer_magi_id,
-            job_kind="request",
-            job_id=job_id,
-            event="get_result",
-            role="user",
-            text=result.content or result.error or "",
-        )
+        if first_claim:
+            _record_transcript(
+                messages_book=self._messages_book,
+                conversations_book=self._conversations_book,
+                peer_magi_id=peer_magi_id,
+                job_id=job_id,
+                event="get_result",
+                role="user",
+                text=result.content or result.error or "",
+            )
         return result
 
     @staticmethod
@@ -458,7 +456,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
             messages_book=self._messages_book,
             conversations_book=self._conversations_book,
             peer_magi_id=job.target_magi_id,
-            job_kind="notify",
             job_id=job_id,
             event="publish",
             role="assistant",
@@ -480,7 +477,6 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
                 messages_book=self._messages_book,
                 conversations_book=self._conversations_book,
                 peer_magi_id=job.source_magi_id,
-                job_kind="notify",
                 job_id=job.job_id,
                 event="claim",
                 role="user",
