@@ -71,7 +71,7 @@ async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bo
     _require_control(request)
     from magi.channels.telegram import bot as tg_bot
 
-    token = get_bus(request).settings_book.get(key="telegram.bot_token")
+    token = get_bus(request).settings_book.get_value(key="telegram.bot_token")
     if not token:
         raise MagiHTTPException(
             status_code=409, code="telegram.not_configured", detail="Telegram is not configured"

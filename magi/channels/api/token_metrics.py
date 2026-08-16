@@ -187,7 +187,7 @@ def get_contact_token_usage(
     contact with thousands of calls is still O(rows in
     window), not O(total rows).
     """
-    tz_name = bus.settings_book.get(key="system.timezone") or "UTC"
+    tz_name = bus.settings_book.get_value(key="system.timezone") or "UTC"
     tz = zoneinfo.ZoneInfo(tz_name)
 
     week = _aggregate_period(bus, contact_id, "week", tz)

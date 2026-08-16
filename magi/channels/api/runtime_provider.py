@@ -82,7 +82,7 @@ def _known_providers(bus) -> set[str]:
     :data:`magi.providers.factory._KNOWN_PROVIDERS` when the
     worker hasn't seeded ``providers.options`` yet.
     """
-    raw = bus.settings_book.get(key=_PROVIDERS_OPTIONS_KEY)
+    raw = bus.settings_book.get_value(key=_PROVIDERS_OPTIONS_KEY)
     if raw:
         try:
             options = json.loads(raw)
@@ -116,9 +116,9 @@ def _validate_provider(bus, provider: str | None) -> str | None:
 def _read_current(bus) -> tuple[str | None, str | None, str | None]:
     """Return ``(provider, api_key, model)`` from settings_book."""
     return (
-        bus.settings_book.get(key=PROVIDER_NAME_KEY),
-        bus.settings_book.get(key=PROVIDER_API_KEY_KEY),
-        bus.settings_book.get(key=PROVIDER_MODEL_KEY),
+        bus.settings_book.get_value(key=PROVIDER_NAME_KEY),
+        bus.settings_book.get_value(key=PROVIDER_API_KEY_KEY),
+        bus.settings_book.get_value(key=PROVIDER_MODEL_KEY),
     )
 
 

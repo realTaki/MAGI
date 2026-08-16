@@ -49,7 +49,7 @@ def _signing_key(bus: Bus) -> bytes:
     if control_store.enabled():
         secret = os.environ.get("MAGI_CONTROL_SECRET")
         if not secret and bus.control_secrets_book is not None:
-            row = bus.control_secrets_book.get(name=_control_secret_name(bus))
+            row = bus.control_secrets_book.get_by_name(name=_control_secret_name(bus))
             if row is not None and row.secret_value:
                 secret = row.secret_value.decode("utf-8")
         if not secret:
@@ -66,7 +66,7 @@ def _signing_key(bus: Bus) -> bytes:
     # directly, no shared MAGIS). The signing key is stored in the
     # node's ``settings`` table, freshly generated if absent so first-boot
     # sign-in still works.
-    raw = bus.settings_book.get(key="auth.signing_key")
+    raw = bus.settings_book.get_value(key="auth.signing_key")
     if raw:
         return hashlib.sha256(raw.encode() + b"magi-session-signing").digest()
     import secrets
@@ -227,7 +227,7 @@ async def _target_access(
     payload: dict[str, object] | None = None,
     timeout: httpx.Timeout = CONTROL_TIMEOUT,
 ) -> dict[str, Any]:
-    runtime = bus.runtime_state_book.get(runtime_id=magi_id) if bus.runtime_state_book else None
+    runtime = bus.runtime_state_book.get_by_runtime_id(runtime_id=magi_id) if bus.runtime_state_book else None
     base = getattr(runtime, "base_url", None) if runtime else None
     if not base:
         raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable")

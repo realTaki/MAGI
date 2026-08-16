@@ -294,7 +294,7 @@ class Tool(ABC):
         Default implementation builds the caller's
         **effective role-tag set**:
 
-        - ``ctx.bus.contacts_book.get(contact_id=...)`` →
+        - ``ctx.bus.contacts_book.get(...)`` →
           the MAGI-local role (``assigned`` / ``guest`` /
           ``contact``) — lives on ``Contact.role``.
         - ``Contact.magis_admin_id`` → shared ``MagisAdmin`` existence.
@@ -346,7 +346,7 @@ class Tool(ABC):
 
         # Build effective role-tag set: local Contact.role plus the shared
         # administrator identity when this is its local projection.
-        contact = ctx.bus.contacts_book.get(contact_id=ct_id)
+        contact = ctx.bus.contacts_book.get(ct_id)
         if contact is None:
             return f"contact {ct_id!r} not found"
         effective: set[str] = {contact.role}
@@ -355,7 +355,7 @@ class Tool(ABC):
         if (
             admins_book is not None
             and magis_admin_id is not None
-            and admins_book.get(admin_id=magis_admin_id) is not None
+            and admins_book.get(magis_admin_id) is not None
         ):
             effective.add("admin")
 

@@ -192,7 +192,7 @@ def _role_out(view: MagisRole) -> RoleOut:
 
 
 def _membership_out(bus: Bus, view: MagisMembership) -> MembershipOut:
-    role = bus.roles_book.get(role_id=view.role_id) if bus.roles_book else None
+    role = bus.roles_book.get(view.role_id) if bus.roles_book else None
     return MembershipOut(
         id=view.id,
         magi_id=view.id,
@@ -263,7 +263,7 @@ def _served_direct_magis_id(bus: Bus) -> int | None:
     raw = os.environ.get("MAGI_RUNTIME_ID")
     if not raw or not raw.isdigit() or bus.memberships_book is None:
         return None
-    membership = bus.memberships_book.get(magi_id=int(raw))
+    membership = bus.memberships_book.get(int(raw))
     return membership.magis_id if membership is not None else None
 
 
@@ -278,7 +278,7 @@ def _require_managed(bus: Bus, magis_id: int) -> None:
 
 
 def _magis_or_404(bus: Bus, magis_id: int) -> Magis:
-    view = _magis_book(bus).get(magis_id=magis_id)
+    view = _magis_book(bus).get(magis_id)
     if view is None:
         raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     return view
@@ -315,7 +315,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
             instruction=payload.instruction,
             parent_id=payload.parent_id,
         ))
-        view = _magis_book(bus).get(magis_id=magis_id)
+        view = _magis_book(bus).get(magis_id)
         if view is None:
             raise RuntimeError(f"MAGIS row {magis_id} disappeared after insert")
     except LookupError as exc:
@@ -357,14 +357,15 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
         kwargs["instruction"] = payload.instruction
     if "parent_id" in fields_set:
         kwargs["parent_id"] = payload.parent_id
+    current = _magis_book(bus).get(magis_id)
+    if current is None:
+        raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     try:
-        view = _magis_book(bus).update(
-            magis_id=magis_id, set_parent_id="parent_id" in fields_set, **kwargs
-        )
+        view = current.with_changes(**kwargs)
+        if not _magis_book(bus).update(view):
+            raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     except (LookupError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
-    if view is None:
-        raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     return _magis_out(bus, view)
 
 
@@ -372,7 +373,7 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
 def delete_magis(magis_id: int, _admin: AdminGate, bus: BusDep) -> Response:
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
-    _magis_book(bus).delete(magis_id=magis_id)
+    _magis_book(bus).delete(magis_id)
     return Response(status_code=204)
 
 
@@ -398,7 +399,7 @@ def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, bus: BusD
             name=payload.name,
             instruction=payload.instruction,
         ))
-        view = _roles_book(bus).get(role_id=role_id)
+        view = _roles_book(bus).get(role_id)
         if view is None:
             raise RuntimeError(f"role row {role_id} disappeared after insert")
     except (LookupError, ValueError) as exc:
@@ -421,16 +422,23 @@ def update_role(
         kwargs["name"] = payload.name
     if "instruction" in fields_set:
         kwargs["instruction"] = payload.instruction
-    try:
-        view = _roles_book(bus).update(role_id=role_id, magis_id=magis_id, **kwargs)
-    except (LookupError, PermissionError, ValueError) as exc:
-        raise _translate_bus_error(exc) from exc
-    if view is None:
+    current = _roles_book(bus).get(role_id)
+    if current is None or current.magis_id != magis_id:
         raise MagiHTTPException(
             status_code=404,
             code="validation.magis_role_not_found",
             detail="role does not belong to this MAGIS",
         )
+    try:
+        view = current.with_changes(**kwargs)
+        if not _roles_book(bus).update(view):
+            raise MagiHTTPException(
+                status_code=404,
+                code="validation.magis_role_not_found",
+                detail="role does not belong to this MAGIS",
+            )
+    except (LookupError, PermissionError, ValueError) as exc:
+        raise _translate_bus_error(exc) from exc
     return _role_out(view)
 
 
@@ -438,7 +446,8 @@ def update_role(
 def delete_role(magis_id: int, role_id: int, _admin: AdminGate, bus: BusDep) -> Response:
     _require_managed(bus, magis_id)
     try:
-        deleted = _roles_book(bus).delete(role_id=role_id, magis_id=magis_id)
+        role = _roles_book(bus).get(role_id)
+        deleted = role is not None and role.magis_id == magis_id and _roles_book(bus).delete(role_id)
     except (PermissionError, ValueError) as exc:
         raise _translate_bus_error(exc) from exc
     if not deleted:
@@ -479,7 +488,7 @@ def create_membership(
             role_id=payload.role_id,
             responsibility=payload.responsibility,
         ))
-        view = _memberships_book(bus).get(magi_id=membership_id)
+        view = _memberships_book(bus).get(membership_id)
         if view is None:
             raise RuntimeError(f"membership row {membership_id} disappeared after insert")
     except (LookupError, ValueError) as exc:
@@ -503,7 +512,7 @@ def update_membership(
                 magi_id=membership_id, magis_id=magis_id, role_id=payload.role_id
             )
         else:
-            view = _memberships_book(bus).get(magi_id=membership_id)
+            view = _memberships_book(bus).get(membership_id)
             if view is not None and view.magis_id != magis_id:
                 view = None
         if view is not None and payload.responsibility is not None:
@@ -529,7 +538,7 @@ def delete_membership(
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        member = _memberships_book(bus).get(magi_id=membership_id)
+        member = _memberships_book(bus).get(membership_id)
         deleted = bool(
             member
             and member.magis_id == magis_id
@@ -576,7 +585,7 @@ def add_magis_admin(
             name=payload.name,
             tgid=payload.tgid,
         ))
-        view = _admins_book(bus).get(admin_id=admin_id)
+        view = _admins_book(bus).get(admin_id)
         if view is None:
             raise RuntimeError(f"MAGIS admin row {admin_id} disappeared after insert")
         # This endpoint runs in the MAGI whose local data the Settings page

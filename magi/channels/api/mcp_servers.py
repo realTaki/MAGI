@@ -373,7 +373,7 @@ def create_mcp_server(
         execute_timeout=payload.execute_timeout,
         sse_read_timeout=payload.sse_read_timeout,
     )
-    # TODO(mcp-worker): publish McpServerChangedJob after writing
+    # TODO(mcp-worker): publish ChangeMCPServerJob after writing
     # (kind="added"). The endpoint will move to bus.mcp_servers_book
     # at the same seam; the publish stays in this function.
     logger.info("MCP server %r created", row.name)
@@ -433,7 +433,7 @@ def update_mcp_server(
         execute_timeout=payload.execute_timeout,
         sse_read_timeout=payload.sse_read_timeout,
     )
-    # TODO(mcp-worker): publish McpServerChangedJob after writing
+    # TODO(mcp-worker): publish ChangeMCPServerJob after writing
     # (kind="updated" — toggling enabled goes through the
     # dedicated toggle endpoint, not this PATCH path).
     logger.info("MCP server %r updated", row.name)
@@ -456,7 +456,7 @@ def delete_mcp_server(
             code="not_found.mcp_server",
             detail=f"mcp server {name!r} not found",
         )
-    # TODO(mcp-worker): publish McpServerChangedJob after writing
+    # TODO(mcp-worker): publish ChangeMCPServerJob after writing
     # (kind="deleted"). The endpoint will move to
     # bus.mcp_servers_book at the same seam; the publish stays
     # in this function.
@@ -480,7 +480,7 @@ def toggle_mcp_server(
             code="not_found.mcp_server",
             detail=f"mcp server {name!r} not found",
         )
-    # TODO(mcp-worker): publish McpServerChangedJob after writing
+    # TODO(mcp-worker): publish ChangeMCPServerJob after writing
     # (kind="toggled").
     logger.info("MCP server %r toggled → enabled=%s", row.name, row.enabled)
     return _serialize(row)

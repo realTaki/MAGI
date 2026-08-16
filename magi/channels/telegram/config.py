@@ -37,7 +37,7 @@ def _settings(bus: Bus):
 
 
 def get_read_reaction_emoji(bus: Bus) -> str:
-    raw = _settings(bus).get(key=_READ_META_KEY)
+    raw = _settings(bus).get_value(key=_READ_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
             logger.warning("tg.read_reaction_emoji %r not in allowlist; defaulting", raw)
@@ -50,7 +50,7 @@ def set_read_reaction_emoji(bus: Bus, emoji: str) -> None:
 
 
 def get_done_reaction_emoji(bus: Bus) -> str:
-    raw = _settings(bus).get(key=_DONE_META_KEY)
+    raw = _settings(bus).get_value(key=_DONE_META_KEY)
     if not raw or raw not in _VALID_EMOJI:
         if raw:
             logger.warning("tg.done_reaction_emoji %r not in allowlist; defaulting", raw)

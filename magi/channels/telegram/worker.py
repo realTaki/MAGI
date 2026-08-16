@@ -28,7 +28,7 @@ class TelegramWorker(ChannelWorker):
         self._shutdown_event: asyncio.Event | None = None
 
     async def on_start(self) -> bool:
-        bot_token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
+        bot_token = await self.call(self.bus.settings_book.get_value, key="telegram.bot_token")
         if not bot_token:
             logger.info("TelegramWorker: no bot_token; skipping")
             return False
@@ -40,7 +40,7 @@ class TelegramWorker(ChannelWorker):
     async def _run_inbound(self) -> None:
         from telegram.ext import Application, MessageHandler, filters
 
-        token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
+        token = await self.call(self.bus.settings_book.get_value, key="telegram.bot_token")
         if not token:
             return
         app = (
@@ -137,7 +137,7 @@ class TelegramWorker(ChannelWorker):
         await self._claim_delivery_loop(self._deliver_tg, "tg")
 
     async def _deliver_tg(self, job: DeliveryJob) -> None:
-        bot_token = await self.call(self.bus.settings_book.get, key="telegram.bot_token")
+        bot_token = await self.call(self.bus.settings_book.get_value, key="telegram.bot_token")
         if not bot_token:
             raise RuntimeError("Telegram delivery: no bot_token")
         chat_id = int(job.destination) if job.destination else 0

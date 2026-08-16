@@ -133,7 +133,7 @@ def list_tasks(request: Request, _admin: AdminGate, bus: BusDep) -> list[TaskOut
 
 @router.get("/tasks/{task_id}", response_model=TaskOut)
 def get_task(task_id: str, request: Request, _admin: AdminGate, bus: BusDep) -> TaskOut:
-    task = bus.tasks_book.get(task_id=task_id)
+    task = bus.tasks_book.get_by_task_id(task_id=task_id)
     if task is None or task.contact_id != _owner(request, _admin):
         raise MagiHTTPException(404, "not_found.task", "task not found")
     return _out(task)
@@ -143,7 +143,7 @@ def get_task(task_id: str, request: Request, _admin: AdminGate, bus: BusDep) -> 
 def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDep) -> TaskOut:
     contact_id = _owner(request, _admin)
     cron, run_at = _schedule(payload)
-    contact = bus.contacts_book.get(contact_id=contact_id)
+    contact = bus.contacts_book.get(contact_id)
     if payload.target_channel == Channel.TG and (contact is None or contact.tgid is None):
         raise MagiHTTPException(
             400, "tasks.telegram_not_bound", "Telegram is not bound for this contact"
@@ -170,10 +170,10 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
             target_channel=payload.target_channel,
             contact_id=contact_id,
             conversation_id=conversation_id,
-            tz=bus.settings_book.get(key="system.timezone") or "UTC",
+            tz=bus.settings_book.get_value(key="system.timezone") or "UTC",
         )
         bus.tasks_book.add(task_record)
-        task = bus.tasks_book.get(task_id=task_record.task_id)
+        task = bus.tasks_book.get_by_task_id(task_id=task_record.task_id)
         if task is None:
             raise RuntimeError(f"task {task_record.task_id} disappeared after insert")
     except ValueError as exc:
@@ -185,28 +185,30 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
 def update_task(
     task_id: str, payload: TaskPatch, request: Request, _admin: AdminGate, bus: BusDep
 ) -> TaskOut:
+    task = bus.tasks_book.get_by_task_id(task_id=task_id)
+    if task is None or task.contact_id != _owner(request, _admin):
+        raise MagiHTTPException(404, "not_found.task", "task not found")
     try:
-        task = bus.tasks_book.update(
-            task_id=task_id,
-            contact_id=_owner(request, _admin),
-            **payload.model_dump(exclude_unset=True),
-        )
+        candidate = task.with_changes(**payload.model_dump(exclude_unset=True))
+        if not bus.tasks_book.update(candidate):
+            raise MagiHTTPException(404, "not_found.task", "task not found")
     except ValueError as exc:
         raise MagiHTTPException(400, "validation.task", str(exc)) from exc
-    if task is None:
-        raise MagiHTTPException(404, "not_found.task", "task not found")
-    return _out(task)
+    updated = bus.tasks_book.get(task.id)
+    assert updated is not None
+    return _out(updated)
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: str, request: Request, _admin: AdminGate, bus: BusDep) -> None:
-    if not bus.tasks_book.delete(task_id=task_id, contact_id=_owner(request, _admin)):
+    task = bus.tasks_book.get_by_task_id(task_id=task_id)
+    if task is None or task.contact_id != _owner(request, _admin) or not bus.tasks_book.delete(task.id):
         raise MagiHTTPException(404, "not_found.task", "task not found")
 
 
 @router.post("/tasks/{task_id}/run", response_model=RunResponse)
 def run_task_now(task_id: str, request: Request, _admin: AdminGate, bus: BusDep) -> RunResponse:
-    task = bus.tasks_book.get(task_id=task_id)
+    task = bus.tasks_book.get_by_task_id(task_id=task_id)
     if task is None or task.contact_id != _owner(request, _admin):
         raise MagiHTTPException(404, "not_found.task", "task not found")
     if not task.enabled:
@@ -230,7 +232,7 @@ def list_task_runs(
     limit: int = Query(20, ge=1, le=100),
 ) -> list[TaskRunOut]:
     _ = limit
-    task = bus.tasks_book.get(task_id=task_id)
+    task = bus.tasks_book.get_by_task_id(task_id=task_id)
     if task is None or task.contact_id != _owner(request, _admin):
         raise MagiHTTPException(404, "not_found.task", "task not found")
     # The durable run Book is keyed by run id; manual launches are surfaced

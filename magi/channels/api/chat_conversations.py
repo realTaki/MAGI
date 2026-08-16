@@ -220,7 +220,7 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
     correct for WebUI rows that never need to deliver
     to a chat (the channel is the WebUI itself, not TG).
     """
-    contact = get_bus(request).contacts_book.get(contact_id=contact_id)
+    contact = get_bus(request).contacts_book.get(contact_id)
     return str(contact.tgid) if contact and contact.tgid is not None else ""
 
 
@@ -408,7 +408,7 @@ def delete_conversation(
     # ``delete`` returns False when the row is absent or owned by
     # another contact — both are treated as "already gone", so the
     # route always answers 204.
-    bus.conversations_book.delete(contact_id=contact_id, conversation_id=conversation_id)
+    bus.conversations_book.delete_owned(contact_id=contact_id, conversation_id=conversation_id)
     return None
 
 

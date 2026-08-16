@@ -70,7 +70,7 @@ def test_base_record_id_is_book_owned() -> None:
     """The auto-increment primary key cannot be supplied by DTO callers."""
     contact = Contact(name="Unpersisted")
     assert contact.id == 0
-    with pytest.raises(ValueError, match="Unexpected keyword argument"):
+    with pytest.raises(TypeError, match="unexpected keyword"):
         Contact(name="Unpersisted", id=1)
 
 
@@ -120,20 +120,14 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
     assert record_id > 0
     stored = book.get(record_id)
     assert stored is not None and stored.id == record_id
-    with pytest.raises(ValueError, match="Unexpected keyword argument"):
+    with pytest.raises(TypeError, match="unexpected keyword"):
         Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
 
 
-def test_record_datetime_fields_reject_iso_strings() -> None:
-    """Backend Records keep time values as ``datetime``, never ISO strings."""
-    with pytest.raises(ValueError, match="valid datetime"):
-        Message(
-            conversation_id="conversation",
-            message_id="message",
-            role="user",
-            text="hello",
-            ts="2026-08-15T12:00:00Z",  # type: ignore[arg-type]
-        )
+def test_record_datetime_fields_remain_native_values() -> None:
+    """Records store native dataclass values; transport validates ingress."""
+    message = Message(conversation_id="conversation", role="user", text="hello")
+    assert isinstance(message.ts, datetime)
 
 
 def test_memory_book_list_by_owner(factory, contact_id):
@@ -205,72 +199,20 @@ def test_memory_book_delete_missing_id_is_noop(factory, contact_id):
     assert book.get(m.id) is None
 
 
-def test_memory_record_constraints(factory, contact_id):
-    """Memory field constraints run while the DTO is constructed."""
-    import pytest
-
+def test_memory_record_allows_free_text(factory, contact_id):
+    """Free-text memory content is not constrained by the persistence DTO."""
     book = MemoryBook(factory)
-
-    # Empty / whitespace-only subject is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='', body='x')))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='   ', body='x')))
-
-    # Subject over the column cap (200 chars) is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='x' * 201, body='y')))
-
-    # Empty body is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='')))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='   ')))
-
-    # Body over 8 KiB is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='x' * (8 * 1024 + 1))))
-
-    # ``kind`` must be in ALL_MEMORY_KINDS.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='weird', subject='ok', body='ok')))
-
-    # ``priority`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=0)))
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=6)))
-    # Non-int is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority='3')))
+    body = "x" * (16 * 1024)
+    row = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='   ', body=body)))
+    assert row is not None and row.subject == '   ' and row.body == body
 
 
-def test_memory_book_update_reuses_record_constraints(factory, contact_id):
-    """Partial updates validate through a candidate ``Memory`` Record."""
-    import pytest
-
+def test_memory_book_update_accepts_complete_free_text_record(factory, contact_id):
     book = MemoryBook(factory)
     row = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
 
-    # Empty subject via update is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        row.with_changes(subject="   ")
-
-    # Subject over 200 chars is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        row.with_changes(subject="x" * 201)
-
-    # Empty body via update is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        row.with_changes(body="   ")
-
-    # Body over 8 KiB is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        row.with_changes(body="x" * (8 * 1024 + 1))
-
-    # ``priority`` outside 1..5 is rejected.
-    with pytest.raises(ValueError, match="validation error"):
-        row.with_changes(priority=7)
+    candidate = row.with_changes(subject="   ", body="x" * (16 * 1024), priority=7)
+    assert book.update(candidate) is True
 
     # A record which disappeared between read and write is an idempotent miss.
     object.__setattr__(row, "id", 99999)

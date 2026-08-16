@@ -13,10 +13,10 @@ transport, not a database.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
-import hashlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
@@ -116,7 +116,7 @@ def _current_proxy_admin(request: Request, bus: Bus) -> int:
     is_admin, _assigned, _two_factor, admin_id = scope
     if not is_admin or admin_id is None or bus.magis_admins_book is None:
         raise MagiHTTPException(403, "auth.magis_admin_required", "MAGIS administrator required")
-    admin = bus.magis_admins_book.get(admin_id=admin_id)
+    admin = bus.magis_admins_book.get(admin_id)
     if admin is None:
         raise MagiHTTPException(403, "auth.magis_admin_required", "MAGIS administrator required")
     return admin.id
@@ -139,7 +139,7 @@ def _direct_magis(bus: Bus) -> tuple[int, int]:
     directly.
     """
     magi_id = _runtime_magi_id()
-    membership = bus.memberships_book.get(magi_id=magi_id) if bus.memberships_book else None
+    membership = bus.memberships_book.get(magi_id) if bus.memberships_book else None
     if membership is None:
         raise MagiHTTPException(409, "access.magi_unassigned", "MAGI is not assigned to a MAGIS")
     return magi_id, membership.magis_id
@@ -239,7 +239,7 @@ async def _send_code(bus: Bus, magi_id: int, magis_id: int, contact_id: int, rol
         raise MagiHTTPException(
             409, "access.no_tg_binding", "This account has no Telegram binding"
         )
-    bot_token = bus.settings_book.get(key="telegram.bot_token")
+    bot_token = bus.settings_book.get_value(key="telegram.bot_token")
     if bot_token:
         await tg_bot.send_text_raw(bot_token, account.tgid, text)
         return "self"
@@ -276,7 +276,7 @@ async def send_login_code(
     ):
         # Do not turn this into a principal-enumeration endpoint.
         return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS)
-    previous_raw = bus.settings_book.get(key=_code_key(payload.contact_id, payload.role))
+    previous_raw = bus.settings_book.get_value(key=_code_key(payload.contact_id, payload.role))
     if previous_raw:
         try:
             previous = json.loads(previous_raw)
@@ -310,7 +310,7 @@ async def send_login_code(
             f"Your MAGI sign-in code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
-        bus.settings_book.delete(key=_code_key(payload.contact_id, payload.role))
+        bus.settings_book.delete_by_key(key=_code_key(payload.contact_id, payload.role))
         if isinstance(exc, MagiHTTPException):
             raise
         raise MagiHTTPException(
@@ -356,10 +356,10 @@ async def verify_login_code(
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
     if account is None:
         return VerifyLoginCodeResponse(ok=False, error="Code does not match")
-    raw = bus.settings_book.get(key=_code_key(payload.contact_id, payload.role))
+    raw = bus.settings_book.get_value(key=_code_key(payload.contact_id, payload.role))
     if not raw:
         return VerifyLoginCodeResponse(ok=False, error="No code was sent — request a new one.")
-    bus.settings_book.delete(key=_code_key(payload.contact_id, payload.role))
+        bus.settings_book.delete_by_key(key=_code_key(payload.contact_id, payload.role))
     try:
         stored = json.loads(raw)
         valid = datetime.now(UTC).timestamp() < float(stored.get("expires_at", 0))
@@ -400,9 +400,9 @@ async def send_two_factor_setup_code(
             }
         ),
     )
-    token = bus.settings_book.get(key="telegram.bot_token")
+    token = bus.settings_book.get_value(key="telegram.bot_token")
     if not token:
-        bus.settings_book.delete(key=key)
+        bus.settings_book.delete_by_key(key=key)
         raise MagiHTTPException(409, "access.no_delivery_bot", "Configure a Telegram bot first")
     try:
         await tg_bot.send_text_raw(
@@ -411,7 +411,7 @@ async def send_two_factor_setup_code(
             f"Your MAGI two-factor setup code is: <code>{code}</code>\n\nThis code expires in 5 minutes.",
         )
     except Exception as exc:
-        bus.settings_book.delete(key=key)
+        bus.settings_book.delete_by_key(key=key)
         raise MagiHTTPException(503, "access.delivery_failed", "Could not deliver the code") from exc
     return LoginCodeResponse(ok=True, expires_in=_TTL_SECONDS, delivery="self")
 
@@ -422,8 +422,8 @@ async def verify_two_factor_setup_code(
 ) -> LoginCodeResponse:
     admin_id = _current_proxy_admin(request, bus)
     key = f"auth.two_factor_setup.{admin_id}"
-    raw = bus.settings_book.get(key=key)
-    bus.settings_book.delete(key=key)
+    raw = bus.settings_book.get_value(key=key)
+    bus.settings_book.delete_by_key(key=key)
     try:
         stored = json.loads(raw or "")
         valid = (

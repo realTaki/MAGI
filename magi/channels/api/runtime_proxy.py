@@ -21,7 +21,7 @@ def _runtime_url(bus, magi_id: int) -> str:
     for K8s service-DNS compatibility when the row is missing.
     """
     if bus.runtime_state_book is not None:
-        runtime = bus.runtime_state_book.get(runtime_id=magi_id)
+        runtime = bus.runtime_state_book.get_by_runtime_id(runtime_id=magi_id)
         if runtime is not None and runtime.base_url:
             return runtime.base_url
     if bus.magis_book is not None:

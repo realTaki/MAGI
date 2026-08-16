@@ -36,11 +36,11 @@ def _session_is_current_admin(request: Request) -> bool:
     admin_id = session.get("magis_admin_id")
     if not isinstance(admin_id, int) or bus.magis_admins_book is None:
         return False
-    admin = bus.magis_admins_book.get(admin_id=admin_id)
+    admin = bus.magis_admins_book.get(admin_id)
     if admin is None or admin.auth_mode == AUTH_MODE_DISABLED:
         return False
     memberships = bus.memberships_book
-    membership = memberships.get(magi_id=int(session["magi_id"])) if memberships else None
+    membership = memberships.get(int(session["magi_id"])) if memberships else None
     return membership is not None and membership.magis_id == admin.magis_id
 
 
@@ -56,10 +56,10 @@ def _proxy_identity(request: Request) -> tuple[int, bool] | None:
     is_admin, is_assigned, _two_factor, admin_id = scope
     if is_admin:
         bus = get_bus(request)
-        admin = bus.magis_admins_book.get(admin_id=admin_id) if (admin_id and bus.magis_admins_book) else None
+        admin = bus.magis_admins_book.get(admin_id) if (admin_id and bus.magis_admins_book) else None
         runtime_id_raw = request.headers.get("X-MAGI-Proxy-Target")
         membership = (
-            bus.memberships_book.get(magi_id=int(runtime_id_raw))
+            bus.memberships_book.get(int(runtime_id_raw))
             if runtime_id_raw and runtime_id_raw.isdigit() and bus.memberships_book
             else None
         )
@@ -73,7 +73,7 @@ def _proxy_identity(request: Request) -> tuple[int, bool] | None:
         operator = verified_proxy_operator(request)
         if operator is None:
             return None
-        contact = get_bus(request).contacts_book.get(contact_id=operator[0])
+        contact = get_bus(request).contacts_book.get(operator[0])
         return (contact.id, False) if contact is not None and contact.role == Role.ASSIGNED else None
     return None
 
@@ -106,7 +106,7 @@ def admin_or_assigned_gate(request: Request) -> str:
             return str(contact_id)
     contact_id = _session_contact_id(request)
     if contact_id is not None:
-        contact = get_bus(request).contacts_book.get(contact_id=contact_id)
+        contact = get_bus(request).contacts_book.get(contact_id)
         if contact is not None and contact.role == Role.ASSIGNED:
             return str(contact_id)
     raise MagiHTTPException(403, "auth.soul_edit_forbidden", "MAGIS administrator or assigned user required")

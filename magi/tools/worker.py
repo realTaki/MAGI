@@ -296,7 +296,7 @@ class ToolsWorker(RuntimeWorker):
 
         # 3. Bump revision + recompute snapshot_hash across ALL
         #    enabled rows (builtin + injected).
-        state = await self.call(self.bus.tool_catalog_book.get)
+        state = await self.call(self.bus.tool_catalog_book.get_current)
         next_revision = (state.revision + 1) if state else 1
         enabled_rows = await self.call(self.bus.tool_definitions_book.list_enabled)
         # Build a hash map from the definitions we just computed.

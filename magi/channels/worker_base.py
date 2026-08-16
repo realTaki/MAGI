@@ -110,7 +110,7 @@ class ChannelWorker(RuntimeWorker):
                 )
 
     async def _read_max_queue_depth(self) -> int:
-        raw = await self.call(self.bus.settings_book.get, key="channels.delivery.max_queue_depth")
+        raw = await self.call(self.bus.settings_book.get_value, key="channels.delivery.max_queue_depth")
         if raw and str(raw).isdigit():
             return int(raw)
         return 1000

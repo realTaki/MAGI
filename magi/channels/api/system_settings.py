@@ -69,7 +69,7 @@ def _default_timezone() -> str:
 
 
 def _read_int_setting(bus, *, key: str, default: int, minimum: int, maximum: int) -> int:
-    raw = _settings(bus).get(key=key)
+    raw = _settings(bus).get_value(key=key)
     try:
         value = int(raw) if raw is not None else default
     except (TypeError, ValueError):
@@ -100,7 +100,7 @@ class TimezoneUpdateRequest(BaseModel):
 def get_system_timezone_endpoint(_admin: AdminGate, bus: BusDep) -> TimezoneOut:
     svc = _settings(bus)
     default = _default_timezone()
-    current = svc.get(key=SYSTEM_TZ_KEY) or default
+    current = svc.get_value(key=SYSTEM_TZ_KEY) or default
     try:
         zoneinfo.ZoneInfo(current)
     except zoneinfo.ZoneInfoNotFoundError:
@@ -137,7 +137,7 @@ def put_system_timezone(
             detail=f"timezone {tz!r} is not a valid IANA tz name",
         )
     # No cache invalidation needed: every tz consumer reads
-    # ``bus.settings_book.get("system.timezone")`` directly, so the
+    # ``bus.settings_book.get_value("system.timezone")`` directly, so the
     # next read picks up the new value with no helper to call.
     logger.info("system.timezone set to %r", tz)
     svc.set(key=SYSTEM_TZ_KEY, value=tz)
@@ -352,10 +352,10 @@ def put_chat_max_input_chars(
 # module keeps working without changes (the implementation moved but
 # the public surface is identical).
 def get_show_daily_note(bus) -> bool:
-    raw = _settings(bus).get(key="system.show_daily_note")
+    raw = _settings(bus).get_value(key="system.show_daily_note")
     return raw is None or raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_show_daily_note_prompt(bus) -> bool:
-    raw = _settings(bus).get(key="system.show_daily_note_prompt")
+    raw = _settings(bus).get_value(key="system.show_daily_note_prompt")
     return raw is not None and raw.strip().lower() in {"1", "true", "yes", "on"}

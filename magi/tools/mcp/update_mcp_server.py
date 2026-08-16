@@ -17,7 +17,7 @@ parent env". Same contract the WebUI ``PATCH`` endpoint enforces.
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It builds the full :class:`McpServer` DTO, publishes a
-:class:`~magi.bus.guild.mcpServerChangedJob.McpServerChangedJob`
+:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
 with ``kind="updated"`` (or ``kind="toggled"`` if the body only
 changed the ``enabled`` flag), and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the write + reconnect.
@@ -28,14 +28,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import MCPKind, McpServerChangedJob
+from magi.bus.guild import MCPKind, ChangeMCPServerJob
 from magi.bus.guild.base import JobStatus
 from magi.bus.library.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )
 from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.mcp.add_mcp_server import _build_server  # noqa: F401  (shared helper)
 
 
 def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
@@ -191,23 +190,23 @@ class UpdateMcpServerTool(Tool):
             if k in kwargs
         }
         if changed == {"enabled"}:
-            job_id = ctx.bus.mcp_server_changed_job_board.publish(
-                McpServerChangedJob(
+            job_id = ctx.bus.change_mcp_server_job_board.publish(
+                ChangeMCPServerJob(
                     kind=MCPKind.TOGGLED,
                     server_name=name,
                     new_enabled=new_server.enabled,
                 )
             )
         else:
-            job_id = ctx.bus.mcp_server_changed_job_board.publish(
-                McpServerChangedJob(
+            job_id = ctx.bus.change_mcp_server_job_board.publish(
+                ChangeMCPServerJob(
                     kind=MCPKind.UPDATED,
                     server_name=name,
                     server=new_server,
                 )
             )
 
-        result = await ctx.bus.mcp_server_changed_job_board.wait_for_result(
+        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:

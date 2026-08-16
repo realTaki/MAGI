@@ -59,7 +59,7 @@ def _skills_book(bus: Bus) -> SkillsBook:
 
 
 def _load_disabled(bus: Bus) -> set[str]:
-    raw = bus.settings_book.get(key=_DISABLED_KEY)
+    raw = bus.settings_book.get_value(key=_DISABLED_KEY)
     if not raw:
         return set()
     try:

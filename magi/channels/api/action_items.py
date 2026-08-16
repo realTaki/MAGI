@@ -209,7 +209,7 @@ def complete_action_item(
     """
     admin_id = _current_admin_id(_admin)
     service = bus.action_items_book
-    row = service.get(item_id=item_id)
+    row = service.get(item_id)
     if row is None:
         raise MagiHTTPException(
             status_code=404,

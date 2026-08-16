@@ -66,7 +66,7 @@ def bind_telegram(
             detail="tgid must fit in an integer",
         )
 
-    contact = bus.contacts_book.get(contact_id=payload.contact_id)
+    contact = bus.contacts_book.get(payload.contact_id)
     if contact is None:
         raise MagiHTTPException(
             status_code=404,

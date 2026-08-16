@@ -30,7 +30,7 @@ def enabled() -> bool:
 
 
 def get(bus: Bus, key: str) -> str | None:
-    return _control(bus).get(key=key)
+    return _control(bus).get_value(key=key)
 
 
 def set(bus: Bus, key: str, value: str) -> None:
@@ -38,7 +38,7 @@ def set(bus: Bus, key: str, value: str) -> None:
 
 
 def delete(bus: Bus, key: str) -> None:
-    _control(bus).delete(key=key)
+    _control(bus).delete_by_key(key=key)
 
 
 def list_prefix(bus: Bus, prefix: str) -> dict[str, str]:

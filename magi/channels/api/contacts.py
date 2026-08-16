@@ -210,12 +210,6 @@ def create_contact(
             code="validation.name_required",
             detail="name must not be empty",
         )
-    if any(view.name == name for view in bus.contacts_book.list_all()):
-        raise MagiHTTPException(
-            status_code=409,
-            code="conflict.contact_name_exists",
-            detail=f"contact {name!r} already exists",
-        )
     if payload.role not in _VALID_LOCAL_ROLES:
         raise MagiHTTPException(
             status_code=400,
@@ -250,7 +244,7 @@ def create_contact(
         role=payload.role,
         tgid=payload.tgid,
     ))
-    view = bus.contacts_book.get(contact_id=record_id)
+    view = bus.contacts_book.get(record_id)
     if view is None:
         raise RuntimeError(f"contact row {record_id} disappeared after insert")
 
@@ -323,7 +317,7 @@ def list_contact_notes(
     _admin: AdminGate,
     bus: BusDep,
 ) -> NoteListOut:
-    contact = bus.contacts_book.get(contact_id=contact_id)
+    contact = bus.contacts_book.get(contact_id)
     if contact is None:
         raise MagiHTTPException(
             status_code=404,
@@ -341,7 +335,7 @@ def get_contact(
     _admin: AdminGate,
     bus: BusDep,
 ) -> ContactOut:
-    view = bus.contacts_book.get(contact_id=contact_id)
+    view = bus.contacts_book.get(contact_id)
     if view is None:
         raise MagiHTTPException(
             status_code=404,
@@ -359,7 +353,7 @@ def update_contact(
     bus: BusDep,
     request: Request,
 ) -> ContactOut:
-    existing = bus.contacts_book.get(contact_id=contact_id)
+    existing = bus.contacts_book.get(contact_id)
     if existing is None:
         raise MagiHTTPException(
             status_code=404,
@@ -437,21 +431,22 @@ def update_contact(
             )
         new_tgid = new_tg
 
-    view = bus.contacts_book.update(
-        contact_id=contact_id,
-        name=new_name,
-        display_name=new_display_name,
-        role=new_role,
-        tgid=new_tgid,
-        set_display_name="display_name" in payload.model_fields_set,
-        set_tgid="tgid" in payload.model_fields_set,
-    )
-    if view is None:
+    current = bus.contacts_book.get(contact_id)
+    if current is None:
         raise MagiHTTPException(
             status_code=404,
             code="not_found.contact",
             detail="contact not found",
         )
+    candidate = current.with_changes(
+        name=new_name if new_name is not None else current.name,
+        display_name=(new_display_name if "display_name" in payload.model_fields_set else current.display_name),
+        role=new_role if new_role is not None else current.role,
+        tgid=(new_tgid if "tgid" in payload.model_fields_set else current.tgid),
+    )
+    bus.contacts_book.update(candidate)
+    view = bus.contacts_book.get(contact_id)
+    assert view is not None
 
     # Preset seed hook — fires only on a TRUE transition
     # into ``assigned``. assigned→admin→assigned would

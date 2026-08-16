@@ -42,7 +42,7 @@ _REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
 
 
 def _read_enabled(bus) -> list[str]:
-    raw = bus.settings_book.get(key=_SETTINGS_KEY)
+    raw = bus.settings_book.get_value(key=_SETTINGS_KEY)
     if raw:
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else raw
@@ -63,7 +63,7 @@ def _write_enabled(bus, channels: list[str]) -> None:
 
 def _has_credentials(bus, channel: str) -> bool:
     if channel == Channel.TG:
-        return bool(bus.settings_book.get(key="telegram.bot_token"))
+        return bool(bus.settings_book.get_value(key="telegram.bot_token"))
     return True
 
 
