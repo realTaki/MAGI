@@ -592,12 +592,18 @@ export default function ChatTab() {
         setActiveTitle(null);
         void refreshHistory();
       }
-      // Refresh the conversation after a short delay — the chat turn
-      // completes asynchronously.  Streaming hooks live in
-      // magi/bus/stream.py (in-process); there is no SSE endpoint to
-      // subscribe to from the WebUI.
-      window.setTimeout(() => void loadSession(data.conversation_id), 500);
-      void queryClientForChat.invalidateQueries({ queryKey: qk.chatMessages(data.conversation_id) });
+      // The durable turn runs asynchronously.  The first refresh picks up
+      // the committed user row; retries pick up a fast failure (such as an
+      // unconfigured provider) or the eventual assistant delivery without
+      // requiring the operator to switch tabs or manually reload.
+      // There is currently no browser-facing SSE stream for this board, so
+      // use a short, bounded revalidation sequence instead.
+      const transcriptKey = qk.chatMessages(data.conversation_id);
+      for (const delayMs of [500, 1_000, 2_000, 4_000, 8_000]) {
+        window.setTimeout(() => {
+          void queryClientForChat.invalidateQueries({ queryKey: transcriptKey });
+        }, delayMs);
+      }
     },
     onError: (err: unknown): void => {
       if (err && typeof err === "object" && "status" in err) {

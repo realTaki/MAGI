@@ -5,12 +5,19 @@ agent 产出回复 → 入队 → worker 投递到渠道
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+
+if TYPE_CHECKING:
+    from magi.bus.library.local.conversationBook import MessageBook
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +69,80 @@ class _DeliveryJobRow(BaseJobRowMixin):
 
 
 class deliveryJobBoard(BaseJobBoard[_DeliveryJobRow, DeliveryJob, DeliveryResult]):
+    """Queue (write + claim + submit_result) for outbound deliveries.
+
+    Mirrors :class:`chatNotifyBoard`'s "single chokepoint" contract:
+    :meth:`publish` is the *only* code path that writes an assistant
+    row into ``chat_messages``. Channel workers (TG / WebUI / …) only
+    deliver to the wire; they no longer touch ``messages_book``.
+
+    The row is written **before** the delivery job hits the queue, not
+    after the wire delivery succeeds. Trade-off: if the wire delivery
+    later fails (worker submits :attr:`JobStatus.FAILED`), the assistant
+    row stays in ``chat_messages`` — the transcript reflects what the
+    agent said, not what the wire confirmed. Mirrors how the inbound
+    side writes the user row at enqueue time regardless of downstream
+    LLM / tool success.
+    """
+
     job_model = _DeliveryJobRow
     job_cls = DeliveryJob
     result_cls = DeliveryResult
+
+    def __init__(
+        self,
+        factory,  # type: ignore[no-untyped-def]
+        *,
+        messages_book: MessageBook | None = None,
+    ) -> None:
+        super().__init__(factory)
+        # Optional so unit tests can build a board without the local
+        # messages store; in that case :meth:`publish` silently skips
+        # the assistant-row write. Production wiring lives in
+        # :func:`magi.bus.bootstrap.open_bus`.
+        self._messages_book = messages_book
+
+    def publish(self, job: DeliveryJob) -> int:
+        """Enqueue one delivery and persist the assistant message.
+
+        Single chokepoint for outbound delivery — every path that
+        enqueues a delivery (agent worker's final reply, the LLM's
+        ``send_message`` tool, future proactive nudges) goes through
+        here. The job's ``text`` is mirrored into ``chat_messages``
+        with ``role="assistant"`` so the next inbound turn's LLM
+        transcript read sees the reply immediately.
+
+        Steps:
+
+          1. Insert the delivery job row (via :meth:`BaseJobBoard.publish`).
+          2. Best-effort ``messages_book.add(Message(role="assistant", …))``.
+             ``ConversationNotFoundError`` (e.g. ``conversation_id`` is
+             ``None``) and any other failure is logged and swallowed —
+             the delivery job is already enqueued; a transient
+             ``messages_book`` blip must not block outbound delivery.
+
+        Returns the *job_id* of the published job (Board-generated).
+        """
+        job_id = super().publish(job)
+        if self._messages_book is not None:
+            try:
+                from magi.bus.library.local.conversationBook import Message
+
+                self._messages_book.add(Message(
+                    conversation_id=job.conversation_id or 0,
+                    role="assistant",
+                    text=job.text,
+                ))
+            except Exception:
+                logger.exception(
+                    "deliveryJobBoard.publish: messages_book.add failed "
+                    "(conversation=%s, channel=%s); deliveryJob %s enqueued without row",
+                    job.conversation_id,
+                    job.channel,
+                    job_id,
+                )
+        return job_id
+
     def claim_for_channel(self, *, channel: str, worker_id: str) -> DeliveryJob | None:
         """CAS-claim the oldest pending delivery row scoped to *channel*.
 

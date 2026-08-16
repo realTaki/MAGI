@@ -422,7 +422,7 @@ def _open_with_dirs(
     )
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
-    delivery_job_board = deliveryJobBoard(local_factory)
+    delivery_job_board = deliveryJobBoard(local_factory, messages_book=messages_book)
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
