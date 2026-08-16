@@ -202,6 +202,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                     _ActionItemRow.dismissed.is_(False),
                 )
             else:
+                assert completed_visible_days is not None
                 cutoff = utcnow_naive() - timedelta(days=completed_visible_days)
                 stmt = stmt.where(
                     (_ActionItemRow.completed_at.is_(None))

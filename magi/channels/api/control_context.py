@@ -11,8 +11,9 @@ context type back into the channel package.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-if False:  # TYPE_CHECKING import-only — kept as a string for cycle safety
+if TYPE_CHECKING:  # import-only — kept as a string for cycle safety
     from magi.bus import MagisBus
 
 

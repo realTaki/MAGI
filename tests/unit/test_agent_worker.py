@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -102,6 +102,9 @@ def _make_bus(**overrides) -> Mock:
     bus.llm_job_board = Mock()
     bus.llm_job_board.publish = Mock(return_value="llm-job-1")
     bus.llm_job_board.get_result = Mock(return_value=None)
+    bus.llm_job_board.wait_for_result = AsyncMock(
+        side_effect=lambda **_kwargs: bus.llm_job_board.get_result()
+    )
 
     bus.tool_job_board = Mock()
     bus.tool_job_board.publish = Mock(return_value="tool-job-1")
@@ -283,8 +286,68 @@ async def test_steering_injected():
 
     bus.agent_job_board.submit_result.assert_any_call(
         job_id=1,
+        worker_id=worker.worker_id,
         result=ChatNotifyResult(job_id=1, status=JobStatus.COMPLETED),
     )
+
+
+@pytest.mark.asyncio
+async def test_one_agent_worker_consumes_persisted_steering_while_waiting_for_a_tool():
+    """A single AgentWorker must consume a same-conversation turn in-band.
+
+    The test uses the real durable ChatNotify board: no second AgentWorker and
+    no release/reclaim hand-off are involved.  ``_gather_all`` sees the new
+    turn while a tool result is pending, incorporates its text, and settles
+    the steering job under that same worker's lease.
+    """
+    from types import SimpleNamespace
+
+    from magi.agent.worker import AgentWorker, RunContext
+    from magi.bus.db.engine import EngineFactory
+    from magi.bus.guild.base import JobStatus
+    from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
+    from magi.bus.guild.runToolJob import RunToolResult
+
+    factory = EngineFactory("sqlite:///:memory:")
+    agent_board = chatNotifyBoard(factory)
+    # This focused test requires only the chat queue.  Creating global
+    # metadata would also include the A2A tables, whose MAGIS FK target is
+    # deliberately absent from this local fixture.
+    agent_board.job_model.__table__.create(factory.engine)
+    steering_job_id = agent_board.publish(
+        ChatNotifyJob(conversation_id=42, contact_id=7, channel="tg", text="补充一下这个约束")
+    )
+    tool_result = RunToolResult(
+        job_id=99,
+        status=JobStatus.COMPLETED,
+        content="tool complete",
+        tool_call_id="tool-call-1",
+    )
+    bus = SimpleNamespace(
+        agent_job_board=agent_board,
+        tool_job_board=SimpleNamespace(get_result=lambda **_kwargs: tool_result),
+        a2a_request_job_board=None,
+        settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
+    )
+    worker = AgentWorker(bus=bus)  # type: ignore[arg-type]
+
+    async def direct_call(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    worker.call = direct_call  # type: ignore[method-assign]
+    ctx = RunContext(contact_id=7, channel="tg", conversation_id=42)
+    gathered = await worker._gather_all(
+        ctx,
+        {"tool-call-1": 99},
+        {},
+        {},
+    )
+
+    assert gathered is not None
+    assert gathered.steering_text == "补充一下这个约束"
+    settled = agent_board.get_result(job_id=steering_job_id)
+    assert settled is not None
+    assert settled.status == JobStatus.COMPLETED
 
 
 # ---------------------------------------------------------------------------
