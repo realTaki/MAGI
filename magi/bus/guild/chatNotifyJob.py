@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, Text
+from sqlalchemy import Integer, Text, or_
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
@@ -205,6 +205,35 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
                     job_id,
                 )
         return job_id
+
+    def claim_for_new_conversation(
+        self,
+        *,
+        worker_id: str,
+        active_conversation_ids: set[int],
+    ) -> ChatNotifyJob | None:
+        """Claim a turn whose conversation is not locally active.
+
+        Agent workers may process different conversations concurrently, but a
+        second top-level turn for an active conversation must remain pending:
+        the active run consumes it through :meth:`claim_for_steering` while it
+        waits for tools or A2A work.  Applying this filter in the CAS claim
+        (rather than claiming and releasing) preserves that ordering without
+        lease churn.
+        """
+        worker_id = self._require_worker_id(worker_id)
+        with self._session() as session:
+            extra_where = None
+            if active_conversation_ids:
+                extra_where = [
+                    or_(
+                        self.job_model.conversation_id.is_(None),
+                        self.job_model.conversation_id.not_in(active_conversation_ids),
+                    )
+                ]
+            row = self._cas_claim(session, owner=worker_id, extra_where=extra_where)
+            session.commit()
+            return self._map_row(row, self.job_cls) if row else None
 
     def _validate_publish(self, job: ChatNotifyJob) -> None:
         """D.22 cross-channel guard.
