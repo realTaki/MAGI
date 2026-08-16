@@ -15,7 +15,7 @@ logger = logging.getLogger("magi.agent.auto_title")
 
 async def request_conversation_title(
     contact_id: int,
-    conversation_id: str,
+    conversation_id: int,
     *,
     bus: Bus,
 ) -> str | None:

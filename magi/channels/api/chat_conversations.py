@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field
 from magi.bus.library.local.conversationBook import (
     Conversation,
     ConversationNotFoundError,
-    ConversationSummary,
     Message,
 )
 from magi.channels.api.auth_gates import AdminGate
@@ -97,28 +96,24 @@ class ConversationOut(BaseModel):
     channel: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
-    # D.7: operator-set or LLM-generated title. ``None`` means
-    # "no title yet" — the sidebar falls back to ``preview``.
+    # D.7: operator-set or LLM-generated title.
     title: str | None = None
     schema_version: int
     messages: list[ConversationMessageOut]
 
 
-class ConversationSummaryOut(BaseModel):
+class ConversationListItemOut(BaseModel):
+    """The persisted conversation fields used by the paginated list."""
+
     conversation_id: int
     created_at: datetime | None = None
-    created_by_contact_id: int
     updated_at: datetime | None = None
-    message_count: int
-    preview: str
-    # D.7: same field as ``Conversation.title`` — list-endpoint
-    # projection.
     title: str | None = None
     channel: str = "webui"
 
 
 class ConversationListOut(BaseModel):
-    items: list[ConversationSummaryOut]
+    items: list[ConversationListItemOut]
     total: int
     limit: int
     offset: int
@@ -178,25 +173,14 @@ def _conversation_to_out(
     )
 
 
-def _summary_to_out(s: ConversationSummary, *, contact_id: int) -> ConversationSummaryOut:
-    """Convert a ConversationSummary into the list-endpoint shape.
-
-    ``contact_id`` is the operator who owns this conversation
-    today. We surface it explicitly so a future C7 view can
-    label rows; v0 always sees the same value across rows
-    for one admin.
-    """
-    return ConversationSummaryOut(
-        conversation_id=s.conversation_id,
-        created_at=s.created_at,
-        created_by_contact_id=contact_id,
-        updated_at=s.updated_at,
-        message_count=s.message_count,
-        preview=s.preview,
-        # D.7: surface the title alongside the preview so the
-        # front-end can render ``h.title ?? h.preview``.
-        title=s.title,
-        channel=s.channel,
+def _conversation_to_list_item(conversation: Conversation) -> ConversationListItemOut:
+    """Convert a persisted conversation into the list-endpoint shape."""
+    return ConversationListItemOut(
+        conversation_id=conversation.id,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        title=conversation.title,
+        channel=conversation.channel,
     )
 
 
@@ -346,18 +330,18 @@ def list_conversations(
     contact_id = _admin_contact_id(request)
     # D.23: list scope is the operator's contact_id, not
     # a per-channel delivery address.
-    # ``ConversationBook.list_summaries`` returns every row whose
+    # ``ConversationBook.list_page_for_owner`` returns every row whose
     # ``contact_id`` matches — webui, TG, and (in future) any
     # other channel the operator owns. The frontend
     # renders the channel alongside each row (D.22
     # added the field).
-    items, total = bus.conversations_book.list_summaries(
+    items, total = bus.conversations_book.list_page_for_owner(
         contact_id=contact_id,
         limit=limit,
         offset=offset,
     )
     return ConversationListOut(
-        items=[_summary_to_out(i, contact_id=contact_id) for i in items],
+        items=[_conversation_to_list_item(i) for i in items],
         total=total,
         limit=limit,
         offset=offset,

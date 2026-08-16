@@ -190,8 +190,7 @@ class PromptBook(BaseFileBook):
     def daily_note_prompt(self) -> str:
         """The "Daily Note 记录指令" reference document.
 
-        Reads ``context/daily_note.md``.  NOT auto-injected into
-        every turn — the operator toggles ``system.show_daily_note_prompt``.
+        Reads ``context/daily_note.md``.
         """
         return self._shelf.read_text("context/daily_note")
 

@@ -13,7 +13,7 @@ permalink: /business-flows/
 > **当前 cutover**：所有运行时路径都走 `magi.bus` Job Board 模型
 > （`agent_job_board` / `delivery_job_board` / `tool_job_board` /
 > `llm_job_board` / `a2a_request_job_board` / `a2a_notify_job_board` /
-> `mcp_server_changed_job_board` /
+> `change_mcp_server_job_board` /
 > `seed_preset_tasks_job_board` / `change_provider_config_job_board` /
 > `run_task_job_board`）。旧的 `magi.bus.BusStore` / `agent_turn_store`
 > / `magi.agent.step.run_agent_step` / `magic` 表 等已删除；文档里
@@ -65,7 +65,7 @@ permalink: /business-flows/
 ```
 1. 工具目录同步
    ├─ MCP 工具由 McpWorker 在启动时引导注入到 registry；
-   │  运行时通过 mcp_server_changed_job_board 异步处理变更
+   │  运行时通过 change_mcp_server_job_board 异步处理变更
    │  （add/update/delete → 重连 → register_tools("mcp", ...)）
    └─ ToolsWorker.on_tools_changed 自动检测 → 重发布 catalog 到
       tool_definitions_book
@@ -561,14 +561,14 @@ format_contact_block（在 system prompt 中渲染）:
   → on_tools_changed → ToolsWorker 自动重发布 catalog
 
 运行时 (McpWorker._run):
-  claim mcp_server_changed_job_board
+  claim change_mcp_server_job_board
     → kind="added"/"updated": 写 Book + 重连 server
     → kind="toggled": flip enabled flag + 重连/断开
     → kind="deleted": delete Book 行 + 断开连接
     → re-inject tools → ToolsWorker 自动重发布 catalog
 
 manage tools 路径 (magi.tools.mcp.*):
-  add/update/delete_mcp_server → publish McpServerChangedJob
+  add/update/delete_mcp_server → publish ChangeMCPServerJob
     → wait_for_result() → 等待 McpWorker 处理完成
     → 返回结果给 LLM
 ```

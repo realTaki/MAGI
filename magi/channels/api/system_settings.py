@@ -1,4 +1,4 @@
-"""System-level config: timezone + tool-iterations + compact + daily-note.
+"""System-level config: timezone + tool-iterations + compact.
 
 Per-MAGI-node settings (ADAM has its own, every EVA has its own).
 Stored in the same ``settings`` meta-key table that already holds
@@ -273,21 +273,3 @@ def put_compact_config(
         default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
         default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
     )
-
-
-# ────────────────────────────────────────────────────────────────── #
-# Daily-note toggle
-# ────────────────────────────────────────────────────────────────── #
-
-
-# Re-export the read helpers so any code that imported them from this
-# module keeps working without changes (the implementation moved but
-# the public surface is identical).
-def get_show_daily_note(bus) -> bool:
-    raw = _settings(bus).get_value(key="system.show_daily_note")
-    return raw is None or raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def get_show_daily_note_prompt(bus) -> bool:
-    raw = _settings(bus).get_value(key="system.show_daily_note_prompt")
-    return raw is not None and raw.strip().lower() in {"1", "true", "yes", "on"}

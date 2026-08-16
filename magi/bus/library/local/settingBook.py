@@ -101,12 +101,6 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
         "system.compact_threshold_pct",  # 触发压缩的上下文占用百分比
         # Number of recent turns to keep verbatim after compaction.
         "system.compact_keep_recent",  # 压缩后保留的最近轮次数
-        # Daily-note visibility (agent-worker-bus.md §6).
-        # ------------------------------------------------------------------
-        # Whether the agent reads its daily note on every turn.
-        "system.show_daily_note",  # 是否在每轮注入 daily note
-        # Whether the operator wants a prompt to update the daily note.
-        "system.show_daily_note_prompt",  # 是否在每轮提示更新 daily note
     )
 
     model_cls = _SettingRow
@@ -189,12 +183,6 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
                 s.commit()
             return options
 
-    @staticmethod
-    def _read_bool(raw: str | None, *, default: bool) -> bool:
-        if raw is None:
-            return default
-        return raw.strip().lower() in ("1", "true", "yes", "on")
-
     def mcp_timeout_config(
         self,
         *,
@@ -230,12 +218,6 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
             return float(raw)
         except (TypeError, ValueError):
             return default
-
-    def show_daily_note(self) -> bool:
-        return self._read_bool(self.get_value(key="system.show_daily_note"), default=True)
-
-    def show_daily_note_prompt(self) -> bool:
-        return self._read_bool(self.get_value(key="system.show_daily_note_prompt"), default=False)
 
     def system_timezone(self) -> str:
         """Return the configured system timezone, defaulting to ``"UTC"``."""

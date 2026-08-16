@@ -669,11 +669,9 @@ export type ChatConversationList = {
   items: Array<{
     conversation_id: number;
     created_at: string;
-    created_by_uid: number;
     updated_at: string;
-    message_count: number;
-    preview: string;
     title: string | null;
+    channel: string;
   }>;
   total: number;
   limit: number;

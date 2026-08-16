@@ -30,7 +30,7 @@ class WebUIWorker(ChannelWorker):
 
     async def _deliver_webui(self, job: DeliveryJob) -> None:
         """将 delivery 内容追加到 Session 消息。"""
-        conversation_id = job.conversation_id or ""
+        conversation_id = job.conversation_id or 0
         contact_id = job.contact_id
         text = job.text
 

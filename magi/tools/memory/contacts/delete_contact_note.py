@@ -58,9 +58,7 @@ class DeleteContactNoteTool(Tool):
         if not isinstance(note_id, int):
             return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
 
-        existed = ctx.bus.contact_notes_book.delete_note(
-            note_id=note_id,
-        )
+        existed = ctx.bus.contact_notes_book.delete(note_id)
         logger.info(
             "delete_contact_note: note=%s existed=%s",
             note_id,

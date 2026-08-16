@@ -105,7 +105,7 @@ def _format_user_content(*, prior_summary: str | None, to_archive: list["Message
 
 async def maybe_compact(
     contact_id: int,
-    conversation_id: str | None,
+    conversation_id: int | None,
     message_dtos: list["Message"],
     *,
     bus,
@@ -236,7 +236,7 @@ async def call_llm_for_summary(
     *,
     to_compress: str,
     contact_id: int | None = None,
-    conversation_id: str | None = None,
+    conversation_id: int | None = None,
     wait_seconds: float = 30.0,
     bus,
 ) -> str | None:

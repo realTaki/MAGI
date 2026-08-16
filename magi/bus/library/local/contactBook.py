@@ -6,13 +6,11 @@ Two tables:
 
 Schema for ``contacts`` + ``contact_notes`` tables.
 
-Book contract. Both books own their **data access** and
-write invariants (non-empty name, length caps, daily
-appends) — callers (LLM-driven tools, channel API routes)
-get the same validation without each path re-implementing
-checks. Returns are frozen DTOs (``:meth:`to_dict`` for
-JSON-serialisation); SQLAlchemy rows stay inside the
-short repository transaction.
+Book contract. Both books own **data access** — callers
+(LLM-driven tools, channel API routes) interact through
+frozen DTOs (``:meth:`to_dict`` for JSON serialisation);
+SQLAlchemy rows stay inside the short repository
+transaction.
 """
 
 from __future__ import annotations
@@ -300,39 +298,6 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                 .order_by(_ContactNoteRow.id.desc())
             ).all()
             return [self._row_to_dto(r) for r in rows]
-
-    def update_note(self, *, note_id: int, note: str) -> ContactNote:
-        """Replace a note row's body.
-
-        Raises :class:`LookupError` if ``note_id`` does
-        not resolve — same exception the old service raised so
-        the tool layer's ``LookupError → ToolResult.err``
-        path stays in place.
-        """
-        with self._session() as s:
-            row = s.get(_ContactNoteRow, note_id)
-            if row is None:
-                raise LookupError(f"contact_note {note_id!r} not found")
-            row.note = note
-            s.commit()
-            s.refresh(row)
-        return self._row_to_dto(row)
-
-    def delete_note(self, *, note_id: int) -> bool:
-        """Delete a note row by id. Idempotent.
-
-        Returns ``True`` if a row was removed, ``False`` if
-        no row matched. Mirrors
-        ``ContactsService.delete_note`` so the tool layer
-        can render "deleted / no-op" identically.
-        """
-        with self._session() as s:
-            row = s.get(_ContactNoteRow, note_id)
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
 
     def read_daily_note(self, *, contact_id: int) -> ContactNote | None:
         """Return today's daily-note row for *contact_id*, or ``None``."""

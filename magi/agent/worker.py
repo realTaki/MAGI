@@ -60,8 +60,8 @@ _A2A_ENABLED = True
 @dataclass
 class RunContext:
     contact_id: int | None
-    conversation_id: str
     channel: str
+    conversation_id: int = 0  # chat_conversations.id；0 = 无会话（transcript 不可用时）
     messages: list[dict] = field(default_factory=list)
     max_iterations: int = _DEFAULT_MAX_ITERATIONS
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -132,8 +132,8 @@ class AgentWorker(RuntimeWorker):
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25, magi_id: int | None = None) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
         self.worker_id = f"agent-{uuid.uuid4().hex}"
-        self._active_conversations: set[str] = set()
-        self._in_flight: dict[str, asyncio.Event] = {}  # conversation_id → cancel_event
+        self._active_conversations: set[int] = set()
+        self._in_flight: dict[int, asyncio.Event] = {}  # conversation_id → cancel_event
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
         # from the provisioned RuntimeSpec at boot
@@ -156,7 +156,7 @@ class AgentWorker(RuntimeWorker):
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
-            conversation_id = getattr(job, "conversation_id", None) or ""
+            conversation_id = getattr(job, "conversation_id", None) or 0
 
             # steering — release back to board for _process to claim
             if (
@@ -186,7 +186,7 @@ class AgentWorker(RuntimeWorker):
                         self.bus.conversations_book.get_or_create_for_a2a_peer,
                         peer_magi_id=peer_magi_id,
                     )
-                    conversation_id = conversation.conversation_id
+                    conversation_id = conversation.id
                 except Exception:
                     # The claim remains consumable if a local transcript
                     # store is temporarily unavailable.  ``_load_history``
@@ -198,10 +198,10 @@ class AgentWorker(RuntimeWorker):
                         peer_magi_id,
                         exc_info=True,
                     )
-                    conversation_id = f"a2a:{peer_magi_id}"
+                    conversation_id = 0
             ctx = RunContext(
                 contact_id=(None if is_a2a else job.contact_id),
-                conversation_id=(conversation_id or f"{source}:{job.job_id}"),
+                conversation_id=(conversation_id or 0),
                 channel=(source if is_a2a else job.channel),
                 messages=[],
                 max_iterations=await self._read_max_iterations(),
@@ -605,7 +605,7 @@ class AgentWorker(RuntimeWorker):
                 "workspace": "",
                 "contact_id": ctx.contact_id or 0,
                 "channel": ctx.channel,
-                "conversation_id": ctx.conversation_id or "",
+                "conversation_id": ctx.conversation_id or 0,
             }
             if name == "message_magi":
                 if (
@@ -928,7 +928,7 @@ class AgentWorker(RuntimeWorker):
 
     # -- cancel --------------------------------------------------------------
 
-    def _broadcast_cancel(self, conversation_id: str) -> None:
+    def _broadcast_cancel(self, conversation_id: int) -> None:
         event = self._in_flight.get(conversation_id)
         if event is not None:
             event.set()
@@ -957,7 +957,7 @@ async def submit_agent_message(bus: Bus, message: Any) -> int:
 
     job = ChatNotifyJob(
         # ``job_id`` is database-owned and is filled after publish().
-        conversation_id=getattr(message, "conversation_id", None) or "",
+        conversation_id=getattr(message, "conversation_id", None) or 0,
         text=getattr(message, "text", ""),
         channel=getattr(message, "channel", ""),
         contact_id=getattr(message, "contact_id", None),

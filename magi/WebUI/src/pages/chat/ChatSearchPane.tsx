@@ -60,7 +60,7 @@ import Notice from "../../components/Notice";
 // Lives here as a named alias so the row component
 // doesn't have to thread the parent type through.
 type SearchHit = ChatSearchResult["items"][number];
-type ConversationSummary = ChatConversationList["items"][number];
+type ConversationListItem = ChatConversationList["items"][number];
 
 type Props = {
   /** Deep-link into the matching thread. Matches
@@ -89,7 +89,7 @@ export default function ChatSearchPane({ onOpen }: Props) {
   // an infinite scroll doesn't drop earlier entries
   // when react-query re-fetches a new page (each page
   // is its own cache entry, not a replace).
-  const [browseItems, setBrowseItems] = useState<ConversationSummary[]>([]);
+  const [browseItems, setBrowseItems] = useState<ConversationListItem[]>([]);
   const [browseTotal, setBrowseTotal] = useState(0);
   const [browseOffset, setBrowseOffset] = useState(0);
   const [browseExhausted, setBrowseExhausted] = useState(false);
@@ -281,9 +281,9 @@ export default function ChatSearchPane({ onOpen }: Props) {
             {browseItems.length > 0 && (
               <ul className="flex flex-col gap-3">
                 {browseItems.map((s) => (
-                  <ConversationSummaryRow
+                  <ConversationListItemRow
                     key={s.conversation_id}
-                    summary={s}
+                    conversation={s}
                     onOpen={onOpen}
                   />
                 ))}
@@ -367,49 +367,36 @@ function SearchHitRow({
   );
 }
 
-function ConversationSummaryRow({
-  summary,
+function ConversationListItemRow({
+  conversation,
   onOpen,
 }: {
-  summary: ConversationSummary;
+  conversation: ConversationListItem;
   onOpen: (conversationId: number) => void;
 }) {
-  const t = useT();
-  // Build a single display line. ``title`` wins (manual or
-  // auto-titled); otherwise show the first user message
-  // preview (truncated by the backend). The footer shows
-  // when the session was last updated.
-  const displayTitle = summary.title ?? summary.preview ?? "(空对话)";
+  const displayTitle = conversation.title ?? "(无标题对话)";
   return (
     <li
       className="rounded-lg border border-border bg-surface hover:bg-surface-2 transition cursor-pointer"
-      onClick={() => onOpen(summary.conversation_id)}
+      onClick={() => onOpen(conversation.conversation_id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onOpen(summary.conversation_id);
+          onOpen(conversation.conversation_id);
         }
       }}
     >
       <div className="p-3">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <h3 className="text-sm font-medium text-ink truncate">
-            {displayTitle}
-          </h3>
-          <span className="shrink-0 text-[10px] text-ink-soft border border-border rounded px-1.5 py-0.5">
-            {t("chatSearch.messageCount").replace("{count}", String(summary.message_count))}
-          </span>
-        </div>
-        <p className="text-xs text-ink-soft line-clamp-2">
-          {summary.preview || "—"}
-        </p>
+        <h3 className="text-sm font-medium text-ink truncate">
+          {displayTitle}
+        </h3>
         <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-ink-soft">
           <span className="truncate font-mono">
-            {String(summary.conversation_id).slice(0, 13) + "…"}
+            {String(conversation.conversation_id).slice(0, 13) + "…"}
           </span>
-          <span>{formatRelative(summary.updated_at)}</span>
+          <span>{formatRelative(conversation.updated_at)}</span>
         </div>
       </div>
     </li>

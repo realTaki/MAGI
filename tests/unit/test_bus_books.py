@@ -324,6 +324,28 @@ def test_conversation_and_message(factory):
     assert msgs[0].text == "hi"
 
 
+def test_conversation_list_page_returns_persisted_conversations(factory, contact_id):
+    book = ConversationBook(factory)
+    own_ids = [
+        book.add(
+            Conversation(
+                delivery_address=f"webui:{index}",
+                contact_id=contact_id,
+                channel="webui",
+                title=f"Conversation {index}",
+            )
+        )
+        for index in range(2)
+    ]
+    book.add(Conversation(delivery_address="tg:other", contact_id=999, channel="tg"))
+
+    items, total = book.list_page_for_owner(contact_id=contact_id, limit=50, offset=0)
+
+    assert total == 2
+    assert {item.id for item in items} == set(own_ids)
+    assert all(isinstance(item, Conversation) for item in items)
+
+
 def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
     """`set_summary` writes summary, stamps last_compaction_at, bumps updated_at."""
     sbook = ConversationBook(factory)
@@ -609,12 +631,10 @@ def test_token_usage_book(factory, contact_id):
     book = TokenUsageBook(factory)
     book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=10, output_tokens=20)))
     book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=5, output_tokens=10)))
-    book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', llm_attempt_id='attempt-1', input_tokens=100, output_tokens=200)))
+    book.get(book.add(TokenUsage(contact_id=contact_id, provider='openai', model='gpt-4', input_tokens=100, output_tokens=200)))
     rows = book.list_for_owner(contact_id=contact_id)
     assert len(rows) == 3
-    attempt = next(row for row in rows if row.llm_attempt_id == "attempt-1")
-    assert attempt.input_tokens == 100
-    assert attempt.output_tokens == 200
+    assert {row.input_tokens for row in rows} == {10, 5, 100}
 
 
 # -- ToolCatalogStateBook + ToolDefinitionBook -------------------------

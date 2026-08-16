@@ -245,7 +245,7 @@ Bus (magi/bus/bootstrap.py)
 │  │   tool_job_board         runToolJobBoard     (RunToolJob in/out)
 │  │   llm_job_board          callLLMJobBoard     (CallLLMJob in/out)
 │  │   delivery_job_board     deliveryJobBoard    (DeliveryJob out)
-│  │   mcp_server_changed_job_board  mcpServerChangedJobBoard
+│  │   change_mcp_server_job_board  changeMCPServerJobBoard
 │  │   change_provider_config_job_board  changeProviderConfigJobBoard
 │  │   seed_preset_tasks_job_board     seedPresetTasksJobBoard
 │  │   run_task_job_board     runTaskJobBoard     (RunTaskJob trigger)
@@ -281,7 +281,7 @@ Boards above.
 | `magi.agent` | agent turn loop, system prompt, context loading, compaction | `magi.bus` |
 | `magi.tools` | tool contracts, registry, durable tool execution | `magi.bus` |
 | `magi.providers` | provider adapters and durable LLM-job consumer | `magi.bus` |
-| `magi.mcp` | MCP connection lifecycle, `McpServerChangedJob` glue | `magi.bus`, `magi.tools` |
+| `magi.mcp` | MCP connection lifecycle, `ChangeMCPServerJob` glue | `magi.bus`, `magi.tools` |
 | `magi.channels` | HTTP, WebUI, Telegram, task adapters | `magi.bus` |
 | `magi.proactive` | system-level proactive policies + Worker | `magi.bus` |
 | `magi.connectors` | long-lived external data sources, in-process event bus | `magi.bus` (configs) |
@@ -349,7 +349,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
 
 - The single lifecycle owner of every MCP connection in one MAGI process.
 - Reads from `mcp_servers_book`, writes back via
-  `mcp_server_changed_job_board` (the LLM-side manage tools publish to it
+  `change_mcp_server_job_board` (the LLM-side manage tools publish to it
   and wait for the result).
 - Discovered tools are injected via `tools.registry.register_tools("mcp",
   …)`; the `ToolsWorker` re-publishes its catalog automatically on the

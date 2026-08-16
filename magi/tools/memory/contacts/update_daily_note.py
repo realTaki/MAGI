@@ -9,8 +9,7 @@ today's row verbatim; permanent ``add_contact_note``
 rows stay separate.
 
 Capture rules (full text lives in
-``prompts/context/daily_note.md`` — folded into the system prompt
-only when the operator toggles ``system.show_daily_note_prompt``):
+``prompts/context/daily_note.md`` — folded into the system prompt):
 
 - Record from the user (tasks done, preferences, project
   context). Don't record trivial external facts.

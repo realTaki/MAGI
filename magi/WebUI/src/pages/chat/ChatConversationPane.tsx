@@ -22,7 +22,6 @@ export function ChatConversationPane(props: {
   error: { code: string; detail: string } | null;
   onSend: () => void;
   title: string | null;
-  preview: string | null;
   hasMoreOlder: boolean;
   totalActive: number;
   loadedCount: number;
@@ -59,10 +58,7 @@ export function ChatConversationPane(props: {
     }
   }, [props.messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const headerLabel =
-    props.title
-    ?? props.preview
-    ?? t("sidebar.newChat");
+  const headerLabel = props.title ?? t("sidebar.newChat");
 
   return (
     <div className="flex flex-col h-full min-h-0">

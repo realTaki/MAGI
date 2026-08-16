@@ -13,7 +13,7 @@ logger = logging.getLogger("magi.agent.agent_context")
 
 def build_messages_from_conversation(
     contact_id: int | None,
-    conversation_id: str | None,
+    conversation_id: int | None,
     new_user_text: str,
     *,
     bus: Bus,

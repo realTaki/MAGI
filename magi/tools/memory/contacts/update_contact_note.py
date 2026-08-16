@@ -16,13 +16,12 @@ it — ``admin`` from a MAGIS admin row, ``assigned``
 from the contact's local role.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
-— the Book owns write invariants (non-empty note,
-≤8 KB clamp) and exposes ``update_note(...)`` plus
-``to_dict`` on the returned DTO. ``LookupError`` raised by
-the Book for a missing row is translated to
-``ToolResult.err`` so the LLM sees a caller-fixable
-message rather than a worker "tool.crashed" envelope.
+(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``.
+The flow is ``get`` → ``with_changes`` → base ``update``;
+a missing row is rendered as ``ToolResult.err`` so the
+LLM sees a caller-fixable message rather than a worker
+"tool.crashed" envelope. The updated DTO is returned
+via ``to_dict`` for the JSON transport.
 """
 
 from __future__ import annotations
@@ -73,24 +72,19 @@ class UpdateContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err("note is required (non-empty string)")
 
-        try:
-            row = ctx.bus.contact_notes_book.update_note(
-                note_id=note_id,
-                note=note,
-            )
-        except LookupError as e:
-            # ``contact_notes_book.update_note`` raises
-            # ``LookupError`` when ``note_id`` does not
-            # resolve — same exception type
-            # raised, so the LLM-facing error stays
-            # caller-fixable rather than tripping the
-            # worker's "tool.crashed" envelope.
-            return ToolResult.err(str(e))
-        except ValueError as e:
-            # Write invariants (non-empty, length cap)
-            # live on the Book.
-            return ToolResult.err(str(e))
-
+        book = ctx.bus.contact_notes_book
+        existing = book.get(note_id)
+        if existing is None:
+            # Base ``update`` would have returned ``False``
+            # for this id; we pre-check so the LLM sees a
+            # caller-fixable ``ToolResult.err`` rather than
+            # tripping the worker's "tool.crashed" envelope.
+            return ToolResult.err(f"contact_note {note_id!r} not found")
+        book.update(existing.with_changes(note=note))
+        # Re-read so ``updated_at`` matches the row the DB stored;
+        # fall back to the candidate we just wrote in the unlikely
+        # race where the row vanished between update and read.
+        row = book.get(note_id) or existing.with_changes(note=note)
         logger.info(
             "update_contact_note: note=%s updated",
             row.id,

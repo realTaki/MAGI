@@ -50,7 +50,7 @@ class TaskOut(BaseModel):
     target_channel: str
     contact_id: int | None
     enabled: bool
-    conversation_id: str | None
+    conversation_id: int | None
     created_at: datetime
     updated_at: datetime
 

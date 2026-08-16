@@ -69,7 +69,7 @@ class _FooRow(Base):
 |------|------|-----------|
 | `JobStatus` | [`magi/bus/guild/base.py`](../../magi/bus/guild/base.py) | `BaseJobRowMixin.status`（所有 `_XxxJobRow` 共用） |
 | `A2AErrorCode` | [`magi/bus/guild/a2aJob.py`](../../magi/bus/guild/a2aJob.py) | `_A2ARequestRow.error_code` / `_A2ANotifyRow.error_code` |
-| `MCPKind` | [`magi/bus/guild/mcpServerChangedJob.py`](../../magi/bus/guild/mcpServerChangedJob.py) | `_McpServerChangedRow.kind` |
+| `MCPKind` | [`magi/bus/guild/changeMCPServerJob.py`](../../magi/bus/guild/changeMCPServerJob.py) | `_ChangeMCPServerRow.kind` |
 | `ChannelEnum` | [`magi/bus/library/local/tasksBook.py`](../../magi/bus/library/local/tasksBook.py) | `_TaskRow.target_channel`（列名 `"channel"`） |
 | `TaskSource` | [`magi/bus/library/local/tasksBook.py`](../../magi/bus/library/local/tasksBook.py) | `_TaskRow.source` |
 | `TaskRunStatus` | [`magi/bus/library/local/tasksBook.py`](../../magi/bus/library/local/tasksBook.py) | `_TaskRow.last_status` / `_TaskRunRow.status` |
@@ -154,7 +154,7 @@ class _FooRow(Base):
 | `_CONTACT_ROLES` (`("admin", "assigned", "guest", "contact")`) | [`magi/channels/api/contacts.py:40`](../../magi/channels/api/contacts.py#L40) | 包含 `admin`（MAGIS 概念，外部依赖），跟 `Contact.role`（本地 `assigned`/`guest`）正交。等 MAGIS 那边的 `Role` 概念定型后再说 |
 | `ALLOWED_ROLES = frozenset({"admin", "assigned"})` | 多个 tool | 同上，工具 gate 的 `admin` 是 MAGIS 派生角色，不是本地 contact 角色 |
 | 各种 `body` / `subject` / `description` / `error_message` / setting `value` | 多处 | 用户自由文本，封闭集合不成立 |
-| `McpServerChangedJob` 之外的 job 字段（`name` / `args` / `kwargs`） | 多处 | `args` 显然是 free-form 数据 |
+| `ChangeMCPServerJob` 之外的 job 字段（`name` / `args` / `kwargs`） | 多处 | `args` 显然是 free-form 数据 |
 
 ## 推荐执行顺序（针对剩余候选）
 

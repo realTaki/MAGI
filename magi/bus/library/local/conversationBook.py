@@ -162,28 +162,6 @@ class ConversationMessage:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ConversationSummary:
-    """Lightweight projection of :class:`Conversation` for the
-    list-endpoint (``GET /api/chat/conversations``).
-
-    Carries enough to render the sidebar row (id, title /
-    preview, timestamps, channel, message count) without
-    pulling the full transcript. The list endpoint fans
-    these out in bulk; the full :class:`Conversation` (with
-    ``messages``) is fetched only when the operator opens
-    a row.
-    """
-
-    conversation_id: int  # 会话 ID（chat_conversations.id）
-    channel: str  # 渠道
-    created_at: datetime  # 创建时间
-    updated_at: datetime  # 最近活动时间
-    message_count: int  # 消息总数（active）
-    preview: str  # 最新一条消息预览
-    title: str | None = None  # 会话标题
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class ResolvedHit:
     """A search hit after cross-contact validation + context fetch.
 
@@ -308,22 +286,18 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
             ).all()
             return [self._row_to_dto(r) for r in rows]
 
-    def list_summaries(
+    def list_page_for_owner(
         self,
         *,
         contact_id: int,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[ConversationSummary], int]:
-        """Paginated, newest-first summaries for the list endpoint.
+    ) -> tuple[list[Conversation], int]:
+        """Return one newest-first page of this owner's conversations.
 
-        Each :class:`ConversationSummary` projects the conversation header
-        plus two message-derived fields — ``message_count`` (active rows
-        only) and ``preview`` (the latest active message text). The two
-        aggregates are fetched per row (N+1) because a single operator's
-        conversation set is small (the HTTP layer clamps ``limit`` to 200);
-        a join + window-function rewrite is a follow-up if this ever shows
-        up in a profile.
+        This is deliberately a plain :class:`Conversation` query.  The
+        conversation-list API currently exposes no message-derived preview
+        or count, so it does not need a special aggregate DTO.
         """
         with self._session() as s:
             total = int(
@@ -341,41 +315,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 .limit(limit)
                 .offset(offset)
             ).all()
-            summaries: list[ConversationSummary] = []
-            for row in rows:
-                conv = self._row_to_dto(row)
-                message_count = int(
-                    s.scalar(
-                        select(func.count())
-                        .select_from(_MessageRow)
-                        .where(
-                            _MessageRow.conversation_row_id == row.id,
-                            _MessageRow.archived == 0,
-                        )
-                    )
-                    or 0
-                )
-                preview_row = s.scalar(
-                    select(_MessageRow)
-                    .where(
-                        _MessageRow.conversation_row_id == row.id,
-                        _MessageRow.archived == 0,
-                    )
-                    .order_by(_MessageRow.id.desc())
-                    .limit(1)
-                )
-                summaries.append(
-                    ConversationSummary(
-                        conversation_id=conv.id,
-                        channel=conv.channel,
-                        created_at=conv.created_at or utcnow_naive(),
-                        updated_at=conv.updated_at or utcnow_naive(),
-                        message_count=message_count,
-                        preview=preview_row.text if preview_row else "",
-                        title=conv.title,
-                    )
-                )
-        return summaries, total
+            return [self._row_to_dto(row) for row in rows], total
 
     def get_or_create_for_a2a_peer(self, *, peer_magi_id: int) -> Conversation:
         """Return this MAGI's private transcript header for one A2A peer.
