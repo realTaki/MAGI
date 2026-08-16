@@ -85,7 +85,7 @@ class ToolContext:
     workspace: str
     contact_id: int
     channel: str
-    conversation_id: str = ""
+    conversation_id: int = 0  # chat_conversations.id
     bus: Bus | None = None
 
 

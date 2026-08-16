@@ -373,7 +373,7 @@ class ToolsWorker(RuntimeWorker):
             workspace=str(ctx_data.get("workspace") or ""),
             contact_id=int(ctx_data.get("contact_id") or 0),
             channel=str(ctx_data.get("channel") or ""),
-            conversation_id=str(ctx_data.get("conversation_id") or ""),
+            conversation_id=int(ctx_data.get("conversation_id") or 0),
             bus=self.bus,
         )
         denied = tool.gate(ctx)

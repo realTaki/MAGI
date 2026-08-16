@@ -44,7 +44,7 @@ class DeliveryJob(BaseJob):
 
     channel: str  # 投递渠道（tg/webui/...）
     text: str = ""  # 投递文本（最终回复 / send_message 文本）
-    conversation_id: str | None = None  # 关联会话（webui worker 用）
+    conversation_id: int | None = None  # 关联会话 id（webui worker 用）
     contact_id: int | None = None  # 关联 contact（webui worker 用）
     destination: str | None = None  # 目标地址（chat_id 等）
 
@@ -71,7 +71,7 @@ class _DeliveryJobRow(BaseJobRowMixin):
     # typed columns on :class:`DeliveryJob` so producers / consumers see
     # one field per attribute (no ``payload`` dict).
     text: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    conversation_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     destination: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

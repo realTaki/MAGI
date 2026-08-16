@@ -126,7 +126,7 @@ class Task(BaseRecord):
     run_at: datetime | None = None
     tz: str = "UTC"
     delivery_to: str | None = None
-    conversation_id: str | None = None
+    conversation_id: int | None = None  # 关联会话 id（chat_conversations.id）
 
     # --- user-task ownership ----------------------------------------------
     contact_id: int | None = None
@@ -149,7 +149,7 @@ class TaskRun(BaseRecord):
     status: TaskRunStatus = TaskRunStatus.RUNNING  # 运行状态（running/success/failed）
     error: str | None = None
     reply_excerpt: str | None = None
-    conversation_id: str | None = None
+    conversation_id: int | None = None  # 关联会话 id（chat_conversations.id）
 
 
 # -- internal ORM --------------------------------------------------------
@@ -272,7 +272,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         dto = super()._row_to_dto(row)
         if row.conversation is None:
             return dto
-        object.__setattr__(dto, "conversation_id", row.conversation.conversation_id)
+        object.__setattr__(dto, "conversation_id", row.conversation.id)
         return dto
 
     def get_by_task_id(self, *, task_id: str) -> Task | None:
@@ -385,7 +385,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         if record.conversation_id is not None:
             conversation = session.scalar(
                 select(_ConversationRow).where(
-                    _ConversationRow.conversation_id == record.conversation_id
+                    _ConversationRow.id == record.conversation_id
                 )
             )
             if conversation is None:
@@ -464,7 +464,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         delivery_to: str | None,
         target_channel: str,
         contact_id: int,
-        conversation_id: str,
+        conversation_id: int,
         tz: str,
         enabled: int = 1,
     ) -> tuple[str, bool]:
@@ -555,7 +555,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 if existing.conversation_row_id is None:
                     conversation = s.scalar(
                         select(_ConversationRow).where(
-                            _ConversationRow.conversation_id == candidate.conversation_id
+                            _ConversationRow.id == candidate.conversation_id
                         )
                     )
                     if conversation is None:
@@ -567,7 +567,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
             conversation = s.scalar(
                 select(_ConversationRow).where(
-                    _ConversationRow.conversation_id == candidate.conversation_id
+                    _ConversationRow.id == candidate.conversation_id
                 )
             )
             if conversation is None:
@@ -680,7 +680,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
             status=row.status,
             error=row.error,
             reply_excerpt=row.reply_excerpt,
-            conversation_id=(row.conversation.conversation_id if row.conversation else None),
+            conversation_id=(row.conversation.id if row.conversation else None),
         )
         object.__setattr__(task_run, "id", row.id)
         object.__setattr__(task_run, "created_at", row.created_at)
@@ -699,7 +699,7 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
         conversation_row_id = task.conversation_row_id
         if record.conversation_id is not None:
             conversation = session.scalar(
-                select(_ConversationRow).where(_ConversationRow.conversation_id == record.conversation_id)
+                select(_ConversationRow).where(_ConversationRow.id == record.conversation_id)
             )
             if conversation is None:
                 raise ValueError(f"unknown conversation_id {record.conversation_id!r}")

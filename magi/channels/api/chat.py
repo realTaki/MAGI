@@ -56,23 +56,6 @@ _MAX_INPUT_CHARS = 8000
 _MAX_OUTPUT_CHARS = 4000
 
 
-def new_conversation_id() -> str:
-    """Generate a new conversation/message id as a Crockford-base32
-    ULID-like string (26 chars)."""
-    import uuid
-
-    raw = uuid.uuid4().bytes  # 16 bytes = 128 bits
-    # Encode as 26-char Crockford-like base32 string:
-    # 16 bytes → ~26 chars in base32 (ceil(128/5) = 26).
-    alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
-    bits = int.from_bytes(raw, "big")
-    chars = []
-    for _ in range(26):
-        chars.append(alphabet[bits & 31])
-        bits >>= 5
-    return "".join(reversed(chars))
-
-
 def _resolve_caller_credentials(bus: Bus, contact_id: int) -> int:
     """Look up the operator's Contact row by their
     ``contact_id`` (the cookie value post-D.24) and return the
@@ -117,13 +100,7 @@ class ChatSendRequest(BaseModel):
     """
 
     text: str = Field(min_length=1, max_length=_MAX_INPUT_CHARS)
-    # Upper-bounded 64 chars to bound validation work on
-    # the server side. 64 is comfortably above the
-    # Crockford base32-ULID length (26) so any plausible
-    # future id format is accommodated. A hand-crafted
-    # value outside this length is treated as
-    # ``validation.conversation_id_invalid``.
-    conversation_id: str | None = Field(default=None, max_length=64)
+    conversation_id: int | None = None
 
 
 class ChatSendResponse(BaseModel):
@@ -132,7 +109,7 @@ class ChatSendResponse(BaseModel):
     # Always returned so the frontend can stash it on a
     # fresh chat. For an existing-conversation send it equals
     # what was sent in.
-    conversation_id: str
+    conversation_id: int
     messages: list[ConversationMessageOut] = []
 
 
@@ -272,14 +249,13 @@ async def send_chat(
             delivery_address=tg_im_id,
         )
         store.add(sess)
-        conversation_id = sess.conversation_id
+        conversation_id = sess.id
 
     # D.22 cross-channel guard + chat_messages write + chatNotifyJob
     # enqueue are all consolidated inside
     # :meth:`chatNotifyBoard.publish`. The user message is
     # persisted to ``chat_messages`` at the same chokepoint, so
     # the channel never touches ``messages_book`` directly.
-    inbound_message_id = new_conversation_id()
     try:
         job_id = bus.agent_job_board.publish(
             ChatNotifyJob(
@@ -287,8 +263,7 @@ async def send_chat(
                 channel="webui",
                 contact_id=contact_id,
                 conversation_id=conversation_id,
-            ),
-            message_id=inbound_message_id,  # idempotency for retry
+            )
         )
     except ChannelMismatchError as e:
         # D.22: the conversation was created on a different

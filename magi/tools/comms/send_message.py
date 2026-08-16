@@ -156,7 +156,7 @@ class SendMessageTool(Tool):
                     channel=conversation.channel,
                     destination=conversation.delivery_address or None,
                     text=text,
-                    conversation_id=conversation.conversation_id,
+                    conversation_id=conversation.id,
                     contact_id=conversation.contact_id,
                 )
             )

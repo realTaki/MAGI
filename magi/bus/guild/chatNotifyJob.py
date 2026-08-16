@@ -63,7 +63,7 @@ class ChatNotifyJob(BaseJob):
     row's ``delivery_address``, not on the turn.
     """
 
-    conversation_id: str | None = None  # 会话 ID（WebUI 多会话 / TG 单会话）
+    conversation_id: int | None = None  # 会话 ID（chat_conversations.id；WebUI 多会话 / TG 单会话）
     # Core turn input
     text: str = ""  # 用户消息原文（pre-cap，chat_messages 存截断后）
     channel: str = ""  # 入站渠道：tg / webui / task / ...
@@ -99,7 +99,7 @@ class _ChatNotifyRow(BaseJobRowMixin):
     __tablename__ = "chat_notify_jobs"
     __table_args__ = {"extend_existing": True}
 
-    conversation_id: Mapped[str | None] = mapped_column(Text, nullable=True)  # 会话 ID
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 会话 ID
     # Turn input — formerly a single ``payload`` JSON blob. Split into
     # individual columns in migration 0011 so producers / consumers
     # see one field per attribute on :class:`ChatNotifyJob` (no
@@ -142,7 +142,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._messages_book = messages_book
         self._conversations_book = conversations_book
 
-    def publish(self, job: ChatNotifyJob, *, message_id: str | None = None) -> int:
+    def publish(self, job: ChatNotifyJob) -> int:
         """Enqueue one agent turn and persist the user message.
 
         Single chokepoint for inbound turn intake — every path that
@@ -168,8 +168,6 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         that lives in :meth:`MessageBook.add`, which is the chokepoint
         compaction reads.
 
-        ``message_id`` is the ULID to use for the ``chat_messages``
-        row — pass the same value on retry for producer-side idempotency.
         ``job_id`` is **always Board-generated** (see
         :meth:`BaseJobBoard.publish`); callers can't pass one in.
 
@@ -177,7 +175,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         """
         self._validate_publish(job)
         channel = job.channel
-        conversation_id = job.conversation_id or ""
+        conversation_id = job.conversation_id or 0
         with self._session() as s:
             row = self._build_pending_row(job)
             s.add(row)
@@ -187,13 +185,12 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._stamp_last_seen(job)
         if self._messages_book is not None:
             try:
-                from magi.bus.library.local.conversationBook import Message, _new_semantic_id
+                from magi.bus.library.local.conversationBook import Message
 
                 self._messages_book.add(Message(
                     conversation_id=conversation_id,
                     role="user",
                     text=job.text,
-                    message_id=message_id or _new_semantic_id(),
                 ))
             except Exception:
                 logger.exception(
@@ -223,7 +220,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         except (TypeError, ValueError):
             return
         conversation = self._conversations_book.get_for_owner(
-            contact_id=cid_int, conversation_id=job.conversation_id or ""
+            contact_id=cid_int, conversation_id=job.conversation_id or 0
         )
         if conversation is not None and conversation.channel != channel:
             from magi.bus.library.local.conversationBook import ChannelMismatchError
@@ -250,7 +247,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
                 "chatNotifyBoard.publish: contact_book.touch failed for contact_id=%r", job.contact_id
             )
 
-    def claim_for_steering(self, *, conversation_id: str) -> ChatNotifyJob | None:
+    def claim_for_steering(self, *, conversation_id: int) -> ChatNotifyJob | None:
         """CAS-claim a ChatNotifyJob scoped to one conversation.
 
         设计 §2.5 + §5.2：AgentWorker 在 ``_gather_all`` 中每轮轮询调用，

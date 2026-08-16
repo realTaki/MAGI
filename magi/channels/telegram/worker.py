@@ -170,12 +170,12 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, str] | None:
     return (contact.id, contact.role, name)
 
 
-def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> str:
+def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> int:
     session = bus.conversations_book.get_or_create_for_tg(
         contact_id=contact_id,
         delivery_address=tgid,
     )
-    return session.conversation_id
+    return session.id
 
 
 # Note: the user message is persisted to ``chat_messages`` inside

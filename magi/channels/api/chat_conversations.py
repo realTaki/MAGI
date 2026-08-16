@@ -49,7 +49,7 @@ router = APIRouter(tags=["chat_conversations"])
 
 
 class ConversationMessageOut(BaseModel):
-    message_id: str
+    message_id: int
     role: str
     ts: datetime
     text: str
@@ -73,7 +73,7 @@ class ConversationMessagesPage(BaseModel):
     stays at the scroll bottom.
     """
 
-    conversation_id: str
+    conversation_id: int
     messages: list[ConversationMessageOut]
     total_active: int
     total_all: int
@@ -91,7 +91,7 @@ class ConversationOut(BaseModel):
     non-nullable in practice, but Python-side optionality keeps the
     dataclass ↔ Pydantic contract honest.
     """
-    conversation_id: str
+    conversation_id: int
     delivery_address: str
     contact_id: int
     channel: str
@@ -105,7 +105,7 @@ class ConversationOut(BaseModel):
 
 
 class ConversationSummaryOut(BaseModel):
-    conversation_id: str
+    conversation_id: int
     created_at: datetime | None = None
     created_by_contact_id: int
     updated_at: datetime | None = None
@@ -125,7 +125,7 @@ class ConversationListOut(BaseModel):
 
 
 class CreateConversationResponse(BaseModel):
-    conversation_id: str
+    conversation_id: int
 
 
 class UpdateConversationRequest(BaseModel):
@@ -157,7 +157,7 @@ def _conversation_to_out(
     future schema changes without parsing the row shape.
     """
     return ConversationOut(
-        conversation_id=s.conversation_id,
+        conversation_id=s.id,
         delivery_address=s.delivery_address,
         contact_id=s.contact_id,
         channel=s.channel,
@@ -168,7 +168,7 @@ def _conversation_to_out(
         title=s.title,
         messages=[
             ConversationMessageOut(
-                message_id=m.message_id,
+                message_id=m.id,
                 role=m.role,
                 ts=m.ts,
                 text=m.text,
@@ -317,7 +317,7 @@ def create_conversation(
         channel="webui",
     )
     bus.conversations_book.add(record)
-    return CreateConversationResponse(conversation_id=record.conversation_id)
+    return CreateConversationResponse(conversation_id=record.id)
 
 
 @router.get(
@@ -369,7 +369,7 @@ def list_conversations(
     response_model=ConversationOut,
 )
 def get_conversation(
-    conversation_id: str,
+    conversation_id: int,
     request: Request,
     _admin: AdminGate,
     bus: BusDep,
@@ -385,13 +385,13 @@ def get_conversation(
             code="not_found.conversation",
             detail=f"conversation {conversation_id} not found",
         )
-    messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
+    messages = bus.messages_book.list_for_conversation(conversation_id=sess.id)
     return _conversation_to_out(sess, messages=messages)
 
 
 @router.delete("/chat/conversations/{conversation_id}", status_code=204)
 def delete_conversation(
-    conversation_id: str,
+    conversation_id: int,
     request: Request,
     _admin: AdminGate,
     bus: BusDep,
@@ -416,7 +416,7 @@ def delete_conversation(
     response_model=ConversationOut,
 )
 def update_conversation(
-    conversation_id: str,
+    conversation_id: int,
     payload: UpdateConversationRequest,
     request: Request,
     _admin: AdminGate,
@@ -461,7 +461,7 @@ def update_conversation(
                 code="not_found.conversation",
                 detail=f"conversation {conversation_id} not found",
             )
-        messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
+        messages = bus.messages_book.list_for_conversation(conversation_id=sess.id)
         return _conversation_to_out(sess, messages=messages)
 
     # No-op path — return current state. Going through
@@ -477,7 +477,7 @@ def update_conversation(
             code="not_found.conversation",
             detail=f"conversation {conversation_id} not found",
         )
-    messages = bus.messages_book.list_for_conversation(conversation_id=sess.conversation_id)
+    messages = bus.messages_book.list_for_conversation(conversation_id=sess.id)
     return _conversation_to_out(sess, messages=messages)
 
 
@@ -514,7 +514,7 @@ def update_conversation(
     response_model=ConversationMessagesPage,
 )
 def get_conversation_messages(
-    conversation_id: str,
+    conversation_id: int,
     request: Request,
     _admin: AdminGate,
     bus: BusDep,
@@ -581,7 +581,7 @@ def get_conversation_messages(
         conversation_id=conversation_id,
         messages=[
             ConversationMessageOut(
-                message_id=m.message_id,
+                message_id=m.id,
                 role=m.role,
                 ts=m.ts,
                 text=m.text,
