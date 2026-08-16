@@ -267,8 +267,10 @@ def create_contact(
         # figure out which preset failed; one-job-per-preset makes
         # the failure surface obvious from the JobBoard's claim log.
         try:
-            presets = bus.prompt_book.task_presets()
-            for preset_key in presets:
+            for prompt_key in bus.prompt_book.list():
+                if not prompt_key.startswith("proactive/"):
+                    continue
+                preset_key = prompt_key.removeprefix("proactive/")
                 bus.seed_preset_task_job_board.publish(
                     SeedPresetTaskJob(
                         contact_id=view.id,
@@ -463,8 +465,10 @@ def update_contact(
     # JobBoard claim log without post-mortem log-diving.
     if newly_assigned:
         try:
-            presets = bus.prompt_book.task_presets()
-            for preset_key in presets:
+            for prompt_key in bus.prompt_book.list():
+                if not prompt_key.startswith("proactive/"):
+                    continue
+                preset_key = prompt_key.removeprefix("proactive/")
                 bus.seed_preset_task_job_board.publish(
                     SeedPresetTaskJob(
                         contact_id=view.id,

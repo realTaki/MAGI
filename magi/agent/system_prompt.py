@@ -71,15 +71,8 @@ def _format_collaboration_directory(bus: Bus, *, magi_id: int | None) -> str:
 
 
 def read_soul(*, bus: Bus) -> str:
-    """Read the SOUL persona via ``bus.prompt_book``.
-
-    The Book already resolves the correct SOUL source (workspace or
-    bundled) via the prompts directory configured at bootstrap time.
-    Falls back to the bundled fallback persona only when the canonical
-    SOUL is empty.
-    """
-    text = bus.prompt_book.soul().strip()
-    return text or bus.prompt_book.fallback_persona()
+    """Read the SOUL persona from the AgentWorker-owned prompt records."""
+    return (bus.prompt_book.get(key="agent/soul") or "").strip()
 
 
 def build_system_prompt(
@@ -127,7 +120,8 @@ def build_system_prompt(
         try:
             metas = skills_book.list()
             if metas:
-                lines = ["", *bus.prompt_book.skills_block_template().splitlines(), ""]
+                skills_header = bus.prompt_book.get(key="agent/skills_block") or ""
+                lines = ["", *skills_header.splitlines(), ""]
                 for s in metas:
                     name = getattr(s, "name", "") or ""
                     desc = getattr(s, "description", "") or ""

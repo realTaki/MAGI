@@ -26,13 +26,12 @@ class SeedPresetTaskJob(BaseJob):
     """一条预设任务播种 job — 插一个 Task。
 
     ``contact_id`` 是目标联系人；``preset_key`` 是
-    :func:`magi.bus.library.local.promptBook.PromptBook.task_presets`
-    返回字典的 key（用于 worker 端定位 YAML preset）。每次 publish
-    只对应一个 Task 行—— caller 在循环里发多个 job。
+    ``proactive/<key>.md`` 的 key（用于 worker 端定位
+    Markdown preset）。每次 publish 只对应一个 Task 行—— caller 在循环里发多个 job。
     """
 
     contact_id: int = 0  # 目标联系人 ID
-    preset_key: str = ""  # preset 在 prompt_book.task_presets() 字典中的 key
+    preset_key: str = ""  # proactive/<key>.md 中的 key
 
 
 @dataclass(frozen=True, slots=True)

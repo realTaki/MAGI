@@ -3,8 +3,10 @@
 The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
-1. Reads and validates the provisioned :class:`RuntimeSpec`.
-2. Opens one :class:`~magi.bus.Bus` facade.
+1. Opens one :class:`~magi.bus.Bus` facade for the configured workspace and
+   MAGIS database.
+2. Reads and validates the provisioned :class:`RuntimeSpec` through that
+   same facade.
 3. Brings up durable workers in dependency order.
 4. Brings up channels.
 5. Serves the private runtime HTTP API on the spec's sticky port.
@@ -78,10 +80,9 @@ class RuntimeContext:
     workers: WorkerRegistry
 
     @classmethod
-    def create(cls, startup: StartupContext) -> RuntimeContext:
+    def create(cls, startup: StartupContext, bus: Bus) -> RuntimeContext:
         from magi.startup.workers import WorkerRegistry
 
-        bus = _build_bus(startup)
         _validate_runtime_identity(startup, bus)
 
         # Announce ourselves to the control plane: flip
@@ -127,7 +128,9 @@ class RuntimeContext:
 # ----------------------------------------------------------------------
 
 
-def _startup_context(config: StartupConfig) -> StartupContext:
+def _startup_context(
+    config: StartupConfig, bus: Bus, *, magis_url: str
+) -> StartupContext:
     """Resolve one provisioned node before its ASGI app is built.
 
     Identity is derived from the MAGIS shared database — see
@@ -137,15 +140,6 @@ def _startup_context(config: StartupConfig) -> StartupContext:
     ``host_workspace_dir`` + ``magis_name``; ``resolve_magis_database_url``
     is the single path-aware helper for that.
     """
-    from magi.bus import open_magis_bus
-    from magi.startup.paths import (
-        resolve_magis_database_url,
-    )
-
-    magis_url = config.magis_database_url or resolve_magis_database_url(
-        config.host_workspace_dir, config.magis_name
-    )
-    bus = open_magis_bus(magis_url=magis_url)
     spec = load_runtime_spec(
         bus, config.magi_name, magis_database_url=magis_url
     )
@@ -221,9 +215,16 @@ def run_magi(config: StartupConfig) -> None:
     and ``magi node restart`` always address the process that owns the
     listening socket.
     """
-    startup = _startup_context(config)
+    from magi.bus import open_bus
+    from magi.startup.paths import resolve_magis_database_url
+
+    magis_url = config.magis_database_url or resolve_magis_database_url(
+        config.host_workspace_dir, config.magis_name
+    )
+    bus = open_bus(workspace_dir=str(config.workspace_dir), magis_url=magis_url)
+    startup = _startup_context(config, bus, magis_url=magis_url)
     _configure_runtime_environment(config, magi_id=startup.magi_id)
-    context = RuntimeContext.create(startup)
+    context = RuntimeContext.create(startup, bus)
     app = _create_runtime_app(context)
     pid_path = resolve_runtime_pid_path(startup.workspace_dir)
     claim_pid_file(pid_path)
@@ -255,26 +256,6 @@ def run_magi(config: StartupConfig) -> None:
 
 
 # ----------------------------------------------------------------------
-# Bus wiring
-# ----------------------------------------------------------------------
-
-
-def _build_bus(startup: StartupContext) -> Bus:
-    """Construct the single Bus facade for this process.
-
-    Paths are resolved by :class:`StartupContext` and passed through
-    explicitly.  The runtime never bootstraps the retired ``magi.bus``
-    facade or shares its process-global state.
-    """
-    from magi.bus.bootstrap import open_bus
-
-    state_dir = str(startup.workspace_dir / "memories")
-    return open_bus(
-        state_dir=state_dir,
-        magis_url=startup.magis_database_url,
-    )
-
-
 def _to_magi_id(raw: str) -> int | None:
     """Parse the magi_id string from StartupContext into an int."""
     try:

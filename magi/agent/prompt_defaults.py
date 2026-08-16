@@ -4,26 +4,25 @@ from __future__ import annotations
 
 from importlib.resources import files
 
-_TEXT_DEFAULTS: tuple[tuple[str, str], ...] = (
-    ("agent/defaults/soul", "soul.md"),
+_TEXT_PROMPTS: tuple[tuple[str, str], ...] = (
     ("agent/soul", "soul.md"),
-    ("agent/defaults/fallback_persona", "fallback_persona.md"),
     ("agent/chat_titles", "chat_titles.md"),
     ("agent/compaction", "compaction.md"),
-    ("agent/context/skills_block", "skills_block.md"),
+    ("agent/skills_block", "skills_block.md"),
 )
 
 
 def ensure_agent_prompt_defaults(prompt_book) -> None:
     """Seed AgentWorker-owned prompts into the workspace PromptBook.
 
-    Existing records are intentionally never overwritten: operators edit the
-    workspace copy through BUS, while package assets only supply first-run
-    defaults.
+    Default/active lifecycle is implemented by
+    :meth:`PromptBook.register`; this Worker only supplies the
+    owner keys and package content.
     """
-    assets = files("magi.agent.assets")
-    for key, filename in _TEXT_DEFAULTS:
-        prompt_book.ensure(key, assets.joinpath(filename).read_text(encoding="utf-8"), suffix=".md")
+    prompts = files("magi.agent.prompts")
+    for active_key, filename in _TEXT_PROMPTS:
+        content = prompts.joinpath(filename).read_text(encoding="utf-8")
+        prompt_book.register(key=active_key, value=content)
 
 
 __all__ = ["ensure_agent_prompt_defaults"]

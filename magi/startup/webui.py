@@ -224,7 +224,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     """
     import uvicorn
 
-    from magi.bus import open_magis_bus
+    from magi.bus import open_bus
     from magi.channels.api.app import create_control_app
     from magi.channels.api.control_context import ControlContext
 
@@ -250,7 +250,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.
-    bus = open_magis_bus(magis_url=magis_url)
+    bus = open_bus(magis_url=magis_url)
     app = create_control_app(context=ControlContext(bus=bus))
     port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
     host = os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
@@ -357,9 +357,9 @@ def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:
     Opens a transient MAGIS facade purely to read the ``control_secrets`` row.
     """
     try:
-        from magi.bus import open_magis_bus
+        from magi.bus import open_bus
 
-        bus = open_magis_bus(magis_url=magis_url)
+        bus = open_bus(magis_url=magis_url)
     except Exception:
         return None
     if bus.control_secrets_book is not None:

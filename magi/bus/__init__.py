@@ -10,7 +10,7 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
     from magi.bus import open_bus
 
-    bus = open_bus(state_dir="/path/to/memories", magis_url="...")
+    bus = open_bus(workspace_dir="/path/to/workspace", magis_url="...")
     worker = AgentWorker(bus=bus)    # 构造器注入
     job = bus.tool_job_board.claim()
     adam = bus.memberships_book.get(1)  # ADAM = membership id=1
@@ -27,11 +27,10 @@ Guild（写侧 publish/claim/submit_result）、FileShelf（文件 I/O + 热重�
 
 from __future__ import annotations
 
-from magi.bus.bootstrap import Bus, MagisBus, open_bus, open_magis_bus
+from magi.bus.bootstrap import Bus, MagisBus, open_bus
 
 __all__ = [
     "Bus",
     "MagisBus",
     "open_bus",
-    "open_magis_bus",
 ]

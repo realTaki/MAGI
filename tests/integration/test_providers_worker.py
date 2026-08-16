@@ -151,7 +151,7 @@ def bus(tmp_path) -> Bus:
     """Stand up a per-test SQLite-backed :class:`Bus`."""
     state_dir = tmp_path / "memories"
     provision_node_storage(state_dir=str(state_dir), magis_url=None)
-    return open_bus(state_dir=str(state_dir))
+    return open_bus(workspace_dir=str(tmp_path))
 
 
 def _seed_provider_config(

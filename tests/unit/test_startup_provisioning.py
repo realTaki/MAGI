@@ -18,7 +18,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from magi.bus import open_bus, open_magis_bus
+from magi.bus import open_bus
 from magi.bus.db.engine import EngineFactory
 from magi.bus.library.local.contactBook import _ContactRow
 from magi.bus.library.magis.magisBook import _MagisAdminRow
@@ -61,14 +61,13 @@ def _load_spec_from_db(*, workspace_dir: Path, magis_name: str = "genesis") -> R
     (``tmp_path/MAGI_Citizens/<name>``); the host root that owns the
     MAGIS shared DB is the directory *above* ``MAGI_Citizens/``.
     """
-    from magi.bus import open_magis_bus
     from magi.startup.paths import resolve_magis_database_url
 
     # workspace_dir is ``<host>/MAGI_Citizens/<name>``; the host root
     # is two levels up (``<host>``).
     host_root = workspace_dir.parent.parent
     magis_url = resolve_magis_database_url(host_root, magis_name)
-    bus = open_magis_bus(magis_url=magis_url)
+    bus = open_bus(magis_url=magis_url)
     return load_runtime_spec(
         bus,
         workspace_dir.name,
@@ -88,7 +87,7 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert not (tmp_path / "MAGI_Societies" / "genesis" / "control").exists()
     assert _load_spec_from_db(workspace_dir=workspace) == spec
     bus = open_bus(
-        state_dir=str(workspace / "memories"),
+        workspace_dir=str(workspace),
         magis_url=spec.magis_database_url,
     )
     assert bus.settings_book.get_value(key="auth.signing_key")
@@ -102,7 +101,7 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     assert spec.magis_name == "research"
     assert (tmp_path / "MAGI_Societies" / "research" / "magis.db").is_file()
     bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     local_tables = set(inspect(bus._local_factory.engine).get_table_names())
@@ -182,7 +181,7 @@ def test_repeated_init_is_identity_and_key_idempotent(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     first = init_first_magi(config)
     first_bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=first.magis_database_url,
     )
     signing_key = first_bus.settings_book.get_value(key="auth.signing_key")
@@ -190,7 +189,7 @@ def test_repeated_init_is_identity_and_key_idempotent(tmp_path: Path) -> None:
 
     second = init_first_magi(config)
     second_bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=second.magis_database_url,
     )
 
@@ -227,16 +226,16 @@ def test_runtime_open_never_creates_a_missing_node_database(tmp_path: Path) -> N
     state_dir.mkdir(parents=True)
 
     with pytest.raises(StorageNotProvisioned, match="node database is missing"):
-        open_bus(state_dir=str(state_dir))
+        open_bus(workspace_dir=str(state_dir.parent))
 
     assert not (state_dir / "magi.db").exists()
 
 
-def test_magis_bus_uses_only_the_magis_store(tmp_path: Path) -> None:
+def test_open_bus_without_workspace_uses_only_the_magis_store(tmp_path: Path) -> None:
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
 
-    bus = open_magis_bus(magis_url=spec.magis_database_url)
+    bus = open_bus(magis_url=spec.magis_database_url)
 
     assert bus._magis_factory.url == spec.magis_database_url
     assert not hasattr(bus, "_local_factory")
@@ -260,7 +259,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
     bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     with bus._local_factory.engine.begin() as connection:
@@ -273,7 +272,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
         )
 
     repaired = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     assert "action_items" in set(inspect(repaired._local_factory.engine).get_table_names())
@@ -305,7 +304,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
     # only need the local store's table set for the assertion below.
     spec = init_first_magi(config)
     bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     assert "a2a_jobs" not in set(inspect(bus._local_factory.engine).get_table_names())
@@ -318,14 +317,22 @@ def test_runtime_app_creation_repairs_schema_before_runtime_context_is_exposed(
     config = _first_config(tmp_path)
     spec = init_first_magi(config)
     bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     with bus._local_factory.engine.begin() as connection:
         connection.execute(text("DROP TABLE action_items"))
 
-    startup = runtime._startup_context(config)
-    context = runtime.RuntimeContext.create(startup)
+    repaired_bus = open_bus(
+        workspace_dir=str(config.workspace_dir),
+        magis_url=spec.magis_database_url,
+    )
+    startup = runtime._startup_context(
+        config,
+        repaired_bus,
+        magis_url=spec.magis_database_url,
+    )
+    context = runtime.RuntimeContext.create(startup, repaired_bus)
     app = runtime._create_runtime_app(context)
 
     assert "action_items" in set(inspect(app.state.bus._local_factory.engine).get_table_names())
@@ -354,9 +361,22 @@ def test_run_magi_serves_the_in_process_runtime_app_without_reload(
         captured["app"] = app
         captured.update(kwargs)
 
+    def _open_bus(*, workspace_dir: str, magis_url: str) -> object:
+        captured["open_bus"] = (workspace_dir, magis_url)
+        return object()
+
+    def _startup_context(_config, _bus, *, magis_url: str) -> StartupContext:
+        captured["startup_magis_url"] = magis_url
+        return startup
+
     monkeypatch.setattr(runtime.uvicorn, "run", _run)
-    monkeypatch.setattr(runtime, "_startup_context", lambda _config: startup)
-    monkeypatch.setattr(runtime.RuntimeContext, "create", lambda _startup: object())
+    monkeypatch.setattr("magi.bus.open_bus", _open_bus)
+    monkeypatch.setattr(runtime, "_startup_context", _startup_context)
+    monkeypatch.setattr(
+        runtime.RuntimeContext,
+        "create",
+        lambda _startup, _bus: object(),
+    )
     monkeypatch.setattr(runtime, "_create_runtime_app", lambda _context: app)
     monkeypatch.setattr(runtime, "mark_registry_stopped", lambda _config: None)
 
@@ -367,6 +387,10 @@ def test_run_magi_serves_the_in_process_runtime_app_without_reload(
     assert "reload" not in captured
     assert "reload_dirs" not in captured
     assert captured["port"] == startup.runtime_port
+    assert captured["open_bus"] == (
+        str(config.workspace_dir),
+        captured["startup_magis_url"],
+    )
 
 
 # -- Initial schema: native-Enum + DateTime shape guarantees ---------------
@@ -426,7 +450,7 @@ def test_initial_schema_declares_datetime_columns_for_tasks(tmp_path: Path) -> N
 
     spec = _load_spec_from_db(workspace_dir=config.workspace_dir)
     bus = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
 
@@ -456,7 +480,7 @@ def test_initial_schema_declares_datetime_columns_for_tasks(tmp_path: Path) -> N
 
     # Idempotent re-open does not change column types.
     reopened = open_bus(
-        state_dir=str(config.workspace_dir / "memories"),
+        workspace_dir=str(config.workspace_dir),
         magis_url=spec.magis_database_url,
     )
     tasks_columns_2 = {

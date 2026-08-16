@@ -54,10 +54,11 @@ def _make_bus(*, sbook: ConversationBook, mbook: MessageBook) -> MagicMock:
     bus.messages_book = mbook
     # No settings persisted → defaults apply.
     bus.settings_book.get_value.return_value = None
-    # compaction_prompt() is read inside call_llm_for_summary; mock it
+    # The compaction prompt is read through the generic PromptBook KV API;
+    # mock it so the test doesn't depend on the file prompt.
     # so the test doesn't depend on the file prompt.
     bus.prompt_book = MagicMock()
-    bus.prompt_book.compaction_prompt.return_value = "system: compress"
+    bus.prompt_book.get.return_value = "system: compress"
     return bus
 
 

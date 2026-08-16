@@ -7,13 +7,11 @@ structured files through :class:`~magi.bus.db.file.FileShelf`.
 Public surface:
 
 - :class:`BaseFileBook` — abstract base with dunders + ``read(name)``
-- :class:`PromptBook`   — typed accessors for worker-seeded workspace prompts
-  (soul / fallback_persona / chat_title_prompt / compaction_prompt /
-  skills_block_template / task_presets) plus generic ``get`` / ``get_structured`` / ``list``
-  / ``exists``.
+- :class:`PromptBook`   — worker-seeded Markdown filename-to-content KV
+  prompts, with :data:`KNOWN_PROMPTS` as its documented vocabulary.
 """
 
 from magi.bus.library.file.base import BaseFileBook
-from magi.bus.library.file.promptBook import PromptBook, WorkspaceSoul
+from magi.bus.library.file.promptBook import KNOWN_PROMPTS, PromptBook
 
-__all__ = ["BaseFileBook", "PromptBook", "WorkspaceSoul"]
+__all__ = ["BaseFileBook", "KNOWN_PROMPTS", "PromptBook"]

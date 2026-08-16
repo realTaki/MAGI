@@ -1,196 +1,145 @@
-"""PromptBook — read MAGI prompt assets from a file directory.
+"""PromptBook — workspace-managed filename-to-content prompt store.
 
-Built on :class:`~magi.bus.db.file.FileShelf`, ``PromptBook``
-provides typed accessors for every prompt file the runtime emits:
+Prompt files are durable BUS records rooted at ``<workspace>/prompts``.
+Their key is the extensionless relative filename and their value is Markdown
+content; for example ``agent/soul`` maps to ``agent/soul.md``.  The Book does
+not interpret prompt text or import owner modules.  Each Worker owns its
+defaults and registers missing records during startup.
 
-- ``soul.md``, ``fallback_persona.md`` — system-prompt persona
-- ``chat_titles.md``, ``compaction.md`` — sub-task system prompts
-- ``context/*.md`` — system-prompt block templates
-- ``task_presets/*.yaml`` — bundled proactive task templates
-  (keyed by ``key`` field)
-
-Every accessor method triggers a hot-reload check (single ``stat()``
-per call), so editing a prompt file takes effect on the next LLM
-turn without restarting the process.
-
-Usage via ``Bus``::
-
-    bus = open_bus(...)
-    soul = bus.prompt_book.soul()
-    presets = bus.prompt_book.task_presets()
-
-Standalone (testing)::
-
-    from magi.bus.db.file import FileShelf
-    from magi.bus.library.file import PromptBook
-
-    shelf = FileShelf("/workspace/prompts")
-    book = PromptBook(shelf)
-    print(book.soul())
+``KNOWN_PROMPTS`` is a developer-facing inventory, mirroring
+``SettingBook.KNOWN_KEYS``. It is informative rather than restrictive:
+operators and modules may add further prompt keys through this Book.
 """
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Final
 
-from magi.bus.library.file.base import BaseFileBook
+from magi.bus.db.file import FileShelf
 
-logger = logging.getLogger("magi.bus.promptBook")
+KNOWN_PROMPTS: Final[dict[str, str]] = {
+    # AgentWorker-owned prompts.
+    "agent/soul": "Active workspace persona used for every agent turn.",
+    "agent/defaults/soul": "AgentWorker upgrade-managed soul reset default.",
+    "agent/chat_titles": "Active system prompt for automatic conversation titles.",
+    "agent/defaults/chat_titles": "Upgrade-managed automatic-title reset default.",
+    "agent/compaction": "Active system prompt for conversation compaction.",
+    "agent/defaults/compaction": "Upgrade-managed compaction reset default.",
+    "agent/skills_block": "Active header template for the available-skills block.",
+    "agent/defaults/skills_block": "Upgrade-managed skills-block reset default.",
+    # ProactiveWorker-owned prompts. Markdown front matter carries each
+    # preset's schedule metadata; its body is the task prompt.
+    "proactive/daily_standup_brief": "Daily stand-up preset prompt.",
+    "proactive/weekly_review": "Weekly review preset prompt.",
+    "proactive/morning_brief": "Morning brief preset prompt.",
+    "proactive/night_summary": "Night summary preset prompt.",
+}
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class WorkspaceSoul:
-    """Result of reading the managed Agent persona.
+class PromptBook:
+    """Markdown key/value Book backed by :class:`FileShelf`.
 
-    ``is_fallback`` is True when the workspace file is missing
-    and the bundled fallback was returned instead.
+    Keys are extensionless relative filenames. All values are strings and are
+    stored as ``.md`` files, preserving FileShelf's atomic-write and
+    hot-reload behaviour.
     """
 
-    content: str
-    mtime: datetime | None  # 文件 mtime（UTC，fallback 时为 None）
-    is_fallback: bool  # True=使用了 bundled fallback
+    KNOWN_PROMPTS = KNOWN_PROMPTS
 
+    def __init__(self, shelf: FileShelf) -> None:
+        self._shelf = shelf
 
-class PromptBook(BaseFileBook):
-    """Typed accessors for workspace-managed prompt files.
+    def get(self, *, key: str) -> str | None:
+        """Return active content, falling back to its managed default if absent."""
+        self._require_active_key(key)
+        try:
+            return self._read_exact(key)
+        except FileNotFoundError:
+            if self._is_default_key(key):
+                return None
+            try:
+                default_key = self._default_key(active_key=key)
+            except ValueError:
+                return None
+            try:
+                return self._read_exact(default_key)
+            except FileNotFoundError:
+                return None
 
-    Each method reads through :class:`FileShelf`, inheriting its
-    hot-reload semantics.  These are methods (not properties) so
-    callers are reminded that every invocation may trigger a
-    ``stat()`` + potential re-read.
+    def set(self, *, key: str, value: str) -> datetime:
+        """Atomically replace one prompt record and return its UTC mtime."""
+        self._require_active_key(key)
+        return self._set_exact(key=key, value=value)
 
-    Each owning Worker seeds its defaults through :meth:`ensure` during
-    startup.  All later reads and writes stay inside this Book.
-    """
+    @staticmethod
+    def _default_key(*, active_key: str) -> str:
+        """Return the upgrade-managed default record for an active prompt key.
 
-    def ensure(self, name: str, value: Any, *, suffix: str) -> bool:
-        """Write a module default only when its managed record is absent."""
-        if self._shelf.exists(name):
+        ``agent/skills_block`` becomes ``agent/defaults/skills_block``. Keeping
+        the owner namespace
+        first makes default and active records co-locate in one module tree.
+        """
+        owner, separator, relative_key = active_key.partition("/")
+        if not owner or not separator or not relative_key or relative_key.startswith("defaults/"):
+            raise ValueError(f"active prompt key must be '<owner>/<name>', got {active_key!r}")
+        return f"{owner}/defaults/{relative_key}"
+
+    @staticmethod
+    def _is_default_key(key: str) -> bool:
+        """Whether *key* is already a managed default path."""
+        _owner, separator, relative_key = key.partition("/")
+        return bool(separator and relative_key.startswith("defaults/"))
+
+    @classmethod
+    def _require_active_key(cls, key: str) -> None:
+        """Reject default paths from the public active-prompt API."""
+        if cls._is_default_key(key):
+            raise ValueError(f"default prompt key {key!r} is managed by PromptBook")
+
+    def register(self, *, key: str, value: str) -> bool:
+        """Refresh a default and initialise its active record if missing.
+
+        Worker startup calls this for every package-owned prompt. The default
+        is always replaced so package upgrades improve future resets; the
+        active record is written only once so an operator's customisation is
+        never overwritten. Returns whether this call created the active key.
+        """
+        self._require_active_key(key)
+        self._set_exact(key=self._default_key(active_key=key), value=value)
+        if self._shelf.exists(key):
             return False
-        self._shelf.write(name, value, suffix=suffix)
+        self.set(key=key, value=value)
         return True
 
-    def read_workspace_soul(self) -> WorkspaceSoul:
-        """Read the managed node persona, falling back to generic persona.
-
-        Returns a :class:`WorkspaceSoul` with ``is_fallback=True`` and
-        the generic fallback content when the managed record is missing.
-        """
+    def reset(self, *, key: str) -> datetime:
+        """Replace one active prompt with its current managed default."""
+        default_key = self._default_key(active_key=key)
         try:
-            content = self._shelf.read_text("agent/soul")
-            mtime = self._shelf.modified_at("agent/soul")
-            return WorkspaceSoul(content=content, mtime=mtime, is_fallback=False)
-        except FileNotFoundError:
-            return WorkspaceSoul(
-                content=self.fallback_persona(),
-                mtime=None,
-                is_fallback=True,
-            )
+            return self.set(key=key, value=self._read_exact(default_key))
+        except FileNotFoundError as exc:
+            raise KeyError(f"no default prompt registered for {key!r}") from exc
 
-    def write_workspace_soul(self, content: str) -> datetime:
-        """Atomically write *content* to the managed node persona.
-
-        Returns the new file's naive UTC mtime.
-        """
-        self._shelf.write_text("agent/soul", content)
-        return self._shelf.modified_at("agent/soul")
-
-    # -- agent prompts ------------------------------------------------------
-
-    def soul(self) -> str:
-        """Return the active node persona."""
-        try:
-            return self._shelf.read_text("agent/soul")
-        except FileNotFoundError:
-            return self.default_soul()
-
-    def default_soul(self) -> str:
-        """Return the Agent Worker's immutable seed persona."""
-        return self._shelf.read_text("agent/defaults/soul")
-
-    def fallback_persona(self) -> str:
-        """Return ``fallback_persona.md`` — last-resort persona.
-
-        Used only when the active node persona is missing.
-        """
-        return self._shelf.read_text("agent/defaults/fallback_persona")
-
-    # -- sub-task system prompts --------------------------------------------
-
-    def chat_title_prompt(self) -> str:
-        """System prompt for the auto-title worker.
-
-        Reads ``chat_titles.md``; used to summarise each session's
-        first user message into a 3-5 word title.
-        """
-        return self._shelf.read_text("agent/chat_titles")
-
-    def compaction_prompt(self) -> str:
-        """System prompt for the auto-compact worker.
-
-        Reads ``compaction.md``.
-        """
-        return self._shelf.read_text("agent/compaction")
-
-    # -- system-prompt block templates --------------------------------------
-
-    def skills_block_template(self) -> str:
-        """The "Available skills" block header template.
-
-        Reads ``context/skills_block.md``.
-        """
-        return self._shelf.read_text("agent/context/skills_block")
-
-    # -- task presets -------------------------------------------------------
-
-    def task_presets(self) -> dict[str, dict[str, Any]]:
-        """Bundled proactive task templates, keyed by ``preset.key``.
-
-        Reads every YAML file under ``task_presets/`` and merges their
-        top-level ``presets:`` lists into one ``{key: preset_dict}``
-        mapping.  Collisions (same ``key`` in multiple files) keep the
-        last file's entry — file order is the shelf's ``list()`` order
-        (sorted by stem).
-
-        Each preset dict carries the YAML schema used by
-        bus Book API / the bundled
-        ``defaults.yaml``: ``id``, ``key``, ``name``, ``description``,
-        ``prompt``, ``frequency``, ``hour``, ``minute``,
-        ``day_of_week``, ``day_of_month``, ``run_at``, ``channel``,
-        ``enabled``.
-        """
-        out: dict[str, dict[str, Any]] = {}
-        for name in self._shelf.list("proactive/task_presets/*"):
-            data = self._shelf.read(name)
-            if not isinstance(data, dict):
-                raise ValueError(
-                    f"task preset file {name!r} must be a mapping; got {type(data).__name__}"
-                )
-            presets_list = data.get("presets")
-            if not isinstance(presets_list, list):
-                raise ValueError(f"task preset file {name!r} missing 'presets' list")
-            for preset in presets_list:
-                if not isinstance(preset, dict) or "key" not in preset:
-                    raise ValueError(f"task preset file {name!r} contains entry without 'key'")
-                out[preset["key"]] = preset
-        return out
-
-    # -- generic access (for future prompts not yet typed) ------------------
-
-    def get_structured(self, name: str) -> dict[str, Any] | list[Any]:
-        """Read and decode any YAML/JSON prompt by *name*."""
-        data = self._shelf.read(name)
-        if not isinstance(data, (dict, list)):
-            raise TypeError(f"Expected dict or list for {name!r}, got {type(data).__name__}")
-        return data
+    def delete(self, *, key: str) -> bool:
+        """Delete one prompt record, returning whether it existed."""
+        self._require_active_key(key)
+        if not self._shelf.exists(key):
+            return False
+        self._shelf.delete(key)
+        return True
 
     def list(self) -> list[str]:
-        """List all available prompt names (delegates to :meth:`FileShelf.list`)."""
-        return self._shelf.list()
+        """List active prompt keys; internal default records are hidden."""
+        return [key for key in self._shelf.list() if not self._is_default_key(key)]
 
-    def exists(self, name: str) -> bool:
-        """Return ``True`` if a prompt file for *name* exists."""
-        return self._shelf.exists(name)
+    def _set_exact(self, *, key: str, value: str) -> datetime:
+        """Replace an exact physical record, including an internal default."""
+        self._shelf.write_text(key, value)
+        return self._shelf.modified_at(key)
+
+    def _read_exact(self, key: str) -> str:
+        """Read an exact physical record without applying active fallback."""
+        return self._shelf.read_text(key)
+
+
+__all__ = ["KNOWN_PROMPTS", "PromptBook"]

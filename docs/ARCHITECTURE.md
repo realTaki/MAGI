@@ -23,15 +23,16 @@ user-facing documentation. They are the only supported names.
 | Architecture boundary | **BUS** |
 | Public Python package | `magi.bus` |
 | Process-local facade | `Bus` (frozen dataclass returned by `open_bus`) |
-| Composition-root entry | `open_bus(state_dir=…, magis_url=…)` |
-| Control-plane entry | `open_magis_bus(magis_url=…)` |
+| Composition-root entry | `open_bus(workspace_dir=…, magis_url=…)` |
+| Control-plane entry | `open_bus(magis_url=…)` (no workspace) |
 | Durable CRUD / query API | **Book** (e.g. `conversations_book`, `messages_book`) |
 | Durable `publish → claim → submit_result` API | **Job Board** (e.g. `agent_job_board`) |
 | Ephemeral notification aid | `stream_hub` (not a source of truth) |
 
-`MagisBus` is deliberately narrower than a node `Bus`: it is a database-only
-control-plane facade, not a second node runtime or compatibility layer. There
-is no fallback singleton, dual-write path, or alternate node BUS
+`open_bus(magis_url=…)` returns a deliberately narrower `MagisBus`: a
+database-only control-plane facade, not a second node runtime or compatibility
+layer. It does not create a workspace, local SQLite database, file shelf, or
+workers. There is no fallback singleton, dual-write path, or alternate node BUS
 implementation. The retired
 `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are banned by
 `tests/architecture/test_import_boundaries.py`.
@@ -86,16 +87,17 @@ this.
 `magi.startup.runtime.run_magi` is the single composition root for one MAGI
 process. It:
 
-1. Reads and validates the provisioned `RuntimeSpec` (`magi.startup.spec`).
-2. Builds the `StartupContext` (paths, MAGI name, MAGI identity, database
-   URLs, runtime port).
-3. Opens one `Bus` via `open_bus(state_dir=…, magis_url=…)`.
-4. Validates the runtime identity against the provisioned MAGIS records
+1. Resolves the MAGIS URL and opens one `Bus` via
+   `open_bus(workspace_dir=…, magis_url=…)`; the BUS
+   derives its local SQLite path as `<workspace>/memories/magi.db`.
+2. Reads `RuntimeSpec` through that same Bus and builds the `StartupContext`
+   (paths, MAGI name, MAGI identity, database URLs, runtime port).
+3. Validates the runtime identity against the provisioned MAGIS records
    (`memberships_book`, `control_runtimes_book`, `port_allocations_book`).
-5. Constructs a `WorkerRegistry(bus, …)` — see
+4. Constructs a `WorkerRegistry(bus, …)` — see
    `magi.startup.workers.WorkerRegistry`.
-6. Starts the workers in dependency order.
-7. Serves the private Runtime FastAPI app (`create_runtime_app`) on the
+5. Starts the workers in dependency order.
+6. Serves the private Runtime FastAPI app (`create_runtime_app`) on the
    sticky runtime port.
 
 ```text

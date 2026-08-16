@@ -14,9 +14,9 @@ The two currently implemented policies:
 - **Preset task seeding** — :class:`magi.proactive.worker.ProactiveWorker`
   drains :class:`magi.bus.guild.seedPresetTasksJob.SeedPresetTaskJob`
   rows (one job per preset; one Task per job) via
-  :mod:`magi.proactive.preset_tasks`, which reads bundled YAML
-  presets from :meth:`~magi.bus.library.file.promptBook.PromptBook.task_presets`,
-  runs the pure planner, and inserts per-user Task rows.
+  :mod:`magi.proactive.preset_tasks`, which reads bundled Markdown records
+  from :class:`~magi.bus.library.file.promptBook.PromptBook`, runs the pure
+  planner, and inserts per-user Task rows.
 """
 
 from magi.proactive.credentials_action import (

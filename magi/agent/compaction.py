@@ -250,7 +250,7 @@ async def call_llm_for_summary(
     if prompt_book is None:
         return None
 
-    system = prompt_book.compaction_prompt()
+    system = prompt_book.get(key="agent/compaction") or ""
 
     if len(to_compress) > _COMPRESS_INPUT_CAP:
         # Try truncating the "[Prior summary]\n..." prefix if it's there

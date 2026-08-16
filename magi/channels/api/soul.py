@@ -26,9 +26,8 @@ in the API layer.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -81,16 +80,17 @@ class SoulUpdateResponse(BaseModel):
 def read_soul(_admin: AdminOrAssignedGate, bus: BusDep) -> SoulReadResponse:
     """Return the current persona text the agent reads.
 
-    When the managed persona is missing the agent falls back to its
-    generic fallback — we mirror that
+    When the managed persona is missing the agent falls back to the Agent
+    default — we mirror that
     behaviour here so the UI shows *what the agent is actually
     using*, not a phantom "the file is empty" state.
     """
-    ws = bus.prompt_book.read_workspace_soul()
+    content = bus.prompt_book.get(key="agent/soul") or ""
+    is_bundled_fallback = "agent/soul" not in bus.prompt_book.list()
     return SoulReadResponse(
-        content=ws.content,
-        modified_at=ws.mtime,
-        is_bundled_fallback=ws.is_fallback,
+        content=content,
+        modified_at=None,
+        is_bundled_fallback=is_bundled_fallback,
     )
 
 
@@ -103,7 +103,7 @@ def update_soul(
     """Persist the new persona through ``PromptBook``.
 
     The file is rewritten atomically (via
-    :meth:`PromptBook.write_workspace_soul`); the agent picks up
+    :meth:`PromptBook.set`); the agent picks up
     the new content on the next chat turn (``read_soul`` is called
     per turn, no cache).
     """
@@ -121,7 +121,7 @@ def update_soul(
         )
 
     assert bus.prompt_book is not None
-    modified_at = bus.prompt_book.write_workspace_soul(content)
+    modified_at = bus.prompt_book.set(key="agent/soul", value=content)
     return SoulUpdateResponse(modified_at=modified_at)
 
 
@@ -132,6 +132,14 @@ def reset_soul(
 ) -> SoulUpdateResponse:
     """Reset the managed persona to the AgentWorker default."""
     assert bus.prompt_book is not None
-    default = bus.prompt_book.default_soul()
-    modified_at = bus.prompt_book.write_workspace_soul(default)
+    try:
+        modified_at = bus.prompt_book.reset(key="agent/soul")
+    except KeyError:
+        from magi.channels.api.errors import MagiHTTPException
+
+        raise MagiHTTPException(
+            status_code=503,
+            code="prompt.default_missing",
+            detail="AgentWorker default soul is not registered",
+        ) from None
     return SoulUpdateResponse(modified_at=modified_at)

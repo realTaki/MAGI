@@ -41,7 +41,7 @@ async def request_conversation_title(
 
     job = CallLLMJob(
         messages=[
-            {"role": "system", "content": bus.prompt_book.chat_title_prompt()},
+            {"role": "system", "content": bus.prompt_book.get(key="agent/chat_titles") or ""},
             {"role": "user", "content": getattr(first_user, "text", "")},
         ],
         contact_id=contact_id,

@@ -97,7 +97,7 @@ class Task(BaseRecord):
       runtime bookkeeping (``last_run_at`` / ``last_status`` /
       ``consecutive_failures``).
     - ``TaskSource.PROACTIVE`` — preset templates bundled from
-      ``prompts/task_presets/``. No owning ``contact_id``.
+      ``prompts/proactive/``. No owning ``contact_id``.
 
     The schedule is stored in ONE of two shapes — never both,
     never neither (enforced by :meth:`TaskBook.add`):
@@ -302,7 +302,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         ``contact_id`` is REQUIRED for strict per-user privacy — a
         no-filter scan would leak templates another operator
         shouldn't see. ``contact_id IS NULL`` rows
-        (system-bundled presets from ``prompts/task_presets/``)
+        (system-bundled presets from ``prompts/proactive/``)
         are visible to every contact_id; ``contact_id IS NOT NULL`` rows
         (user-private presets) are visible only to the
         matching contact_id.

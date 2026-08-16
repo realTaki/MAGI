@@ -627,7 +627,7 @@ FTS5 搜索:
 主循环 (_run, poll_seconds 默认 0.25):
   while not stopping:
     claim seed_preset_tasks_job_board → handle_seed_job(bus, job)
-    └─ 从 prompt_book.task_presets() 读 bundled YAML preset
+    └─ 从 prompt_book.task_presets() 读 bundled Markdown preset
     └─ 跑 pure planner（magi.proactive.preset_tasks）
     └─ 插入 per-user Task 行（source = SOURCE_PROACTIVE）
 ```

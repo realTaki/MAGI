@@ -18,6 +18,8 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import yaml
+
 from magi.bus.guild.base import JobStatus
 from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskResult
 from magi.bus.library.local import Role
@@ -55,8 +57,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob) -> None:
             _submit_success(bus, job)
             return
 
-        presets = _load_presets(bus)
-        preset = presets.get(job.preset_key)
+        preset = _load_preset(bus, job.preset_key)
         if preset is None:
             _submit_failure(
                 bus, job, f"preset {job.preset_key!r} not found in prompt_book"
@@ -190,13 +191,28 @@ def _resolve_schedule(preset: dict) -> tuple[str | None, datetime | None]:
     return None, None
 
 
-def _load_presets(bus: Bus) -> dict:
-    """Read bundled preset templates from prompt_book."""
+def _load_preset(bus: Bus, preset_key: str) -> dict | None:
+    """Read and decode one ProactiveWorker-owned Markdown preset prompt."""
     try:
-        return bus.prompt_book.task_presets()
+        content = bus.prompt_book.get(key=f"proactive/{preset_key}")
     except Exception:
-        logger.warning("preset_tasks: failed to read presets from prompt_book")
-        return {}
+        logger.warning("preset_tasks: failed to read preset %r from prompt_book", preset_key)
+        return None
+    if content is None:
+        return None
+    if not content.startswith("---\n"):
+        raise ValueError(f"preset {preset_key!r} must begin with YAML front matter")
+    try:
+        raw_metadata, prompt = content[4:].split("\n---\n", maxsplit=1)
+    except ValueError as exc:
+        raise ValueError(f"preset {preset_key!r} has unterminated YAML front matter") from exc
+    metadata = yaml.safe_load(raw_metadata)
+    if not isinstance(metadata, dict) or metadata.get("key") != preset_key:
+        raise ValueError(f"preset {preset_key!r} has invalid or mismatched front matter key")
+    prompt = prompt.strip()
+    if not prompt:
+        raise ValueError(f"preset {preset_key!r} has an empty prompt body")
+    return {**metadata, "prompt": prompt}
 
 
 def _read_system_timezone(bus: Bus) -> str:

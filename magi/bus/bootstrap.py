@@ -1,6 +1,6 @@
 """Composition-root opening for BUS.
 
-Provides :func:`open_bus` — a pure function that opens local
+Provides :func:`open_bus` — a pure function that opens a workspace's local
 SQLite, MAGIS database, and file-storage access into a single
 :class:`Bus` facade.  All paths are passed explicitly; no
 environment variable reads, no auto-discovery.  The composition root
@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 from magi.bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
@@ -82,7 +82,7 @@ class Bus:
 
     Usage::
 
-        bus = open_bus(state_dir="...", magis_url="...")
+        bus = open_bus(workspace_dir="...", magis_url="...")
         job = bus.tool_job_board.claim()
         adam = bus.memberships_book.get(1)  # ADAM = membership id=1
 
@@ -198,9 +198,9 @@ class Bus:
 
 @dataclass(frozen=True, slots=True)
 class MagisBus:
-    """Database-only facade for the singleton MAGIS control plane.
+    """Database-only facade returned by ``open_bus(magis_url=...)``.
 
-    Unlike :class:`Bus`, this facade has no node-private SQLite database,
+    It has no node-private SQLite database,
     workspace, file shelves, workers, or stream hub.  It is the only facade
     the WebUI and startup control operations may use.
     """
@@ -220,17 +220,37 @@ class MagisBus:
 # ---------------------------------------------------------------------------
 
 
+@overload
 def open_bus(
     *,
-    state_dir: str,
+    workspace_dir: str,
     magis_url: str | None = None,
 ) -> Bus:
-    """Open a provisioned ``Bus`` with resolved paths.
+    ...
+
+
+@overload
+def open_bus(
+    *,
+    workspace_dir: None = None,
+    magis_url: str,
+) -> MagisBus:
+    ...
+
+
+def open_bus(
+    *,
+    workspace_dir: str | None = None,
+    magis_url: str | None = None,
+) -> Bus | MagisBus:
+    """Open a provisioned ``Bus`` for one workspace.
 
     Called by the composition root (e.g. :mod:`magi.startup.runtime`)
     after identity + database paths have been resolved.  Does NOT
-    read environment variables or call auto-discovery — all paths
-    are passed explicitly.
+    read environment variables or call auto-discovery.  When ``workspace_dir``
+    is provided, the private SQLite store is always
+    ``<workspace_dir>/memories/magi.db``.  Without ``workspace_dir``, it
+    opens only the MAGIS control-plane facade and creates no local workspace.
 
     Before returning the facade, this function synchronises all existing BUS
     stores.  That happens before any Book or JobBoard is constructed, so a
@@ -239,25 +259,22 @@ def open_bus(
     :mod:`magi.bus.provision`; this function does not create node identity or
     default application settings.
 
-    Returns a ready-to-use ``Bus``.  The caller is responsible for
-    passing it to workers via constructor injection.  There is no
-    process-level singleton — every component receives its ``Bus``
-    explicitly.
+    Returns a ready-to-use ``Bus`` for a workspace or a MAGIS-only
+    ``MagisBus``.  The caller is responsible for passing a workspace Bus to
+    workers via constructor injection.  There is no process-level singleton.
     """
+    if workspace_dir is None:
+        if not magis_url:
+            raise ValueError("MAGIS-only BUS requires a MAGIS database URL")
+        return _build_magis_facade(magis_url)
     return _open_with_dirs(
-        state_dir=state_dir,
+        state_dir=str(Path(workspace_dir) / "memories"),
         magis_url=magis_url,
     )
 
 
-def open_magis_bus(*, magis_url: str) -> MagisBus:
-    """Open the database-only MAGIS control-plane facade.
-
-    The control plane has no workspace or file-backed state.  Its entire
-    durable boundary is the explicitly supplied MAGIS database URL.
-    """
-    if not magis_url:
-        raise ValueError("control plane requires a MAGIS database URL")
+def _build_magis_facade(magis_url: str) -> MagisBus:
+    """Build the MAGIS-only view used by :func:`open_bus` without a workspace."""
     from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
     from magi.bus.library.magis import (
         ControlSecretBook,

@@ -243,9 +243,9 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
         magis_url = config.magis_database_url or resolve_magis_database_url(
             config.host_workspace_dir, config.magis_name
         )
-        from magi.bus.bootstrap import open_magis_bus
+        from magi.bus.bootstrap import open_bus
 
-        bus = open_magis_bus(magis_url=magis_url)
+        bus = open_bus(magis_url=magis_url)
         spec = load_runtime_spec(
             bus, config.magi_name, magis_database_url=magis_url
         )

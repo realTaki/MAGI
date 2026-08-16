@@ -327,8 +327,9 @@ async def test_system_prompt_delegates():
     bus = _make_bus()
     bus.memory_book.list_by_owner.return_value = [_FakeMemory()]
     bus.contacts_book.get.return_value = _FakeContact(name="TestUser")
-    bus.prompt_book.soul.return_value = "You are MAGI."
-    bus.prompt_book.fallback_persona.return_value = "fallback"
+    bus.prompt_book.get.side_effect = lambda *, key: {
+        "agent/soul": "You are MAGI.",
+    }.get(key)
     bus.contact_notes_book.list_for_contact.return_value = []
     bus.contact_notes_book.read_daily_note.return_value = None
     bus.skills_book.list.return_value = []

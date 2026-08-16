@@ -11,16 +11,16 @@ The base provides:
   so ``"soul" in book``, ``for name in book``, ``repr(book)`` all
   behave as expected;
 - A ``read(name) -> str`` shortcut for "give me any markdown by name"
-  — domain accessors (e.g. ``PromptBook.soul()``) live on the subclass.
+  — domain modules build their own semantics on top of generic file Books.
 
-Concrete subclasses add typed accessors:
+Concrete subclasses can add domain-specific helpers:
 
 ::
 
     class PromptBook(BaseFileBook):
         def __init__(self, shelf: FileShelf) -> None:
             super().__init__(shelf)
-        def soul(self) -> str: return self.read("soul")
+        def get(self, *, key: str) -> str | None: ...
         ...
 """
 
@@ -63,8 +63,7 @@ class BaseFileBook:
     def read(self, name: str) -> str:
         """Read any markdown prompt by *name* (no extension).
 
-        Returns the stripped text content.  Subclasses add typed
-        accessors (e.g. ``PromptBook.soul()``) on top of this.
+        Returns the stripped text content.
         """
         return self._shelf.read_text(name)
 

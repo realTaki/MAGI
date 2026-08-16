@@ -194,7 +194,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
-    from magi.bus import open_magis_bus
+    from magi.bus import open_bus
     from magi.bus.library.magis import (
         MagisBook,
         MagisMembership,
@@ -204,7 +204,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     )
 
     node_config = replace(config, magis_database_url=magis_url)
-    control_bus = open_magis_bus(magis_url=magis_url)
+    control_bus = open_bus(magis_url=magis_url)
     factory = control_bus._magis_factory
     magis = MagisBook(factory)
     roles = MagisRoleBook(factory)
