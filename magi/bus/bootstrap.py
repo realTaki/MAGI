@@ -437,6 +437,12 @@ def _open_with_dirs(
         a2a_request_job_board = None
         a2a_notify_job_board = None
 
+    # A2A is a BUS capability, rather than a channel-worker capability.  Its
+    # option therefore belongs to BUS bootstrap; delivery/scheduler workers
+    # register their own names when the runtime starts.
+    if local_provision_scope != "magis":
+        settings_book.register_channel(name="a2a")
+
     # ---- assemble ----------------------------------------------------------
     return Bus(
         conversations_book=conversations_book,

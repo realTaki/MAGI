@@ -1,9 +1,8 @@
 """Channel management API — GET / POST /api/channels.
 
 Channel enable/disable state lives in the ``settings`` table
-under key ``channels.enabled`` (a JSON array of
-:class:`Channel` values). Settings read/write now prefers
-bus via the concrete request application's explicit dependency.
+under key ``channels.enabled``.  The selectable channel names themselves
+live in ``settings.channels.available`` and are registered by BUS/Workers.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -25,20 +23,11 @@ router = APIRouter(tags=["channels"])
 
 _SETTINGS_KEY = "channels.enabled"
 
-# Channel metadata
-_CHANNEL_META: list[dict] = [
-    {"name": Channel.WEBUI, "label": "WebUI", "implemented": True},
-    {"name": Channel.TG, "label": "Telegram", "implemented": True},
-    {"name": "wechat", "label": "WeChat", "implemented": False},
-    {"name": "lark", "label": "Lark", "implemented": False},
-    {"name": "teams", "label": "Teams", "implemented": False},
-]
-
 #: Channels the operator-facing toggle API refuses to disable.
 #: Mirrors :data:`magi.startup.workers._REQUIRED_CHANNELS` — both
 #: The WebUI dashboard is the one mandatory human-facing channel. A2A is a
 #: MAGIS-shared durable board, so it is deliberately absent from this API.
-_REQUIRED_CHANNELS: frozenset[str] = frozenset({Channel.WEBUI})
+_REQUIRED_CHANNELS: frozenset[str] = frozenset({"webui"})
 
 
 def _read_enabled(bus) -> list[str]:
@@ -47,14 +36,14 @@ def _read_enabled(bus) -> list[str]:
         try:
             parsed = json.loads(raw) if isinstance(raw, str) else raw
             if isinstance(parsed, list) and all(isinstance(c, str) for c in parsed):
-                result = [c for c in parsed if c in Channel]
+                result = list(dict.fromkeys(c for c in parsed if c))
                 for req in _REQUIRED_CHANNELS:
                     if req not in result:
                         result.append(req)
                 return result
         except (json.JSONDecodeError, TypeError):
             pass
-    return [Channel.WEBUI]
+    return ["webui"]
 
 
 def _write_enabled(bus, channels: list[str]) -> None:
@@ -62,9 +51,20 @@ def _write_enabled(bus, channels: list[str]) -> None:
 
 
 def _has_credentials(bus, channel: str) -> bool:
-    if channel == Channel.TG:
+    if channel == "tg":
         return bool(bus.settings_book.get_value(key="telegram.bot_token"))
     return True
+
+
+def _label(name: str) -> str:
+    return {"a2a": "A2A", "task": "Task", "tg": "Telegram", "webui": "WebUI"}.get(
+        name, name
+    )
+
+
+def _is_implemented(registry, name: str) -> bool:
+    """A2A is BUS-owned; all other implementations have a runtime worker."""
+    return name == "a2a" or bool(registry and registry.get_worker(name))
 
 
 # -- response / request shapes --------------------------------------------
@@ -100,16 +100,16 @@ async def list_channels(
     enabled = _read_enabled(bus)
     registry = getattr(request.app.state, "workers", None)
     available: list[ChannelInfo] = []
-    for meta in _CHANNEL_META:
-        name = meta["name"]
+    for name in bus.settings_book.channel_options():
+        implemented = _is_implemented(registry, name)
         available.append(
             ChannelInfo(
                 name=name,
-                label=meta["label"],
-                implemented=meta["implemented"],
+                label=_label(name),
+                implemented=implemented,
                 has_credentials=_has_credentials(bus, name),
                 enabled=name in enabled,
-                running=bool(meta["implemented"] and registry and registry.is_running(name)),
+                running=bool(name != "a2a" and implemented and registry and registry.is_running(name)),
             )
         )
     return ChannelsResponse(enabled=enabled, available=available)
@@ -122,7 +122,8 @@ async def update_channels(
     _admin: AdminGate,
     bus: BusDep,
 ) -> ChannelsResponse:
-    unknown = [c for c in payload.enabled if c not in Channel]
+    options = bus.settings_book.channel_options()
+    unknown = [c for c in payload.enabled if c not in options]
     if unknown:
         raise MagiHTTPException(
             status_code=400,
@@ -140,10 +141,10 @@ async def update_channels(
     registry = getattr(request.app.state, "workers", None)
 
     available: list[ChannelInfo] = []
-    for meta in _CHANNEL_META:
-        name = meta["name"]
-        should_run = name in enabled_list and meta["implemented"]
-        currently_running = bool(meta["implemented"] and registry and registry.is_running(name))
+    for name in options:
+        implemented = _is_implemented(registry, name)
+        should_run = name in enabled_list and name != "a2a" and implemented
+        currently_running = bool(name != "a2a" and implemented and registry and registry.is_running(name))
 
         if registry is not None and should_run and not currently_running:
             logger.info("channels: starting %r (toggled on)", name)
@@ -155,11 +156,11 @@ async def update_channels(
         available.append(
             ChannelInfo(
                 name=name,
-                label=meta["label"],
-                implemented=meta["implemented"],
+                label=_label(name),
+                implemented=implemented,
                 has_credentials=_has_credentials(bus, name),
                 enabled=name in enabled_list,
-                running=bool(meta["implemented"] and registry and registry.is_running(name)),
+                running=bool(name != "a2a" and implemented and registry and registry.is_running(name)),
             )
         )
 

@@ -8,13 +8,15 @@ store, on both SQLite and PostgreSQL backends.
 
 from __future__ import annotations
 
-from sqlalchemy import String, UniqueConstraint, select
+import dataclasses
+
+from sqlalchemy import Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class ControlSetting(BaseRecord):
     key: str  # 配置键
     value: str  # 配置值
@@ -23,8 +25,8 @@ class ControlSetting(BaseRecord):
 class _ControlSettingRow(BaseRecordMixin):
     __tablename__ = "control_settings"
 
-    key: Mapped[str] = mapped_column(String(255), nullable=False)
-    value: Mapped[str] = mapped_column(String, nullable=False)
+    key: Mapped[str] = mapped_column(Text, nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
     __table_args__ = (UniqueConstraint("key", name="uq_control_settings_key"),)
 
 
@@ -48,14 +50,13 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
             session.commit()
             return self._row_to_dto(row)
 
-    def delete(self, *, key: str) -> bool:
+    def delete_by_key(self, *, key: str) -> bool:
         with self._session() as session:
             row = session.scalar(select(_ControlSettingRow).where(_ControlSettingRow.key == key))
             if row is None:
                 return False
-            session.delete(row)
-            session.commit()
-            return True
+            record_id = row.id
+        return self.delete(record_id)
 
     def list_all(self) -> list[ControlSetting]:
         with self._session() as session:

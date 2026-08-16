@@ -5,6 +5,7 @@ Tests TaskWorker.__init__, start/stop lifecycle, and cron fire logic.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC
 from unittest.mock import MagicMock
 
@@ -27,6 +28,15 @@ def test_init_populates_required_attributes():
     assert w._task is None
     assert isinstance(w._next_fire, dict)
     assert w._rehydrated is False
+
+
+def test_startup_registers_task_channel():
+    mock_bus = MagicMock()
+    w = TaskWorker(mock_bus)
+
+    asyncio.run(w.on_start())
+
+    mock_bus.settings_book.register_channel.assert_called_once_with(name="task")
 
 
 def test_should_fire_cron_coalesce_equivalent():

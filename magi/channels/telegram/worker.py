@@ -28,6 +28,7 @@ class TelegramWorker(ChannelWorker):
         self._shutdown_event: asyncio.Event | None = None
 
     async def on_start(self) -> bool:
+        await super().on_start()
         bot_token = await self.call(self.bus.settings_book.get_value, key="telegram.bot_token")
         if not bot_token:
             logger.info("TelegramWorker: no bot_token; skipping")

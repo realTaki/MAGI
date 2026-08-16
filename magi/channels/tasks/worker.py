@@ -28,6 +28,14 @@ class TaskWorker(RuntimeWorker):
         self._next_fire: dict[str, datetime] = {}
         self._rehydrated = False
 
+    async def register_channel(self) -> None:
+        """Advertise the internal task trigger during worker startup."""
+        await self.call(self.bus.settings_book.register_channel, name="task")
+
+    async def on_start(self) -> bool | None:
+        await self.register_channel()
+        return None
+
     async def _run(self) -> None:
         await self._rehydrate()
         await self._reap_stale_runs()

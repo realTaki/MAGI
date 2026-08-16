@@ -19,7 +19,7 @@ timezone, no per-task credentials):
                      ``frequency="once"``. Naive timestamps
                      are interpreted as UTC. apscheduler
                      treats this as a single fire.
-  - ``channel``     ``webui`` / ``tg`` (default ``webui``)
+  - ``channel``     a registered delivery channel (default ``webui``)
 
 Timezone + credentials come from the calling admin /
 ``assigned`` contact; the runner charges the operator's
@@ -46,10 +46,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.library.local.tasksBook import (
-    ChannelEnum,
-    preset_to_cron,
-)
+from magi.bus.library.local.tasksBook import preset_to_cron
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.schedule")
@@ -173,10 +170,10 @@ class ScheduleTaskTool(Tool):
             },
             "channel": {
                 "type": "string",
-                "enum": [ChannelEnum.WEBUI, ChannelEnum.TG],
-                "default": ChannelEnum.WEBUI,
+                "default": "webui",
                 "description": (
-                    "Where the fired reply surfaces. 'webui' "
+                    "Where the fired reply surfaces. Use a registered "
+                    "delivery channel (normally 'webui' or 'tg'). 'webui' "
                     "creates a chat conversation visible in the "
                     "operator's history list (each fire spawns "
                     "a fresh conversation unless the LLM called this "
@@ -223,7 +220,7 @@ class ScheduleTaskTool(Tool):
         # ``channel`` is referenced up-front by the delivery_to
         # resolution block below (webui vs tg drives both the
         # default-rule branch and the format validator).
-        target_channel = kwargs.get("channel") or ChannelEnum.WEBUI
+        target_channel = kwargs.get("channel") or "webui"
 
         # ``delivery_to`` is server-derived per the unified
         # rule: only ``channel`` + ``ctx`` drive the value.
@@ -250,9 +247,9 @@ class ScheduleTaskTool(Tool):
         # the source of truth for IM addressing, and
         # the dispatcher is the only thing that interprets
         # the value).
-        if target_channel == ChannelEnum.WEBUI:
+        if target_channel == "webui":
             delivery_to = None
-        elif target_channel == ChannelEnum.TG:
+        elif target_channel == "tg":
             delivery_to = ctx.bus.conversations_book.resolve_delivery_address(
                 conversation_id=ctx.conversation_id
             )
@@ -288,9 +285,10 @@ class ScheduleTaskTool(Tool):
                 day_of_month=kwargs.get("day_of_month"),
             )
 
-        if target_channel not in (ChannelEnum.WEBUI, ChannelEnum.TG):
+        registered = ctx.bus.settings_book.channel_options()
+        if target_channel not in registered or target_channel in {"a2a", "task"}:
             return ToolResult(
-                content=f"channel must be one of webui/tg, got {target_channel!r}",
+                content=f"channel is not a registered task delivery target: {target_channel!r}",
                 is_error=True,
             )
 
@@ -303,7 +301,7 @@ class ScheduleTaskTool(Tool):
         # ContactBook uses its own short SQLite transaction.
         # Empty string when the operator has no TG binding.
         operator_id = int(ctx.contact_id)
-        contact = ctx.bus.contacts_book.get(contact_id=operator_id)
+        contact = ctx.bus.contacts_book.get(operator_id)
         task_conversation_delivery_address = (
             str(contact.tgid)
             if contact is not None and contact.tgid is not None

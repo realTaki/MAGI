@@ -39,6 +39,14 @@ class ChannelWorker(RuntimeWorker):
         self.worker_id = f"{self.channel_name}-worker"
         self._queue_depth = 0
 
+    async def register_channel(self) -> None:
+        """Advertise this worker's channel in the BUS settings registry."""
+        await self.call(self.bus.settings_book.register_channel, name=self.channel_name)
+
+    async def on_start(self) -> bool | None:
+        await self.register_channel()
+        return None
+
     @abstractmethod
     async def _run(self) -> None: ...
 

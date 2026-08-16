@@ -89,7 +89,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     from magi.bus.db import EngineFactory
     from magi.bus.library.local.contactBook import ContactBook
     from magi.bus.library.local.conversationBook import ConversationBook  # noqa: F401
-    from magi.bus.library.local.tasksBook import ChannelEnum, TaskBook
+    from magi.bus.library.local.tasksBook import TaskBook
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
@@ -102,7 +102,7 @@ def test_mark_run_at_consumed_sets_enabled_zero():
     future = (datetime.now(dt.UTC) + timedelta(hours=1)).replace(tzinfo=None)
     datetime.now(dt.UTC).replace(tzinfo=None)
 
-    task = tb.get(tb.add(Task(name='Once consume test', prompt='run once then disable', run_at=future, target_channel=ChannelEnum.WEBUI, contact_id=contact_id, conversation_id=None, tz='UTC')))
+    task = tb.get(tb.add(Task(name='Once consume test', prompt='run once then disable', run_at=future, target_channel="webui", contact_id=contact_id, conversation_id=None, tz='UTC')))
     assert task.enabled == 1
 
     tb.mark_run_at_consumed(task_id=task.task_id)

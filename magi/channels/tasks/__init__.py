@@ -1,6 +1,6 @@
 """Scheduled-task channel.
 
-``Channel.SCHEDULED`` is an internal trigger channel: it turns a persisted
+``task`` is an internal trigger channel: it turns a persisted
 task schedule into a normal invocation of the MAGI agent loop.  It is not a
 user-facing transport, so it has no receive socket or standalone credentials.
 

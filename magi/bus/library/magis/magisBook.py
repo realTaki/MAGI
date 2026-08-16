@@ -38,13 +38,12 @@ Query keys
 
 from __future__ import annotations
 
-from typing import Annotated
+import dataclasses
 
-from pydantic import Strict, StringConstraints
-from sqlalchemy import BigInteger, ForeignKey, String, select
+from sqlalchemy import BigInteger, ForeignKey, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 AUTH_MODE_LOCAL_NO_2FA = "local_no_2fa"
 AUTH_MODE_IM_2FA_ENABLED = "im_2fa_enabled"
@@ -62,28 +61,20 @@ ALL_ADMIN_AUTH_MODES = frozenset(
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class Magis(BaseRecord):
-    name: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
-    ]  # MAGIS 唯一名
-    parent_id: Annotated[int, Strict()] | None = None  # 父 MAGIS ID（根节点为 NULL）
-    adam_id: Annotated[int, Strict()] | None = None  # ADAM MAGI 的身份 ID
-    instruction: Annotated[str, Strict()] = ""  # MAGIS 默认指令
+    name: str  # MAGIS 唯一名
+    parent_id: int | None = None  # 父 MAGIS ID（根节点为 NULL）
+    adam_id: int | None = None  # ADAM MAGI 的身份 ID
+    instruction: str = ""  # MAGIS 默认指令
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class MagisAdmin(BaseRecord):
-    magis_id: Annotated[int, Strict()]  # 授权作用的 MAGIS ID
-    name: Annotated[
-        str, Strict(), StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
-    ]  # 管理员显示名
-    tgid: Annotated[int, Strict()] | None = None  # 已绑定 Telegram 验证地址
-    auth_mode: Annotated[
-        str,
-        Strict(),
-        StringConstraints(pattern="^(local_no_2fa|im_2fa_enabled|recovery_local_no_2fa|disabled)$"),
-    ] = AUTH_MODE_LOCAL_NO_2FA
+    magis_id: int  # 授权作用的 MAGIS ID
+    name: str  # 管理员显示名
+    tgid: int | None = None  # 已绑定 Telegram 验证地址
+    auth_mode: str = AUTH_MODE_LOCAL_NO_2FA
 
 
 # -- internal ORM --------------------------------------------------------
@@ -92,7 +83,7 @@ class MagisAdmin(BaseRecord):
 class _MagisRow(BaseRecordMixin):
     __tablename__ = "magis"
 
-    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("magis.id", ondelete="RESTRICT"), nullable=True
     )
@@ -108,10 +99,10 @@ class _MagisAdminRow(BaseRecordMixin):
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False
     )
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     tgid: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     auth_mode: Mapped[str] = mapped_column(
-        String(32), nullable=False, default=AUTH_MODE_LOCAL_NO_2FA
+        Text, nullable=False, default=AUTH_MODE_LOCAL_NO_2FA
     )
 
 
@@ -165,40 +156,6 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
             row.adam_id = adam_id
             s.commit()
 
-    def update(
-        self,
-        *,
-        magis_id: int,
-        name: str | None = None,
-        parent_id: int | None = None,
-        instruction: str | None = None,
-        set_parent_id: bool = False,
-    ) -> Magis | None:
-        """Update one MAGIS row and return a DTO, never an ORM row."""
-        with self._session() as s:
-            row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
-            if row is None:
-                return None
-            if name is not None:
-                row.name = name
-            if instruction is not None:
-                row.instruction = instruction
-            if set_parent_id:
-                row.parent_id = parent_id
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
-
-    def delete(self, *, magis_id: int) -> bool:
-        with self._session() as s:
-            row = s.scalar(select(_MagisRow).where(_MagisRow.id == magis_id))
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
-
-
 class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
     model_cls = _MagisAdminRow
     record_cls = MagisAdmin
@@ -231,7 +188,6 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             )
             if duplicate is not None:
                 raise ValueError("tgid already bound to a MAGIS admin")
-        values["name"] = record.name.strip()
         return values
 
     def set_auth_mode(self, *, admin_id: int, auth_mode: str) -> MagisAdmin:

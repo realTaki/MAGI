@@ -34,14 +34,13 @@ from dataclasses import dataclass
 from sqlalchemy import (
     Boolean,
     ForeignKey,
-    String,
     Text,
     UniqueConstraint,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 from magi.bus.library.local.settingBook import SettingBook
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
@@ -54,7 +53,7 @@ DEFAULT_ROLE_INSTRUCTIONS = {
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class MagisRole(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     name: str  # 角色名（ADAM/EVA/...）
@@ -62,7 +61,7 @@ class MagisRole(BaseRecord):
     is_reserved: bool = False  # 是否为保留角色（ADAM/EVA）
 
 
-@record
+@dataclass(frozen=True, slots=True, kw_only=True)
 class MagisMembership(BaseRecord):
     magis_id: int  # 所属 MAGIS ID
     role_id: int  # 绑定的角色 ID
@@ -88,7 +87,7 @@ class _MagisRoleRow(BaseRecordMixin):
     magis_id: Mapped[int] = mapped_column(
         ForeignKey("magis.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
     instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_reserved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -132,46 +131,6 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
                 )
             )
             return self._row_to_dto(row) if row else None
-
-    def update(
-        self,
-        *,
-        role_id: int,
-        magis_id: int,
-        name: str | None = None,
-        instruction: str | None = None,
-    ) -> MagisRole | None:
-        with self._session() as s:
-            row = s.scalar(
-                select(_MagisRoleRow).where(
-                    _MagisRoleRow.id == role_id,
-                    _MagisRoleRow.magis_id == magis_id,
-                )
-            )
-            if row is None:
-                return None
-            if name is not None:
-                row.name = name
-            if instruction is not None:
-                row.instruction = instruction
-            s.commit()
-            s.refresh(row)
-            return self._row_to_dto(row)
-
-    def delete(self, *, role_id: int, magis_id: int) -> bool:
-        with self._session() as s:
-            row = s.scalar(
-                select(_MagisRoleRow).where(
-                    _MagisRoleRow.id == role_id,
-                    _MagisRoleRow.magis_id == magis_id,
-                )
-            )
-            if row is None:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
-
 
 class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
@@ -284,9 +243,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             raise LookupError(f"role {record.role_id} not found")
         if role.magis_id != record.magis_id:
             raise ValueError("role must belong to the target MAGIS")
-        values = super()._record_to_row_values(record, session)
-        values["responsibility"] = record.responsibility.strip()
-        return values
+        return super()._record_to_row_values(record, session)
 
     def remove(self, *, magi_id: int) -> bool:
         """Unregister a MAGI by its per-MAGI identity."""
@@ -331,7 +288,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             )
             if row is None:
                 return None
-            row.responsibility = responsibility.strip()
+            row.responsibility = responsibility
             s.commit()
             s.refresh(row)
             return self._row_to_dto(row)

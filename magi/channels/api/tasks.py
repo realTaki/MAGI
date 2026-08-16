@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from magi.bus.guild.runTaskJob import RunTaskJob
 from magi.bus.library.local.tasksBook import Task, preset_to_cron, validate_run_at
-from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -27,7 +26,7 @@ class TaskIn(BaseModel):
     day_of_week: int | None = Field(default=None, ge=0, le=6)
     day_of_month: int | None = Field(default=None, ge=1, le=31)
     run_at: datetime | None = None
-    target_channel: Literal["webui", "tg"] = "webui"
+    target_channel: str = "webui"
     delivery_to: str | None = None
 
 
@@ -36,7 +35,7 @@ class TaskPatch(BaseModel):
     prompt: str | None = Field(default=None, min_length=1, max_length=8000)
     enabled: bool | None = None
     delivery_to: str | None = None
-    target_channel: Literal["webui", "tg"] | None = None
+    target_channel: str | None = None
 
 
 class TaskOut(BaseModel):
@@ -126,6 +125,16 @@ def _schedule(payload: TaskIn) -> tuple[str | None, datetime | None]:
         raise MagiHTTPException(400, "validation.schedule", str(exc)) from exc
 
 
+def _validate_delivery_channel(bus, channel: str) -> None:
+    """Tasks may target a worker-registered delivery channel, never a trigger."""
+    if channel not in bus.settings_book.channel_options() or channel in {"a2a", "task"}:
+        raise MagiHTTPException(
+            400,
+            "validation.target_channel",
+            f"unknown task delivery channel: {channel!r}",
+        )
+
+
 @router.get("/tasks", response_model=list[TaskOut])
 def list_tasks(request: Request, _admin: AdminGate, bus: BusDep) -> list[TaskOut]:
     return [_out(task) for task in bus.tasks_book.list_by_user(contact_id=_owner(request, _admin))]
@@ -143,13 +152,14 @@ def get_task(task_id: str, request: Request, _admin: AdminGate, bus: BusDep) -> 
 def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDep) -> TaskOut:
     contact_id = _owner(request, _admin)
     cron, run_at = _schedule(payload)
+    _validate_delivery_channel(bus, payload.target_channel)
     contact = bus.contacts_book.get(contact_id)
-    if payload.target_channel == Channel.TG and (contact is None or contact.tgid is None):
+    if payload.target_channel == "tg" and (contact is None or contact.tgid is None):
         raise MagiHTTPException(
             400, "tasks.telegram_not_bound", "Telegram is not bound for this contact"
         )
     delivery_to = payload.delivery_to
-    if delivery_to is None and payload.target_channel == Channel.TG:
+    if delivery_to is None and payload.target_channel == "tg":
         delivery_to = str(contact.tgid)
     # Allocate the task's home conversation up-front so cron fires
     # accumulate into one conversation per task. Same path the
@@ -167,12 +177,7 @@ def create_task(payload: TaskIn, request: Request, _admin: AdminGate, bus: BusDe
             cron=cron,
             run_at=run_at,
             delivery_to=delivery_to or "new",
-            # Boundary conversion: the wire contract stays strict
-            # (``Literal["webui", "tg"]``); ``Task`` owns the domain
-            # enum. ``Channel`` here is the public alias of
-            # ``ChannelEnum`` — ``Channel(value)`` maps the literal
-            # onto its member and can't fail for these values.
-            target_channel=Channel(payload.target_channel),
+            target_channel=payload.target_channel,
             contact_id=contact_id,
             conversation_id=conversation_id,
             tz=bus.settings_book.get_value(key="system.timezone") or "UTC",
@@ -194,6 +199,8 @@ def update_task(
     if task is None or task.contact_id != _owner(request, _admin):
         raise MagiHTTPException(404, "not_found.task", "task not found")
     try:
+        if payload.target_channel is not None:
+            _validate_delivery_channel(bus, payload.target_channel)
         candidate = task.with_changes(**payload.model_dump(exclude_unset=True))
         if not bus.tasks_book.update(candidate):
             raise MagiHTTPException(404, "not_found.task", "task not found")

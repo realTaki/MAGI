@@ -90,10 +90,12 @@ def test_init_provisions_only_canonical_node_database(tmp_path: Path) -> None:
     assert not (workspace / "magi.db").exists()
     assert (tmp_path / "MAGI_Societies" / "genesis" / "magis.db").is_file()
     assert _load_spec_from_db(workspace_dir=workspace) == spec
-    assert open_bus(
+    bus = open_bus(
         state_dir=str(workspace / "memories"),
         magis_url=spec.magis_database_url,
-    ).settings_book.get_value(key="auth.signing_key")
+    )
+    assert bus.settings_book.get_value(key="auth.signing_key")
+    assert "a2a" in bus.settings_book.channel_options()
 
 
 def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None:

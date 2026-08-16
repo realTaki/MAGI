@@ -371,7 +371,7 @@ def test_route_is_scoped_to_one_magis_and_requests_expire(boards) -> None:
     assert result is not None
     assert result.status == JobStatus.FAILED
     assert result.error_code == "a2a_timeout"
-    # Round-trip through the String(64) column must come back as the enum,
+    # Round-trip through the Text column must come back as the enum,
     # not a plain str — that's the whole point of the StrEnum migration.
     assert result.error_code is A2AErrorCode.TIMEOUT
 

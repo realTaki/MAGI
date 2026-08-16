@@ -14,8 +14,6 @@ from magi.bus.db import EngineFactory
 from magi.bus.library.local import (
     ActionItem,
     ActionItemBook,
-    Channel,
-    ChannelEnum,
     Contact,
     ContactBook,
     ContactNote,
@@ -93,6 +91,15 @@ def test_setting_book_list_and_delete(factory):
     assert book.delete_by_key(key="a") is True
     assert book.delete_by_key(key="nonexistent") is False
     assert book.list_keys() == ["b"]
+
+
+def test_setting_book_register_channel_is_idempotent(factory):
+    book = SettingBook(factory)
+
+    assert book.register_channel(name="a2a") == ["a2a"]
+    assert book.register_channel(name="webui") == ["a2a", "webui"]
+    assert book.register_channel(name="a2a") == ["a2a", "webui"]
+    assert book.channel_options() == ["a2a", "webui"]
 
 
 # -- MemoryBook ---------------------------------------------------------
@@ -731,18 +738,22 @@ def test_task_record_allows_free_text_but_book_validates_schedule(factory, conta
         book.add(Task(task_id='t2', name='x', prompt='p', contact_id=contact_id, target_channel='webui'))
 
 
-def test_channel_enum_values():
-    """Pin the enum values — the dashboard and dispatcher
-    treat them as a closed vocabulary, and the value strings
-    land in the DB column verbatim.
-    """
-    assert ChannelEnum.TG == "tg"
-    assert ChannelEnum.WEBUI == "webui"
-    assert ChannelEnum.SCHEDULED == "scheduled"
-    # ``Channel`` is the back-compat alias (mirrors the old
-    # bus shape so adapter / agent modules can migrate
-    # independently).
-    assert Channel is ChannelEnum
+def test_task_target_channel_round_trips_as_registered_name(factory, contact_id):
+    """Task storage does not carry its own closed channel vocabulary."""
+    book = TaskBook(factory)
+    task = book.get(
+        book.add(
+            Task(
+                task_id="channel-name",
+                name="channel name",
+                prompt="p",
+                cron="0 0 * * *",
+                contact_id=contact_id,
+                target_channel="custom-worker",
+            )
+        )
+    )
+    assert task is not None and task.target_channel == "custom-worker"
 
 
 def test_task_source_enum_values():
@@ -751,7 +762,7 @@ def test_task_source_enum_values():
 
     The DTO field ``Task.source`` is annotated :class:`TaskSource`
     so the LLM tool and dashboard can use ``isinstance`` checks;
-    the DB column stays ``String(16)`` for back-compat. The
+    the DB column stays ``Text`` (enum not enforced at the DB layer). The
     Book's ``_row_to_dto`` coerces the raw string back into the
     enum, so callers see enum members on read AND on write.
     """

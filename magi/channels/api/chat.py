@@ -38,7 +38,6 @@ from pydantic import BaseModel, Field
 from magi.bus import Bus
 from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 from magi.bus.library.local.conversationBook import ChannelMismatchError
-from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_conversations import ConversationMessageOut
 from magi.channels.api.dependencies import BusDep
@@ -269,7 +268,7 @@ async def send_chat(
 
         sess = Conversation(
             contact_id=contact_id,
-            channel=Channel.WEBUI,
+            channel="webui",
             delivery_address=tg_im_id,
         )
         store.add(sess)
@@ -285,7 +284,7 @@ async def send_chat(
         job_id = bus.agent_job_board.publish(
             ChatNotifyJob(
                 text=text,
-                channel=Channel.WEBUI,
+                channel="webui",
                 contact_id=contact_id,
                 conversation_id=conversation_id,
             ),

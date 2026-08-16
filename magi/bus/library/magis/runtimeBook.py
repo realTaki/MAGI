@@ -39,25 +39,23 @@ The unified design means:
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import Strict, StringConstraints
 from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
     LargeBinary,
-    String,
     Text,
     select,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin, record
+from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 
 class RuntimeDesiredState(StrEnum):
@@ -78,41 +76,41 @@ class RuntimeObservedState(StrEnum):
 # -- public dataclasses --------------------------------------------------
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class Runtime(BaseRecord):
-    runtime_id: Annotated[int, Strict()]
-    backend_kind: Annotated[str, Strict(), StringConstraints(max_length=20)]
+    runtime_id: int
+    backend_kind: str
     desired_state: RuntimeDesiredState  # 期望状态（started/stopped）
     observed_state: RuntimeObservedState  # 观察状态（started/stopped/crashed/...）
-    backend_ref: Annotated[str, Strict(), StringConstraints(max_length=100)]
-    workspace_dir: Annotated[str, Strict(), StringConstraints(max_length=500)]
-    log_dir: Annotated[str, Strict(), StringConstraints(max_length=500)]
-    audit_log_path: Annotated[str, Strict(), StringConstraints(max_length=500)]
-    pid: Annotated[int, Strict()] | None = None
-    base_url: Annotated[str, Strict(), StringConstraints(max_length=200)] | None = None
-    port: Annotated[int, Strict()] | None = None
-    spawned_at: Annotated[datetime, Strict()] | None = None
-    stopped_at: Annotated[datetime, Strict()] | None = None
-    stale: Annotated[bool, Strict()] = False
+    backend_ref: str
+    workspace_dir: str
+    log_dir: str
+    audit_log_path: str
+    pid: int | None = None
+    base_url: str | None = None
+    port: int | None = None
+    spawned_at: datetime | None = None
+    stopped_at: datetime | None = None
+    stale: bool = False
     # K8s-only fields (NULL in local mode).
-    deployment_name: Annotated[str, Strict(), StringConstraints(max_length=120)] | None = None
-    namespace: Annotated[str, Strict(), StringConstraints(max_length=64)] | None = None
-    image: Annotated[str, Strict(), StringConstraints(max_length=256)] | None = None
-    extra: Annotated[str, Strict()] | None = None
+    deployment_name: str | None = None
+    namespace: str | None = None
+    image: str | None = None
+    extra: str | None = None
     # Sticky port allocation (NULL for an un-allocated runtime).
-    port_in_use_since: Annotated[datetime, Strict()] | None = None
-    port_released_at: Annotated[datetime, Strict()] | None = None
+    port_in_use_since: datetime | None = None
+    port_released_at: datetime | None = None
     # Workspace tombstone (NULL for live runtimes).
-    archive_path: Annotated[str, Strict(), StringConstraints(max_length=500)] | None = None
-    archived_at: Annotated[datetime, Strict()] | None = None
-    restored: Annotated[bool, Strict()] = False
+    archive_path: str | None = None
+    archived_at: datetime | None = None
+    restored: bool = False
 
 
-@record
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
 class ControlSecret(BaseRecord):
-    name: Annotated[str, Strict(), StringConstraints(max_length=100)]
-    secret_hash: Annotated[bytes, Strict()]
-    salt: Annotated[bytes, Strict()]
+    name: str
+    secret_hash: bytes
+    salt: bytes
     # Raw secret value — populated alongside ``secret_hash`` once the
     # ``0002_add_control_secret_value`` migration ran on this MAGIS
     # store. The WebUI / Runtime proxy HMAC needs the raw bytes to
@@ -120,7 +118,7 @@ class ControlSecret(BaseRecord):
     # make the control plane unable to mint / verify proxy signatures.
     # Older deployments (pre-migration) only have ``secret_hash`` +
     # ``salt`` and will fall back to the bootstrap file at startup.
-    secret_value: Annotated[bytes, Strict()] | None = None
+    secret_value: bytes | None = None
 class _RuntimeRow(BaseRecordMixin):
     """Runtime state with an internal PK and explicit MAGI business key."""
 
@@ -130,7 +128,7 @@ class _RuntimeRow(BaseRecordMixin):
     membership_row_id: Mapped[int] = mapped_column(
         ForeignKey("magis_memberships.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    backend_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    backend_kind: Mapped[str] = mapped_column(Text, nullable=False)
     desired_state: Mapped[RuntimeDesiredState] = mapped_column(
         enum_column(RuntimeDesiredState, name="runtime_desired_state"),
         nullable=False,
@@ -142,25 +140,25 @@ class _RuntimeRow(BaseRecordMixin):
         default=RuntimeObservedState.UNKNOWN,
     )
     pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    base_url: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    backend_ref: Mapped[str] = mapped_column(String(100), nullable=False)
-    workspace_dir: Mapped[str] = mapped_column(String(500), nullable=False)
-    log_dir: Mapped[str] = mapped_column(String(500), nullable=False)
-    audit_log_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backend_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    workspace_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    log_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    audit_log_path: Mapped[str] = mapped_column(Text, nullable=False)
     port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     spawned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     stopped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     stale: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # K8s-only fields — NULL in local mode.
-    deployment_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    namespace: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    image: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    deployment_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    namespace: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Sticky port allocation.
     port_in_use_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     port_released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Workspace tombstone.
-    archive_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    archive_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     restored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -170,7 +168,7 @@ class _ControlSecretRow(BaseRecordMixin):
 
     __tablename__ = "control_secrets"
 
-    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     secret_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     secret_value: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

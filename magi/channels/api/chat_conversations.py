@@ -36,7 +36,6 @@ from magi.bus.library.local.conversationBook import (
     ConversationSummary,
     Message,
 )
-from magi.channels import Channel
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep, get_bus
 from magi.channels.api.errors import MagiHTTPException
@@ -315,7 +314,7 @@ def create_conversation(
     record = Conversation(
         delivery_address=delivery_address,
         contact_id=contact_id,
-        channel=Channel.WEBUI,
+        channel="webui",
     )
     bus.conversations_book.add(record)
     return CreateConversationResponse(conversation_id=record.conversation_id)

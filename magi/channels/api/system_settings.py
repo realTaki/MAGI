@@ -31,7 +31,6 @@ TOOL_MAX_ITERATIONS_KEY = "system.tool_max_iterations"
 COMPACT_CONTEXT_WINDOW_KEY = "system.compact_context_window"
 COMPACT_THRESHOLD_PCT_KEY = "system.compact_threshold_pct"
 COMPACT_KEEP_RECENT_KEY = "system.compact_keep_recent"
-CHAT_MAX_INPUT_CHARS_KEY = "system.chat_max_input_chars"
 
 DEFAULT_TOOL_MAX_ITERATIONS = 10
 MIN_TOOL_MAX_ITERATIONS = 1
@@ -45,15 +44,6 @@ MIN_COMPACT_THRESHOLD_PCT = 50
 MAX_COMPACT_THRESHOLD_PCT = 95
 MIN_COMPACT_KEEP_RECENT = 5
 MAX_COMPACT_KEEP_RECENT = 100
-# Inbound message cap. Default matches the WebUI's Pydantic
-# ``ChatSendRequest.text`` max_length. Telegram and task channels
-# don't pre-validate, so the chatNotifyBoard + messages_book apply this
-# cap as a defense-in-depth to prevent a single turn from blowing
-# past the LLM context budget (and breaking compaction's floor-of-1
-# guarantee that always keeps the most recent turn).
-DEFAULT_CHAT_MAX_INPUT_CHARS = 8_000
-MIN_CHAT_MAX_INPUT_CHARS = 1_000
-MAX_CHAT_MAX_INPUT_CHARS = 100_000
 
 
 def _settings(bus):
@@ -282,64 +272,6 @@ def put_compact_config(
         default_context_window=DEFAULT_COMPACT_CONTEXT_WINDOW,
         default_threshold_pct=DEFAULT_COMPACT_THRESHOLD_PCT,
         default_keep_recent=DEFAULT_COMPACT_KEEP_RECENT,
-    )
-
-
-# ────────────────────────────────────────────────────────────────── #
-# Chat input cap (per-turn character limit)
-# ────────────────────────────────────────────────────────────────── #
-
-
-class ChatMaxInputCharsOut(BaseModel):
-    """``GET /api/system-settings/chat-max-input-chars`` response."""
-
-    current: int
-    default: int
-    min: int
-    max: int
-
-
-class ChatMaxInputCharsUpdateRequest(BaseModel):
-    """``PUT /api/system-settings/chat-max-input-chars`` body."""
-
-    value: int = Field(ge=MIN_CHAT_MAX_INPUT_CHARS, le=MAX_CHAT_MAX_INPUT_CHARS)
-
-
-@router.get("/system-settings/chat-max-input-chars", response_model=ChatMaxInputCharsOut)
-def get_chat_max_input_chars(_admin: AdminGate, bus: BusDep) -> ChatMaxInputCharsOut:
-    return ChatMaxInputCharsOut(
-        current=_read_int_setting(
-            bus,
-            key=CHAT_MAX_INPUT_CHARS_KEY,
-            default=DEFAULT_CHAT_MAX_INPUT_CHARS,
-            minimum=MIN_CHAT_MAX_INPUT_CHARS,
-            maximum=MAX_CHAT_MAX_INPUT_CHARS,
-        ),
-        default=DEFAULT_CHAT_MAX_INPUT_CHARS,
-        min=MIN_CHAT_MAX_INPUT_CHARS,
-        max=MAX_CHAT_MAX_INPUT_CHARS,
-    )
-
-
-@router.put("/system-settings/chat-max-input-chars", response_model=ChatMaxInputCharsOut)
-def put_chat_max_input_chars(
-    payload: ChatMaxInputCharsUpdateRequest,
-    _admin: AdminGate,
-    bus: BusDep,
-) -> ChatMaxInputCharsOut:
-    """Persist a new chat-input cap. Truncates the LLM input (chatNotifyJob)
-    AND the persistent message row (``messages_book``); the LLM and
-    compaction both see the truncated version, so no single turn can
-    break the budget on its own.
-    """
-    svc = _settings(bus)
-    svc.set(key=CHAT_MAX_INPUT_CHARS_KEY, value=str(payload.value))
-    logger.info("system.chat_max_input_chars set to %d", payload.value)
-    return ChatMaxInputCharsOut(
-        current=payload.value,
-        default=DEFAULT_CHAT_MAX_INPUT_CHARS,
-        min=MIN_CHAT_MAX_INPUT_CHARS,
-        max=MAX_CHAT_MAX_INPUT_CHARS,
     )
 
 

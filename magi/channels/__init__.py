@@ -14,18 +14,17 @@ Concrete adapters:
 - ``channels.telegram`` — EVA side, python-telegram-bot v21+ (C3).
 - ``channels.webui``    — ADAM side, FastAPI + HTMX + WS (C1 for CRUD, C7 for chat console).
 
-The :class:`Channel` enum is owned by the Bus task domain and re-exported
-here as the common channel vocabulary.
+Channel names are persisted strings.  Their selectable vocabulary is the
+BUS-owned ``settings.channels.available`` registry, populated by bootstrap
+and worker startup.
 """
 
 from __future__ import annotations
 
-from magi.bus.library.local.tasksBook import Channel
 from magi.channels.worker_base import ChannelWorker
 
 __all__ = [
     "base",
     "worker_base",
-    "Channel",
     "ChannelWorker",
 ]

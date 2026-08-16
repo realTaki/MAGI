@@ -8,7 +8,6 @@ commands only; a runtime uses :func:`magi.bus.open_bus` instead.
 
 from __future__ import annotations
 
-import json
 import secrets
 from pathlib import Path
 
@@ -61,18 +60,6 @@ def provision_node_storage(
     bus.messages_book.ensure_fts()
     if not bus.settings_book.get_value(key="auth.signing_key"):
         bus.settings_book.set(key="auth.signing_key", value=secrets.token_hex(32))
-    # ``channels.enabled`` is the runtime's single source of truth for which
-    # channel workers to start. WebUI is required for the operator dashboard;
-    # A2A is MAGIS-internal durable work and is not a channel worker.
-    from magi.bus.library.local.tasksBook import Channel
-
-    if not bus.settings_book.get_value(key="channels.enabled"):
-        # Use :data:`Channel` enum values rather than string literals
-        # so renaming the enum keeps the persisted default in sync.
-        bus.settings_book.set(
-            key="channels.enabled",
-            value=json.dumps([Channel.WEBUI.value]),
-        )
     resolved_prompts = _resolve_prompts_dir(prompts_dir)
     if resolved_prompts is not None:
         _ensure_workspace_soul(workspace_dir, resolved_prompts)
