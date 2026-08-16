@@ -77,7 +77,7 @@ def ctx(bus: _BusStub, tmp_path: Path) -> ToolContext:
         workspace=str(tmp_path),
         contact_id=1,
         channel="webui",
-        conversation_id="",
+        conversation_id=0,
         bus=bus,  # type: ignore[arg-type]
     )
 
@@ -171,7 +171,7 @@ async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
         workspace=str(tmp_path),
         contact_id=1,
         channel="webui",
-        conversation_id="",
+        conversation_id=0,
         bus=None,
     )
     tool = AddMemoryTool()

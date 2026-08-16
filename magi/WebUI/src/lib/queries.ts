@@ -94,7 +94,7 @@ export type TaskRow = {
   id: number; task_id: string; name: string; prompt: string;
   target_channel: "webui" | "tg";
   delivery_to: string | null; enabled: boolean;
-  conversation_id: string | null;
+  conversation_id: number | null;
   last_run_at: string | null; last_status: string | null;
   consecutive_failures: number;
   created_at: string; updated_at: string;
@@ -119,7 +119,7 @@ export function useTasks(filter?: { enabled?: boolean }) {
 }
 
 export type TaskRunRow = {
-  id: string; task_id: string; conversation_id: string | null;
+  id: string; task_id: string; conversation_id: number | null;
   manual: boolean; started_at: string; finished_at: string | null;
   latency_ms: number | null; status: string; error: string | null;
   reply_excerpt: string | null;
@@ -629,8 +629,8 @@ export type ChatSearchResult = {
   q: string;
   uid: number;
   items: Array<{
-    conversation_id: string;
-    message_id: string;
+    conversation_id: number;
+    message_id: number;
     role: string;
     ts: string;
     snippet: string;
@@ -667,7 +667,7 @@ export function useChatSearch(q: string) {
 
 export type ChatConversationList = {
   items: Array<{
-    conversation_id: string;
+    conversation_id: number;
     created_at: string;
     created_by_uid: number;
     updated_at: string;
@@ -698,7 +698,7 @@ export function useChatConversations(opts: { limit?: number; offset?: number; en
 }
 
 export type ChatConversationOut = {
-  conversation_id: string;
+  conversation_id: number;
   uid: number;
   channel: string;
   delivery_address: string;
@@ -706,7 +706,7 @@ export type ChatConversationOut = {
   created_at: string;
   updated_at: string;
   messages: Array<{
-    message_id: string;
+    message_id: number;
     role: "user" | "assistant";
     ts: string;
     text: string;
@@ -714,14 +714,14 @@ export type ChatConversationOut = {
 };
 
 /** GET /api/chat/conversations/{id} — full conversation incl. messages. */
-export function useChatConversation(conversationId: string | null) {
+export function useChatConversation(conversationId: number | null) {
   return useQuery({
-    queryKey: conversationId ? qk.chatConversation(conversationId) : ["chatConversation", "none"],
+    queryKey: conversationId !== null ? qk.chatConversation(conversationId) : ["chatConversation", "none"],
     queryFn: () =>
       apiFetch<ChatConversationOut>(
-        `/api/chat/conversations/${encodeURIComponent(conversationId as string)}`,
+        `/api/chat/conversations/${conversationId as number}`,
       ),
-    enabled: !!conversationId,
+    enabled: conversationId !== null,
   });
 }
 
@@ -746,7 +746,7 @@ export type TaskOut = {
   created_at: string;
   updated_at: string;
   description?: string | null;
-  conversation_id?: string | null;
+  conversation_id?: number | null;
 };
 
 export function useTask(taskId: string | null) {

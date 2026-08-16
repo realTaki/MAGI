@@ -167,7 +167,7 @@ const CONVERSATION_STORAGE_KEY = "magi_chat_conversation_id";
 
 /** A row in the ``/api/chat/conversations`` list response. */
 type ConversationSummary = {
-  conversation_id: string;
+  conversation_id: number;
   created_at: string;
   created_by_uid: number;
   updated_at: string;
@@ -192,9 +192,10 @@ export default function ChatTab() {
   // currently has open. ``null`` means "no conversation yet" (the
   // next /send call will auto-create one); the server
   // returns the new id in the response.
-  const [conversationId, setConversationId] = useState<string | null>(
-    () => localStorage.getItem(CONVERSATION_STORAGE_KEY)
-  );
+  const [conversationId, setConversationId] = useState<number | null>(() => {
+    const raw = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    return raw ? Number(raw) || null : null;
+  });
   // History list — most recent first, scoped to the
   // current tgid (server resolves via cookie).
   const [history, setHistory] = useState<ConversationSummary[]>([]);
@@ -210,7 +211,7 @@ export default function ChatTab() {
   // Only one row can be in edit mode at a time (cheaper
   // than a Set<id>).
   const [editing, setEditing] = useState<
-    { id: string; value: string } | null
+    { id: number; value: string } | null
   >(null);
 
   // -- chat messages (kept in component state, hydrated from
@@ -270,10 +271,10 @@ export default function ChatTab() {
     queryKey: conversationId ? [...qk.chatMessages(conversationId), "page-0"] : ["chatMessages", "none", "page-0"],
     queryFn: () =>
       apiFetch<{
-        conversation_id: string;
-        messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+        conversation_id: number;
+        messages: Array<{ message_id: number; role: string; text: string; ts: string }>;
         total_active: number;
-      }>(`/api/chat/conversations/${conversationId as string}/messages?limit=${PAGE_SIZE}&offset=0`),
+      }>(`/api/chat/conversations/${conversationId as number}/messages?limit=${PAGE_SIZE}&offset=0`),
     enabled: conversationId !== null,
     refetchOnWindowFocus: true,
   });
@@ -312,7 +313,7 @@ export default function ChatTab() {
     if (data.conversation_id !== conversationId) {
       setConversationId(data.conversation_id);
     }
-    localStorage.setItem(CONVERSATION_STORAGE_KEY, data.conversation_id);
+    localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.conversation_id));
     setChatMessages(
       data.messages.map((m, i) => ({
         id: i,
@@ -327,12 +328,12 @@ export default function ChatTab() {
     );
     setChatError(null);
   }, [conversationId, messagesQuery.data, messagesQuery.isError, messagesQuery.error]);
-  function loadSession(id: string) {
+  function loadSession(id: number) {
     setChatError(null);
     setLoadedCount(0);
     setTotalActive(0);
     setConversationId(id);
-    localStorage.setItem(CONVERSATION_STORAGE_KEY, id);
+    localStorage.setItem(CONVERSATION_STORAGE_KEY, String(id));
   }
 
 
@@ -358,7 +359,7 @@ export default function ChatTab() {
       );
       if (!r.ok) return;
       const data = (await r.json()) as {
-        messages: Array<{ message_id: string; role: string; text: string; ts: string }>;
+        messages: Array<{ message_id: number; role: string; text: string; ts: string }>;
         total_active: number;
       };
       // Older messages get negative ids so they sort
@@ -420,7 +421,7 @@ export default function ChatTab() {
   const sessionTitleQuery = useQuery({
     queryKey: conversationId ? qk.chatMessages(conversationId) : ["chatConversation", "none"],
     queryFn: () =>
-      apiFetch<{ title: string | null }>(`/api/chat/conversations/${conversationId as string}`),
+      apiFetch<{ title: string | null }>(`/api/chat/conversations/${conversationId as number}`),
     enabled: conversationId !== null,
     refetchOnWindowFocus: true,
   });
@@ -474,7 +475,7 @@ export default function ChatTab() {
     setSelectedId("new-chat");
   }
 
-  async function openSession(id: string) {
+  async function openSession(id: number) {
     await loadSession(id);
     setSelectedId("new-chat");
     void refreshHistory();
@@ -486,7 +487,7 @@ export default function ChatTab() {
   // no touch" semantics — the operator editing then
   // pressing Escape should leave the session alone, not
   // wipe the title.
-  async function commitRename(id: string, raw: string) {
+  async function commitRename(id: number, raw: string) {
     if (editing === null || editing.id !== id) return;
     const trimmed = raw.trim();
 
@@ -558,7 +559,7 @@ export default function ChatTab() {
     }
   }
 
-  async function deleteSession(id: string) {
+  async function deleteSession(id: number) {
     if (!confirm("删除这条对话？")) return;
     const r = await fetch(`/api/chat/conversations/${id}`, {
       method: "DELETE",
@@ -586,7 +587,7 @@ export default function ChatTab() {
   // localStorage. If the id no longer exists, ``loadSession``
   // drops the pointer and starts clean.
   useEffect(() => {
-    const id = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    const id = Number(localStorage.getItem(CONVERSATION_STORAGE_KEY));
     if (id) loadSession(id);
     void refreshHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -594,15 +595,15 @@ export default function ChatTab() {
 
   const queryClientForChat = useQueryClient();
   const sendChatMut = useMutation({
-    mutationFn: (vars: { text: string; conversationId: string | null }) =>
-      apiFetch<{ job_id: number; status: string; conversation_id: string }>("/api/chat/send", {
+    mutationFn: (vars: { text: string; conversationId: number | null }) =>
+      apiFetch<{ job_id: number; status: string; conversation_id: number }>("/api/chat/send", {
         method: "POST",
         body: { text: vars.text, conversation_id: vars.conversationId },
       }),
-    onSuccess: (data: { job_id: number; status: string; conversation_id: string }, vars: { text: string; conversationId: string | null }) => {
+    onSuccess: (data: { job_id: number; status: string; conversation_id: number }, vars: { text: string; conversationId: number | null }) => {
       if (data.conversation_id !== vars.conversationId) {
         setConversationId(data.conversation_id);
-        localStorage.setItem(CONVERSATION_STORAGE_KEY, data.conversation_id);
+        localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.conversation_id));
         setActiveTitle(null);
         setActivePreview(vars.text);
         void refreshHistory();

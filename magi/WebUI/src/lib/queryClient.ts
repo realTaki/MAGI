@@ -145,14 +145,14 @@ export const qk = {
   task: (taskId: string) =>
     runtimeKey("task", taskId),
   /** Active conversation messages — paginated per conversation. */
-  chatMessages: (conversationId: string) =>
+  chatMessages: (conversationId: number) =>
     runtimeKey("chatMessages", conversationId),
   chatConversations: (limit?: number, offset?: number) =>
     limit === undefined && offset === undefined
       ? runtimeKey("chatConversations")
       : runtimeKey("chatConversations", { limit, offset }),
   /** Full conversation detail (messages included). */
-  chatConversation: (conversationId: string) =>
+  chatConversation: (conversationId: number) =>
     runtimeKey("chatConversation", conversationId),
   /** Chat search results — keyed by query string so a
    *  re-typed query hits the cache. */

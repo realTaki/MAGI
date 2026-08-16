@@ -70,7 +70,7 @@ export function formatRunTimestamp(iso: string | null): string {
 export type TaskRunRow = {
   id: string;
   task_id: string;
-  conversation_id: string | null;
+  conversation_id: number | null;
   trigger: string;
   started_at: string;
   finished_at: string | null;

@@ -183,7 +183,7 @@ def test_task_out_carries_run_at_field() -> None:
         target_channel="webui",
         contact_id=1,
         enabled=True,
-        conversation_id="task-once",
+        conversation_id=0,
         created_at=datetime(2026, 7, 20, 12),
         updated_at=datetime(2026, 7, 20, 12),
     )
@@ -205,7 +205,7 @@ def test_task_out_run_at_is_optional_for_cron_rows() -> None:
         target_channel="webui",
         contact_id=1,
         enabled=True,
-        conversation_id="task-cron",
+        conversation_id=0,
         created_at=datetime(2026, 7, 20, 12),
         updated_at=datetime(2026, 7, 20, 12),
     )

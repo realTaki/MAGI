@@ -29,7 +29,7 @@ from magi.bus.guild.base import JobStatus
 class _FakeSession:
     """Mimics Session DTO."""
 
-    conversation_id: str = "sess-1"
+    conversation_id: int = 1
     uid: int = 42
     delivery_address: str = "tg:123"
 
@@ -171,7 +171,7 @@ async def test_single_turn_no_tools_delivers():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
     )
     ctx.messages = []
 
@@ -217,7 +217,7 @@ async def test_tool_loop_completes():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
     )
     ctx.messages = []
 
@@ -259,7 +259,7 @@ async def test_steering_injected():
     )
 
     steer_job = ChatNotifyJob(
-        conversation_id="conv-1",
+        conversation_id=1,
         contact_id=42,
         text="Also check this please.",
     )
@@ -269,7 +269,7 @@ async def test_steering_injected():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
     )
     ctx.messages = []
 
@@ -302,7 +302,7 @@ async def test_cancel_interrupts():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
     )
     ctx.messages = []
     ctx.cancel_event.set()  # simulate cancel
@@ -336,7 +336,7 @@ async def test_system_prompt_delegates():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
     )
 
     worker = AgentWorker(bus=bus)
@@ -356,7 +356,7 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
     bus = _make_bus()
     job = SimpleNamespace(
         job_id="shutdown-job",
-        conversation_id="conv-1",
+        conversation_id=1,
         contact_id=42,
         channel="tg",
         text="hello",
@@ -418,7 +418,7 @@ async def test_max_iterations_exceeded():
     ctx = RunContext(
         contact_id=42,
         channel="tg",
-        conversation_id="conv-1",
+        conversation_id=1,
         max_iterations=2,
     )
     ctx.messages = []

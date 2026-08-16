@@ -131,7 +131,7 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
 
 def test_record_datetime_fields_remain_native_values() -> None:
     """Records store native dataclass values; transport validates ingress."""
-    message = Message(conversation_id="conversation", role="user", text="hello")
+    message = Message(conversation_id=1, role="user", text="hello")
     assert isinstance(message.ts, datetime)
 
 
@@ -315,11 +315,11 @@ def test_conversation_and_message(factory):
 
     s = sbook.get(sbook.add(Conversation(delivery_address='tg:12345', contact_id=1, channel='tg')))
     assert isinstance(s, Conversation)
-    assert s.conversation_id  # book-managed, just check it's truthy
+    assert s.id > 0  # book-managed internal id
 
-    m = mbook.get(mbook.add(Message(conversation_id=s.conversation_id, message_id='m1', role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, 1))))
+    m = mbook.get(mbook.add(Message(conversation_id=s.id, role='user', text='hi', ts=datetime(2026, 8, 5, 0, 0, 1))))
     assert isinstance(m, Message)
-    msgs = mbook.list_for_conversation(conversation_id=s.conversation_id)
+    msgs = mbook.list_for_conversation(conversation_id=s.id)
     assert len(msgs) == 1
     assert msgs[0].text == "hi"
 
@@ -328,7 +328,7 @@ def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
     """`set_summary` writes summary, stamps last_compaction_at, bumps updated_at."""
     sbook = ConversationBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
 
     result = sbook.set_summary(
         contact_id=contact_id, conversation_id=cid, summary="S0"
@@ -354,7 +354,7 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
     other_contact = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
 
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
 
     result = sbook.set_summary(
         contact_id=other_contact, conversation_id=cid, summary="hijack"
@@ -372,7 +372,7 @@ def test_conversation_set_summary_overwrites(factory, contact_id):
     """Second call supersedes the first; last_compaction_at moves forward."""
     sbook = ConversationBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
 
     first = sbook.set_summary(
         contact_id=contact_id, conversation_id=cid, summary="S0"
@@ -883,7 +883,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     from magi.bus.library.local.conversationBook import ConversationBook
 
     conv_seed = ConversationBook(factory).get(ConversationBook(factory).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
-    seed_cid = conv_seed.conversation_id
+    seed_cid = conv_seed.id
 
     # First call: insert.
     task_id_1, is_update_1 = book.upsert_by_name(
@@ -909,7 +909,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
         delivery_to=None,
         target_channel="tg",
         contact_id=contact_id,
-        conversation_id="01DEF",  # different from the row's current session
+        conversation_id=999,  # different from the row's current session
         tz="UTC",
     )
     assert is_update_2 is True
@@ -933,7 +933,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
             delivery_to=None,
             target_channel="webui",
             contact_id=contact_id,
-            conversation_id="x",
+            conversation_id=999,
             tz="UTC",
         )
 

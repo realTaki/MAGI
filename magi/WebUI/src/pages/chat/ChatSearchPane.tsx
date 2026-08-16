@@ -65,7 +65,7 @@ type ConversationSummary = ChatConversationList["items"][number];
 type Props = {
   /** Deep-link into the matching thread. Matches
    *  DashboardPage's ``openConversation`` helper. */
-  onOpen: (conversationId: string) => void;
+  onOpen: (conversationId: number) => void;
 };
 
 const DEBOUNCE_MS = 300;
@@ -325,7 +325,7 @@ function SearchHitRow({
   onOpen,
 }: {
   hit: SearchHit;
-  onOpen: (conversationId: string) => void;
+  onOpen: (conversationId: number) => void;
 }) {
   const t = useT();
   return (
@@ -344,7 +344,7 @@ function SearchHitRow({
       <div className="p-3">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="text-sm font-medium text-ink truncate">
-            {hit.title ?? hit.conversation_id.slice(0, 13) + "…"}
+            {hit.title ?? String(hit.conversation_id).slice(0, 13) + "…"}
           </h3>
           <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-soft border border-border rounded px-1.5 py-0.5">
             {hit.role === "user"
@@ -372,7 +372,7 @@ function ConversationSummaryRow({
   onOpen,
 }: {
   summary: ConversationSummary;
-  onOpen: (conversationId: string) => void;
+  onOpen: (conversationId: number) => void;
 }) {
   const t = useT();
   // Build a single display line. ``title`` wins (manual or
@@ -407,7 +407,7 @@ function ConversationSummaryRow({
         </p>
         <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-ink-soft">
           <span className="truncate font-mono">
-            {summary.conversation_id.slice(0, 13) + "…"}
+            {String(summary.conversation_id).slice(0, 13) + "…"}
           </span>
           <span>{formatRelative(summary.updated_at)}</span>
         </div>

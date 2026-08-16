@@ -110,7 +110,7 @@ def transcript_boards(tmp_path):
 
 def _peer_messages(conversations, messages, *, peer_magi_id: int):
     conversation = conversations.get_or_create_for_a2a_peer(peer_magi_id=peer_magi_id)
-    return messages.list_for_conversation(conversation_id=conversation.conversation_id)
+    return messages.list_for_conversation(conversation_id=conversation.id)
 
 
 def test_request_lifecycle_writes_each_executing_magi_message_book(transcript_boards) -> None:
@@ -268,7 +268,7 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
     expected_conversation = boards.target_conversations.get_or_create_for_a2a_peer(
         peer_magi_id=boards.source.id
     )
-    assert ctx.conversation_id == expected_conversation.conversation_id
+    assert ctx.conversation_id == expected_conversation.id
     assert ctx.messages == [
         {"role": "user", "content": "First request."},
         {"role": "assistant", "content": "First answer."},
@@ -428,7 +428,7 @@ async def test_message_magi_splits_request_and_notify_without_waiting_for_notify
         return fn(*args, **kwargs)
 
     worker.call = direct_call  # type: ignore[method-assign]
-    ctx = RunContext(contact_id=None, conversation_id="conv", channel="webui")
+    ctx = RunContext(contact_id=None, conversation_id=0, channel="webui")
     split = await worker._split_tools(
         ctx,
         [
@@ -468,7 +468,7 @@ async def test_a2a_terminal_does_not_publish_human_delivery() -> None:
     worker = AgentWorker(SimpleNamespace(delivery_job_board=delivery_board))  # type: ignore[arg-type]
     ctx = RunContext(
         contact_id=None,
-        conversation_id="a2a.request:one",
+        conversation_id=0,
         channel="a2a.request",
         a2a_kind="a2a.request",
         final_reply="one response",

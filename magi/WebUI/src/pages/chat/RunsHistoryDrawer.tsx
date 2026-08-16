@@ -17,7 +17,7 @@ import { formatRunTimestamp } from "./TaskListPane";
 export function RunsHistoryDrawer(props: {
   taskId: string;
   taskName: string;
-  conversationId: string | null;
+  conversationId: number | null;
   onClose: () => void;
 }) {
   // Chat-style log view for a task's conversation. Mirrors the
@@ -72,7 +72,7 @@ export function RunsHistoryDrawer(props: {
             <p className="text-xs text-ink-soft mt-0.5">
               {sessionTitle ?? "[定时] conversation"}
               {props.conversationId
-                ? ` · ${props.conversationId.slice(0, 8)}…`
+                ? ` · ${String(props.conversationId).slice(0, 8)}…`
                 : ""}
             </p>
           </div>

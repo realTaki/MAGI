@@ -38,7 +38,7 @@ def seed_conversation(factory, contact_id):
     from magi.bus.library.local import ConversationBook
 
     sbook = ConversationBook(factory)
-    return sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).conversation_id
+    return sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).id
 
 
 # ---------------------------------------------------------------------------
@@ -48,14 +48,14 @@ def seed_conversation(factory, contact_id):
 
 def test_messages_book_add_noop_under_cap(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
-    m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text='hi')))
+    m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, role='user', text='hi')))
     assert m.text == "hi"
 
 
 def test_messages_book_add_preserves_long_text(factory, seed_conversation):
     mbook = MessageBook(factory, settings_book=None)
     huge = "x" * 20_000
-    m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, message_id='m1', role='user', text=huge)))
+    m = mbook.get(mbook.add(Message(conversation_id=seed_conversation, role='user', text=huge)))
     assert m.text is not None
     assert m.text == huge
 
@@ -66,9 +66,9 @@ def test_messages_book_add_keeps_huge_turn_for_provider_budgeting(
     """Compaction/provider code, not persistence, decides how to budget it."""
     sbook = ConversationBook(factory, settings_book=None)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     mbook = MessageBook(factory, settings_book=None)
-    mbook.get(mbook.add(Message(conversation_id=cid, message_id='m_huge', role='user', text='x' * 50000)))
+    mbook.get(mbook.add(Message(conversation_id=cid, role='user', text='x' * 50000)))
     rows = mbook.list_for_conversation(conversation_id=cid)
     assert len(rows) == 1
     assert len(rows[0].text) == 50_000
@@ -83,7 +83,7 @@ def test_publish_chat_preserves_payload_in_book(factory, contact_id):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -115,7 +115,7 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory,
         messages_book=mbook,
@@ -144,25 +144,23 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     assert rows[0].role == "user"
 
 
-def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
-    """Same message_id on retry → same chat_messages row (producer-side idempotency)."""
+def test_publish_chat_writes_one_message_per_turn(factory, contact_id):
+    """Each publish persists one user message row (no producer-side dedup key)."""
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
 
-    fixed_id = "fixed-message-id-123"
     board.publish(
         ChatNotifyJob(
             text="retry me",
             channel="tg",
             contact_id=contact_id,
             conversation_id=cid,
-        ),
-        message_id=fixed_id,
+        )
     )
     board.publish(
         ChatNotifyJob(
@@ -170,14 +168,13 @@ def test_publish_chat_uses_message_id_for_idempotency(factory, contact_id):
             channel="tg",
             contact_id=contact_id,
             conversation_id=cid,
-        ),
-        message_id=fixed_id,
+        )
     )
 
     rows = mbook.list_for_conversation(conversation_id=cid)
-    # Unique constraint on (conversation_id, message_id) collapses
-    # the retry into a single row.
-    assert len(rows) == 1
+    # No idempotency key for ordinary chat turns — two publishes
+    # mean two rows (the agent loop owns de-duplication, not the board).
+    assert len(rows) == 2
 
 
 def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
@@ -185,7 +182,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -214,7 +211,7 @@ def test_publish_chat_d22_passes_when_channel_matches(factory, contact_id):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -236,7 +233,7 @@ def test_publish_chat_d22_skipped_when_contact_id_is_none(factory):
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=1, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(
         factory, messages_book=mbook, conversations_book=sbook
     )
@@ -258,7 +255,7 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
     sbook = ConversationBook(factory)
     mbook = MessageBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(factory, messages_book=mbook)  # no conversations_book
 
     jid = board.publish(
@@ -287,7 +284,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
 
     sbook = ConversationBook(factory)
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
-    cid = conv.conversation_id
+    cid = conv.id
     board = chatNotifyBoard(factory, conversations_book=sbook)
 
     job = ChatNotifyJob(
