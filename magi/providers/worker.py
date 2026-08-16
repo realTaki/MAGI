@@ -66,13 +66,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("magi.providers.worker")
 
-# Backpressure cap. Two parallel upstream calls keep latency low
-# while leaving room for a streaming job to take a long time
-# without starving shorter turns. Injected via the ``concurrency``
-# constructor parameter; there is no environment-variable knob.
-_DEFAULT_CONCURRENCY = 2
-
-
 def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
     """Map a provider-side exception to a stable :class:`LLMErrorCode`.
 
@@ -123,15 +116,7 @@ class ProvidersWorker(RuntimeWorker):
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
-        # Concurrency is constructor-injected only — this worker does
-        # no env reads. A worker reaching into ``os.environ`` makes its
-        # behaviour untestable and invisible to the composition root,
-        # so the knob is a constructor parameter and nothing else.
-        # Mirrors :class:`~magi.tools.worker.ToolsWorker`.
-        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
-        self._slots = asyncio.Semaphore(self.concurrency)
-        self._inflight: set[asyncio.Task[None]] = set()
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
 
         # Cached LLM client + the typed error that prevented us from
         # building one. The cache is refreshed only on a claimed
@@ -150,9 +135,6 @@ class ProvidersWorker(RuntimeWorker):
         await self.call(self._rebuild_provider)
 
     async def on_stopped(self) -> None:
-        if self._inflight:
-            await asyncio.gather(*self._inflight, return_exceptions=True)
-            self._inflight.clear()
         self._provider = None
         self._provider_error = None
 
@@ -171,22 +153,27 @@ class ProvidersWorker(RuntimeWorker):
                 await self._handle_config_job(cfg_job)
                 continue
 
-            # 2. Claim one LLM job.
-            job = await self.call(
-                self.bus.llm_job_board.claim,
-                worker_id=self.worker_id,
-            )
+            # 2. Reserve local capacity before claiming one LLM job.
+            await self.reserve_capacity()
+            try:
+                job = await self.call(
+                    self.bus.llm_job_board.claim,
+                    worker_id=self.worker_id,
+                )
+            except Exception:
+                self.release_capacity()
+                logger.exception("providers worker: claim failed")
+                await asyncio.sleep(self.poll_seconds)
+                continue
             if job is None:
+                self.release_capacity()
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
-            await self._slots.acquire()
-            task_obj = self.spawn(
+            self.spawn_reserved(
                 self._invoke_safe(job),
                 name=f"provider-job-{job.job_id}",
             )
-            self._inflight.add(task_obj)
-            task_obj.add_done_callback(self._inflight.discard)
 
     # ----- config change -------------------------------------------------
 
@@ -351,9 +338,6 @@ class ProvidersWorker(RuntimeWorker):
                 error_code=LLMErrorCode.PROVIDER_CRASHED,
                 error_detail=str(exc),
             )
-        finally:
-            self._slots.release()
-
     async def _invoke_provider(self, job: CallLLMJob) -> None:
         """Deserialize the job, call the provider, submit the result."""
         # Resolve cached provider.

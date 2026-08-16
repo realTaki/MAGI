@@ -300,12 +300,21 @@ class a2aRequestJobBoard(BaseJobBoard[_A2ARequestRow, A2ARequestJob, A2ARequestR
         )
         return job_id
 
-    def claim_for_target(self, *, magi_id: int, worker_id: str) -> A2ARequestJob | None:
+    def claim_for_target(
+        self,
+        *,
+        magi_id: int,
+        worker_id: str,
+        active_source_magi_ids: set[int] | None = None,
+    ) -> A2ARequestJob | None:
         with self._session() as s:
+            extra_where = [_A2ARequestRow.target_magi_id == magi_id]
+            if active_source_magi_ids:
+                extra_where.append(_A2ARequestRow.source_magi_id.not_in(active_source_magi_ids))
             row = self._cas_claim(
                 s,
                 owner=self._require_worker_id(worker_id),
-                extra_where=[_A2ARequestRow.target_magi_id == magi_id],
+                extra_where=extra_where,
             )
             s.commit()
             job = self._map_row(row, A2ARequestJob) if row is not None else None
@@ -429,12 +438,21 @@ class a2aNotifyBoard(BaseJobBoard[_A2ANotifyRow, A2ANotifyJob, A2ANotifyResult])
         )
         return job_id
 
-    def claim_for_target(self, *, magi_id: int, worker_id: str) -> A2ANotifyJob | None:
+    def claim_for_target(
+        self,
+        *,
+        magi_id: int,
+        worker_id: str,
+        active_source_magi_ids: set[int] | None = None,
+    ) -> A2ANotifyJob | None:
         with self._session() as s:
+            extra_where = [_A2ANotifyRow.target_magi_id == magi_id]
+            if active_source_magi_ids:
+                extra_where.append(_A2ANotifyRow.source_magi_id.not_in(active_source_magi_ids))
             row = self._cas_claim(
                 s,
                 owner=self._require_worker_id(worker_id),
-                extra_where=[_A2ANotifyRow.target_magi_id == magi_id],
+                extra_where=extra_where,
             )
             s.commit()
             job = self._map_row(row, A2ANotifyJob) if row is not None else None

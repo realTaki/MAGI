@@ -125,13 +125,22 @@ class _GatherResult:
 
 
 class AgentWorker(RuntimeWorker):
-    """Sequential consumer of one MAGI's ``chat_notify_jobs`` stream."""
+    """Concurrent-by-conversation consumer of one MAGI's turn streams."""
 
     worker_name = "agent"
 
-    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25, magi_id: int | None = None) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
-        self.worker_id = f"agent-{uuid.uuid4().hex}"
+    def __init__(
+        self,
+        bus: Bus,
+        *,
+        poll_seconds: float = 0.25,
+        magi_id: int | None = None,
+        concurrency: int | None = None,
+    ) -> None:
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
+        # ``self.worker_id`` 已经在 :class:`RuntimeWorker.__init__` 里生成
+        # (``f"{self.worker_name}-{uuid.uuid4().hex}"``), 此处不用再赋一次
+        # —— 覆盖会丢掉原 UUID 又生成一个新 UUID, 白消耗一次熵。
         self._in_flight: dict[int, asyncio.Event] = {}  # conversation_id → cancel_event
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
@@ -143,6 +152,9 @@ class AgentWorker(RuntimeWorker):
         # instruction.
         self._magi_id = magi_id
         self._claim_cursor = 0
+        self._claim_lock = asyncio.Lock()
+        self._active_a2a_peers: set[int] = set()
+        self._managed_contexts: set[int] = set()
 
     async def on_start(self) -> None:
         """Register AgentWorker-owned defaults before consuming turns."""
@@ -153,6 +165,16 @@ class AgentWorker(RuntimeWorker):
     # -- main loop -----------------------------------------------------------
 
     async def _run(self) -> None:
+        """Run one claim loop per local execution slot.
+
+        The shared claim lock reserves a conversation in ``_in_flight`` before
+        another loop can select it.  Thus different conversations make
+        progress concurrently while a same-conversation message remains
+        available for in-band steering.
+        """
+        await asyncio.gather(*(self._run_consumer() for _ in range(self.concurrency)))
+
+    async def _run_consumer(self) -> None:
         from magi.bus.guild.chatNotifyJob import ChatErrorCode, ChatNotifyResult
 
         while not self._stopping:
@@ -203,6 +225,7 @@ class AgentWorker(RuntimeWorker):
                 a2a_inbound_text=a2a_inbound_text,
             )
             try:
+                self._managed_contexts.add(id(ctx))
                 await self._process(ctx)
             except asyncio.CancelledError:
                 ctx.final_error = ChatErrorCode.RUN_CANCELLED
@@ -278,11 +301,29 @@ class AgentWorker(RuntimeWorker):
                                 error=ctx.final_error,
                             ),
                         )
+                current_event = self._in_flight.get(ctx.conversation_id)
+                if current_event is ctx.cancel_event:
+                    self._in_flight.pop(ctx.conversation_id, None)
+                if ctx.a2a_source_magi_id is not None:
+                    self._active_a2a_peers.discard(ctx.a2a_source_magi_id)
+                self._managed_contexts.discard(id(ctx))
 
     async def _claim_next_turn(self) -> tuple[str | None, Any | None]:
+        async with self._claim_lock:
+            return await self._claim_next_turn_locked()
+
+    async def _claim_next_turn_locked(self) -> tuple[str | None, Any | None]:
         """Fairly claim local chat and MAGIS-shared A2A work."""
+        agent_board = self.bus.agent_job_board
+
+        def claim_chat():
+            return agent_board.claim_for_new_conversation(
+                worker_id=self.worker_id,
+                active_conversation_ids=set(self._in_flight),
+            )
+
         choices: list[tuple[str, Any]] = [
-            ("chat", lambda: self.bus.agent_job_board.claim(worker_id=self.worker_id))
+            ("chat", claim_chat)
         ]
         # Bind to locals so Pylance keeps the ``is not None``
         # narrowing across the lambda boundary; ``self.bus.*`` and
@@ -299,6 +340,7 @@ class AgentWorker(RuntimeWorker):
                     lambda: request_board.claim_for_target(
                         magi_id=magi_id,
                         worker_id=self.worker_id,
+                        active_source_magi_ids=set(self._active_a2a_peers),
                     ),
                 )
             )
@@ -309,6 +351,7 @@ class AgentWorker(RuntimeWorker):
                     lambda: notify_board.claim_for_target(
                         magi_id=magi_id,
                         worker_id=self.worker_id,
+                        active_source_magi_ids=set(self._active_a2a_peers),
                     ),
                 )
             )
@@ -318,6 +361,17 @@ class AgentWorker(RuntimeWorker):
             source, claim = choices[(offset + index) % len(choices)]
             job = await self.call(claim)
             if job is not None:
+                if source == "chat":
+                    conversation_id = getattr(job, "conversation_id", None) or 0
+                    if conversation_id:
+                        # Reserve the key before dropping ``_claim_lock``.
+                        # ``_process`` replaces this placeholder with the
+                        # context's real cancellation event.
+                        self._in_flight[conversation_id] = asyncio.Event()
+                else:
+                    peer_magi_id = getattr(job, "source_magi_id", None)
+                    if isinstance(peer_magi_id, int):
+                        self._active_a2a_peers.add(peer_magi_id)
                 return source, job
         return None, None
 
@@ -393,7 +447,11 @@ class AgentWorker(RuntimeWorker):
             ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
             await self._publish_delivery(ctx)
         finally:
-            self._in_flight.pop(ctx.conversation_id, None)
+            if (
+                id(ctx) not in self._managed_contexts
+                and self._in_flight.get(ctx.conversation_id) is ctx.cancel_event
+            ):
+                self._in_flight.pop(ctx.conversation_id, None)
 
     # -- context assembly ----------------------------------------------------
 

@@ -70,11 +70,6 @@ logger = logging.getLogger("magi.tools.worker")
 #: logic — see :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` for the
 #: mirror on the provider side.
 
-#: Default concurrency — how many tool jobs may run simultaneously.
-#: Override by passing ``concurrency`` to the constructor.
-_DEFAULT_CONCURRENCY = 2
-
-
 def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -142,13 +137,9 @@ class ToolsWorker(RuntimeWorker):
     Publishes the builtin tool catalog at ``start()``, then drains
     :class:`RunToolJob` claims forever.
 
-    Concurrency is controlled by an :class:`asyncio.Semaphore` whose
-    size defaults to :data:`_DEFAULT_CONCURRENCY` (2) and can be
-    overridden via the ``concurrency`` constructor parameter. The
-    claim loop is fire-and-forget — it acquires a slot, spawns a
-    child :class:`asyncio.Task`, and immediately loops to claim the
-    next job.  The semaphore is the throttle; there is no fixed
-    worker pool or queue depth limit.
+    ``RuntimeWorker`` owns the common concurrency semaphore.  The claim loop
+    reserves capacity, claims one job, then spawns a managed child task; there
+    is no fixed worker pool or queue depth limit.
     """
 
     worker_name = "tools"
@@ -160,14 +151,7 @@ class ToolsWorker(RuntimeWorker):
         poll_seconds: float = 0.25,
         concurrency: int | None = None,
     ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
-        # Concurrency is constructor-injected only — no env var
-        # fallback. The startup module reads any env-configured
-        # override and passes it in. Mirrors
-        # :class:`~magi.providers.worker.ProvidersWorker`.
-        self.concurrency = max(1, concurrency or _DEFAULT_CONCURRENCY)
-        self._slots = asyncio.Semaphore(self.concurrency)
-        self._inflight: set[asyncio.Task[None]] = set()
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         #: Set by :meth:`_on_injected_tools_changed` when external
         #: subsystems inject tools.  The claim loop checks this
         #: before each claim and republishes the catalog.
@@ -185,17 +169,7 @@ class ToolsWorker(RuntimeWorker):
         #    (mirrors ProvidersWorker._publish_provider_options).
         await self._publish_full_catalog()
 
-        self._inflight.clear()
-
     async def on_stopped(self) -> None:
-        # Wait for any still-running child tasks before the event
-        # loop tears down.  Semaphore prevents new tasks from
-        # spawning after _run() exits; inflight drains what's
-        # already in flight.
-        if self._inflight:
-            await asyncio.gather(*self._inflight, return_exceptions=True)
-            self._inflight.clear()
-
         # Background shells are process-local state owned by the
         # bash tools, and this worker is the only thing that
         # outlives an individual tool call — so it's the only place
@@ -218,33 +192,31 @@ class ToolsWorker(RuntimeWorker):
                 await self._publish_full_catalog()
                 self._catalog_dirty.clear()
 
+            await self.reserve_capacity()
             try:
                 job = await asyncio.to_thread(
                     self.bus.tool_job_board.claim,
                     worker_id=self.worker_id,
                 )
             except Exception:
+                self.release_capacity()
                 logger.exception("tools worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
                 continue
             if job is None:
+                self.release_capacity()
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
-            # Acquire a concurrency slot before spawning.  The
-            # loop blocks here when all slots are busy — no
-            # further claims happen until a slot frees up.
-            await self._slots.acquire()
-            task = self.spawn(self._invoke_safe(job), name=f"tool-job-{job.job_id}")
-            self._inflight.add(task)
-            task.add_done_callback(self._inflight.discard)
+            self.spawn_reserved(self._invoke_safe(job), name=f"tool-job-{job.job_id}")
 
     async def _invoke_safe(self, job: RunToolJob) -> None:
-        """Wrapper that guarantees ``_slots.release()``.
+        """Translate failures into results; RuntimeWorker releases capacity.
 
         Even if :meth:`_execute` raises an unexpected exception
         (real bug, not a tool-level ``ToolResult(is_error=True)``),
-        the slot is released so the worker doesn't deadlock.
+        the shared worker wrapper releases its slot so the loop doesn't
+        deadlock.
         On cancellation, a failure result is submitted before
         re-raising so the caller doesn't wait forever.
         Mirrors :meth:`ProvidersWorker._invoke_safe`.
@@ -258,8 +230,6 @@ class ToolsWorker(RuntimeWorker):
                 error_code=ToolErrorCode.CANCELLED,
             )
             raise
-        finally:
-            self._slots.release()
 
     # ----- catalog publish ----------------------------------------------
 

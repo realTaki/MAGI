@@ -96,6 +96,7 @@ def _make_bus(**overrides) -> Mock:
     # -- job boards --
     bus.agent_job_board = Mock()
     bus.agent_job_board.claim = Mock(return_value=None)
+    bus.agent_job_board.claim_for_new_conversation = Mock(return_value=None)
     bus.agent_job_board.submit_result = Mock()
     bus.agent_job_board.claim_for_steering = Mock(return_value=None)
 
@@ -350,6 +351,51 @@ async def test_one_agent_worker_consumes_persisted_steering_while_waiting_for_a_
     assert settled.status == JobStatus.COMPLETED
 
 
+@pytest.mark.asyncio
+async def test_agent_worker_runs_different_conversations_concurrently():
+    """One AgentWorker uses its slots across conversations, never per process."""
+    from types import SimpleNamespace
+
+    from magi.agent.worker import AgentWorker
+    from magi.bus.db.engine import EngineFactory
+    from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
+
+    factory = EngineFactory("sqlite:///:memory:")
+    agent_board = chatNotifyBoard(factory)
+    agent_board.job_model.__table__.create(factory.engine)
+    agent_board.publish(ChatNotifyJob(conversation_id=1, contact_id=1, channel="tg", text="one"))
+    agent_board.publish(ChatNotifyJob(conversation_id=2, contact_id=2, channel="tg", text="two"))
+    bus = SimpleNamespace(
+        agent_job_board=agent_board,
+        a2a_request_job_board=None,
+        a2a_notify_job_board=None,
+        settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
+    )
+    worker = AgentWorker(bus=bus, concurrency=2)  # type: ignore[arg-type]
+
+    async def direct_call(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    both_started = asyncio.Event()
+    release = asyncio.Event()
+    seen: list[int] = []
+
+    async def process(ctx):
+        seen.append(ctx.conversation_id)
+        if len(seen) == 2:
+            both_started.set()
+        await release.wait()
+
+    worker.call = direct_call  # type: ignore[method-assign]
+    worker._process = process  # type: ignore[method-assign]
+    run_task = asyncio.create_task(worker._run())
+    await asyncio.wait_for(both_started.wait(), timeout=1)
+    assert set(seen) == {1, 2}
+    worker._stopping = True
+    release.set()
+    await asyncio.wait_for(run_task, timeout=1)
+
+
 # ---------------------------------------------------------------------------
 # Test 4: cancel via cancel_event
 # ---------------------------------------------------------------------------
@@ -433,11 +479,11 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
         claimed = True
         return job
 
-    bus.agent_job_board.claim.side_effect = claim
-    worker = AgentWorker(bus)
+    bus.agent_job_board.claim_for_new_conversation.side_effect = lambda **_kwargs: claim()
+    worker = AgentWorker(bus, concurrency=1)
     started = asyncio.Event()
 
-    async def blocked_process(_ctx):
+    async def blocked_process(_ctx, **_kwargs):
         started.set()
         await asyncio.Event().wait()
 

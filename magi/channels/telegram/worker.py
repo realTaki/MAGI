@@ -20,9 +20,14 @@ class TelegramWorker(ChannelWorker):
     channel_name = "tg"
 
     def __init__(
-        self, bus: Bus, *, poll_seconds: float = 0.25, delivery_poll_seconds: float = 0.1
+        self,
+        bus: Bus,
+        *,
+        poll_seconds: float = 0.25,
+        delivery_poll_seconds: float = 0.1,
+        concurrency: int | None = None,
     ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         self._delivery_poll_seconds = delivery_poll_seconds
         self._bot_app: object | None = None
         self._shutdown_event: asyncio.Event | None = None

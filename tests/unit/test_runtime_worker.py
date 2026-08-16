@@ -13,8 +13,8 @@ from magi.startup.worker import RuntimeWorker
 class _ProbeWorker(RuntimeWorker):
     worker_name = "probe"
 
-    def __init__(self) -> None:
-        super().__init__(bus=None)  # type: ignore[arg-type]
+    def __init__(self, *, concurrency: int | None = None) -> None:
+        super().__init__(bus=None, concurrency=concurrency)  # type: ignore[arg-type]
         self.started = asyncio.Event()
 
     async def _run(self) -> None:
@@ -79,3 +79,27 @@ async def test_worker_can_intentionally_skip_startup() -> None:
     assert await worker.start() is False
     assert worker._task is None
     assert worker.health()["running"] is False
+
+
+@pytest.mark.asyncio
+async def test_reserved_capacity_limits_managed_jobs() -> None:
+    worker = _ProbeWorker(concurrency=1)
+    running = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def job() -> None:
+        running.set()
+        await finish.wait()
+
+    await worker.reserve_capacity()
+    task = worker.spawn_reserved(job())
+    await running.wait()
+
+    next_reservation = asyncio.create_task(worker.reserve_capacity())
+    await asyncio.sleep(0)
+    assert not next_reservation.done()
+
+    finish.set()
+    await task
+    await next_reservation
+    worker.release_capacity()

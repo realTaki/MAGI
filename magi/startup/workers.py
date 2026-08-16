@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from magi.runtime_worker import RuntimeWorker
@@ -27,6 +27,7 @@ class WorkerRegistry:
         *,
         enabled_channels: Iterable[str] = (),
         magi_id: int | None = None,
+        worker_concurrency: Mapping[str, int | None] | None = None,
     ) -> None:
         from magi.agent.worker import AgentWorker
         from magi.channels.tasks.worker import TaskWorker
@@ -38,22 +39,31 @@ class WorkerRegistry:
         from magi.tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
+        concurrency = dict(worker_concurrency or {})
+
+        def worker_slots(name: str) -> int | None:
+            return concurrency.get(name)
+
         # The WebUI is started regardless of ``enabled_channels``.  The
         # runtime fallback in :func:`magi.startup.runtime._build_channels`
         # provides that safe operator surface when no selection is persisted.
         enabled.update(_REQUIRED_CHANNELS)
         self._workers: dict[str, RuntimeWorker] = {
-            "providers": ProvidersWorker(bus),
-            "tools": ToolsWorker(bus),
-            "mcp": McpWorker(bus),
+            "providers": ProvidersWorker(bus, concurrency=worker_slots("providers")),
+            "tools": ToolsWorker(bus, concurrency=worker_slots("tools")),
+            "mcp": McpWorker(bus, concurrency=worker_slots("mcp")),
             # AgentWorker now receives ``magi_id`` so :meth:`_system_prompt`
             # can render the per-MAGI ``## MAGIS: ... Team instructions``
             # block via :meth:`MagisMembershipBook.instruction_context`.
-            "agent": AgentWorker(bus, magi_id=magi_id),
-            "task": TaskWorker(bus),
-            "tg": TelegramWorker(bus),
-            "webui": WebUIWorker(bus),
-            "proactive": ProactiveWorker(bus, magi_id=magi_id),
+            "agent": AgentWorker(bus, magi_id=magi_id, concurrency=worker_slots("agent")),
+            "task": TaskWorker(bus, concurrency=worker_slots("task")),
+            "tg": TelegramWorker(bus, concurrency=worker_slots("tg")),
+            "webui": WebUIWorker(bus, concurrency=worker_slots("webui")),
+            "proactive": ProactiveWorker(
+                bus,
+                magi_id=magi_id,
+                concurrency=worker_slots("proactive"),
+            ),
         }
         self._started: list[RuntimeWorker] = []
         self._enabled_channels = enabled

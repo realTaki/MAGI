@@ -10,8 +10,8 @@
   :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`.
 - **No environment reads**. Timeouts and per-server config come
   from ``bus.settings_book`` / the row, never from ``os.environ``.
-- **No env-knob concurrency** — the worker is the only one, so
-  there is no slot semaphore to parameterise.
+- **No environment concurrency knob** — bounded in-process concurrency is
+  constructor-injected through :class:`~magi.runtime_worker.RuntimeWorker`.
 
 Write authority
 ---------------
@@ -110,9 +110,11 @@ class McpWorker(RuntimeWorker):
         bus: Bus,
         *,
         poll_seconds: float = 0.25,
+        concurrency: int | None = None,
     ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         self._connections: dict[str, MCPServerConnection] = {}
+        self._server_locks: dict[str, asyncio.Lock] = {}
 
     # -- lifecycle --------------------------------------------------------
 
@@ -134,18 +136,30 @@ class McpWorker(RuntimeWorker):
 
     async def _run(self) -> None:
         while not self._stopping:
+            await self.reserve_capacity()
             try:
                 job = await self.call(
                     self.bus.change_mcp_server_job_board.claim,
                     worker_id=self.worker_id,
                 )
             except Exception:
+                self.release_capacity()
                 logger.exception("mcp worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
                 continue
             if job is None:
+                self.release_capacity()
                 await asyncio.sleep(self.poll_seconds)
                 continue
+            self.spawn_reserved(
+                self._handle_change_serialized(job),
+                name=f"mcp-change-{job.job_id}",
+            )
+
+    async def _handle_change_serialized(self, job: ChangeMCPServerJob) -> None:
+        """Handle different servers concurrently but serialize one server."""
+        lock = self._server_locks.setdefault(job.server_name, asyncio.Lock())
+        async with lock:
             await self._handle_change(job)
 
     # -- startup / per-change handling -----------------------------------

@@ -41,8 +41,9 @@ class ProactiveWorker(RuntimeWorker):
         *,
         magi_id: int | None = None,
         poll_seconds: float = 0.25,
+        concurrency: int | None = None,
     ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         self._magi_id = magi_id
 
     async def on_start(self) -> None:
@@ -62,20 +63,25 @@ class ProactiveWorker(RuntimeWorker):
         from magi.proactive.preset_tasks import handle_seed_job
 
         while not self._stopping:
+            await self.reserve_capacity()
             try:
                 job = await self.call(
                     self.bus.seed_preset_task_job_board.claim,
                     worker_id=self.worker_id,
                 )
             except Exception:
+                self.release_capacity()
                 logger.exception("proactive worker: claim failed")
                 await asyncio.sleep(self.poll_seconds)
                 continue
             if job is None:
+                self.release_capacity()
                 await asyncio.sleep(self.poll_seconds)
                 continue
-
-            await handle_seed_job(self.bus, job, worker_id=self.worker_id)
+            self.spawn_reserved(
+                handle_seed_job(self.bus, job, worker_id=self.worker_id),
+                name=f"seed-preset-task-{job.job_id}",
+            )
 
     # ------------------------------------------------------------------
     # bootstrap

@@ -34,11 +34,19 @@ class ChannelWorker(RuntimeWorker):
     # strings, not a delayed NotImplementedError).
     channel_name: ClassVar[str]
 
-    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
+    def __init__(
+        self,
+        bus: Bus,
+        *,
+        poll_seconds: float = 0.25,
+        concurrency: int | None = None,
+    ) -> None:
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         self.worker_name = self.channel_name
-        # Keep the channel readable while preserving instance identity for
-        # lease ownership when two adapters overlap during a restart.
+        # 父类 :meth:`RuntimeWorker.__init__` 是在 ``worker_name`` 还是默认
+        # ``"worker"`` 时生成的 ``self.worker_id``; 这里用 ``channel_name``
+        # 重生成一次, 让 ``worker_id`` 前缀跟 channel 对齐 —— 每次重启都
+        # 换, 避免「同 channel 起两个 adapter 时各自的 lease 互踩」。
         self.worker_id = f"{self.channel_name}-{uuid.uuid4().hex}"
         self._queue_depth = 0
 
@@ -66,8 +74,6 @@ class ChannelWorker(RuntimeWorker):
         review) caused every worker to thrash on rows it didn't own
         and amplified duplicate-delivery risk under restart.
         """
-        from magi.bus.guild.deliveryJob import DeliveryResult
-
         max_depth = await self._read_max_queue_depth()
         while not self._stopping:
             depth = await self._read_queue_depth(channel_label)
@@ -75,6 +81,7 @@ class ChannelWorker(RuntimeWorker):
                 self._log_backpressure_throttle(channel_label, depth)
                 await asyncio.sleep(self.poll_seconds * 5)
                 continue
+            await self.reserve_capacity()
             try:
                 job = await self.call(
                     self.bus.delivery_job_board.claim_for_channel,
@@ -82,10 +89,12 @@ class ChannelWorker(RuntimeWorker):
                     worker_id=self.worker_id,
                 )
             except Exception:
+                self.release_capacity()
                 logger.exception("channels[%s]: claim failed", channel_label)
                 await asyncio.sleep(self.poll_seconds)
                 continue
             if job is None:
+                self.release_capacity()
                 await asyncio.sleep(self.poll_seconds)
                 continue
             # ``claim_for_channel`` filters at the SQL layer. A mismatched
@@ -97,26 +106,41 @@ class ChannelWorker(RuntimeWorker):
                     channel_label,
                     getattr(job, "channel", None),
                 )
+                self.release_capacity()
                 continue
-            self.polled()
-            try:
-                await deliver_fn(job)
-                await self.call(
-                    self.bus.delivery_job_board.submit_result,
-                    job_id=job.job_id,
-                    worker_id=self.worker_id,
-                    result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
-                )
-                self.succeeded()
-            except Exception as exc:
-                self.failed(exc)
-                logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
-                await self.call(
-                    self.bus.delivery_job_board.submit_result,
-                    job_id=job.job_id,
-                    worker_id=self.worker_id,
-                    result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
-                )
+            self.spawn_reserved(
+                self._deliver_claimed(job, deliver_fn, channel_label),
+                name=f"{channel_label}-delivery-{job.job_id}",
+            )
+
+    async def _deliver_claimed(
+        self,
+        job: DeliveryJob,
+        deliver_fn: Callable[[DeliveryJob], Awaitable[None]],
+        channel_label: str,
+    ) -> None:
+        """Deliver one already-claimed row under RuntimeWorker capacity."""
+        from magi.bus.guild.deliveryJob import DeliveryResult
+
+        self.polled()
+        try:
+            await deliver_fn(job)
+            await self.call(
+                self.bus.delivery_job_board.submit_result,
+                job_id=job.job_id,
+                worker_id=self.worker_id,
+                result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
+            )
+            self.succeeded()
+        except Exception as exc:
+            self.failed(exc)
+            logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
+            await self.call(
+                self.bus.delivery_job_board.submit_result,
+                job_id=job.job_id,
+                worker_id=self.worker_id,
+                result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
+            )
 
     async def _read_max_queue_depth(self) -> int:
         raw = await self.call(self.bus.settings_book.get_value, key="channels.delivery.max_queue_depth")

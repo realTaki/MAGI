@@ -23,9 +23,16 @@ class TaskWorker(RuntimeWorker):
     worker_name = "task"
     worker_kind = "scheduler"
 
-    def __init__(self, bus: Bus, *, poll_seconds: float = 15.0) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds)
+    def __init__(
+        self,
+        bus: Bus,
+        *,
+        poll_seconds: float = 15.0,
+        concurrency: int | None = None,
+    ) -> None:
+        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
         self._next_fire: dict[str, datetime] = {}
+        self._task_locks: dict[str, asyncio.Lock] = {}
         self._rehydrated = False
 
     async def register_channel(self) -> None:
@@ -41,16 +48,23 @@ class TaskWorker(RuntimeWorker):
         await self._reap_stale_runs()
         self._rehydrated = True
         while not self._stopping:
+            await self.reserve_capacity()
             try:
                 rj = await asyncio.to_thread(
                     self.bus.run_task_job_board.claim,
                     worker_id=self.worker_id,
                 )
             except Exception:
+                self.release_capacity()
                 rj = None
-            if rj is not None:
-                await self._handle_run_task_job(rj)
-                continue
+            else:
+                if rj is not None:
+                    self.spawn_reserved(
+                        self._handle_run_task_job_serialized(rj),
+                        name=f"run-task-{rj.job_id}",
+                    )
+                    continue
+                self.release_capacity()
             try:
                 tasks = await self.call(self.bus.tasks_book.list_all_enabled_for_workers)
             except Exception:
@@ -172,6 +186,12 @@ class TaskWorker(RuntimeWorker):
                 worker_id=self.worker_id,
                 result=RunTaskResult(job_id=rj.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
             )
+
+    async def _handle_run_task_job_serialized(self, rj: RunTaskJob) -> None:
+        """Run unrelated task ids concurrently, never fire one task twice."""
+        lock = self._task_locks.setdefault(rj.task_id, asyncio.Lock())
+        async with lock:
+            await self._handle_run_task_job(rj)
 
     async def _rehydrate(self) -> None:
         try:

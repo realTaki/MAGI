@@ -55,19 +55,28 @@ def _claim_sequence(*values: object) -> MagicMock:
     return MagicMock(side_effect=_next)
 
 
+def _bare_worker() -> _FakeChannelWorker:
+    """Build the minimal RuntimeWorker state needed by the loop template."""
+    worker = _FakeChannelWorker.__new__(_FakeChannelWorker)
+    worker.channel_name = "fake"
+    worker.worker_id = "fake-worker"
+    worker.poll_seconds = 0.01
+    worker.concurrency = 2
+    worker._slots = asyncio.Semaphore(worker.concurrency)
+    worker._children = set()
+    worker._stopping = False
+    worker._last_poll_at = None
+    worker._last_success_at = None
+    worker._last_error = None
+    return worker
+
+
 @pytest.mark.asyncio
 async def test_successful_delivery_calls_submit_result_with_success():
     """A successful deliver_fn should submit_result(success=True)."""
     delivered: list[DeliveryJob] = []
 
-    w = _FakeChannelWorker.__new__(_FakeChannelWorker)
-    w.channel_name = "fake"
-    w.worker_id = "fake-worker"
-    w.poll_seconds = 0.01
-    w._stopping = False
-    w._last_poll_at = None
-    w._last_success_at = None
-    w._last_error = None
+    w = _bare_worker()
 
     fake_job = DeliveryJob(channel="fake", text="hi")
     w.bus = MagicMock()
@@ -97,14 +106,7 @@ async def test_successful_delivery_calls_submit_result_with_success():
 @pytest.mark.asyncio
 async def test_failed_delivery_calls_submit_result_with_failure():
     """A failing deliver_fn should submit_result(success=False) with error."""
-    w = _FakeChannelWorker.__new__(_FakeChannelWorker)
-    w.channel_name = "fake"
-    w.worker_id = "fake-worker"
-    w.poll_seconds = 0.01
-    w._stopping = False
-    w._last_poll_at = None
-    w._last_success_at = None
-    w._last_error = None
+    w = _bare_worker()
 
     fake_job = DeliveryJob(channel="fake", text="x")
     w.bus = MagicMock()
@@ -133,14 +135,7 @@ async def test_skips_job_with_wrong_channel():
     """A mismatched claimed job is not delivered or actively released."""
     delivered: list[DeliveryJob] = []
 
-    w = _FakeChannelWorker.__new__(_FakeChannelWorker)
-    w.channel_name = "fake"
-    w.worker_id = "fake-worker"
-    w.poll_seconds = 0.01
-    w._stopping = False
-    w._last_poll_at = None
-    w._last_success_at = None
-    w._last_error = None
+    w = _bare_worker()
 
     wrong_job = DeliveryJob(channel="tg", text="x")
     w.bus = MagicMock()
@@ -163,14 +158,7 @@ async def test_skips_job_with_wrong_channel():
 @pytest.mark.asyncio
 async def test_backpressure_throttle_skips_claim():
     """When pending_count exceeds max_depth, claim should not be called."""
-    w = _FakeChannelWorker.__new__(_FakeChannelWorker)
-    w.channel_name = "fake"
-    w.worker_id = "fake-worker"
-    w.poll_seconds = 0.01
-    w._stopping = False
-    w._last_poll_at = None
-    w._last_success_at = None
-    w._last_error = None
+    w = _bare_worker()
 
     w.bus = MagicMock()
     # claim_for_channel would raise StopIteration if reached — backpressure branch
