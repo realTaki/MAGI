@@ -299,6 +299,10 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         conversation-list API currently exposes no message-derived preview
         or count, so it does not need a special aggregate DTO.
         """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
         with self._session() as s:
             total = int(
                 s.scalar(
@@ -456,8 +460,8 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         contact_id: int,
         conversation_id: int,
         *,
-        limit: int,
-        offset: int,
+        limit: int = 50,
+        offset: int = 0,
         include_archived: bool = False,
     ) -> tuple[list[Message], int, int]:
         """Paginated message slice, scoped to ``contact_id``'s conversation.
@@ -475,6 +479,10 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         the rest of the Book surface raises, so callers don't need a
         special branch for "wrong owner".
         """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
         if self.get_for_owner(contact_id=contact_id, conversation_id=conversation_id) is None:
             raise ConversationNotFoundError(conversation_id)
         message_book = MessageBook(self._factory)
@@ -674,8 +682,8 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         self,
         *,
         conversation_id: int,
-        limit: int,
-        offset: int,
+        limit: int = 50,
+        offset: int = 0,
         include_archived: bool = False,
     ) -> tuple[list[Message], int, int]:
         """Paginated slice of ``conversation_id``'s messages.
@@ -699,6 +707,10 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         ``from __future__ import annotations`` for some dataclass
         versions.
         """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
         from sqlalchemy import func
 
         with self._session() as s:
@@ -800,6 +812,10 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         run). Lets the caller surface a 503 rather than a silent
         empty box.
         """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
         if not q or not q.strip():
             return [], 0
         match = " ".join(

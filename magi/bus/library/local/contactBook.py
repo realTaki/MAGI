@@ -259,6 +259,8 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         (after both passes merge), matching the old
         behaviour.
         """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         pattern = f"%{query.strip()}%"
         with self._session() as s:
             name_rows = list(

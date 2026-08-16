@@ -96,7 +96,6 @@ def _make_bus(**overrides) -> Mock:
     # -- job boards --
     bus.agent_job_board = Mock()
     bus.agent_job_board.claim = Mock(return_value=None)
-    bus.agent_job_board.release = Mock()
     bus.agent_job_board.submit_result = Mock()
     bus.agent_job_board.claim_for_steering = Mock(return_value=None)
 

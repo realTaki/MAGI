@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -38,7 +39,7 @@ class ChannelWorker(RuntimeWorker):
         self.worker_name = self.channel_name
         # Keep the channel readable while preserving instance identity for
         # lease ownership when two adapters overlap during a restart.
-        self.worker_id = f"{self.channel_name}-{self.worker_id.rsplit('-', 1)[-1]}"
+        self.worker_id = f"{self.channel_name}-{uuid.uuid4().hex}"
         self._queue_depth = 0
 
     async def register_channel(self) -> None:
@@ -87,24 +88,15 @@ class ChannelWorker(RuntimeWorker):
             if job is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
-            # Defensive: if the row's channel ever drifts from
-            # ``channel_label``, skip it rather than delivering to the
-            # wrong channel. ``claim_for_channel`` already filters at
-            # the SQL layer, so this is a safety net — not a hot path.
+            # ``claim_for_channel`` filters at the SQL layer. A mismatched
+            # row therefore signals storage corruption or a board bug; do not
+            # deliver it and let its lease expire for later diagnosis.
             if getattr(job, "channel", "") != channel_label:
                 logger.warning(
-                    "channels[%s]: claim_for_channel returned a row with channel=%r; releasing",
+                    "channels[%s]: claim_for_channel returned a row with channel=%r; leaving lease untouched",
                     channel_label,
                     getattr(job, "channel", None),
                 )
-                try:
-                    await self.call(
-                        self.bus.delivery_job_board.release,
-                        job_id=job.job_id,
-                        worker_id=self.worker_id,
-                    )
-                except Exception:
-                    pass
                 continue
             self.polled()
             try:

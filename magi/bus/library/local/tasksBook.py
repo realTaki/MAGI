@@ -755,6 +755,8 @@ class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
 
         Used by TaskWorker on startup for crash recovery.
         """
+        if older_than_seconds <= 0:
+            raise ValueError("older_than_seconds must be positive")
         cutoff = utcnow_naive() - timedelta(seconds=older_than_seconds)
         with self._session() as s:
             rows = s.scalars(

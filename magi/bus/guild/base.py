@@ -145,11 +145,9 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
     job_model: type[RowT]
     job_cls: type[JobT]
     result_cls: type[ResultT]
-    def __init__(self, factory: EngineFactory, *, lease_seconds: int):
-        if lease_seconds <= 0:
-            raise ValueError("lease_seconds must be positive")
+    _lease_seconds = 60  # default lease length for all job boards (subclasses may override)
+    def __init__(self, factory: EngineFactory):
         self._factory = factory
-        self._lease_seconds = lease_seconds
 
     def _session(self):
         return self._factory.session()
@@ -250,6 +248,14 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
         A stale worker's result is deliberately ignored.  This is what keeps a
         worker whose lease was reclaimed from overwriting the new owner's work.
+
+        The write is **silently** dropped when the CAS fails: BUS does not
+        notify the caller, because the correct response is "let the new
+        owner finish the job".  Callers that need to distinguish "wrote
+        successfully" from "lost the lease" must inspect
+        :attr:`BaseJobRowMixin.leased_by` after the call, or wrap the submit
+        in a re-claim loop.  BUS deliberately does not retry — auto-retry
+        would just let the stale worker fight the new owner for the same row.
         """
         worker_id = self._require_worker_id(worker_id)
         with self._session() as s:
@@ -260,27 +266,6 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         """轮询指定 ``job_id`` 的结果。"""
         with self._session() as s:
             return self._get_result(s, job_id=job_id)
-
-    def release(self, *, job_id: int, worker_id: str) -> None:
-        """Release a claimed job back to *pending*.
-
-        Used by AgentWorker when ``_run()`` claims a ChatNotifyJob for a
-        session that already has an active in-flight run.  The job
-        is released so ``_process()`` can reclaim it as steering
-        via ``claim_for_steering``.
-        """
-        worker_id = self._require_worker_id(worker_id)
-        with self._session() as s:
-            s.execute(
-                update(self.job_model)
-                .where(
-                    self.job_model.job_id == job_id,  # type: ignore[reportAttributeAccessIssue]
-                    self.job_model.status == JobStatus.PROCESSING,  # type: ignore[reportAttributeAccessIssue]
-                    self.job_model.leased_by == worker_id,  # type: ignore[reportAttributeAccessIssue]
-                )
-                .values(status=JobStatus.PENDING, leased_by=None, leased_until=None)
-            )
-            s.commit()
 
     async def wait_for_result(
         self,
@@ -303,6 +288,10 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         responsive while the Worker — which polls every
         ~0.25s — catches up.
         """
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be positive")
         import asyncio
 
         loop = asyncio.get_running_loop()

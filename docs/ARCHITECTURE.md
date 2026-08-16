@@ -199,7 +199,7 @@ For channels that do follow this template:
      sleep `5 × poll_seconds` before retrying.
   2. **Claim** — `bus.delivery_job_board.claim_for_channel(channel, worker_id)`.
   3. **Lease ownership** — the durable row records `worker_id`; a stale worker
-     cannot submit or release a lease reclaimed by another worker.
+     cannot submit a result after another worker reclaims the lease.
   4. **Deliver** — invoke the caller-supplied `_deliver_<channel>` function.
   5. **Submit** — write `DeliveryResult(success, error)` back to the board.
 
@@ -316,10 +316,8 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
   compare-and-set and ends the run. Responses are not new inbound messages
   and cannot themselves carry `request` / `expect_reply` semantics, so
   two Agents never auto-loop just because each wants to "answer the other".
-- Steering is in-band: when a fresh `ChatNotifyJob` for an already-active
-  conversation arrives, the Worker releases it back to the board; the
-  active loop pulls it as steering via
-  `agent_job_board.claim_for_steering(...)` during `_gather_all`.
+- Steering is in-band: the active loop pulls a fresh same-conversation job
+  via `agent_job_board.claim_for_steering(...)` during `_gather_all`.
 - Module-private helpers (`agent_context.build_messages_from_session`,
   `system_prompt.build_system_prompt`, `auto_title.request_session_title`,
   `token_usage.record_token_usage`) keep the Worker thin.

@@ -31,7 +31,7 @@ worker 拿到 job 后直接查 tool 名 → 跑 gate → 执行，不再重做�
       └─ spawn _run() task
     _run() loop
       └─ if _catalog_dirty → _publish_full_catalog()  # 工具注入后自动刷新
-      └─ bus.tool_job_board.claim()
+      └─ bus.tool_job_board.claim(worker_id="worker-1")
       └─ await _slots.acquire()
       └─ create_task(_invoke_safe(job))  # fire-and-forget
       └─ continue
