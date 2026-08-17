@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Integer, Text, or_
@@ -70,29 +69,20 @@ class ChatNotifyJob(BaseJob):
     contact_id: int | None = None  # 所属联系人；task 无联系人时为 None
 
 
-class ChatErrorCode(StrEnum):
-    """Stable error code returned on a failed :class:`ChatNotifyResult`.
-
-    ``StrEnum`` so each member is a ``str`` subclass — ``==`` against
-    string literals, JSON serialisation and any ``String`` columns keep
-    working unchanged. Mirrors
-    :class:`magi.bus.guild.callLLMJob.LLMErrorCode` and
-    :class:`magi.bus.guild.a2aJob.A2AErrorCode`.
-    """
-
-    RUN_CANCELLED = "magi.run_cancelled"  # 运行被取消（cancel_event / 关闭）
-    AGENT_CRASHED = "agent_crashed"  # agent loop 未捕获异常
-    LLM_TIMEOUT = "llm_timeout"  # LLM 调用超时（result is None）
-    LLM_FAILED = "llm_failed"  # LLM 返回非 COMPLETED（细节见 BaseJobResult.error）
-    LEASE_LOST = "lease_lost"  # 工具/A2A 汇聚阶段 lease 丢失
-
-
 @dataclass(frozen=True, slots=True)
 class ChatNotifyResult(BaseJobResult):
-    """Final state of a turn."""
+    """Final state of a turn.
 
-    error_code: ChatErrorCode | None = None  # 稳定错误码（失败时非 None）
-    # 失败的人类可读文案用继承的 ``BaseJobResult.error``，不再另设 error_detail
+    Channel workers (TG / WebUI / …) only read ``status`` (see
+    :class:`JobStatus`) — they never see a stable error code. When the
+    agent loop fails, :meth:`AgentWorker._publish_delivery` enqueues a
+    :class:`DeliveryJob` carrying the user-facing error text, and
+    ``chat_notify_jobs.status`` flips to ``FAILED``. Operators diagnose
+    failures from the inherited :attr:`BaseJobResult.error` (humman-
+    readable string) plus stderr; the structured
+    ``LLMErrorCode`` / ``A2AErrorCode`` layers stay on the provider /
+    A2A board paths where the corresponding workers live.
+    """
 
 
 class _ChatNotifyRow(BaseJobRowMixin):
@@ -312,7 +302,6 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
 
 
 __all__ = [
-    "ChatErrorCode",
     "ChatNotifyJob",
     "ChatNotifyResult",
     "chatNotifyBoard",

@@ -183,7 +183,7 @@ async def test_single_turn_no_tools_delivers():
 
     # reply set and delivery published
     assert ctx.final_reply == "Hello!"
-    assert ctx.final_error is None
+    assert ctx.failed is False
     bus.delivery_job_board.publish.assert_called_once()
     # ChatNotifyResult is submitted by _run(), not _process();
     # inside _process we only test side-effects are correct.
@@ -191,7 +191,12 @@ async def test_single_turn_no_tools_delivers():
 
 @pytest.mark.asyncio
 async def test_missing_provider_delivers_actionable_reply() -> None:
-    """A failed CallLLMJob still becomes a channel delivery, never a blank chat."""
+    """A failed CallLLMJob still becomes a channel delivery, never a blank chat.
+
+    The agent forwards ``error_code: error`` verbatim — no agent-side
+    paraphrase. The "is this too detailed for the user" call belongs
+    upstream in :mod:`magi.providers.errors`, not in the agent worker.
+    """
     from magi.agent.worker import AgentWorker, RunContext
     from magi.bus.guild.callLLMJob import LLMErrorCode
 
@@ -205,8 +210,10 @@ async def test_missing_provider_delivers_actionable_reply() -> None:
 
     await AgentWorker(bus=bus)._process(ctx)
 
-    assert ctx.final_error is not None
-    assert "Settings" in ctx.final_reply
+    assert ctx.failed is True
+    assert ctx.final_reply == (
+        f"{LLMErrorCode.CREDENTIALS_REQUIRED}: MAGI runtime has no LLM provider configured"
+    )
     delivery = bus.delivery_job_board.publish.call_args.args[0]
     assert delivery.channel == "webui"
     assert delivery.conversation_id == 1
@@ -518,7 +525,7 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
 
     result = bus.agent_job_board.submit_result.call_args.kwargs["result"]
     assert result.status == JobStatus.FAILED
-    assert result.error_code == "magi.run_cancelled"
+    assert result.error is None
 
 
 # ---------------------------------------------------------------------------

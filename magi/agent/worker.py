@@ -8,8 +8,9 @@
 - **board claim steering**：steering 不通过进程内队列，而是在
   ``_gather_all`` 中主动 ``claim_for_steering`` 认领同 session 的新
   ChatNotifyJob。board 本身是唯一持久化协调点。
-- **回复走 delivery_job_board**：``ChatNotifyResult`` 只承载 success/error_code，
-  回复文本统一由 ``_publish_delivery`` 投递。
+- **回复走 delivery_job_board**：``ChatNotifyResult`` 只承载 status（``COMPLETED`` /
+  ``FAILED``），回复文本统一由 ``_publish_delivery`` 投递，失败时文本已经是人类可读
+  错误文案。
 
 本步骤已完成 Phase 2 子模块迁移，现已委托调用：
 - ``system_prompt.build_system_prompt(bus=...)``
@@ -32,7 +33,6 @@ from magi.runtime_worker import RuntimeWorker
 if TYPE_CHECKING:
     from magi.bus import Bus
     from magi.bus.guild.callLLMJob import CallLLMResult
-    from magi.bus.guild.chatNotifyJob import ChatErrorCode
     from magi.bus.guild.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.agent.worker")
@@ -66,8 +66,7 @@ class RunContext:
     max_iterations: int = _DEFAULT_MAX_ITERATIONS
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     final_reply: str = ""
-    final_error: ChatErrorCode | None = None  # 稳定错误码（成功为 None）
-    final_error_detail: str | None = None  # 失败详情（底层码 + 人类文案）
+    failed: bool = False  # 失败标志（succeeded = not failed）
     cancelled: bool = False
     a2a_kind: str | None = None
     a2a_source_magi_id: int | None = None
@@ -76,23 +75,6 @@ class RunContext:
     # the local transcript.  Keep it separately as a resilience fallback if
     # that best-effort transcript write was unavailable.
     a2a_inbound_text: str = ""
-
-
-def _llm_failure_detail(result: CallLLMResult) -> str | None:
-    """拼 LLM 失败的人类可读文案（写入继承的 ``BaseJobResult.error``）：底层稳定码 + 人类文案。
-
-    底层码保留 :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` 的
-    ``.value``（如 ``llm.auth_failed``），文案保留 provider 给的
-    ``error``。至少一项非空才返回，否则 ``None``。
-    """
-    code = getattr(result, "error_code", None)
-    text = getattr(result, "error", None)
-    parts: list[str] = []
-    if code is not None and str(code) != "":
-        parts.append(str(code))
-    if text:
-        parts.append(str(text))
-    return " | ".join(parts) if parts else None
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +157,7 @@ class AgentWorker(RuntimeWorker):
         await asyncio.gather(*(self._run_consumer() for _ in range(self.concurrency)))
 
     async def _run_consumer(self) -> None:
-        from magi.bus.guild.chatNotifyJob import ChatErrorCode, ChatNotifyResult
+        from magi.bus.guild.chatNotifyJob import ChatNotifyResult
 
         while not self._stopping:
             source, job = await self._claim_next_turn()
@@ -228,16 +210,15 @@ class AgentWorker(RuntimeWorker):
                 self._managed_contexts.add(id(ctx))
                 await self._process(ctx)
             except asyncio.CancelledError:
-                ctx.final_error = ChatErrorCode.RUN_CANCELLED
+                ctx.failed = True
                 raise
             except Exception as exc:
                 logger.exception("agent run failed conv=%s", conversation_id)
-                ctx.final_error = ChatErrorCode.AGENT_CRASHED
-                ctx.final_error_detail = str(exc)
+                ctx.failed = True
                 ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
                 await self._publish_delivery(ctx)
             finally:
-                succeeded = ctx.final_error is None
+                succeeded = not ctx.failed
                 if source == "chat":
                     chat_job_id = job.job_id
                     await self.call(
@@ -247,26 +228,13 @@ class AgentWorker(RuntimeWorker):
                         result=ChatNotifyResult(
                             job_id=chat_job_id,
                             status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                            error_code=ctx.final_error,
-                            error=ctx.final_error_detail,
                         ),
                     )
                 elif source == "a2a.request":
-                    from magi.bus.guild.a2aJob import A2AErrorCode, A2ARequestResult
+                    from magi.bus.guild.a2aJob import A2ARequestResult
 
                     board = self.bus.a2a_request_job_board
                     if board is not None:
-                        # ``error_code`` only carries A2A-board-managed
-                        # codes (``A2AErrorCode``); the worker's own
-                        # business codes (``magi.run_cancelled`` /
-                        # ``agent_crashed`` / ``llm_timeout`` / …) flow
-                        # through ``error`` so consumers still see them
-                        # without breaking the strict StrEnum contract.
-                        board_code = (
-                            A2AErrorCode.TIMEOUT
-                            if ctx.final_error == A2AErrorCode.TIMEOUT.value
-                            else None
-                        )
                         a2a_request_job_id = job.job_id
                         await self.call(
                             board.submit_result,
@@ -276,8 +244,6 @@ class AgentWorker(RuntimeWorker):
                                 job_id=a2a_request_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
                                 content=ctx.final_reply,
-                                error_code=board_code,
-                                error=ctx.final_error,
                             ),
                         )
                 elif source == "a2a.notify":
@@ -285,10 +251,6 @@ class AgentWorker(RuntimeWorker):
 
                     board = self.bus.a2a_notify_job_board
                     if board is not None:
-                        # Notify has no board-managed codes yet — the
-                        # worker's business code flows through ``error``
-                        # and ``error_code`` stays ``None`` so the
-                        # StrEnum contract isn't violated.
                         a2a_notify_job_id = job.job_id
                         await self.call(
                             board.submit_result,
@@ -297,8 +259,6 @@ class AgentWorker(RuntimeWorker):
                             result=A2ANotifyResult(
                                 job_id=a2a_notify_job_id,
                                 status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                                error_code=None,
-                                error=ctx.final_error,
                             ),
                         )
                 current_event = self._in_flight.get(ctx.conversation_id)
@@ -378,8 +338,6 @@ class AgentWorker(RuntimeWorker):
     # -- agent loop ----------------------------------------------------------
 
     async def _process(self, ctx: RunContext) -> None:
-        from magi.bus.guild.chatNotifyJob import ChatErrorCode
-
         await self._load_history(ctx)
         self._in_flight[ctx.conversation_id] = ctx.cancel_event
         try:
@@ -392,7 +350,12 @@ class AgentWorker(RuntimeWorker):
 
                 llm_job = await self._build_llm_job(ctx)
                 if llm_job is None:
-                    ctx.final_reply = self._fallback_reply()
+                    # Defensive only — ``_build_llm_job`` always returns a
+                    # :class:`CallLLMJob` today. If it ever returns ``None``
+                    # it's an internal agent failure with no upstream to
+                    # forward; surface a short constant.
+                    ctx.final_reply = "内部错误：无法构建 LLM 请求"
+                    ctx.failed = True
                     await self._publish_delivery(ctx)
                     return
 
@@ -407,22 +370,19 @@ class AgentWorker(RuntimeWorker):
 
                 if result is None:
                     ctx.final_reply = "抱歉，回复生成超时，请稍后再试。"
-                    ctx.final_error = ChatErrorCode.LLM_TIMEOUT
+                    ctx.failed = True
                     await self._publish_delivery(ctx)
                     return
                 if result.status != JobStatus.COMPLETED:
-                    # Missing runtime credentials are an operator-actionable
-                    # failure, not a transient model error.  Keep the detail
-                    # on the durable chat-job result for diagnostics, while
-                    # delivering a safe, actionable message to the channel.
-                    from magi.bus.guild.callLLMJob import LLMErrorCode
-
-                    if getattr(result, "error_code", None) == LLMErrorCode.CREDENTIALS_REQUIRED:
-                        ctx.final_reply = self._fallback_reply()
-                    else:
-                        ctx.final_reply = "抱歉，回复生成失败，请稍后再试。"
-                    ctx.final_error = ChatErrorCode.LLM_FAILED
-                    ctx.final_error_detail = _llm_failure_detail(result)
+                    # Forward the upstream ``error_code: error`` verbatim.
+                    # The provider worker already maps provider exceptions
+                    # to a stable :class:`LLMErrorCode` and ships a human-
+                    # readable ``error`` string; rephrasing either one is
+                    # the agent's job to lose fidelity, and "is this too
+                    # detailed to surface to the user" is the upstream's
+                    # call, not ours.
+                    ctx.final_reply = _format_llm_error(result)
+                    ctx.failed = True
                     await self._publish_delivery(ctx)
                     return
 
@@ -448,7 +408,7 @@ class AgentWorker(RuntimeWorker):
                     a2a_notify_results,
                 )
                 if gather is None:
-                    ctx.final_error = ChatErrorCode.LEASE_LOST
+                    ctx.failed = True
                     return
 
                 self._append_tool_result_user_message(ctx, gather)
@@ -989,12 +949,6 @@ class AgentWorker(RuntimeWorker):
             msg["content_blocks"] = blocks
         return msg
 
-    def _fallback_reply(self) -> str:
-        # Provider configuration belongs to this MAGI runtime.  The same
-        # durable delivery path serves WebUI and channel users, so don't leak
-        # the underlying provider error or API-key details here.
-        return "这个 MAGI 还没设置 LLM provider 和 API key，请在 WebUI 的「Settings」中配置后重试。"
-
     # -- cancel --------------------------------------------------------------
 
     def _broadcast_cancel(self, conversation_id: int) -> None:
@@ -1055,3 +1009,28 @@ def _coerce_float(raw: Any, default: float) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _format_llm_error(result: Any) -> str:
+    """Compose ``error_code: error`` from a failed :class:`CallLLMResult`.
+
+    The provider worker maps provider exceptions to a stable
+    :class:`LLMErrorCode` and ships a human-readable ``error`` string;
+    the agent forwards both verbatim. The question of "is this too
+    detailed for the end user" belongs upstream — if a future
+    ``LLMAuthError`` starts quoting API-key material in ``error``,
+    fix it in :mod:`magi.providers.errors`, not by paraphrasing here.
+
+    Returns just the ``error_code`` when ``error`` is empty, and a
+    constant placeholder when both are missing.
+    """
+    code = getattr(result, "error_code", None)
+    error = getattr(result, "error", None) or ""
+    code_str = str(code) if code is not None else ""
+    if error and code_str:
+        return f"{code_str}: {error}"
+    if error:
+        return error
+    if code_str:
+        return code_str
+    return "回复生成失败"

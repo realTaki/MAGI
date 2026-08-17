@@ -101,7 +101,7 @@ permalink: /business-flows/
    for _ in range(max_iterations):
    ├─ [每轮] cancel check (ctx.cancel_event.is_set())
    ├─ [每轮] llm_job_board.publish(CallLLMJob) → wait_for_result
-   │   （默认 120s；失败 → final_error="llm_timeout"/"llm_failed"，
+   │   （默认 120s；失败 → ctx.failed=True + final_reply 错误文案，
    │    publish delivery → return）
    ├─ [每轮] record_token_usage（按 contact_id 入账 token_usage_book）
    ├─ [每轮] _split_tools(ctx, tool_uses) → tool_jobs / a2a_jobs
@@ -117,11 +117,12 @@ permalink: /business-flows/
    ├─ 无错误 / 有 reply → delivery_job_board.publish(DeliveryJob(
    │     channel=ctx.channel, payload={text, conversation_id,
    │     contact_id})) → channel worker claim → 投递
-   ├─ 异常 → ctx.final_error = "agent_crashed" + publish delivery
+   ├─ 异常 → ctx.failed=True + final_reply 兜底文案 + publish delivery
    └─ cancel → ctx.final_reply = "任务已取消。" + publish delivery
      （**不**制造伪造 assistant reply — 避免污染 transcript）
-   └─ ChatNotifyResult(success=True/False, status="completed"/"failed")
-     写回 agent_job_board
+   └─ ChatNotifyResult(status="completed"/"failed") 写回 agent_job_board
+     （channel worker 只看 status，不读 error_code —— 失败文案已
+      通过上面的 DeliveryJob 投到频道）
 
 6. 后台 (fire-and-forget)
    └─ _maybe_title → spawn request_session_title（独立 task）

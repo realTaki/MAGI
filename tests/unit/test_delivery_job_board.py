@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from threading import Barrier
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import select
@@ -13,6 +14,12 @@ from magi.bus.db import EngineFactory
 from magi.bus.db.base import utcnow_naive
 from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.guild.deliveryJob import DeliveryJob, _DeliveryJobRow, deliveryJobBoard
+from magi.bus.library.local.contactBook import Contact, ContactBook
+from magi.bus.library.local.conversationBook import (
+    Conversation,
+    ConversationBook,
+    MessageBook,
+)
 
 
 @pytest.fixture
@@ -20,6 +27,20 @@ def board(tmp_path) -> deliveryJobBoard:
     factory = EngineFactory(f"sqlite:///{tmp_path / 'delivery.sqlite'}")
     synchronise_schema(factory, scope=LOCAL_SCOPE)
     return deliveryJobBoard(factory)
+
+
+@pytest.fixture
+def conversation_id(board: deliveryJobBoard) -> int:
+    """Seed a contact + webui conversation so message writes can resolve."""
+    cbook = ContactBook(board._factory)
+    sbook = ConversationBook(board._factory)
+    contact_id = cbook.get(cbook.add(Contact(name="delivery-test"))).id
+    conv = sbook.get(sbook.add(Conversation(
+        delivery_address="webui:1",
+        contact_id=contact_id,
+        channel="webui",
+    )))
+    return conv.id
 
 
 def test_claim_for_channel_never_claims_another_channel(board: deliveryJobBoard) -> None:
@@ -67,3 +88,99 @@ def test_channel_lease_recovery_never_auto_fails(
             session.commit()
 
     assert board.get_result(job_id=job_id) is None
+
+
+# ---------------------------------------------------------------------------
+# assistant-row chokepoint (mirrors chatNotifyBoard.publish)
+# ---------------------------------------------------------------------------
+
+
+def test_publish_writes_assistant_row_when_messages_book_wired(
+    board: deliveryJobBoard,
+    conversation_id: int,
+) -> None:
+    """Single chokepoint: publish writes the ``role='assistant'`` row,
+    channel workers no longer reach into ``messages_book`` themselves.
+    """
+    mbook = MessageBook(board._factory)
+    board_with = deliveryJobBoard(board._factory, messages_book=mbook)
+
+    jid = board_with.publish(DeliveryJob(
+        channel="webui",
+        text="hello assistant",
+        conversation_id=conversation_id,
+        contact_id=1,
+    ))
+    assert jid > 0
+
+    rows = mbook.list_for_conversation(conversation_id=conversation_id)
+    assert len(rows) == 1
+    assert rows[0].role == "assistant"
+    assert rows[0].text == "hello assistant"
+
+
+def test_publish_skips_message_write_when_messages_book_is_none(
+    board: deliveryJobBoard,
+    conversation_id: int,
+) -> None:
+    """Legacy / test-mode board (no messages_book) silently no-ops on DB."""
+    jid = board.publish(DeliveryJob(
+        channel="webui",
+        text="no-book",
+        conversation_id=conversation_id,
+        contact_id=1,
+    ))
+    assert jid > 0
+    # No row anywhere — messages_book was never wired.
+    assert MessageBook(board._factory).list_for_conversation(conversation_id=conversation_id) == []
+
+
+def test_publish_skips_message_write_when_conversation_id_is_none(
+    board: deliveryJobBoard,
+) -> None:
+    """Orphan delivery (no conversation) — assistant row not even attempted."""
+    mbook = MessageBook(board._factory)
+    board_with = deliveryJobBoard(board._factory, messages_book=mbook)
+
+    jid = board_with.publish(DeliveryJob(channel="tg", text="orphan"))
+    assert jid > 0
+    # No row, no crash — MessageBook.add(0) would have raised.
+    assert mbook.list_for_conversation(conversation_id=0) == []
+
+
+def test_publish_swallows_messages_book_failure(
+    board: deliveryJobBoard,
+    conversation_id: int,
+) -> None:
+    """A transient messages_book outage must NOT block the delivery job."""
+    flaky = MagicMock()
+    flaky.add.side_effect = RuntimeError("transient blip")
+    board_flaky = deliveryJobBoard(board._factory, messages_book=flaky)
+
+    jid = board_flaky.publish(DeliveryJob(
+        channel="tg",
+        text="will be enqueued",
+        conversation_id=conversation_id,
+        contact_id=1,
+    ))
+    assert jid > 0  # delivery job enqueued despite messages_book failure
+    flaky.add.assert_called_once()
+
+
+def test_publish_swallows_conversation_not_found(
+    board: deliveryJobBoard,
+) -> None:
+    """Bad conversation_id → ``ConversationNotFoundError`` is swallowed,
+    delivery job still enqueued (matches chatNotifyBoard behaviour).
+    """
+    mbook = MessageBook(board._factory)
+    board_with = deliveryJobBoard(board._factory, messages_book=mbook)
+
+    jid = board_with.publish(DeliveryJob(
+        channel="tg",
+        text="ghost",
+        conversation_id=99999,
+        contact_id=1,
+    ))
+    assert jid > 0
+    assert mbook.list_for_conversation(conversation_id=99999) == []
