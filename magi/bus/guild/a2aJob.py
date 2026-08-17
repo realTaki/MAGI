@@ -37,6 +37,8 @@ if TYPE_CHECKING:
     from magi.bus.db.engine import EngineFactory
     from magi.bus.library.magis.membershipBook import MagisMembershipBook
 
+from magi.bus.library.local.conversationBook import AgentMessageRole, Message
+
 
 logger = logging.getLogger("magi.bus.guild.a2aJob")
 
@@ -218,7 +220,7 @@ def _record_transcript(
     peer_magi_id: int,
     job_id: int,
     event: str,
-    role: str,
+    role: AgentMessageRole | str,
     text: str,
 ) -> None:  # type: ignore[no-untyped-def]
     """Best-effort local transcript write for the MAGI executing an action.
@@ -232,14 +234,12 @@ def _record_transcript(
     if messages_book is None or conversations_book is None:
         return
     try:
-        from magi.bus.library.local.conversationBook import Message
-
         conversation = conversations_book.get_or_create_for_a2a_peer(
             peer_magi_id=peer_magi_id
         )
         messages_book.add(Message(
             conversation_id=conversation.id,
-            role=role,
+            role=AgentMessageRole(role) if isinstance(role, str) else role,
             text=text,
         ))
     except Exception:
