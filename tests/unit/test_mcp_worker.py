@@ -505,7 +505,6 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
         await worker.stop()
 
 
-@pytest.mark.asyncio
 # NOTE: a prior ``test_handle_change_unknown_kind_records_error`` lived
 # here. With the ``kind`` column promoted to ``SAEnum(MCPKind, ...)``
 # the DB CHECK constraint rejects unknown kinds at INSERT time, so

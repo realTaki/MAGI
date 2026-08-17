@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from magi.startup.worker import RuntimeWorker
+from magi.runtime_worker import RuntimeWorker
 
 
 class _ProbeWorker(RuntimeWorker):

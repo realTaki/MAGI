@@ -34,7 +34,7 @@ from magi.startup.provision import create_node, init_first_magi
 from magi.startup.spec import load_runtime_spec
 
 
-LOCAL_HEAD_REVISION = "0003_rename_delivery_notify"
+LOCAL_HEAD_REVISION = "0001_initial_schema"
 MAGIS_HEAD_REVISION = "0002_remove_job_attempts"
 
 

@@ -32,6 +32,8 @@ def test_health_returns_expected_keys():
     w._children = set()
     w._queue_depth = 3
     w.worker_name = "test_ch"
+    w.concurrency = 2
+    w.worker_kind = "channel"
     w.bus = MagicMock()
 
     h = w.health()
@@ -41,6 +43,8 @@ def test_health_returns_expected_keys():
     assert h["last_success_at"] is not None
     assert h["last_error"] is None
     assert h["queue_depth"] == 3
+    assert h["concurrency"] == 2
+    assert h["kind"] == "channel"
 
 
 def test_health_returns_none_when_not_polled():
@@ -54,12 +58,15 @@ def test_health_returns_none_when_not_polled():
     w._children = set()
     w._queue_depth = 0
     w.worker_name = "fresh"
+    w.concurrency = 1
+    w.worker_kind = "channel"
     w.bus = MagicMock()
 
     h = w.health()
     assert h["last_poll_at"] is None
     assert h["last_success_at"] is None
     assert h["queue_depth"] == 0
+    assert h["concurrency"] == 1
 
 
 @pytest.mark.asyncio

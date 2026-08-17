@@ -63,19 +63,29 @@ class _StubContact:
 
 
 class _StubContactsBook:
+    """Minimal stand-in for :class:`ContactBook`.
+
+    Signature mirrors :meth:`BaseBook.get`: positional
+    ``record_id`` argument — :meth:`Tool.gate` calls it
+    positionally (see :mod:`magi.tools.base`).
+    """
+
     def __init__(self, by_id: dict[int, _StubContact]):
         self._by_id = by_id
 
-    def get(self, *, contact_id: int) -> _StubContact | None:
-        return self._by_id.get(contact_id)
+    def get(self, record_id: int) -> _StubContact | None:
+        return self._by_id.get(record_id)
 
 
 class _StubMagisAdminsBook:
+    """Stand-in for :class:`MagisAdminBook`. Inherits
+    :meth:`BaseBook.get`'s positional signature."""
+
     def __init__(self, admin_uids: set[int]):
         self._admin_uids = admin_uids
 
-    def get(self, *, admin_id: int):
-        return object() if admin_id in self._admin_uids else None
+    def get(self, record_id: int):
+        return object() if record_id in self._admin_uids else None
 
 
 @dataclass(frozen=True, slots=True)

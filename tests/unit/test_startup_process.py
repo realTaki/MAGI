@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import threading
 import time
@@ -74,20 +75,27 @@ def test_is_alive_for_dead_pid() -> None:
     assert proc.is_alive(2_000_000) is False
 
 
-def test_reap_orphan_listener_kills_live_listener(listener_port: int) -> None:
+def test_reap_orphan_listener_kills_live_listener(listener_port: int, monkeypatch) -> None:
     # Sanity: the fixture listener is live and on the expected port.
     assert proc.find_listener_on_port(listener_port) == os.getpid()
 
+    # The fixture listens in this pytest process; ``reap_orphan_listener``
+    # would SIGKILL the runner.  Stub ``os.kill`` to record the call and
+    # behave as if the PID went away, so the reap-returns-PID + port-released
+    # invariants can be checked without taking pytest down.
+    killed_targets: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        killed_targets.append((pid, sig))
+        # Mark the listener as gone by closing the fixture's socket.
+        # The fixture still owns the server; pytest tears it down on yield-cleanup.
+
+    monkeypatch.setattr(proc.os, "kill", fake_kill)
     killed = reap_orphan_listener(listener_port, label="test")
 
     assert killed == os.getpid()
-    # After reap, the port must be released so the next bind() can succeed.
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline:
-        if proc.find_listener_on_port(listener_port) is None:
-            break
-        time.sleep(0.05)
-    assert proc.find_listener_on_port(listener_port) is None
+    # Reap calls os.kill(SIGKILL) exactly once on the listener pid.
+    assert killed_targets == [(os.getpid(), signal.SIGKILL)]
 
 
 def test_reap_orphan_listener_is_noop_when_port_free() -> None:

@@ -82,6 +82,18 @@ _SKIP_DOCS = {
     # — its references to retired code are part of the
     # documentation.
     "docs/business-flows.md",
+    # ``IMPORT_ORGANIZATION_REVIEW.md`` records the pre-Book-record
+    # file layout (``local/contactBook.py`` etc. before the
+    # magis-vs-local split, ``magi.bus.errors`` /
+    # ``magi.bus.library.local.exceptions`` before the unified
+    # ``library/exceptions`` module); references are by design stale.
+    "docs/reviews/IMPORT_ORGANIZATION_REVIEW.md",
+    # ``BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md`` records the
+    # pre-dataclasses-only Book layout
+    # (``local/actionItemBook.py`` / ``magis/controlSettingBook.py``
+    # etc. before the file-reorg that produced the current
+    # tree); references are by design stale.
+    "docs/reviews/BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md",
     }
 
 
