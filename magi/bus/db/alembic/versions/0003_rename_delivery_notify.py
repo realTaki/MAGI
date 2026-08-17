@@ -35,8 +35,11 @@ def upgrade() -> None:
         # Alembic runs. Copy first, then remove the retired table.
         op.execute(sa.text(
             f"INSERT INTO delivery_notify_jobs ({_COLUMNS}) "
-            f"SELECT {_COLUMNS} FROM delivery_jobs "
-            "ON CONFLICT (job_id) DO NOTHING"
+            f"SELECT {_COLUMNS} FROM delivery_jobs AS old "
+            "WHERE NOT EXISTS ("
+            "SELECT 1 FROM delivery_notify_jobs AS new "
+            "WHERE new.job_id = old.job_id"
+            ")"
         ))
         op.drop_table("delivery_jobs")
 
