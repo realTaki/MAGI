@@ -314,7 +314,6 @@ async def send_chat(
 @router.get("/chat/notifications/{job_id}", response_model=ChatNotifyStatusResponse)
 def get_chat_notification_status(
     job_id: int,
-    request: Request,
     _admin: AdminGate,
     bus: BusDep,
 ) -> ChatNotifyStatusResponse:

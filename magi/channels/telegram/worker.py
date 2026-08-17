@@ -262,7 +262,10 @@ async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
     from magi.bus.guild.base import JobStatus
 
     received = False
-    for _ in range(120):  # 30 seconds waiting for a worker receipt
+    # Stop waiting if no Agent ever claims the turn.  Once it is claimed,
+    # keep refreshing Telegram's short-lived typing indicator until the
+    # existing ChatNotify execution reaches a terminal state.
+    for _ in range(120):
         try:
             status = await asyncio.to_thread(
                 bus.agent_job_board.check_job_status,

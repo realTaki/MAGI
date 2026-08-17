@@ -42,8 +42,8 @@ Bus plumbing: this tool talks to bus
 lookup via :meth:`ConversationBook.get_for_owner`) and
 ``ctx.bus.delivery_notify_job_board`` (publish a
 :class:`magi.bus.guild.deliveryNotifyJob.DeliveryNotifyJob` to
-the durable ``delivery_jobs`` queue — the channel-owned
-DeliveryWorker performs the actual protocol I/O after the
+the durable ``delivery_notify_jobs`` queue — the channel-owned
+ChannelWorker performs the actual protocol I/O after the
 agent transition has committed). The legacy services at
 bus Book API and
 bus Book API are no longer
@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-            from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
+from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.comms.send_message")
@@ -131,7 +131,7 @@ class SendMessageTool(Tool):
             )
 
         # A tool never invokes a channel adapter.  It writes a durable
-        # delivery intent; the channel-owned DeliveryWorker performs the
+        # delivery intent; the channel-owned ChannelWorker performs the
         # actual protocol I/O after the agent transition has committed.
         logger.info(
             "send_message: enqueueing %d chars for conversation=%s channel=%s",

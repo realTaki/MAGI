@@ -10,7 +10,8 @@ from __future__ import annotations
 import pytest
 
 from magi.bus.db import EngineFactory
-from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
+from magi.bus.guild.base import JobStatus
+from magi.bus.guild.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
 from magi.bus.library.local import Contact, Conversation, ConversationBook, Message, MessageBook
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,36 @@ def test_publish_chat_writes_user_message_to_messages_book(factory, contact_id):
     assert len(rows) == 1
     assert rows[0].text == "hello world"
     assert rows[0].role == "user"
+
+
+def test_check_job_status_exposes_claim_as_channel_receipt(factory, contact_id):
+    """A Channel observes Agent receipt at the atomic claim, not completion."""
+    sbook = ConversationBook(factory)
+    mbook = MessageBook(factory)
+    conv = sbook.get(sbook.add(Conversation(
+        delivery_address="tg:1", contact_id=contact_id, channel="tg"
+    )))
+    board = chatNotifyBoard(factory, messages_book=mbook, conversations_book=sbook)
+
+    job_id = board.publish(ChatNotifyJob(
+        text="hello",
+        channel="tg",
+        contact_id=contact_id,
+        conversation_id=conv.id,
+    ))
+    assert board.check_job_status(job_id=job_id) is JobStatus.PENDING
+    assert board.check_job_status(job_id=job_id + 10_000) is None
+
+    job = board.claim_for_steering(conversation_id=conv.id, worker_id="agent-a")
+    assert job is not None
+    assert board.check_job_status(job_id=job_id) is JobStatus.PROCESSING
+
+    board.submit_result(
+        job_id=job_id,
+        worker_id="agent-a",
+        result=ChatNotifyResult(job_id=job_id, status=JobStatus.COMPLETED),
+    )
+    assert board.check_job_status(job_id=job_id) is JobStatus.COMPLETED
 
 
 def test_publish_chat_writes_one_message_per_turn(factory, contact_id):

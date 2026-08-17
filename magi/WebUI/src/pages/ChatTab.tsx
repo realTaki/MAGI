@@ -322,7 +322,20 @@ export default function ChatTab() {
     }
     setChatError(null);
   }, [conversationId, messagesQuery.data, messagesQuery.isError, messagesQuery.error, chatPhase, assistantCountAtSend]);
+
+  // A claimed turn can outlive the short bootstrap invalidations below.
+  // Keep polling the transcript while the Agent owns it, then stop as soon
+  // as the assistant row arrives (the effect above switches us to idle).
+  useEffect(() => {
+    if (chatPhase !== "typing" || conversationId === null) return;
+    const interval = window.setInterval(() => {
+      void messagesQuery.refetch();
+    }, 2_000);
+    return () => window.clearInterval(interval);
+  }, [chatPhase, conversationId, messagesQuery.refetch]);
+
   function loadSession(id: number) {
+    setChatPhase("idle");
     setChatError(null);
     setLoadedCount(0);
     setTotalActive(0);
@@ -456,6 +469,7 @@ export default function ChatTab() {
   // race against a POST. A rapid double-click just clears
   // state twice, which is idempotent.
   function newChat() {
+    setChatPhase("idle");
     setConversationId(null);
     localStorage.removeItem(CONVERSATION_STORAGE_KEY);
     setChatMessages([]);
@@ -567,6 +581,7 @@ export default function ChatTab() {
       // localStorage pointer and start fresh — the next
       // /send will auto-create.
       if (id === conversationId) {
+        setChatPhase("idle");
         localStorage.removeItem(CONVERSATION_STORAGE_KEY);
         setConversationId(null);
         setChatMessages([]);
