@@ -241,30 +241,23 @@ async def _send_read_receipt(update, bus: Bus) -> None:
         pass
 
 
-async def _send_typing(update) -> None:
-    """Tell Telegram that the Agent is actively processing this turn."""
-    try:
-        chat = update.effective_chat
-        if chat is not None:
-            await update.get_bot().send_chat_action(chat_id=chat.id, action="typing")
-    except Exception:
-        pass
-
-
 async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
-    """React only after the Agent has durably claimed the chat notification.
+    """Fire the read reaction the moment the Agent durably claims the turn.
 
-    Telegram typing indicators expire quickly, so renew them while the claimed
-    ChatNotify row stays ``PROCESSING``.  A terminal row may have passed
-    through PROCESSING between polls; it still proves receipt and gets the
-    read reaction once.
+    Poll :meth:`chatNotifyBoard.check_job_status` until the row leaves
+    ``PENDING``. Any non-pending state — ``PROCESSING`` (claimed), or
+    a terminal ``COMPLETED``/``FAILED`` that raced past between polls —
+    proves the Agent has the message and triggers the single read
+    reaction. Once fired, the watcher exits; we don't track the
+    "done" milestone here. A terminal race is benign: the row may
+    pass through PROCESSING between polls, but as soon as we observe
+    any non-pending state we react once and return.
     """
     from magi.bus.guild.base import JobStatus
 
-    received = False
-    # Stop waiting if no Agent ever claims the turn.  Once it is claimed,
-    # keep refreshing Telegram's short-lived typing indicator until the
-    # existing ChatNotify execution reaches a terminal state.
+    # 120 × 0.25s = 30s ceiling for an Agent to claim the turn.
+    # Beyond that we give up silently — no reaction is better than a
+    # reaction that lags the user's follow-up message.
     for _ in range(120):
         try:
             status = await asyncio.to_thread(
@@ -276,12 +269,6 @@ async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
         if status is None:
             return
         if status != JobStatus.PENDING:
-            if not received:
-                received = True
-                await _send_read_receipt(update, bus)
-                await _send_typing(update)
-            if status in (JobStatus.COMPLETED, JobStatus.FAILED):
-                return
-            await asyncio.sleep(3.5)
-            continue
+            await _send_read_receipt(update, bus)
+            return
         await asyncio.sleep(0.25)

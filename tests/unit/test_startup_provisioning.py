@@ -116,9 +116,9 @@ def test_named_sqlite_magis_is_isolated_from_local_store(tmp_path: Path) -> None
     assert "magi_schema_revisions" not in magis_tables
     # After the 2026.08 collapse there is a single revision per scope.
     with bus._local_factory.engine.connect() as connection:
-            assert _select_version(connection) == LOCAL_HEAD_REVISION
+        assert _select_version(connection) == LOCAL_HEAD_REVISION
     with bus._magis_factory.engine.connect() as connection:
-            assert _select_version(connection) == MAGIS_HEAD_REVISION
+        assert _select_version(connection) == MAGIS_HEAD_REVISION
 
 
 def test_contacts_admin_authority_lives_on_magis_admin_id_not_a_local_admin_flag() -> None:
@@ -278,7 +278,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
     )
     assert "action_items" in set(inspect(repaired._local_factory.engine).get_table_names())
     with repaired._local_factory.engine.connect() as connection:
-            assert _select_version(connection) == LOCAL_HEAD_REVISION
+        assert _select_version(connection) == LOCAL_HEAD_REVISION
 
 
 def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> None:
@@ -457,7 +457,7 @@ def test_initial_schema_declares_datetime_columns_for_tasks(tmp_path: Path) -> N
 
     # Schema is at the single 0001 head on a fresh DB.
     with bus._local_factory.engine.connect() as connection:
-            assert _select_version(connection) == LOCAL_HEAD_REVISION
+        assert _select_version(connection) == LOCAL_HEAD_REVISION
 
     # Time columns are DateTime directly from create_all — no migration DDL needed.
     tasks_columns = {
