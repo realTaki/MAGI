@@ -4,15 +4,18 @@ Revision ID: 0001_initial_schema
 
 This is the **only** alembic revision for the local scope. The
 2026.08 dev-mode collapse folded the previous 19-revision chain
-(0001-0019) into one baseline so every dev install starts with the
-final schema and Alembic's ``upgrade head`` is a single transaction.
+(0001-0019) plus the 2026.08 rename/cleanup revisions into one
+baseline so every dev install starts with the final schema and
+Alembic's ``upgrade head`` is a single transaction.
 
 Schema source of truth is the declarative ORM in
 :mod:`magi.bus.library.local` and :mod:`magi.bus.guild`. This
 migration's :func:`upgrade` simply hands the scope-filtered table
 list to :meth:`sqlalchemy.sql.schema.MetaData.create_all`, which
 emits the matching ``CREATE TABLE`` / ``CREATE INDEX`` /
-``CREATE UNIQUE INDEX`` statements for every model.
+``CREATE UNIQUE INDEX`` statements for every model — including the
+final, post-rename table names (``delivery_notify_jobs`` and
+friends) and the post-cleanup column set (no ``attempts``).
 
 ``env.py`` imports every ORM module so the union is registered on
 ``Base.metadata`` before alembic walks it. ``synchronise_schema``

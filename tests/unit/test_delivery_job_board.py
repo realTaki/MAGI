@@ -94,44 +94,6 @@ def test_channel_lease_recovery_never_auto_fails(
     assert board.get_result(job_id=job_id) is None
 
 
-def test_schema_upgrade_preserves_old_delivery_jobs(board: deliveryNotifyJobBoard) -> None:
-    """Queued outbound notifications survive the delivery-board rename."""
-    from sqlalchemy import inspect, text
-
-    # Model an existing 0002 database.  ``synchronise_schema`` first creates
-    # the new declarative table, then migration 0003 copies this old queue
-    # into it and retires the old physical table.
-    with board._factory.engine.begin() as connection:
-        connection.execute(text(
-            "CREATE TABLE delivery_jobs AS "
-            "SELECT * FROM delivery_notify_jobs WHERE 0"
-        ))
-        connection.execute(text(
-            "INSERT INTO delivery_jobs "
-            "(job_id, error, status, leased_until, leased_by, created_at, "
-            "updated_at, started_at, completed_at, channel, text, "
-            "conversation_id, contact_id, destination) "
-            "VALUES (991, NULL, 'pending', NULL, NULL, CURRENT_TIMESTAMP, "
-            "CURRENT_TIMESTAMP, NULL, NULL, 'tg', 'keep this reply', "
-            "NULL, NULL, '123')"
-        ))
-        connection.execute(text("DROP TABLE delivery_notify_jobs"))
-        connection.execute(text(
-            "UPDATE alembic_version "
-            "SET version_num = '0002_remove_job_attempts'"
-        ))
-
-    synchronise_schema(board._factory, scope=LOCAL_SCOPE)
-
-    assert "delivery_jobs" not in inspect(board._factory.engine).get_table_names()
-    recovered = deliveryNotifyJobBoard(board._factory).claim_for_channel(
-        channel="tg", worker_id="tg-worker"
-    )
-    assert recovered is not None
-    assert recovered.job_id == 991
-    assert recovered.text == "keep this reply"
-
-
 # ---------------------------------------------------------------------------
 # assistant-row chokepoint (mirrors chatNotifyBoard.publish)
 # ---------------------------------------------------------------------------
