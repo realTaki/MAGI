@@ -306,25 +306,28 @@ export default function ChatTab() {
     }
     localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.conversation_id));
     setChatMessages((prev) => {
-      // Merge server data with any optimistic messages
-      // (``id = Date.now()`` placeholder) that haven't yet
-      // been confirmed. ``sendChatMut.onSuccess`` swaps
-      // the optimistic id for the server ``message_id`` as
-      // soon as ``POST /api/chat/send`` returns, so the
-      // optimistic tail is usually already resolved by the
-      // time we get here. This merge is the belt-and-braces
-      // for any path that didn't go through onSuccess (TG
-      // cross-channel writes, partial failures, etc.) — a
-      // race that previously wiped the user message between
-      // T=0 and the first refetch.
-      const serverIds = new Set(data.messages.map((m) => m.message_id));
-      const optimistic = prev.filter((m) => !serverIds.has(m.id));
+      // Merge server data with any optimistic messages that
+      // haven't been confirmed yet. ``sendChat`` adds the
+      // user row at T=0 with ``id: Date.now()`` so it shows
+      // up immediately; the first ``/messages`` refetch can
+      // race the chat_messages commit and return without
+      // the user row, which previously wiped the optimistic
+      // entry. We dedupe by ``role + text`` fingerprint (not
+      // id): when the server catches up, the matching
+      // optimistic row is dropped instead of being shown
+      // alongside the server copy.
+      const serverFingerprints = new Set(
+        data.messages.map((m) => `${m.role}::${m.text}`),
+      );
+      const pendingOptimistic = prev.filter(
+        (m) => !serverFingerprints.has(`${m.role}::${m.text}`),
+      );
       const serverMsgs = data.messages.map((m) => ({
         id: m.message_id,
         role: m.role as "user" | "assistant",
         text: m.text,
       }));
-      return [...serverMsgs, ...optimistic];
+      return [...serverMsgs, ...pendingOptimistic];
     });
     setLoadedCount(data.messages.length);
     // ``totalActive`` is server-authoritative for committed
