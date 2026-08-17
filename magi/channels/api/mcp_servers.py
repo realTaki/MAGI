@@ -161,7 +161,7 @@ def _serialize(row) -> McpServerOut:
     """
     return McpServerOut(
         name=row.name,
-        connection_type=row.connection_type,  # type: ignore[arg-type]
+        connection_type=row.connection_type.value,  # MCPConnectionType → Literal["stdio", ...]
         command=row.command,
         args=list(row.args),
         url=row.url,

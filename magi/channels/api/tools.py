@@ -127,7 +127,7 @@ def list_tools(_admin: AdminGate, bus: BusDep) -> ToolListOut:
                 "description": definition.description,
                 "input_schema": definition.input_schema,
             },
-            "mcp" if definition.source.startswith("mcp") else "builtin",
+            "mcp" if definition.source.value.startswith("mcp") else "builtin",
             list(definition.allowed_roles),
         )
         for definition in definitions

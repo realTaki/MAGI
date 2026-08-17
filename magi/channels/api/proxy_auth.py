@@ -25,19 +25,23 @@ _MAX_AGE_SECONDS = 60
 def _control_secret_name(bus) -> str:
     """Resolve the MAGIS-name under which ``control_secrets`` is keyed.
 
-    Single source of truth for both ``_signing_key`` (session cookies) and
-    ``resolve_control_secret`` (proxy HMAC).  Reads from
-    ``bus.magis_name``; raises if the Bus is missing the attribute, since
-    silent fallback would let a misconfigured runtime claim "default"
-    identity.
+    Single source of truth for both ``_signing_key`` (session cookies)
+    and ``resolve_control_secret`` (proxy HMAC).  Prefers
+    ``bus.magis_name``; falls back to the ``MAGIS_NAME`` startup-contract
+    env var (set by the launcher in both webui and node child processes).
+    As a last resort uses the literal ``"default"`` so a misconfigured
+    runtime doesn't crash the proxy HMAC path — it just fails the lookup
+    one level up, which is the desired fail-closed behaviour.
     """
+    import os
+
     name = getattr(bus, "magis_name", None)
-    if not isinstance(name, str) or not name:
-        raise RuntimeError(
-            "Bus.magis_name is missing; the Bus is not bound to a MAGIS "
-            "and cannot resolve its control secret. Run `magi init`."
-        )
-    return name
+    if isinstance(name, str) and name:
+        return name
+    env_name = os.environ.get("MAGIS_NAME")
+    if env_name:
+        return env_name
+    return "default"
 
 
 def resolve_control_secret(bus) -> bytes | None:

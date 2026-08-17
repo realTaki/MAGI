@@ -243,6 +243,9 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     # consulted. ``open_bus`` below opens that row for both
     # ``_signing_key`` (session cookie signing) and
     # ``proxy_auth.resolve_control_secret`` (forwarded-request HMAC).
+    # ``magis_name`` is a startup-contract identity (not a secret); it
+    # keys the ``control_secrets`` lookup.
+    os.environ.setdefault("MAGIS_NAME", config.magis_name)
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.

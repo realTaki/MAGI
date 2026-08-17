@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -26,7 +27,37 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from magi.bus.db.base import enum_column
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+
+
+class ToolSource(StrEnum):
+    """Origin discriminator stored on ``ToolDefinition.source``.
+
+    ``BUILTIN`` covers the hard-coded toolset shipped with MAGI
+    (filesystem, memory, contacts, MCP CRUD, …). ``MCP`` is
+    everything discovered via a live MCP server connection.
+    ``MANUAL`` is reserved for operator-registered tools not
+    backed by an MCP server (e.g. a hand-rolled webhook bridge
+    landing in a future PR); the row's ``default="manual"`` in
+    the ORM keeps legacy single-source rows compatible.
+
+    ``StrEnum`` rather than bare constants so typos are caught
+    at lookup time instead of silently comparing False: every
+    member is still a ``str`` (``ToolSource.BUILTIN == "builtin"``),
+    so ``isinstance(x, str)`` checks, ``json.dumps`` serialisation,
+    ``hash()`` consistency, and existing ``source == "builtin"``
+    comparisons keep working unchanged. The ToolsWorker's
+    ``upsert_many(source="builtin")`` keeps working because
+    ``"builtin" in ToolSource`` (and the SAEnum column compare)
+    are both True via str equality. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    """
+
+    BUILTIN = "builtin"
+    MCP = "mcp"
+    MANUAL = "manual"
+
 
 # -- public dataclasses --------------------------------------------------
 
@@ -51,7 +82,7 @@ class ToolDefinition(BaseRecord):
     """
 
     name: str  # 工具唯一名
-    source: str  # 工具来源（builtin/mcp/manual）
+    source: ToolSource  # 工具来源（builtin/mcp/manual）
     description: str  # 工具描述（暴露给 LLM）
     input_schema: dict[str, Any]  # 入参 JSON schema
     allowed_roles: tuple[str, ...] = ()  # 允许调用此工具的角色
@@ -91,7 +122,9 @@ class _ToolDefinitionRow(BaseRecordMixin):
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")
+    source: Mapped[ToolSource] = mapped_column(
+        enum_column(ToolSource), nullable=False, default=ToolSource.MANUAL
+    )
     # JSON-serialized list[str] or NULL (no role gate).
     allowed_roles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -322,6 +355,7 @@ __all__ = [
     "ToolCatalogSnapshot",
     "ToolCatalogStateBook",
     "ToolDefinitionBook",
+    "ToolSource",
     "_ToolCatalogStateRow",
     "_ToolDefinitionRow",
 ]

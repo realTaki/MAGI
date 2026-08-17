@@ -34,6 +34,7 @@ import re
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 logger = logging.getLogger("magi.tools.shell._manager")
 
@@ -68,9 +69,32 @@ _MAX_BUFFERED_LINES = 5000
 _COMPLETED_TTL_SECONDS = 300
 _MAX_COMPLETED_RETAINED = 32
 
+
+class ShellStatus(StrEnum):
+    """Background-shell lifecycle state stored on ``_BackgroundShell.status``.
+
+    In-memory only — the shell registry is process-local and
+    nothing persists this column, so the enum is a typo-guard
+    rather than a DB constraint. ``StrEnum`` keeps
+    ``status == "completed"`` style comparisons in tests /
+    formatting (``f"[status] {shell.status}"`` in
+    :mod:`magi.tools.shell.output`) working unchanged because
+    every member is still a ``str``. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    """
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TERMINATED = "terminated"
+    ERROR = "error"
+
+
 # Terminal statuses — a shell in one of these has no live
 # subprocess behind it and is eligible for reaping.
-_TERMINAL_STATUSES = frozenset({"completed", "failed", "terminated", "error"})
+_TERMINAL_STATUSES = frozenset(
+    {ShellStatus.COMPLETED, ShellStatus.FAILED, ShellStatus.TERMINATED, ShellStatus.ERROR}
+)
 
 
 @dataclass
@@ -87,7 +111,7 @@ class _BackgroundShell:
     start_time: float
     output_lines: list[str] = field(default_factory=list)
     last_read_index: int = 0
-    status: str = "running"  # running / completed / failed / terminated / error
+    status: ShellStatus = ShellStatus.RUNNING  # running / completed / failed / terminated / error
     exit_code: int | None = None
     #: When the shell reached a terminal status — drives the
     #: reaper's TTL. ``None`` while still running.
@@ -136,15 +160,15 @@ class _BackgroundShell:
 
     def update_status(self, *, is_alive: bool, exit_code: int | None) -> None:
         if not is_alive:
-            self.status = "completed" if exit_code == 0 else "failed"
+            self.status = ShellStatus.COMPLETED if exit_code == 0 else ShellStatus.FAILED
             self.exit_code = exit_code
             self.ended_at = time.monotonic()
         else:
-            self.status = "running"
+            self.status = ShellStatus.RUNNING
 
     def mark_error(self, message: str) -> None:
         """Terminal 'the monitor itself broke' transition."""
-        self.status = "error"
+        self.status = ShellStatus.ERROR
         self.ended_at = time.monotonic()
         self.add_output(message)
 
@@ -159,7 +183,7 @@ class _BackgroundShell:
                 # Reap so the OS doesn't keep a zombie around.
                 with suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self.process.wait(), timeout=2)
-        self.status = "terminated"
+        self.status = ShellStatus.TERMINATED
         self.exit_code = self.process.returncode
         self.ended_at = time.monotonic()
         self._close_transport()

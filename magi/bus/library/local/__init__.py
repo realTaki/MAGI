@@ -24,8 +24,16 @@ from magi.bus.library.local.conversationBook import (
     Message,
     MessageBook,
 )
-from magi.bus.library.local.hookSignoffBook import HookSignoff, HookSignoffBook
-from magi.bus.library.local.mcpServerBook import McpServer, McpServerBook
+from magi.bus.library.local.hookSignoffBook import (
+    HookSignoff,
+    HookSignoffBook,
+    HookSignoffStatus,
+)
+from magi.bus.library.local.mcpServerBook import (
+    MCPConnectionType,
+    McpServer,
+    McpServerBook,
+)
 from magi.bus.library.local.memoryBook import (
     Memory,
     MemoryBook,
@@ -51,6 +59,7 @@ from magi.bus.library.local.toolsBook import (
     ToolCatalogStateBook,
     ToolDefinition,
     ToolDefinitionBook,
+    ToolSource,
 )
 
 __all__ = [
@@ -65,6 +74,8 @@ __all__ = [
     "ContactNoteBook",
     "HookSignoff",
     "HookSignoffBook",
+    "HookSignoffStatus",
+    "MCPConnectionType",
     "McpServer",
     "McpServerBook",
     "Memory",
@@ -91,4 +102,5 @@ __all__ = [
     "ToolCatalogSnapshot",
     "ToolDefinition",
     "ToolDefinitionBook",
+    "ToolSource",
 ]
