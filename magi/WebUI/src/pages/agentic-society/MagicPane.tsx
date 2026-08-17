@@ -128,6 +128,14 @@ export function MagicPane() {
         },
       );
       setMessage(null);
+      // Persist landed on the runtime — re-fetch the row so the
+      // read-only summary (provider / key-set / key-last4) reflects
+      // the new values, and exit edit mode so the operator can see
+      // what they just configured.  Without the invalidate + setEditing
+      // the PATCH 200s but the UI stays on the stale draft with no
+      // visible acknowledgement.
+      refresh();
+      setEditing(null);
     } catch (e) {
       setMessage((e as Error).message);
     } finally {
@@ -329,10 +337,10 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
     ? t("magic.providerHelpReady")
     : t("magic.providerHelpNotReady");
   return (
-    <div className="flex flex-col gap-1 min-w-[20rem]">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-1 min-w-[24rem]">
+      <div className="grid items-center gap-2 grid-cols-[7rem_minmax(8rem,1fr)_minmax(7rem,1fr)_auto]">
         <select
-          className="form-input min-w-[7rem]"
+          className="form-input"
           value={draft.provider}
           onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
           disabled={!isReady}
@@ -340,7 +348,7 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
           {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <input
-          className="form-input flex-1 min-w-[10rem]"
+          className="form-input w-full"
           type="password"
           placeholder={magic.api_key_set ? t("magic.providerKeyPlaceholderReplace") : t("magic.providerKeyPlaceholderSet")}
           value={draft.api_key}
@@ -348,7 +356,7 @@ function ProviderEditor({ magic, draft, setDraft, onSave }: ProviderEditorProps)
           disabled={!isReady}
         />
         <input
-          className="form-input flex-1 min-w-[8rem]"
+          className="form-input w-full"
           placeholder={t("magic.providerModelPlaceholder")}
           value={draft.model}
           onChange={(e) => setDraft({ ...draft, model: e.target.value })}
