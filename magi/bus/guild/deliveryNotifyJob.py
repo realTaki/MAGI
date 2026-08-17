@@ -69,11 +69,14 @@ class deliveryNotifyJobBoard(BaseJobBoard[_DeliveryNotifyJobRow, DeliveryNotifyJ
         job_id = super().publish(job)
         if self._messages_book is not None:
             try:
-                from magi.bus.library.local.conversationBook import Message
+                from magi.bus.library.local.conversationBook import (
+                    AgentMessageRole,
+                    Message,
+                )
 
                 self._messages_book.add(Message(
                     conversation_id=job.conversation_id or 0,
-                    role="assistant",
+                    role=AgentMessageRole.ASSISTANT,
                     text=job.text,
                 ))
             except Exception:

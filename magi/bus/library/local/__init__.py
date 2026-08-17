@@ -19,6 +19,7 @@ from magi.bus.library.local.contactBook import (
     Role,
 )
 from magi.bus.library.local.conversationBook import (
+    AgentMessageRole,
     Conversation,
     ConversationBook,
     Message,
@@ -75,6 +76,7 @@ __all__ = [
     "HookSignoff",
     "HookSignoffBook",
     "HookSignoffStatus",
+    "AgentMessageRole",
     "MCPConnectionType",
     "McpServer",
     "McpServerBook",

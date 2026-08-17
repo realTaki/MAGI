@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -23,7 +24,32 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from magi.bus.db.base import enum_column
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+
+
+class MCPConnectionType(StrEnum):
+    """Transport type discriminator stored on ``McpServer.connection_type``.
+
+    Closed set — adding a transport requires a schema migration. The
+    three members are the canonical MCP transports the runtime can
+    bootstrap (see :class:`magi.mcp.MCPClient`). Values are the same
+    strings the upstream MCP SDK uses, so they round-trip through
+    the loader / worker without translation.
+
+    ``StrEnum`` rather than bare constants so typos are caught at
+    lookup time instead of silently comparing False: every member
+    is still a ``str`` (``MCPConnectionType.STDIO == "stdio"``),
+    so ``isinstance(x, str)`` checks, ``json.dumps`` serialisation,
+    and existing ``connection_type == "stdio"`` comparisons keep
+    working unchanged. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    """
+
+    STDIO = "stdio"
+    SSE = "sse"
+    STREAMABLE_HTTP = "streamable_http"
+
 
 # -- public dataclass ----------------------------------------------------
 
@@ -45,7 +71,7 @@ class McpServer(BaseRecord):
     """
 
     name: str  # 操作员面向的唯一名（PK）
-    connection_type: str  # 连接类型（stdio/sse/streamable_http）
+    connection_type: MCPConnectionType  # 连接类型（stdio/sse/streamable_http）
     command: str | None = None  # stdio 启动命令
     args: tuple[str, ...] = ()  # stdio 启动参数
     url: str | None = None  # URL 类型连接的端点
@@ -76,7 +102,9 @@ class _McpServerRow(BaseRecordMixin):
     # The cross-ORM uniqueness contract lives in the
     # ``UniqueConstraint`` below.
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    connection_type: Mapped[str] = mapped_column(Text, nullable=False)
+    connection_type: Mapped[MCPConnectionType] = mapped_column(
+        enum_column(MCPConnectionType), nullable=False
+    )
 
     # STDIO
     command: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -264,12 +292,17 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         :class:`ValueError` on bad input — the existing manage
         tools already catch this in their error envelopes.
         """
-        if connection_type not in ("stdio", "sse", "streamable_http"):
+        if connection_type not in MCPConnectionType:
             raise ValueError("connection_type must be one of: stdio, sse, streamable_http")
-        if connection_type == "stdio" and not (command and command.strip()):
+        # Coerce to MCPConnectionType so the typed ``McpServer.connection_type``
+        # field (and ``with_changes``) receive the enum value, not a raw str.
+        # ``StrEnum(value)`` round-trips a validated string back to its member,
+        # so behaviour for str-input callers is unchanged.
+        conn_type = MCPConnectionType(connection_type)
+        if conn_type == "stdio" and not (command and command.strip()):
             raise ValueError("stdio servers require 'command'")
-        if connection_type != "stdio" and not (url and url.strip()):
-            raise ValueError(f"{connection_type} servers require 'url'")
+        if conn_type != "stdio" and not (url and url.strip()):
+            raise ValueError(f"{conn_type} servers require 'url'")
 
         args_list = list(args) if args else []
         env_dict = env or {}
@@ -284,7 +317,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         if existing is None:
             record = McpServer(
                 name=name,
-                connection_type=connection_type,
+                connection_type=conn_type,
                 command=command,
                 args=tuple(args_list),
                 env=env_dict,
@@ -303,11 +336,12 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # streamable_http (the worker keys tool discovery on
         # ``connection_type``; stale fields would silently mask
         # transport errors).
-        new_connection_type = (
-            connection_type if connection_type is not None else existing.connection_type
-        )
+        # ``conn_type`` is the validated enum value above; never ``str`` here
+        # because we coerced at the entry. The previous ``is not None``
+        # fallback was dead — the public parameter is annotated ``str``.
+        new_connection_type = conn_type
         self.update(existing.with_changes(
-            connection_type=connection_type,
+            connection_type=conn_type,
             command=None if new_connection_type != "stdio" else command,
             args=() if new_connection_type != "stdio" else tuple(args_list),
             env={} if new_connection_type != "stdio" else env_dict,
@@ -418,4 +452,10 @@ def serialize_mcp_server(server: McpServer) -> dict[str, Any]:
     }
 
 
-__all__ = ["McpServer", "McpServerBook", "_McpServerRow", "serialize_mcp_server"]
+__all__ = [
+    "MCPConnectionType",
+    "McpServer",
+    "McpServerBook",
+    "_McpServerRow",
+    "serialize_mcp_server",
+]

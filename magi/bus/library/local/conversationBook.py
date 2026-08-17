@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import (
     DateTime,
@@ -32,10 +33,37 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus.db.base import utcnow_naive
+from magi.bus.db.base import enum_column, utcnow_naive
 from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
 
 logger = logging.getLogger("magi.bus.library.local.conversationBook")
+
+
+class AgentMessageRole(StrEnum):
+    """Closed set of roles stored on ``Message.role``.
+
+    Values mirror the on-the-wire LLM message-protocol role
+    names (``"user"`` / ``"assistant"`` / ``"system"`` /
+    ``"tool"``) so the DB row's ``role`` column drops straight
+    into the dict the providers (Anthropic / OpenAI) accept
+    without a translation hop. Adding a new role (e.g.
+    ``"developer"`` for OpenAI's newer spec) requires a schema
+    migration.
+
+    ``StrEnum`` rather than bare constants so typos are caught
+    at lookup time instead of silently comparing False: every
+    member is still a ``str`` (``AgentMessageRole.USER == "user"``),
+    so ``m.role in ("user", "system")`` checks, Pydantic
+    ``role: str`` fields, ``json.dumps`` serialisation, and the
+    ``role.upper()`` call in :mod:`magi.agent.compaction` keep
+    working unchanged. Mirrors
+    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    """
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
 
 
 # -- public dataclasses --------------------------------------------------
@@ -54,7 +82,7 @@ class Conversation(BaseRecord):
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Message(BaseRecord):
     conversation_id: int  # 所属会话的内部自增 ID（= chat_conversations.id）
-    role: str
+    role: AgentMessageRole
     text: str
     ts: datetime = field(default_factory=utcnow_naive)
     archived: int = 0
@@ -156,7 +184,7 @@ class ConversationMessage:
     message_id for producer-side idempotency.
     """
 
-    role: str  # 消息角色（user/assistant/system/tool）
+    role: AgentMessageRole  # 消息角色（user/assistant/system/tool）
     text: str  # 消息正文
     ts: datetime  # 消息时间戳（naive UTC）
 
@@ -226,7 +254,9 @@ class _MessageRow(BaseRecordMixin):
         index=True,
     )
     conversation: Mapped[_ConversationRow] = relationship()
-    role: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[AgentMessageRole] = mapped_column(
+        enum_column(AgentMessageRole), nullable=False
+    )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -1051,6 +1081,7 @@ def install_conversation_fts_schema(engine) -> None:
 
 
 __all__ = [
+    "AgentMessageRole",
     "Conversation",
     "Message",
     "ConversationMessage",
