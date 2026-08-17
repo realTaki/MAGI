@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, overload
 from magi.bus.bases.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
 if TYPE_CHECKING:
+    from magi.bus.bases.stream import StreamHub
     from magi.bus.firmwares.books.file.promptBook import PromptBook
     from magi.bus.firmwares.books.file.skillsBook import SkillsBook
     from magi.bus.firmwares.books.local.actionItemBook import ActionItemBook
@@ -62,7 +63,6 @@ if TYPE_CHECKING:
     from magi.bus.firmwares.jobs.runTaskJob import runTaskJobBoard
     from magi.bus.firmwares.jobs.runToolJob import runToolJobBoard
     from magi.bus.firmwares.jobs.seedPresetTasksJob import seedPresetTaskJobBoard
-    from magi.bus.stream import StreamHub
 
 logger = logging.getLogger("magi.bus.bootstrap")
 
@@ -275,7 +275,6 @@ def open_bus(
 
 def _build_magis_facade(magis_url: str) -> MagisBus:
     """Build the MAGIS-only view used by :func:`open_bus` without a workspace."""
-    from magi.bus.bases.db.schema import MAGIS_SCOPE, synchronise_schema
     from magi.bus.firmwares.books.magis import (
         ControlSecretBook,
         ControlSettingBook,
@@ -285,6 +284,7 @@ def _build_magis_facade(magis_url: str) -> MagisBus:
         MagisRoleBook,
         RuntimeBook,
     )
+    from magi.bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
 
     factory = build_magis_factory(magis_url)
     synchronise_schema(factory, scope=MAGIS_SCOPE)
@@ -373,7 +373,7 @@ def _open_with_dirs(
     # Book/JobBoard exists, and therefore before workers or HTTP handlers can
     # query the database. Every explicit Runtime restart passes this barrier
     # again.
-    from magi.bus.bases.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+    from magi.bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 
     if (
         magis_factory is not None
@@ -409,7 +409,7 @@ def _open_with_dirs(
     skills_book = build_default_skills_book(_workspace_dir)
 
     # ---- stream hub (in-process pipe registry) ------------------------------
-    from magi.bus.stream import StreamHub
+    from magi.bus.bases.stream import StreamHub
 
     stream_hub = StreamHub()
 

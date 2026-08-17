@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from magi.bus.bases.db import EngineFactory
 from magi.bus.bases.db.base import utcnow_naive
-from magi.bus.bases.db.schema import LOCAL_SCOPE, synchronise_schema
+from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     _DeliveryNotifyJobRow,

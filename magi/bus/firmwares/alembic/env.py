@@ -2,7 +2,7 @@
 
 This file is **not an operator-facing script**.  It exists only because
 alembic's ``command.upgrade`` unconditionally loads ``env.py`` from the
-``script_location`` directory; :func:`magi.bus.bases.db.schema.upgrade_schema`
+``script_location`` directory; :func:`magi.bus.firmwares.schema.upgrade_schema`
 sets ``script_location`` to this package and calls ``command.upgrade``
 programmatically before a BUS is opened.
 
@@ -37,9 +37,9 @@ from sqlalchemy import engine_from_config, pool
 
 # Ensure the project root is on sys.path so ``import magi`` resolves
 # no matter which CWD alembic was launched from.
-# ``env.py`` lives at ``magi/bus/bases/db/alembic/env.py`` — 5 levels deep
-# under the project root (``magi/bus/bases/db/alembic``).
-PROJECT_ROOT = Path(__file__).resolve().parents[5]
+# ``env.py`` lives at ``magi/bus/firmwares/alembic/env.py`` — 4 levels deep
+# under the project root (``magi/bus/firmwares/alembic``).
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 

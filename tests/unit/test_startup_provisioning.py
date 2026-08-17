@@ -254,7 +254,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
     or "rename column" DDL. The ``0001_initial_schema`` migration's
     :func:`upgrade` is itself ``Base.metadata.create_all``, which
     acts as the additive repair path during
-    :func:`magi.bus.bases.db.schema.synchronise_schema` (the legacy
+    :func:`magi.bus.firmwares.schema.synchronise_schema` (the legacy
     ``create_all`` half was kept for exactly this situation).
     """
     config = _first_config(tmp_path)
@@ -294,7 +294,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
 
     with factory.engine.begin() as connection:
         # Initial-schema bring-up: create_all + alembic stamp.
-        from magi.bus.bases.db.schema import LOCAL_SCOPE, synchronise_schema
+        from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
 
     # Use ``synchronise_schema`` indirectly by going through ``open_bus``
     # — first, drop the existing DB so the boot is truly from scratch.
@@ -409,7 +409,7 @@ def test_initial_schema_declares_native_enum_on_a2a_tables(tmp_path: Path) -> No
     CHECK being present and bounded, not on a specific dialect
     syntax.
     """
-    from magi.bus.bases.db.schema import MAGIS_SCOPE, synchronise_schema
+    from magi.bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
     from magi.bus.bases.db.engine import EngineFactory
 
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")

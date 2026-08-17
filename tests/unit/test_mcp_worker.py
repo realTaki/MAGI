@@ -37,7 +37,7 @@ import pytest
 from magi.bus.bootstrap import Bus
 from magi.bus.bases.db import EngineFactory
 from magi.bus.bases.db.file import FileShelf
-from magi.bus.bases.db.schema import LOCAL_SCOPE, synchronise_schema
+from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
 from magi.bus.firmwares.jobs import (
     ChangeMCPServerJob,
     MCPKind,

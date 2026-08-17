@@ -111,8 +111,8 @@ class BaseJobRowMixin(Base):
     # share one source of truth. ``name="job_status"`` is the PG
     # ``CREATE TYPE`` / SQLite CHECK constraint label emitted by the
     # collapsed initial schema (see
-    # :mod:`magi.bus.bases.db.alembic.versions.0001_initial_schema` and
-    # :mod:`magi.bus.bases.db.alembic.magis_versions.0001_initial_schema` —
+    # :mod:`magi.bus.firmwares.alembic.versions.0001_initial_schema` and
+    # :mod:`magi.bus.firmwares.alembic.magis_versions.0001_initial_schema` —
     # the 2026.08 dev-mode collapse folded the historical migration
     # chain into a single baseline per scope).
     status: Mapped[JobStatus] = mapped_column(

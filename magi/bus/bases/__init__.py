@@ -10,10 +10,13 @@ Public surface:
   :class:`BaseJobBoard` / :class:`JobStatus`
 - :class:`BaseBook` / :class:`BaseRecord` / :class:`BaseRecordMixin`
 - :class:`BaseFileBook`
+- :class:`StreamHub`
 
-The database layer (:mod:`magi.bus.bases.db`) stays a subpackage so
-domain code can be forbidden from importing engines, ORM, and schema
-helpers without also losing access to the Book/Job bases.
+The database layer (:mod:`magi.bus.bases.db`) is the integration
+surface only — ``Base``, engine factories, and ``FileShelf``. It does
+not define tables, columns, or Alembic revisions; those live in
+:mod:`magi.bus.firmwares`. Domain code is forbidden from importing
+this subpackage.
 """
 
 from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
@@ -25,6 +28,7 @@ from magi.bus.bases.job import (
     BaseJobRowMixin,
     JobStatus,
 )
+from magi.bus.bases.stream import StreamHub
 
 __all__ = [
     "BaseBook",
@@ -36,4 +40,5 @@ __all__ = [
     "BaseRecord",
     "BaseRecordMixin",
     "JobStatus",
+    "StreamHub",
 ]

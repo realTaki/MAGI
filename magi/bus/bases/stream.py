@@ -35,8 +35,8 @@ Lifecycle
 Design note
 -----------
 
-Placed in ``bus`` so that neither producer nor consumer needs
-to import ``magi.providers``.  Both sides talk to
+Placed in ``bus.bases`` so that neither producer nor consumer
+needs to import ``magi.providers``.  Both sides talk to
 ``bus.stream_hub`` exclusively.
 """
 

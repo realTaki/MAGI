@@ -19,13 +19,13 @@ friends) and the post-cleanup column set (no ``attempts``).
 
 ``env.py`` imports every ORM module so the union is registered on
 ``Base.metadata`` before alembic walks it. ``synchronise_schema``
-in :mod:`magi.bus.bases.db.schema` partitions the model registry by
+in :mod:`magi.bus.firmwares.schema` partitions the model registry by
 ``__module__`` (see :func:`_tables_for_scope`) so this migration
 only materialises the tables the local BUS store actually owns.
 
 Dev environment only — we don't carry the historical revision
 chain forward because there is no operator deployment to migrate.
-See :mod:`magi.bus.bases.db.alembic.magis_versions.0001_initial_schema`
+See :mod:`magi.bus.firmwares.alembic.magis_versions.0001_initial_schema`
 for the matching baseline on the MAGIS-shared store.
 """
 
@@ -51,7 +51,7 @@ def upgrade() -> None:
     one transaction.
     """
     from magi.bus.bases.db.base import Base
-    from magi.bus.bases.db.schema import LOCAL_SCOPE, _tables_for_scope
+    from magi.bus.firmwares.schema import LOCAL_SCOPE, _tables_for_scope
 
     Base.metadata.create_all(
         op.get_bind(),
@@ -66,7 +66,7 @@ def downgrade() -> None:
     reverse walk orders children before parents so existing FKs
     don't block the drop.
     """
-    from magi.bus.bases.db.schema import LOCAL_SCOPE, _tables_for_scope
+    from magi.bus.firmwares.schema import LOCAL_SCOPE, _tables_for_scope
 
     bind = op.get_bind()
     for table in reversed(_tables_for_scope(LOCAL_SCOPE)):

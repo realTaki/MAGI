@@ -1,4 +1,4 @@
-"""bus.db — 数据库抽象层。
+"""bus.bases.db — 数据库集成层，不含业务表定义。
 
 Public surface:
 

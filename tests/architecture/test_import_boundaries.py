@@ -66,20 +66,14 @@ def test_retired_bus_package_names_are_not_imported() -> None:
 
 
 def test_bases_do_not_import_firmwares() -> None:
-    """Bases own contracts and storage; only schema registration may look up.
+    """Bases own contracts and storage engines, never firmware tables.
 
-    ``bases.db.schema`` and the Alembic env import ``magi.bus.firmwares``
-    so ``Base.metadata`` is populated before create_all / upgrade. Every
-    other bases module must stay firmware-free.
+    Table/column definitions, Alembic revisions, and schema
+    synchronisation live in ``magi.bus.firmwares``. Bases must stay
+    firmware-free so the integration layer does not encode business data.
     """
-    allowed = {
-        MAGI_ROOT / "bus" / "bases" / "db" / "schema.py",
-        MAGI_ROOT / "bus" / "bases" / "db" / "alembic" / "env.py",
-    }
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus" / "bases").rglob("*.py"):
-        if path in allowed:
-            continue
         for module, lineno in _imports(path):
             if module == "magi.bus.firmwares" or module.startswith("magi.bus.firmwares."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")

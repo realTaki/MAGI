@@ -1,4 +1,8 @@
-"""Internal schema synchronisation owned by the BUS bootstrap.
+"""Firmware schema synchronisation — table sets, scopes, and Alembic.
+
+Owned by :mod:`magi.bus.firmwares` because it names the concrete
+tables each store materialises. :mod:`magi.bus.bases.db` supplies
+``Base`` and the engine; it does not know which tables exist.
 
 The provisioning flow has two phases:
 
@@ -6,7 +10,7 @@ The provisioning flow has two phases:
    table the ORM knows about is present (idempotent on already-present
    tables — safe to run whenever a BUS is opened).
 2. :func:`upgrade_schema` runs the migration versions stored in
-   :mod:`magi.bus.bases.db.alembic.versions` against the live DB.
+   :mod:`magi.bus.firmwares.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
    without requiring an operator to invoke ``alembic`` from a shell.
 
@@ -33,13 +37,13 @@ from sqlalchemy import Connection, Table, text
 # populated by the time ``_tables_for_scope`` or any caller walks it.
 # :mod:`magi.bus.firmwares` imports the jobs / local / magis packages
 # that register tables.  Without this, a fresh import of
-# ``magi.bus.bases.db.schema`` would leave the mapper registry empty
+# ``magi.bus.firmwares.schema`` would leave the mapper registry empty
 # and ``synchronise_schema`` would silently build zero tables.
 import magi.bus.firmwares  # noqa: F401  (side-effect: registers firmware tables)
 from magi.bus.bases.db.base import Base
 from magi.bus.bases.db.engine import EngineFactory
 
-logger = logging.getLogger("magi.bus.bases.db.schema")
+logger = logging.getLogger("magi.bus.firmwares.schema")
 
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"

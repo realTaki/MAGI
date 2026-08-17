@@ -9,9 +9,11 @@ permalink: /architecture/
 The current MAGI runtime is organised around one durable boundary — **BUS**
 (`magi.bus`) — that owns Books (typed CRUD), Job Boards (publish → claim →
 submit_result), and the file-backed prompt/skill shelves. Inside that
-boundary the package is split in two: **bases** (`magi.bus.bases`) hold
-the Job/Book contracts and the database layer; **firmwares**
-(`magi.bus.firmwares`) hold the concrete Jobs and Books. This document is
+boundary the package is split in two: **bases** (`magi/bus/bases/`) hold
+the Job/Book contracts and the database integration (engines, `Base`,
+`FileShelf`) without any table or column definitions; **firmwares**
+(`magi/bus/firmwares/`) hold the concrete Jobs, Books, and their
+schema/Alembic revisions. This document is
 the authoritative architecture for the current runtime: canonical naming,
 dependency rules, runtime shape, composition root, durable invariants, and
 how each domain package attaches to BUS.
@@ -155,13 +157,15 @@ Durable runtime rules (enforced by the architecture guard):
 | Path | Responsibility |
 | --- | --- |
 | `magi/bus/bootstrap.py` | `Bus` dataclass + `open_bus(...)` composition |
-| `magi/bus/bases/` | Job/Book bases (`BaseJobBoard`, `BaseBook`, `BaseFileBook`) |
-| `magi/bus/bases/db/` | SQLAlchemy `Base`, engine factories, `FileShelf` (private) |
+| `magi/bus/bases/` | Job/Book/Stream bases (`BaseJobBoard`, `BaseBook`, `BaseFileBook`, `StreamHub`) |
+| `magi/bus/bases/db/` | SQLAlchemy `Base`, engine factories, `FileShelf` — no tables |
+| `magi/bus/firmwares/schema.py` | Scope-filtered `create_all` + Alembic upgrade |
+| `magi/bus/firmwares/alembic/` | Revisioned DDL for firmware tables |
 | `magi/bus/firmwares/jobs/` | Concrete Job Boards (`publish → claim → submit_result`) |
 | `magi/bus/firmwares/books/local/` | Local-SQLite Books (conversations, tasks, contacts, memory, …) |
 | `magi/bus/firmwares/books/magis/` | MAGIS-side Books (society, members, roles, control plane) |
 | `magi/bus/firmwares/books/file/` | File-backed `PromptBook` + `SkillsBook` |
-| `magi/bus/stream.py` | `StreamHub` — ephemeral SSE notification only |
+| `magi/bus/bases/stream.py` | `StreamHub` — ephemeral SSE notification only |
 | `magi/startup/runtime.py` | composition root + worker lifecycle |
 | `magi/startup/workers.py` | `WorkerRegistry` — sole owner of all Worker instances |
 | `magi/startup/worker.py` | `RuntimeWorker` — shared lifecycle primitives |
@@ -564,7 +568,7 @@ The architecture guard in `tests/architecture/test_import_boundaries.py`
 enforces:
 
 - Domain code does not import `magi.bus.bases.db`.
-- `magi.bus.bases` does not import firmwares except schema/Alembic registration.
+- `magi/bus/bases/` does not import firmwares. Table and column definitions live only in `magi/bus/firmwares/`.
 - BUS does not import domain worker implementations.
 - The retired `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names never
   reappear in production code.

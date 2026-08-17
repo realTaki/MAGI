@@ -10,7 +10,7 @@ import pytest
 
 from magi.bus.bases.db.base import utcnow_naive
 from magi.bus.bases.db.engine import EngineFactory
-from magi.bus.bases.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+from magi.bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 from magi.bus.firmwares.jobs.a2aJob import (
     A2ANotifyJob,
     A2ANotifyResult,

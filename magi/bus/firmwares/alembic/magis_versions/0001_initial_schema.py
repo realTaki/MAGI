@@ -11,7 +11,7 @@ Schema source of truth is the declarative ORM in
 :mod:`magi.bus.firmwares.books.magis` and ``magi.bus.firmwares.jobs.a2aJob`` (the
 two ``JobRowMixin``-derived tables whose module path is rooted at
 ``magi.bus.firmwares.jobs`` are intentionally grouped with the MAGIS
-store — see :func:`magi.bus.bases.db.schema._tables_for_scope`). This
+store — see :func:`magi.bus.firmwares.schema._tables_for_scope`). This
 migration's :func:`upgrade` simply hands the scope-filtered table
 list to :meth:`sqlalchemy.sql.schema.MetaData.create_all`, which
 emits the matching ``CREATE TABLE`` / ``CREATE INDEX`` /
@@ -19,7 +19,7 @@ emits the matching ``CREATE TABLE`` / ``CREATE INDEX`` /
 
 Dev environment only — we don't carry the historical revision
 chain forward because there is no operator deployment to migrate.
-See :mod:`magi.bus.bases.db.alembic.versions.0001_initial_schema` for
+See :mod:`magi.bus.firmwares.alembic.versions.0001_initial_schema` for
 the matching baseline on the local BUS store.
 """
 
@@ -45,7 +45,7 @@ def upgrade() -> None:
     one transaction.
     """
     from magi.bus.bases.db.base import Base
-    from magi.bus.bases.db.schema import MAGIS_SCOPE, _tables_for_scope
+    from magi.bus.firmwares.schema import MAGIS_SCOPE, _tables_for_scope
 
     Base.metadata.create_all(
         op.get_bind(),
@@ -60,7 +60,7 @@ def downgrade() -> None:
     reverse walk orders children before parents so existing FKs
     don't block the drop.
     """
-    from magi.bus.bases.db.schema import MAGIS_SCOPE, _tables_for_scope
+    from magi.bus.firmwares.schema import MAGIS_SCOPE, _tables_for_scope
 
     bind = op.get_bind()
     for table in reversed(_tables_for_scope(MAGIS_SCOPE)):
