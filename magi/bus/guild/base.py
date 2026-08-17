@@ -54,7 +54,7 @@ class BaseJob:
     业务字段留给子类声明。
 
     ``kw_only=True`` 给子类留出空间声明无默认值的必填字段（如
-    ``DeliveryJob.channel``）而不违反 dataclass「无默认字段不能
+    ``DeliveryNotifyJob.channel``）而不违反 dataclass「无默认字段不能
     跟在有默认字段之后」的规则。
     """
 
@@ -267,6 +267,18 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
         with self._session() as s:
             return self._get_result(s, job_id=job_id)
 
+    def check_job_status(self, *, job_id: int) -> JobStatus | None:
+        """Return a job's durable queue state without waiting for a result.
+
+        Notification producers use ``PROCESSING`` as the receiver receipt:
+        the consumer has atomically claimed the row and owns its lease.  This
+        is intentionally distinct from :meth:`get_result`, which exposes only
+        a terminal business result.
+        """
+        with self._session() as s:
+            row = s.get(self.job_model, job_id)
+            return getattr(row, "status", None) if row is not None else None
+
     async def wait_for_result(
         self,
         *,
@@ -333,7 +345,7 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
     def _claim(self, session: Session, *, worker_id: str) -> RowT | None:
         """Default CAS-claim — no extra WHERE filter.
 
-        Specialized boards (``deliveryJobBoard.claim_for_channel``,
+        Specialized boards (``deliveryNotifyJobBoard.claim_for_channel``,
         ``chatNotifyBoard.claim_for_steering``) wrap
         :meth:`_cas_claim` with their own scoping clause.
         """

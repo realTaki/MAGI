@@ -76,7 +76,7 @@ class ChatNotifyResult(BaseJobResult):
     Channel workers (TG / WebUI / …) only read ``status`` (see
     :class:`JobStatus`) — they never see a stable error code. When the
     agent loop fails, :meth:`AgentWorker._publish_delivery` enqueues a
-    :class:`DeliveryJob` carrying the user-facing error text, and
+    :class:`DeliveryNotifyJob` carrying the user-facing error text, and
     ``chat_notify_jobs.status`` flips to ``FAILED``. Operators diagnose
     failures from the inherited :attr:`BaseJobResult.error` (humman-
     readable string) plus stderr; the structured

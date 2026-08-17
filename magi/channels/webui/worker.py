@@ -1,11 +1,11 @@
 """WebUIWorker — WebUI 通道出站 Worker。
 
-纯 wire 投递 — 从 delivery_job_board 认领 channel=="webui" 的 Job，
+纯 wire 投递 — 从 delivery_notify_job_board 认领 channel=="webui" 的 Job，
 把消息内容通过 WebSocket 推到对应 Session。
 
-``chat_messages`` 行的写入由 :meth:`deliveryJobBoard.publish` 在
+``chat_messages`` 行的写入由 :meth:`deliveryNotifyJobBoard.publish` 在
 入队时完成（与 ``chatNotifyBoard.publish`` 写用户行对称），本 worker
-不再触 ``messages_book``。如果 wire 投递失败，deliveryJob 的 result
+不再触 ``messages_book``。如果 wire 投递失败，delivery notify 的 result
 会记 :attr:`JobStatus.FAILED`，但 assistant 行已经在 DB 里 ——
 transcript 反映"agent 说了什么"，而不是"线路上确认了什么"。
 
@@ -21,20 +21,20 @@ from typing import TYPE_CHECKING
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.bus.guild.deliveryJob import DeliveryJob
+    from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.webui.worker")
 
 
 class WebUIWorker(ChannelWorker):
-    """WebUI 通道 Worker：认领 deliveryJob(channel=webui) → WS 推送。"""
+    """WebUI 通道 Worker：认领 delivery notify(channel=webui) → WS 推送。"""
 
     channel_name = "webui"
 
     async def _run(self) -> None:
         await self._claim_delivery_loop(self._deliver_webui, "webui")
 
-    async def _deliver_webui(self, job: DeliveryJob) -> None:
+    async def _deliver_webui(self, job: DeliveryNotifyJob) -> None:
         """推送 delivery 内容到对应 WebUI Session（纯 wire 投递）。"""
         conversation_id = job.conversation_id or 0
         contact_id = job.contact_id
@@ -43,7 +43,7 @@ class WebUIWorker(ChannelWorker):
             raise ValueError("webui delivery missing conversation_id or contact_id")
 
         # The ``chat_messages`` row is written by
-        # :meth:`deliveryJobBoard.publish` at enqueue time. This
+        # :meth:`deliveryNotifyJobBoard.publish` at enqueue time. This
         # method only handles the WS push; a failure here surfaces
         # as :attr:`JobStatus.FAILED` on submit_result but does
         # NOT delete the assistant row.

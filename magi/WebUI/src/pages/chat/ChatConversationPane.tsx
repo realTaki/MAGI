@@ -19,6 +19,7 @@ export function ChatConversationPane(props: {
   input: string;
   onInputChange: (v: string) => void;
   sending: boolean;
+  sendingLabel?: string;
   error: { code: string; detail: string } | null;
   onSend: () => void;
   title: string | null;
@@ -127,7 +128,7 @@ export function ChatConversationPane(props: {
         {props.sending && (
           <div className="flex justify-start">
             <div className="rounded-2xl bg-sky-soft text-ink-soft border border-border px-4 py-2.5 text-sm flex items-center gap-2">
-              <span>{t("chat.sending")}</span>
+              <span>{props.sendingLabel ?? t("chat.sending")}</span>
               <span className="inline-flex gap-1">
                 <span className="animate-pulse">·</span>
                 <span className="animate-pulse" style={{ animationDelay: "0.2s" }}>·</span>

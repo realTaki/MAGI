@@ -21,7 +21,7 @@ under the hood, with workers wrapping in ``asyncio.to_thread``
 at the worker layer). Spawning threads lets us overlap claims
 in wall-clock time without having to coordinate event loops.
 
-The boards used here (``runTaskJobBoard``, ``deliveryJobBoard``)
+The boards used here (``runTaskJobBoard``, ``deliveryNotifyJobBoard``)
 are the ones reviewed in the architecture review; each test
 isolates the invariant it cares about so a regression points
 straight at the broken layer.
@@ -37,10 +37,10 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.base import JobStatus
-from magi.bus.guild.deliveryJob import (
-    DeliveryJob,
-    DeliveryResult,
-    deliveryJobBoard,
+from magi.bus.guild.deliveryNotifyJob import (
+    DeliveryNotifyJob,
+    DeliveryNotifyResult,
+    deliveryNotifyJobBoard,
 )
 from magi.bus.guild.runTaskJob import (
     RunTaskJob,
@@ -63,10 +63,10 @@ def _seed_run_tasks(f, *, count: int) -> list[str]:
 
 
 def _seed_delivery(f, *, channel: str, count: int) -> list[str]:
-    """Insert N pending DeliveryJobs for *channel*; return job_ids."""
-    board = deliveryJobBoard(f)
+    """Insert N pending DeliveryNotifyJobs for *channel*; return job_ids."""
+    board = deliveryNotifyJobBoard(f)
     ids = [
-        board.publish(DeliveryJob(channel=channel, text=f"#{i}", destination="x"))
+        board.publish(DeliveryNotifyJob(channel=channel, text=f"#{i}", destination="x"))
         for i in range(count)
     ]
     return ids
@@ -151,7 +151,7 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
     lock = threading.Lock()
 
     def drain(channel: str, sink: list[set[str]]) -> None:
-        board = deliveryJobBoard(f)
+        board = deliveryNotifyJobBoard(f)
         worker_id = f"delivery-{channel}-{threading.get_ident()}"
         own: set[str] = set()
         barrier.wait()
@@ -163,7 +163,7 @@ def test_delivery_channel_workers_do_not_steal_each_other_rows(tmp_path: Path) -
             board.submit_result(
                 job_id=job.job_id,
                 worker_id=worker_id,
-                result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
+                result=DeliveryNotifyResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
         with lock:
             sink.append(own)

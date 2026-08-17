@@ -30,7 +30,7 @@ SCAN_PREFIXES: tuple[str, ...] = (
 
 # These are the remaining production Actor/Tool entry paths that must retain
 # their BUS-only boundary. Delivery is now represented by the durable
-# ``deliveryJob`` board and no longer has a channels/delivery.py module.
+# ``deliveryNotifyJob`` board and no longer has a channels/delivery.py module.
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "magi/agent/worker.py",
     "magi/agent/agent_context.py",

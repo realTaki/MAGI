@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from magi.bus.guild.base import JobStatus
-from magi.bus.guild.deliveryJob import DeliveryJob
+from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 from magi.channels.worker_base import ChannelWorker
 
 
@@ -34,7 +34,7 @@ class _FakeChannelWorker(ChannelWorker):
     async def _run(self) -> None:
         await self._claim_delivery_loop(self._deliver, "fake")
 
-    async def _deliver(self, job: DeliveryJob) -> None:
+    async def _deliver(self, job: DeliveryNotifyJob) -> None:
         pass  # overridden in tests
 
 
@@ -74,15 +74,15 @@ def _bare_worker() -> _FakeChannelWorker:
 @pytest.mark.asyncio
 async def test_successful_delivery_calls_submit_result_with_success():
     """A successful deliver_fn should submit_result(success=True)."""
-    delivered: list[DeliveryJob] = []
+    delivered: list[DeliveryNotifyJob] = []
 
     w = _bare_worker()
 
-    fake_job = DeliveryJob(channel="fake", text="hi")
+    fake_job = DeliveryNotifyJob(channel="fake", text="hi")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
-    w.bus.delivery_job_board.submit_result = MagicMock()
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
+    w.bus.delivery_notify_job_board.claim_for_channel = _claim_sequence(fake_job)
+    w.bus.delivery_notify_job_board.submit_result = MagicMock()
+    w.bus.delivery_notify_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get_value = MagicMock(return_value=None)  # default depth
 
     async def deliver(job):
@@ -97,8 +97,8 @@ async def test_successful_delivery_calls_submit_result_with_success():
     await asyncio.wait_for(task, timeout=2.0)
 
     assert len(delivered) == 1
-    w.bus.delivery_job_board.submit_result.assert_called()
-    call_args = w.bus.delivery_job_board.submit_result.call_args
+    w.bus.delivery_notify_job_board.submit_result.assert_called()
+    call_args = w.bus.delivery_notify_job_board.submit_result.call_args
     result = call_args.kwargs["result"]
     assert result.status == JobStatus.COMPLETED
 
@@ -108,11 +108,11 @@ async def test_failed_delivery_calls_submit_result_with_failure():
     """A failing deliver_fn should submit_result(success=False) with error."""
     w = _bare_worker()
 
-    fake_job = DeliveryJob(channel="fake", text="x")
+    fake_job = DeliveryNotifyJob(channel="fake", text="x")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim_for_channel = _claim_sequence(fake_job)
-    w.bus.delivery_job_board.submit_result = MagicMock()
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
+    w.bus.delivery_notify_job_board.claim_for_channel = _claim_sequence(fake_job)
+    w.bus.delivery_notify_job_board.submit_result = MagicMock()
+    w.bus.delivery_notify_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get_value = MagicMock(return_value=None)
 
     async def failing_deliver(job):
@@ -124,8 +124,8 @@ async def test_failed_delivery_calls_submit_result_with_failure():
     w._stopping = True
     await asyncio.wait_for(task, timeout=2.0)
 
-    w.bus.delivery_job_board.submit_result.assert_called()
-    result = w.bus.delivery_job_board.submit_result.call_args.kwargs["result"]
+    w.bus.delivery_notify_job_board.submit_result.assert_called()
+    result = w.bus.delivery_notify_job_board.submit_result.call_args.kwargs["result"]
     assert result.status == JobStatus.FAILED
     assert "TG API timeout" in str(result.error)
 
@@ -133,14 +133,14 @@ async def test_failed_delivery_calls_submit_result_with_failure():
 @pytest.mark.asyncio
 async def test_skips_job_with_wrong_channel():
     """A mismatched claimed job is not delivered or actively released."""
-    delivered: list[DeliveryJob] = []
+    delivered: list[DeliveryNotifyJob] = []
 
     w = _bare_worker()
 
-    wrong_job = DeliveryJob(channel="tg", text="x")
+    wrong_job = DeliveryNotifyJob(channel="tg", text="x")
     w.bus = MagicMock()
-    w.bus.delivery_job_board.claim_for_channel = _claim_sequence(wrong_job)
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=0)
+    w.bus.delivery_notify_job_board.claim_for_channel = _claim_sequence(wrong_job)
+    w.bus.delivery_notify_job_board.pending_count = MagicMock(return_value=0)
     w.bus.settings_book.get_value = MagicMock(return_value=None)
 
     async def deliver(job):
@@ -152,7 +152,7 @@ async def test_skips_job_with_wrong_channel():
     await asyncio.wait_for(task, timeout=2.0)
 
     assert len(delivered) == 0
-    w.bus.delivery_job_board.submit_result.assert_not_called()
+    w.bus.delivery_notify_job_board.submit_result.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -163,10 +163,10 @@ async def test_backpressure_throttle_skips_claim():
     w.bus = MagicMock()
     # claim_for_channel would raise StopIteration if reached — backpressure branch
     # must short-circuit BEFORE this mock is called.
-    w.bus.delivery_job_board.claim_for_channel = MagicMock(
+    w.bus.delivery_notify_job_board.claim_for_channel = MagicMock(
         side_effect=AssertionError("claim_for_channel should not be called under backpressure"),
     )
-    w.bus.delivery_job_board.pending_count = MagicMock(return_value=5000)
+    w.bus.delivery_notify_job_board.pending_count = MagicMock(return_value=5000)
     w.bus.settings_book.get_value = MagicMock(return_value="10")  # max_depth=10
 
     async def deliver(job):
@@ -178,4 +178,4 @@ async def test_backpressure_throttle_skips_claim():
     await asyncio.wait_for(task, timeout=2.0)
 
     # claim_for_channel should NOT be called because depth > max
-    w.bus.delivery_job_board.claim_for_channel.assert_not_called()
+    w.bus.delivery_notify_job_board.claim_for_channel.assert_not_called()

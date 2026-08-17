@@ -113,6 +113,13 @@ class ChatSendResponse(BaseModel):
     messages: list[ConversationMessageOut] = []
 
 
+class ChatNotifyStatusResponse(BaseModel):
+    """Channel-facing receipt state for one submitted ChatNotifyJob."""
+
+    job_id: int
+    status: str
+
+
 @router.post("/chat/send", response_model=ChatSendResponse, status_code=status.HTTP_202_ACCEPTED)
 async def send_chat(
     payload: ChatSendRequest,
@@ -302,3 +309,21 @@ async def send_chat(
         )
 
     return ChatSendResponse(job_id=job_id, conversation_id=conversation_id)
+
+
+@router.get("/chat/notifications/{job_id}", response_model=ChatNotifyStatusResponse)
+def get_chat_notification_status(
+    job_id: int,
+    request: Request,
+    _admin: AdminGate,
+    bus: BusDep,
+) -> ChatNotifyStatusResponse:
+    """Read the durable channel→Agent receipt state for this caller's turn."""
+    job_status = bus.agent_job_board.check_job_status(job_id=job_id)
+    if job_status is None:
+        raise MagiHTTPException(
+            status_code=404,
+            code="not_found.chat_notification",
+            detail=f"chat notification {job_id} not found",
+        )
+    return ChatNotifyStatusResponse(job_id=job_id, status=job_status.value)

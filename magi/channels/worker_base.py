@@ -15,7 +15,7 @@ from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.deliveryJob import DeliveryJob
+    from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.worker")
 _backpressure_last_warn: dict[str, float] = {}
@@ -63,12 +63,12 @@ class ChannelWorker(RuntimeWorker):
 
     async def _claim_delivery_loop(
         self,
-        deliver_fn: Callable[[DeliveryJob], Awaitable[None]],
+        deliver_fn: Callable[[DeliveryNotifyJob], Awaitable[None]],
         channel_label: str,
     ) -> None:
         """Channel-scoped delivery claim loop.
 
-        Uses :meth:`deliveryJobBoard.claim_for_channel` so each worker
+        Uses :meth:`deliveryNotifyJobBoard.claim_for_channel` so each worker
         only reads its own row slice. The previous "claim any, release
         mismatches" pattern (P1 issue in the 2026-08-10 architecture
         review) caused every worker to thrash on rows it didn't own
@@ -84,7 +84,7 @@ class ChannelWorker(RuntimeWorker):
             await self.reserve_capacity()
             try:
                 job = await self.call(
-                    self.bus.delivery_job_board.claim_for_channel,
+                    self.bus.delivery_notify_job_board.claim_for_channel,
                     channel=channel_label,
                     worker_id=self.worker_id,
                 )
@@ -115,31 +115,31 @@ class ChannelWorker(RuntimeWorker):
 
     async def _deliver_claimed(
         self,
-        job: DeliveryJob,
-        deliver_fn: Callable[[DeliveryJob], Awaitable[None]],
+        job: DeliveryNotifyJob,
+        deliver_fn: Callable[[DeliveryNotifyJob], Awaitable[None]],
         channel_label: str,
     ) -> None:
         """Deliver one already-claimed row under RuntimeWorker capacity."""
-        from magi.bus.guild.deliveryJob import DeliveryResult
+        from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyResult
 
         self.polled()
         try:
             await deliver_fn(job)
             await self.call(
-                self.bus.delivery_job_board.submit_result,
+                self.bus.delivery_notify_job_board.submit_result,
                 job_id=job.job_id,
                 worker_id=self.worker_id,
-                result=DeliveryResult(job_id=job.job_id, status=JobStatus.COMPLETED),
+                result=DeliveryNotifyResult(job_id=job.job_id, status=JobStatus.COMPLETED),
             )
             self.succeeded()
         except Exception as exc:
             self.failed(exc)
             logger.exception("channels[%s]: delivery %s failed", channel_label, job.job_id)
             await self.call(
-                self.bus.delivery_job_board.submit_result,
+                self.bus.delivery_notify_job_board.submit_result,
                 job_id=job.job_id,
                 worker_id=self.worker_id,
-                result=DeliveryResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
+                result=DeliveryNotifyResult(job_id=job.job_id, status=JobStatus.FAILED, error=str(exc)[:1024]),
             )
 
     async def _read_max_queue_depth(self) -> int:
@@ -151,7 +151,7 @@ class ChannelWorker(RuntimeWorker):
     async def _read_queue_depth(self, channel_label: str) -> int:
         try:
             self._queue_depth = await self.call(
-                self.bus.delivery_job_board.pending_count,
+                self.bus.delivery_notify_job_board.pending_count,
                 channel=channel_label,
             )
         except Exception:

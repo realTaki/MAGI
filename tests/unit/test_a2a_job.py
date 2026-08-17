@@ -243,7 +243,7 @@ async def test_target_worker_reloads_local_a2a_transcript_on_later_request(trans
             a2a_notify_job_board=boards.target_notifies,
             conversations_book=boards.target_conversations,
             messages_book=boards.target_messages,
-            delivery_job_board=Mock(),
+            delivery_notify_job_board=Mock(),
                 settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         ),
         magi_id=boards.target.id,
@@ -476,7 +476,7 @@ async def test_a2a_terminal_does_not_publish_human_delivery() -> None:
     from magi.agent.worker import AgentWorker, RunContext
 
     delivery_board = Mock()
-    worker = AgentWorker(SimpleNamespace(delivery_job_board=delivery_board))  # type: ignore[arg-type]
+    worker = AgentWorker(SimpleNamespace(delivery_notify_job_board=delivery_board))  # type: ignore[arg-type]
     ctx = RunContext(
         contact_id=None,
         conversation_id=0,
@@ -498,7 +498,7 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
     bus = SimpleNamespace(
         a2a_request_job_board=request_board,
         a2a_notify_job_board=notify_board,
-        delivery_job_board=delivery_board,
+        delivery_notify_job_board=delivery_board,
         settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         agent_job_board=Mock(),
     )
@@ -549,7 +549,7 @@ async def test_target_agent_worker_consumes_shared_request_from_another_member(b
             agent_job_board=SimpleNamespace(claim_for_new_conversation=lambda **_kwargs: None),
             a2a_request_job_board=requests,
             a2a_notify_job_board=notifies,
-            delivery_job_board=delivery_board,
+            delivery_notify_job_board=delivery_board,
             settings_book=SimpleNamespace(get_value=lambda **_kwargs: None),
         ),
         magi_id=target.id,

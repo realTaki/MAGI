@@ -8,9 +8,9 @@
 - **board claim steering**：steering 不通过进程内队列，而是在
   ``_gather_all`` 中主动 ``claim_for_steering`` 认领同 session 的新
   ChatNotifyJob。board 本身是唯一持久化协调点。
-- **回复走 delivery_job_board**：``ChatNotifyResult`` 只承载 status（``COMPLETED`` /
-  ``FAILED``），回复文本统一由 ``_publish_delivery`` 投递，失败时文本已经是人类可读
-  错误文案。
+- **ChatNotify 的接收回执是 ``PROCESSING``**：channel 观察 claim 写下的
+  durable lease，而不等待整轮执行的终态。
+- **回复走 delivery notify board**：回复文本统一由 ``_publish_delivery`` 投递。
 
 本步骤已完成 Phase 2 子模块迁移，现已委托调用：
 - ``system_prompt.build_system_prompt(bus=...)``
@@ -282,9 +282,7 @@ class AgentWorker(RuntimeWorker):
                 active_conversation_ids=set(self._in_flight),
             )
 
-        choices: list[tuple[str, Any]] = [
-            ("chat", claim_chat)
-        ]
+        choices: list[tuple[str, Any]] = [("chat", claim_chat)]
         # Bind to locals so Pylance keeps the ``is not None``
         # narrowing across the lambda boundary; ``self.bus.*`` and
         # ``self._magi_id`` would otherwise be re-typed as
@@ -898,7 +896,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _publish_delivery(self, ctx: RunContext) -> None:
-        from magi.bus.guild.deliveryJob import DeliveryJob
+        from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 
         # A2A has its own terminal path in ``_run``.  Its text is either the
         # single request response or deliberately discarded for a notify.
@@ -919,8 +917,8 @@ class AgentWorker(RuntimeWorker):
                 destination = getattr(conversation, "delivery_address", None) or None
 
         await self.call(
-            self.bus.delivery_job_board.publish,
-            DeliveryJob(
+            self.bus.delivery_notify_job_board.publish,
+            DeliveryNotifyJob(
                 channel=ctx.channel,
                 text=ctx.final_reply or "处理完毕。",
                 conversation_id=ctx.conversation_id,

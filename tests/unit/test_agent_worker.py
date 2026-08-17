@@ -114,8 +114,8 @@ def _make_bus(**overrides) -> Mock:
     bus.a2a_request_job_board = None
     bus.a2a_notify_job_board = None
 
-    bus.delivery_job_board = Mock()
-    bus.delivery_job_board.publish = Mock()
+    bus.delivery_notify_job_board = Mock()
+    bus.delivery_notify_job_board.publish = Mock()
 
     # -- books --
     bus.conversations_book = Mock()
@@ -184,7 +184,7 @@ async def test_single_turn_no_tools_delivers():
     # reply set and delivery published
     assert ctx.final_reply == "Hello!"
     assert ctx.failed is False
-    bus.delivery_job_board.publish.assert_called_once()
+    bus.delivery_notify_job_board.publish.assert_called_once()
     # ChatNotifyResult is submitted by _run(), not _process();
     # inside _process we only test side-effects are correct.
 
@@ -214,7 +214,7 @@ async def test_missing_provider_delivers_actionable_reply() -> None:
     assert ctx.final_reply == (
         f"{LLMErrorCode.CREDENTIALS_REQUIRED}: MAGI runtime has no LLM provider configured"
     )
-    delivery = bus.delivery_job_board.publish.call_args.args[0]
+    delivery = bus.delivery_notify_job_board.publish.call_args.args[0]
     assert delivery.channel == "webui"
     assert delivery.conversation_id == 1
     assert delivery.text == ctx.final_reply
@@ -567,4 +567,4 @@ async def test_max_iterations_exceeded():
     await worker._process(ctx)
 
     assert "已达到最大工具调用次数" in ctx.final_reply
-    bus.delivery_job_board.publish.assert_called()
+    bus.delivery_notify_job_board.publish.assert_called()

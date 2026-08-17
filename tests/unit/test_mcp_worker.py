@@ -124,7 +124,7 @@ def _build_bus(tmp_path) -> Bus:
         tool_job_board=None,  # type: ignore[arg-type]
         agent_job_board=None,  # type: ignore[arg-type]
         llm_job_board=None,  # type: ignore[arg-type]
-        delivery_job_board=None,  # type: ignore[arg-type]
+        delivery_notify_job_board=None,  # type: ignore[arg-type]
         a2a_request_job_board=None,  # type: ignore[arg-type]
         a2a_notify_job_board=None,  # type: ignore[arg-type]
         change_provider_config_job_board=None,  # type: ignore[arg-type]

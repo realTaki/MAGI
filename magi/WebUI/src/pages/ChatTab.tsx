@@ -240,7 +240,9 @@ export default function ChatTab() {
   const [totalActive, setTotalActive] = useState(0);
   const [pagingOlder, setPagingOlder] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [chatSending, setChatSending] = useState(false);
+  const [chatPhase, setChatPhase] = useState<"idle" | "sending" | "typing">("idle");
+  const [assistantCountAtSend, setAssistantCountAtSend] = useState(0);
+  const chatSending = chatPhase !== "idle";
   // ``chatError`` carries the stable backend error ``code`` so
   // the renderer can pick a friendlier message than the English
   // ``detail`` for known cases (e.g. ``chat.llm_credentials_required``
@@ -312,8 +314,14 @@ export default function ChatTab() {
     );
     setLoadedCount(data.messages.length);
     setTotalActive(data.total_active);
+    if (
+      chatPhase === "typing" &&
+      data.messages.filter((message) => message.role === "assistant").length > assistantCountAtSend
+    ) {
+      setChatPhase("idle");
+    }
     setChatError(null);
-  }, [conversationId, messagesQuery.data, messagesQuery.isError, messagesQuery.error]);
+  }, [conversationId, messagesQuery.data, messagesQuery.isError, messagesQuery.error, chatPhase, assistantCountAtSend]);
   function loadSession(id: number) {
     setChatError(null);
     setLoadedCount(0);
@@ -604,8 +612,10 @@ export default function ChatTab() {
           void queryClientForChat.invalidateQueries({ queryKey: transcriptKey });
         }, delayMs);
       }
+      void waitForAgentReceipt(data.job_id);
     },
     onError: (err: unknown): void => {
+      setChatPhase("idle");
       if (err && typeof err === "object" && "status" in err) {
         const e = err as { status?: number; message?: string };
         if (e.status && e.status >= 400 && e.status < 500) {
@@ -622,6 +632,37 @@ export default function ChatTab() {
       });
     },
   });
+
+  async function waitForAgentReceipt(jobId: number) {
+    // PROCESSING is the durable receipt: the Agent has claimed this turn.
+    // COMPLETED/FAILED also imply it was received (a very fast run may pass
+    // through PROCESSING between polling ticks).
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      try {
+        const receipt = await apiFetch<{ job_id: number; status: string }>(
+          `/api/chat/notifications/${jobId}`,
+        );
+        if (receipt.status !== "pending") {
+          setChatPhase("typing");
+          return;
+        }
+      } catch (err) {
+        setChatError({
+          code: "chat.receipt_unavailable",
+          detail: err instanceof Error ? err.message : "Could not confirm Agent receipt",
+        });
+        setChatPhase("idle");
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    setChatError({
+      code: "chat.receipt_timeout",
+      detail: "Agent has not received this message yet.",
+    });
+    setChatPhase("idle");
+  }
+
   async function sendChat() {
     const text = chatInput.trim();
     if (!text || chatSending) return;
@@ -629,11 +670,12 @@ export default function ChatTab() {
     setChatError(null);
     const userMsg = { id: Date.now(), role: "user" as const, text };
     setChatMessages((prev) => [...prev, userMsg]);
-    setChatSending(true);
+    setAssistantCountAtSend(chatMessages.filter((message) => message.role === "assistant").length);
+    setChatPhase("sending");
     try {
       await sendChatMut.mutateAsync({ text, conversationId });
-    } finally {
-      setChatSending(false);
+    } catch {
+      // onError owns the user-visible error and resets the phase.
     }
   }
 
@@ -836,6 +878,7 @@ export default function ChatTab() {
           input={chatInput}
           onInputChange={setChatInput}
           sending={chatSending}
+          sendingLabel={chatPhase === "sending" ? `${t("chat.send")}…` : t("chat.sending")}
           error={chatError}
           onSend={sendChat}
           title={activeTitle}

@@ -11,7 +11,7 @@ from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.deliveryJob import DeliveryJob
+    from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.telegram.worker")
 
@@ -123,17 +123,25 @@ class TelegramWorker(ChannelWorker):
         # The user message is persisted to ``chat_messages`` inside
         # :meth:`chatNotifyBoard.publish` — see ``magi.bus.guild.chatNotifyJob``.
         # Channels must not reach into ``messages_book`` directly anymore.
-        asyncio.create_task(_send_read_receipt(update, self.bus))
-
         from magi.bus.guild.chatNotifyJob import ChatNotifyJob
 
         try:
-            self.bus.agent_job_board.publish(
+            job_id = self.bus.agent_job_board.publish(
                 ChatNotifyJob(
                     text=text,
                     channel="tg",
                     contact_id=contact_id,
                     conversation_id=conversation_id,
+                )
+            )
+            # A Telegram update reaching this adapter is not an Agent read.
+            # Wait for the durable PROCESSING receipt before reacting or
+            # advertising that the Agent is typing.
+            asyncio.create_task(
+                _await_agent_receipt(
+                    update,
+                    job_id=job_id,
+                    bus=self.bus,
                 )
             )
         except Exception:
@@ -142,7 +150,7 @@ class TelegramWorker(ChannelWorker):
     async def _run_outbound(self) -> None:
         await self._claim_delivery_loop(self._deliver_tg, "tg")
 
-    async def _deliver_tg(self, job: DeliveryJob) -> None:
+    async def _deliver_tg(self, job: DeliveryNotifyJob) -> None:
         bot_token = await self.call(self.bus.settings_book.get_value, key="telegram.bot_token")
         if not bot_token:
             raise RuntimeError("Telegram delivery: no bot_token")
@@ -231,3 +239,46 @@ async def _send_read_receipt(update, bus: Bus) -> None:
             )
     except Exception:
         pass
+
+
+async def _send_typing(update) -> None:
+    """Tell Telegram that the Agent is actively processing this turn."""
+    try:
+        chat = update.effective_chat
+        if chat is not None:
+            await update.get_bot().send_chat_action(chat_id=chat.id, action="typing")
+    except Exception:
+        pass
+
+
+async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
+    """React only after the Agent has durably claimed the chat notification.
+
+    Telegram typing indicators expire quickly, so renew them while the claimed
+    ChatNotify row stays ``PROCESSING``.  A terminal row may have passed
+    through PROCESSING between polls; it still proves receipt and gets the
+    read reaction once.
+    """
+    from magi.bus.guild.base import JobStatus
+
+    received = False
+    for _ in range(120):  # 30 seconds waiting for a worker receipt
+        try:
+            status = await asyncio.to_thread(
+                bus.agent_job_board.check_job_status,
+                job_id=job_id,
+            )
+        except Exception:
+            return
+        if status is None:
+            return
+        if status != JobStatus.PENDING:
+            if not received:
+                received = True
+                await _send_read_receipt(update, bus)
+                await _send_typing(update)
+            if status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                return
+            await asyncio.sleep(3.5)
+            continue
+        await asyncio.sleep(0.25)

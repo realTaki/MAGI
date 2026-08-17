@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from magi.bus.guild.changeMCPServerJob import changeMCPServerJobBoard
     from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
     from magi.bus.guild.chatNotifyJob import chatNotifyBoard
-    from magi.bus.guild.deliveryJob import deliveryJobBoard
+    from magi.bus.guild.deliveryNotifyJob import deliveryNotifyJobBoard
     from magi.bus.guild.runTaskJob import runTaskJobBoard
     from magi.bus.guild.runToolJob import runToolJobBoard
     from magi.bus.guild.seedPresetTasksJob import seedPresetTaskJobBoard
@@ -135,7 +135,7 @@ class Bus:
 
     # -- local: delivery (Job board) ------------------------------------------
 
-    delivery_job_board: deliveryJobBoard  # deliveryJobBoard
+    delivery_notify_job_board: deliveryNotifyJobBoard  # deliveryNotifyJobBoard
 
     # -- MAGIS shared: durable A2A boards -------------------------------------
 
@@ -320,7 +320,7 @@ def _open_with_dirs(
         changeMCPServerJobBoard,
         changeProviderConfigJobBoard,
         chatNotifyBoard,
-        deliveryJobBoard,
+        deliveryNotifyJobBoard,
         runTaskJobBoard,
         runToolJobBoard,
         seedPresetTaskJobBoard,
@@ -422,7 +422,7 @@ def _open_with_dirs(
     )
     tool_job_board = runToolJobBoard(local_factory)
     llm_job_board = callLLMJobBoard(local_factory)
-    delivery_job_board = deliveryJobBoard(local_factory, messages_book=messages_book)
+    delivery_notify_job_board = deliveryNotifyJobBoard(local_factory, messages_book=messages_book)
     change_provider_config_job_board = changeProviderConfigJobBoard(
         local_factory, settings_book=settings_book
     )
@@ -492,7 +492,7 @@ def _open_with_dirs(
         tool_job_board=tool_job_board,
         agent_job_board=agent_job_board,
         llm_job_board=llm_job_board,
-        delivery_job_board=delivery_job_board,
+        delivery_notify_job_board=delivery_notify_job_board,
         a2a_request_job_board=a2a_request_job_board,
         a2a_notify_job_board=a2a_notify_job_board,
         change_provider_config_job_board=change_provider_config_job_board,

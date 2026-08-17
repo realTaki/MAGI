@@ -29,7 +29,11 @@ from magi.bus.guild.changeProviderConfigJob import (
     changeProviderConfigJobBoard,
 )
 from magi.bus.guild.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
-from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
+from magi.bus.guild.deliveryNotifyJob import (
+    DeliveryNotifyJob,
+    DeliveryNotifyResult,
+    deliveryNotifyJobBoard,
+)
 from magi.bus.guild.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
 from magi.bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
 from magi.bus.guild.seedPresetTasksJob import (
@@ -48,9 +52,9 @@ __all__ = [
     "RunToolJob",
     "RunToolResult",
     "runToolJobBoard",
-    "DeliveryJob",
-    "DeliveryResult",
-    "deliveryJobBoard",
+    "DeliveryNotifyJob",
+    "DeliveryNotifyResult",
+    "deliveryNotifyJobBoard",
     "ChatNotifyJob",
     "ChatNotifyResult",
     "chatNotifyBoard",

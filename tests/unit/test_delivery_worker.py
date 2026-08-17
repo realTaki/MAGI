@@ -1,4 +1,4 @@
-"""Telegram delivery tests — rebased to bus deliveryJobBoard + TelegramWorker.
+"""Telegram delivery tests — rebased to bus deliveryNotifyJobBoard + TelegramWorker.
 
 Tests that TelegramWorker._deliver_tg calls send_text_raw and marks
 the delivery job as completed via submit_result.
@@ -13,7 +13,11 @@ import pytest
 
 from magi.bus.db import EngineFactory
 from magi.bus.guild.base import JobStatus
-from magi.bus.guild.deliveryJob import DeliveryJob, DeliveryResult, deliveryJobBoard
+from magi.bus.guild.deliveryNotifyJob import (
+    DeliveryNotifyJob,
+    DeliveryNotifyResult,
+    deliveryNotifyJobBoard,
+)
 
 
 @pytest.mark.asyncio
@@ -22,11 +26,11 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
-    board = deliveryJobBoard(f)
+    board = deliveryNotifyJobBoard(f)
 
     # Publish a TG delivery job
     jid = board.publish(
-        DeliveryJob(
+        DeliveryNotifyJob(
             channel="tg",
             destination="123456",
             text="hello",
@@ -35,7 +39,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
 
     # Create a mock bus for the worker
     mock_bus = MagicMock()
-    mock_bus.delivery_job_board = board
+    mock_bus.delivery_notify_job_board = board
     mock_bus.settings_book = MagicMock()
     mock_bus.settings_book.get_value = MagicMock(return_value="fake_token")
 
@@ -71,7 +75,7 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
     board.submit_result(
         job_id=jid,
         worker_id=worker.worker_id,
-        result=DeliveryResult(
+        result=DeliveryNotifyResult(
             job_id=jid,
             status=JobStatus.COMPLETED,
         ),
@@ -88,7 +92,7 @@ async def test_telegram_worker_fails_without_token():
     mock_bus.settings_book = MagicMock()
     mock_bus.settings_book.get_value = MagicMock(return_value=None)  # no token
 
-    job = DeliveryJob(
+    job = DeliveryNotifyJob(
         channel="tg",
         destination="123",
         text="hi",

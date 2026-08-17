@@ -101,7 +101,9 @@ permalink: /business-flows/
    for _ in range(max_iterations):
    ├─ [每轮] cancel check (ctx.cancel_event.is_set())
    ├─ [每轮] llm_job_board.publish(CallLLMJob) → wait_for_result
-   │   （默认 120s；失败 → ctx.failed=True + final_reply 错误文案，
+   │   （默认 120s；失败 → ctx.failed=True +
+   │    final_reply = _format_llm_error(result) — 透传
+   │    ``error_code: error`` 给用户，agent 不 paraphrase，
    │    publish delivery → return）
    ├─ [每轮] record_token_usage（按 contact_id 入账 token_usage_book）
    ├─ [每轮] _split_tools(ctx, tool_uses) → tool_jobs / a2a_jobs

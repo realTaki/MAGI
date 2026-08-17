@@ -40,8 +40,8 @@ Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via
 ``ctx.bus.conversations_book`` (cross-contact-safe conversation
 lookup via :meth:`ConversationBook.get_for_owner`) and
-``ctx.bus.delivery_job_board`` (publish a
-:class:`magi.bus.guild.deliveryJob.DeliveryJob` to
+``ctx.bus.delivery_notify_job_board`` (publish a
+:class:`magi.bus.guild.deliveryNotifyJob.DeliveryNotifyJob` to
 the durable ``delivery_jobs`` queue — the channel-owned
 DeliveryWorker performs the actual protocol I/O after the
 agent transition has committed). The legacy services at
@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.guild.deliveryJob import DeliveryJob
+            from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.comms.send_message")
@@ -151,8 +151,8 @@ class SendMessageTool(Tool):
             )
             if conversation is None:
                 raise KeyError(f"unknown conversation {ctx.conversation_id!r}")
-            bus.delivery_job_board.publish(
-                DeliveryJob(
+            bus.delivery_notify_job_board.publish(
+                DeliveryNotifyJob(
                     channel=conversation.channel,
                     destination=conversation.delivery_address or None,
                     text=text,
