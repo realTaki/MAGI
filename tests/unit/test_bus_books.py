@@ -52,6 +52,21 @@ def factory():
     return f
 
 
+def _seeded_settings_book(factory) -> SettingBook:
+    """Return a ``SettingBook`` with the standard channel set registered.
+
+    Helper for tests that build a ``ConversationBook`` from the raw factory
+    fixture — they need a ``settings_book`` wired in so
+    ``ConversationBook._validate_add`` can read ``channel_options()`` and
+    reject unregistered channels. Mirrors runtime bootstrap where
+    :func:`magi.bus.bootstrap.build_local_bus` wires the two together.
+    """
+    sbook = SettingBook(factory)
+    for name in ("a2a", "tg", "webui", "task"):
+        sbook.register_channel(name=name)
+    return sbook
+
+
 @pytest.fixture
 def contact_id(factory):
     """Create a contact row, return its id.  Tests that need a contact
@@ -310,7 +325,7 @@ def test_contact_note_database_rejects_unknown_kind(factory):
 
 
 def test_conversation_and_message(factory):
-    sbook = ConversationBook(factory)
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     mbook = MessageBook(factory)
 
     s = sbook.get(sbook.add(Conversation(delivery_address='tg:12345', contact_id=1, channel='tg')))
@@ -325,7 +340,7 @@ def test_conversation_and_message(factory):
 
 
 def test_conversation_list_page_returns_persisted_conversations(factory, contact_id):
-    book = ConversationBook(factory)
+    book = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     own_ids = [
         book.add(
             Conversation(
@@ -348,7 +363,7 @@ def test_conversation_list_page_returns_persisted_conversations(factory, contact
 
 def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
     """`set_summary` writes summary, stamps last_compaction_at, bumps updated_at."""
-    sbook = ConversationBook(factory)
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
 
@@ -372,7 +387,7 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
     """Cross-contact guard: wrong contact_id returns None and leaves row unchanged."""
     from magi.bus.library.local.contactBook import ContactBook
 
-    sbook = ConversationBook(factory)
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     other_contact = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
 
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
@@ -392,7 +407,7 @@ def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
 
 def test_conversation_set_summary_overwrites(factory, contact_id):
     """Second call supersedes the first; last_compaction_at moves forward."""
-    sbook = ConversationBook(factory)
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
     cid = conv.id
 
@@ -406,6 +421,73 @@ def test_conversation_set_summary_overwrites(factory, contact_id):
     assert second is not None
     assert second.summary == "S1"
     assert second.last_compaction_at >= (first.last_compaction_at or "")
+
+
+# -- ConversationBook channel-validation ---------------------------------
+
+
+def test_conversation_book_add_rejects_unregistered_channel(factory):
+    """``_validate_add`` rejects ``channel`` values not in
+    ``settings_book.channel_options()`` before SQLAlchemy sees them.
+
+    Pin the new contract: the channel set is dynamic — workers register at
+    startup — so we don't enum-ify the column at the schema level. The
+    Book enforces the contract at the write boundary instead.
+    """
+    from magi.bus.library.local.conversationBook import ChannelNotRegisteredError
+
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))  # factory fixture pre-registers a2a/tg/webui/task
+    with pytest.raises(ChannelNotRegisteredError) as exc_info:
+        sbook.add(
+            Conversation(
+                delivery_address="slack:C123",
+                contact_id=1,
+                channel="slack",
+            )
+        )
+    assert exc_info.value.channel == "slack"
+    assert "tg" in exc_info.value.registered
+
+
+def test_conversation_book_add_accepts_registered_channel(factory):
+    """Happy path: every bootstrap-registered channel (``a2a`` /
+    ``tg`` / ``webui`` / ``task``) passes the boundary check.
+
+    Includes ``"a2a"`` and ``"task"`` to pin that BUS-internal channels
+    are valid conversation channels too — the operator-facing disable
+    is a separate concern, see ``channels/api/tasks.py``.
+    """
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
+    for ch in ("a2a", "tg", "webui", "task"):
+        sbook.add(Conversation(delivery_address=f"{ch}:x", contact_id=1, channel=ch))
+
+
+def test_conversation_book_update_rejects_unregistered_channel(factory):
+    """``_validate_add`` is the single chokepoint — ``update()`` reuses it,
+    so a PATCH that swaps ``channel`` to an unregistered name also fails
+    fast with the same exception. (The base class' ``update()`` invokes
+    ``_validate_add`` after re-reading the row.)
+    """
+    from magi.bus.library.local.conversationBook import ChannelNotRegisteredError
+
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
+    conv = sbook.get(sbook.add(Conversation(delivery_address="tg:1", contact_id=1, channel="tg")))
+
+    with pytest.raises(ChannelNotRegisteredError):
+        sbook.update(conv.with_changes(channel="slack"))
+
+
+def test_conversation_book_skips_validation_when_settings_book_missing(factory):
+    """Backwards-compat: a ``ConversationBook`` constructed without a
+    ``settings_book`` doesn't raise on writes. This keeps narrow test
+    setups (and any future code path that doesn't go through bootstrap)
+    from being broken by the new check.
+    """
+    sbook = ConversationBook(factory, settings_book=None)
+    # ``channel="anything"`` would normally fail; without ``settings_book``
+    # the Book is a permissive shim — the column is still ``str`` at the DB
+    # level, so no value is rejected at the schema layer either.
+    sbook.add(Conversation(delivery_address="x:1", contact_id=1, channel="anything"))
 
 
 # -- McpServerBook ------------------------------------------------------
@@ -902,7 +984,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     # SQLite's FK guard.
     from magi.bus.library.local.conversationBook import ConversationBook
 
-    conv_seed = ConversationBook(factory).get(ConversationBook(factory).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
+    conv_seed = ConversationBook(factory, settings_book=_seeded_settings_book(factory)).get(ConversationBook(factory, settings_book=_seeded_settings_book(factory)).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
     seed_cid = conv_seed.id
 
     # First call: insert.

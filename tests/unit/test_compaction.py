@@ -15,7 +15,14 @@ import pytest
 
 from magi.agent.compaction import maybe_compact
 from magi.bus.db import EngineFactory
-from magi.bus.library.local import Contact, Conversation, ConversationBook, Message, MessageBook
+from magi.bus.library.local import (
+    Contact,
+    Conversation,
+    ConversationBook,
+    Message,
+    MessageBook,
+    SettingBook,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -30,6 +37,20 @@ def factory():
     return f
 
 
+def _seeded_settings_book(factory) -> SettingBook:
+    """Return a ``SettingBook`` with the standard channel set registered.
+
+    Helper for tests that build a ``ConversationBook`` from the raw factory
+    fixture — they need a ``settings_book`` wired in so
+    ``ConversationBook._validate_add`` can read ``channel_options()`` and
+    reject unregistered channels. Mirrors runtime bootstrap.
+    """
+    sbook = SettingBook(factory)
+    for name in ("a2a", "tg", "webui", "task"):
+        sbook.register_channel(name=name)
+    return sbook
+
+
 @pytest.fixture
 def contact_id(factory):
     from magi.bus.library.local.contactBook import ContactBook
@@ -40,7 +61,7 @@ def contact_id(factory):
 @pytest.fixture
 def seed_conversation(factory, contact_id):
     """Create a conversation row, return ``(sbook, mbook, conversation_id)``."""
-    sbook = ConversationBook(factory)
+    sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     mbook = MessageBook(factory)
     cid = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).id
     return sbook, mbook, cid

@@ -69,11 +69,47 @@ class AgentMessageRole(StrEnum):
 # -- public dataclasses --------------------------------------------------
 
 
+#: Semantic alias for a channel name stored on :attr:`Conversation.channel`.
+#:
+#: The channel set is **dynamic** — workers advertise their channel via
+#: :meth:`SettingBook.register_channel` at startup, and :meth:`SettingBook.channel_options`
+#: returns the live list. The DTO therefore keeps ``channel`` as ``str``
+#: (the column stays ``Mapped[str]`` + ``Text`` — no schema migration) and
+#: relies on :meth:`ConversationBook._validate_add` to reject unregistered
+#: values at the write boundary.
+#:
+#: This is a plain alias (not ``NewType``) so callers can keep passing raw
+#: strings at every existing call site without type-checker friction.
+#: The runtime contract — :class:`ChannelNotRegisteredError` raised at the
+#: write boundary — is the actual safety net; this alias exists only so
+#: docstrings and future function signatures can refer to "ChannelName"
+#: without inventing a one-letter class.
+ChannelName = str
+
+
+class ChannelNotRegisteredError(ValueError):
+    """``Conversation.channel`` is not a currently-registered channel.
+
+    Raised by :meth:`ConversationBook.add` / :meth:`update` when the supplied
+    channel string isn't in :meth:`SettingBook.channel_options`. The
+    registered channel set is dynamic — workers register at startup, the
+    Book just enforces the contract at the write boundary.
+    """
+
+    def __init__(self, channel: str, registered: list[str]) -> None:
+        super().__init__(
+            f"channel {channel!r} is not registered in settings_book; "
+            f"registered: {registered!r}"
+        )
+        self.channel = channel
+        self.registered = registered
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Conversation(BaseRecord):
     delivery_address: str
     contact_id: int
-    channel: str
+    channel: ChannelName  # must be in settings_book.channel_options(); validated at write
     title: str | None = None
     summary: str | None = None
     last_compaction_at: datetime | None = None
@@ -273,8 +309,31 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
     model_cls = _ConversationRow
     record_cls = Conversation
 
-    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
+    def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]
         super().__init__(factory)
+        # ``settings_book`` is required for :meth:`_validate_add`'s channel
+        # check. In tests it's passed by the ``factory`` fixture; in
+        # production it's wired by :func:`magi.bus.bootstrap.build_local_bus`
+        # before any conversation is created.
+        self._settings_book = settings_book
+
+    def _validate_add(self, record: Conversation) -> None:
+        """Reject ``Conversation.channel`` values not in the live registry.
+
+        The channel set is dynamic — workers register at startup
+        (``SettingBook.register_channel``) — so we don't enum-ify the
+        column at the schema level. Instead this single chokepoint
+        enforces the contract: any ``add`` / ``update`` that carries an
+        unregistered channel fails fast with :class:`ChannelNotRegisteredError`,
+        before SQLAlchemy sees it. A missing ``settings_book`` (older
+        bootstrap paths, narrow test setups) silently skips the check —
+        the row's column type is still ``str``, so no value is rejected.
+        """
+        if self._settings_book is None:
+            return
+        registered = self._settings_book.channel_options()
+        if record.channel not in registered:
+            raise ChannelNotRegisteredError(record.channel, registered)
 
     def resolve_delivery_address(self, *, conversation_id: int) -> str | None:
         """Return the ``delivery_address`` for a conversation, or ``None``."""
