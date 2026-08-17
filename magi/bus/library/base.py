@@ -164,14 +164,20 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
         read the DTO, use :meth:`BaseRecord.with_changes`, then pass that complete
         value here.  ``True`` means a row was replaced; ``False`` means its
         database-local ID no longer exists.
+
+        ``_validate_add`` runs *before* the session opens — same shape as
+        :meth:`add` — so subclasses that open their own session in the
+        validator (e.g. :class:`ConversationBook._validate_add` reading
+        ``settings_book.channel_options()``) don't trigger a nested
+        transaction.
         """
         if record.id <= 0:
             raise ValueError("update() requires a persisted record (id must be positive)")
+        self._validate_add(record)
         with self._session() as session:
             row = session.get(self.model_cls, record.id)
             if row is None:
                 return False
-            self._validate_add(record)
             for name, value in self._record_to_row_values(record, session).items():
                 setattr(row, name, value)
             session.commit()
