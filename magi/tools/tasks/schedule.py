@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.library.local.tasksBook import preset_to_cron
+from magi.bus.firmwares.books.local.tasksBook import preset_to_cron
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.schedule")

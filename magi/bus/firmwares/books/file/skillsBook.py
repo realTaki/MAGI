@@ -78,9 +78,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from magi.bus.db.file import FileShelf
+from magi.bus.bases.db.file import FileShelf
 
-logger = logging.getLogger("magi.bus.library.file.skills_book")
+logger = logging.getLogger("magi.bus.firmwares.books.file.skills_book")
 
 _SKILL_FILENAME = "SKILL.md"
 
@@ -386,7 +386,7 @@ def _process_skill_paths(
 class SkillsBook:
     """Read-side registry for workspace-managed SKILL.md files.
 
-    Built on two :class:`~magi.bus.db.file.FileShelf` instances
+    Built on two :class:`~magi.bus.bases.db.file.FileShelf` instances
     (bundle + operator). The shelves give us safe path resolution
     underneath; the registry itself is hot-reloaded on every public
     read via :meth:`_fresh_registry`.
@@ -750,7 +750,7 @@ def _resolve_bundle_skills_dir() -> Path:
         pass
 
     # Tier 2: ``__file__`` fallback. This module lives at
-    # ``magi/bus/library/file/skillsBook.py``; three levels up is ``magi/``.
+    # ``magi/bus/firmwares/books/file/skillsBook.py``; three levels up is ``magi/``.
     # ``+ "skills"`` gives ``magi/skills/``.
     return Path(__file__).resolve().parents[3] / "skills"
 

@@ -27,8 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column
 
 
 class ToolSource(StrEnum):
@@ -51,7 +51,7 @@ class ToolSource(StrEnum):
     ``upsert_many(source="builtin")`` keeps working because
     ``"builtin" in ToolSource`` (and the SAEnum column compare)
     are both True via str equality. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     BUILTIN = "builtin"

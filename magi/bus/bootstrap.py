@@ -22,46 +22,46 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
-from magi.bus.db.engine import EngineFactory, build_local_factory, build_magis_factory
+from magi.bus.bases.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
 if TYPE_CHECKING:
-    from magi.bus.guild.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
-    from magi.bus.guild.callLLMJob import callLLMJobBoard
-    from magi.bus.guild.changeMCPServerJob import changeMCPServerJobBoard
-    from magi.bus.guild.changeProviderConfigJob import changeProviderConfigJobBoard
-    from magi.bus.guild.chatNotifyJob import chatNotifyBoard
-    from magi.bus.guild.deliveryNotifyJob import deliveryNotifyJobBoard
-    from magi.bus.guild.runTaskJob import runTaskJobBoard
-    from magi.bus.guild.runToolJob import runToolJobBoard
-    from magi.bus.guild.seedPresetTasksJob import seedPresetTaskJobBoard
-    from magi.bus.library.file.promptBook import PromptBook
-    from magi.bus.library.file.skillsBook import SkillsBook
-    from magi.bus.library.local.actionItemBook import ActionItemBook
-    from magi.bus.library.local.contactBook import ContactBook, ContactNoteBook
-    from magi.bus.library.local.conversationBook import (
+    from magi.bus.firmwares.books.file.promptBook import PromptBook
+    from magi.bus.firmwares.books.file.skillsBook import SkillsBook
+    from magi.bus.firmwares.books.local.actionItemBook import ActionItemBook
+    from magi.bus.firmwares.books.local.contactBook import ContactBook, ContactNoteBook
+    from magi.bus.firmwares.books.local.conversationBook import (
         ConversationBook,
         MessageBook,
     )
-    from magi.bus.library.local.hookSignoffBook import HookSignoffBook
-    from magi.bus.library.local.mcpServerBook import McpServerBook
-    from magi.bus.library.local.memoryBook import MemoryBook
-    from magi.bus.library.local.settingBook import SettingBook
-    from magi.bus.library.local.tasksBook import TaskBook, TaskRunBook
-    from magi.bus.library.local.tokenUsageBook import TokenUsageBook
-    from magi.bus.library.local.toolsBook import (
+    from magi.bus.firmwares.books.local.hookSignoffBook import HookSignoffBook
+    from magi.bus.firmwares.books.local.mcpServerBook import McpServerBook
+    from magi.bus.firmwares.books.local.memoryBook import MemoryBook
+    from magi.bus.firmwares.books.local.settingBook import SettingBook
+    from magi.bus.firmwares.books.local.tasksBook import TaskBook, TaskRunBook
+    from magi.bus.firmwares.books.local.tokenUsageBook import TokenUsageBook
+    from magi.bus.firmwares.books.local.toolsBook import (
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.bus.library.magis.controlSettingBook import ControlSettingBook
-    from magi.bus.library.magis.magisBook import MagisAdminBook, MagisBook
-    from magi.bus.library.magis.membershipBook import (
+    from magi.bus.firmwares.books.magis.controlSettingBook import ControlSettingBook
+    from magi.bus.firmwares.books.magis.magisBook import MagisAdminBook, MagisBook
+    from magi.bus.firmwares.books.magis.membershipBook import (
         MagisMembershipBook,
         MagisRoleBook,
     )
-    from magi.bus.library.magis.runtimeBook import (
+    from magi.bus.firmwares.books.magis.runtimeBook import (
         ControlSecretBook,
         RuntimeBook,
     )
+    from magi.bus.firmwares.jobs.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
+    from magi.bus.firmwares.jobs.callLLMJob import callLLMJobBoard
+    from magi.bus.firmwares.jobs.changeMCPServerJob import changeMCPServerJobBoard
+    from magi.bus.firmwares.jobs.changeProviderConfigJob import changeProviderConfigJobBoard
+    from magi.bus.firmwares.jobs.chatNotifyJob import chatNotifyBoard
+    from magi.bus.firmwares.jobs.deliveryNotifyJob import deliveryNotifyJobBoard
+    from magi.bus.firmwares.jobs.runTaskJob import runTaskJobBoard
+    from magi.bus.firmwares.jobs.runToolJob import runToolJobBoard
+    from magi.bus.firmwares.jobs.seedPresetTasksJob import seedPresetTaskJobBoard
     from magi.bus.stream import StreamHub
 
 logger = logging.getLogger("magi.bus.bootstrap")
@@ -275,8 +275,8 @@ def open_bus(
 
 def _build_magis_facade(magis_url: str) -> MagisBus:
     """Build the MAGIS-only view used by :func:`open_bus` without a workspace."""
-    from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
-    from magi.bus.library.magis import (
+    from magi.bus.bases.db.schema import MAGIS_SCOPE, synchronise_schema
+    from magi.bus.firmwares.books.magis import (
         ControlSecretBook,
         ControlSettingBook,
         MagisAdminBook,
@@ -312,22 +312,10 @@ def _open_with_dirs(
     registering ORM tables at module-import time.
     """
     # ---- lazy imports (avoid eager ORM table registration) ----------------
-    from magi.bus.db.file import FileShelf
-    from magi.bus.guild import (
-        a2aNotifyBoard,
-        a2aRequestJobBoard,
-        callLLMJobBoard,
-        changeMCPServerJobBoard,
-        changeProviderConfigJobBoard,
-        chatNotifyBoard,
-        deliveryNotifyJobBoard,
-        runTaskJobBoard,
-        runToolJobBoard,
-        seedPresetTaskJobBoard,
-    )
-    from magi.bus.library.file.promptBook import PromptBook
-    from magi.bus.library.file.skillsBook import build_default_skills_book
-    from magi.bus.library.local import (
+    from magi.bus.bases.db.file import FileShelf
+    from magi.bus.firmwares.books.file.promptBook import PromptBook
+    from magi.bus.firmwares.books.file.skillsBook import build_default_skills_book
+    from magi.bus.firmwares.books.local import (
         ActionItemBook,
         ContactBook,
         ContactNoteBook,
@@ -343,7 +331,7 @@ def _open_with_dirs(
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.bus.library.magis import (
+    from magi.bus.firmwares.books.magis import (
         ControlSecretBook,
         ControlSettingBook,
         MagisAdminBook,
@@ -351,6 +339,18 @@ def _open_with_dirs(
         MagisMembershipBook,
         MagisRoleBook,
         RuntimeBook,
+    )
+    from magi.bus.firmwares.jobs import (
+        a2aNotifyBoard,
+        a2aRequestJobBoard,
+        callLLMJobBoard,
+        changeMCPServerJobBoard,
+        changeProviderConfigJobBoard,
+        chatNotifyBoard,
+        deliveryNotifyJobBoard,
+        runTaskJobBoard,
+        runToolJobBoard,
+        seedPresetTaskJobBoard,
     )
 
     # ---- wire factories ----------------------------------------------------
@@ -373,7 +373,7 @@ def _open_with_dirs(
     # Book/JobBoard exists, and therefore before workers or HTTP handlers can
     # query the database. Every explicit Runtime restart passes this barrier
     # again.
-    from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+    from magi.bus.bases.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 
     if (
         magis_factory is not None

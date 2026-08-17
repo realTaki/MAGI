@@ -43,7 +43,7 @@ import dataclasses
 from sqlalchemy import BigInteger, ForeignKey, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
 
 AUTH_MODE_LOCAL_NO_2FA = "local_no_2fa"
 AUTH_MODE_IM_2FA_ENABLED = "im_2fa_enabled"

@@ -40,8 +40,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
-from magi.bus.library.local.settingBook import SettingBook
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.firmwares.books.local.settingBook import SettingBook
 
 RESERVED_ROLE_NAMES = frozenset({"ADAM", "EVA"})
 DEFAULT_ROLE_INSTRUCTIONS = {
@@ -169,7 +169,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
 
     def list_collaboration_directory(self, *, magi_id: int) -> list[MagisCollaborationMember]:
         """Return public collaboration cards for *magi_id*'s direct MAGIS."""
-        from magi.bus.library.magis.runtimeBook import _RuntimeRow
+        from magi.bus.firmwares.books.magis.runtimeBook import _RuntimeRow
 
         with self._session() as s:
             own = s.scalar(
@@ -210,7 +210,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         :func:`magi.agent.instructions.runtime_instruction_block`) that
         want to render every membership at once.
         """
-        from magi.bus.library.magis.magisBook import _MagisRow
+        from magi.bus.firmwares.books.magis.magisBook import _MagisRow
 
         contexts: list[dict] = []
         with self._session() as s:
@@ -323,7 +323,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             # ``magis`` row's name + instruction come from a second
             # hop on the same session (all three tables share the
             # magis factory so they're in the same MetaData).
-            from magi.bus.library.magis.magisBook import _MagisRow
+            from magi.bus.firmwares.books.magis.magisBook import _MagisRow
 
             row = s.execute(
                 select(_MagisMembershipRow, _MagisRoleRow, _MagisRow)

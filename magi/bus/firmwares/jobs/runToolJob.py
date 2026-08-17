@@ -18,9 +18,8 @@ from enum import StrEnum
 from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
-
+from magi.bus.bases.db.base import enum_column
+from magi.bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 # -- public enum -----------------------------------------------------------
 
@@ -29,7 +28,7 @@ class ToolErrorCode(StrEnum):
     """Stable error code returned on a failed :class:`RunToolResult`.
 
     ``NONE`` 表示成功（无错误）；其余成员是工具层的稳定错误码。
-    Mirrors :class:`magi.bus.guild.callLLMJob.LLMErrorCode`。
+    Mirrors :class:`magi.bus.firmwares.jobs.callLLMJob.LLMErrorCode`。
     """
 
     NONE = ""  # 成功（对齐 LLMErrorCode.NONE）
@@ -64,7 +63,7 @@ class RunToolResult(BaseJobResult):
     ``content`` 是 :class:`ToolResult` 的纯文本内容（给 LLM 看）；
     成败由 ``error_code`` 表达——:attr:`ToolErrorCode.NONE` 表示成功，
     其余成员表示失败（对齐 :class:`CallLLMResult` 的
-    :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` 模式）。基类的
+    :class:`~magi.bus.firmwares.jobs.callLLMJob.LLMErrorCode` 模式）。基类的
     ``error`` 是失败时的人类可读文案。
     """
 

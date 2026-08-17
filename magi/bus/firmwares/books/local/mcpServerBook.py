@@ -24,8 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column
 
 
 class MCPConnectionType(StrEnum):
@@ -43,7 +43,7 @@ class MCPConnectionType(StrEnum):
     so ``isinstance(x, str)`` checks, ``json.dumps`` serialisation,
     and existing ``connection_type == "stdio"`` comparisons keep
     working unchanged. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     STDIO = "stdio"
@@ -187,7 +187,7 @@ _UNSET = _UnsetType()
 def _parse_json_dict(raw: str | None) -> dict[str, str]:
     """Defensive JSON-object parser for ``env_json`` / ``headers_json``.
 
-    Mirrors ``magi.bus.db.models.local.mcp_server._parse_json_dict``
+    Mirrors ``magi.bus.bases.db.models.local.mcp_server._parse_json_dict``
     — coerce non-string values to ``str`` rather than dropping
     them, so a bad row logs and degrades to empty rather than
     crashing the consumer.

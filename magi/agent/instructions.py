@@ -43,7 +43,7 @@ def runtime_instruction_block(bus: Bus, *, magi_id: int | None = None) -> str:
     :class:`AgentWorker`). When provided, the per-MAGI
     memberships and joined MAGIS/role instructions are
     materialised through
-    :meth:`magi.bus.library.magis.membershipBook.MagisMembershipBook.instruction_context`
+    :meth:`magi.bus.firmwares.books.magis.membershipBook.MagisMembershipBook.instruction_context`
     (which performs the ``magis_memberships × magis_roles × magis``
     JOIN in one query).
 

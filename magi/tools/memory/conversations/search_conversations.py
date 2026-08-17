@@ -79,7 +79,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.library.local.conversationBook import (
+from magi.bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )

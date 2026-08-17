@@ -13,8 +13,8 @@ Per-MAGI fields that used to live on the old ``magic`` table
 LOCAL :class:`SettingBook` — see :attr:`SettingBook.KNOWN_KEYS`.
 """
 
-from magi.bus.library.magis.controlSettingBook import ControlSetting, ControlSettingBook
-from magi.bus.library.magis.magisBook import (
+from magi.bus.firmwares.books.magis.controlSettingBook import ControlSetting, ControlSettingBook
+from magi.bus.firmwares.books.magis.magisBook import (
     AUTH_MODE_DISABLED,
     AUTH_MODE_IM_2FA_ENABLED,
     AUTH_MODE_LOCAL_NO_2FA,
@@ -24,7 +24,7 @@ from magi.bus.library.magis.magisBook import (
     MagisAdminBook,
     MagisBook,
 )
-from magi.bus.library.magis.membershipBook import (
+from magi.bus.firmwares.books.magis.membershipBook import (
     DEFAULT_ROLE_INSTRUCTIONS,
     RESERVED_ROLE_NAMES,
     MagisCollaborationMember,
@@ -33,7 +33,7 @@ from magi.bus.library.magis.membershipBook import (
     MagisRole,
     MagisRoleBook,
 )
-from magi.bus.library.magis.runtimeBook import (
+from magi.bus.firmwares.books.magis.runtimeBook import (
     ControlSecret,
     ControlSecretBook,
     Runtime,

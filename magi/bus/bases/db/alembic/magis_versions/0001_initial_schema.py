@@ -8,10 +8,10 @@ This is the **only** alembic revision for the magis scope. The
 final schema and Alembic's ``upgrade head`` is a single transaction.
 
 Schema source of truth is the declarative ORM in
-:mod:`magi.bus.library.magis` and ``magi.bus.guild.a2aJob`` (the
+:mod:`magi.bus.firmwares.books.magis` and ``magi.bus.firmwares.jobs.a2aJob`` (the
 two ``JobRowMixin``-derived tables whose module path is rooted at
-``magi.bus.guild`` are intentionally grouped with the MAGIS
-store — see :func:`magi.bus.db.schema._tables_for_scope`). This
+``magi.bus.firmwares.jobs`` are intentionally grouped with the MAGIS
+store — see :func:`magi.bus.bases.db.schema._tables_for_scope`). This
 migration's :func:`upgrade` simply hands the scope-filtered table
 list to :meth:`sqlalchemy.sql.schema.MetaData.create_all`, which
 emits the matching ``CREATE TABLE`` / ``CREATE INDEX`` /
@@ -19,7 +19,7 @@ emits the matching ``CREATE TABLE`` / ``CREATE INDEX`` /
 
 Dev environment only — we don't carry the historical revision
 chain forward because there is no operator deployment to migrate.
-See :mod:`magi.bus.db.alembic.versions.0001_initial_schema` for
+See :mod:`magi.bus.bases.db.alembic.versions.0001_initial_schema` for
 the matching baseline on the local BUS store.
 """
 
@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "0001_initial_schema"
 down_revision: str | Sequence[str] | None = None
@@ -44,8 +44,8 @@ def upgrade() -> None:
     anything already on disk. A fresh DB lands at this revision in
     one transaction.
     """
-    from magi.bus.db.base import Base
-    from magi.bus.db.schema import MAGIS_SCOPE, _tables_for_scope
+    from magi.bus.bases.db.base import Base
+    from magi.bus.bases.db.schema import MAGIS_SCOPE, _tables_for_scope
 
     Base.metadata.create_all(
         op.get_bind(),
@@ -60,7 +60,7 @@ def downgrade() -> None:
     reverse walk orders children before parents so existing FKs
     don't block the drop.
     """
-    from magi.bus.db.schema import MAGIS_SCOPE, _tables_for_scope
+    from magi.bus.bases.db.schema import MAGIS_SCOPE, _tables_for_scope
 
     bind = op.get_bind()
     for table in reversed(_tables_for_scope(MAGIS_SCOPE)):

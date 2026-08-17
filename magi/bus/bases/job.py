@@ -14,8 +14,8 @@ from sqlalchemy import DateTime, Integer, Text, and_, func, or_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
-from magi.bus.db.base import Base, enum_column, utcnow_naive
-from magi.bus.db.engine import EngineFactory
+from magi.bus.bases.db.base import Base, enum_column, utcnow_naive
+from magi.bus.bases.db.engine import EngineFactory
 
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
@@ -29,7 +29,7 @@ class JobStatus(StrEnum):
 
     :class:`~enum.StrEnum`——成员继承 ``str``，``JobStatus.COMPLETED ==
     "completed"`` 恒为真、JSON 序列化直接输出 ``"completed"``。存储走
-    :func:`magi.bus.db.base.enum_column`（``values_callable`` 把存储
+    :func:`magi.bus.bases.db.base.enum_column`（``values_callable`` 把存储
     / CHECK 锁定到 ``.value``），业务代码比较用 ``JobStatus.COMPLETED``
     而不是字符串字面量。
     """
@@ -107,12 +107,12 @@ class BaseJobRowMixin(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
-    # lives in :func:`magi.bus.db.base.enum_column` so all 10 Job boards
+    # lives in :func:`magi.bus.bases.db.base.enum_column` so all 10 Job boards
     # share one source of truth. ``name="job_status"`` is the PG
     # ``CREATE TYPE`` / SQLite CHECK constraint label emitted by the
     # collapsed initial schema (see
-    # :mod:`magi.bus.db.alembic.versions.0001_initial_schema` and
-    # :mod:`magi.bus.db.alembic.magis_versions.0001_initial_schema` —
+    # :mod:`magi.bus.bases.db.alembic.versions.0001_initial_schema` and
+    # :mod:`magi.bus.bases.db.alembic.magis_versions.0001_initial_schema` —
     # the 2026.08 dev-mode collapse folded the historical migration
     # chain into a single baseline per scope).
     status: Mapped[JobStatus] = mapped_column(

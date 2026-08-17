@@ -22,8 +22,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column
 
 
 class HookSignoffStatus(StrEnum):
@@ -40,7 +40,7 @@ class HookSignoffStatus(StrEnum):
     member is still a ``str`` (``HookSignoffStatus.PENDING == "pending"``),
     so existing ``where(status == "pending")`` queries and any
     raw-string comparisons keep working unchanged. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     PENDING = "pending"

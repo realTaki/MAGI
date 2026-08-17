@@ -5,7 +5,7 @@
 负责"凭据 → SDK client"这一步，**唯一**知道这件事的地方。
 
 凭据来源是 ``bus.settings_book``（key 见
-:mod:`magi.bus.guild.changeProviderConfigJob`）。WebUI / API
+:mod:`magi.bus.firmwares.jobs.changeProviderConfigJob`）。WebUI / API
 channel 通过 ``changeProviderConfigJobBoard.publish()``（self-contained
 write，会自动落 settings_book）或直接 ``settings_book.set()`` 写入。
 
@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.guild.changeProviderConfigJob import (
+from magi.bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,

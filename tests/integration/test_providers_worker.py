@@ -22,13 +22,13 @@ from typing import Any
 import pytest
 
 from magi.bus import Bus, open_bus
-from magi.bus.guild import (
+from magi.bus.firmwares.jobs import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
 )
-from magi.bus.guild.base import JobStatus
-from magi.bus.guild.changeProviderConfigJob import (
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
@@ -420,7 +420,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         # The config-change job was drained (status advanced past pending).
         from sqlalchemy import select
 
-        from magi.bus.guild.changeProviderConfigJob import _ChangeProviderConfigRow
+        from magi.bus.firmwares.jobs.changeProviderConfigJob import _ChangeProviderConfigRow
 
         with bus._local_factory.session() as s:
             leftovers = s.scalar(

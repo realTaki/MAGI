@@ -7,7 +7,7 @@ right fields before calling this tool — ``name`` and
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It builds the full :class:`McpServer` DTO, publishes a
-:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
+:class:`~magi.bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
 with ``kind="added"``, and waits for the
 :class:`~magi.mcp.worker.McpWorker` to apply the write + reconnect.
 The Worker is the single writer — see
@@ -22,9 +22,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.guild import MCPKind, ChangeMCPServerJob
-from magi.bus.guild.base import JobStatus
-from magi.bus.library.local.mcpServerBook import (
+from magi.bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.books.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )

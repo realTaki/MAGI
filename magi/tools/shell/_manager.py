@@ -80,7 +80,7 @@ class ShellStatus(StrEnum):
     formatting (``f"[status] {shell.status}"`` in
     :mod:`magi.tools.shell.output`) working unchanged because
     every member is still a ``str``. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     RUNNING = "running"

@@ -23,10 +23,10 @@ worker hands the tool) and :class:`ToolResult` (what the
 tool returns) — live in this module because they're part
 of the ``Tool`` abstraction itself, not a bus concept.
 LLM-contract DTOs (``ToolDefinition`` / ``ToolCatalogSnapshot``)
-live in :mod:`magi.bus.library.local.toolsBook` next to
+live in :mod:`magi.bus.firmwares.books.local.toolsBook` next to
 the Books that publish them. Job-side DTOs (``RunToolJob`` /
 ``RunToolResult``) live in
-:mod:`magi.bus.guild.runToolJob`.
+:mod:`magi.bus.firmwares.jobs.runToolJob`.
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
@@ -208,7 +208,7 @@ class Tool(ABC):
     #: :attr:`Contact.role` (the role enum is just
     #: ``assigned`` / ``guest``), but :meth:`gate` treats it
     #: as a synonym for "the caller is an admin of at least
-    #: one MAGIS per :class:`~magi.bus.library.magis.magisBook.MagisAdminBook`".
+    #: one MAGIS per :class:`~magi.bus.firmwares.books.magis.magisBook.MagisAdminBook`".
     #: That lets tools declare ``ALLOWED_ROLES = {"admin",
     #: "assigned"}`` without carrying a parallel ``admin``
     #: boolean on the contact row. A user can be both

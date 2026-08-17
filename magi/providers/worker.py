@@ -42,14 +42,14 @@ import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from magi.bus.guild import (
+from magi.bus.firmwares.jobs import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
     LLMErrorCode,
 )
-from magi.bus.guild.base import JobStatus
+from magi.bus.bases.job import JobStatus
 from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import (
     LLMAuthError,
@@ -546,7 +546,7 @@ class ProvidersWorker(RuntimeWorker):
         }
         provider = model.split(":")[0] if model else "unknown"
         try:
-            from magi.bus.library.local.tokenUsageBook import TokenUsage
+            from magi.bus.firmwares.books.local.tokenUsageBook import TokenUsage
 
             book.add(TokenUsage(
                 contact_id=job.contact_id or 0,

@@ -24,7 +24,7 @@ registry**，并 submit :class:`ChangeMCPServerResult`。
   与 operator 之间的状态永远一致。
 - **payload 携带**：
   - :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED` 必须带完整的
-    :class:`~magi.bus.library.local.mcpServerBook.McpServer`
+    :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServer`
     payload（存为 JSON 列）。
   - :attr:`MCPKind.TOGGLED` 必须带 ``new_enabled: bool``。
   - :attr:`MCPKind.DELETED` 只需 ``server_name``。
@@ -44,13 +44,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import JSON, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from magi.bus.bases.db.base import enum_column
+from magi.bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
-    from magi.bus.library.local.mcpServerBook import McpServer
+    from magi.bus.firmwares.books.local.mcpServerBook import McpServer
 
-logger = logging.getLogger("magi.bus.guild.changeMCPServerJob")
+logger = logging.getLogger("magi.bus.firmwares.jobs.changeMCPServerJob")
 
 
 # -- public enum ---------------------------------------------------------
@@ -74,8 +74,8 @@ class MCPKind(StrEnum):
     (``MCPKind.ADDED == "added"``), so ORM columns, JSON
     serialisation, ``==`` / ``!=`` against string literals and
     existing rows keep working unchanged. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind` /
-    :class:`magi.bus.library.local.memoryBook.MemoryKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind` /
+    :class:`magi.bus.firmwares.books.local.memoryBook.MemoryKind`.
     See ``docs/insights/ENUM_MIGRATION_INVENTORY.md`` §2.
     """
 
@@ -184,7 +184,7 @@ def _dump_server(server: McpServer) -> dict[str, Any]:
 
 def _load_server(payload: dict[str, Any]) -> McpServer:
     """Inverse of :func:`_dump_server`."""
-    from magi.bus.library.local.mcpServerBook import McpServer
+    from magi.bus.firmwares.books.local.mcpServerBook import McpServer
 
     return McpServer(
         name=payload["name"],

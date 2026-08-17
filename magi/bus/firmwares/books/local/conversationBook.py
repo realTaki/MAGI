@@ -33,10 +33,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column, utcnow_naive
 
-logger = logging.getLogger("magi.bus.library.local.conversationBook")
+logger = logging.getLogger("magi.bus.firmwares.books.local.conversationBook")
 
 
 class AgentMessageRole(StrEnum):
@@ -57,7 +57,7 @@ class AgentMessageRole(StrEnum):
     ``role: str`` fields, ``json.dumps`` serialisation, and the
     ``role.upper()`` call in :mod:`magi.agent.compaction` keep
     working unchanged. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     USER = "user"
@@ -712,7 +712,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
         absent or owned by another contact, so a stale DELETE on an
         already-removed id is a no-op. ``chat_messages`` rows are removed
         by the ``ondelete="CASCADE"`` FK (``foreign_keys=ON`` is enabled
-        in :mod:`magi.bus.db.engine`).
+        in :mod:`magi.bus.bases.db.engine`).
         """
         with self._session() as s:
             row = s.scalar(

@@ -2,7 +2,7 @@
 
 Locks the design §18 rule: agent/tools must not import from
 ``magi.channels.api.*`` (the channels-specific HTTP surface).
-BUS owns persistence behind ``magi.bus.db``. A future change that
+BUS owns persistence behind ``magi.bus.bases.db``. A future change that
 re-introduces a reverse domain import must fail here before it reaches
 production.
 """
@@ -39,9 +39,9 @@ BUS_ONLY_PATHS: tuple[str, ...] = (
 )
 
 _FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {
-    "magi/agent/": ("magi.bus.db", "magi.tools", "magi.channels"),
-    "magi/tools/": ("magi.bus.db", "magi.agent", "magi.channels"),
-    "magi/channels/": ("magi.bus.db", "magi.agent", "magi.tools"),
+    "magi/agent/": ("magi.bus.bases.db", "magi.tools", "magi.channels"),
+    "magi/tools/": ("magi.bus.bases.db", "magi.agent", "magi.channels"),
+    "magi/channels/": ("magi.bus.bases.db", "magi.agent", "magi.tools"),
 }
 
 

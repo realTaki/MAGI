@@ -20,10 +20,10 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from magi.bus.guild.base import JobStatus
-from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskResult
-from magi.bus.library.local import Role
-from magi.bus.library.local.tasksBook import (
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskResult
+from magi.bus.firmwares.books.local import Role
+from magi.bus.firmwares.books.local.tasksBook import (
     TaskSource,
     preset_to_cron,
     validate_run_at,
@@ -31,7 +31,7 @@ from magi.bus.library.local.tasksBook import (
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskJob
+    from magi.bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
 
 logger = logging.getLogger("magi.proactive.preset_tasks")
 
@@ -107,7 +107,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob, *, worker_id: str) -
                 kwargs["cron"] = cron_val
             else:
                 kwargs["run_at"] = run_at_val
-            from magi.bus.library.local.tasksBook import Task
+            from magi.bus.firmwares.books.local.tasksBook import Task
 
             bus.tasks_book.add(Task(**kwargs))
         except ValueError as exc:

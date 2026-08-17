@@ -35,22 +35,22 @@ from unittest.mock import AsyncMock
 import pytest
 
 from magi.bus.bootstrap import Bus
-from magi.bus.db import EngineFactory
-from magi.bus.db.file import FileShelf
-from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
-from magi.bus.guild import (
+from magi.bus.bases.db import EngineFactory
+from magi.bus.bases.db.file import FileShelf
+from magi.bus.bases.db.schema import LOCAL_SCOPE, synchronise_schema
+from magi.bus.firmwares.jobs import (
     ChangeMCPServerJob,
     MCPKind,
     changeMCPServerJobBoard,
 )
-from magi.bus.guild.base import JobStatus
-from magi.bus.library.file.promptBook import PromptBook
-from magi.bus.library.local import (
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.books.file.promptBook import PromptBook
+from magi.bus.firmwares.books.local import (
     McpServerBook,
     SettingBook,
 )
-from magi.bus.library.local.mcpServerBook import McpServer
-from magi.bus.library.local.toolsBook import ToolDefinitionBook
+from magi.bus.firmwares.books.local.mcpServerBook import McpServer
+from magi.bus.firmwares.books.local.toolsBook import ToolDefinitionBook
 from magi.mcp.worker import McpWorker
 from magi.tools import registry as tool_registry
 from magi.tools.mcp.add_mcp_server import AddMcpServerTool
@@ -510,7 +510,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 # the DB CHECK constraint rejects unknown kinds at INSERT time, so
 # the worker's defensive ``else: error = "unknown change kind"``
 # branch can no longer be reached from a published job. The
-# enforcement now lives in :class:`magi.bus.guild.changeMCPServerJob._ChangeMCPServerRow`'s
+# enforcement now lives in :class:`magi.bus.firmwares.jobs.changeMCPServerJob._ChangeMCPServerRow`'s
 # column type, not the worker — see the StrEnum/SAEnum migration
 # docs.
 

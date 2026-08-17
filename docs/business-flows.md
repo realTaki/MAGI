@@ -46,7 +46,7 @@ permalink: /business-flows/
 > - Channel ingress → `magi/channels/telegram/worker.py::_on_tg_message` 等
 > - Credential 解析 → `magi/providers/factory.py::get_provider(bus=...)`
 > - Task 调度 → `magi/channels/tasks/worker.py::TaskWorker._run`
-> - 手动 / tool 触发任务 → `bus.run_task_job_board.publish(RunTaskJob(...))`（走 `magi/bus/guild/runTaskJob.py`）
+> - 手动 / tool 触发任务 → `bus.run_task_job_board.publish(RunTaskJob(...))`（走 `magi/bus/firmwares/jobs/runTaskJob.py`）
 > - 系统级主动策略 → `magi/proactive/worker.py::ProactiveWorker._run`
 > - 外部数据流 → `magi/connectors/`（按需启动，非默认 Worker）
 >
@@ -177,7 +177,7 @@ permalink: /business-flows/
 
 ## 3. Conversation 生命周期与 D.22 通道守卫
 
-**入口**: `magi/bus/library/local/conversationBook.py::{ConversationBook, MessageBook}`
+**入口**: `magi/bus/firmwares/books/local/conversationBook.py::{ConversationBook, MessageBook}`
 
 ### 创建对话
 ```

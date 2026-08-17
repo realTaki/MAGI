@@ -14,7 +14,7 @@ This test extracts three kinds of references from each
    against the repo root. Missing files (retired modules,
    reorgs) fail the test.
 
-2. **Module paths** like ``magi.bus.guild.base``. Importable
+2. **Module paths** like ``magi.bus.bases.job``. Importable
    modules fail the test.
 
 3. **Relative file paths** like ``channels/worker.py`` (no
@@ -62,7 +62,7 @@ _FILE_RE = re.compile(
 
 # Module / attribute paths: dotted, must start with ``magi.``.
 # Matches anything from ``magi.bus`` (module) to
-# ``magi.bus.guild.base._cas_claim`` (function) to
+# ``magi.bus.bases.job._cas_claim`` (function) to
 # ``magi.bus.BusStore`` (class). The test logic below
 # splits on the last dot: the prefix must be importable as
 # a module; the suffix, when present, must resolve as an
@@ -85,7 +85,7 @@ _SKIP_DOCS = {
     # ``IMPORT_ORGANIZATION_REVIEW.md`` records the pre-Book-record
     # file layout (``local/contactBook.py`` etc. before the
     # magis-vs-local split, ``magi.bus.errors`` /
-    # ``magi.bus.library.local.exceptions`` before the unified
+    # ``magi.bus.firmwares.books.local.exceptions`` before the unified
     # ``library/exceptions`` module); references are by design stale.
     "docs/reviews/IMPORT_ORGANIZATION_REVIEW.md",
     # ``BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md`` records the
@@ -94,6 +94,9 @@ _SKIP_DOCS = {
     # etc. before the file-reorg that produced the current
     # tree); references are by design stale.
     "docs/reviews/BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md",
+    # Snapshot of mid-file import findings against the pre-bases/firmwares
+    # layout (`magi.bus.guild` / `magi.bus.library` / `magi.bus.db`).
+    "docs/MID_FILE_IMPORTS_AUDIT.md",
     }
 
 

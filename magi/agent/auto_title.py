@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.guild.base import JobStatus
+from magi.bus.bases.job import JobStatus
 
 if TYPE_CHECKING:
     from magi.bus import Bus
@@ -37,7 +37,7 @@ async def request_conversation_title(
     if first_user is None:
         return None
 
-    from magi.bus.guild.callLLMJob import CallLLMJob
+    from magi.bus.firmwares.jobs.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
         messages=[

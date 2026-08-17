@@ -6,15 +6,13 @@ Model 不传在 Job 上 —— provider worker 从缓存的配置中取当前模
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, Text
+from sqlalchemy import JSON, Boolean, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
-
+from magi.bus.bases.db.base import enum_column
+from magi.bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 # -- public enum -----------------------------------------------------------
 
@@ -28,7 +26,7 @@ class LLMErrorCode(StrEnum):
       set an error". Stored as ``""`` so the existing
       ``if result.error_code:`` truthy check still works.
     - ``CREDENTIALS_REQUIRED`` / ``PROVIDER_CRASHED`` / ``RUN_CANCELLED``
-      — bus-wide codes already in use by :class:`magi.bus.guild.base.JobStatus`
+      — bus-wide codes already in use by :class:`magi.bus.bases.job.JobStatus`
       neighbours; keeping them verbatim avoids cross-board wire churn.
     - ``AUTH_FAILED`` / ``RATE_LIMITED`` / ``NETWORK_ERROR`` /
       ``CONTEXT_TOO_LONG`` — one member per known provider exception

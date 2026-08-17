@@ -6,12 +6,12 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.library.local import Contact, Role
+from magi.bus.firmwares.books.local import Contact, Role
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
+    from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.telegram.worker")
 
@@ -121,9 +121,9 @@ class TelegramWorker(ChannelWorker):
             return
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         # The user message is persisted to ``chat_messages`` inside
-        # :meth:`chatNotifyBoard.publish` — see ``magi.bus.guild.chatNotifyJob``.
+        # :meth:`chatNotifyBoard.publish` — see ``magi.bus.firmwares.jobs.chatNotifyJob``.
         # Channels must not reach into ``messages_book`` directly anymore.
-        from magi.bus.guild.chatNotifyJob import ChatNotifyJob
+        from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
         try:
             job_id = self.bus.agent_job_board.publish(
@@ -192,7 +192,7 @@ def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> int:
 
 
 # Note: the user message is persisted to ``chat_messages`` inside
-# :meth:`chatNotifyBoard.publish` (see ``magi.bus.guild.chatNotifyJob``).
+# :meth:`chatNotifyBoard.publish` (see ``magi.bus.firmwares.jobs.chatNotifyJob``).
 # Channels must not reach into ``messages_book`` directly anymore —
 # the chokepoint lives in the bus layer where the cap, D.22 guard,
 # and chatNotifyJob enqueue are all atomic.
@@ -253,7 +253,7 @@ async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
     pass through PROCESSING between polls, but as soon as we observe
     any non-pending state we react once and return.
     """
-    from magi.bus.guild.base import JobStatus
+    from magi.bus.bases.job import JobStatus
 
     # 120 × 0.25s = 30s ceiling for an Agent to claim the turn.
     # Beyond that we give up silently — no reaction is better than a

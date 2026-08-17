@@ -36,8 +36,8 @@ from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.guild.chatNotifyJob import ChatNotifyJob
-from magi.bus.library.local.conversationBook import ChannelMismatchError
+from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+from magi.bus.firmwares.books.local.conversationBook import ChannelMismatchError
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.chat_conversations import ConversationMessageOut
 from magi.channels.api.dependencies import BusDep
@@ -248,7 +248,7 @@ async def send_chat(
         # callers never pass it (see :meth:`ConversationBook.add`
         # docstring). The new id comes back on the returned
         # ``Conversation`` below.
-        from magi.bus.library.local.conversationBook import Conversation
+        from magi.bus.firmwares.books.local.conversationBook import Conversation
 
         sess = Conversation(
             contact_id=contact_id,

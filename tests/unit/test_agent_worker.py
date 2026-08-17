@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from magi.bus.guild.base import JobStatus
+from magi.bus.bases.job import JobStatus
 
 # ---------------------------------------------------------------------------
 # Minimal fakes (no runtime import needed)
@@ -198,7 +198,7 @@ async def test_missing_provider_delivers_actionable_reply() -> None:
     upstream in :mod:`magi.providers.errors`, not in the agent worker.
     """
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.guild.callLLMJob import LLMErrorCode
+    from magi.bus.firmwares.jobs.callLLMJob import LLMErrorCode
 
     bus = _make_bus()
     bus.llm_job_board.get_result.return_value = _fake_llm(
@@ -228,7 +228,7 @@ async def test_missing_provider_delivers_actionable_reply() -> None:
 @pytest.mark.asyncio
 async def test_tool_loop_completes():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.guild.runToolJob import RunToolResult
+    from magi.bus.firmwares.jobs.runToolJob import RunToolResult
 
     bus = _make_bus()
 
@@ -271,8 +271,8 @@ async def test_tool_loop_completes():
 @pytest.mark.asyncio
 async def test_steering_injected():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.guild.chatNotifyJob import ChatNotifyJob
-    from magi.bus.guild.runToolJob import RunToolResult
+    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+    from magi.bus.firmwares.jobs.runToolJob import RunToolResult
 
     bus = _make_bus()
 
@@ -314,7 +314,7 @@ async def test_steering_injected():
     steering_found = any("Also check this" in str(m.get("content", "")) for m in ctx.messages)
     assert steering_found
     # steering ChatNotifyJob was consumed (submitted as ChatNotifyResult)
-    from magi.bus.guild.chatNotifyJob import ChatNotifyResult
+    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
     bus.agent_job_board.submit_result.assert_any_call(
         job_id=1,
@@ -335,10 +335,10 @@ async def test_one_agent_worker_consumes_persisted_steering_while_waiting_for_a_
     from types import SimpleNamespace
 
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.db.engine import EngineFactory
-    from magi.bus.guild.base import JobStatus
-    from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
-    from magi.bus.guild.runToolJob import RunToolResult
+    from magi.bus.bases.db.engine import EngineFactory
+    from magi.bus.bases.job import JobStatus
+    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
+    from magi.bus.firmwares.jobs.runToolJob import RunToolResult
 
     factory = EngineFactory("sqlite:///:memory:")
     agent_board = chatNotifyBoard(factory)
@@ -388,8 +388,8 @@ async def test_agent_worker_runs_different_conversations_concurrently():
     from types import SimpleNamespace
 
     from magi.agent.worker import AgentWorker
-    from magi.bus.db.engine import EngineFactory
-    from magi.bus.guild.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
+    from magi.bus.bases.db.engine import EngineFactory
+    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob, chatNotifyBoard
 
     factory = EngineFactory("sqlite:///:memory:")
     agent_board = chatNotifyBoard(factory)
@@ -536,7 +536,7 @@ async def test_shutdown_marks_claimed_agent_job_cancelled():
 @pytest.mark.asyncio
 async def test_max_iterations_exceeded():
     from magi.agent.worker import AgentWorker, RunContext
-    from magi.bus.guild.runToolJob import RunToolResult
+    from magi.bus.firmwares.jobs.runToolJob import RunToolResult
 
     bus = _make_bus()
 

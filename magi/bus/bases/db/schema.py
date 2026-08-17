@@ -6,7 +6,7 @@ The provisioning flow has two phases:
    table the ORM knows about is present (idempotent on already-present
    tables — safe to run whenever a BUS is opened).
 2. :func:`upgrade_schema` runs the migration versions stored in
-   :mod:`magi.bus.db.alembic.versions` against the live DB.
+   :mod:`magi.bus.bases.db.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
    without requiring an operator to invoke ``alembic`` from a shell.
 
@@ -29,19 +29,17 @@ from pathlib import Path
 
 from sqlalchemy import Connection, Table, text
 
-# Pull in every ORM module so ``Base.registry.mappers`` is fully populated
-# by the time ``_tables_for_scope`` or any caller walks it.  Both packages'
-# ``__init__`` modules import every table / book — we just need to make
-# sure ``schema`` itself triggers that import.  Without this, a fresh
-# import of ``magi.bus.db.schema`` would leave the mapper registry empty
+# Pull in every firmware ORM module so ``Base.registry.mappers`` is fully
+# populated by the time ``_tables_for_scope`` or any caller walks it.
+# :mod:`magi.bus.firmwares` imports the jobs / local / magis packages
+# that register tables.  Without this, a fresh import of
+# ``magi.bus.bases.db.schema`` would leave the mapper registry empty
 # and ``synchronise_schema`` would silently build zero tables.
-import magi.bus.guild  # noqa: F401  (side-effect: registers guild tables)
-import magi.bus.library.local  # noqa: F401  (side-effect: registers local tables)
-import magi.bus.library.magis  # noqa: F401  (side-effect: registers MAGIS tables)
-from magi.bus.db.base import Base
-from magi.bus.db.engine import EngineFactory
+import magi.bus.firmwares  # noqa: F401  (side-effect: registers firmware tables)
+from magi.bus.bases.db.base import Base
+from magi.bus.bases.db.engine import EngineFactory
 
-logger = logging.getLogger("magi.bus.db.schema")
+logger = logging.getLogger("magi.bus.bases.db.schema")
 
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"
@@ -59,8 +57,8 @@ VERSION_DIRECTORIES = {
 def _tables_for_scope(scope: str) -> list[Table]:
     """Return the tables owned by one physical BUS store.
 
-    Local Books and Guild job boards belong to a MAGI-private store; only
-    ``library.magis`` models belong to the MAGIS-shared store.  The ORM uses
+    Local Books and Job Boards belong to a MAGI-private store; only
+    ``firmwares.books.magis`` models belong to the MAGIS-shared store.  The ORM uses
     one SQLAlchemy metadata registry for import-order safety, so provisioning
     must select tables explicitly instead of materialising the whole registry
     into both databases.
@@ -71,8 +69,8 @@ def _tables_for_scope(scope: str) -> list[Table]:
     tables: dict[str, Table] = {}
     for mapper in Base.registry.mappers:
         is_magis_table = (
-            mapper.class_.__module__.startswith("magi.bus.library.magis.")
-            or mapper.class_.__module__ == "magi.bus.guild.a2aJob"
+            mapper.class_.__module__.startswith("magi.bus.firmwares.books.magis.")
+            or mapper.class_.__module__ == "magi.bus.firmwares.jobs.a2aJob"
         )
         if (scope == MAGIS_SCOPE) == is_magis_table:
             # Every ORM class in MAGI is table-mapped (no joins / aliases

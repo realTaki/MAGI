@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.bus.guild.deliveryNotifyJob import DeliveryNotifyJob
+    from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.webui.worker")
 

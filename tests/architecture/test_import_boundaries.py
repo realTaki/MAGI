@@ -47,11 +47,43 @@ def test_domain_modules_do_not_reach_into_bus_storage() -> None:
     for domain in domains:
         for path in (MAGI_ROOT / domain).rglob("*.py"):
             for module, lineno in _imports(path):
-                if module.startswith("magi.bus.db"):
+                if module.startswith("magi.bus.bases.db"):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, "domain modules must use Bus facade, not storage:\n  " + "\n  ".join(
         offenders
     )
+
+
+def test_retired_bus_package_names_are_not_imported() -> None:
+    """``guild`` / ``library`` / top-level ``bus.db`` have no import surface."""
+    retired = ("magi.bus.db", "magi.bus.guild", "magi.bus.library")
+    offenders: list[str] = []
+    for path in _production_modules():
+        for module, lineno in _imports(path):
+            if any(module == root or module.startswith(root + ".") for root in retired):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    assert not offenders, "retired BUS package names remain:\n  " + "\n  ".join(offenders)
+
+
+def test_bases_do_not_import_firmwares() -> None:
+    """Bases own contracts and storage; only schema registration may look up.
+
+    ``bases.db.schema`` and the Alembic env import ``magi.bus.firmwares``
+    so ``Base.metadata`` is populated before create_all / upgrade. Every
+    other bases module must stay firmware-free.
+    """
+    allowed = {
+        MAGI_ROOT / "bus" / "bases" / "db" / "schema.py",
+        MAGI_ROOT / "bus" / "bases" / "db" / "alembic" / "env.py",
+    }
+    offenders: list[str] = []
+    for path in (MAGI_ROOT / "bus" / "bases").rglob("*.py"):
+        if path in allowed:
+            continue
+        for module, lineno in _imports(path):
+            if module == "magi.bus.firmwares" or module.startswith("magi.bus.firmwares."):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    assert not offenders, "bases must not import firmwares:\n  " + "\n  ".join(offenders)
 
 
 def test_bus_does_not_import_domain_implementations() -> None:
@@ -67,7 +99,7 @@ def test_bus_does_not_import_domain_implementations() -> None:
 def test_bus_does_not_depend_on_startup() -> None:
     """The composition root (``magi.startup``) imports the bus, never
     the other way around.  Catches the legacy reverse edge where
-    :mod:`magi.bus.library.file.skillsBook` reached into
+    :mod:`magi.bus.firmwares.books.file.skillsBook` reached into
     :mod:`magi.startup.paths`.
 
     Note: ``magi.startup`` itself is a composition root and is

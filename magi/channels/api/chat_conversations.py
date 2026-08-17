@@ -30,7 +30,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.library.local.conversationBook import (
+from magi.bus.firmwares.books.local.conversationBook import (
     Conversation,
     ConversationNotFoundError,
     Message,
@@ -84,7 +84,7 @@ class ConversationOut(BaseModel):
     """Wire shape for one conversation row.
 
     ``created_at`` / ``updated_at`` are typed ``datetime | None``
-    to match :class:`magi.bus.library.local.conversationBook.Conversation`'s
+    to match :class:`magi.bus.firmwares.books.local.conversationBook.Conversation`'s
     ``BaseRecord`` mixin (which leaves them as ``None`` until the row
     is persisted). The DB schema (via :class:`BaseRecordMixin`) is
     non-nullable in practice, but Python-side optionality keeps the

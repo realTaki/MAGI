@@ -12,8 +12,8 @@ from enum import StrEnum
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column, utcnow_naive
 
 
 class MemoryKind(StrEnum):
@@ -35,7 +35,7 @@ class MemoryKind(StrEnum):
     (``MemoryKind.FACT == "fact"``), so ORM columns,
     ``asdict`` serialisation and existing rows keep
     working unchanged. Mirrors
-    :class:`magi.bus.library.local.contactBook.NoteKind`.
+    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     FACT = "fact"
@@ -59,7 +59,7 @@ class Memory(BaseRecord):
 
 class _MemoryRow(BaseRecordMixin):
     __tablename__ = "memory_entries"
-    # ``rememberNotify`` (in ``magi.bus.guild``) registers a Table
+    # ``rememberNotify`` (in ``magi.bus.firmwares.jobs``) registers a Table
     # with the same name; whichever module is imported first wins and
     # the other must opt-in to sharing the existing Table object.
     # SQLAlchemy convention: dict kwargs must come last in the tuple.

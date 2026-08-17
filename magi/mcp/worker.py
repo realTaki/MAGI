@@ -7,7 +7,7 @@
 - **Only depends on bus**. The composition root (see
   :mod:`magi.startup.runtime`) wires a :class:`~magi.bus.Bus`
   with a ready-to-use :class:`changeMCPServerJobBoard` and
-  :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`.
+  :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServerBook`.
 - **No environment reads**. Timeouts and per-server config come
   from ``bus.settings_book`` / the row, never from ``os.environ``.
 - **No environment concurrency knob** — bounded in-process concurrency is
@@ -18,7 +18,7 @@ Write authority
 
 The Worker is the **only writer** to ``McpServerBook``. The LLM
 manage tools (under :mod:`magi.tools.mcp`) only publish a
-:class:`~magi.bus.guild.changeMCPServerJob.ChangeMCPServerJob`
+:class:`~magi.bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
 — they never call ``book.upsert`` / ``book.delete`` /
 ``book.update`` themselves. The Worker claims the job, applies the
 write, and reconnects the live connection in the same handler.
@@ -66,18 +66,18 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from magi.bus.guild import (
+from magi.bus.firmwares.jobs import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
     MCPKind,
 )
-from magi.bus.guild.base import JobStatus
+from magi.bus.bases.job import JobStatus
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.library.local.mcpServerBook import McpServer
+    from magi.bus.firmwares.books.local.mcpServerBook import McpServer
     from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
 
 logger = logging.getLogger("magi.mcp.worker")
@@ -98,7 +98,7 @@ class McpWorker(RuntimeWorker):
     drained in the background; :meth:`_bootstrap_connections`
     reads the current enabled set on startup. Every change job the
     worker claims carries enough payload to write
-    :class:`~magi.bus.library.local.mcpServerBook.McpServerBook`
+    :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServerBook`
     *and* refresh the live connection — the worker is the only
     code that touches either side after startup.
     """

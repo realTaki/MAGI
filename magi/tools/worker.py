@@ -51,23 +51,23 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.guild.base import JobStatus
-from magi.bus.guild.runToolJob import RunToolResult, ToolErrorCode
-from magi.bus.library.local import ToolDefinition
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+from magi.bus.firmwares.books.local import ToolDefinition
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
 
 if TYPE_CHECKING:
     from magi.bus import Bus
-    from magi.bus.guild.runToolJob import RunToolJob
+    from magi.bus.firmwares.jobs.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.tools.worker")
 
 #: Stable error codes moved to
-#: :class:`~magi.bus.guild.runToolJob.ToolErrorCode` (StrEnum) so the
+#: :class:`~magi.bus.firmwares.jobs.runToolJob.ToolErrorCode` (StrEnum) so the
 #: agent layer can treat tool and LLM failures with the same retry
-#: logic — see :class:`~magi.bus.guild.callLLMJob.LLMErrorCode` for the
+#: logic — see :class:`~magi.bus.firmwares.jobs.callLLMJob.LLMErrorCode` for the
 #: mirror on the provider side.
 
 def _canonical_json(value: object) -> str:
@@ -423,7 +423,7 @@ def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
 
     ``content`` is truncated to 8 KB to fit the column.
     """
-    from magi.bus.guild.runToolJob import RunToolResult, ToolErrorCode
+    from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 
     return RunToolResult(
         job_id=job.job_id,

@@ -15,7 +15,7 @@ from magi.startup.spec import RuntimeSpec
 
 def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     """Create one MAGIS root and its sole ADAM membership if absent."""
-    from magi.bus.library.magis import (
+    from magi.bus.firmwares.books.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
         Magis,
         MagisBook,
@@ -74,7 +74,7 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     membership = bus.memberships_book.get(magi_id) if bus.memberships_book else None
     if membership is None or bus.magis_admins_book is None:
         raise RuntimeError("MAGIS admin registry unavailable")
-    from magi.bus.library.magis import MagisAdmin
+    from magi.bus.firmwares.books.magis import MagisAdmin
 
     grants = bus.magis_admins_book.list_for_magis(magis_id=membership.magis_id)
     existing = next((admin for admin in grants if admin.name == "admin"), None)
@@ -195,7 +195,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
         config.host_workspace_dir, config.magis_name
     )
     from magi.bus import open_bus
-    from magi.bus.library.magis import (
+    from magi.bus.firmwares.books.magis import (
         MagisBook,
         MagisMembership,
         MagisMembershipBook,

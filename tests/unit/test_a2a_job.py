@@ -8,10 +8,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from magi.bus.db.base import utcnow_naive
-from magi.bus.db.engine import EngineFactory
-from magi.bus.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
-from magi.bus.guild.a2aJob import (
+from magi.bus.bases.db.base import utcnow_naive
+from magi.bus.bases.db.engine import EngineFactory
+from magi.bus.bases.db.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+from magi.bus.firmwares.jobs.a2aJob import (
     A2ANotifyJob,
     A2ANotifyResult,
     A2ARequestJob,
@@ -19,10 +19,10 @@ from magi.bus.guild.a2aJob import (
     a2aNotifyBoard,
     a2aRequestJobBoard,
 )
-from magi.bus.guild.base import JobStatus
-from magi.bus.library.local.conversationBook import ConversationBook, MessageBook
-from magi.bus.library.magis.magisBook import Magis, MagisBook
-from magi.bus.library.magis.membershipBook import (
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.books.local.conversationBook import ConversationBook, MessageBook
+from magi.bus.firmwares.books.magis.magisBook import Magis, MagisBook
+from magi.bus.firmwares.books.magis.membershipBook import (
     MagisMembership,
     MagisMembershipBook,
     MagisRole,

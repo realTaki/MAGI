@@ -23,8 +23,8 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.guild.seedPresetTasksJob import SeedPresetTaskJob
-from magi.bus.library.local import Contact, Role
+from magi.bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
+from magi.bus.firmwares.books.local import Contact, Role
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException

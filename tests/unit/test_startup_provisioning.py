@@ -19,9 +19,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
 from magi.bus import open_bus
-from magi.bus.db.engine import EngineFactory
-from magi.bus.library.local.contactBook import _ContactRow
-from magi.bus.library.magis.magisBook import _MagisAdminRow
+from magi.bus.bases.db.engine import EngineFactory
+from magi.bus.firmwares.books.local.contactBook import _ContactRow
+from magi.bus.firmwares.books.magis.magisBook import _MagisAdminRow
 from magi.bus.provision import StorageNotProvisioned
 from magi.startup import runtime
 from magi.startup.config import (
@@ -254,7 +254,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
     or "rename column" DDL. The ``0001_initial_schema`` migration's
     :func:`upgrade` is itself ``Base.metadata.create_all``, which
     acts as the additive repair path during
-    :func:`magi.bus.db.schema.synchronise_schema` (the legacy
+    :func:`magi.bus.bases.db.schema.synchronise_schema` (the legacy
     ``create_all`` half was kept for exactly this situation).
     """
     config = _first_config(tmp_path)
@@ -294,7 +294,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
 
     with factory.engine.begin() as connection:
         # Initial-schema bring-up: create_all + alembic stamp.
-        from magi.bus.db.schema import LOCAL_SCOPE, synchronise_schema
+        from magi.bus.bases.db.schema import LOCAL_SCOPE, synchronise_schema
 
     # Use ``synchronise_schema`` indirectly by going through ``open_bus``
     # — first, drop the existing DB so the boot is truly from scratch.
@@ -409,8 +409,8 @@ def test_initial_schema_declares_native_enum_on_a2a_tables(tmp_path: Path) -> No
     CHECK being present and bounded, not on a specific dialect
     syntax.
     """
-    from magi.bus.db.schema import MAGIS_SCOPE, synchronise_schema
-    from magi.bus.db.engine import EngineFactory
+    from magi.bus.bases.db.schema import MAGIS_SCOPE, synchronise_schema
+    from magi.bus.bases.db.engine import EngineFactory
 
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(factory, scope=MAGIS_SCOPE)

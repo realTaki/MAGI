@@ -55,7 +55,7 @@ The data path that the WebUI / LLM manage tools write to is
 the bus ``McpServerBook`` (via ``ChangeMCPServerJob``);
 the Worker is the sole writer. The WebUI / ``McpService``-backed
 read paths still resolve through the same physical SQLite
-table (see ``magi/bus/library/local/mcpServerBook.py``).
+table (see ``magi/bus/firmwares/books/local/mcpServerBook.py``).
 """
 
 from __future__ import annotations

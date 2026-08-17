@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from magi.bus.db.base import utcnow_naive
-from magi.bus.library.magis.runtimeBook import (
+from magi.bus.bases.db.base import utcnow_naive
+from magi.bus.firmwares.books.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )

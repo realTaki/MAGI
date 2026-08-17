@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from magi.bus.db.file import FileShelf
-from magi.bus.library.file.skillsBook import SkillsBook
+from magi.bus.bases.db.file import FileShelf
+from magi.bus.firmwares.books.file.skillsBook import SkillsBook
 from magi.tools.base import ToolContext
 from magi.tools.skills.load_skill import LoadSkillTool
 

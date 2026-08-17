@@ -6,10 +6,10 @@
 :class:`LLMProvider` 是 providers 包的**唯一**对外契约，运行时
 (:class:`~magi.providers.worker.ProvidersWorker`) 只通过它调用
 模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（bus
-的 :class:`~magi.bus.guild.callLLMJob.CallLLMJob` 上的
+的 :class:`~magi.bus.firmwares.jobs.callLLMJob.CallLLMJob` 上的
 ``messages`` 字段），不再使用中间 dataclass；每个 provider 子类
 内部自行翻成 SDK 期望的形状。返回值是 plain dict，与
-:class:`~magi.bus.guild.callLLMJob.CallLLMResult.response` 直
+:class:`~magi.bus.firmwares.jobs.callLLMJob.CallLLMResult.response` 直
 接对齐。
 
 设计要点

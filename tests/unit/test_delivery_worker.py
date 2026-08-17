@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.bus.db import EngineFactory
-from magi.bus.guild.base import JobStatus
-from magi.bus.guild.deliveryNotifyJob import (
+from magi.bus.bases.db import EngineFactory
+from magi.bus.bases.job import JobStatus
+from magi.bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     DeliveryNotifyResult,
     deliveryNotifyJobBoard,

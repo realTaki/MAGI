@@ -4,13 +4,13 @@ Each module maps to one (or a small group of) SQLite tables.
 File names match the Book classes: ``<domain>Book.py``.
 """
 
-from magi.bus.library.local.actionItemBook import (
+from magi.bus.firmwares.books.local.actionItemBook import (
     ActionItem,
     ActionItemBook,
     ActionPriority,
     ActionSource,
 )
-from magi.bus.library.local.contactBook import (
+from magi.bus.firmwares.books.local.contactBook import (
     Contact,
     ContactBook,
     ContactNote,
@@ -18,34 +18,34 @@ from magi.bus.library.local.contactBook import (
     NoteKind,
     Role,
 )
-from magi.bus.library.local.conversationBook import (
+from magi.bus.firmwares.books.local.conversationBook import (
     AgentMessageRole,
     Conversation,
     ConversationBook,
     Message,
     MessageBook,
 )
-from magi.bus.library.local.hookSignoffBook import (
+from magi.bus.firmwares.books.local.hookSignoffBook import (
     HookSignoff,
     HookSignoffBook,
     HookSignoffStatus,
 )
-from magi.bus.library.local.mcpServerBook import (
+from magi.bus.firmwares.books.local.mcpServerBook import (
     MCPConnectionType,
     McpServer,
     McpServerBook,
 )
-from magi.bus.library.local.memoryBook import (
+from magi.bus.firmwares.books.local.memoryBook import (
     Memory,
     MemoryBook,
     MemoryKind,
 )
-from magi.bus.library.local.settingBook import (
+from magi.bus.firmwares.books.local.settingBook import (
     CHANNEL_OPTIONS_KEY,
     Setting,
     SettingBook,
 )
-from magi.bus.library.local.tasksBook import (
+from magi.bus.firmwares.books.local.tasksBook import (
     Task,
     TaskBook,
     TaskRun,
@@ -53,8 +53,8 @@ from magi.bus.library.local.tasksBook import (
     TaskRunStatus,
     TaskSource,
 )
-from magi.bus.library.local.tokenUsageBook import TokenUsage, TokenUsageBook
-from magi.bus.library.local.toolsBook import (
+from magi.bus.firmwares.books.local.tokenUsageBook import TokenUsage, TokenUsageBook
+from magi.bus.firmwares.books.local.toolsBook import (
     ToolCatalogSnapshot,
     ToolCatalogState,
     ToolCatalogStateBook,

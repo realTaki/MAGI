@@ -11,8 +11,8 @@ from datetime import datetime
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import Base, utcnow_naive
-from magi.bus.db.engine import EngineFactory
+from magi.bus.bases.db.base import Base, utcnow_naive
+from magi.bus.bases.db.engine import EngineFactory
 
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from magi.bus import Bus
 
-from magi.bus.library.local import ActionPriority
+from magi.bus.firmwares.books.local import ActionPriority
 
 logger = logging.getLogger("magi.agent.system_prompt")
 

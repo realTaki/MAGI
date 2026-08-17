@@ -21,10 +21,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, Text, or_
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.guild.base import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from magi.bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 if TYPE_CHECKING:
-    from magi.bus.library.local.contactBook import ContactBook
+    from magi.bus.firmwares.books.local.contactBook import ContactBook
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._stamp_last_seen(job)
         if self._messages_book is not None:
             try:
-                from magi.bus.library.local.conversationBook import (
+                from magi.bus.firmwares.books.local.conversationBook import (
                     AgentMessageRole,
                     Message,
                 )
@@ -249,7 +249,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
             contact_id=cid_int, conversation_id=job.conversation_id or 0
         )
         if conversation is not None and conversation.channel != channel:
-            from magi.bus.library.local.conversationBook import ChannelMismatchError
+            from magi.bus.firmwares.books.local.conversationBook import ChannelMismatchError
 
             raise ChannelMismatchError(conversation.channel)
 

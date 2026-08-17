@@ -1,11 +1,11 @@
-"""bus.guild — 仅写。继承 BaseJobBoard，override publish 即可。
+"""bus.firmwares.jobs — concrete Job Boards.
 
-Job 命名（publish → claim → submit_result）：动词打头
-（chatNotifyBoard / a2aRequestJobBoard / callLLMJobBoard / ...）。
-Book 命名：名词结尾（memoryBook / contactBook / ...）。
+Each board inherits :class:`~magi.bus.bases.job.BaseJobBoard` and
+overrides ``publish`` when it needs domain checks. Job names are
+verb-led (``chatNotifyBoard`` / ``a2aRequestJobBoard`` / …).
 """
 
-from magi.bus.guild.a2aJob import (
+from magi.bus.firmwares.jobs.a2aJob import (
     A2ANotifyJob,
     A2ANotifyResult,
     A2ARequestJob,
@@ -13,38 +13,38 @@ from magi.bus.guild.a2aJob import (
     a2aNotifyBoard,
     a2aRequestJobBoard,
 )
-from magi.bus.guild.base import BaseJobBoard
-
-# 往返 (publish → claim → submit_result)
-from magi.bus.guild.callLLMJob import CallLLMJob, CallLLMResult, LLMErrorCode, callLLMJobBoard
-from magi.bus.guild.changeMCPServerJob import (
-    MCPKind,
+from magi.bus.firmwares.jobs.callLLMJob import (
+    CallLLMJob,
+    CallLLMResult,
+    LLMErrorCode,
+    callLLMJobBoard,
+)
+from magi.bus.firmwares.jobs.changeMCPServerJob import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
+    MCPKind,
     changeMCPServerJobBoard,
 )
-from magi.bus.guild.changeProviderConfigJob import (
+from magi.bus.firmwares.jobs.changeProviderConfigJob import (
     ChangeProviderConfigJob,
     ChangeProviderConfigResult,
     changeProviderConfigJobBoard,
 )
-from magi.bus.guild.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
-from magi.bus.guild.deliveryNotifyJob import (
+from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
+from magi.bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     DeliveryNotifyResult,
     deliveryNotifyJobBoard,
 )
-from magi.bus.guild.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
-from magi.bus.guild.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
-from magi.bus.guild.seedPresetTasksJob import (
+from magi.bus.firmwares.jobs.runTaskJob import RunTaskJob, RunTaskResult, runTaskJobBoard
+from magi.bus.firmwares.jobs.runToolJob import RunToolJob, RunToolResult, runToolJobBoard
+from magi.bus.firmwares.jobs.seedPresetTasksJob import (
     SeedPresetTaskJob,
     SeedPresetTaskResult,
     seedPresetTaskJobBoard,
 )
 
 __all__ = [
-    "BaseJobBoard",
-    # 往返
     "CallLLMJob",
     "CallLLMResult",
     "LLMErrorCode",

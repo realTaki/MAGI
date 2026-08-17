@@ -29,8 +29,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus.db.base import enum_column, utcnow_naive
-from magi.bus.library.base import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from magi.bus.bases.db.base import enum_column, utcnow_naive
 
 
 class NoteKind(StrEnum):
@@ -47,7 +47,7 @@ class NoteKind(StrEnum):
     member is still a ``str`` (``NoteKind.DAILY == "daily"``),
     so ORM columns, ``asdict`` serialisation and existing rows
     keep working unchanged. Mirrors
-    :class:`magi.bus.library.local.actionItemBook.ActionSource`.
+    :class:`magi.bus.firmwares.books.local.actionItemBook.ActionSource`.
     """
 
     PERMANENT = "permanent"
@@ -70,7 +70,7 @@ class Role(StrEnum):
     ``!=`` against string literals and existing rows keep
     working unchanged. Admin authority is **not** here — it's a
     MAGIS-level concept and lives in
-    :class:`~magi.bus.library.magis.magisBook.MagisAdminBook`.
+    :class:`~magi.bus.firmwares.books.magis.magisBook.MagisAdminBook`.
     """
 
     ASSIGNED = "assigned"
@@ -87,7 +87,7 @@ class Contact(BaseRecord):
     ``role`` is the MAGI-local role tag (``assigned`` /
     ``guest`` / ``contact``). Admin is **not** a column
     here — it's a MAGIS-level concept and lives in
-    :class:`~magi.bus.library.magis.magisBook.MagisAdminBook`
+    :class:`~magi.bus.firmwares.books.magis.magisBook.MagisAdminBook`
     (``magis_admins`` table). A user can be ``assigned`` in
     this MAGI **and** admin in any MAGIS — the two flags
     are orthogonal. Tool gating combines both via
@@ -192,7 +192,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         """Stamp ``last_seen_at`` for a contact.
 
         Cheap, idempotent activity signal — called by the
-        channel→agent publish path (:meth:`magi.bus.guild.chatNotifyJob.chatNotifyBoard.publish`)
+        channel→agent publish path (:meth:`magi.bus.firmwares.jobs.chatNotifyJob.chatNotifyBoard.publish`)
         so :meth:`search`'s recency ordering reflects real
         inbound traffic. A no-op when ``contact_id`` is
         ``None`` (e.g. a cron task without a bound contact)

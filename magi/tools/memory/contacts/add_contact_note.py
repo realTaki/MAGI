@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.library.local.contactBook import ContactNote
+from magi.bus.firmwares.books.local.contactBook import ContactNote
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact_note")
