@@ -305,14 +305,33 @@ export default function ChatTab() {
       setConversationId(data.conversation_id);
     }
     localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.conversation_id));
-    setChatMessages(
-      data.messages.map((m, i) => ({
-        id: i,
+    setChatMessages((prev) => {
+      // Merge server data with any optimistic messages
+      // (``id = Date.now()`` placeholder) that haven't yet
+      // been confirmed. ``sendChatMut.onSuccess`` swaps
+      // the optimistic id for the server ``message_id`` as
+      // soon as ``POST /api/chat/send`` returns, so the
+      // optimistic tail is usually already resolved by the
+      // time we get here. This merge is the belt-and-braces
+      // for any path that didn't go through onSuccess (TG
+      // cross-channel writes, partial failures, etc.) — a
+      // race that previously wiped the user message between
+      // T=0 and the first refetch.
+      const serverIds = new Set(data.messages.map((m) => m.message_id));
+      const optimistic = prev.filter((m) => !serverIds.has(m.id));
+      const serverMsgs = data.messages.map((m) => ({
+        id: m.message_id,
         role: m.role as "user" | "assistant",
         text: m.text,
-      })),
-    );
+      }));
+      return [...serverMsgs, ...optimistic];
+    });
     setLoadedCount(data.messages.length);
+    // ``totalActive`` is server-authoritative for committed
+    // rows; optimistic rows aren't counted yet (the
+    // operator sees them, the count catches up on the next
+    // refetch). Including them here would briefly inflate
+    // "load older" affordances that don't apply.
     setTotalActive(data.total_active);
     if (
       chatPhase === "typing" &&
@@ -620,7 +639,10 @@ export default function ChatTab() {
       // unconfigured provider) or the eventual assistant delivery without
       // requiring the operator to switch tabs or manually reload.
       // There is currently no browser-facing SSE stream for this board, so
-      // use a short, bounded revalidation sequence instead.
+      // use a short, bounded revalidation sequence instead. The chat pane's
+      // mirror effect dedupes optimistic messages against server rows by
+      // ``role + text`` fingerprint, so a race that returns the user row
+      // late no longer wipes the optimistic placeholder.
       const transcriptKey = qk.chatMessages(data.conversation_id);
       for (const delayMs of [500, 1_000, 2_000, 4_000, 8_000]) {
         window.setTimeout(() => {

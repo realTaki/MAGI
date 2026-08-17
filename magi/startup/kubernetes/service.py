@@ -6,6 +6,10 @@ the service uses the Kubernetes path directly via the in-cluster
 :class:`magi.startup.kubernetes.resources.KubernetesEvaBackend` and the
 ``KubernetesEvaBackend`` semantics that wrap it.
 
+The HMAC key for verifying ``X-MAGI-Timestamp`` / ``X-MAGI-Signature``
+is resolved by :mod:`magi.startup.kubernetes._secret`.  See that
+module for the env-var → DB fallback order.
+
 Run via:
 
     uvicorn magi.startup.kubernetes.service:create_app --factory --host 0.0.0.0 --port 42100
@@ -15,11 +19,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
+from magi.startup.kubernetes._secret import get_control_secret
 from magi.startup.kubernetes.contracts import (
     EvaSpec,
     MagisBinding,
@@ -32,7 +36,7 @@ from magi.startup.kubernetes.resources import KubernetesEvaBackend
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:
-    secret = os.environ.get("MAGI_CONTROL_SECRET")
+    secret = get_control_secret()
     if not secret or not timestamp or not signature:
         raise HTTPException(status_code=401, detail="missing control authentication")
     try:
@@ -42,7 +46,7 @@ def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -
     if age > 300:
         raise HTTPException(status_code=401, detail="expired control request")
     expected = hmac.new(
-        secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+        secret, timestamp.encode() + b"." + body, hashlib.sha256
     ).hexdigest()
     if not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=401, detail="invalid control signature")

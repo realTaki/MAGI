@@ -23,6 +23,8 @@ from typing import Any
 
 import httpx
 
+from magi.startup.kubernetes._secret import get_control_secret
+
 from magi.startup.config import (
     DEFAULT_MAGI_NAME,
     RUNTIME_PORT,
@@ -400,10 +402,15 @@ class KubernetesEvaBackend:
         shared_secret = f"{database_service}-credentials"
         magis_secret = f"{resource}-db"
         workspace_claim = f"{resource}-workspace"
+        secret = get_control_secret()
+        if not secret:
+            raise RuntimeError(
+                "control secret is not configured (neither MAGIS_DATABASE_URL "
+                "control_secrets row nor MAGI_CONTROL_SECRET env var); "
+                "ensure the cluster bootstrap has run before provisioning a MAGIS."
+            )
         password = hmac.new(
-            os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
-            b"magis-postgres",
-            hashlib.sha256,
+            secret, b"magis-postgres", hashlib.sha256
         ).hexdigest()
         database = f"magis_{binding.id}"
         database_url = f"postgresql+psycopg://magi:{password}@{database_service}:5432/{database}"
@@ -601,10 +608,14 @@ class KubernetesEvaBackend:
                 return base64.b64decode(encoded).decode()
         except Exception:
             pass
+        secret = get_control_secret()
+        if not secret:
+            return (
+                f"postgresql+psycopg://magi:missing@{_shared_magis_database_resource_name()}:5432/"
+                f"magis_{binding.id}"
+            )
         password = hmac.new(
-            os.environ.get("MAGI_CONTROL_SECRET", "").encode(),
-            b"magis-postgres",
-            hashlib.sha256,
+            secret, b"magis-postgres", hashlib.sha256
         ).hexdigest()
         return (
             f"postgresql+psycopg://magi:{password}@{_shared_magis_database_resource_name()}:5432/"

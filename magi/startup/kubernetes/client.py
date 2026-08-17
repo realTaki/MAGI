@@ -3,6 +3,11 @@
 Consolidated from the legacy ``magi.orchestrator.client`` module
 per plan §20.4. Talks to the FastAPI service in
 :mod:`magi.startup.kubernetes.service` over HMAC-signed HTTP.
+
+The HMAC key is resolved at call time by :mod:`magi.startup.kubernetes._secret`,
+which prefers the DB-backed ``control_secrets`` row and falls back to the
+``MAGI_CONTROL_SECRET`` env var as a deployment-side bootstrap bridge
+(for the cluster-init phase that creates the MAGIS database).
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import time
 
 import httpx
 
+from magi.startup.kubernetes._secret import get_control_secret
 from magi.startup.kubernetes.contracts import (
     EvaOperationResult,
     EvaSpec,
@@ -26,17 +32,21 @@ class OrchestratorUnavailable(RuntimeError):
     """The lifecycle controller could not accept an operation."""
 
 
-def _control_secret() -> str:
-    value = os.environ.get("MAGI_CONTROL_SECRET")
-    if not value:
-        raise OrchestratorUnavailable("MAGI_CONTROL_SECRET is not configured")
-    return value
+def _control_secret() -> bytes:
+    secret = get_control_secret()
+    if not secret:
+        raise OrchestratorUnavailable(
+            "control secret is not configured (neither MAGIS_DATABASE_URL "
+            "control_secrets row nor MAGI_CONTROL_SECRET env var); "
+            "ensure the cluster bootstrap has run."
+        )
+    return secret
 
 
 def _headers(body: bytes) -> dict[str, str]:
     timestamp = str(int(time.time()))
     digest = hmac.new(
-        _control_secret().encode(), timestamp.encode() + b"." + body, hashlib.sha256
+        _control_secret(), timestamp.encode() + b"." + body, hashlib.sha256
     ).hexdigest()
     return {"X-MAGI-Timestamp": timestamp, "X-MAGI-Signature": digest}
 
