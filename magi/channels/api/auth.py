@@ -37,27 +37,29 @@ SESSION_TTL_SECONDS = 14 * 24 * 60 * 60
 
 def _signing_key(bus: Bus) -> bytes:
     # Control-plane mode (WebUI talking to its MAGIS-managed runtimes):
-    # the session signing key is derived from ``MAGI_CONTROL_SECRET``.
-    # Two sources are tried in order — env var (for a Kubernetes Secret or
-    # launcher injection), then the persistent ``bus.control_secrets`` row.
-    # Silently falling
-    # back to ``bus.settings_book['auth.signing_key']`` here would
-    # crash the proxy with ``no such table: settings`` because the
-    # WebUI bus is bound to the MAGIS store, not the node's SQLite.
+    # the session signing key is derived from the per-MAGIS
+    # ``control_secrets`` row. The DB row is the single source of truth —
+    # ``_ensure_control_secret`` provisions it during ``magi init``. Both
+    # the WebUI and the node subprocesses share the row because they
+    # both open the MAGIS store.
+    # ``bus.settings_book`` is intentionally NOT consulted here: the WebUI
+    # bus is bound to the MAGIS store, not the node's SQLite, and a
+    # silent fallback would let a partially-provisioned node serve
+    # cookies that the rest of the control plane cannot verify.
     if control_store.enabled():
-        secret = os.environ.get("MAGI_CONTROL_SECRET")
-        if not secret and bus.control_secrets_book is not None:
-            row = bus.control_secrets_book.get_by_name(name=_control_secret_name(bus))
-            if row is not None and row.secret_value:
-                secret = row.secret_value.decode("utf-8")
-        if not secret:
+        if bus.control_secrets_book is None:
             raise RuntimeError(
-                "MAGI_CONTROL_SECRET is required when running under a MAGIS "
-                "control plane — neither the environment nor the "
-                "``bus.control_secrets`` row has it. Run `magi init` to "
-                "provision it, or inject it through the deployment environment."
+                "bus.control_secrets_book is unavailable; the MAGIS store "
+                "is not wired into this Bus. Run `magi init` to provision "
+                "it."
             )
-        return hashlib.sha256(secret.encode() + b"magi-control-session").digest()
+        row = bus.control_secrets_book.get_by_name(name=_control_secret_name(bus))
+        if row is None or row.secret_value is None:
+            raise RuntimeError(
+                "control_secrets row is missing for the current MAGIS; "
+                "run `magi init` to provision the control secret."
+            )
+        return hashlib.sha256(row.secret_value + b"magi-control-session").digest()
     # Standalone / per-node mode (e.g. k8s pod running its own control bus
     # directly, no shared MAGIS). The signing key is stored in the
     # node's ``settings`` table, freshly generated if absent so first-boot
@@ -205,6 +207,7 @@ async def _target_access(
     if not base:
         raise MagiHTTPException(503, "access.runtime_unreachable", "Selected MAGI runtime is unreachable")
     headers = build_proxy_headers(
+        bus=bus,
         method=method,
         path_and_query=path,
         target_id=magi_id,

@@ -257,8 +257,12 @@ def _browser_request() -> Request:
 async def test_proxy_answers_503_instead_of_stalling_on_an_unresponsive_runtime(monkeypatch) -> None:
     """The browser-visible contract is an immediate, labelled 503 — not a
     minute of silence that an ingress reports as an unattributable 504."""
-    monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
-    monkeypatch.setattr(runtime_proxy, "get_bus", lambda _request: MagicMock())
+    proxy_bus = MagicMock()
+    proxy_bus.magis_name = "test"
+    proxy_bus.control_secrets_book.get_by_name.return_value = MagicMock(
+        secret_value=b"test-control-secret",
+    )
+    monkeypatch.setattr(runtime_proxy, "get_bus", lambda _request: proxy_bus)
 
     from magi.channels.api import auth as auth_mod
 

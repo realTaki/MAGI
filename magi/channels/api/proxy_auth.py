@@ -2,8 +2,12 @@
 
 The browser authenticates only to the single WebUI service.  When that service
 needs private state from a selected MAGI, it signs a short-lived request with
-``MAGI_CONTROL_SECRET``.  Runtime APIs accept that request only when its target
+the HMAC key derived from the per-MAGIS ``control_secrets`` row (provisions
+during ``magi init``).  Runtime APIs accept that request only when its target
 matches their own ``MAGI_RUNTIME_ID``.
+
+The secret is read exclusively from the DB-backed ``bus.control_secrets_book``
+row.  No environment variable is consulted at runtime.
 """
 
 from __future__ import annotations
@@ -18,9 +22,49 @@ from fastapi import Request
 _MAX_AGE_SECONDS = 60
 
 
-def _secret() -> bytes | None:
-    value = os.environ.get("MAGI_CONTROL_SECRET")
-    return value.encode() if value else None
+def _control_secret_name(bus) -> str:
+    """Resolve the MAGIS-name under which ``control_secrets`` is keyed.
+
+    Single source of truth for both ``_signing_key`` (session cookies) and
+    ``resolve_control_secret`` (proxy HMAC).  Reads from
+    ``bus.magis_name``; raises if the Bus is missing the attribute, since
+    silent fallback would let a misconfigured runtime claim "default"
+    identity.
+    """
+    name = getattr(bus, "magis_name", None)
+    if not isinstance(name, str) or not name:
+        raise RuntimeError(
+            "Bus.magis_name is missing; the Bus is not bound to a MAGIS "
+            "and cannot resolve its control secret. Run `magi init`."
+        )
+    return name
+
+
+def resolve_control_secret(bus) -> bytes | None:
+    """Return the raw ``control_secrets`` row value for the current MAGIS.
+
+    Returns ``None`` when:
+      - the Bus is unbound to a MAGIS store, or
+      - the ``control_secrets_book`` has not been wired, or
+      - no row exists for this MAGIS, or
+      - the row's ``secret_value`` is empty.
+
+    Callers fail closed on ``None`` (proxy HMAC verification returns
+    ``None``; ``build_proxy_headers`` raises ``RuntimeError``).
+    """
+    if bus is None:
+        return None
+    book = getattr(bus, "control_secrets_book", None)
+    if book is None:
+        return None
+    try:
+        name = _control_secret_name(bus)
+    except RuntimeError:
+        return None
+    row = book.get_by_name(name=name)
+    if row is None or row.secret_value is None:
+        return None
+    return row.secret_value
 
 
 def _canonical(
@@ -38,6 +82,7 @@ def _canonical(
 
 def build_proxy_headers(
     *,
+    bus,
     method: str,
     path_and_query: str,
     target_id: int,
@@ -50,9 +95,12 @@ def build_proxy_headers(
     two_factor: bool = False,
 ) -> dict[str, str]:
     """Return service-to-service headers for one selected MAGI request."""
-    secret = _secret()
+    secret = resolve_control_secret(bus)
     if secret is None:
-        raise RuntimeError("MAGI_CONTROL_SECRET is required for WebUI runtime proxying")
+        raise RuntimeError(
+            "control_secrets row is unavailable; cannot sign proxy "
+            "request. Run `magi init` to provision the control secret."
+        )
     timestamp = str(int(time.time()))
     target = str(target_id)
     operator = str(operator_id)
@@ -80,9 +128,11 @@ def build_proxy_headers(
     return headers
 
 
-def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | None:
+def verified_proxy_operator(
+    bus, request: Request
+) -> tuple[int, str, int | None] | None:
     """Validate a WebUI-to-runtime request and return its operator identity."""
-    secret = _secret()
+    secret = resolve_control_secret(bus)
     timestamp = request.headers.get("X-MAGI-Proxy-Timestamp", "")
     target = request.headers.get("X-MAGI-Proxy-Target", "")
     operator = request.headers.get("X-MAGI-Proxy-Operator", "")
@@ -144,9 +194,11 @@ def verified_proxy_operator(request: Request) -> tuple[int, str, int | None] | N
     )
 
 
-def verified_proxy_scope(request: Request) -> tuple[bool, bool, bool, int | None] | None:
+def verified_proxy_scope(
+    bus, request: Request
+) -> tuple[bool, bool, bool, int | None] | None:
     """Return the signed MAGIS-admin / local-assigned capabilities."""
-    if verified_proxy_operator(request) is None:
+    if verified_proxy_operator(bus, request) is None:
         return None
     try:
         parts = dict(item.split("=", 1) for item in request.headers["X-MAGI-Proxy-Scope"].split(";"))
@@ -171,20 +223,21 @@ def ensure_runtime_operator(request: Request) -> int | None:
     explicit system marker covers WebUI-only operators.  The returned local
     contact ID keeps existing chat/conversation APIs correctly scoped.
     """
-    identity = verified_proxy_operator(request)
+    from magi.channels.api.dependencies import get_bus
+
+    bus = get_bus(request)
+    identity = verified_proxy_operator(bus, request)
     if identity is None:
         return None
     _operator_id, name, _tgid = identity
-    scope = verified_proxy_scope(request)
+    scope = verified_proxy_scope(bus, request)
     if scope is None:
         return None
     is_admin, _is_assigned, _two_factor, magis_admin_id = scope
     if not is_admin or magis_admin_id is None:
         return None
 
-    from magi.channels.api.dependencies import get_bus
-
-    projection = get_bus(request).contacts_book.ensure_magis_admin_projection(
+    projection = bus.contacts_book.ensure_magis_admin_projection(
         magis_admin_id=magis_admin_id,
         display_name=name,
     )
@@ -194,6 +247,7 @@ def ensure_runtime_operator(request: Request) -> int | None:
 __all__ = [
     "build_proxy_headers",
     "ensure_runtime_operator",
+    "resolve_control_secret",
     "verified_proxy_operator",
     "verified_proxy_scope",
 ]

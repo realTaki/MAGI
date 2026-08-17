@@ -62,7 +62,8 @@ async def proxy_runtime(
         )
     from magi.channels.api.auth import selected_session
 
-    browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
+    bus = get_bus(request)
+    browser_session = selected_session(bus, request.cookies.get("magi_session"))
     if browser_session is None:
         raise MagiHTTPException(status_code=401, code="auth.not_signed_in", detail="Not signed in")
     session_magi_id = int(browser_session["magi_id"])
@@ -80,6 +81,7 @@ async def proxy_runtime(
     named_display_name = raw_display_name if isinstance(raw_display_name, str) else None
     try:
         signed_headers = build_proxy_headers(
+            bus=bus,
             method=request.method,
             path_and_query=runtime_path,
             target_id=magi_id,

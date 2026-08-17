@@ -115,7 +115,7 @@ def _two_factor_is_enabled(request: Request, bus: Bus) -> bool:
     """
     from magi.channels.api.proxy_auth import verified_proxy_scope
 
-    scope = verified_proxy_scope(request)
+    scope = verified_proxy_scope(bus, request)
     if scope is not None:
         is_admin, _assigned, two_factor, _admin_id = scope
         return is_admin and two_factor

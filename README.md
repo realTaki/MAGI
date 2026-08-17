@@ -260,11 +260,12 @@ to an individual MAGI Pod.
 
 The landing page first selects a running MAGI, then offers only that MAGI's
 direct MAGIS administrators and assigned user. The proxy signs each internal
-request with `MAGI_CONTROL_SECRET`, binding it to the selected MAGI and the
-authenticated identity. Each runtime rejects a request addressed to a different
-MAGI. Selecting another MAGI requires a new login; it is not an in-dashboard
-target switch. A MAGI's own Bot sends login codes when configured; otherwise
-its direct MAGIS ADAM Bot provides the one-time bootstrap fallback.
+request with an HMAC derived from the per-MAGIS `control_secrets` row,
+binding it to the selected MAGI and the authenticated identity. Each runtime
+rejects a request addressed to a different MAGI. Selecting another MAGI
+requires a new login; it is not an in-dashboard target switch. A MAGI's own
+Bot sends login codes when configured; otherwise its direct MAGIS ADAM Bot
+provides the one-time bootstrap fallback.
 
 For the implementation-level view, see:
 

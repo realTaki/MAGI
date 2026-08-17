@@ -16,8 +16,8 @@ from magi.channels.api.proxy_auth import verified_proxy_operator
 router = APIRouter(tags=["runtime-control"])
 
 
-def _require_control(request: Request) -> None:
-    if verified_proxy_operator(request) is None:
+def _require_control(request: Request, bus) -> None:
+    if verified_proxy_operator(bus, request) is None:
         raise MagiHTTPException(
             status_code=401, code="control.unauthorized", detail="Invalid control request"
         )
@@ -39,9 +39,9 @@ class TelegramVerify(BaseModel):
 
 @router.post("/control/telegram/bootstrap")
 async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> dict[str, bool]:
-    _require_control(request)
-
     bus = get_bus(request)
+    _require_control(request, bus)
+
     bus.settings_book.set(key="telegram.bot_token", value=payload.token)
     bus.settings_book.set(key="telegram.bot_username", value=payload.username)
     # Hot-restart the TG polling worker so it picks up the newly-saved
@@ -56,7 +56,8 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
 
 @router.post("/control/telegram/verify")
 async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str, object]:
-    _require_control(request)
+    bus = get_bus(request)
+    _require_control(request, bus)
     from magi.channels.telegram import bot as tg_bot
 
     try:
@@ -68,10 +69,11 @@ async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str
 
 @router.post("/control/telegram/send")
 async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bool]:
-    _require_control(request)
+    bus = get_bus(request)
+    _require_control(request, bus)
     from magi.channels.telegram import bot as tg_bot
 
-    token = get_bus(request).settings_book.get_value(key="telegram.bot_token")
+    token = bus.settings_book.get_value(key="telegram.bot_token")
     if not token:
         raise MagiHTTPException(
             status_code=409, code="telegram.not_configured", detail="Telegram is not configured"

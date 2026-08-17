@@ -206,10 +206,10 @@ MAGI，并只提供集群内 Runtime API；`magi webui` 则运行唯一的 React
 不会直接连接任何 MAGI Pod。
 
 落地页先选择正在运行的 MAGI，再只显示该 MAGI 的直接 MAGIS Admin 与 assigned user。
-代理用 `MAGI_CONTROL_SECRET` 为每个内部请求签名；签名同时绑定目标 MAGI 与已认证身份。
-运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 必须重新登录，不能在已登录页面直接切换。
-MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS 的 ADAM
-Bot 代发验证码。
+代理用每个 MAGI 在 `control_secrets` 表里的持久 secret 为内部请求签名；签名同时绑定目标
+MAGI 与已认证身份。运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 必须重新登录，不能在已登录
+页面直接切换。MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS
+的 ADAM Bot 代发验证码。
 
 深入实现请阅读：
 

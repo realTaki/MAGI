@@ -287,6 +287,10 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
 
     Plan §21 — only the startup-contract inputs are propagated; runtime host,
     port, and reload behaviour are not operator-configurable.
+
+    The proxy HMAC secret is NOT propagated here.  The node child reopens
+    the same MAGIS store via ``MAGIS_DATABASE_URL`` and resolves the
+    secret directly from ``bus.control_secrets_book`` at request time.
     """
     env = os.environ.copy()
     env["HOST_WORKSPACE_DIR"] = str(config.host_workspace_dir)
@@ -296,20 +300,6 @@ def _build_subprocess_env(config: StartupConfig) -> dict[str, str]:
         env["MAGIS_DATABASE_URL"] = config.magis_database_url
     if config.magi_id:
         env["MAGI_ID"] = str(config.magi_id)
-    # The runtime verifies WebUI-originated requests with HMAC over the
-    # request line plus selected MAGI. The shared secret is durable MAGIS
-    # state; thread it into the node child for proxy verification.
-    from magi.startup.webui import _read_control_secret
-
-    magis_url = config.magis_database_url or resolve_magis_database_url(
-        config.host_workspace_dir, config.magis_name
-    )
-    secret = _read_control_secret(
-        magis_url=magis_url,
-        magis_name=config.magis_name,
-    )
-    if secret:
-        env["MAGI_CONTROL_SECRET"] = secret
     return env
 
 

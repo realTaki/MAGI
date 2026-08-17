@@ -172,6 +172,7 @@ def _magi_out(bus: Bus, membership) -> MagiOut:
 
 
 async def _fetch_runtime_provider(
+    bus: Bus,
     runtime_base_url: str,
     *,
     magi_id: int,
@@ -190,6 +191,7 @@ async def _fetch_runtime_provider(
     fix the runtime out-of-band.
     """
     headers = build_proxy_headers(
+        bus=bus,
         method="GET",
         path_and_query="/api/magi/self/provider",
         target_id=magi_id,
@@ -238,7 +240,7 @@ async def _magi_out_with_provider(bus: Bus, membership) -> MagiOut:
         else None
     )
     if runtime is not None and runtime.base_url and runtime.observed_state in {"starting", "started"}:
-        fetched = await _fetch_runtime_provider(runtime.base_url, magi_id=membership.id)
+        fetched = await _fetch_runtime_provider(bus, runtime.base_url, magi_id=membership.id)
         if fetched is not None:
             out.provider, out.api_key_set, out.api_key_last4 = fetched
     return out

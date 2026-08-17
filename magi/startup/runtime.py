@@ -176,9 +176,10 @@ def _configure_runtime_environment(config: StartupConfig, *, magi_id: str) -> No
     else:
         os.environ["MAGIS_DATABASE_URL"] = config.magis_database_url
     os.environ["MAGI_ID"] = magi_id
-    # The webui's proxy layer signs every request with
-    # ``MAGI_CONTROL_SECRET`` plus the target runtime id; the runtime verifies
-    # that ``X-MAGI-Proxy-Target`` matches its own ``MAGI_RUNTIME_ID``.
+    # The webui's proxy layer signs every forwarded request with an
+    # HMAC derived from the per-MAGIS ``control_secrets`` row; the
+    # runtime verifies the same row via its own bus, plus checks that
+    # ``X-MAGI-Proxy-Target`` matches its own ``MAGI_RUNTIME_ID``.
     os.environ["MAGI_RUNTIME_ID"] = magi_id
 
 

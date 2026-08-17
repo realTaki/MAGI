@@ -238,15 +238,11 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     # explicitly foreground-launched WebUI too, not only for its detached
     # child process.
     os.environ["MAGIS_DATABASE_URL"] = magis_url
-    # ``MAGI_CONTROL_SECRET`` is required for the proxy signature on every
-    # forwarded ``/api/runtime/<id>/...`` request (see
-    # :mod:`magi.channels.api.proxy_auth`). The detached launcher sets it
-    # via :func:`_build_webui_env`; this foreground path inherits the
-    # parent shell's env only if the operator remembered to export it.
-    # The MAGIS database is the only persisted source of the secret. K8s
-    # deployments may inject the same value through ``MAGI_CONTROL_SECRET``.
-    if not os.environ.get("MAGI_CONTROL_SECRET"):
-        _seed_control_secret_from_magis(magis_url=magis_url, magis_name=config.magis_name)
+    # The proxy HMAC secret is read exclusively from the
+    # ``control_secrets`` row on the MAGIS database — no env var is
+    # consulted. ``open_bus`` below opens that row for both
+    # ``_signing_key`` (session cookie signing) and
+    # ``proxy_auth.resolve_control_secret`` (forwarded-request HMAC).
     # This opens only the provisioned control/MAGIS store.  It never opens a
     # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
     # node worker; target-specific operations are proxied to runtimes.
@@ -312,43 +308,11 @@ def _build_webui_env(config: StartupConfig, port: int) -> dict[str, str]:
         config.host_workspace_dir, config.magis_name
     )
     env["MAGIS_NAME"] = config.magis_name
-    # The webui signs proxy requests to the runtime via
-    # ``MAGI_CONTROL_SECRET`` (HMAC over the request line +
-    # selected MAGI). The single-machine install provisions
-    # the secret from the MAGIS control-secrets Book. Thread it into the
-    # detached WebUI's env so the proxy layer can sign requests.
-    secret = _read_control_secret(
-        magis_url=env["MAGIS_DATABASE_URL"],
-        magis_name=config.magis_name,
-    )
-    if secret:
-        env["MAGI_CONTROL_SECRET"] = secret
+    # No ``MAGI_CONTROL_SECRET`` is propagated: the WebUI reads the
+    # HMAC key directly from the per-MAGIS ``control_secrets`` row at
+    # request time.  The detached child reopens the same MAGIS store
+    # via ``MAGIS_DATABASE_URL`` and resolves the secret itself.
     return env
-
-
-def _seed_control_secret_from_magis(*, magis_url: str, magis_name: str) -> None:
-    """Self-inject ``MAGI_CONTROL_SECRET`` into the process env.
-
-    Mirrors :func:`_read_control_secret` but mutates ``os.environ`` so
-    the value is visible to every downstream subsystem (especially
-    :func:`magi.channels.api.auth._signing_key`, which still keys off
-    the env var). Called by the foreground launcher before uvicorn
-    binds so the proxy signature path is ready at the first request.
-
-    When the DB row is missing, provisioning is incomplete and startup fails.
-    """
-    secret = _read_control_secret(
-        magis_url=magis_url, magis_name=magis_name
-    )
-    if secret:
-        os.environ["MAGI_CONTROL_SECRET"] = secret
-        return
-
-    raise RuntimeError(
-        f"MAGI_CONTROL_SECRET is not set and MAGIS {magis_name!r} has no "
-        "control_secrets row. Run `magi init` to provision it, or inject the "
-        "secret through the deployment environment."
-    )
 
 
 def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:

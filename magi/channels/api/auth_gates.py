@@ -48,14 +48,14 @@ def _proxy_identity(request: Request) -> tuple[int, bool] | None:
     """Return ``(local_contact_id, is_admin)`` for a signed runtime call."""
     from magi.channels.api.proxy_auth import ensure_runtime_operator, verified_proxy_operator, verified_proxy_scope
 
-    if verified_proxy_operator(request) is None:
+    bus = get_bus(request)
+    if verified_proxy_operator(bus, request) is None:
         return None
-    scope = verified_proxy_scope(request)
+    scope = verified_proxy_scope(bus, request)
     if scope is None:
         return None
     is_admin, is_assigned, _two_factor, admin_id = scope
     if is_admin:
-        bus = get_bus(request)
         admin = bus.magis_admins_book.get(admin_id) if (admin_id and bus.magis_admins_book) else None
         runtime_id_raw = request.headers.get("X-MAGI-Proxy-Target")
         membership = (
@@ -70,7 +70,7 @@ def _proxy_identity(request: Request) -> tuple[int, bool] | None:
     if is_assigned:
         # Assigned sessions are target-bound by the HMAC.  Their operator id
         # is their existing local Contact id, not a MAGIS authority identity.
-        operator = verified_proxy_operator(request)
+        operator = verified_proxy_operator(bus, request)
         if operator is None:
             return None
         contact = get_bus(request).contacts_book.get(operator[0])

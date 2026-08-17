@@ -6,12 +6,14 @@ import os
 
 import httpx
 
+from magi.bus import Bus
 from magi.channels.api.proxy_auth import build_proxy_headers
 from magi.channels.api.runtime_http import RELAY_TIMEOUT
 
 
-async def _post(path: str, payload: dict[str, object]) -> None:
+async def _post(bus: Bus, path: str, payload: dict[str, object]) -> None:
     headers = build_proxy_headers(
+        bus=bus,
         method="POST",
         path_and_query=path,
         target_id=1,
@@ -38,9 +40,9 @@ async def _post(path: str, payload: dict[str, object]) -> None:
     response.raise_for_status()
 
 
-async def bootstrap_telegram(token: str, username: str) -> None:
-    await _post("/api/control/telegram/bootstrap", {"token": token, "username": username})
+async def bootstrap_telegram(bus: Bus, token: str, username: str) -> None:
+    await _post(bus, "/api/control/telegram/bootstrap", {"token": token, "username": username})
 
 
-async def send_telegram(tgid: int, text: str) -> None:
-    await _post("/api/control/telegram/send", {"tgid": tgid, "text": text})
+async def send_telegram(bus: Bus, tgid: int, text: str) -> None:
+    await _post(bus, "/api/control/telegram/send", {"tgid": tgid, "text": text})

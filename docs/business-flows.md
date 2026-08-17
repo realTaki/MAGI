@@ -430,8 +430,9 @@ bootstrap 创建 MAGIS 共享的 `MagisAdmin(admin)`，并在 `eva-000` 创建�
 ### Cookie 身份模型（两套共存）
 ```
 签名密钥来源（按优先级）:
-  1. 控制面启用时：`MAGI_CONTROL_SECRET` 环境变量 →
-     SHA256(secret + b"magi-control-session")
+  1. 控制面启用时：`bus.control_secrets_book.get_by_name(magis_name)` →
+     SHA256(row.secret_value + b"magi-control-session")
+     （在 `magi init` 时由 `_ensure_control_secret` 写入；运行时不再读 env）
   2. 否则：bus.settings_book.get("auth.signing_key") →
      SHA256(raw + b"magi-session-signing")
   3. 启动兜底：secrets.token_bytes(32)
@@ -467,8 +468,9 @@ _super_admins():
 - `_super_admins()` 的 ORM 读取失败必须回退到 legacy meta（极早期启动场景）。
 - 旧 cookie（pre-v4，payload 用 `magic_id` 或 `telegram_id`）在升级后失效，需重新登录。
 - 签名不防文件系统级攻击者（有 state_dir 访问权 = 已拥有 DB）。
-- `MAGI_CONTROL_SECRET` 存在时优先于 settings_book 来源（control plane
-  共用 secret 派生签名密钥）。
+- 在 control-plane 模式下，签名密钥统一从 `bus.control_secrets_book`
+  派生；`MAGI_RUNTIME_ID` 用于绑定目标 runtime。Runtime 通过同一个
+  MAGIS 表读取并验证 HMAC；无 env 注入。
 
 ---
 

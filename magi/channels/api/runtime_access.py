@@ -101,16 +101,16 @@ class TwoFactorVerifyRequest(TwoFactorSendRequest):
     code: str = Field(min_length=6, max_length=6)
 
 
-def _require_webui(request: Request) -> None:
+def _require_webui(request: Request, bus: Bus) -> None:
     # Operator id 0 is the deliberately unauthenticated-before-login WebUI
     # caller.  It is still HMAC authenticated and target-bound.
-    if verified_proxy_operator(request) is None:
+    if verified_proxy_operator(bus, request) is None:
         raise MagiHTTPException(401, "access.unauthorized", "Invalid WebUI control request")
 
 
 def _current_proxy_admin(request: Request, bus: Bus) -> int:
     """Return the shared admin identity from an authenticated runtime proxy call."""
-    scope = verified_proxy_scope(request)
+    scope = verified_proxy_scope(bus, request)
     if scope is None:
         raise MagiHTTPException(401, "auth.not_signed_in", "Not signed in")
     is_admin, _assigned, _two_factor, admin_id = scope
@@ -249,7 +249,7 @@ async def _send_code(bus: Bus, magi_id: int, magis_id: int, contact_id: int, rol
 
 @router.get("/access/login-accounts", response_model=LoginAccountsResponse)
 async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse:
-    _require_webui(request)
+    _require_webui(request, bus)
     magi_id, magis_id = _direct_magis(bus)
     accounts = sorted(
         _accounts(bus, magis_id),
@@ -266,7 +266,7 @@ async def login_accounts(request: Request, bus: BusDep) -> LoginAccountsResponse
 async def send_login_code(
     payload: LoginCodeRequest, request: Request, bus: BusDep
 ) -> LoginCodeResponse:
-    _require_webui(request)
+    _require_webui(request, bus)
     magi_id, magis_id = _direct_magis(bus)
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
     if (
@@ -330,7 +330,7 @@ async def local_direct_login(
     both the account role and the persisted operator auth state.
     """
 
-    _require_webui(request)
+    _require_webui(request, bus)
     _magi_id, magis_id = _direct_magis(bus)
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
     if account is None or not account.admin or not account.local_direct_allowed:
@@ -351,7 +351,7 @@ async def local_direct_login(
 async def verify_login_code(
     payload: VerifyLoginCodeRequest, request: Request, bus: BusDep
 ) -> VerifyLoginCodeResponse:
-    _require_webui(request)
+    _require_webui(request, bus)
     _magi_id, magis_id = _direct_magis(bus)
     account = _find_account(_accounts(bus, magis_id), payload.contact_id, payload.role)
     if account is None:
