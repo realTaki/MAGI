@@ -45,8 +45,7 @@ def record[RecordT: BaseRecord](cls: type[RecordT]) -> type[RecordT]:
 `dataclasses.replace()` 会丢弃 `init=False` 的 `id`、`created_at`、`updated_at`，而该方法
 必须保留这些数据库拥有字段再交给 `update(record)`。
 
-同步更新：`magi/bus/library/__init__.py` 的导出、`base.py` docstring、以及
-`BOOK_SCHEMA_UNIFICATION_REVIEW.md` 中“Pydantic 构造期校验”的表述。
+同步更新：`magi/bus/library/__init__.py` 的导出和 `base.py` docstring 中”构造期校验”的表述。
 
 ### 3.2 Record 声明的机械替换
 
