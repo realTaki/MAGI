@@ -28,6 +28,7 @@ from .bus import Bus
 from .firmware import (
     FIRMWARE_VERSION,
     Conversation,
+    FirmwareVersion,
     ManageConversationJob,
     ManageConversationJobBoard,
     ManageMessageJob,
@@ -48,6 +49,7 @@ __all__ = [
     "InvalidJobError",
     "InvalidJobStateError",
     "FIRMWARE_VERSION",
+    "FirmwareVersion",
     "BaseJob",
     "BaseJobBoard",
     "BaseJobResult",

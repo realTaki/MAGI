@@ -20,9 +20,11 @@ def test_publish_claim_complete(bus: Bus) -> None:
     assert claimed.status is JobStatus.CLAIMED
     assert claimed.payload["n"] == 1
 
-    done = bus.complete(claimed, result={"ok": True})
+    done = bus.complete(claimed)
     assert done.status is JobStatus.COMPLETED
-    assert done.result == {"ok": True}
+    assert done.result is not None
+    assert done.result.status is JobStatus.COMPLETED
+    assert done.result.job_id == done.id
     assert bus.get(PingJob, done.id).status is JobStatus.COMPLETED
 
 
@@ -33,6 +35,9 @@ def test_claim_then_fail(bus: Bus) -> None:
     failed = bus.fail(claimed, "nope")
     assert failed.status is JobStatus.FAILED
     assert failed.error == "nope"
+    assert failed.result is not None
+    assert failed.result.status is JobStatus.FAILED
+    assert failed.result.error == "nope"
 
 
 def test_claim_empty_board(bus: Bus) -> None:
@@ -49,9 +54,9 @@ def test_complete_twice_is_illegal(bus: Bus) -> None:
     bus.publish(PingJob())
     claimed = bus.claim(PingJob)
     assert claimed is not None
-    bus.complete(claimed, result=1)
+    bus.complete(claimed)
     with pytest.raises(InvalidJobStateError):
-        bus.complete(claimed, result=2)
+        bus.complete(claimed)
 
 
 def test_list_filters_status(bus: Bus) -> None:

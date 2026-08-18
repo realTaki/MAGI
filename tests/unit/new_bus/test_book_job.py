@@ -3,28 +3,29 @@ from __future__ import annotations
 import pytest
 
 from magi.new_bus import BookOp, Bus, InvalidJobError, JobStatus, ManageBookJob
-from magi.new_bus.base.book import BaseBook
+from magi.new_bus.base.BaseBook import BaseBook
 from magi.new_bus.testing import PingJob, book_job
 
 
 def test_create_read_update_delete(bus: Bus) -> None:
     created = bus.publish(book_job(BookOp.CREATE, name="alpha", kind="x"))
     assert created.status is JobStatus.COMPLETED
-    record = created.result["record"]
+    assert created.result is not None
+    record = created.result.record
     record_id = record["id"]
     assert record["name"] == "alpha"
 
     by_id = bus.publish(book_job(BookOp.READ, id=record_id))
     assert by_id.status is JobStatus.COMPLETED
-    assert by_id.result["record"]["name"] == "alpha"
+    assert by_id.result.record["name"] == "alpha"
 
     listed = bus.publish(book_job(BookOp.READ, filter={"kind": "x"}))
     assert listed.status is JobStatus.COMPLETED
-    assert [item["id"] for item in listed.result["records"]] == [record_id]
+    assert [item["id"] for item in listed.result.records] == [record_id]
 
     updated = bus.publish(book_job(BookOp.UPDATE, id=record_id, name="beta"))
     assert updated.status is JobStatus.COMPLETED
-    assert updated.result["record"]["name"] == "beta"
+    assert updated.result.record["name"] == "beta"
 
     deleted = bus.publish(book_job(BookOp.DELETE, id=record_id))
     assert deleted.status is JobStatus.COMPLETED
@@ -35,16 +36,16 @@ def test_create_read_update_delete(bus: Bus) -> None:
 
 def test_failed_mutation_leaves_book_valid(bus: Bus) -> None:
     created = bus.publish(book_job(BookOp.CREATE, name="keep"))
-    record_id = created.result["record"]["id"]
+    record_id = created.result.record["id"]
 
     failed = bus.publish(book_job(BookOp.UPDATE, name="no-id"))
     assert failed.status is JobStatus.FAILED
 
     still = bus.publish(book_job(BookOp.READ, id=record_id))
     assert still.status is JobStatus.COMPLETED
-    assert still.result["record"]["name"] == "keep"
+    assert still.result.record["name"] == "keep"
 
-    missing = bus.publish(book_job(BookOp.DELETE, id="nope"))
+    missing = bus.publish(book_job(BookOp.DELETE, id=999))
     assert missing.status is JobStatus.FAILED
     still = bus.publish(book_job(BookOp.READ, id=record_id))
     assert still.status is JobStatus.COMPLETED
@@ -76,11 +77,11 @@ def test_book_is_not_on_the_public_surface() -> None:
 def test_external_code_uses_jobs_not_books(bus: Bus) -> None:
     bus.publish(book_job(BookOp.CREATE, name="via-job"))
     listed = bus.publish(book_job(BookOp.READ))
-    assert listed.result["records"][0]["name"] == "via-job"
+    assert listed.result.records[0]["name"] == "via-job"
     assert not isinstance(listed, BaseBook)
 
 
 def test_work_jobs_do_not_touch_books(bus: Bus) -> None:
     bus.publish(PingJob(payload={"hello": True}))
     empty = bus.publish(book_job(BookOp.READ))
-    assert empty.result["records"] == []
+    assert empty.result.records == []

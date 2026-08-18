@@ -17,7 +17,7 @@ from ..base.backends._common import (
     next_id,
     sort_records,
 )
-from ..base.errors import BackendError
+from ..base.backends.errors import BackendError
 
 
 class InMemoryBackend(Backend):

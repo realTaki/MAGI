@@ -7,7 +7,7 @@ from .books.conversationBook import Conversation
 from .books.messageBook import Message
 from .jobs.manageConversationJob import ManageConversationJob, ManageConversationJobBoard
 from .jobs.manageMessageJob import ManageMessageJob, ManageMessageJobBoard
-from .version import FIRMWARE_VERSION
+from .version import FIRMWARE_VERSION, FirmwareVersion
 
 
 def attach(bus) -> None:
@@ -23,6 +23,7 @@ def attach(bus) -> None:
 
 __all__ = [
     "FIRMWARE_VERSION",
+    "FirmwareVersion",
     "Conversation",
     "ManageConversationJob",
     "ManageConversationJobBoard",
