@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from magi.new_bus import BookOp, Bus, InvalidJobError, JobStatus, ManageBookJob
-from magi.new_bus.base.book import Book
+from magi.new_bus.base.book import BaseBook
 from magi.new_bus.testing import PingJob, book_job
 
 
@@ -68,7 +68,7 @@ def test_book_jobs_remain_on_the_board(bus: Bus) -> None:
 def test_book_is_not_on_the_public_surface() -> None:
     import magi.new_bus as bus_pkg
 
-    assert "Book" not in bus_pkg.__all__
+    assert "BaseBook" not in bus_pkg.__all__
     assert not hasattr(bus_pkg.Bus, "book")
     assert not hasattr(bus_pkg.Bus, "get_book")
 
@@ -77,7 +77,7 @@ def test_external_code_uses_jobs_not_books(bus: Bus) -> None:
     bus.publish(book_job(BookOp.CREATE, name="via-job"))
     listed = bus.publish(book_job(BookOp.READ))
     assert listed.result["records"][0]["name"] == "via-job"
-    assert not isinstance(listed, Book)
+    assert not isinstance(listed, BaseBook)
 
 
 def test_work_jobs_do_not_touch_books(bus: Bus) -> None:

@@ -1,9 +1,10 @@
-"""Sample Job types for tests. Not Firmware."""
+"""Sample BaseJob types for tests. Not Firmware."""
 
-from ..base.job import BookOp, Job, ManageBookJob
+from ..base.job import BaseJob
+from ..base.manageBookJob import BookOp, ManageBookJob
 
 
-class PingJob(Job):
+class PingJob(BaseJob):
     pass
 
 

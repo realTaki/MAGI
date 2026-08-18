@@ -1,7 +1,7 @@
-"""Job and its JobBoard.
+"""BaseJob and its BaseJobBoard.
 
-A Job is something that needs to happen, is happening, or has happened.
-A JobBoard is the claimable container for one work Job type.
+A BaseJob is something that needs to happen, is happening, or has happened.
+A BaseJobBoard is the claimable container for one work BaseJob type.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Self
 from uuid import uuid4
 
-from ..errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 from .backends import Backend, RecordStore
+from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 
 if TYPE_CHECKING:
     from .slot import SlotSpace
@@ -37,8 +37,8 @@ def utcnow() -> datetime:
 
 
 @dataclass
-class Job:
-    """Generic work Job. Firmware later subclasses this.
+class BaseJob:
+    """Generic work BaseJob. Firmware later subclasses this.
 
     Slots attach to the concrete class, not to an instance.
     """
@@ -82,7 +82,7 @@ class Job:
         return job
 
 
-def persist_new_job(store: RecordStore, slots: SlotSpace, job: Job) -> Job:
+def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJob:
     """Run publish slots and persist a PENDING job. Does not execute anything."""
     from .slot import Slot
 
@@ -102,39 +102,39 @@ def persist_new_job(store: RecordStore, slots: SlotSpace, job: Job) -> Job:
     return job
 
 
-def load_job(store: RecordStore, job_type: type[Job], job_id: str) -> Job:
+def load_job(store: RecordStore, job_type: type[BaseJob], job_id: str) -> BaseJob:
     record = store.get(job_id)
     if record is None:
         raise JobNotFoundError(f"{job_type.type_name()} {job_id} not found")
     return job_type.from_record(record)
 
 
-class JobBoard:
-    """Running container for one work Job type."""
+class BaseJobBoard:
+    """Running container for one work BaseJob type."""
 
     def __init__(
         self,
-        job_type: type[Job],
+        job_type: type[BaseJob],
         backend: Backend,
         slots: SlotSpace,
         *,
         collection: str | None = None,
     ) -> None:
-        if job_type is Job:
-            raise InvalidJobError("mount a concrete Job subclass, not Job itself")
+        if job_type is BaseJob:
+            raise InvalidJobError("mount a concrete BaseJob subclass, not BaseJob itself")
         self.job_type = job_type
         self._backend = backend
         self._slots = slots
         self._store = backend.records(collection or f"jobs.{job_type.type_name()}")
 
-    def publish(self, job: Job) -> Job:
+    def publish(self, job: BaseJob) -> BaseJob:
         if type(job) is not self.job_type:
             raise InvalidJobError(
                 f"this board accepts {self.job_type.type_name()}, not {type(job).type_name()}"
             )
         return persist_new_job(self._store, self._slots, job)
 
-    def claim(self) -> Job | None:
+    def claim(self) -> BaseJob | None:
         from .slot import Slot
 
         for record in self._store.find(status=JobStatus.PENDING.value):
@@ -154,16 +154,16 @@ class JobBoard:
             return job
         return None
 
-    def complete(self, job_id: str, result: Any = None) -> Job:
+    def complete(self, job_id: str, result: Any = None) -> BaseJob:
         return self._finish(job_id, JobStatus.COMPLETED, result=result, error=None)
 
-    def fail(self, job_id: str, error: str) -> Job:
+    def fail(self, job_id: str, error: str) -> BaseJob:
         return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
 
-    def get(self, job_id: str) -> Job:
+    def get(self, job_id: str) -> BaseJob:
         return load_job(self._store, self.job_type, job_id)
 
-    def list(self, *, status: JobStatus | None = None) -> list[Job]:
+    def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
         status_value = status.value if status is not None else None
         return [
             self.job_type.from_record(record) for record in self._store.find(status=status_value)
@@ -176,7 +176,7 @@ class JobBoard:
         *,
         result: Any,
         error: str | None,
-    ) -> Job:
+    ) -> BaseJob:
         current = load_job(self._store, self.job_type, job_id)
         if current.status is not JobStatus.CLAIMED:
             raise InvalidJobStateError(

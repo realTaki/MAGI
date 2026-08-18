@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from ...base.backends import Backend
-from ...base.job import Job, JobBoard
+from ...base.errors import InvalidJobError
+from ...base.job import BaseJob, BaseJobBoard
 from ...base.slot import SlotSpace
-from ...errors import InvalidJobError
 
 
 @dataclass
-class ManageMessageJob(Job):
+class ManageMessageJob(BaseJob):
     """Work about a message. Lives on ManageMessageJobBoard."""
 
     message_id: str = ""
@@ -37,10 +37,10 @@ class ManageMessageJob(Job):
         return job
 
 
-class ManageMessageJobBoard(JobBoard):
+class ManageMessageJobBoard(BaseJobBoard):
     """The claimable board for ManageMessageJob."""
 
-    def __init__(self, job_type: type[Job], backend: Backend, slots: SlotSpace) -> None:
+    def __init__(self, job_type: type[BaseJob], backend: Backend, slots: SlotSpace) -> None:
         if job_type is not ManageMessageJob:
             raise InvalidJobError("ManageMessageJobBoard only accepts ManageMessageJob")
         super().__init__(ManageMessageJob, backend, slots)

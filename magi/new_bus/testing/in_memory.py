@@ -16,7 +16,7 @@ from ..base.backends._common import (
     require_id,
     sort_records,
 )
-from ..errors import BackendError
+from ..base.errors import BackendError
 
 
 class InMemoryBackend(Backend):

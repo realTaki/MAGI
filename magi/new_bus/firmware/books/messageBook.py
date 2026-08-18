@@ -1,6 +1,6 @@
 """MessageBook — current messages.
 
-The record type :class:`Message` is the field list for this Book.
+The record type :class:`Message` is the field list for this BaseBook.
 """
 
 from __future__ import annotations
@@ -9,14 +9,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from ...base.book import Book, BookRecord
-from ...errors import InvalidJobError
+from ...base.book import BaseBook, BaseBookRecord
+from ...base.errors import InvalidJobError
 
 MESSAGE_ROLES = frozenset({"user", "assistant", "system", "tool"})
 
 
 @dataclass(kw_only=True)
-class Message(BookRecord):
+class Message(BaseBookRecord):
     """One row in MessageBook.
 
     role: ``user`` | ``assistant`` | ``system`` | ``tool``
@@ -31,7 +31,7 @@ class Message(BookRecord):
     BOOK: ClassVar[str] = "messages"
 
 
-class MessageBook(Book):
+class MessageBook(BaseBook):
     NAME = Message.BOOK
     record_cls = Message
 

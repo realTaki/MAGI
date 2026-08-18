@@ -1,4 +1,4 @@
-"""Manage a Book. BUS executes this on publish; workers never claim it."""
+"""Manage a BaseBook. BUS executes this on publish; workers never claim it."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Self
 
-from ..errors import BusError, InvalidJobError
 from .backends import Backend
-from .book import Book
-from .job import Job, JobBoard, JobStatus
+from .book import BaseBook
+from .errors import BusError, InvalidJobError
+from .job import BaseJob, BaseJobBoard, JobStatus
 from .slot import SlotSpace
 
 
@@ -21,7 +21,7 @@ class BookOp(StrEnum):
 
 
 @dataclass
-class ManageBookJob(Job):
+class ManageBookJob(BaseJob):
     """``op`` selects create / read / update / delete on ``book``."""
 
     book: str = ""
@@ -41,12 +41,12 @@ class ManageBookJob(Job):
         return job
 
 
-class ManageBookJobBoard(JobBoard):
-    """Per-Book board. publish runs the op; claim is not used."""
+class ManageBookJobBoard(BaseJobBoard):
+    """Per-BaseBook board. publish runs the op; claim is not used."""
 
     def __init__(
         self,
-        book: Book,
+        book: BaseBook,
         backend: Backend,
         slots: SlotSpace,
         job_type: type[ManageBookJob] = ManageBookJob,
@@ -56,7 +56,7 @@ class ManageBookJobBoard(JobBoard):
         super().__init__(job_type, backend, slots, collection=f"jobs.book.{book.name}")
         self.book = book
 
-    def publish(self, job: Job) -> ManageBookJob:
+    def publish(self, job: BaseJob) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):
             raise InvalidJobError("book board only accepts ManageBookJob")
         if not job.book:
@@ -78,14 +78,14 @@ class ManageBookJobBoard(JobBoard):
             self._store.replace(job.id, job.to_record())
         return job
 
-    def claim(self) -> Job | None:
+    def claim(self) -> BaseJob | None:
         raise InvalidJobError("ManageBookJob is executed by BUS and cannot be claimed")
 
-    def complete(self, job_id: str, result: Any = None) -> Job:
+    def complete(self, job_id: str, result: Any = None) -> BaseJob:
         del job_id, result
         raise InvalidJobError("ManageBookJob completes itself")
 
-    def fail(self, job_id: str, error: str) -> Job:
+    def fail(self, job_id: str, error: str) -> BaseJob:
         del job_id, error
         raise InvalidJobError("ManageBookJob fails itself")
 

@@ -1,14 +1,14 @@
-"""Slot is a Job-type lifecycle feature, not a work-delivery mechanism."""
+"""Slot is a BaseJob-type lifecycle feature, not a work-delivery mechanism."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from enum import StrEnum
 
-from ..errors import SlotNotFoundError, SlotOccupiedError
-from .job import Job
+from .errors import SlotNotFoundError, SlotOccupiedError
+from .job import BaseJob
 
-Handler = Callable[[Job], None]
+Handler = Callable[[BaseJob], None]
 
 
 class Slot(StrEnum):
@@ -33,17 +33,17 @@ MULTI_SLOTS = frozenset({Slot.PUBLISH})
 
 
 class SlotSpace:
-    """Per-Bus bindings keyed by Job type.
+    """Per-Bus bindings keyed by BaseJob type.
 
-    Workers still pull :meth:`JobBoard.claim`. Bindings only intercept
+    Workers still pull :meth:`BaseJobBoard.claim`. Bindings only intercept
     or observe those lifecycle points.
     """
 
     def __init__(self) -> None:
-        self._single: dict[tuple[type[Job], Slot], Handler] = {}
-        self._multi: dict[tuple[type[Job], Slot], list[Handler]] = {}
+        self._single: dict[tuple[type[BaseJob], Slot], Handler] = {}
+        self._multi: dict[tuple[type[BaseJob], Slot], list[Handler]] = {}
 
-    def attach(self, job_type: type[Job], slot: Slot, handler: Handler) -> None:
+    def attach(self, job_type: type[BaseJob], slot: Slot, handler: Handler) -> None:
         slot = _require_slot(slot)
         key = (job_type, slot)
         if slot in MULTI_SLOTS:
@@ -56,7 +56,7 @@ class SlotSpace:
             raise SlotOccupiedError(f"{job_type.type_name()}.{slot} is occupied")
         self._single[key] = handler
 
-    def detach(self, job_type: type[Job], slot: Slot, handler: Handler) -> None:
+    def detach(self, job_type: type[BaseJob], slot: Slot, handler: Handler) -> None:
         slot = _require_slot(slot)
         key = (job_type, slot)
         if slot in MULTI_SLOTS:
@@ -72,7 +72,7 @@ class SlotSpace:
             raise SlotNotFoundError(f"{job_type.type_name()}.{slot} is not bound to this handler")
         del self._single[key]
 
-    def fire(self, job_type: type[Job], slot: Slot, job: Job) -> None:
+    def fire(self, job_type: type[BaseJob], slot: Slot, job: BaseJob) -> None:
         slot = _require_slot(slot)
         key = (job_type, slot)
         if slot in MULTI_SLOTS:

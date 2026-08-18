@@ -1,17 +1,14 @@
 """MAGI-BUS vNext — software backplane.
 
-Constructing :class:`Bus` starts Firmware with it. Book fields live on the
-record types (see :class:`Message`). External code talks to Bus, never to Book.
+Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
+record types (see :class:`Message`). External code talks to Bus, never to BaseBook.
 """
 
 from .base.backends.file import FileBackend
 from .base.backends.postgres import PostgresBackend
 from .base.backends.sqlite import SQLiteBackend
-from .base.book import BookRecord
-from .base.job import BookOp, Job, JobStatus, ManageBookJob
-from .base.slot import Slot
-from .bus import Bus
-from .errors import (
+from .base.book import BaseBookRecord
+from .base.errors import (
     BackendError,
     BookNotFoundError,
     BusError,
@@ -24,6 +21,10 @@ from .errors import (
     SlotOccupiedError,
     SlotRejected,
 )
+from .base.job import BaseJob, BaseJobBoard, JobStatus
+from .base.manageBookJob import BookOp, ManageBookJob
+from .base.slot import Slot
+from .bus import Bus
 from .firmware import FIRMWARE_VERSION, ManageMessageJob, ManageMessageJobBoard, Message
 
 __all__ = [
@@ -31,7 +32,7 @@ __all__ = [
     "ManageBookJob",
     "BookNotFoundError",
     "BookOp",
-    "BookRecord",
+    "BaseBookRecord",
     "Bus",
     "BusError",
     "FileBackend",
@@ -39,7 +40,8 @@ __all__ = [
     "InvalidJobError",
     "InvalidJobStateError",
     "FIRMWARE_VERSION",
-    "Job",
+    "BaseJob",
+    "BaseJobBoard",
     "JobAlreadyClaimedError",
     "JobNotFoundError",
     "JobStatus",

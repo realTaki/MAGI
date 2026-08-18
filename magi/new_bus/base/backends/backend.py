@@ -1,4 +1,4 @@
-"""Backend: where Book and Job records actually live."""
+"""Backend: where BaseBook and Job records actually live."""
 
 from __future__ import annotations
 

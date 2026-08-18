@@ -10,7 +10,7 @@ class BackendError(BusError):
 
 
 class BookNotFoundError(BusError):
-    """A Book record referenced by a Job does not exist."""
+    """A BaseBook record referenced by a Job does not exist."""
 
 
 class JobNotFoundError(BusError):

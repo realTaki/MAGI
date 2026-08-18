@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from ...errors import BackendError
+from ..errors import BackendError
 from ._common import check_collection, copy_record, matches, require_id, sort_records
 from .backend import Backend, RecordStore
 

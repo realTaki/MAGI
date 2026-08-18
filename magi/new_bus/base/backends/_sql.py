@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
 
-from ...errors import BackendError
+from ..errors import BackendError
 from ._common import check_collection, copy_record, matches, require_id, sort_records
 from .backend import Backend, RecordStore
 

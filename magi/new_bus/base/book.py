@@ -1,4 +1,4 @@
-"""Book is BUS-internal current state. External modules never hold this object."""
+"""BaseBook is BUS-internal current state. External modules never hold this object."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 from uuid import uuid4
 
-from ..errors import BookNotFoundError, InvalidJobError
 from .backends import Backend, RecordStore
+from .errors import BookNotFoundError, InvalidJobError
 
 
 def utcnow() -> datetime:
@@ -17,18 +17,18 @@ def utcnow() -> datetime:
 
 
 @dataclass(kw_only=True)
-class BookRecord:
-    """Fields every Book row has. BUS assigns these."""
+class BaseBookRecord:
+    """Fields every BaseBook row has. BUS assigns these."""
 
     id: str = ""
     created_at: str | None = None
     updated_at: str | None = None
 
 
-OWNED_FIELDS = frozenset(item.name for item in fields(BookRecord))
+OWNED_FIELDS = frozenset(item.name for item in fields(BaseBookRecord))
 
 
-class Book:
+class BaseBook:
     """Internal record collection. Only ManageBookJobBoard may call these methods.
 
     Firmware Books set ``record_cls`` to the dataclass that lists their fields.

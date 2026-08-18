@@ -89,7 +89,7 @@ def test_slots_are_per_job_type(bus: Bus) -> None:
 
 
 def test_book_job_slots_do_not_deliver_the_work(backend: Backend) -> None:
-    """Slot handlers observe Book jobs; BUS still executes CRUD itself."""
+    """Slot handlers observe BaseBook jobs; BUS still executes CRUD itself."""
     observed: list[str] = []
     with Bus(backend) as bus:
         bus.mount_book("items")
