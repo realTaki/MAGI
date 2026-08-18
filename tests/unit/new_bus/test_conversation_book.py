@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import UTC, datetime
 
 from magi.new_bus import (
     BaseRecord,
@@ -15,8 +16,18 @@ from magi.new_bus import (
 from magi.new_bus.testing import InMemoryBackend
 
 
-def write_conversation(bus: Bus, op: BookOp, **payload) -> ManageBookJob:
-    job = bus.publish(ManageBookJob(book=Conversation.BOOK, op=op, payload=payload))
+def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
+    record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
+    filt = values.pop("filter", None)
+    job = bus.publish(
+        ManageBookJob(
+            book=Conversation.BOOK,
+            op=op,
+            record_id=int(record_id),
+            filter=filt,
+            values=values,
+        )
+    )
     assert isinstance(job, ManageBookJob)
     return job
 
@@ -69,13 +80,13 @@ def test_create_read_filter_conversation() -> None:
 
 def test_last_compaction_at_round_trips() -> None:
     bus = Bus(InMemoryBackend())
-    stamped = "2026-08-18T12:00:00+00:00"
+    stamped = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
     assert created.status is JobStatus.COMPLETED
-    assert bus.result(created).record["last_compaction_at"] == stamped
+    assert bus.result(created).record["last_compaction_at"] == stamped.isoformat()
 
     loaded = write_conversation(bus, BookOp.READ, id=bus.result(created).record["id"])
-    assert bus.result(loaded).record["last_compaction_at"] == stamped
+    assert bus.result(loaded).record["last_compaction_at"] == stamped.isoformat()
 
 
 def test_messages_can_be_listed_by_conversation() -> None:
@@ -89,14 +100,14 @@ def test_messages_can_be_listed_by_conversation() -> None:
         ManageBookJob(
             book=Message.BOOK,
             op=BookOp.CREATE,
-            payload={"role": "user", "content": "hi", "conversation_id": conversation_id},
+            values={"role": "user", "content": "hi", "conversation_id": conversation_id},
         )
     )
     listed = bus.publish(
         ManageBookJob(
             book=Message.BOOK,
             op=BookOp.READ,
-            payload={"filter": {"conversation_id": conversation_id}},
+            filter={"conversation_id": conversation_id},
         )
     )
     records = bus.result(listed).records

@@ -62,7 +62,7 @@ def test_book_jobs_remain_on_the_board(bus: Bus) -> None:
     history = bus.list(ManageBookJob, book="items")
     assert [job.id for job in history] == [first.id, history[1].id]
     assert [job.status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
-    assert bus.get(ManageBookJob, first.id, book="items").payload["name"] == "a"
+    assert bus.get(ManageBookJob, first.id, book="items").values["name"] == "a"
 
 
 def test_book_is_not_on_the_public_surface() -> None:
@@ -81,6 +81,6 @@ def test_external_code_uses_jobs_not_books(bus: Bus) -> None:
 
 
 def test_work_jobs_do_not_touch_books(bus: Bus) -> None:
-    bus.publish(PingJob(payload={"hello": True}))
+    bus.publish(PingJob())
     empty = bus.publish(book_job(BookOp.READ))
     assert bus.result(empty).records == []

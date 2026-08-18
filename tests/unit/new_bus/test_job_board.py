@@ -10,7 +10,7 @@ from magi.new_bus.testing import PingJob
 
 
 def test_publish_claim_complete(bus: Bus) -> None:
-    published = bus.publish(PingJob(payload={"n": 1}, publisher="worker-a"))
+    published = bus.publish(PingJob(n=1, publisher="worker-a"))
     assert published.id
     assert published.status is JobStatus.PENDING
 
@@ -18,7 +18,7 @@ def test_publish_claim_complete(bus: Bus) -> None:
     assert claimed is not None
     assert claimed.id == published.id
     assert claimed.status is JobStatus.CLAIMED
-    assert claimed.payload["n"] == 1
+    assert claimed.n == 1
 
     done = bus.complete(claimed)
     assert done.status is JobStatus.COMPLETED
@@ -77,14 +77,14 @@ def test_complete_twice_is_illegal(bus: Bus) -> None:
 
 
 def test_list_filters_status(bus: Bus) -> None:
-    first = bus.publish(PingJob(payload={"i": 1}))
-    bus.publish(PingJob(payload={"i": 2}))
+    first = bus.publish(PingJob(n=1))
+    bus.publish(PingJob(n=2))
     claimed = bus.claim(PingJob)
     assert claimed is not None
     bus.complete(claimed)
     pending = bus.list(PingJob, status=JobStatus.PENDING)
     completed = bus.list(PingJob, status=JobStatus.COMPLETED)
-    assert [job.payload["i"] for job in pending] == [2]
+    assert [job.n for job in pending] == [2]
     assert [job.id for job in completed] == [first.id]
 
 
@@ -92,7 +92,7 @@ def test_claim_is_exclusive(db_backend: Backend) -> None:
     with Bus(db_backend) as bus:
         bus.mount_job(PingJob)
         for index in range(20):
-            bus.publish(PingJob(payload={"i": index}))
+            bus.publish(PingJob(n=index))
 
         claimed_ids: list[str] = []
         lock = threading.Lock()

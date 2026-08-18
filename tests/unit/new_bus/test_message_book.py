@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -29,8 +30,18 @@ def bus() -> Bus:
     return Bus(InMemoryBackend())
 
 
-def write_message(bus: Bus, op: BookOp, **payload) -> ManageBookJob:
-    job = bus.publish(ManageBookJob(book=Message.BOOK, op=op, payload=payload))
+def write_message(bus: Bus, op: BookOp, **values) -> ManageBookJob:
+    record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
+    filt = values.pop("filter", None)
+    job = bus.publish(
+        ManageBookJob(
+            book=Message.BOOK,
+            op=op,
+            record_id=int(record_id),
+            filter=filt,
+            values=values,
+        )
+    )
     assert isinstance(job, ManageBookJob)
     return job
 
@@ -75,8 +86,9 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     assert record["content"] == "hello"
     assert record["conversation_id"] == 1
     assert record["archived"] is False
-    assert isinstance(record["timestamp"], str)
-    assert record["timestamp"]
+    datetime.fromisoformat(record["timestamp"])
+    datetime.fromisoformat(record["created_at"])
+    datetime.fromisoformat(record["updated_at"])
 
     by_id = write_message(bus, BookOp.READ, id=record["id"])
     assert by_id.status is JobStatus.COMPLETED
@@ -97,7 +109,7 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
 
 
 def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
-    stamped = "2026-08-18T09:30:00+00:00"
+    stamped = datetime(2026, 8, 18, 9, 30, tzinfo=UTC)
     created = create(
         bus,
         role="assistant",
@@ -108,7 +120,7 @@ def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
     )
     assert created.status is JobStatus.COMPLETED
     record = bus.result(created).record
-    assert record["timestamp"] == stamped
+    assert record["timestamp"] == stamped.isoformat()
     assert record["archived"] is True
 
     listed = write_message(bus, BookOp.READ, filter={"archived": True})
