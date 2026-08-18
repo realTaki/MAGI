@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ...errors import BackendError
-from ..backend import Backend, RecordStore
 from ._common import check_collection, copy_record, matches, require_id, sort_records
+from .backend import Backend, RecordStore
 
 
 class FileBackend(Backend):

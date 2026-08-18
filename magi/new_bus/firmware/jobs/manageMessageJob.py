@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Self
 
-from ...base.backend import Backend
+from ...base.backends import Backend
 from ...base.job import Job
 from ...base.job_board import JobBoard
 from ...base.slot import SlotSpace

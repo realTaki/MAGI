@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from magi.new_bus import FileBackend, SQLiteBackend
-from magi.new_bus.base.backend import Backend
+from magi.new_bus.base.backends import Backend
 from magi.new_bus.errors import BackendError
 from magi.new_bus.testing import InMemoryBackend
 

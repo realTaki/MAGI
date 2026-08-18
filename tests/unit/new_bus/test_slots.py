@@ -11,7 +11,7 @@ from magi.new_bus import (
     SlotOccupiedError,
     SlotRejected,
 )
-from magi.new_bus.base.backend import Backend
+from magi.new_bus.base.backends import Backend
 from magi.new_bus.testing import PingJob, book_job
 
 

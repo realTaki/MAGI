@@ -9,7 +9,7 @@ from typing import Any, ClassVar
 from uuid import uuid4
 
 from ..errors import BookNotFoundError, InvalidJobError
-from .backend import Backend, RecordStore
+from .backends import Backend, RecordStore
 
 
 def utcnow() -> datetime:

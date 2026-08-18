@@ -1,7 +1,6 @@
 """BUS Base primitives. No MAGI domain concepts live here."""
 
-from .backend import Backend, RecordStore
-from .backends import FileBackend, PostgresBackend, SQLiteBackend
+from .backends import Backend, FileBackend, PostgresBackend, RecordStore, SQLiteBackend
 from .book import Book, BookRecord
 from .job import BookOp, Job, JobStatus, ManageBookJob
 from .job_board import JobBoard

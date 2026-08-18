@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base.backend import Backend
+from .base.backends import Backend
 from .base.book import Book
 from .base.job import Job, JobStatus, ManageBookJob
 from .base.job_board import JobBoard

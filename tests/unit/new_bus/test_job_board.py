@@ -5,7 +5,7 @@ import threading
 import pytest
 
 from magi.new_bus import Bus, InvalidJobError, InvalidJobStateError, JobStatus
-from magi.new_bus.base.backend import Backend
+from magi.new_bus.base.backends import Backend
 from magi.new_bus.testing import PingJob
 
 

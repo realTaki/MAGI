@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import pytest
 
 from magi.new_bus import Bus, FileBackend, SQLiteBackend
-from magi.new_bus.base.backend import Backend
+from magi.new_bus.base.backends import Backend
 from magi.new_bus.testing import InMemoryBackend, PingJob
 
 

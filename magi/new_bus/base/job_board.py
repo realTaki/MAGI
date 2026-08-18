@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
-from .backend import Backend, RecordStore
+from .backends import Backend, RecordStore
 from .job import Job, JobStatus
 from .slot import Slot, SlotSpace
 

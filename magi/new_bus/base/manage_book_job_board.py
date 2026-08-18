@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..errors import BusError, InvalidJobError
-from .backend import Backend
+from .backends import Backend
 from .book import Book
 from .job import BookOp, JobStatus, ManageBookJob
 from .job_board import load_job, persist_new_job

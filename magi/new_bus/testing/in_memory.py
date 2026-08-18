@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
-from ..base.backend import Backend, RecordStore
+from ..base.backends import Backend, RecordStore
 from ..base.backends._common import (
     check_collection,
     copy_record,

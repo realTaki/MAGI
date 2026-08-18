@@ -9,8 +9,8 @@ from contextlib import contextmanager
 from typing import Any, Protocol
 
 from ...errors import BackendError
-from ..backend import Backend, RecordStore
 from ._common import check_collection, copy_record, matches, require_id, sort_records
+from .backend import Backend, RecordStore
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
