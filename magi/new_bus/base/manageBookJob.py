@@ -57,19 +57,15 @@ class ManageBookJobResult(BaseJobResult):
 class ManageBookJobBoard(BaseJobBoard):
     """Per-BaseBook board. publish runs the op; claim is not used."""
 
+    job_cls: ClassVar[type[BaseJob]] = ManageBookJob
     result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
 
-    def __init__(
-        self,
-        book: BaseBook,
-        backend: Backend,
-        slots: SlotSpace,
-        job_type: type[ManageBookJob] = ManageBookJob,
-    ) -> None:
-        if not issubclass(job_type, ManageBookJob):
-            raise InvalidJobError("book board job_type must be a ManageBookJob")
-        super().__init__(job_type, backend, slots, collection=f"jobs.book.{book.name}")
+    def __init__(self, book: BaseBook, backend: Backend, slots: SlotSpace) -> None:
         self.book = book
+        super().__init__(backend, slots)
+
+    def _collection(self) -> str:
+        return f"jobs.book.{self.book.name}"
 
     def publish(self, job: BaseJob) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):

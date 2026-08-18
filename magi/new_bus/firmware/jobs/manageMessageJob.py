@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...base.backends import Backend
 from ...base.BaseJob import BaseJob, BaseJobBoard
-from ...base.errors import InvalidJobError
-from ...base.slot import SlotSpace
 
 
 @dataclass
@@ -25,7 +22,4 @@ class ManageMessageJob(BaseJob):
 class ManageMessageJobBoard(BaseJobBoard):
     """The claimable board for ManageMessageJob."""
 
-    def __init__(self, job_type: type[BaseJob], backend: Backend, slots: SlotSpace) -> None:
-        if job_type is not ManageMessageJob:
-            raise InvalidJobError("ManageMessageJobBoard only accepts ManageMessageJob")
-        super().__init__(ManageMessageJob, backend, slots)
+    job_cls = ManageMessageJob
