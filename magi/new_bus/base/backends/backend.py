@@ -79,3 +79,7 @@ class Backend(ABC):
     @abstractmethod
     def close(self) -> None:
         """Release backend resources."""
+
+
+class DatabaseBackend(Backend):
+    """SQL or in-memory record table. Required by BaseBook. Not FileBackend."""

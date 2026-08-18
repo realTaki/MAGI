@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .base.backends import Backend
+from .base.backends.backend import DatabaseBackend
 from .base.backends.file import FileBackend
 from .base.BaseBook import BaseBook
 from .base.BaseFileBook import BaseFileBook
@@ -19,10 +20,10 @@ class Bus:
     """Logical backplane: publish / claim / attach / detach plus job queries."""
 
     def __init__(self, backend: Backend, *, files: FileBackend | None = None) -> None:
+        if not isinstance(backend, DatabaseBackend):
+            raise InvalidJobError("Bus requires a database backend")
         self._backend = backend
         self._backend.ensure()
-        if files is None and isinstance(backend, FileBackend):
-            files = backend
         self._files = files
         if self._files is not None:
             self._files.ensure()

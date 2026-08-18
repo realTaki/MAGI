@@ -8,7 +8,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
-from ..base.backends import Backend, RecordStore
+from ..base.backends import DatabaseBackend, RecordStore
 from ..base.backends._common import (
     check_collection,
     coerce_id,
@@ -20,7 +20,7 @@ from ..base.backends._common import (
 from ..base.backends.errors import BackendError
 
 
-class InMemoryBackend(Backend):
+class InMemoryBackend(DatabaseBackend):
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._data: dict[str, dict[str, dict[str, Any]]] = {}

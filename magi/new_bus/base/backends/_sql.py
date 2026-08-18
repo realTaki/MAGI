@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from typing import Any, Protocol
 
 from ._common import check_collection, coerce_id, copy_record, matches, sort_records
-from .backend import Backend, RecordStore
+from .backend import DatabaseBackend, RecordStore
 from .errors import BackendError
 
 _SCHEMA = """
@@ -34,7 +34,7 @@ class SqlDriver(Protocol):
     def connect(self) -> Any: ...
 
 
-class SqlBackend(Backend):
+class SqlBackend(DatabaseBackend):
     def __init__(self, driver: SqlDriver) -> None:
         self._driver = driver
         self._lock = threading.RLock()

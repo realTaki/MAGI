@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 
-from .backends import Backend, RecordStore
+from .backends.backend import DatabaseBackend, RecordStore
 from .errors import BookNotFoundError, InvalidJobError
 
 
@@ -51,9 +51,11 @@ class BaseBook:
 
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
 
-    def __init__(self, name: str, backend: Backend) -> None:
+    def __init__(self, name: str, backend) -> None:
         if not name:
             raise InvalidJobError("book name is required")
+        if not isinstance(backend, DatabaseBackend):
+            raise InvalidJobError("BaseBook requires a database backend")
         self.name = name
         self._store: RecordStore = backend.records(f"books.{name}")
 
