@@ -20,12 +20,12 @@ class Message(BaseRecord):
 
     role: ``user`` | ``assistant`` | ``system`` | ``tool``
     content: non-empty text
-    session_id: optional grouping key
+    conversation_id: optional grouping key
     """
 
     role: str
     content: str
-    session_id: str | None = None
+    conversation_id: str | None = None
 
     BOOK: ClassVar[str] = "messages"
 
@@ -48,5 +48,5 @@ class MessageBook(BaseBook):
             )
         if not record.content:
             raise InvalidJobError("message.content must be a non-empty string")
-        if record.session_id is not None and not isinstance(record.session_id, str):
-            raise InvalidJobError("message.session_id must be a string")
+        if record.conversation_id is not None and not isinstance(record.conversation_id, str):
+            raise InvalidJobError("message.conversation_id must be a string")

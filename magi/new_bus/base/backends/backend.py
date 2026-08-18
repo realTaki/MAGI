@@ -61,6 +61,14 @@ class Backend(ABC):
     """Unified persistence handle. Base never talks to File/SQLite/Postgres directly."""
 
     @abstractmethod
+    def ensure(self) -> None:
+        """Prepare storage for this backend.
+
+        File creates the root directory. SQLite and PostgreSQL create the
+        shared ``records`` table. Safe to call more than once.
+        """
+
+    @abstractmethod
     def records(self, name: str) -> RecordStore:
         """Return the named collection, creating it if needed."""
 

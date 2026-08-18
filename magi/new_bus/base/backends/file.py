@@ -18,10 +18,13 @@ from .backend import Backend, RecordStore
 class FileBackend(Backend):
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._tx_depth = 0
         self._pending: dict[str, dict[int, dict[str, Any] | None]] = {}
+        self.ensure()
+
+    def ensure(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
 
     def records(self, name: str) -> RecordStore:
         return _FileStore(self, check_collection(name))

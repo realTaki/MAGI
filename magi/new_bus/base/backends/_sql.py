@@ -41,11 +41,17 @@ class SqlBackend(Backend):
         self._tx_depth = 0
         try:
             self._conn = driver.connect()
+        except Exception as exc:
+            raise BackendError("failed to open SQL backend") from exc
+        self.ensure()
+
+    def ensure(self) -> None:
+        try:
             self._execute(_SCHEMA)
             self._execute(_INDEX)
             self._conn.commit()
         except Exception as exc:
-            raise BackendError("failed to open SQL backend") from exc
+            raise BackendError("failed to prepare SQL backend") from exc
 
     def records(self, name: str) -> RecordStore:
         return _SqlStore(self, check_collection(name))
