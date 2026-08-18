@@ -22,6 +22,28 @@ class Bus:
         self._books: dict[str, Book] = {}
         self._book_boards: dict[str, ManageBookJobBoard] = {}
         self._job_boards: dict[type[Job], JobBoard] = {}
+        from .firmware import attach
+
+        attach(self)
+
+    @property
+    def books(self) -> tuple[str, ...]:
+        return tuple(self._books)
+
+    @property
+    def jobs(self) -> tuple[type[Job], ...]:
+        return tuple(self._job_boards)
+
+    def record_type(self, book: str) -> type:
+        """Return the record dataclass that lists a Book's fields."""
+        try:
+            item = self._books[book]
+        except KeyError:
+            raise InvalidJobError(f"book {book!r} is not provided by this BUS") from None
+        record_cls = type(item).record_cls
+        if record_cls is None:
+            raise InvalidJobError(f"book {book!r} has no record type")
+        return record_cls
 
     def mount_book(
         self,
@@ -113,7 +135,7 @@ class Bus:
         try:
             return self._book_boards[name]
         except KeyError:
-            raise InvalidJobError(f"book {name!r} is not mounted") from None
+            raise InvalidJobError(f"book {name!r} is not provided by this BUS") from None
 
     def _job_board(self, job_type: type[Job]) -> JobBoard:
         try:

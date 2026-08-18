@@ -1,15 +1,15 @@
-"""Firmware: concrete Books and Jobs on top of Base.
+"""Firmware shipped with BUS: concrete Books and Jobs.
 
-External code depends on this protocol, not on other modules.
+Opening :class:`~magi.new_bus.bus.Bus` loads this set. Callers do not mount it.
 """
 
-from ..bus import Bus
+from .books.messageBook import Message
 from .jobs.manageMessageJob import ManageMessageJob, ManageMessageJobBoard
 from .version import FIRMWARE_VERSION
 
 
-def install(bus: Bus) -> None:
-    """Mount this Firmware's Books and claimable JobBoards."""
+def attach(bus) -> None:
+    """Bind this Firmware onto a Bus. Called by Bus itself at start."""
     from .books.messageBook import MessageBook
 
     bus.mount_book(MessageBook.NAME, book_cls=MessageBook)
@@ -20,5 +20,5 @@ __all__ = [
     "FIRMWARE_VERSION",
     "ManageMessageJob",
     "ManageMessageJobBoard",
-    "install",
+    "Message",
 ]

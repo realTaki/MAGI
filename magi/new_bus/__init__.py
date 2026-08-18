@@ -1,7 +1,7 @@
 """MAGI-BUS vNext — software backplane.
 
-Base defines mechanisms. Firmware (later) will define concrete Books and Jobs.
-External code talks to :class:`Bus`, never to Book or Backend.
+Constructing :class:`Bus` starts Firmware with it. Book fields live on the
+record types (see :class:`Message`). External code talks to Bus, never to Book.
 """
 
 from .base.backends.file import FileBackend
@@ -23,6 +23,7 @@ from .errors import (
     SlotOccupiedError,
     SlotRejected,
 )
+from .firmware import FIRMWARE_VERSION, ManageMessageJob, ManageMessageJobBoard, Message
 
 __all__ = [
     "BackendError",
@@ -35,10 +36,14 @@ __all__ = [
     "FirmwareCompatibilityError",
     "InvalidJobError",
     "InvalidJobStateError",
+    "FIRMWARE_VERSION",
     "Job",
     "JobAlreadyClaimedError",
     "JobNotFoundError",
     "JobStatus",
+    "ManageMessageJob",
+    "ManageMessageJobBoard",
+    "Message",
     "PostgresBackend",
     "SQLiteBackend",
     "Slot",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from ..errors import BookNotFoundError, InvalidJobError
@@ -16,7 +16,12 @@ def utcnow() -> datetime:
 
 
 class Book:
-    """Internal record collection. Only ManageBookJobBoard may call these methods."""
+    """Internal record collection. Only ManageBookJobBoard may call these methods.
+
+    Firmware Books set ``record_cls`` to the dataclass that lists their fields.
+    """
+
+    record_cls: ClassVar[type | None] = None
 
     def __init__(self, name: str, backend: Backend) -> None:
         if not name:
