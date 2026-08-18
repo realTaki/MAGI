@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from ...base.backends import Backend
-from ...base.job import Job
-from ...base.job_board import JobBoard
+from ...base.job import Job, JobBoard
 from ...base.slot import SlotSpace
 from ...errors import InvalidJobError
 

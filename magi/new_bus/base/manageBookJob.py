@@ -9,8 +9,7 @@ from typing import Any, Self
 from ..errors import BusError, InvalidJobError
 from .backends import Backend
 from .book import Book
-from .job import Job, JobStatus
-from .job_board import JobBoard
+from .job import Job, JobBoard, JobStatus
 from .slot import SlotSpace
 
 
