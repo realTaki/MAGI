@@ -1,21 +1,50 @@
-"""Per-Book JobBoard. One Job type, ``op`` selects create/read/update/delete.
-
-BUS executes the op on publish. These jobs never enter the claim path.
-"""
+"""Manage a Book. BUS executes this on publish; workers never claim it."""
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any, Self
 
 from ..errors import BusError, InvalidJobError
 from .backends import Backend
 from .book import Book
-from .job import BookOp, JobStatus, ManageBookJob
-from .job_board import load_job, persist_new_job
+from .job import Job, JobStatus
+from .job_board import JobBoard
 from .slot import SlotSpace
 
 
-class ManageBookJobBoard:
+class BookOp(StrEnum):
+    CREATE = "create"
+    READ = "read"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
+@dataclass
+class ManageBookJob(Job):
+    """``op`` selects create / read / update / delete on ``book``."""
+
+    book: str = ""
+    op: BookOp = BookOp.READ
+
+    def to_record(self) -> dict[str, Any]:
+        record = super().to_record()
+        record["book"] = self.book
+        record["op"] = self.op.value
+        return record
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> Self:
+        job = super().from_record(record)
+        job.book = str(record.get("book") or "")
+        job.op = BookOp(record.get("op") or BookOp.READ)
+        return job
+
+
+class ManageBookJobBoard(JobBoard):
+    """Per-Book board. publish runs the op; claim is not used."""
+
     def __init__(
         self,
         book: Book,
@@ -25,20 +54,17 @@ class ManageBookJobBoard:
     ) -> None:
         if not issubclass(job_type, ManageBookJob):
             raise InvalidJobError("book board job_type must be a ManageBookJob")
+        super().__init__(job_type, backend, slots, collection=f"jobs.book.{book.name}")
         self.book = book
-        self.job_type = job_type
-        self._backend = backend
-        self._slots = slots
-        self._store = backend.records(f"jobs.book.{book.name}")
 
-    def publish(self, job: ManageBookJob) -> ManageBookJob:
+    def publish(self, job: Job) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):
             raise InvalidJobError("book board only accepts ManageBookJob")
-        if job.book != self.book.name:
-            raise InvalidJobError(f"job.book is {job.book!r}, this board is {self.book.name!r}")
         if not job.book:
             raise InvalidJobError("ManageBookJob.book is required")
-        persist_new_job(self._store, self._slots, job)
+        if job.book != self.book.name:
+            raise InvalidJobError(f"job.book is {job.book!r}, this board is {self.book.name!r}")
+        super().publish(job)
         try:
             with self._backend.transaction():
                 result = self._execute(job)
@@ -53,17 +79,16 @@ class ManageBookJobBoard:
             self._store.replace(job.id, job.to_record())
         return job
 
-    def get(self, job_id: str) -> ManageBookJob:
-        job = load_job(self._store, self.job_type, job_id)
-        assert isinstance(job, ManageBookJob)
-        return job
+    def claim(self) -> Job | None:
+        raise InvalidJobError("ManageBookJob is executed by BUS and cannot be claimed")
 
-    def list(self, *, status: JobStatus | None = None) -> list[ManageBookJob]:
-        status_value = status.value if status is not None else None
-        jobs: list[ManageBookJob] = []
-        for record in self._store.find(status=status_value):
-            jobs.append(self.job_type.from_record(record))
-        return jobs
+    def complete(self, job_id: str, result: Any = None) -> Job:
+        del job_id, result
+        raise InvalidJobError("ManageBookJob completes itself")
+
+    def fail(self, job_id: str, error: str) -> Job:
+        del job_id, error
+        raise InvalidJobError("ManageBookJob fails itself")
 
     def _execute(self, job: ManageBookJob) -> Any:
         payload = job.payload or {}

@@ -2,9 +2,9 @@
 
 from .backends import Backend, FileBackend, PostgresBackend, RecordStore, SQLiteBackend
 from .book import Book, BookRecord
-from .job import BookOp, Job, JobStatus, ManageBookJob
+from .job import Job, JobStatus
 from .job_board import JobBoard
-from .manage_book_job_board import ManageBookJobBoard
+from .manageBookJob import BookOp, ManageBookJob, ManageBookJobBoard
 from .slot import MULTI_SLOTS, SINGLE_SLOTS, Handler, Slot, SlotSpace
 
 __all__ = [

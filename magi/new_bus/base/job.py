@@ -15,13 +15,6 @@ class JobStatus(StrEnum):
     FAILED = "failed"
 
 
-class BookOp(StrEnum):
-    CREATE = "create"
-    READ = "read"
-    UPDATE = "update"
-    DELETE = "delete"
-
-
 def _parse_dt(value: Any) -> datetime | None:
     if value is None or isinstance(value, datetime):
         return value
@@ -71,28 +64,4 @@ class Job:
         job.created_at = _parse_dt(record.get("created_at"))
         job.result = record.get("result")
         job.error = record.get("error")
-        return job
-
-
-@dataclass
-class ManageBookJob(Job):
-    """Manage a Book. ``op`` is the CRUD verb.
-
-    BUS executes these on publish. External workers never claim them.
-    """
-
-    book: str = ""
-    op: BookOp = BookOp.READ
-
-    def to_record(self) -> dict[str, Any]:
-        record = super().to_record()
-        record["book"] = self.book
-        record["op"] = self.op.value
-        return record
-
-    @classmethod
-    def from_record(cls, record: dict[str, Any]) -> Self:
-        job = super().from_record(record)
-        job.book = str(record.get("book") or "")
-        job.op = BookOp(record.get("op") or BookOp.READ)
         return job

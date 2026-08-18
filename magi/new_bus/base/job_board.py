@@ -49,13 +49,15 @@ class JobBoard:
         job_type: type[Job],
         backend: Backend,
         slots: SlotSpace,
+        *,
+        collection: str | None = None,
     ) -> None:
         if job_type is Job:
             raise InvalidJobError("mount a concrete Job subclass, not Job itself")
         self.job_type = job_type
         self._backend = backend
         self._slots = slots
-        self._store = backend.records(f"jobs.{job_type.type_name()}")
+        self._store = backend.records(collection or f"jobs.{job_type.type_name()}")
 
     def publish(self, job: Job) -> Job:
         if type(job) is not self.job_type:
