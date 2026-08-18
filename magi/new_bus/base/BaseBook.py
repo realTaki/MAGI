@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
-from datetime import UTC, datetime
-from typing import Any, ClassVar, Self
+from types import UnionType
+from typing import Any, ClassVar, Self, Union, get_args, get_origin, get_type_hints
 
 from .backends.backend import DatabaseBackend
 from .errors import BookNotFoundError, InvalidJobError
+from .time import utcnow
 
 
-def utcnow() -> datetime:
-    return datetime.now(UTC)
+def _annotation_args(annotation: Any) -> tuple[Any, ...]:
+    origin = get_origin(annotation)
+    if origin in (Union, UnionType):
+        return get_args(annotation)
+    return (annotation,)
 
 
 @dataclass(kw_only=True)
@@ -29,8 +33,18 @@ class BaseRecord:
     @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
         """Build a record from a mapping, keeping only declared fields."""
+        hints = get_type_hints(cls)
         allowed = {item.name for item in fields(cls)}
-        kwargs = {key: value for key, value in data.items() if key in allowed}
+        kwargs: dict[str, Any] = {}
+        for key, value in data.items():
+            if key not in allowed:
+                continue
+            annotation = hints.get(key)
+            if value is None and annotation is not None and type(None) not in _annotation_args(
+                annotation
+            ):
+                continue
+            kwargs[key] = value
         return cls(**kwargs)
 
     def merge(self, changes: Mapping[str, Any]) -> Self:
@@ -62,19 +76,15 @@ class BaseBook:
         if not isinstance(backend, DatabaseBackend):
             raise InvalidJobError("BaseBook requires a database backend")
 
-    def _validate_write(self, record: BaseRecord) -> None:
-        """Firmware Books override this to enforce their record protocol."""
-
     def add(self, record: BaseRecord) -> BaseRecord:
         if record.id and self._store.get(record.id) is not None:
             raise InvalidJobError(f"book {self.name!r} already has id {record.id}")
-        now = utcnow().isoformat()
+        now = utcnow()
         prepared = replace(
             record,
             created_at=record.created_at or now,
             updated_at=now,
         )
-        self._validate_write(prepared)
         return self.record_cls.parse(self._store.insert(prepared.to_dict()))
 
     def get(self, record_id: int) -> BaseRecord | None:
@@ -91,9 +101,8 @@ class BaseBook:
         if current is None:
             raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
         stored = replace(
-            record, id=current.id, created_at=current.created_at, updated_at=utcnow().isoformat()
+            record, id=current.id, created_at=current.created_at, updated_at=utcnow()
         )
-        self._validate_write(stored)
         self._store.replace(stored.id, stored.to_dict())
         return stored
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
@@ -21,24 +21,22 @@ class BookOp(StrEnum):
 
 
 @dataclass
-class ManageBookJobResult(BaseJobResult):
-    record: dict[str, Any] | None = None
-    records: list[dict[str, Any]] | None = None
-    deleted_id: int | None = None
-
-
-@dataclass
 class ManageBookJob(BaseJob):
     """``op`` selects create / read / update / delete on ``book``."""
 
-    result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
     book: str = ""
     op: BookOp = BookOp.READ
+    record_id: int = 0
+    filter: dict[str, Any] | None = None
+    values: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
         record = super().to_record()
+        record.update(self.values)
         record["book"] = self.book
         record["op"] = self.op.value
+        record["record_id"] = self.record_id
+        record["filter"] = self.filter
         return record
 
     @classmethod
@@ -46,11 +44,26 @@ class ManageBookJob(BaseJob):
         job = super().from_record(record)
         job.book = str(record.get("book") or "")
         job.op = BookOp(record.get("op") or BookOp.READ)
+        job.record_id = int(record.get("record_id") or 0)
+        filt = record.get("filter")
+        job.filter = filt if isinstance(filt, dict) else None
+        job.values = {
+            key: value for key, value in record.items() if key not in _MANAGE_JOB_KEYS
+        }
         return job
+
+
+@dataclass
+class ManageBookJobResult(BaseJobResult):
+    record: dict[str, Any] | None = None
+    records: list[dict[str, Any]] | None = None
+    deleted_id: int | None = None
 
 
 class ManageBookJobBoard(BaseJobBoard):
     """Per-BaseBook board. publish runs the op; claim is not used."""
+
+    result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
 
     def __init__(
         self,
@@ -77,16 +90,12 @@ class ManageBookJobBoard(BaseJobBoard):
                 outcome = self._execute(job)
                 job.status = JobStatus.COMPLETED
                 job.error = None
-                job.result = ManageBookJobResult.parse(
-                    {"job_id": job.id, "status": JobStatus.COMPLETED, **outcome}
-                )
-                self._store.replace(job.id, job.to_record())
+                record = job.to_record()
+                record.update(outcome)
+                self._store.replace(job.id, record)
         except BusError as exc:
             job.status = JobStatus.FAILED
             job.error = str(exc)
-            job.result = ManageBookJobResult(
-                job_id=job.id, status=JobStatus.FAILED, error=str(exc)
-            )
             self._store.replace(job.id, job.to_record())
         return job
 
@@ -102,44 +111,58 @@ class ManageBookJobBoard(BaseJobBoard):
         raise InvalidJobError("ManageBookJob fails itself")
 
     def _execute(self, job: ManageBookJob) -> Any:
-        payload = job.payload or {}
         if job.op is BookOp.CREATE:
             try:
-                record = self.book.record_cls.parse(payload)
+                record = self.book.record_cls.parse(job.values)
             except TypeError as exc:
                 raise InvalidJobError(f"invalid {self.book.record_cls.__name__}: {exc}") from exc
             return {"record": self.book.add(record).to_dict()}
         if job.op is BookOp.READ:
-            return self._read(payload)
+            return self._read(job)
         if job.op is BookOp.UPDATE:
-            current = self.book.get(_record_id(payload))
+            current = self.book.get(_record_id(job))
             if current is None:
-                raise BookNotFoundError(f"book {self.book.name!r} has no id {payload.get('id')}")
-            return {"record": self.book.update(current.merge(payload)).to_dict()}
+                raise BookNotFoundError(f"book {self.book.name!r} has no id {job.record_id}")
+            return {"record": self.book.update(current.merge(job.values)).to_dict()}
         if job.op is BookOp.DELETE:
-            record_id = _record_id(payload)
+            record_id = _record_id(job)
             if not self.book.delete(record_id):
                 raise BookNotFoundError(f"book {self.book.name!r} has no id {record_id}")
             return {"deleted_id": record_id}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
-    def _read(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if "id" in payload and payload["id"] not in (None, "", 0):
-            record = self.book.get(_record_id(payload))
+    def _read(self, job: ManageBookJob) -> dict[str, Any]:
+        if job.record_id:
+            record = self.book.get(job.record_id)
             if record is None:
-                raise BookNotFoundError(f"book {self.book.name!r} has no id {payload.get('id')}")
+                raise BookNotFoundError(f"book {self.book.name!r} has no id {job.record_id}")
             return {"record": record.to_dict()}
-        filters = payload.get("filter")
-        if filters is not None and not isinstance(filters, dict):
+        if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("read filter must be an object")
-        return {"records": [record.to_dict() for record in self.book.list(filters)]}
+        return {"records": [record.to_dict() for record in self.book.list(job.filter)]}
 
 
-def _record_id(payload: dict[str, Any]) -> int:
-    value = payload.get("id")
-    if value in (None, "", 0):
-        raise InvalidJobError("payload.id is required")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise InvalidJobError("payload.id must be an integer") from exc
+def _record_id(job: ManageBookJob) -> int:
+    if not job.record_id:
+        raise InvalidJobError("record_id is required")
+    return job.record_id
+
+
+_MANAGE_JOB_KEYS = frozenset(
+    {
+        "id",
+        "type",
+        "status",
+        "publisher",
+        "created_at",
+        "error",
+        "book",
+        "op",
+        "record_id",
+        "filter",
+        "record",
+        "records",
+        "deleted_id",
+        "job_id",
+    }
+)

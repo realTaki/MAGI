@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
 
 from magi.new_bus import (
     BaseRecord,
@@ -70,13 +69,13 @@ def test_create_read_filter_conversation() -> None:
 
 def test_last_compaction_at_round_trips() -> None:
     bus = Bus(InMemoryBackend())
-    stamped = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    stamped = "2026-08-18T12:00:00+00:00"
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
     assert created.status is JobStatus.COMPLETED
-    assert bus.result(created).record["last_compaction_at"] == stamped.isoformat()
+    assert bus.result(created).record["last_compaction_at"] == stamped
 
     loaded = write_conversation(bus, BookOp.READ, id=bus.result(created).record["id"])
-    assert bus.result(loaded).record["last_compaction_at"] == stamped.isoformat()
+    assert bus.result(loaded).record["last_compaction_at"] == stamped
 
 
 def test_messages_can_be_listed_by_conversation() -> None:

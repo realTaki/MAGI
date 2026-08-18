@@ -1,19 +1,20 @@
-"""BaseJob and its BaseJobBoard.
+"""BaseJob, BaseJobResult, then BaseJobBoard.
 
 A BaseJob is something that needs to happen, is happening, or has happened.
+A BaseJobResult is the outcome fields on the same record.
 A BaseJobBoard is the claimable container for one work BaseJob type.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, fields
-from datetime import UTC, datetime
+from dataclasses import dataclass, fields
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .backends import Backend, RecordStore
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
+from .time import utcnow
 
 if TYPE_CHECKING:
     from .slot import SlotSpace
@@ -26,14 +27,41 @@ class JobStatus(StrEnum):
     FAILED = "failed"
 
 
-def _parse_dt(value: Any) -> datetime | None:
-    if value is None or isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(str(value))
+@dataclass
+class BaseJob:
+    """Generic work BaseJob. Firmware later subclasses this.
 
+    Slots attach to the concrete class, not to an instance.
+    """
 
-def utcnow() -> datetime:
-    return datetime.now(UTC)
+    publisher: str | None = None
+    id: int = 0
+    status: JobStatus = JobStatus.PENDING
+    created_at: str | None = None
+    error: str | None = None
+
+    @classmethod
+    def type_name(cls) -> str:
+        return cls.__qualname__
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "type": type(self).type_name(),
+            "status": self.status.value,
+            "publisher": self.publisher,
+            "created_at": self.created_at,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> Self:
+        job = cls(publisher=record.get("publisher"))
+        job.id = int(record["id"])
+        job.status = JobStatus(record["status"])
+        job.created_at = record.get("created_at")
+        job.error = record.get("error")
+        return job
 
 
 @dataclass
@@ -61,49 +89,6 @@ class BaseJobResult:
         if status is not None and not isinstance(status, JobStatus):
             kwargs["status"] = JobStatus(status)
         return cls(**kwargs)
-
-
-@dataclass
-class BaseJob:
-    """Generic work BaseJob. Firmware later subclasses this.
-
-    Slots attach to the concrete class, not to an instance.
-    """
-
-    result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
-    payload: dict[str, Any] = field(default_factory=dict)
-    publisher: str | None = None
-    id: int = 0
-    status: JobStatus = JobStatus.PENDING
-    created_at: datetime | None = None
-    error: str | None = None
-
-    @classmethod
-    def type_name(cls) -> str:
-        return cls.__qualname__
-
-    def to_record(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": type(self).type_name(),
-            "status": self.status.value,
-            "publisher": self.publisher,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "payload": self.payload,
-            "error": self.error,
-        }
-
-    @classmethod
-    def from_record(cls, record: dict[str, Any]) -> Self:
-        job = cls(
-            payload=dict(record.get("payload") or {}),
-            publisher=record.get("publisher"),
-        )
-        job.id = int(record["id"])
-        job.status = JobStatus(record["status"])
-        job.created_at = _parse_dt(record.get("created_at"))
-        job.error = record.get("error")
-        return job
 
 
 def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJob:
@@ -135,6 +120,8 @@ def load_job(store: RecordStore, job_type: type[BaseJob], job_id: int) -> BaseJo
 
 class BaseJobBoard:
     """Running container for one work BaseJob type."""
+
+    result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
 
     def __init__(
         self,
@@ -195,7 +182,7 @@ class BaseJobBoard:
         record = self._store.get(job_id)
         if record is None:
             raise JobNotFoundError(f"{self.job_type.type_name()} {job_id} not found")
-        return self.job_type.result_cls.parse(record)
+        return type(self).result_cls.parse(record)
 
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
         status_value = status.value if status is not None else None
@@ -235,7 +222,7 @@ class BaseJobBoard:
         result: BaseJobResult | Mapping[str, Any] | None,
         error: str | None,
     ) -> BaseJobResult:
-        cls = self.job_type.result_cls
+        cls = type(self).result_cls
         if result is None:
             parsed: BaseJobResult = cls()
         elif isinstance(result, BaseJobResult):

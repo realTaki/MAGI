@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import dataclasses
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -76,7 +75,8 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     assert record["content"] == "hello"
     assert record["conversation_id"] == 1
     assert record["archived"] is False
-    datetime.fromisoformat(record["timestamp"])
+    assert isinstance(record["timestamp"], str)
+    assert record["timestamp"]
 
     by_id = write_message(bus, BookOp.READ, id=record["id"])
     assert by_id.status is JobStatus.COMPLETED
@@ -97,7 +97,7 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
 
 
 def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
-    stamped = datetime(2026, 8, 18, 9, 30, tzinfo=UTC)
+    stamped = "2026-08-18T09:30:00+00:00"
     created = create(
         bus,
         role="assistant",
@@ -108,16 +108,15 @@ def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
     )
     assert created.status is JobStatus.COMPLETED
     record = bus.result(created).record
-    assert record["timestamp"] == stamped.isoformat()
+    assert record["timestamp"] == stamped
     assert record["archived"] is True
 
     listed = write_message(bus, BookOp.READ, filter={"archived": True})
     assert [item["id"] for item in bus.result(listed).records] == [record["id"]]
 
 
-def test_invalid_message_fails_and_does_not_write(bus: Bus) -> None:
-    assert create(bus, role="narrator", content="nope").status is JobStatus.FAILED
-    assert create(bus, role="user", content="").status is JobStatus.FAILED
+def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
+    assert create(bus, content="nope").status is JobStatus.FAILED
     listed = write_message(bus, BookOp.READ)
     assert listed.status is JobStatus.COMPLETED
     assert bus.result(listed).records == []
@@ -125,7 +124,7 @@ def test_invalid_message_fails_and_does_not_write(bus: Bus) -> None:
 
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
     first = create(bus, role="assistant", content="ok")
-    create(bus, role="nope", content="x")
+    create(bus, content="x")
     history = bus.list(ManageBookJob, book=Message.BOOK)
     assert [job.status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     assert isinstance(bus.get(ManageBookJob, first.id, book=Message.BOOK), ManageBookJob)

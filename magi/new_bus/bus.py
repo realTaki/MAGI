@@ -123,6 +123,13 @@ class Bus:
             return self._book_board(_book_name(job_type, book)).get(job_id)
         return self._job_board(job_type).get(job_id)
 
+    def result(self, job: BaseJob) -> BaseJobResult:
+        if isinstance(job, ManageBookJob):
+            if not job.book:
+                raise InvalidJobError("ManageBookJob.book is required")
+            return self._book_board(job.book).result(job.id)
+        return self._job_board(type(job)).result(job.id)
+
     def list(
         self,
         job_type: type[BaseJob],
