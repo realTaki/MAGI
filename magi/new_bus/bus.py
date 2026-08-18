@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from .base.backends import Backend
 from .base.BaseBook import BaseBook
-from .base.BaseJob import BaseJob, BaseJobBoard, JobStatus
+from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.errors import InvalidJobError
 from .base.manageBookJob import ManageBookJob, ManageBookJobBoard
 from .base.slot import Handler, Slot, SlotSpace
@@ -89,7 +90,9 @@ class Bus:
             raise InvalidJobError("book jobs are executed by BUS and cannot be claimed")
         return self._job_board(job_type).claim()
 
-    def complete(self, job: BaseJob, result: Any = None) -> BaseJob:
+    def complete(
+        self, job: BaseJob, result: BaseJobResult | Mapping[str, Any] | None = None
+    ) -> BaseJob:
         if isinstance(job, ManageBookJob):
             raise InvalidJobError("book jobs complete themselves")
         return self._job_board(type(job)).complete(job.id, result)

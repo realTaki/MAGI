@@ -8,7 +8,7 @@ from .base.backends.file import FileBackend
 from .base.backends.postgres import PostgresBackend
 from .base.backends.sqlite import SQLiteBackend
 from .base.BaseBook import BaseRecord
-from .base.BaseJob import BaseJob, BaseJobBoard, JobStatus
+from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.errors import (
     BackendError,
     BookNotFoundError,
@@ -42,6 +42,7 @@ __all__ = [
     "FIRMWARE_VERSION",
     "BaseJob",
     "BaseJobBoard",
+    "BaseJobResult",
     "JobAlreadyClaimedError",
     "JobNotFoundError",
     "JobStatus",

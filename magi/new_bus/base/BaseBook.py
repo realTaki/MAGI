@@ -60,7 +60,7 @@ class BaseBook:
     def _validate_write(self, record: BaseRecord) -> None:
         """Firmware Books override this to enforce their record protocol."""
 
-    def insert(self, record: BaseRecord) -> BaseRecord:
+    def add(self, record: BaseRecord) -> BaseRecord:
         if record.id and self._store.get(record.id) is not None:
             raise InvalidJobError(f"book {self.name!r} already has id {record.id}")
         now = utcnow().isoformat()
@@ -76,16 +76,15 @@ class BaseBook:
         data = self._store.get(id)
         return None if data is None else self.record_cls.parse(data)
 
-    def require(self, id: str) -> BaseRecord:
-        record = self.get(id)
-        if record is None:
-            raise BookNotFoundError(f"book {self.name!r} has no id {id}")
-        return record
+    def require(self, id: int) -> bool:
+        return self.get(id) is not None
 
     def update(self, record: BaseRecord) -> BaseRecord:
         if not record.id:
             raise InvalidJobError("update requires record.id")
-        current = self.require(record.id)
+        current = self.get(record.id)
+        if current is None:
+            raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
         stored = replace(
             record, id=current.id, created_at=current.created_at, updated_at=utcnow().isoformat()
         )
@@ -94,7 +93,8 @@ class BaseBook:
         return stored
 
     def delete(self, id: int) -> None:
-        self.require(id)
+        if not self.require(id):
+            raise BookNotFoundError(f"book {self.name!r} has no id {id}")
         self._store.delete(id)
 
     def query(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
