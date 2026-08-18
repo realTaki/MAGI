@@ -25,7 +25,15 @@ from .base.errors import (
 from .base.manageBookJob import BookOp, ManageBookJob
 from .base.slot import Slot
 from .bus import Bus
-from .firmware import FIRMWARE_VERSION, ManageMessageJob, ManageMessageJobBoard, Message
+from .firmware import (
+    FIRMWARE_VERSION,
+    Conversation,
+    ManageConversationJob,
+    ManageConversationJobBoard,
+    ManageMessageJob,
+    ManageMessageJobBoard,
+    Message,
+)
 
 __all__ = [
     "BackendError",
@@ -46,6 +54,9 @@ __all__ = [
     "JobAlreadyClaimedError",
     "JobNotFoundError",
     "JobStatus",
+    "Conversation",
+    "ManageConversationJob",
+    "ManageConversationJobBoard",
     "ManageMessageJob",
     "ManageMessageJobBoard",
     "Message",

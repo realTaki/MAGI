@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from ..errors import BackendError
+from .errors import BackendError
 
 _COLLECTION = re.compile(r"^[A-Za-z0-9_.-]+$")
 

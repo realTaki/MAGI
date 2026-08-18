@@ -20,7 +20,7 @@ class ManageMessageJob(BaseJob):
     """Work about a message. Lives on ManageMessageJobBoard."""
 
     message_id: int = 0
-    conversation_id: str | None = None
+    conversation_id: int | None = None
 
     def to_record(self) -> dict[str, Any]:
         record = super().to_record()
@@ -33,7 +33,7 @@ class ManageMessageJob(BaseJob):
         job = super().from_record(record)
         job.message_id = int(record.get("message_id") or 0)
         conversation_id = record.get("conversation_id")
-        job.conversation_id = None if conversation_id in (None, "") else str(conversation_id)
+        job.conversation_id = None if conversation_id in (None, "", 0) else int(conversation_id)
         return job
 
 

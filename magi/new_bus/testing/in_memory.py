@@ -26,6 +26,10 @@ class InMemoryBackend(Backend):
         self._data: dict[str, dict[str, dict[str, Any]]] = {}
         self._tx_depth = 0
         self._snapshot: dict[str, dict[str, dict[str, Any]]] | None = None
+        self.ensure()
+
+    def ensure(self) -> None:
+        return
 
     def records(self, name: str) -> RecordStore:
         return _MemoryStore(self, check_collection(name))

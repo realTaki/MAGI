@@ -1,12 +1,24 @@
 """BUS error model — small and direct."""
 
+from .backends.errors import BackendError
+
+__all__ = [
+    "BackendError",
+    "BookNotFoundError",
+    "BusError",
+    "FirmwareCompatibilityError",
+    "InvalidJobError",
+    "InvalidJobStateError",
+    "JobAlreadyClaimedError",
+    "JobNotFoundError",
+    "SlotNotFoundError",
+    "SlotOccupiedError",
+    "SlotRejected",
+]
+
 
 class BusError(Exception):
     """Base class for every BUS error."""
-
-
-class BackendError(BusError):
-    """Storage backend failed."""
 
 
 class BookNotFoundError(BusError):

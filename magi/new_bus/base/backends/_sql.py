@@ -8,9 +8,9 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
 
-from ..errors import BackendError
 from ._common import check_collection, coerce_id, copy_record, matches, sort_records
 from .backend import Backend, RecordStore
+from .errors import BackendError
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (

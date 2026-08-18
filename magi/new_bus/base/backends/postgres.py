@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..errors import BackendError
 from ._sql import SqlBackend
+from .errors import BackendError
 
 
 class _PostgresDriver:

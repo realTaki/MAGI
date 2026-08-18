@@ -18,6 +18,7 @@ class Bus:
 
     def __init__(self, backend: Backend) -> None:
         self._backend = backend
+        self._backend.ensure()
         self._slots = SlotSpace()
         self._books: dict[str, BaseBook] = {}
         self._book_boards: dict[str, ManageBookJobBoard] = {}
