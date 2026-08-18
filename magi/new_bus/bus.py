@@ -56,11 +56,13 @@ class Bus:
 
     def mount_book(
         self,
-        name: str,
+        book_cls: type[BaseBook],
         *,
-        book_cls: type[BaseBook] = BaseBook,
         job_type: type[ManageBookJob] = ManageBookJob,
     ) -> None:
+        name = book_cls.name
+        if not name:
+            raise InvalidJobError(f"{book_cls.__name__} must set class variable name")
         if name in self._books:
             raise InvalidJobError(f"book {name!r} is already mounted")
         if not issubclass(job_type, ManageBookJob):
@@ -70,7 +72,7 @@ class Bus:
             if self._files is None:
                 raise InvalidJobError("BaseFileBook requires a FileBackend")
             storage = self._files
-        book = book_cls(name, storage)
+        book = book_cls(storage)
         self._books[name] = book
         self._book_boards[name] = ManageBookJobBoard(
             book, self._backend, self._slots, job_type=job_type

@@ -15,8 +15,8 @@ def attach(bus) -> None:
     from .books.conversationBook import ConversationBook
     from .books.messageBook import MessageBook
 
-    bus.mount_book(ConversationBook.NAME, book_cls=ConversationBook)
-    bus.mount_book(MessageBook.NAME, book_cls=MessageBook)
+    bus.mount_book(ConversationBook)
+    bus.mount_book(MessageBook)
     bus.mount_job(ManageConversationJob, board_cls=ManageConversationJobBoard)
     bus.mount_job(ManageMessageJob, board_cls=ManageMessageJobBoard)
 

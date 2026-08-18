@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import pytest
 
 from magi.new_bus import Bus, FileBackend, SQLiteBackend
-from magi.new_bus.base.backends import Backend
+from magi.new_bus.base.backends import Backend, DatabaseBackend
 from magi.new_bus.testing import InMemoryBackend, ItemBook, PingJob
 
 
@@ -24,8 +24,15 @@ def backend(request: pytest.FixtureRequest, tmp_path) -> Iterator[Backend]:
 
 
 @pytest.fixture
-def bus(backend: Backend) -> Iterator[Bus]:
-    with Bus(backend) as item:
-        item.mount_book("items", book_cls=ItemBook)
+def db_backend(backend: Backend) -> Backend:
+    if not isinstance(backend, DatabaseBackend):
+        pytest.skip("needs a database backend")
+    return backend
+
+
+@pytest.fixture
+def bus(db_backend: Backend) -> Iterator[Bus]:
+    with Bus(db_backend) as item:
+        item.mount_book(ItemBook)
         item.mount_job(PingJob)
         yield item

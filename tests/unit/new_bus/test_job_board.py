@@ -71,8 +71,8 @@ def test_list_filters_status(bus: Bus) -> None:
     assert [job.id for job in completed] == [first.id]
 
 
-def test_claim_is_exclusive(backend: Backend) -> None:
-    with Bus(backend) as bus:
+def test_claim_is_exclusive(db_backend: Backend) -> None:
+    with Bus(db_backend) as bus:
         bus.mount_job(PingJob)
         for index in range(20):
             bus.publish(PingJob(payload={"i": index}))
@@ -98,8 +98,8 @@ def test_claim_is_exclusive(backend: Backend) -> None:
         assert len(set(claimed_ids)) == 20
 
 
-def test_unmounted_job_is_invalid(backend: Backend) -> None:
-    with Bus(backend) as bus:
+def test_unmounted_job_is_invalid(db_backend: Backend) -> None:
+    with Bus(db_backend) as bus:
         with pytest.raises(InvalidJobError):
             bus.publish(PingJob())
 

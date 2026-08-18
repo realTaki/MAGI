@@ -137,6 +137,13 @@ class _FileStore(RecordStore):
         self._backend = backend
         self._name = name
 
+    @property
+    def directory(self) -> Path:
+        return self._backend.collection_dir(self._name)
+
+    def path_for(self, record_id: int) -> Path:
+        return self._backend._path(self._name, record_id)
+
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         with self._backend._lock:

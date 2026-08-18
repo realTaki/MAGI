@@ -18,6 +18,7 @@ class Item(BaseRecord):
 
 
 class ItemBook(BaseBook):
+    name = "items"
     record_cls = Item
 
 

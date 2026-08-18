@@ -1,6 +1,13 @@
 """BUS Base primitives. No MAGI domain concepts live here."""
 
-from .backends import Backend, FileBackend, PostgresBackend, RecordStore, SQLiteBackend
+from .backends import (
+    Backend,
+    DatabaseBackend,
+    FileBackend,
+    PostgresBackend,
+    RecordStore,
+    SQLiteBackend,
+)
 from .BaseBook import BaseBook, BaseRecord
 from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
@@ -11,6 +18,7 @@ __all__ = [
     "MULTI_SLOTS",
     "SINGLE_SLOTS",
     "Backend",
+    "DatabaseBackend",
     "BaseBook",
     "BaseFileBook",
     "BaseRecord",

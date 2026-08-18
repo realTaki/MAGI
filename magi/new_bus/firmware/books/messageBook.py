@@ -31,13 +31,8 @@ class Message(BaseRecord):
 
 
 class MessageBook(BaseBook):
-    NAME = Message.BOOK
+    name = Message.BOOK
     record_cls = Message
-
-    def __init__(self, name: str, backend) -> None:
-        if name != self.NAME:
-            raise InvalidJobError(f"MessageBook must be named {self.NAME!r}")
-        super().__init__(name, backend)
 
     def _validate_write(self, record: BaseRecord) -> None:
         if not isinstance(record, Message):

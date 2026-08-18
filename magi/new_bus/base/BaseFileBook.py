@@ -8,8 +8,9 @@ the Bus primary backend is SQLite or PostgreSQL.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
-from .backends.file import FileBackend
+from .backends.file import FileBackend, _FileStore
 from .BaseBook import BaseBook
 from .errors import InvalidJobError
 
@@ -17,16 +18,13 @@ from .errors import InvalidJobError
 class BaseFileBook(BaseBook):
     """File-backed Book. ``backend`` must be a :class:`FileBackend`."""
 
-    def __init__(self, name: str, backend) -> None:
+    def _require_backend(self, backend) -> None:
         if not isinstance(backend, FileBackend):
             raise InvalidJobError("BaseFileBook requires FileBackend")
-        super().__init__(name, backend)
-        self._files = backend
 
     @property
     def directory(self) -> Path:
-        """Directory that holds this Book's record files."""
-        return self._files.collection_dir(f"books.{self.name}")
+        return cast(_FileStore, self._store).directory
 
     def path_for(self, record_id: int) -> Path:
-        return self.directory / f"{record_id}.json"
+        return cast(_FileStore, self._store).path_for(record_id)

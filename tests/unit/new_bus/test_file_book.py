@@ -16,24 +16,24 @@ from magi.new_bus.testing import InMemoryBackend
 
 
 class NotesBook(BaseFileBook):
-    pass
+    name = "notes"
 
 
 def test_file_book_requires_file_backend(tmp_path) -> None:
     with Bus(InMemoryBackend()) as bus:
         with pytest.raises(InvalidJobError, match="FileBackend"):
-            bus.mount_book("notes", book_cls=NotesBook)
+            bus.mount_book(NotesBook)
 
     with Bus(SQLiteBackend(tmp_path / "bus.sqlite")) as bus:
         with pytest.raises(InvalidJobError, match="FileBackend"):
-            bus.mount_book("notes", book_cls=NotesBook)
+            bus.mount_book(NotesBook)
 
 
 def test_file_book_uses_disk_when_bus_is_sqlite(tmp_path) -> None:
     sqlite = SQLiteBackend(tmp_path / "bus.sqlite")
     files = FileBackend(tmp_path / "files")
     with Bus(sqlite, files=files) as bus:
-        bus.mount_book("notes", book_cls=NotesBook)
+        bus.mount_book(NotesBook)
         created = bus.publish(
             ManageBookJob(book="notes", op=BookOp.CREATE, payload={"label": "a"})
         )
@@ -48,7 +48,6 @@ def test_file_book_uses_disk_when_bus_is_sqlite(tmp_path) -> None:
         assert path.parent == tmp_path / "files" / "books.notes"
 
 
-def test_file_only_bus_can_host_file_book(tmp_path) -> None:
-    with Bus(FileBackend(tmp_path / "files")) as bus:
-        bus.mount_book("notes", book_cls=NotesBook)
-        assert isinstance(bus._books["notes"], NotesBook)
+def test_bus_rejects_file_as_primary_backend(tmp_path) -> None:
+    with pytest.raises(InvalidJobError, match="database backend"):
+        Bus(FileBackend(tmp_path / "files"))

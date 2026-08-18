@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 
-from .backends.backend import DatabaseBackend, RecordStore
+from .backends.backend import DatabaseBackend
 from .errors import BookNotFoundError, InvalidJobError
 
 
@@ -49,15 +49,18 @@ class BaseBook:
     Firmware Books set ``record_cls`` to the dataclass that lists their fields.
     """
 
+    name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
 
-    def __init__(self, name: str, backend) -> None:
-        if not name:
-            raise InvalidJobError("book name is required")
+    def __init__(self, backend) -> None:
+        if not type(self).name:
+            raise InvalidJobError(f"{type(self).__name__} must set class variable name")
+        self._require_backend(backend)
+        self._store = backend.records(f"books.{type(self).name}")
+
+    def _require_backend(self, backend) -> None:
         if not isinstance(backend, DatabaseBackend):
             raise InvalidJobError("BaseBook requires a database backend")
-        self.name = name
-        self._store: RecordStore = backend.records(f"books.{name}")
 
     def _validate_write(self, record: BaseRecord) -> None:
         """Firmware Books override this to enforce their record protocol."""
