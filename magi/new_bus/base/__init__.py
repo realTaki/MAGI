@@ -2,6 +2,7 @@
 
 from .backends import Backend, FileBackend, PostgresBackend, RecordStore, SQLiteBackend
 from .BaseBook import BaseBook, BaseRecord
+from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .manageBookJob import BookOp, ManageBookJob, ManageBookJobBoard
 from .slot import MULTI_SLOTS, SINGLE_SLOTS, Handler, Slot, SlotSpace
@@ -11,6 +12,7 @@ __all__ = [
     "SINGLE_SLOTS",
     "Backend",
     "BaseBook",
+    "BaseFileBook",
     "BaseRecord",
     "ManageBookJob",
     "ManageBookJobBoard",

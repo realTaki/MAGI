@@ -49,8 +49,11 @@ class FileBackend(Backend):
     def close(self) -> None:
         return
 
-    def _collection_dir(self, name: str) -> Path:
+    def collection_dir(self, name: str) -> Path:
         return self.root / name
+
+    def _collection_dir(self, name: str) -> Path:
+        return self.collection_dir(name)
 
     def _path(self, name: str, record_id: int) -> Path:
         return self._collection_dir(name) / f"{record_id}.json"

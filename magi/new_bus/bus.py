@@ -6,7 +6,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from .base.backends import Backend
+from .base.backends.file import FileBackend
 from .base.BaseBook import BaseBook
+from .base.BaseFileBook import BaseFileBook
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.errors import InvalidJobError
 from .base.manageBookJob import ManageBookJob, ManageBookJobBoard
@@ -16,9 +18,14 @@ from .base.slot import Handler, Slot, SlotSpace
 class Bus:
     """Logical backplane: publish / claim / attach / detach plus job queries."""
 
-    def __init__(self, backend: Backend) -> None:
+    def __init__(self, backend: Backend, *, files: FileBackend | None = None) -> None:
         self._backend = backend
         self._backend.ensure()
+        if files is None and isinstance(backend, FileBackend):
+            files = backend
+        self._files = files
+        if self._files is not None:
+            self._files.ensure()
         self._slots = SlotSpace()
         self._books: dict[str, BaseBook] = {}
         self._book_boards: dict[str, ManageBookJobBoard] = {}
@@ -57,7 +64,12 @@ class Bus:
             raise InvalidJobError(f"book {name!r} is already mounted")
         if not issubclass(job_type, ManageBookJob):
             raise InvalidJobError("mount_book job_type must be a ManageBookJob")
-        book = book_cls(name, self._backend)
+        storage = self._backend
+        if issubclass(book_cls, BaseFileBook):
+            if self._files is None:
+                raise InvalidJobError("BaseFileBook requires a FileBackend")
+            storage = self._files
+        book = book_cls(name, storage)
         self._books[name] = book
         self._book_boards[name] = ManageBookJobBoard(
             book, self._backend, self._slots, job_type=job_type
