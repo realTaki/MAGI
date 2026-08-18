@@ -6,9 +6,11 @@ The record type :class:`Conversation` is the field list for this BaseBook.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import ClassVar
 
-from ...base.BaseBook import BaseBook, BaseRecord
+from ...base.BaseBook import BaseBook
+from ...base.BaseRecord import BaseRecord
 
 
 @dataclass(kw_only=True)
@@ -28,7 +30,7 @@ class Conversation(BaseRecord):
     channel: str
     title: str = ""
     summary: str = ""
-    last_compaction_at: str | None = None
+    last_compaction_at: datetime | None = None
 
     BOOK: ClassVar[str] = "conversations"
 

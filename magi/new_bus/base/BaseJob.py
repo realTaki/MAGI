@@ -8,11 +8,12 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .backends import Backend, RecordStore
+from .BaseRecord import BaseRecord
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 from .time import utcnow
 
@@ -28,67 +29,41 @@ class JobStatus(StrEnum):
 
 
 @dataclass
-class BaseJob:
+class BaseJob(BaseRecord):
     """Generic work BaseJob. Firmware later subclasses this.
 
     Slots attach to the concrete class, not to an instance.
     """
 
     publisher: str | None = None
-    id: int = 0
-    status: JobStatus = JobStatus.PENDING
-    created_at: str | None = None
-    error: str | None = None
 
     @classmethod
     def type_name(cls) -> str:
         return cls.__qualname__
 
     def to_record(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": type(self).type_name(),
-            "status": self.status.value,
-            "publisher": self.publisher,
-            "created_at": self.created_at,
-            "error": self.error,
-        }
+        record = self.to_dict()
+        record["type"] = type(self).type_name()
+        return record
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> Self:
-        job = cls(publisher=record.get("publisher"))
-        job.id = int(record["id"])
-        job.status = JobStatus(record["status"])
-        job.created_at = record.get("created_at")
-        job.error = record.get("error")
-        return job
+        return cls.parse(record)
 
 
 @dataclass
-class BaseJobResult:
+class BaseJobResult(BaseRecord):
     """Outcome of a Job. Firmware subclasses add business fields."""
 
-    job_id: int = 0
     status: JobStatus = JobStatus.COMPLETED
     error: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {}
-        for item in fields(self):
-            value = getattr(self, item.name)
-            data[item.name] = value.value if isinstance(value, JobStatus) else value
-        return data
-
     @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
-        allowed = {item.name for item in fields(cls)}
-        kwargs = {key: value for key, value in data.items() if key in allowed}
-        if not kwargs.get("job_id") and data.get("id"):
-            kwargs["job_id"] = int(data["id"])
-        status = kwargs.get("status")
-        if status is not None and not isinstance(status, JobStatus):
-            kwargs["status"] = JobStatus(status)
-        return cls(**kwargs)
+        parsed = super().parse(data)
+        if not isinstance(parsed.status, JobStatus):
+            parsed.status = JobStatus(parsed.status)
+        return parsed
 
 
 def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJob:
@@ -97,14 +72,13 @@ def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJ
 
     if job.id:
         raise InvalidJobError("publish accepts only a new job (id must be 0)")
-    if job.status is not JobStatus.PENDING:
-        raise InvalidJobError("publish accepts only a pending job")
     job_type = type(job)
     slots.fire(job_type, Slot.PRE_PUBLISH, job)
     job.created_at = utcnow()
-    job.status = JobStatus.PENDING
-    job.error = None
-    stored = store.insert(job.to_record())
+    record = job.to_record()
+    record["status"] = JobStatus.PENDING.value
+    record["error"] = None
+    stored = store.insert(record)
     job.id = int(stored["id"])
     slots.fire(job_type, Slot.PUBLISH, job)
     slots.fire(job_type, Slot.POST_PUBLISH, job)
@@ -198,10 +172,12 @@ class BaseJobBoard:
         result: BaseJobResult | Mapping[str, Any] | None,
         error: str | None,
     ) -> BaseJob:
-        current = load_job(self._store, self.job_type, job_id)
-        if current.status is not JobStatus.CLAIMED:
+        current = self._store.get(job_id)
+        if current is None:
+            raise JobNotFoundError(f"{self.job_type.type_name()} {job_id} not found")
+        if current.get("status") != JobStatus.CLAIMED.value:
             raise InvalidJobStateError(
-                f"{self.job_type.type_name()} {job_id} is {current.status}, not claimed"
+                f"{self.job_type.type_name()} {job_id} is {current.get('status')}, not claimed"
             )
         parsed = self._coerce_result(job_id, status, result, error)
         update = {"status": status.value, "error": error, **_result_fields(parsed)}
@@ -229,13 +205,13 @@ class BaseJobBoard:
             parsed = result
         else:
             parsed = cls.parse(result)
-        parsed.job_id = job_id
+        parsed.id = job_id
         parsed.status = status
         parsed.error = error
         return parsed
 
 
-_RESULT_META = frozenset({"job_id", "status", "error"})
+_RESULT_META = frozenset({"id", "created_at", "updated_at", "status", "error"})
 
 
 def _result_fields(result: BaseJobResult) -> dict[str, Any]:

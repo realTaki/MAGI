@@ -6,9 +6,11 @@ The record type :class:`Message` is the field list for this BaseBook.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import ClassVar
 
-from ...base.BaseBook import BaseBook, BaseRecord
+from ...base.BaseBook import BaseBook
+from ...base.BaseRecord import BaseRecord
 from ...base.time import utcnow
 
 
@@ -26,7 +28,7 @@ class Message(BaseRecord):
     role: str
     content: str
     conversation_id: int | None = None
-    timestamp: str = field(default_factory=utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     archived: bool = False
 
     BOOK: ClassVar[str] = "messages"

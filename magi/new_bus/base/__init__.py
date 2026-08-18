@@ -8,9 +8,10 @@ from .backends import (
     RecordStore,
     SQLiteBackend,
 )
-from .BaseBook import BaseBook, BaseRecord
+from .BaseBook import BaseBook
 from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .BaseRecord import BaseRecord
 from .manageBookJob import BookOp, ManageBookJob, ManageBookJobBoard
 from .slot import MULTI_SLOTS, SINGLE_SLOTS, Handler, Slot, SlotSpace
 

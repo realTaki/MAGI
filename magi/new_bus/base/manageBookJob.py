@@ -32,21 +32,15 @@ class ManageBookJob(BaseJob):
 
     def to_record(self) -> dict[str, Any]:
         record = super().to_record()
-        record.update(self.values)
-        record["book"] = self.book
-        record["op"] = self.op.value
-        record["record_id"] = self.record_id
-        record["filter"] = self.filter
+        extra = record.pop("values", {}) or {}
+        record.update(extra)
         return record
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> Self:
         job = super().from_record(record)
-        job.book = str(record.get("book") or "")
-        job.op = BookOp(record.get("op") or BookOp.READ)
-        job.record_id = int(record.get("record_id") or 0)
-        filt = record.get("filter")
-        job.filter = filt if isinstance(filt, dict) else None
+        if not isinstance(job.op, BookOp):
+            job.op = BookOp(job.op)
         job.values = {
             key: value for key, value in record.items() if key not in _MANAGE_JOB_KEYS
         }
@@ -88,15 +82,16 @@ class ManageBookJobBoard(BaseJobBoard):
         try:
             with self._backend.transaction():
                 outcome = self._execute(job)
-                job.status = JobStatus.COMPLETED
-                job.error = None
                 record = job.to_record()
+                record["status"] = JobStatus.COMPLETED.value
+                record["error"] = None
                 record.update(outcome)
                 self._store.replace(job.id, record)
         except BusError as exc:
-            job.status = JobStatus.FAILED
-            job.error = str(exc)
-            self._store.replace(job.id, job.to_record())
+            record = job.to_record()
+            record["status"] = JobStatus.FAILED.value
+            record["error"] = str(exc)
+            self._store.replace(job.id, record)
         return job
 
     def claim(self) -> BaseJob | None:
@@ -116,14 +111,14 @@ class ManageBookJobBoard(BaseJobBoard):
                 record = self.book.record_cls.parse(job.values)
             except TypeError as exc:
                 raise InvalidJobError(f"invalid {self.book.record_cls.__name__}: {exc}") from exc
-            return {"record": self.book.add(record).to_dict()}
+            return {"record": self._record(self.book.add(record))}
         if job.op is BookOp.READ:
             return self._read(job)
         if job.op is BookOp.UPDATE:
             current = self.book.get(_record_id(job))
             if current is None:
                 raise BookNotFoundError(f"book {self.book.name!r} has no id {job.record_id}")
-            return {"record": self.book.update(current.merge(job.values)).to_dict()}
+            return {"record": self._record(self.book.update(current.merge(job.values)))}
         if job.op is BookOp.DELETE:
             record_id = _record_id(job)
             if not self.book.delete(record_id):
@@ -140,6 +135,12 @@ class ManageBookJobBoard(BaseJobBoard):
         if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("read filter must be an object")
         return {"records": [record.to_dict() for record in self.book.list(job.filter)]}
+
+    def _record(self, record_id: int) -> dict[str, Any]:
+        record = self.book.get(record_id)
+        if record is None:
+            raise BookNotFoundError(f"book {self.book.name!r} has no id {record_id}")
+        return record.to_dict()
 
 
 def _record_id(job: ManageBookJob) -> int:
