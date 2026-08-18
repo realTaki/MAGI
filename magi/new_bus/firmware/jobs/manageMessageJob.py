@@ -1,6 +1,6 @@
 """Manage a message.
 
-MessageBook is edited with ManageBookJob.
+MessageBook is managed with ManageBookJob.
 ManageMessageJob is work about a message; workers claim it on ManageMessageJobBoard.
 """
 
