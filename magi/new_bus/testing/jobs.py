@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from ..base.book import BaseBook, BaseRecord
-from ..base.job import BaseJob
+from ..base.BaseBook import BaseBook, BaseRecord
+from ..base.BaseJob import BaseJob
 from ..base.manageBookJob import BookOp, ManageBookJob
 
 

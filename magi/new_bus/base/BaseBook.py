@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
-from uuid import uuid4
 
 from .backends import Backend, RecordStore
 from .errors import BookNotFoundError, InvalidJobError
@@ -20,7 +19,7 @@ def utcnow() -> datetime:
 class BaseRecord:
     """Fields every BaseBook row has. BUS assigns these."""
 
-    id: str = ""
+    id: int = 0
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -62,21 +61,18 @@ class BaseBook:
         """Firmware Books override this to enforce their record protocol."""
 
     def insert(self, record: BaseRecord) -> BaseRecord:
-        record_id = record.id or uuid4().hex
-        if self._store.get(record_id) is not None:
-            raise InvalidJobError(f"book {self.name!r} already has id {record_id}")
+        if record.id and self._store.get(record.id) is not None:
+            raise InvalidJobError(f"book {self.name!r} already has id {record.id}")
         now = utcnow().isoformat()
-        stored = replace(
+        prepared = replace(
             record,
-            id=record_id,
             created_at=record.created_at or now,
             updated_at=now,
         )
-        self._validate_write(stored)
-        self._store.insert(stored.to_dict())
-        return stored
+        self._validate_write(prepared)
+        return self.record_cls.parse(self._store.insert(prepared.to_dict()))
 
-    def get(self, id: str) -> BaseRecord | None:
+    def get(self, id: int) -> BaseRecord | None:
         data = self._store.get(id)
         return None if data is None else self.record_cls.parse(data)
 
@@ -97,7 +93,7 @@ class BaseBook:
         self._store.replace(stored.id, stored.to_dict())
         return stored
 
-    def delete(self, id: str) -> None:
+    def delete(self, id: int) -> None:
         self.require(id)
         self._store.delete(id)
 

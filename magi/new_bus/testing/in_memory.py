@@ -11,9 +11,10 @@ from typing import Any
 from ..base.backends import Backend, RecordStore
 from ..base.backends._common import (
     check_collection,
+    coerce_id,
     copy_record,
     matches,
-    require_id,
+    next_id,
     sort_records,
 )
 from ..base.errors import BackendError
@@ -58,20 +59,23 @@ class _MemoryStore(RecordStore):
 
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
-        record_id = require_id(data)
         with self._backend._lock:
             bucket = self._backend._data.setdefault(self._name, {})
-            if record_id in bucket:
+            record_id = coerce_id(data.get("id"))
+            if record_id is None:
+                record_id = next_id([int(key) for key in bucket])
+                data["id"] = record_id
+            elif record_id in bucket:
                 raise BackendError(f"duplicate id {record_id}")
             bucket[record_id] = data
             return copy_record(data)
 
-    def get(self, id: str) -> dict[str, Any] | None:
+    def get(self, id: int) -> dict[str, Any] | None:
         with self._backend._lock:
             record = self._backend._data.get(self._name, {}).get(id)
             return copy_record(record) if record is not None else None
 
-    def replace(self, id: str, record: Mapping[str, Any]) -> dict[str, Any]:
+    def replace(self, id: int, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         data["id"] = id
         with self._backend._lock:
@@ -81,7 +85,7 @@ class _MemoryStore(RecordStore):
             bucket[id] = data
             return copy_record(data)
 
-    def delete(self, id: str) -> bool:
+    def delete(self, id: int) -> bool:
         with self._backend._lock:
             bucket = self._backend._data.get(self._name)
             if not bucket or id not in bucket:
@@ -105,7 +109,7 @@ class _MemoryStore(RecordStore):
 
     def compare_and_set(
         self,
-        id: str,
+        id: int,
         *,
         field: str,
         expect: Any,

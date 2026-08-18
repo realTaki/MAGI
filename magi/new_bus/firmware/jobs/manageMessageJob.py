@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from ...base.backends import Backend
+from ...base.BaseJob import BaseJob, BaseJobBoard
 from ...base.errors import InvalidJobError
-from ...base.job import BaseJob, BaseJobBoard
 from ...base.slot import SlotSpace
 
 
@@ -19,7 +19,7 @@ from ...base.slot import SlotSpace
 class ManageMessageJob(BaseJob):
     """Work about a message. Lives on ManageMessageJobBoard."""
 
-    message_id: str = ""
+    message_id: int = 0
     session_id: str | None = None
 
     def to_record(self) -> dict[str, Any]:
@@ -31,7 +31,7 @@ class ManageMessageJob(BaseJob):
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> Self:
         job = super().from_record(record)
-        job.message_id = str(record.get("message_id") or "")
+        job.message_id = int(record.get("message_id") or 0)
         session_id = record.get("session_id")
         job.session_id = None if session_id in (None, "") else str(session_id)
         return job

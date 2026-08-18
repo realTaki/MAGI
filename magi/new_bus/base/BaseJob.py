@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Self
-from uuid import uuid4
 
 from .backends import Backend, RecordStore
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
@@ -45,7 +44,7 @@ class BaseJob:
 
     payload: dict[str, Any] = field(default_factory=dict)
     publisher: str | None = None
-    id: str = ""
+    id: int = 0
     status: JobStatus = JobStatus.PENDING
     created_at: datetime | None = None
     result: Any = None
@@ -74,7 +73,7 @@ class BaseJob:
             payload=dict(record.get("payload") or {}),
             publisher=record.get("publisher"),
         )
-        job.id = str(record["id"])
+        job.id = int(record["id"])
         job.status = JobStatus(record["status"])
         job.created_at = _parse_dt(record.get("created_at"))
         job.result = record.get("result")
@@ -87,22 +86,22 @@ def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJ
     from .slot import Slot
 
     if job.id:
-        raise InvalidJobError("publish accepts only a new job (id must be empty)")
+        raise InvalidJobError("publish accepts only a new job (id must be 0)")
     if job.status is not JobStatus.PENDING:
         raise InvalidJobError("publish accepts only a pending job")
     job_type = type(job)
     slots.fire(job_type, Slot.PRE_PUBLISH, job)
-    job.id = uuid4().hex
     job.created_at = utcnow()
     job.status = JobStatus.PENDING
     job.error = None
-    store.insert(job.to_record())
+    stored = store.insert(job.to_record())
+    job.id = int(stored["id"])
     slots.fire(job_type, Slot.PUBLISH, job)
     slots.fire(job_type, Slot.POST_PUBLISH, job)
     return job
 
 
-def load_job(store: RecordStore, job_type: type[BaseJob], job_id: str) -> BaseJob:
+def load_job(store: RecordStore, job_type: type[BaseJob], job_id: int) -> BaseJob:
     record = store.get(job_id)
     if record is None:
         raise JobNotFoundError(f"{job_type.type_name()} {job_id} not found")
@@ -154,13 +153,13 @@ class BaseJobBoard:
             return job
         return None
 
-    def complete(self, job_id: str, result: Any = None) -> BaseJob:
+    def complete(self, job_id: int, result: Any = None) -> BaseJob:
         return self._finish(job_id, JobStatus.COMPLETED, result=result, error=None)
 
-    def fail(self, job_id: str, error: str) -> BaseJob:
+    def fail(self, job_id: int, error: str) -> BaseJob:
         return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
 
-    def get(self, job_id: str) -> BaseJob:
+    def get(self, job_id: int) -> BaseJob:
         return load_job(self._store, self.job_type, job_id)
 
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
@@ -171,7 +170,7 @@ class BaseJobBoard:
 
     def _finish(
         self,
-        job_id: str,
+        job_id: int,
         status: JobStatus,
         *,
         result: Any,

@@ -17,11 +17,15 @@ def check_collection(name: str) -> str:
     return name
 
 
-def require_id(record: Mapping[str, Any]) -> str:
-    record_id = record.get("id")
-    if not record_id:
-        raise BackendError("record id is required")
-    return str(record_id)
+def coerce_id(value: Any) -> int | None:
+    """Return a persisted id, or None when the record is still unassigned (0)."""
+    if value in (None, "", 0, "0"):
+        return None
+    return int(value)
+
+
+def next_id(existing: list[int]) -> int:
+    return max(existing, default=0) + 1
 
 
 def matches(record: Mapping[str, Any], eq: Mapping[str, Any] | None) -> bool:
@@ -31,7 +35,7 @@ def matches(record: Mapping[str, Any], eq: Mapping[str, Any] | None) -> bool:
 
 
 def sort_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(records, key=lambda item: (str(item.get("created_at") or ""), str(item["id"])))
+    return sorted(records, key=lambda item: (str(item.get("created_at") or ""), int(item["id"])))
 
 
 def copy_record(record: Mapping[str, Any]) -> dict[str, Any]:

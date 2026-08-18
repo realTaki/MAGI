@@ -9,13 +9,13 @@ from contextlib import contextmanager
 from typing import Any, Protocol
 
 from ..errors import BackendError
-from ._common import check_collection, copy_record, matches, require_id, sort_records
+from ._common import check_collection, coerce_id, copy_record, matches, sort_records
 from .backend import Backend, RecordStore
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
     collection TEXT NOT NULL,
-    id TEXT NOT NULL,
+    id INTEGER NOT NULL,
     status TEXT,
     created_at TEXT,
     data TEXT NOT NULL,
@@ -100,8 +100,17 @@ class _SqlStore(RecordStore):
 
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
-        record_id = require_id(data)
         with self._backend._lock:
+            record_id = coerce_id(data.get("id"))
+            if record_id is None:
+                row = self._backend._execute(
+                    "SELECT COALESCE(MAX(id), 0) + 1 FROM records WHERE collection = ?",
+                    (self._name,),
+                ).fetchone()
+                record_id = int(
+                    row[0] if not isinstance(row, Mapping) else next(iter(row.values()))
+                )
+                data["id"] = record_id
             try:
                 self._backend._execute(
                     "INSERT INTO records (collection, id, status, created_at, data) "
@@ -119,7 +128,7 @@ class _SqlStore(RecordStore):
             self._backend._autocommit()
             return copy_record(data)
 
-    def get(self, id: str) -> dict[str, Any] | None:
+    def get(self, id: int) -> dict[str, Any] | None:
         with self._backend._lock:
             row = self._backend._execute(
                 "SELECT data FROM records WHERE collection = ? AND id = ?",
@@ -129,7 +138,7 @@ class _SqlStore(RecordStore):
             return None
         return json.loads(_row_data(row))
 
-    def replace(self, id: str, record: Mapping[str, Any]) -> dict[str, Any]:
+    def replace(self, id: int, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         data["id"] = id
         with self._backend._lock:
@@ -143,7 +152,7 @@ class _SqlStore(RecordStore):
             self._backend._autocommit()
             return copy_record(data)
 
-    def delete(self, id: str) -> bool:
+    def delete(self, id: int) -> bool:
         with self._backend._lock:
             cursor = self._backend._execute(
                 "DELETE FROM records WHERE collection = ? AND id = ?",
@@ -177,7 +186,7 @@ class _SqlStore(RecordStore):
 
     def compare_and_set(
         self,
-        id: str,
+        id: int,
         *,
         field: str,
         expect: Any,

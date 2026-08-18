@@ -11,24 +11,25 @@ from typing import Any
 class RecordStore(ABC):
     """A named collection of JSON-serializable records.
 
-    Every record has a string ``id``. Job stores also keep ``status`` and
+    Every record has an integer ``id``. ``0`` means unassigned: ``insert``
+    lets the backend generate one. Job stores also keep ``status`` and
     ``created_at`` so claim can be implemented uniformly.
     """
 
     @abstractmethod
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        """Insert a record that already has an ``id``. Returns the stored copy."""
+        """Insert a record. Generates ``id`` when it is 0/missing."""
 
     @abstractmethod
-    def get(self, id: str) -> dict[str, Any] | None:
+    def get(self, id: int) -> dict[str, Any] | None:
         """Return one record or ``None``."""
 
     @abstractmethod
-    def replace(self, id: str, record: Mapping[str, Any]) -> dict[str, Any]:
+    def replace(self, id: int, record: Mapping[str, Any]) -> dict[str, Any]:
         """Overwrite an existing record. Raises if it does not exist."""
 
     @abstractmethod
-    def delete(self, id: str) -> bool:
+    def delete(self, id: int) -> bool:
         """Delete by id. Returns whether a record was removed."""
 
     @abstractmethod
@@ -43,7 +44,7 @@ class RecordStore(ABC):
     @abstractmethod
     def compare_and_set(
         self,
-        id: str,
+        id: int,
         *,
         field: str,
         expect: Any,

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import StrEnum
 
+from .BaseJob import BaseJob
 from .errors import SlotNotFoundError, SlotOccupiedError
-from .job import BaseJob
 
 Handler = Callable[[BaseJob], None]
 

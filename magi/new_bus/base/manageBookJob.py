@@ -7,9 +7,9 @@ from enum import StrEnum
 from typing import Any, Self
 
 from .backends import Backend
-from .book import BaseBook
+from .BaseBook import BaseBook
+from .BaseJob import BaseJob, BaseJobBoard, JobStatus
 from .errors import BusError, InvalidJobError
-from .job import BaseJob, BaseJobBoard, JobStatus
 from .slot import SlotSpace
 
 
@@ -81,38 +81,47 @@ class ManageBookJobBoard(BaseJobBoard):
     def claim(self) -> BaseJob | None:
         raise InvalidJobError("ManageBookJob is executed by BUS and cannot be claimed")
 
-    def complete(self, job_id: str, result: Any = None) -> BaseJob:
+    def complete(self, job_id: int, result: Any = None) -> BaseJob:
         del job_id, result
         raise InvalidJobError("ManageBookJob completes itself")
 
-    def fail(self, job_id: str, error: str) -> BaseJob:
+    def fail(self, job_id: int, error: str) -> BaseJob:
         del job_id, error
         raise InvalidJobError("ManageBookJob fails itself")
 
     def _execute(self, job: ManageBookJob) -> Any:
         payload = job.payload or {}
         if job.op is BookOp.CREATE:
-            return {"record": self.book.insert(self.book.parse(payload)).to_dict()}
+            try:
+                record = self.book.record_cls.parse(payload)
+            except TypeError as exc:
+                raise InvalidJobError(f"invalid {self.book.record_cls.__name__}: {exc}") from exc
+            return {"record": self.book.insert(record).to_dict()}
         if job.op is BookOp.READ:
             return self._read(payload)
         if job.op is BookOp.UPDATE:
-            record_id = payload.get("id")
-            if not record_id:
-                raise InvalidJobError("update requires payload.id")
-            current = self.book.require(str(record_id))
-            return {"record": self.book.update(self.book.merge(current, payload)).to_dict()}
+            current = self.book.require(_record_id(payload))
+            return {"record": self.book.update(current.merge(payload)).to_dict()}
         if job.op is BookOp.DELETE:
-            record_id = payload.get("id")
-            if not record_id:
-                raise InvalidJobError("delete requires payload.id")
-            self.book.delete(str(record_id))
-            return {"id": str(record_id)}
+            record_id = _record_id(payload)
+            self.book.delete(record_id)
+            return {"id": record_id}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
     def _read(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if "id" in payload and payload["id"] not in (None, ""):
-            return {"record": self.book.require(str(payload["id"])).to_dict()}
+        if "id" in payload and payload["id"] not in (None, "", 0):
+            return {"record": self.book.require(_record_id(payload)).to_dict()}
         filters = payload.get("filter")
         if filters is not None and not isinstance(filters, dict):
             raise InvalidJobError("read filter must be an object")
         return {"records": [record.to_dict() for record in self.book.query(filters)]}
+
+
+def _record_id(payload: dict[str, Any]) -> int:
+    value = payload.get("id")
+    if value in (None, "", 0):
+        raise InvalidJobError("payload.id is required")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise InvalidJobError("payload.id must be an integer") from exc

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import BackendError
-from ._common import check_collection, copy_record, matches, require_id, sort_records
+from ._common import check_collection, coerce_id, copy_record, matches, next_id, sort_records
 from .backend import Backend, RecordStore
 
 
@@ -21,7 +21,7 @@ class FileBackend(Backend):
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._tx_depth = 0
-        self._pending: dict[str, dict[str, dict[str, Any] | None]] = {}
+        self._pending: dict[str, dict[int, dict[str, Any] | None]] = {}
 
     def records(self, name: str) -> RecordStore:
         return _FileStore(self, check_collection(name))
@@ -49,10 +49,10 @@ class FileBackend(Backend):
     def _collection_dir(self, name: str) -> Path:
         return self.root / name
 
-    def _path(self, name: str, record_id: str) -> Path:
+    def _path(self, name: str, record_id: int) -> Path:
         return self._collection_dir(name) / f"{record_id}.json"
 
-    def _read_disk(self, name: str, record_id: str) -> dict[str, Any] | None:
+    def _read_disk(self, name: str, record_id: int) -> dict[str, Any] | None:
         path = self._path(name, record_id)
         if not path.is_file():
             return None
@@ -61,7 +61,7 @@ class FileBackend(Backend):
         except (OSError, json.JSONDecodeError) as exc:
             raise BackendError(f"failed to read {path}") from exc
 
-    def _write_disk(self, name: str, record_id: str, record: Mapping[str, Any]) -> None:
+    def _write_disk(self, name: str, record_id: int, record: Mapping[str, Any]) -> None:
         directory = self._collection_dir(name)
         directory.mkdir(parents=True, exist_ok=True)
         path = self._path(name, record_id)
@@ -75,7 +75,7 @@ class FileBackend(Backend):
             tmp.unlink(missing_ok=True)
             raise BackendError(f"failed to write {path}") from exc
 
-    def _delete_disk(self, name: str, record_id: str) -> bool:
+    def _delete_disk(self, name: str, record_id: int) -> bool:
         path = self._path(name, record_id)
         if not path.is_file():
             return False
@@ -85,13 +85,28 @@ class FileBackend(Backend):
             raise BackendError(f"failed to delete {path}") from exc
         return True
 
-    def _list_disk_ids(self, name: str) -> list[str]:
+    def _list_disk_ids(self, name: str) -> list[int]:
         directory = self._collection_dir(name)
         if not directory.is_dir():
             return []
-        return [path.stem for path in directory.glob("*.json") if path.suffix == ".json"]
+        ids: list[int] = []
+        for path in directory.glob("*.json"):
+            try:
+                ids.append(int(path.stem))
+            except ValueError:
+                continue
+        return ids
 
-    def _visible(self, name: str, record_id: str) -> dict[str, Any] | None:
+    def _existing_ids(self, name: str) -> list[int]:
+        ids = set(self._list_disk_ids(name))
+        for record_id, record in self._pending.get(name, {}).items():
+            if record is None:
+                ids.discard(record_id)
+            else:
+                ids.add(record_id)
+        return list(ids)
+
+    def _visible(self, name: str, record_id: int) -> dict[str, Any] | None:
         pending = self._pending.get(name)
         if pending is not None and record_id in pending:
             record = pending[record_id]
@@ -99,7 +114,7 @@ class FileBackend(Backend):
         record = self._read_disk(name, record_id)
         return copy_record(record) if record is not None else None
 
-    def _stage(self, name: str, record_id: str, record: dict[str, Any] | None) -> None:
+    def _stage(self, name: str, record_id: int, record: dict[str, Any] | None) -> None:
         self._pending.setdefault(name, {})[record_id] = record
 
     def _commit(self) -> None:
@@ -118,9 +133,12 @@ class _FileStore(RecordStore):
 
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
-        record_id = require_id(data)
         with self._backend._lock:
-            if self._backend._visible(self._name, record_id) is not None:
+            record_id = coerce_id(data.get("id"))
+            if record_id is None:
+                record_id = next_id(self._backend._existing_ids(self._name))
+                data["id"] = record_id
+            elif self._backend._visible(self._name, record_id) is not None:
                 raise BackendError(f"duplicate id {record_id}")
             if self._backend._tx_depth:
                 self._backend._stage(self._name, record_id, data)
@@ -128,11 +146,11 @@ class _FileStore(RecordStore):
                 self._backend._write_disk(self._name, record_id, data)
             return copy_record(data)
 
-    def get(self, id: str) -> dict[str, Any] | None:
+    def get(self, id: int) -> dict[str, Any] | None:
         with self._backend._lock:
             return self._backend._visible(self._name, id)
 
-    def replace(self, id: str, record: Mapping[str, Any]) -> dict[str, Any]:
+    def replace(self, id: int, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         data["id"] = id
         with self._backend._lock:
@@ -144,7 +162,7 @@ class _FileStore(RecordStore):
                 self._backend._write_disk(self._name, id, data)
             return copy_record(data)
 
-    def delete(self, id: str) -> bool:
+    def delete(self, id: int) -> bool:
         with self._backend._lock:
             if self._backend._visible(self._name, id) is None:
                 return False
@@ -178,7 +196,7 @@ class _FileStore(RecordStore):
 
     def compare_and_set(
         self,
-        id: str,
+        id: int,
         *,
         field: str,
         expect: Any,

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from ...base.book import BaseBook, BaseRecord
+from ...base.BaseBook import BaseBook, BaseRecord
 from ...base.errors import InvalidJobError
 
 MESSAGE_ROLES = frozenset({"user", "assistant", "system", "tool"})

@@ -7,7 +7,8 @@ record types (see :class:`Message`). External code talks to Bus, never to BaseBo
 from .base.backends.file import FileBackend
 from .base.backends.postgres import PostgresBackend
 from .base.backends.sqlite import SQLiteBackend
-from .base.book import BaseRecord
+from .base.BaseBook import BaseRecord
+from .base.BaseJob import BaseJob, BaseJobBoard, JobStatus
 from .base.errors import (
     BackendError,
     BookNotFoundError,
@@ -21,7 +22,6 @@ from .base.errors import (
     SlotOccupiedError,
     SlotRejected,
 )
-from .base.job import BaseJob, BaseJobBoard, JobStatus
 from .base.manageBookJob import BookOp, ManageBookJob
 from .base.slot import Slot
 from .bus import Bus

@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from .base.backends import Backend
-from .base.book import BaseBook
+from .base.BaseBook import BaseBook
+from .base.BaseJob import BaseJob, BaseJobBoard, JobStatus
 from .base.errors import InvalidJobError
-from .base.job import BaseJob, BaseJobBoard, JobStatus
 from .base.manageBookJob import ManageBookJob, ManageBookJobBoard
 from .base.slot import Handler, Slot, SlotSpace
 
@@ -99,7 +99,7 @@ class Bus:
             raise InvalidJobError("book jobs fail themselves")
         return self._job_board(type(job)).fail(job.id, error)
 
-    def get(self, job_type: type[BaseJob], job_id: str, *, book: str | None = None) -> BaseJob:
+    def get(self, job_type: type[BaseJob], job_id: int, *, book: str | None = None) -> BaseJob:
         if issubclass(job_type, ManageBookJob):
             return self._book_board(_book_name(job_type, book)).get(job_id)
         return self._job_board(job_type).get(job_id)
