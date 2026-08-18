@@ -1,8 +1,13 @@
-"""Shared SQL record store used by SQLite and PostgreSQL."""
+"""Shared SQL record store used by SQLite and PostgreSQL.
+
+Each Book and each JobBoard is its own table. Job tables keep a JSON
+``data`` column. Book tables use one column per record field.
+"""
 
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -12,31 +17,27 @@ from ._common import check_collection, coerce_id, copy_record, matches, sort_rec
 from .backend import DatabaseBackend, RecordStore
 from .errors import BackendError
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS records (
-    collection TEXT NOT NULL,
-    id INTEGER NOT NULL,
-    status TEXT,
-    created_at TEXT,
-    data TEXT NOT NULL,
-    PRIMARY KEY (collection, id)
-)
-"""
-_INDEX = """
-CREATE INDEX IF NOT EXISTS ix_records_claim
-ON records (collection, status, created_at)
-"""
+_IDENT = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_SQL_TYPES = {
+    "int": "INTEGER",
+    "bool": "INTEGER",
+    "str": "TEXT",
+    "datetime": "TEXT",
+    "json": "TEXT",
+}
 
 
 class SqlDriver(Protocol):
     placeholder: str
+    id_column: str
 
     def connect(self) -> Any: ...
 
 
 class SqlBackend(DatabaseBackend):
-    def __init__(self, driver: SqlDriver) -> None:
+    def __init__(self, driver: SqlDriver, engine=None) -> None:
         self._driver = driver
+        self.engine = engine
         self._lock = threading.RLock()
         self._tx_depth = 0
         try:
@@ -46,15 +47,19 @@ class SqlBackend(DatabaseBackend):
         self.ensure()
 
     def ensure(self) -> None:
-        try:
-            self._execute(_SCHEMA)
-            self._execute(_INDEX)
-            self._conn.commit()
-        except Exception as exc:
-            raise BackendError("failed to prepare SQL backend") from exc
+        return
 
-    def records(self, name: str) -> RecordStore:
-        return _SqlStore(self, check_collection(name))
+    def records(
+        self,
+        name: str,
+        *,
+        fields: Sequence[tuple[str, str]] | None = None,
+        foreign_keys: Sequence[tuple[str, str, str]] | None = None,
+    ) -> RecordStore:
+        table = table_name(check_collection(name))
+        with self._lock:
+            self._ensure_table(table, fields, foreign_keys)
+        return _SqlStore(self, table, tuple(fields) if fields else None)
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -98,61 +103,109 @@ class SqlBackend(DatabaseBackend):
         if self._tx_depth == 0:
             self._conn.commit()
 
+    def _ensure_table(
+        self,
+        table: str,
+        fields: Sequence[tuple[str, str]] | None,
+        foreign_keys: Sequence[tuple[str, str, str]] | None,
+    ) -> None:
+        if fields:
+            columns = [self._driver.id_column]
+            for name, kind in fields:
+                if name == "id":
+                    continue
+                columns.append(f"{name} {_SQL_TYPES.get(kind, 'TEXT')}")
+            for column, target, target_column in foreign_keys or ():
+                columns.append(
+                    f"FOREIGN KEY ({column}) REFERENCES {table_name(target)} ({target_column})"
+                )
+        else:
+            columns = [
+                self._driver.id_column,
+                "status TEXT",
+                "created_at TEXT",
+                "data TEXT NOT NULL",
+            ]
+        try:
+            self._execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(columns)})")
+            if not fields:
+                self._execute(
+                    f"CREATE INDEX IF NOT EXISTS ix_{table}_claim ON {table} (status, created_at)"
+                )
+            self._autocommit()
+        except Exception as exc:
+            raise BackendError(f"failed to prepare table {table}") from exc
+
 
 class _SqlStore(RecordStore):
-    def __init__(self, backend: SqlBackend, name: str) -> None:
+    def __init__(
+        self,
+        backend: SqlBackend,
+        table: str,
+        fields: tuple[tuple[str, str], ...] | None,
+    ) -> None:
         self._backend = backend
-        self._name = name
+        self._table = table
+        self._fields = fields
+        self._kinds = dict(fields) if fields else {}
 
     def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         with self._backend._lock:
             record_id = coerce_id(data.get("id"))
-            if record_id is None:
-                row = self._backend._execute(
-                    "SELECT COALESCE(MAX(id), 0) + 1 FROM records WHERE collection = ?",
-                    (self._name,),
-                ).fetchone()
-                record_id = int(
-                    row[0] if not isinstance(row, Mapping) else next(iter(row.values()))
-                )
-                data["id"] = record_id
             try:
-                self._backend._execute(
-                    "INSERT INTO records (collection, id, status, created_at, data) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        self._name,
-                        record_id,
-                        data.get("status"),
-                        data.get("created_at"),
-                        json.dumps(data),
-                    ),
-                )
+                if record_id is None:
+                    data["id"] = self._insert_new(data)
+                elif self._fields is None:
+                    self._backend._execute(
+                        f"INSERT INTO {self._table} (id, status, created_at, data) "
+                        "VALUES (?, ?, ?, ?)",
+                        (record_id, data.get("status"), data.get("created_at"), json.dumps(data)),
+                    )
+                else:
+                    names, values = self._typed_row(data)
+                    placeholders = ", ".join("?" for _ in names)
+                    self._backend._execute(
+                        f"INSERT INTO {self._table} ({', '.join(names)}) VALUES ({placeholders})",
+                        values,
+                    )
             except Exception as exc:
-                raise BackendError(f"duplicate id {record_id}") from exc
+                raise BackendError(f"duplicate id {data.get('id')}") from exc
             self._backend._autocommit()
             return copy_record(data)
 
     def get(self, id: int) -> dict[str, Any] | None:
         with self._backend._lock:
+            if self._fields is None:
+                row = self._backend._execute(
+                    f"SELECT data FROM {self._table} WHERE id = ?", (id,)
+                ).fetchone()
+                if row is None:
+                    return None
+                return json.loads(_cell(row, "data", 0))
             row = self._backend._execute(
-                "SELECT data FROM records WHERE collection = ? AND id = ?",
-                (self._name, id),
+                f"SELECT * FROM {self._table} WHERE id = ?", (id,)
             ).fetchone()
-        if row is None:
-            return None
-        return json.loads(_row_data(row))
+        return None if row is None else self._from_row(row)
 
     def replace(self, id: int, record: Mapping[str, Any]) -> dict[str, Any]:
         data = copy_record(record)
         data["id"] = id
         with self._backend._lock:
-            cursor = self._backend._execute(
-                "UPDATE records SET status = ?, created_at = ?, data = ? "
-                "WHERE collection = ? AND id = ?",
-                (data.get("status"), data.get("created_at"), json.dumps(data), self._name, id),
-            )
+            if self._fields is None:
+                cursor = self._backend._execute(
+                    f"UPDATE {self._table} SET status = ?, created_at = ?, data = ? WHERE id = ?",
+                    (data.get("status"), data.get("created_at"), json.dumps(data), id),
+                )
+            else:
+                names, values = self._typed_row(data)
+                assignments = ", ".join(f"{name} = ?" for name in names if name != "id")
+                params = [value for name, value in zip(names, values, strict=True) if name != "id"]
+                params.append(id)
+                cursor = self._backend._execute(
+                    f"UPDATE {self._table} SET {assignments} WHERE id = ?",
+                    params,
+                )
             if _rowcount(cursor) == 0:
                 raise BackendError(f"missing id {id}")
             self._backend._autocommit()
@@ -160,10 +213,7 @@ class _SqlStore(RecordStore):
 
     def delete(self, id: int) -> bool:
         with self._backend._lock:
-            cursor = self._backend._execute(
-                "DELETE FROM records WHERE collection = ? AND id = ?",
-                (self._name, id),
-            )
+            cursor = self._backend._execute(f"DELETE FROM {self._table} WHERE id = ?", (id,))
             deleted = _rowcount(cursor) > 0
             self._backend._autocommit()
             return deleted
@@ -175,17 +225,29 @@ class _SqlStore(RecordStore):
         eq: Mapping[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         with self._backend._lock:
-            if status is None:
-                rows = self._backend._execute(
-                    "SELECT data FROM records WHERE collection = ?",
-                    (self._name,),
-                ).fetchall()
+            if self._fields is None:
+                if status is None:
+                    rows = self._backend._execute(f"SELECT data FROM {self._table}").fetchall()
+                else:
+                    rows = self._backend._execute(
+                        f"SELECT data FROM {self._table} WHERE status = ?", (status,)
+                    ).fetchall()
+                records = [json.loads(_cell(row, "data", 0)) for row in rows]
             else:
+                clauses: list[str] = []
+                params: list[Any] = []
+                if status is not None and "status" in self._kinds:
+                    clauses.append("status = ?")
+                    params.append(status)
+                for key, value in (eq or {}).items():
+                    if key in self._kinds or key == "id":
+                        clauses.append(f"{key} = ?")
+                        params.append(_encode(self._kinds.get(key, "int"), value))
+                where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
                 rows = self._backend._execute(
-                    "SELECT data FROM records WHERE collection = ? AND status = ?",
-                    (self._name, status),
+                    f"SELECT * FROM {self._table}{where}", params
                 ).fetchall()
-        records = [json.loads(_row_data(row)) for row in rows]
+                records = [self._from_row(row) for row in rows]
         if eq:
             records = [record for record in records if matches(record, eq)]
         return sort_records(records)
@@ -199,39 +261,90 @@ class _SqlStore(RecordStore):
         update: Mapping[str, Any],
     ) -> dict[str, Any] | None:
         with self._backend._lock:
-            row = self._backend._execute(
-                "SELECT data FROM records WHERE collection = ? AND id = ?",
-                (self._name, id),
-            ).fetchone()
-            if row is None:
-                return None
-            current = json.loads(_row_data(row))
-            if current.get(field) != expect:
+            current = self.get(id)
+            if current is None or current.get(field) != expect:
                 return None
             merged = copy_record(current)
             merged.update(update)
             merged["id"] = id
-            cursor = self._backend._execute(
-                "UPDATE records SET status = ?, created_at = ?, data = ? "
-                "WHERE collection = ? AND id = ?",
-                (
-                    merged.get("status"),
-                    merged.get("created_at"),
-                    json.dumps(merged),
-                    self._name,
-                    id,
-                ),
-            )
-            if _rowcount(cursor) == 0:
+            try:
+                return self.replace(id, merged)
+            except BackendError:
                 return None
-            self._backend._autocommit()
-            return copy_record(merged)
+
+    def _insert_new(self, data: dict[str, Any]) -> int:
+        returning = self._backend._driver.placeholder == "%s"
+        if self._fields is None:
+            sql = f"INSERT INTO {self._table} (status, created_at, data) VALUES (?, ?, ?)"
+            params: list[Any] = [data.get("status"), data.get("created_at"), json.dumps(data)]
+        else:
+            names = [name for name, _kind in self._fields if name != "id"]
+            params = [_encode(self._kinds[name], data.get(name)) for name in names]
+            placeholders = ", ".join("?" for _ in names)
+            sql = f"INSERT INTO {self._table} ({', '.join(names)}) VALUES ({placeholders})"
+        if returning:
+            sql += " RETURNING id"
+        cursor = self._backend._execute(sql, params)
+        if returning:
+            row = cursor.fetchone()
+            if row is None:
+                raise BackendError("insert did not return id")
+            new_id = int(_cell(row, "id", 0))
+        else:
+            new_id = int(cursor.lastrowid)
+        data["id"] = new_id
+        if self._fields is None:
+            self._backend._execute(
+                f"UPDATE {self._table} SET data = ? WHERE id = ?",
+                (json.dumps(data), new_id),
+            )
+        return new_id
+
+    def _typed_row(self, data: Mapping[str, Any]) -> tuple[list[str], list[Any]]:
+        names = [name for name, _kind in self._fields or ()]
+        values = [_encode(self._kinds[name], data.get(name)) for name in names]
+        return names, values
+
+    def _from_row(self, row: Any) -> dict[str, Any]:
+        if isinstance(row, Mapping):
+            mapping = row
+        else:
+            names = [name for name, _kind in self._fields or ()]
+            mapping = dict(zip(names, row, strict=False))
+        return {name: _decode(kind, mapping.get(name)) for name, kind in (self._fields or ())}
 
 
-def _row_data(row: Any) -> str:
+def table_name(collection: str) -> str:
+    name = collection.replace(".", "_")
+    if not _IDENT.fullmatch(name):
+        raise BackendError(f"invalid table name {name!r}")
+    return name
+
+
+def _encode(kind: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if kind == "bool":
+        return int(bool(value))
+    if kind == "json":
+        return json.dumps(value)
+    return value
+
+
+def _decode(kind: str, value: Any) -> Any:
+    if value is None:
+        return None
+    if kind == "bool":
+        return bool(value)
+    if kind == "json":
+        return json.loads(value) if isinstance(value, str) else value
+    return value
+
+
+def _cell(row: Any, key: str | int, index: int) -> Any:
     if isinstance(row, Mapping):
-        return str(row["data"])
-    return str(row[0])
+        return row[key] if key in row else row[index]
+    return row[index]
 
 
 def _rowcount(cursor: Any) -> int:

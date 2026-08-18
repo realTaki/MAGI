@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any, ClassVar
 
 from .backends.backend import DatabaseBackend
-from .BaseRecord import BaseRecord
+from .BaseRecord import BaseRecord, field_kinds
 from .errors import BookNotFoundError, InvalidJobError
 from .time import utcnow
 
@@ -20,28 +20,36 @@ class BaseBook:
 
     name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
+    model_cls: ClassVar[type | None] = None
+    foreign_keys: ClassVar[tuple[tuple[str, str], ...]] = ()
 
     def __init__(self, backend) -> None:
         if not type(self).name:
             raise InvalidJobError(f"{type(self).__name__} must set class variable name")
         self._require_backend(backend)
-        self._store = backend.records(f"books.{type(self).name}")
+        cls = type(self)
+        self._store = backend.records(
+            f"books.{cls.name}",
+            fields=field_kinds(cls.record_cls),
+            foreign_keys=tuple(
+                (column, f"books.{book}", "id") for column, book in cls.foreign_keys
+            ),
+        )
 
     def _require_backend(self, backend) -> None:
         if not isinstance(backend, DatabaseBackend):
             raise InvalidJobError("BaseBook requires a database backend")
 
     def add(self, record: BaseRecord) -> int:
-        record_id = self._next_id()
         now = utcnow()
         prepared = replace(
             record,
-            id=record_id,
+            id=0,
             created_at=record.created_at or now,
             updated_at=now,
         )
-        self._store.insert(prepared.to_dict())
-        return record_id
+        stored = self._store.insert(prepared.to_dict())
+        return int(stored["id"])
 
     def get(self, record_id: int) -> BaseRecord | None:
         data = self._store.get(record_id)
@@ -61,10 +69,6 @@ class BaseBook:
         )
         self._store.replace(stored.id, stored.to_dict())
         return stored.id
-
-    def _next_id(self) -> int:
-        existing = [int(row["id"]) for row in self._store.find() if row.get("id")]
-        return max(existing, default=0) + 1
 
     def delete(self, record_id: int) -> bool:
         return self._store.delete(record_id)

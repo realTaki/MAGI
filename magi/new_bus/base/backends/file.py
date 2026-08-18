@@ -26,7 +26,7 @@ class FileBackend(Backend):
     def ensure(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def records(self, name: str) -> RecordStore:
+    def records(self, name: str, **_spec: Any) -> RecordStore:
         return _FileStore(self, check_collection(name))
 
     @contextmanager

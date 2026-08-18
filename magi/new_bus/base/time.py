@@ -7,7 +7,7 @@ from typing import Any, get_args
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def parse_dt(value: Any) -> datetime | None:

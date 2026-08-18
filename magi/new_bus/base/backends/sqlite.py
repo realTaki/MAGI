@@ -5,11 +5,14 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from sqlalchemy import create_engine
+
 from ._sql import SqlBackend
 
 
 class _SQLiteDriver:
     placeholder = "?"
+    id_column = "id INTEGER PRIMARY KEY AUTOINCREMENT"
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
@@ -24,4 +27,9 @@ class _SQLiteDriver:
 
 class SQLiteBackend(SqlBackend):
     def __init__(self, path: str | Path) -> None:
-        super().__init__(_SQLiteDriver(path))
+        path = Path(path)
+        engine = create_engine(
+            f"sqlite:///{path}",
+            connect_args={"check_same_thread": False},
+        )
+        super().__init__(_SQLiteDriver(path), engine=engine)

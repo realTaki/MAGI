@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from datetime import datetime
-from typing import Any, Self, get_type_hints
+from typing import Any, Self, get_args, get_origin, get_type_hints
 
 from .time import dump_dt, load_dt
 
@@ -47,3 +47,25 @@ class BaseRecord:
 
 
 OWNED_FIELDS = frozenset(item.name for item in fields(BaseRecord))
+
+
+def field_kinds(record_cls: type[BaseRecord]) -> tuple[tuple[str, str], ...]:
+    """SQL-facing kinds for each declared field: int, str, bool, datetime, json."""
+    hints = get_type_hints(record_cls)
+    return tuple((item.name, _field_kind(hints.get(item.name))) for item in fields(record_cls))
+
+
+def _field_kind(annotation: Any) -> str:
+    args = tuple(arg for arg in (get_args(annotation) or (annotation,)) if arg is not type(None))
+    if not args:
+        return "str"
+    if bool in args or args[0] is bool:
+        return "bool"
+    if datetime in args or args[0] is datetime:
+        return "datetime"
+    if int in args or args[0] is int:
+        return "int"
+    origin = get_origin(args[0])
+    if args[0] in (dict, list) or origin in (dict, list):
+        return "json"
+    return "str"
