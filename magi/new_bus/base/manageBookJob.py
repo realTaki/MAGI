@@ -118,7 +118,8 @@ class ManageBookJobBoard(BaseJobBoard):
             return {"record": self.book.update(current.merge(payload)).to_dict()}
         if job.op is BookOp.DELETE:
             record_id = _record_id(payload)
-            self.book.delete(record_id)
+            if not self.book.delete(record_id):
+                raise BookNotFoundError(f"book {self.book.name!r} has no id {record_id}")
             return {"deleted_id": record_id}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
@@ -131,7 +132,7 @@ class ManageBookJobBoard(BaseJobBoard):
         filters = payload.get("filter")
         if filters is not None and not isinstance(filters, dict):
             raise InvalidJobError("read filter must be an object")
-        return {"records": [record.to_dict() for record in self.book.query(filters)]}
+        return {"records": [record.to_dict() for record in self.book.list(filters)]}
 
 
 def _record_id(payload: dict[str, Any]) -> int:

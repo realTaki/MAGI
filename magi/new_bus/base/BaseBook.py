@@ -72,12 +72,12 @@ class BaseBook:
         self._validate_write(prepared)
         return self.record_cls.parse(self._store.insert(prepared.to_dict()))
 
-    def get(self, id: int) -> BaseRecord | None:
-        data = self._store.get(id)
+    def get(self, record_id: int) -> BaseRecord | None:
+        data = self._store.get(record_id)
         return None if data is None else self.record_cls.parse(data)
 
-    def require(self, id: int) -> bool:
-        return self.get(id) is not None
+    def require(self, record_id: int) -> bool:
+        return self.get(record_id) is not None
 
     def update(self, record: BaseRecord) -> BaseRecord:
         if not record.id:
@@ -92,10 +92,8 @@ class BaseBook:
         self._store.replace(stored.id, stored.to_dict())
         return stored
 
-    def delete(self, id: int) -> None:
-        if not self.require(id):
-            raise BookNotFoundError(f"book {self.name!r} has no id {id}")
-        self._store.delete(id)
+    def delete(self, record_id: int) -> bool:
+        return self._store.delete(record_id)
 
-    def query(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
+    def list(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
         return [self.record_cls.parse(row) for row in self._store.find(eq=filters)]
