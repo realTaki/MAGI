@@ -5,10 +5,11 @@ The record type :class:`Message` is the field list for this BaseBook.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import ClassVar
 
-from ...base.BaseBook import BaseBook, BaseRecord
+from ...base.BaseBook import BaseBook, BaseRecord, utcnow
 from ...base.errors import InvalidJobError
 
 MESSAGE_ROLES = frozenset({"user", "assistant", "system", "tool"})
@@ -21,11 +22,15 @@ class Message(BaseRecord):
     role: ``user`` | ``assistant`` | ``system`` | ``tool``
     content: non-empty text
     conversation_id: optional Conversation.id
+    timestamp: when the message was produced
+    archived: hidden from the live transcript
     """
 
     role: str
     content: str
     conversation_id: int | None = None
+    timestamp: datetime = field(default_factory=utcnow)
+    archived: bool = False
 
     BOOK: ClassVar[str] = "messages"
 
@@ -43,7 +48,14 @@ class MessageBook(BaseBook):
             )
         if not record.content:
             raise InvalidJobError("message.content must be a non-empty string")
-        if record.conversation_id is not None and not isinstance(record.conversation_id, int):
+        if record.conversation_id is not None and (
+            not isinstance(record.conversation_id, int)
+            or isinstance(record.conversation_id, bool)
+        ):
             raise InvalidJobError("message.conversation_id must be an integer")
         if record.conversation_id is not None and record.conversation_id < 1:
             raise InvalidJobError("message.conversation_id must be a persisted Conversation.id")
+        if not isinstance(record.timestamp, datetime):
+            raise InvalidJobError("message.timestamp must be a datetime")
+        if not isinstance(record.archived, bool):
+            raise InvalidJobError("message.archived must be a bool")

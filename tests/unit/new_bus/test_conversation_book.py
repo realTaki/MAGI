@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import UTC, datetime
 
 from magi.new_bus import (
     BaseRecord,
@@ -21,35 +22,69 @@ def write_conversation(bus: Bus, op: BookOp, **payload) -> ManageBookJob:
     return job
 
 
+def create_conversation(bus: Bus, **payload) -> ManageBookJob:
+    payload.setdefault("delivery_address", "webui:test")
+    payload.setdefault("contact_id", 1)
+    payload.setdefault("channel", "webui")
+    return write_conversation(bus, BookOp.CREATE, **payload)
+
+
 def test_bus_starts_with_conversation_firmware() -> None:
     bus = Bus(InMemoryBackend())
     assert Conversation.BOOK in bus.books
     assert ManageConversationJob in bus.jobs
     assert bus.record_type(Conversation.BOOK) is Conversation
     owned = {field.name for field in dataclasses.fields(BaseRecord)}
-    assert {field.name for field in dataclasses.fields(Conversation)} - owned == {"title"}
+    assert {field.name for field in dataclasses.fields(Conversation)} - owned == {
+        "delivery_address",
+        "contact_id",
+        "channel",
+        "title",
+        "summary",
+        "last_compaction_at",
+    }
 
 
 def test_create_read_filter_conversation() -> None:
     bus = Bus(InMemoryBackend())
-    created = write_conversation(bus, BookOp.CREATE, title="hello")
+    created = create_conversation(
+        bus,
+        delivery_address="tg:123",
+        contact_id=7,
+        channel="tg",
+        title="hello",
+        summary="hi",
+    )
     assert created.status is JobStatus.COMPLETED
-    assert created.result is not None
-    record = created.result.record
+    record = bus.result(created).record
+    assert record["delivery_address"] == "tg:123"
+    assert record["contact_id"] == 7
+    assert record["channel"] == "tg"
     assert record["title"] == "hello"
+    assert record["summary"] == "hi"
+    assert record["last_compaction_at"] is None
 
-    listed = write_conversation(bus, BookOp.READ, filter={"title": "hello"})
-    assert listed.result is not None
-    assert [item["id"] for item in listed.result.records] == [record["id"]]
+    listed = write_conversation(bus, BookOp.READ, filter={"contact_id": 7})
+    assert [item["id"] for item in bus.result(listed).records] == [record["id"]]
+
+
+def test_last_compaction_at_round_trips() -> None:
+    bus = Bus(InMemoryBackend())
+    stamped = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
+    assert created.status is JobStatus.COMPLETED
+    assert bus.result(created).record["last_compaction_at"] == stamped.isoformat()
+
+    loaded = write_conversation(bus, BookOp.READ, id=bus.result(created).record["id"])
+    assert bus.result(loaded).record["last_compaction_at"] == stamped.isoformat()
 
 
 def test_messages_can_be_listed_by_conversation() -> None:
     from magi.new_bus import Message
 
     bus = Bus(InMemoryBackend())
-    conversation = write_conversation(bus, BookOp.CREATE, title="thread")
-    assert conversation.result is not None
-    conversation_id = conversation.result.record["id"]
+    conversation = create_conversation(bus, title="thread")
+    conversation_id = bus.result(conversation).record["id"]
 
     bus.publish(
         ManageBookJob(
@@ -65,16 +100,15 @@ def test_messages_can_be_listed_by_conversation() -> None:
             payload={"filter": {"conversation_id": conversation_id}},
         )
     )
-    assert listed.result is not None
-    assert len(listed.result.records) == 1
-    assert listed.result.records[0]["conversation_id"] == conversation_id
+    records = bus.result(listed).records
+    assert len(records) == 1
+    assert records[0]["conversation_id"] == conversation_id
 
 
 def test_conversation_job_board_publish_claim_complete() -> None:
     bus = Bus(InMemoryBackend())
-    stored = write_conversation(bus, BookOp.CREATE, title="inbox")
-    assert stored.result is not None
-    conversation_id = stored.result.record["id"]
+    stored = create_conversation(bus, title="inbox")
+    conversation_id = bus.result(stored).record["id"]
 
     board = bus.job_board(ManageConversationJob)
     assert isinstance(board, ManageConversationJobBoard)

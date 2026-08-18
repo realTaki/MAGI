@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -62,32 +63,32 @@ def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
         "role",
         "content",
         "conversation_id",
+        "timestamp",
+        "archived",
     }
 
 
 def test_create_read_update_delete_message(bus: Bus) -> None:
     created = create(bus, role="user", content="hello", conversation_id=1)
     assert created.status is JobStatus.COMPLETED
-    assert created.result is not None
-    record = created.result.record
+    record = bus.result(created).record
     assert record["role"] == "user"
     assert record["content"] == "hello"
     assert record["conversation_id"] == 1
+    assert record["archived"] is False
+    datetime.fromisoformat(record["timestamp"])
 
     by_id = write_message(bus, BookOp.READ, id=record["id"])
     assert by_id.status is JobStatus.COMPLETED
-    assert by_id.result is not None
-    assert by_id.result.record["content"] == "hello"
+    assert bus.result(by_id).record["content"] == "hello"
 
     listed = write_message(bus, BookOp.READ, filter={"conversation_id": 1})
-    assert listed.result is not None
-    assert [item["id"] for item in listed.result.records] == [record["id"]]
+    assert [item["id"] for item in bus.result(listed).records] == [record["id"]]
 
     updated = write_message(bus, BookOp.UPDATE, id=record["id"], content="hello, world")
     assert updated.status is JobStatus.COMPLETED
-    assert updated.result is not None
-    assert updated.result.record["content"] == "hello, world"
-    assert updated.result.record["role"] == "user"
+    assert bus.result(updated).record["content"] == "hello, world"
+    assert bus.result(updated).record["role"] == "user"
 
     deleted = write_message(bus, BookOp.DELETE, id=record["id"])
     assert deleted.status is JobStatus.COMPLETED
@@ -95,13 +96,31 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     assert missing.status is JobStatus.FAILED
 
 
+def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
+    stamped = datetime(2026, 8, 18, 9, 30, tzinfo=UTC)
+    created = create(
+        bus,
+        role="assistant",
+        content="later",
+        conversation_id=2,
+        timestamp=stamped,
+        archived=True,
+    )
+    assert created.status is JobStatus.COMPLETED
+    record = bus.result(created).record
+    assert record["timestamp"] == stamped.isoformat()
+    assert record["archived"] is True
+
+    listed = write_message(bus, BookOp.READ, filter={"archived": True})
+    assert [item["id"] for item in bus.result(listed).records] == [record["id"]]
+
+
 def test_invalid_message_fails_and_does_not_write(bus: Bus) -> None:
     assert create(bus, role="narrator", content="nope").status is JobStatus.FAILED
     assert create(bus, role="user", content="").status is JobStatus.FAILED
     listed = write_message(bus, BookOp.READ)
     assert listed.status is JobStatus.COMPLETED
-    assert listed.result is not None
-    assert listed.result.records == []
+    assert bus.result(listed).records == []
 
 
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
@@ -126,8 +145,7 @@ def test_message_job_board_is_on_the_bus(bus: Bus) -> None:
 
 def test_message_job_board_publish_claim_complete(bus: Bus) -> None:
     stored = create(bus, role="user", content="ping", conversation_id=1)
-    assert stored.result is not None
-    message_id = stored.result.record["id"]
+    message_id = bus.result(stored).record["id"]
 
     board = bus.job_board(ManageMessageJob)
     published = board.publish(
@@ -146,9 +164,9 @@ def test_message_job_board_publish_claim_complete(bus: Bus) -> None:
     done = board.complete(claimed.id)
     assert done.status is JobStatus.COMPLETED
     loaded = board.get(done.id)
-    assert loaded.result is not None
-    assert loaded.result.status is JobStatus.COMPLETED
-    assert loaded.result.job_id == done.id
+    outcome = board.result(loaded.id)
+    assert outcome.status is JobStatus.COMPLETED
+    assert outcome.job_id == done.id
     assert board.claim() is None
 
 

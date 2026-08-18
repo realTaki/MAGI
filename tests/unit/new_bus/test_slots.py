@@ -98,5 +98,4 @@ def test_book_job_slots_do_not_deliver_the_work(db_backend: Backend) -> None:
         assert result.status is JobStatus.COMPLETED
         assert observed == ["create"]
         listed = bus.publish(book_job(BookOp.READ))
-        assert listed.result is not None
-        assert listed.result.records[0]["name"] == "slot-create"
+        assert bus.result(listed).records[0]["name"] == "slot-create"

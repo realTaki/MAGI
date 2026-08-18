@@ -22,10 +22,27 @@ def test_publish_claim_complete(bus: Bus) -> None:
 
     done = bus.complete(claimed)
     assert done.status is JobStatus.COMPLETED
-    assert done.result is not None
-    assert done.result.status is JobStatus.COMPLETED
-    assert done.result.job_id == done.id
+    outcome = bus.result(done)
+    assert outcome.status is JobStatus.COMPLETED
+    assert outcome.job_id == done.id
     assert bus.get(PingJob, done.id).status is JobStatus.COMPLETED
+    assert not hasattr(done, "result")
+
+
+def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
+    bus.publish(PingJob())
+    claimed = bus.claim(PingJob)
+    assert claimed is not None
+    done = bus.complete(claimed)
+    raw = bus.job_board(PingJob)._store.get(done.id)
+    assert raw is not None
+    assert "result" not in raw
+    assert raw["id"] == done.id
+    assert raw["status"] == "completed"
+    outcome = bus.result(done)
+    assert outcome.job_id == done.id
+    assert outcome.status is JobStatus.COMPLETED
+    assert not hasattr(done, "result")
 
 
 def test_claim_then_fail(bus: Bus) -> None:
@@ -35,9 +52,9 @@ def test_claim_then_fail(bus: Bus) -> None:
     failed = bus.fail(claimed, "nope")
     assert failed.status is JobStatus.FAILED
     assert failed.error == "nope"
-    assert failed.result is not None
-    assert failed.result.status is JobStatus.FAILED
-    assert failed.result.error == "nope"
+    outcome = bus.result(failed)
+    assert outcome.status is JobStatus.FAILED
+    assert outcome.error == "nope"
 
 
 def test_claim_empty_board(bus: Bus) -> None:

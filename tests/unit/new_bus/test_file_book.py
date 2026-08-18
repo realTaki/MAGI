@@ -38,8 +38,7 @@ def test_file_book_uses_disk_when_bus_is_sqlite(tmp_path) -> None:
             ManageBookJob(book="notes", op=BookOp.CREATE, payload={"label": "a"})
         )
         assert created.status is JobStatus.COMPLETED
-        assert created.result is not None
-        record_id = created.result.record["id"]
+        record_id = bus.result(created).record["id"]
         book = bus._books["notes"]
         assert isinstance(book, NotesBook)
         path = book.path_for(record_id)

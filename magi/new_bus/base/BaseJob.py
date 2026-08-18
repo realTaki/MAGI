@@ -55,6 +55,8 @@ class BaseJobResult:
     def parse(cls, data: Mapping[str, Any]) -> Self:
         allowed = {item.name for item in fields(cls)}
         kwargs = {key: value for key, value in data.items() if key in allowed}
+        if not kwargs.get("job_id") and data.get("id"):
+            kwargs["job_id"] = int(data["id"])
         status = kwargs.get("status")
         if status is not None and not isinstance(status, JobStatus):
             kwargs["status"] = JobStatus(status)
@@ -74,7 +76,6 @@ class BaseJob:
     id: int = 0
     status: JobStatus = JobStatus.PENDING
     created_at: datetime | None = None
-    result: BaseJobResult | None = None
     error: str | None = None
 
     @classmethod
@@ -82,17 +83,15 @@ class BaseJob:
         return cls.__qualname__
 
     def to_record(self) -> dict[str, Any]:
-        record: dict[str, Any] = {
+        return {
             "id": self.id,
             "type": type(self).type_name(),
             "status": self.status.value,
             "publisher": self.publisher,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "payload": self.payload,
-            "result": None if self.result is None else self.result.to_dict(),
             "error": self.error,
         }
-        return record
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> Self:
@@ -103,8 +102,6 @@ class BaseJob:
         job.id = int(record["id"])
         job.status = JobStatus(record["status"])
         job.created_at = _parse_dt(record.get("created_at"))
-        raw_result = record.get("result")
-        job.result = None if raw_result in (None, {}) else cls.result_cls.parse(raw_result)
         job.error = record.get("error")
         return job
 
@@ -194,6 +191,12 @@ class BaseJobBoard:
     def get(self, job_id: int) -> BaseJob:
         return load_job(self._store, self.job_type, job_id)
 
+    def result(self, job_id: int) -> BaseJobResult:
+        record = self._store.get(job_id)
+        if record is None:
+            raise JobNotFoundError(f"{self.job_type.type_name()} {job_id} not found")
+        return self.job_type.result_cls.parse(record)
+
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
         status_value = status.value if status is not None else None
         return [
@@ -214,11 +217,12 @@ class BaseJobBoard:
                 f"{self.job_type.type_name()} {job_id} is {current.status}, not claimed"
             )
         parsed = self._coerce_result(job_id, status, result, error)
+        update = {"status": status.value, "error": error, **_result_fields(parsed)}
         updated = self._store.compare_and_set(
             job_id,
             field="status",
             expect=JobStatus.CLAIMED.value,
-            update={"status": status.value, "result": parsed.to_dict(), "error": error},
+            update=update,
         )
         if updated is None:
             raise InvalidJobStateError(f"{self.job_type.type_name()} {job_id} is no longer claimed")
@@ -242,3 +246,10 @@ class BaseJobBoard:
         parsed.status = status
         parsed.error = error
         return parsed
+
+
+_RESULT_META = frozenset({"job_id", "status", "error"})
+
+
+def _result_fields(result: BaseJobResult) -> dict[str, Any]:
+    return {key: value for key, value in result.to_dict().items() if key not in _RESULT_META}
