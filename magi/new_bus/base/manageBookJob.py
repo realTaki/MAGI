@@ -92,14 +92,15 @@ class ManageBookJobBoard(BaseJobBoard):
     def _execute(self, job: ManageBookJob) -> Any:
         payload = job.payload or {}
         if job.op is BookOp.CREATE:
-            return {"record": self.book.insert(payload)}
+            return {"record": self.book.insert(self.book.parse(payload)).to_dict()}
         if job.op is BookOp.READ:
             return self._read(payload)
         if job.op is BookOp.UPDATE:
             record_id = payload.get("id")
             if not record_id:
                 raise InvalidJobError("update requires payload.id")
-            return {"record": self.book.update(str(record_id), payload)}
+            current = self.book.require(str(record_id))
+            return {"record": self.book.update(self.book.merge(current, payload)).to_dict()}
         if job.op is BookOp.DELETE:
             record_id = payload.get("id")
             if not record_id:
@@ -110,9 +111,8 @@ class ManageBookJobBoard(BaseJobBoard):
 
     def _read(self, payload: dict[str, Any]) -> dict[str, Any]:
         if "id" in payload and payload["id"] not in (None, ""):
-            record = self.book.require(str(payload["id"]))
-            return {"record": record}
+            return {"record": self.book.require(str(payload["id"])).to_dict()}
         filters = payload.get("filter")
         if filters is not None and not isinstance(filters, dict):
             raise InvalidJobError("read filter must be an object")
-        return {"records": self.book.query(filters)}
+        return {"records": [record.to_dict() for record in self.book.query(filters)]}

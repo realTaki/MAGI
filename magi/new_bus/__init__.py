@@ -7,7 +7,7 @@ record types (see :class:`Message`). External code talks to Bus, never to BaseBo
 from .base.backends.file import FileBackend
 from .base.backends.postgres import PostgresBackend
 from .base.backends.sqlite import SQLiteBackend
-from .base.book import BaseBookRecord
+from .base.book import BaseRecord
 from .base.errors import (
     BackendError,
     BookNotFoundError,
@@ -32,7 +32,7 @@ __all__ = [
     "ManageBookJob",
     "BookNotFoundError",
     "BookOp",
-    "BaseBookRecord",
+    "BaseRecord",
     "Bus",
     "BusError",
     "FileBackend",

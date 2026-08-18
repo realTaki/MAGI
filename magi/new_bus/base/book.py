@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 from uuid import uuid4
@@ -17,15 +17,18 @@ def utcnow() -> datetime:
 
 
 @dataclass(kw_only=True)
-class BaseBookRecord:
+class BaseRecord:
     """Fields every BaseBook row has. BUS assigns these."""
 
     id: str = ""
     created_at: str | None = None
     updated_at: str | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {item.name: getattr(self, item.name) for item in fields(self)}
 
-OWNED_FIELDS = frozenset(item.name for item in fields(BaseBookRecord))
+
+OWNED_FIELDS = frozenset(item.name for item in fields(BaseRecord))
 
 
 class BaseBook:
@@ -34,7 +37,7 @@ class BaseBook:
     Firmware Books set ``record_cls`` to the dataclass that lists their fields.
     """
 
-    record_cls: ClassVar[type | None] = None
+    record_cls: ClassVar[type[BaseRecord]] = BaseRecord
 
     def __init__(self, name: str, backend: Backend) -> None:
         if not name:
@@ -42,45 +45,63 @@ class BaseBook:
         self.name = name
         self._store: RecordStore = backend.records(f"books.{name}")
 
-    def _validate_write(self, record: Mapping[str, Any]) -> None:
+    def parse(self, data: Mapping[str, Any]) -> BaseRecord:
+        """Build a record from a mapping, keeping only declared fields."""
+        allowed = {item.name for item in fields(self.record_cls)}
+        kwargs = {key: value for key, value in data.items() if key in allowed}
+        try:
+            return self.record_cls(**kwargs)
+        except TypeError as exc:
+            raise InvalidJobError(f"invalid {self.record_cls.__name__}: {exc}") from exc
+
+    def merge(self, current: BaseRecord, changes: Mapping[str, Any]) -> BaseRecord:
+        """Apply declared, non-owned fields from ``changes`` onto ``current``."""
+        allowed = {item.name for item in fields(type(current))} - (OWNED_FIELDS - {"updated_at"})
+        updates = {key: value for key, value in changes.items() if key in allowed}
+        return replace(current, **updates)
+
+    def _validate_write(self, record: BaseRecord) -> None:
         """Firmware Books override this to enforce their record protocol."""
 
-    def insert(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        data = dict(record)
-        record_id = str(data.get("id") or uuid4().hex)
+    def insert(self, record: BaseRecord) -> BaseRecord:
+        record_id = record.id or uuid4().hex
         if self._store.get(record_id) is not None:
             raise InvalidJobError(f"book {self.name!r} already has id {record_id}")
         now = utcnow().isoformat()
-        data["id"] = record_id
-        data.setdefault("created_at", now)
-        data["updated_at"] = now
-        self._validate_write(data)
-        return self._store.insert(data)
+        stored = replace(
+            record,
+            id=record_id,
+            created_at=record.created_at or now,
+            updated_at=now,
+        )
+        self._validate_write(stored)
+        self._store.insert(stored.to_dict())
+        return stored
 
-    def get(self, id: str) -> dict[str, Any] | None:
-        return self._store.get(id)
+    def get(self, id: str) -> BaseRecord | None:
+        data = self._store.get(id)
+        return None if data is None else self.parse(data)
 
-    def require(self, id: str) -> dict[str, Any]:
-        record = self._store.get(id)
+    def require(self, id: str) -> BaseRecord:
+        record = self.get(id)
         if record is None:
             raise BookNotFoundError(f"book {self.name!r} has no id {id}")
         return record
 
-    def update(self, id: str, changes: Mapping[str, Any]) -> dict[str, Any]:
-        current = self.require(id)
-        merged = dict(current)
-        for key, value in changes.items():
-            if key in OWNED_FIELDS - {"updated_at"}:
-                continue
-            merged[key] = value
-        merged["id"] = id
-        merged["updated_at"] = utcnow().isoformat()
-        self._validate_write(merged)
-        return self._store.replace(id, merged)
+    def update(self, record: BaseRecord) -> BaseRecord:
+        if not record.id:
+            raise InvalidJobError("update requires record.id")
+        current = self.require(record.id)
+        stored = replace(
+            record, id=current.id, created_at=current.created_at, updated_at=utcnow().isoformat()
+        )
+        self._validate_write(stored)
+        self._store.replace(stored.id, stored.to_dict())
+        return stored
 
     def delete(self, id: str) -> None:
         self.require(id)
         self._store.delete(id)
 
-    def query(self, filters: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
-        return self._store.find(eq=filters)
+    def query(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
+        return [self.parse(row) for row in self._store.find(eq=filters)]

@@ -1,11 +1,24 @@
 """Sample BaseJob types for tests. Not Firmware."""
 
+from dataclasses import dataclass
+
+from ..base.book import BaseBook, BaseRecord
 from ..base.job import BaseJob
 from ..base.manageBookJob import BookOp, ManageBookJob
 
 
 class PingJob(BaseJob):
     pass
+
+
+@dataclass(kw_only=True)
+class Item(BaseRecord):
+    name: str = ""
+    kind: str = ""
+
+
+class ItemBook(BaseBook):
+    record_cls = Item
 
 
 def book_job(op: BookOp, **payload) -> ManageBookJob:
