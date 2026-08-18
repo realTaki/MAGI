@@ -8,6 +8,7 @@ import pytest
 
 from magi.new_bus import (
     BookOp,
+    BookRecord,
     Bus,
     InvalidJobError,
     JobStatus,
@@ -44,13 +45,17 @@ def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
     assert Message.BOOK in bus.books
     assert ManageMessageJob in bus.jobs
     assert bus.record_type(Message.BOOK) is Message
-    assert {field.name for field in dataclasses.fields(Message)} == {
-        "role",
-        "content",
-        "session_id",
+    assert issubclass(Message, BookRecord)
+    assert {field.name for field in dataclasses.fields(BookRecord)} == {
         "id",
         "created_at",
         "updated_at",
+    }
+    owned = {field.name for field in dataclasses.fields(BookRecord)}
+    assert {field.name for field in dataclasses.fields(Message)} - owned == {
+        "role",
+        "content",
+        "session_id",
     }
 
 

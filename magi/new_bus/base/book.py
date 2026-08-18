@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 from uuid import uuid4
@@ -13,6 +14,18 @@ from .backend import Backend, RecordStore
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+@dataclass(kw_only=True)
+class BookRecord:
+    """Fields every Book row has. BUS assigns these."""
+
+    id: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+OWNED_FIELDS = frozenset(item.name for item in fields(BookRecord))
 
 
 class Book:
@@ -57,7 +70,7 @@ class Book:
         current = self.require(id)
         merged = dict(current)
         for key, value in changes.items():
-            if key in {"id", "created_at"}:
+            if key in OWNED_FIELDS - {"updated_at"}:
                 continue
             merged[key] = value
         merged["id"] = id

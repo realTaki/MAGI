@@ -2,7 +2,7 @@
 
 from .backend import Backend, RecordStore
 from .backends import FileBackend, PostgresBackend, SQLiteBackend
-from .book import Book
+from .book import Book, BookRecord
 from .job import BookOp, Job, JobStatus, ManageBookJob
 from .job_board import JobBoard
 from .manage_book_job_board import ManageBookJobBoard
@@ -13,6 +13,7 @@ __all__ = [
     "SINGLE_SLOTS",
     "Backend",
     "Book",
+    "BookRecord",
     "ManageBookJob",
     "ManageBookJobBoard",
     "BookOp",

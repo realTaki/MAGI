@@ -9,28 +9,24 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from ...base.book import Book
+from ...base.book import Book, BookRecord
 from ...errors import InvalidJobError
 
 MESSAGE_ROLES = frozenset({"user", "assistant", "system", "tool"})
 
 
-@dataclass
-class Message:
+@dataclass(kw_only=True)
+class Message(BookRecord):
     """One row in MessageBook.
 
     role: ``user`` | ``assistant`` | ``system`` | ``tool``
     content: non-empty text
     session_id: optional grouping key
-    id / created_at / updated_at: assigned by BUS
     """
 
     role: str
     content: str
     session_id: str | None = None
-    id: str = ""
-    created_at: str | None = None
-    updated_at: str | None = None
 
     BOOK: ClassVar[str] = "messages"
 
