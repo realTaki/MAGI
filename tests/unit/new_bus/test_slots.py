@@ -12,7 +12,7 @@ from magi.new_bus import (
     SlotRejected,
 )
 from magi.new_bus.base.backends import Backend
-from magi.new_bus.testing import PingJob, book_job
+from magi.new_bus.testing import ItemBook, PingJob, book_job
 
 
 def test_single_slot_occupy_detach(bus: Bus) -> None:
@@ -92,7 +92,7 @@ def test_book_job_slots_do_not_deliver_the_work(backend: Backend) -> None:
     """Slot handlers observe BaseBook jobs; BUS still executes CRUD itself."""
     observed: list[str] = []
     with Bus(backend) as bus:
-        bus.mount_book("items")
+        bus.mount_book("items", book_cls=ItemBook)
         bus.attach(ManageBookJob, Slot.PUBLISH, lambda job: observed.append(job.op.value))
         result = bus.publish(book_job(BookOp.CREATE, name="slot-create"))
         assert result.status is JobStatus.COMPLETED

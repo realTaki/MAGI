@@ -6,7 +6,7 @@ import pytest
 
 from magi.new_bus import Bus, FileBackend, SQLiteBackend
 from magi.new_bus.base.backends import Backend
-from magi.new_bus.testing import InMemoryBackend, PingJob
+from magi.new_bus.testing import InMemoryBackend, ItemBook, PingJob
 
 
 @pytest.fixture(params=["memory", "file", "sqlite"])
@@ -26,6 +26,6 @@ def backend(request: pytest.FixtureRequest, tmp_path) -> Iterator[Backend]:
 @pytest.fixture
 def bus(backend: Backend) -> Iterator[Bus]:
     with Bus(backend) as item:
-        item.mount_book("items")
+        item.mount_book("items", book_cls=ItemBook)
         item.mount_job(PingJob)
         yield item

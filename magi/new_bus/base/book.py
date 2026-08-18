@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 from uuid import uuid4
 
 from .backends import Backend, RecordStore
@@ -27,6 +27,19 @@ class BaseRecord:
     def to_dict(self) -> dict[str, Any]:
         return {item.name: getattr(self, item.name) for item in fields(self)}
 
+    @classmethod
+    def parse(cls, data: Mapping[str, Any]) -> Self:
+        """Build a record from a mapping, keeping only declared fields."""
+        allowed = {item.name for item in fields(cls)}
+        kwargs = {key: value for key, value in data.items() if key in allowed}
+        return cls(**kwargs)
+
+    def merge(self, changes: Mapping[str, Any]) -> Self:
+        """Apply declared, non-owned fields from ``changes`` onto this record."""
+        allowed = {item.name for item in fields(type(self))} - (OWNED_FIELDS - {"updated_at"})
+        updates = {key: value for key, value in changes.items() if key in allowed}
+        return replace(self, **updates)
+
 
 OWNED_FIELDS = frozenset(item.name for item in fields(BaseRecord))
 
@@ -44,21 +57,6 @@ class BaseBook:
             raise InvalidJobError("book name is required")
         self.name = name
         self._store: RecordStore = backend.records(f"books.{name}")
-
-    def parse(self, data: Mapping[str, Any]) -> BaseRecord:
-        """Build a record from a mapping, keeping only declared fields."""
-        allowed = {item.name for item in fields(self.record_cls)}
-        kwargs = {key: value for key, value in data.items() if key in allowed}
-        try:
-            return self.record_cls(**kwargs)
-        except TypeError as exc:
-            raise InvalidJobError(f"invalid {self.record_cls.__name__}: {exc}") from exc
-
-    def merge(self, current: BaseRecord, changes: Mapping[str, Any]) -> BaseRecord:
-        """Apply declared, non-owned fields from ``changes`` onto ``current``."""
-        allowed = {item.name for item in fields(type(current))} - (OWNED_FIELDS - {"updated_at"})
-        updates = {key: value for key, value in changes.items() if key in allowed}
-        return replace(current, **updates)
 
     def _validate_write(self, record: BaseRecord) -> None:
         """Firmware Books override this to enforce their record protocol."""
@@ -80,7 +78,7 @@ class BaseBook:
 
     def get(self, id: str) -> BaseRecord | None:
         data = self._store.get(id)
-        return None if data is None else self.parse(data)
+        return None if data is None else self.record_cls.parse(data)
 
     def require(self, id: str) -> BaseRecord:
         record = self.get(id)
@@ -104,4 +102,4 @@ class BaseBook:
         self._store.delete(id)
 
     def query(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
-        return [self.parse(row) for row in self._store.find(eq=filters)]
+        return [self.record_cls.parse(row) for row in self._store.find(eq=filters)]

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from magi.new_bus import (
-    BaseBookRecord,
+    BaseRecord,
     BookOp,
     Bus,
     InvalidJobError,
@@ -45,13 +45,13 @@ def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
     assert Message.BOOK in bus.books
     assert ManageMessageJob in bus.jobs
     assert bus.record_type(Message.BOOK) is Message
-    assert issubclass(Message, BaseBookRecord)
-    assert {field.name for field in dataclasses.fields(BaseBookRecord)} == {
+    assert issubclass(Message, BaseRecord)
+    assert {field.name for field in dataclasses.fields(BaseRecord)} == {
         "id",
         "created_at",
         "updated_at",
     }
-    owned = {field.name for field in dataclasses.fields(BaseBookRecord)}
+    owned = {field.name for field in dataclasses.fields(BaseRecord)}
     assert {field.name for field in dataclasses.fields(Message)} - owned == {
         "role",
         "content",
