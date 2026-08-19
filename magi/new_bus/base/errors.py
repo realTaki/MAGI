@@ -7,9 +7,6 @@ __all__ = [
     "InvalidJobError",
     "InvalidJobStateError",
     "JobNotFoundError",
-    "SlotNotFoundError",
-    "SlotOccupiedError",
-    "SlotRejected",
 ]
 
 
@@ -35,15 +32,3 @@ class InvalidJobError(BusError):
 
 class InvalidJobStateError(BusError):
     """The requested transition is not allowed from the Job's current status."""
-
-
-class SlotNotFoundError(BusError):
-    """Unknown slot name, or detach target is not bound."""
-
-
-class SlotOccupiedError(BusError):
-    """A SINGLE slot already has a handler."""
-
-
-class SlotRejected(BusError):
-    """A SINGLE pre_* handler aborted the operation."""

@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from sqlalchemy import JSON, Table, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,9 +20,6 @@ from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 from .time import dump_dt, utcnow
-
-if TYPE_CHECKING:
-    from .slot import SlotSpace
 
 
 class JobStatus(StrEnum):
@@ -34,10 +31,7 @@ class JobStatus(StrEnum):
 
 @dataclass
 class BaseJob(BaseRecord):
-    """Generic work BaseJob. Firmware later subclasses this.
-
-    Slots attach to the concrete class, not to an instance.
-    """
+    """Generic work BaseJob. Firmware later subclasses this."""
 
     publisher: str | None = None
 
@@ -67,14 +61,13 @@ class BaseJobBoard:
     result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
     row_cls: ClassVar[type[BaseJobRow]]
 
-    def __init__(self, factory: EngineFactory, slots: SlotSpace) -> None:
+    def __init__(self, factory: EngineFactory) -> None:
         cls = type(self)
         if cls.job_cls is BaseJob:
             raise InvalidJobError("set job_cls on the BaseJobBoard subclass")
         if getattr(cls, "row_cls", None) is None:
             raise InvalidJobError(f"{cls.__name__} must set row_cls")
         self._factory = factory
-        self._slots = slots
         table = cls.row_cls.__table__
         if isinstance(table, Table):
             table.create(factory.engine, checkfirst=True)
@@ -83,8 +76,6 @@ class BaseJobBoard:
         return self._factory.session()
 
     def publish(self, job: BaseJob) -> int:
-        from .slot import Slot
-
         now = utcnow()
         prepared = replace(
             job,
@@ -92,20 +83,14 @@ class BaseJobBoard:
             created_at=now,
             updated_at=now,
         )
-        job_type = type(job)
-        self._slots.fire(job_type, Slot.PRE_PUBLISH, prepared)
         with self._session() as session:
             row = type(self).row_cls(**_row_kwargs(type(self).row_cls, prepared.to_dict()))
             session.add(row)
             session.commit()
             job.id = int(row.id)
-        self._slots.fire(job_type, Slot.PUBLISH, job)
-        self._slots.fire(job_type, Slot.POST_PUBLISH, job)
         return job.id
 
     def claim(self) -> BaseJob | None:
-        from .slot import Slot
-
         with self._session() as session:
             pending = list(
                 session.scalars(
@@ -115,13 +100,11 @@ class BaseJobBoard:
                 )
             )
         for row in pending:
-            job = self.job_cls.from_row(row)
-            self._slots.fire(self.job_cls, Slot.PRE_CLAIM, job)
             with self._session() as session:
                 changed = session.execute(
                     update(type(self).row_cls)
                     .where(
-                        type(self).row_cls.id == job.id,
+                        type(self).row_cls.id == row.id,
                         type(self).row_cls.status == JobStatus.PENDING.value,
                     )
                     .values(status=JobStatus.CLAIMED.value)
@@ -129,13 +112,10 @@ class BaseJobBoard:
                 if getattr(changed, "rowcount", 0) != 1:
                     continue
                 session.commit()
-                claimed = session.get(type(self).row_cls, job.id)
+                claimed = session.get(type(self).row_cls, row.id)
             if claimed is None:
                 continue
-            job = self.job_cls.from_row(claimed)
-            self._slots.fire(self.job_cls, Slot.CLAIM, job)
-            self._slots.fire(self.job_cls, Slot.POST_CLAIM, job)
-            return job
+            return self.job_cls.from_row(claimed)
         return None
 
     def submit_result(self, job_id: int, result: BaseJobResult) -> bool:

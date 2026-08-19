@@ -20,7 +20,6 @@ from magi.new_bus import (
     ManageMessageJob,
     ManageMessageJobBoard,
     Message,
-    Slot,
 )
 from magi.new_bus.testing import InMemoryBackend
 
@@ -200,13 +199,6 @@ def test_message_job_board_keeps_history(bus: Bus) -> None:
     history = bus.list(ManageMessageJob)
     assert [job.message_id for job in history] == [1, 2]
     assert [bus.get_result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
-
-
-def test_publish_slot_on_book_job(bus: Bus) -> None:
-    seen: list[str] = []
-    bus.attach(ManageBookJob, Slot.PUBLISH, lambda job: seen.append(job.op.value))
-    create(bus, role="tool", content="result")
-    assert seen == ["create"]
 
 
 def test_message_book_is_not_public() -> None:
