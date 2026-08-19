@@ -7,7 +7,10 @@ from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from typing import Any, Self, get_type_hints
 
-from .time import dump_dt, load_dt
+from sqlalchemy import DateTime, Integer
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from .time import dump_dt, load_dt, utcnow
 
 
 @dataclass(kw_only=True)
@@ -35,9 +38,9 @@ class BaseRecord:
         )
 
     def merge(self, changes: Mapping[str, Any]) -> Self:
-        """Apply declared, non-owned fields from ``changes`` onto this record."""
+        """Apply declared fields from ``changes`` onto this record."""
         hints = get_type_hints(type(self))
-        allowed = {item.name for item in fields(type(self))} - (OWNED_FIELDS - {"updated_at"})
+        allowed = {item.name for item in fields(type(self))}
         updates = {
             key: load_dt(hints.get(key), value)
             for key, value in changes.items()
@@ -46,4 +49,13 @@ class BaseRecord:
         return replace(self, **updates)
 
 
-OWNED_FIELDS = frozenset(item.name for item in fields(BaseRecord))
+class BaseRecordMixin(DeclarativeBase):
+    """Shared ORM columns for every Book / Job table."""
+
+    __abstract__ = True
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )

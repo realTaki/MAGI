@@ -13,8 +13,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook
-from ...base.BaseRecord import BaseRecord
-from ...base.BaseRecordMixin import BaseRecordMixin
+from ...base.BaseRecord import BaseRecord, BaseRecordMixin
 from ...base.time import utcnow
 
 
