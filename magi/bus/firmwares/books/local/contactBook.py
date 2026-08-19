@@ -145,7 +145,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
     def get_by_telegram(self, *, tgid: int) -> Contact | None:
         with self._session() as s:
             row = s.scalar(select(_ContactRow).where(_ContactRow.tgid == tgid))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def get_by_magis_admin_id(self, *, magis_admin_id: int) -> Contact | None:
         """Return this runtime's local projection of one MAGIS admin."""
@@ -153,7 +153,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             row = s.scalar(
                 select(_ContactRow).where(_ContactRow.magis_admin_id == magis_admin_id)
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def ensure_magis_admin_projection(
         self, *, magis_admin_id: int, display_name: str | None
@@ -170,7 +170,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 select(_ContactRow).where(_ContactRow.magis_admin_id == magis_admin_id)
             )
             if existing is not None:
-                return self._row_to_dto(existing)
+                return self.record_cls.from_row(existing)
             base_name = f"magis-admin-{magis_admin_id}"
             candidate = base_name
             suffix = 1
@@ -186,7 +186,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
             s.add(row)
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def touch(self, *, contact_id: int | None) -> None:
         """Stamp ``last_seen_at`` for a contact.
@@ -222,7 +222,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
     def list_all(self) -> list[Contact]:
         with self._session() as s:
             rows = s.scalars(select(_ContactRow).order_by(_ContactRow.id)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def set_tgid(
         self,
@@ -286,7 +286,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
                 key=lambda row: row.last_seen_at or datetime.min,
                 reverse=True,
             )
-            return [self._row_to_dto(r) for r in name_rows[:limit]]
+            return [self.record_cls.from_row(r) for r in name_rows[:limit]]
 
 class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
     model_cls = _ContactNoteRow
@@ -299,7 +299,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                 .where(_ContactNoteRow.contact_id == contact_id)
                 .order_by(_ContactNoteRow.id.desc())
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def read_daily_note(self, *, contact_id: int) -> ContactNote | None:
         """Return today's daily-note row for *contact_id*, or ``None``."""
@@ -312,7 +312,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                     _ContactNoteRow.note_date >= today,
                 )
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def upsert_daily_note(
         self,
@@ -359,7 +359,7 @@ class ContactNoteBook(BaseBook[_ContactNoteRow, ContactNote]):
                 row.note = row.note + "\n" + content
             s.commit()
             s.refresh(row)
-        return self._row_to_dto(row)
+        return self.record_cls.from_row(row)
 
 
 __all__ = [

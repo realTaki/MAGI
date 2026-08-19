@@ -120,7 +120,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
                 .where(_MagisRoleRow.magis_id == magis_id)
                 .order_by(_MagisRoleRow.name)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def find(self, *, magis_id: int, name: str) -> MagisRole | None:
         with self._session() as s:
@@ -130,7 +130,7 @@ class MagisRoleBook(BaseBook[_MagisRoleRow, MagisRole]):
                     _MagisRoleRow.name == name,
                 )
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
 class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
     model_cls = _MagisMembershipRow
@@ -157,7 +157,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
         """
         with self._session() as s:
             rows = s.scalars(select(_MagisMembershipRow).order_by(_MagisMembershipRow.id)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_for_magis(self, *, magis_id: int) -> list[MagisMembership]:
         """All MAGIs registered under a given parent MAGIS."""
@@ -165,7 +165,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             rows = s.scalars(
                 select(_MagisMembershipRow).where(_MagisMembershipRow.magis_id == magis_id)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_collaboration_directory(self, *, magi_id: int) -> list[MagisCollaborationMember]:
         """Return public collaboration cards for *magi_id*'s direct MAGIS."""
@@ -273,7 +273,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             row.role_id = role_id
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def update_responsibility(
         self, *, magi_id: int, magis_id: int, responsibility: str
@@ -291,7 +291,7 @@ class MagisMembershipBook(BaseBook[_MagisMembershipRow, MagisMembership]):
             row.responsibility = responsibility
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     # -- agent-worker-bus.md §6 helper --------------------------------
 

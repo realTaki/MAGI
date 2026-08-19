@@ -70,7 +70,7 @@ class ActionItem(BaseRecord):
     """A to-do surfaced to an operator in the dashboard.
 
     Frozen DTO returned to callers; the Book maps every ORM
-    row to one of these via :meth:`BaseBook._row_to_dto`.
+    row to one of these via :meth:`BaseRecord.from_row`.
     ``to_dict`` returns the public-facing wire shape — ISO
     timestamps, ``None`` for unset optionals — matching the
     bus's ``ActionItemView`` contract that the API layer
@@ -144,7 +144,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     explicitly so the audit trail reflects who caused
     the write.
 
-    Timestamp mapping is inherited: ``BaseBook._row_to_dto`` keeps every
+    Timestamp mapping is inherited: ``BaseRecord.from_row`` keeps every
     ``datetime`` column intact. This Book has no special serialisation path.
     """
 
@@ -216,7 +216,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                 _ActionItemRow.created_at.desc(),
             )
             rows = s.scalars(stmt).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     # -- writes -----------------------------------------------------------
 
@@ -257,7 +257,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
                     row.completion_note = note
                 s.commit()
                 s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
 
 __all__ = [

@@ -99,7 +99,7 @@ class HookSignoffBook(BaseBook[_HookSignoffRow, HookSignoff]):
                 .where(_HookSignoffRow.status == HookSignoffStatus.PENDING)
                 .order_by(_HookSignoffRow.created_at)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
 
 __all__ = ["HookSignoff", "HookSignoffBook", "HookSignoffStatus", "_HookSignoffRow"]

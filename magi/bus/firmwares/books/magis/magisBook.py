@@ -116,14 +116,14 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
     def get_by_name(self, *, name: str) -> Magis | None:
         with self._session() as s:
             row = s.scalar(select(_MagisRow).where(_MagisRow.name == name))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def get_root(self) -> Magis | None:
         with self._session() as s:
             row = s.scalar(
                 select(_MagisRow).where(_MagisRow.parent_id.is_(None)).order_by(_MagisRow.id)
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def root_runtime_url(self, *, magi_id: int) -> str | None:
         """Return the K8s service URL for the root MAGIS's ADAM, when applicable.
@@ -146,7 +146,7 @@ class MagisBook(BaseBook[_MagisRow, Magis]):
     def list_all(self) -> list[Magis]:
         with self._session() as s:
             rows = s.scalars(select(_MagisRow).order_by(_MagisRow.id)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def set_adam(self, *, magis_id: int, adam_id: int | None) -> None:
         with self._session() as s:
@@ -165,7 +165,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             rows = s.scalars(
                 select(_MagisAdminRow).where(_MagisAdminRow.magis_id == magis_id)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def get_by_tgid(self, *, magis_id: int, tgid: int) -> MagisAdmin | None:
         with self._session() as s:
@@ -175,7 +175,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
                     _MagisAdminRow.tgid == tgid,
                 )
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def _record_to_row_values(self, record: MagisAdmin, session) -> dict:
         values = super()._record_to_row_values(record, session)
@@ -200,7 +200,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             row.auth_mode = auth_mode
             s.commit()
             s.refresh(row)
-        return self._row_to_dto(row)
+        return self.record_cls.from_row(row)
 
     def bind_telegram(self, *, admin_id: int, tgid: int) -> MagisAdmin:
         with self._session() as s:
@@ -220,7 +220,7 @@ class MagisAdminBook(BaseBook[_MagisAdminRow, MagisAdmin]):
             row.auth_mode = AUTH_MODE_IM_2FA_ENABLED
             s.commit()
             s.refresh(row)
-        return self._row_to_dto(row)
+        return self.record_cls.from_row(row)
 
     def remove_by_id(self, *, admin_id: int, magis_id: int) -> bool:
         with self._session() as s:

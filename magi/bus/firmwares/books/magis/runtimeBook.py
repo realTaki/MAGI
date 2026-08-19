@@ -184,7 +184,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
     def get_by_runtime_id(self, *, runtime_id: int) -> Runtime | None:
         with self._session() as s:
             row = s.scalar(select(_RuntimeRow).where(_RuntimeRow.runtime_id == runtime_id))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def get_by_backend_ref(self, *, backend_ref: str) -> Runtime | None:
         """Return the runtime row whose operator-facing ``backend_ref`` matches.
@@ -203,12 +203,12 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row = s.scalar(
                 select(_RuntimeRow).where(_RuntimeRow.backend_ref == backend_ref)
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def list_all(self) -> list[Runtime]:
         with self._session() as s:
             rows = s.scalars(select(_RuntimeRow).order_by(_RuntimeRow.runtime_id)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def upsert(
         self,
@@ -280,7 +280,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
                 row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def rename(self, *, runtime_id: int, backend_ref: str) -> Runtime | None:
         """Rename the operator-facing runtime label for one MAGI.
@@ -301,7 +301,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = utcnow_naive()
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def set_desired_state(
         self, *, runtime_id: int, desired_state: RuntimeDesiredState
@@ -321,7 +321,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = utcnow_naive()
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def set_observed_state(
         self,
@@ -361,7 +361,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def allocate_port(self, *, runtime_id: int, port: int) -> Runtime | None:
         """Record (or refresh) a sticky port allocation.
@@ -384,7 +384,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def release_port(self, *, runtime_id: int) -> Runtime | None:
         """Hand back the sticky port allocation for one runtime.
@@ -399,13 +399,13 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             if row is None:
                 return None
             if row.port_in_use_since is None:
-                return self._row_to_dto(row)
+                return self.record_cls.from_row(row)
             row.port_released_at = now
             row.port = None
             row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def list_allocated_ports(self) -> set[int]:
         """Return the set of currently-allocated ports (no released rows).
@@ -436,7 +436,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def restore_workspace(self, *, runtime_id: int) -> Runtime | None:
         """Mark an archived workspace as restored."""
@@ -449,7 +449,7 @@ class RuntimeBook(BaseBook[_RuntimeRow, Runtime]):
             row.updated_at = now
             s.commit()
             s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def remove(self, *, runtime_id: int) -> bool:
         """Remove a control record after its runtime has been deprovisioned."""
@@ -472,12 +472,12 @@ class ControlSecretBook(BaseBook[_ControlSecretRow, ControlSecret]):
     def get_by_name(self, *, name: str) -> ControlSecret | None:
         with self._session() as s:
             row = s.scalar(select(_ControlSecretRow).where(_ControlSecretRow.name == name))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def list_all(self) -> list[ControlSecret]:
         with self._session() as s:
             rows = s.scalars(select(_ControlSecretRow)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def upsert(
         self,

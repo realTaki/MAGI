@@ -193,7 +193,7 @@ class _TaskRow(BaseRecordMixin):
         Text,
         nullable=True,
     )
-    conversation_row_id: Mapped[int | None] = mapped_column(
+    conversation_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -234,8 +234,10 @@ class _TaskRunRow(BaseRecordMixin):
     __tablename__ = "task_runs"
 
     run_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    task_row_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
-    conversation_row_id: Mapped[int | None] = mapped_column(
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("tasks.task_id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="SET NULL"), nullable=True
     )
     manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -248,7 +250,7 @@ class _TaskRunRow(BaseRecordMixin):
     task: Mapped[_TaskRow] = relationship(lazy="joined")
     conversation: Mapped[_ConversationRow | None] = relationship(lazy="joined")
 
-    __table_args__ = (Index("ix_task_runs_task_started", "task_row_id", "started_at"),)
+    __table_args__ = (Index("ix_task_runs_task_started", "task_id", "started_at"),)
 
 
 # -- Books ---------------------------------------------------------------
@@ -268,17 +270,10 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     model_cls = _TaskRow
     record_cls = Task
 
-    def _row_to_dto(self, row: _TaskRow) -> Task:
-        dto = super()._row_to_dto(row)
-        if row.conversation is None:
-            return dto
-        object.__setattr__(dto, "conversation_id", row.conversation.id)
-        return dto
-
     def get_by_task_id(self, *, task_id: str) -> Task | None:
         with self._session() as s:
             row = s.scalar(select(_TaskRow).where(_TaskRow.task_id == task_id))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def list_by_user(self, *, contact_id: int) -> list[Task]:
         """User-defined tasks owned by ``contact_id``.
@@ -294,7 +289,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     _TaskRow.source == TaskSource.USER,
                 )
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_proactive_tasks(self, *, contact_id: int) -> list[Task]:
         """Per-user enabled proactive templates.
@@ -318,7 +313,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     ),
                 )
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_enabled(self, *, contact_id: int) -> list[Task]:
         """Per-user enabled tasks (``contact_id`` + ``enabled=1``).
@@ -334,7 +329,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     _TaskRow.enabled == 1,
                 )
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def _validate_add(self, record: Task) -> None:
         """Validate the DTO accepted by the generic ``BaseBook.add``."""
@@ -380,17 +375,16 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 raise ValueError(f"run_at {canonical!r} is in the past: {e}") from None
 
     def _record_to_row_values(self, record: Task, session) -> dict:
+        """Map the DTO onto row columns.
+
+        ``conversation_id`` maps one-to-one to the FK column; the session is
+        used only to surface a friendly error when the reference dangles.
+        """
         run_at = validate_run_at(record.run_at) if record.run_at is not None else None
-        conversation_row_id = None
-        if record.conversation_id is not None:
-            conversation = session.scalar(
-                select(_ConversationRow).where(
-                    _ConversationRow.id == record.conversation_id
-                )
-            )
-            if conversation is None:
-                raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
-            conversation_row_id = conversation.id
+        if record.conversation_id is not None and session.get(
+            _ConversationRow, record.conversation_id
+        ) is None:
+            raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
         return {
             "task_id": record.task_id,
             "name": record.name,
@@ -402,7 +396,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             "run_at": run_at,
             "tz": record.tz,
             "delivery_to": record.delivery_to,
-            "conversation_row_id": conversation_row_id,
+            "conversation_id": record.conversation_id,
             "contact_id": record.contact_id,
             "consecutive_failures": record.consecutive_failures,
             "last_run_at": record.last_run_at,
@@ -452,7 +446,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
         """
         with self._session() as s:
             row = s.scalar(select(_TaskRow).where(_TaskRow.name == name))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def upsert_by_name(
         self,
@@ -552,7 +546,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 # continuity across prompt edits. Update-
                 # path only — insert path uses the caller-
                 # supplied value.
-                if existing.conversation_row_id is None:
+                if existing.conversation_id is None:
                     conversation = s.scalar(
                         select(_ConversationRow).where(
                             _ConversationRow.id == candidate.conversation_id
@@ -560,7 +554,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     )
                     if conversation is None:
                         raise ValueError(f"unknown conversation_id {candidate.conversation_id!r}")
-                    existing.conversation_row_id = conversation.id
+                    existing.conversation_id = candidate.conversation_id
                 s.commit()
                 s.refresh(existing)
                 return existing.task_id, True
@@ -584,7 +578,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 cron=candidate.cron,
                 run_at=candidate.run_at,
                 delivery_to=candidate.delivery_to,
-                conversation_row_id=conversation.id,
+                conversation_id=candidate.conversation_id,
                 tz=candidate.tz,
                 target_channel=candidate.target_channel,
                 contact_id=candidate.contact_id,
@@ -620,8 +614,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                 raise ValueError(f"unknown task_id {task_id!r}")
             run_row = _TaskRunRow(
                 run_id=new_run_id,
-                task_row_id=task.id,
-                conversation_row_id=task.conversation_row_id,
+                task_id=task.task_id,
+                conversation_id=task.conversation_id,
                 manual=manual,
                 started_at=started_at,
                 status=TaskRunStatus.RUNNING.value,
@@ -631,10 +625,8 @@ class TaskBook(BaseBook[_TaskRow, Task]):
             s.commit()
             s.refresh(run_row)
         # ``self.record_cls`` is ``Task``, not ``TaskRun`` — convert the
-        # run row via the ``TaskRunBook`` so the field set matches.
-        # Sharing the same ``magis_factory`` keeps both Books on the
-        # same session/connection scope.
-        return TaskRunBook(self._factory)._row_to_dto(run_row)
+        # run row via ``TaskRun.from_row`` so the field set matches.
+        return TaskRun.from_row(run_row)
 
     def mark_run_at_consumed(self, *, task_id: str) -> None:
         """One-shot run_at: set enabled=0 after successful fire."""
@@ -659,55 +651,40 @@ class TaskBook(BaseBook[_TaskRow, Task]):
                     _TaskRow.source == TaskSource.USER,
                 )
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
 
 class TaskRunBook(BaseBook[_TaskRunRow, TaskRun]):
     model_cls = _TaskRunRow
     record_cls = TaskRun
 
-    def _row_to_dto(self, row: _TaskRunRow) -> TaskRun:
-        task = row.task
-        if task is None:
-            raise ValueError(f"task run {row.id} references missing task row {row.task_row_id}")
-        task_run = TaskRun(
-            run_id=row.run_id,
-            task_id=task.task_id,
-            manual=row.manual,
-            started_at=row.started_at,
-            finished_at=row.finished_at,
-            latency_ms=row.latency_ms,
-            status=row.status,
-            error=row.error,
-            reply_excerpt=row.reply_excerpt,
-            conversation_id=(row.conversation.id if row.conversation else None),
-        )
-        object.__setattr__(task_run, "id", row.id)
-        object.__setattr__(task_run, "created_at", row.created_at)
-        object.__setattr__(task_run, "updated_at", row.updated_at)
-        return task_run
-
     def get_by_run_id(self, *, run_id: str) -> TaskRun | None:
         with self._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.run_id == run_id))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def _record_to_row_values(self, record: TaskRun, session) -> dict:
+        """Map the DTO onto row columns.
+
+        The owning task must exist (``unknown task_id``); when the run does
+        not name its own conversation, it inherits the task's. Both checks
+        fail fast with a friendly error instead of a DB constraint violation.
+        """
         task = session.scalar(select(_TaskRow).where(_TaskRow.task_id == record.task_id))
         if task is None:
             raise ValueError(f"unknown task_id {record.task_id!r}")
-        conversation_row_id = task.conversation_row_id
-        if record.conversation_id is not None:
-            conversation = session.scalar(
-                select(_ConversationRow).where(_ConversationRow.id == record.conversation_id)
-            )
-            if conversation is None:
-                raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
-            conversation_row_id = conversation.id
+        if record.conversation_id is not None and session.get(
+            _ConversationRow, record.conversation_id
+        ) is None:
+            raise ValueError(f"unknown conversation_id {record.conversation_id!r}")
         return {
             "run_id": record.run_id,
-            "task_row_id": task.id,
-            "conversation_row_id": conversation_row_id,
+            "task_id": record.task_id,
+            "conversation_id": (
+                record.conversation_id
+                if record.conversation_id is not None
+                else task.conversation_id
+            ),
             "manual": record.manual,
             "started_at": record.started_at,
             "finished_at": record.finished_at,

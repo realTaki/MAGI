@@ -48,7 +48,7 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
             else:
                 row.value = value
             session.commit()
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def delete_by_key(self, *, key: str) -> bool:
         with self._session() as session:
@@ -63,7 +63,7 @@ class ControlSettingBook(BaseBook[_ControlSettingRow, ControlSetting]):
             rows = session.scalars(
                 select(_ControlSettingRow).order_by(_ControlSettingRow.key)
             ).all()
-            return [self._row_to_dto(row) for row in rows]
+            return [self.record_cls.from_row(row) for row in rows]
 
 
 __all__ = ["ControlSetting", "ControlSettingBook"]

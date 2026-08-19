@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime
+from typing import Any, Self
 
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -39,6 +40,36 @@ class BaseRecord:
         """
 
         return dataclasses.asdict(self)
+
+    @classmethod
+    def from_row(cls, row: Any) -> Self:
+        """Rebuild a Record from a persisted ORM row.
+
+        Inverse of :meth:`to_dict` for the one-to-one case: every field whose
+        name matches a row attribute is copied verbatim, and ``init=False``
+        fields (the database-owned ``id`` / ``created_at`` / ``updated_at``)
+        are assigned after construction.  Records whose storage shape differs —
+        encoded columns, semantic references — override this classmethod
+        locally.
+
+        ``row`` is deliberately ``Any``: the mapping is duck-typed
+        (``hasattr`` / ``getattr``), and each override narrows the parameter
+        to its own ORM row type.
+        """
+        init_kwargs: dict = {}
+        database_values: dict = {}
+        for f in dataclasses.fields(cls):
+            if not hasattr(row, f.name):
+                continue
+            val = getattr(row, f.name)
+            if f.init:
+                init_kwargs[f.name] = val
+            else:
+                database_values[f.name] = val
+        dto = cls(**init_kwargs)
+        for name, value in database_values.items():
+            object.__setattr__(dto, name, value)
+        return dto
 
     def with_changes[Self: "BaseRecord"](self: Self, /, **changes) -> Self:
         """Return a validated replacement while retaining database-owned fields.
@@ -80,21 +111,6 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
     def _session(self):
         return self._factory.session()
 
-    def _row_to_dto(self, row: RowT) -> RecordT:
-        init_kwargs: dict = {}
-        database_values: dict = {}
-        for f in dataclasses.fields(self.record_cls):
-            if hasattr(row, f.name):
-                val = getattr(row, f.name)
-                if f.init:
-                    init_kwargs[f.name] = val
-                else:
-                    database_values[f.name] = val
-        dto = self.record_cls(**init_kwargs)
-        for name, value in database_values.items():
-            object.__setattr__(dto, name, value)
-        return dto
-
     def _validate_add(self, record: RecordT) -> None:
         """Validate a new record before it is persisted.
 
@@ -105,21 +121,20 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
     def _record_to_row_values(self, record: RecordT, _session) -> dict:
         """Map an input DTO to ORM constructor values.
 
-        The default applies to Books whose DTO field names map one-to-one to
-        model columns. Books with semantic references or encoded storage
-        columns override the hook and may use the supplied session to resolve
-        those references.
+        The default derives the one-to-one column mapping from
+        :meth:`BaseRecord.to_dict`, so a newly added DTO field is picked up
+        automatically as long as a column with the same name exists.  Books
+        with semantic references or encoded storage columns override the hook
+        and may use the supplied session to resolve those references; such
+        overrides must not call this default unless every DTO field maps to a
+        real column.
         """
 
-        values: dict = {}
-        unmapped: list[str] = []
+        values = record.to_dict()
         for field in dataclasses.fields(record):
             if not field.init:
-                continue
-            if not hasattr(self.model_cls, field.name):
-                unmapped.append(field.name)
-                continue
-            values[field.name] = getattr(record, field.name)
+                values.pop(field.name, None)  # DB-owned; never handed to the row constructor
+        unmapped = [name for name in values if not hasattr(self.model_cls, name)]
         if unmapped:
             raise TypeError(
                 f"{type(self).__name__} must map DTO-only fields explicitly: "
@@ -154,7 +169,7 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
 
         with self._session() as session:
             row = session.get(self.model_cls, record_id)
-            return self._row_to_dto(row) if row is not None else None
+            return self.record_cls.from_row(row) if row is not None else None
 
     def update(self, record: RecordT) -> bool:
         """Replace the persisted row identified by ``record.id``.

@@ -120,7 +120,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
                 row.value = value
             s.commit()
             s.refresh(row)
-        return self._row_to_dto(row)
+        return self.record_cls.from_row(row)
 
     def delete_by_key(self, *, key: str) -> bool:
         with self._session() as s:
@@ -138,7 +138,7 @@ class SettingBook(BaseBook[_SettingRow, Setting]):
     def list_all(self) -> list[Setting]:
         with self._session() as s:
             rows = s.scalars(select(_SettingRow).order_by(_SettingRow.key)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def channel_options(self) -> list[str]:
         """Return registered channel names in stable registration order.

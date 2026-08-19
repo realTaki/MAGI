@@ -92,7 +92,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
                 .where(_MemoryRow.contact_id == contact_id)
                 .order_by(_MemoryRow.created_at.desc())
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def complete(self, *, memory_id: int) -> Memory:
         """Mark an ongoing memory as done, idempotently.

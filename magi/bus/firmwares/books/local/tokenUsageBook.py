@@ -68,6 +68,6 @@ class TokenUsageBook(BaseBook[_TokenUsageRow, TokenUsage]):
                 .where(_TokenUsageRow.contact_id == contact_id)
                 .order_by(_TokenUsageRow.created_at.desc())
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
 __all__ = ["TokenUsage", "TokenUsageBook", "_TokenUsageRow"]

@@ -284,7 +284,7 @@ class _ConversationRow(BaseRecordMixin):
 class _MessageRow(BaseRecordMixin):
     __tablename__ = "chat_messages"
 
-    conversation_row_id: Mapped[int] = mapped_column(
+    conversation_id: Mapped[int] = mapped_column(
         ForeignKey("chat_conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -298,7 +298,7 @@ class _MessageRow(BaseRecordMixin):
     archived: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     __table_args__ = (
-        Index("ix_chat_messages_conversation_archived", "conversation_row_id", "archived", "id"),
+        Index("ix_chat_messages_conversation_archived", "conversation_id", "archived", "id"),
     )
 
 
@@ -373,7 +373,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 .where(_ConversationRow.contact_id == contact_id)
                 .order_by(_ConversationRow.updated_at.desc())
             ).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_page_for_owner(
         self,
@@ -408,7 +408,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 .limit(limit)
                 .offset(offset)
             ).all()
-            return [self._row_to_dto(row) for row in rows], total
+            return [self.record_cls.from_row(row) for row in rows], total
 
     def get_or_create_for_a2a_peer(self, *, peer_magi_id: int) -> Conversation:
         """Return this MAGI's private transcript header for one A2A peer.
@@ -441,7 +441,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 s.add(row)
                 s.commit()
                 s.refresh(row)
-            return self._row_to_dto(row)
+            return self.record_cls.from_row(row)
 
     def get_or_create_for_tg(
         self,
@@ -627,7 +627,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 return None
             s.commit()
             row = s.scalar(select(_ConversationRow).where(_ConversationRow.id == conversation_id))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def set_summary(
         self,
@@ -665,7 +665,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                 return None
             s.commit()
             row = s.scalar(select(_ConversationRow).where(_ConversationRow.id == conversation_id))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def set_title(
         self,
@@ -703,7 +703,7 @@ class ConversationBook(BaseBook[_ConversationRow, Conversation]):
                     _ConversationRow.id == conversation_id
                 )
             )
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def delete_owned(self, *, contact_id: int, conversation_id: int) -> bool:
         """Delete one owned conversation (and its messages via FK cascade).
@@ -734,38 +734,20 @@ class MessageBook(BaseBook[_MessageRow, Message]):
     def __init__(self, factory, *, settings_book=None) -> None:  # type: ignore[no-untyped-def]  # noqa: ARG002
         super().__init__(factory)
 
-    def _row_to_dto(self, row: _MessageRow) -> Message:
-        conversation = row.conversation
-        if conversation is None:
-            raise ConversationCorruptError(
-                f"message {row.id} references missing conversation row {row.conversation_row_id}"
-            )
-        message = Message(
-            conversation_id=conversation.id,
-            role=row.role,
-            text=row.text,
-            ts=row.ts,
-            archived=row.archived,
-        )
-        object.__setattr__(message, "id", row.id)
-        object.__setattr__(message, "created_at", row.created_at)
-        object.__setattr__(message, "updated_at", row.updated_at)
-        return message
-
     def list_for_conversation(
         self, *, conversation_id: int, include_archived: bool = False
     ) -> list[Message]:
         with self._session() as s:
             stmt = (
                 select(_MessageRow)
-                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_id)
                 .where(_ConversationRow.id == conversation_id)
             )
             if not include_archived:
                 stmt = stmt.where(_MessageRow.archived == 0)
             stmt = stmt.order_by(_MessageRow.id)
             rows = s.scalars(stmt).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_for_conversation_page(
         self,
@@ -805,7 +787,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         with self._session() as s:
             base = (
                 select(_MessageRow)
-                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_id)
                 .where(_ConversationRow.id == conversation_id)
             )
             archived_filter = [] if include_archived else [_MessageRow.archived == 0]
@@ -828,7 +810,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 s.scalar(
                     select(func.count())
                     .select_from(_MessageRow)
-                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_id)
                     .where(_ConversationRow.id == conversation_id)
                     .where(_MessageRow.archived == 0)
                 )
@@ -838,16 +820,16 @@ class MessageBook(BaseBook[_MessageRow, Message]):
                 s.scalar(
                     select(func.count())
                     .select_from(_MessageRow)
-                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_row_id)
+                    .join(_ConversationRow, _ConversationRow.id == _MessageRow.conversation_id)
                     .where(_ConversationRow.id == conversation_id)
                 )
                 or 0
             )
-            # ``_row_to_dto`` reads ``row.conversation``.  It must run while
+            # ``from_row`` reads ``row.conversation``.  It must run while
             # the SQLAlchemy session is still open, otherwise the lazy
             # relationship raises DetachedInstanceError for every non-empty
             # page returned to the WebUI.
-            page_messages = [self._row_to_dto(row) for row in page_rows]
+            page_messages = [self.record_cls.from_row(row) for row in page_rows]
         return (page_messages, int(total_active), int(total_all))
 
     def _record_to_row_values(self, record: Message, session) -> dict:
@@ -855,7 +837,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         if session.get(_ConversationRow, record.conversation_id) is None:
             raise ConversationNotFoundError(record.conversation_id)
         return {
-            "conversation_row_id": record.conversation_id,
+            "conversation_id": record.conversation_id,
             "role": record.role,
             "text": record.text,
             "ts": record.ts or utcnow_naive(),
@@ -930,7 +912,7 @@ class MessageBook(BaseBook[_MessageRow, Message]):
         base = (
             "FROM chat_messages_fts "
             "JOIN chat_messages m ON m.id = chat_messages_fts.rowid "
-            "JOIN chat_conversations c ON c.id = m.conversation_row_id "
+            "JOIN chat_conversations c ON c.id = m.conversation_id "
             "WHERE chat_messages_fts MATCH :match AND c.contact_id = :contact_id"
         )
         with self._session() as s:

@@ -48,6 +48,10 @@ class BaseRecord:
         }
         return replace(self, **updates)
 
+    @classmethod
+    def from_row(cls, row: BaseRecordMixin) -> Self:
+        return cls.parse({item.name: getattr(row, item.name) for item in fields(cls)})
+
 
 class BaseRecordMixin(DeclarativeBase):
     """Shared ORM columns for every Book / Job table."""
@@ -79,6 +83,13 @@ class BaseBook:
     def _session(self):
         return self._factory.session()
 
+    def _validate_add(self, record: BaseRecord) -> None:
+        """Validate a record before it is persisted.
+
+        Subclasses own domain invariants and override this hook where needed.
+        They must not open or commit a separate transaction.
+        """
+
     def add(self, record: BaseRecord) -> int:
         now = utcnow()
         prepared = replace(
@@ -87,8 +98,11 @@ class BaseBook:
             created_at=record.created_at or now,
             updated_at=now,
         )
+        self._validate_add(prepared)
         with self._session() as session:
-            row = type(self).row_cls(**self._row_values(prepared))
+            values = prepared.to_dict()
+            values.pop("id", None)
+            row = type(self).row_cls(**values)
             session.add(row)
             session.commit()
             return int(row.id)
@@ -96,13 +110,14 @@ class BaseBook:
     def get(self, record_id: int) -> BaseRecord | None:
         with self._session() as session:
             row = session.get(type(self).row_cls, record_id)
-            return None if row is None else self._from_row(row)
+            return None if row is None else self.record_cls.from_row(row)
 
     def exists(self, record_id: int) -> bool:
         with self._session() as session:
             return session.get(type(self).row_cls, record_id) is not None
 
     def update(self, record: BaseRecord) -> bool:
+        self._validate_add(record)
         with self._session() as session:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
@@ -110,7 +125,9 @@ class BaseBook:
             stored = replace(
                 record, id=row.id, created_at=row.created_at, updated_at=utcnow()
             )
-            for key, value in self._row_values(stored).items():
+            values = stored.to_dict()
+            values.pop("id", None)
+            for key, value in values.items():
                 setattr(row, key, value)
             session.commit()
             return True
@@ -130,15 +147,4 @@ class BaseBook:
         if filters:
             stmt = stmt.filter_by(**filters)
         with self._session() as session:
-            return [self._from_row(row) for row in session.scalars(stmt)]
-
-    def _book(self) -> str:
-        return type(self).record_cls.__name__
-
-    def _row_values(self, record: BaseRecord) -> dict[str, Any]:
-        return {item.name: getattr(record, item.name) for item in fields(record) if item.name != "id"}
-
-    def _from_row(self, row: BaseRecordMixin) -> BaseRecord:
-        return self.record_cls.parse(
-            {item.name: getattr(row, item.name) for item in fields(self.record_cls)}
-        )
+            return [self.record_cls.from_row(row) for row in session.scalars(stmt)]
