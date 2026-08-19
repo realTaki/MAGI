@@ -20,13 +20,16 @@ class BaseBook:
 
     name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
+    __tablename__: ClassVar[str] = ""
 
     def __init__(self, backend) -> None:
-        if not type(self).name:
-            raise InvalidJobError(f"{type(self).__name__} must set class variable name")
-        self._require_backend(backend)
         cls = type(self)
-        self._store = backend.records(f"books.{cls.name}")
+        if not cls.name:
+            raise InvalidJobError(f"{cls.__name__} must set class variable name")
+        if not cls.__tablename__:
+            raise InvalidJobError(f"{cls.__name__} must set __tablename__")
+        self._require_backend(backend)
+        self._store = backend.records(cls.__tablename__)
 
     def _require_backend(self, backend) -> None:
         if not isinstance(backend, DatabaseBackend):
