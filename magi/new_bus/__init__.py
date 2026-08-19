@@ -24,9 +24,7 @@ from .base.manageBookJob import BookOp, ManageBookJob
 from .base.slot import Slot
 from .bus import Bus
 from .firmware import (
-    FIRMWARE_VERSION,
     Conversation,
-    FirmwareVersion,
     ManageConversationJob,
     ManageConversationJobBoard,
     ManageMessageJob,
@@ -45,8 +43,6 @@ __all__ = [
     "FileBackend",
     "InvalidJobError",
     "InvalidJobStateError",
-    "FIRMWARE_VERSION",
-    "FirmwareVersion",
     "BaseJob",
     "BaseJobResult",
     "BaseJobBoard",

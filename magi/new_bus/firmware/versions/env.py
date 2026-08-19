@@ -1,4 +1,4 @@
-"""Alembic env. Script location is this Firmware package."""
+"""Alembic env. Script location is this versions package."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 
-from magi.new_bus.firmware.schema import firmware_metadata
+from magi.new_bus.firmware.versions.schema import firmware_metadata
 
 config = context.config
 target_metadata = firmware_metadata()

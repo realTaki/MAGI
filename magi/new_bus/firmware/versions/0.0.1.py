@@ -16,12 +16,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    from magi.new_bus.firmware.schema import firmware_metadata
+    from magi.new_bus.firmware.versions.schema import firmware_metadata
 
     firmware_metadata().create_all(bind=op.get_bind())
 
 
 def downgrade() -> None:
-    from magi.new_bus.firmware.schema import firmware_metadata
+    from magi.new_bus.firmware.versions.schema import firmware_metadata
 
     firmware_metadata().drop_all(bind=op.get_bind())
