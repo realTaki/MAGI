@@ -8,6 +8,7 @@ All data access goes through the bus facade — no ``magi.db.*`` imports
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, cast
 
@@ -19,7 +20,12 @@ from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 if TYPE_CHECKING:
-    from magi.bus.firmwares.books.magis.magisBook import Magis, MagisAdmin, MagisAdminBook, MagisBook
+    from magi.bus.firmwares.books.magis.magisBook import (
+        Magis,
+        MagisAdmin,
+        MagisAdminBook,
+        MagisBook,
+    )
     from magi.bus.firmwares.books.magis.membershipBook import (
         MagisMembership,
         MagisMembershipBook,
@@ -361,7 +367,7 @@ def update_magis(magis_id: int, payload: MAGISUpdate, _admin: AdminGate, bus: Bu
     if current is None:
         raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     try:
-        view = current.with_changes(**kwargs)
+        view = replace(current, **kwargs)
         if not _magis_book(bus).update(view):
             raise MagiHTTPException(status_code=404, code="not_found.magis", detail="MAGIS not found")
     except (LookupError, ValueError) as exc:
@@ -430,7 +436,7 @@ def update_role(
             detail="role does not belong to this MAGIS",
         )
     try:
-        view = current.with_changes(**kwargs)
+        view = replace(current, **kwargs)
         if not _roles_book(bus).update(view):
             raise MagiHTTPException(
                 status_code=404,

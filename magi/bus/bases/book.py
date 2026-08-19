@@ -20,15 +20,18 @@ from magi.bus.bases.db.engine import EngineFactory
 class BaseRecord:
     """Common JSON-safe fields for every persisted library DTO.
 
-    ``id`` and audit timestamps are database-owned. Callers cannot supply
-    them when constructing a DTO; Books fill them from a persisted row. Time
-    values deliberately remain ``datetime`` throughout the database, Book and
-    API layers; presentation formatting belongs to the frontend.
+    ``id`` and audit timestamps are database-owned: Books stamp them at
+    write time (see :meth:`BaseBook.add` / :meth:`BaseBook.update`) and
+    :meth:`from_row` fills them from a persisted row.  Callers may supply
+    them when constructing a DTO, but Books deliberately overwrite them —
+    they are not part of the caller's data contract.  Time values remain
+    ``datetime`` throughout the database, Book and API layers; presentation
+    formatting belongs to the frontend.
     """
 
-    id: int = dataclasses.field(default=0, init=False)
-    created_at: datetime | None = dataclasses.field(default=None, init=False)
-    updated_at: datetime | None = dataclasses.field(default=None, init=False)
+    id: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     def to_dict(self) -> dict:
         """Return the DTO's transport-ready field mapping.
@@ -46,40 +49,18 @@ class BaseRecord:
         """Rebuild a Record from its persisted ORM row.
 
         Deliberately mechanical: every DTO field whose name matches a row
-        attribute is copied verbatim, and ``init=False`` fields (the
-        database-owned ``id`` / ``created_at`` / ``updated_at``) are assigned
-        after construction.  No subclass customisation is expected — storage
-        shape is kept aligned with the DTO (column names, SQLAlchemy ``JSON``
-        columns), so a read is always a faithful field-for-field projection
-        of the row.
+        attribute — including the database-owned ``id`` / ``created_at`` /
+        ``updated_at`` — is copied verbatim.  No subclass customisation is
+        expected; storage shape is kept aligned with the DTO (column names,
+        SQLAlchemy ``JSON`` columns), so a read is always a faithful
+        field-for-field projection of the row.
         """
-        init_kwargs: dict = {}
-        database_values: dict = {}
-        for f in dataclasses.fields(cls):
-            if not hasattr(row, f.name):
-                continue
-            val = getattr(row, f.name)
-            if f.init:
-                init_kwargs[f.name] = val
-            else:
-                database_values[f.name] = val
-        dto = cls(**init_kwargs)
-        for name, value in database_values.items():
-            object.__setattr__(dto, name, value)
-        return dto
-
-    def with_changes[Self: "BaseRecord"](self: Self, /, **changes) -> Self:
-        """Return a validated replacement while retaining database-owned fields.
-
-        ``dataclasses.replace`` intentionally omits ``init=False`` fields;
-        that is correct for ordinary dataclasses, but would turn a persisted
-        Record back into an unpersisted one by dropping its ``id``.  This is
-        the sole supported way to prepare a Record for :meth:`BaseBook.update`.
-        """
-        replacement = dataclasses.replace(self, **changes)
-        for name in ("id", "created_at", "updated_at"):
-            object.__setattr__(replacement, name, getattr(self, name))
-        return replacement
+        kwargs = {
+            f.name: getattr(row, f.name)
+            for f in dataclasses.fields(cls)
+            if hasattr(row, f.name)
+        }
+        return cls(**kwargs)
 
 
 class BaseRecordMixin(Base):
@@ -116,21 +97,23 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
         """
 
     def _record_to_row_values(self, record: RecordT, _session) -> dict:
-        """Map an input DTO to ORM constructor values.
+        """Map an input DTO to ORM constructor / update values.
 
         The default derives the one-to-one column mapping from
         :meth:`BaseRecord.to_dict`, so a newly added DTO field is picked up
-        automatically as long as a column with the same name exists.  Books
-        with semantic references or encoded storage columns override the hook
-        and may use the supplied session to resolve those references; such
+        automatically as long as a column with the same name exists.  Only
+        ``id`` (the database-owned autoincrement primary key) is excluded —
+        it must never reach the row constructor.  ``created_at`` /
+        ``updated_at`` flow through so the DTO and the stored row share the
+        same timestamps (Books stamp them before this hook runs).  Books with
+        semantic references or encoded storage columns override the hook and
+        may use the supplied session to resolve those references; such
         overrides must not call this default unless every DTO field maps to a
         real column.
         """
 
         values = record.to_dict()
-        for field in dataclasses.fields(record):
-            if not field.init:
-                values.pop(field.name, None)  # DB-owned; never handed to the row constructor
+        values.pop("id", None)  # DB autoincrement PK; never handed to the row constructor
         unmapped = [name for name in values if not hasattr(self.model_cls, name)]
         if unmapped:
             raise TypeError(
@@ -145,13 +128,24 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
         ``add`` is deliberately a command: callers supply the complete
         unpersisted record and receive only the generated primary key. Use
         ``get`` / ``list`` for DTO reads.
+
+        The DTO's database-owned fields are stamped defensively: ``id`` must
+        be 0 (a caller-supplied value would be silently dropped otherwise),
+        and a missing ``created_at`` is defaulted so validation and storage
+        see a complete record.
         """
 
         if record.id != 0:
             raise ValueError("add() accepts only an unpersisted record (id must be 0)")
-        self._validate_add(record)
+        now = utcnow_naive()
+        prepared = dataclasses.replace(
+            record,
+            created_at=record.created_at or now,
+            updated_at=now,
+        )
+        self._validate_add(prepared)
         with self._session() as session:
-            row = self.model_cls(**self._record_to_row_values(record, session))
+            row = self.model_cls(**self._record_to_row_values(prepared, session))
             session.add(row)
             session.commit()
             return row.id
@@ -190,7 +184,14 @@ class BaseBook[RowT: BaseRecordMixin, RecordT: BaseRecord]:
             row = session.get(self.model_cls, record.id)
             if row is None:
                 return False
-            for name, value in self._record_to_row_values(record, session).items():
+            # Stamp ``updated_at`` and re-anchor ``created_at`` to the stored
+            # value so a caller-constructed DTO cannot corrupt the audit trail.
+            prepared = dataclasses.replace(
+                record,
+                created_at=row.created_at,
+                updated_at=utcnow_naive(),
+            )
+            for name, value in self._record_to_row_values(prepared, session).items():
                 setattr(row, name, value)
             session.commit()
             return True

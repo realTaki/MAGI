@@ -64,14 +64,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from magi.bus.bases.job import JobStatus
 from magi.bus.firmwares.jobs import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
     MCPKind,
 )
-from magi.bus.bases.job import JobStatus
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.registry import register_tools
 
@@ -371,7 +372,7 @@ class McpWorker(RuntimeWorker):
         current = self.bus.mcp_servers_book.get_by_name(name=name)
         if current is None:
             return
-        self.bus.mcp_servers_book.update(current.with_changes(enabled=enabled))
+        self.bus.mcp_servers_book.update(replace(current, enabled=enabled))
 
     # -- helpers ---------------------------------------------------------
 

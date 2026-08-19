@@ -242,7 +242,7 @@ class ContactBook(BaseBook[_ContactRow, Contact]):
         record = self.get(contact_id)
         if record is None:
             return None
-        candidate = record.with_changes(tgid=tgid)
+        candidate = dataclasses.replace(record, tgid=tgid)
         self.update(candidate)
         return self.get(contact_id)
 

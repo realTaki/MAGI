@@ -16,6 +16,7 @@ other routers can import it from here if needed.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -23,8 +24,8 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from magi.bus import Bus
-from magi.bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
 from magi.bus.firmwares.books.local import Contact, Role
+from magi.bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -440,7 +441,8 @@ def update_contact(
             code="not_found.contact",
             detail="contact not found",
         )
-    candidate = current.with_changes(
+    candidate = replace(
+        current,
         name=new_name if new_name is not None else current.name,
         display_name=(new_display_name if "display_name" in payload.model_fields_set else current.display_name),
         role=new_role if new_role is not None else current.role,

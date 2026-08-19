@@ -9,7 +9,7 @@ is registered in a different import order.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
@@ -289,7 +289,8 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         # because we coerced at the entry. The previous ``is not None``
         # fallback was dead — the public parameter is annotated ``str``.
         new_connection_type = conn_type
-        self.update(existing.with_changes(
+        self.update(replace(
+            existing,
             connection_type=conn_type,
             command=None if new_connection_type != "stdio" else command,
             args=[] if new_connection_type != "stdio" else args_list,
@@ -324,7 +325,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         if existing is None:
             return None
         new_enabled = not existing.enabled
-        self.update(existing.with_changes(enabled=new_enabled))
+        self.update(replace(existing, enabled=new_enabled))
         return self.get_by_name(name=name)
 
     # -- DTO mapping ----------------------------------------------------

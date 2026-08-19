@@ -106,7 +106,7 @@ class MemoryBook(BaseBook[_MemoryRow, Memory]):
         if record is None:
             raise LookupError(f"memory row {memory_id} not found")
         if record.completed_at is None:
-            self.update(record.with_changes(completed_at=utcnow_naive()))
+            self.update(dataclasses.replace(record, completed_at=utcnow_naive()))
         return self.get(memory_id)  # type: ignore[return-value]
 
 

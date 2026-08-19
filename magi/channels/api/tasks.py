@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.firmwares.jobs.runTaskJob import RunTaskJob
 from magi.bus.firmwares.books.local.tasksBook import Task, preset_to_cron, validate_run_at
+from magi.bus.firmwares.jobs.runTaskJob import RunTaskJob
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
@@ -201,7 +202,7 @@ def update_task(
     try:
         if payload.target_channel is not None:
             _validate_delivery_channel(bus, payload.target_channel)
-        candidate = task.with_changes(**payload.model_dump(exclude_unset=True))
+        candidate = replace(task, **payload.model_dump(exclude_unset=True))
         if not bus.tasks_book.update(candidate):
             raise MagiHTTPException(404, "not_found.task", "task not found")
     except ValueError as exc:
