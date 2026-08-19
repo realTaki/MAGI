@@ -7,27 +7,29 @@ import pytest
 
 from magi.new_bus import Bus, InvalidJobError, InvalidJobStateError, JobStatus
 from magi.new_bus.base.engine import EngineFactory
-from magi.new_bus.testing import PingJob
+from magi.new_bus.testing import PingJob, PingJobBoard
 
 
 def test_publish_claim_complete(bus: Bus) -> None:
     published = bus.publish(PingJob(n=1, publisher="worker-a"))
     assert published.id
-    assert bus.result(published).status is JobStatus.PENDING
+    assert bus.get_result(published) is None
+    assert bus.check_job_status(published) is JobStatus.PENDING
 
     claimed = bus.claim(PingJob)
     assert claimed is not None
     assert claimed.id == published.id
-    assert bus.result(claimed).status is JobStatus.CLAIMED
+    assert bus.get_result(claimed) is None
+    assert bus.check_job_status(claimed) is JobStatus.CLAIMED
     assert claimed.n == 1
     assert isinstance(claimed.created_at, datetime)
     assert claimed.created_at == published.created_at
 
     done = bus.complete(claimed)
-    outcome = bus.result(done)
+    outcome = bus.get_result(done)
     assert outcome.status is JobStatus.COMPLETED
     assert outcome.id == done.id
-    assert bus.result(bus.get(PingJob, done.id)).status is JobStatus.COMPLETED
+    assert bus.get_result(done).status is JobStatus.COMPLETED
     assert not hasattr(done, "result")
     assert not hasattr(done, "status")
     assert not hasattr(done, "error")
@@ -38,7 +40,7 @@ def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
     claimed = bus.claim(PingJob)
     assert claimed is not None
     done = bus.complete(claimed)
-    outcome = bus.result(done)
+    outcome = bus.get_result(done)
     assert outcome.id == done.id
     assert outcome.status is JobStatus.COMPLETED
     assert not hasattr(done, "result")
@@ -50,7 +52,7 @@ def test_claim_then_fail(bus: Bus) -> None:
     claimed = bus.claim(PingJob)
     assert claimed is not None
     failed = bus.fail(claimed, "nope")
-    outcome = bus.result(failed)
+    outcome = bus.get_result(failed)
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"
 
@@ -88,7 +90,7 @@ def test_list_filters_status(bus: Bus) -> None:
 
 def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
-        bus.mount_job(PingJob)
+        bus.mount_job(PingJob, board_cls=PingJobBoard)
         for index in range(20):
             bus.publish(PingJob(n=index))
 

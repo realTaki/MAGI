@@ -54,7 +54,7 @@ def test_pre_claim_reject_leaves_job_pending(bus: Bus) -> None:
     job = bus.publish(PingJob())
     with pytest.raises(SlotRejected):
         bus.claim(PingJob)
-    assert bus.result(bus.get(PingJob, job.id)).status is JobStatus.PENDING
+    assert bus.check_job_status(job) is JobStatus.PENDING
 
 
 def test_multi_publish_fans_out(bus: Bus) -> None:
@@ -74,7 +74,7 @@ def test_multi_publish_fans_out(bus: Bus) -> None:
     job = bus.publish(PingJob())
 
     assert received == ["a", "b", "c"]
-    assert bus.result(bus.get(PingJob, job.id)).status is JobStatus.PENDING
+    assert bus.check_job_status(job) is JobStatus.PENDING
 
 
 def test_slots_are_per_job_type(bus: Bus) -> None:
@@ -95,7 +95,7 @@ def test_book_job_slots_do_not_deliver_the_work(db_backend: EngineFactory) -> No
         bus.mount_book(ItemBook)
         bus.attach(ManageBookJob, Slot.PUBLISH, lambda job: observed.append(job.op.value))
         result = bus.publish(book_job(BookOp.CREATE, name="slot-create"))
-        assert bus.result(result).status is JobStatus.COMPLETED
+        assert bus.get_result(result).status is JobStatus.COMPLETED
         assert observed == ["create"]
         listed = bus.publish(book_job(BookOp.READ))
-        assert bus.result(listed).records[0]["name"] == "slot-create"
+        assert bus.get_result(listed).records[0]["name"] == "slot-create"
