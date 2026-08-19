@@ -31,7 +31,7 @@ class InMemoryBackend(DatabaseBackend):
     def ensure(self) -> None:
         return
 
-    def records(self, name: str) -> RecordStore:
+    def records(self, name: str, **_spec: Any) -> RecordStore:
         return _MemoryStore(self, check_collection(name))
 
     @contextmanager

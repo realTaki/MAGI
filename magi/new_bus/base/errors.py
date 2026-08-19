@@ -28,7 +28,7 @@ class JobNotFoundError(BusError):
 
 
 class InvalidJobError(BusError):
-    """Job payload, type, or routing is not valid."""
+    """Job fields, type, or routing is not valid."""
 
 
 class InvalidJobStateError(BusError):

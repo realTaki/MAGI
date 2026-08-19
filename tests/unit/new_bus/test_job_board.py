@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime
 
 import pytest
 
@@ -12,21 +13,24 @@ from magi.new_bus.testing import PingJob
 def test_publish_claim_complete(bus: Bus) -> None:
     published = bus.publish(PingJob(n=1, publisher="worker-a"))
     assert published.id
-    assert published.status is JobStatus.PENDING
+    assert bus.result(published).status is JobStatus.PENDING
 
     claimed = bus.claim(PingJob)
     assert claimed is not None
     assert claimed.id == published.id
-    assert claimed.status is JobStatus.CLAIMED
+    assert bus.result(claimed).status is JobStatus.CLAIMED
     assert claimed.n == 1
+    assert isinstance(claimed.created_at, datetime)
+    assert claimed.created_at == published.created_at
 
     done = bus.complete(claimed)
-    assert done.status is JobStatus.COMPLETED
     outcome = bus.result(done)
     assert outcome.status is JobStatus.COMPLETED
-    assert outcome.job_id == done.id
-    assert bus.get(PingJob, done.id).status is JobStatus.COMPLETED
+    assert outcome.id == done.id
+    assert bus.result(bus.get(PingJob, done.id)).status is JobStatus.COMPLETED
     assert not hasattr(done, "result")
+    assert not hasattr(done, "status")
+    assert not hasattr(done, "error")
 
 
 def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
@@ -40,7 +44,7 @@ def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
     assert raw["id"] == done.id
     assert raw["status"] == "completed"
     outcome = bus.result(done)
-    assert outcome.job_id == done.id
+    assert outcome.id == done.id
     assert outcome.status is JobStatus.COMPLETED
     assert not hasattr(done, "result")
 
@@ -50,8 +54,6 @@ def test_claim_then_fail(bus: Bus) -> None:
     claimed = bus.claim(PingJob)
     assert claimed is not None
     failed = bus.fail(claimed, "nope")
-    assert failed.status is JobStatus.FAILED
-    assert failed.error == "nope"
     outcome = bus.result(failed)
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"

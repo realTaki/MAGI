@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook
@@ -47,7 +47,7 @@ class MessageRow(BaseRecordMixin):
         ForeignKey("books_conversations.id"), nullable=True
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    archived: Mapped[bool] = mapped_column(Integer, default=False, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class MessageBook(BaseBook):

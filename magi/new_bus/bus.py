@@ -27,6 +27,9 @@ class Bus:
         self._files = files
         if self._files is not None:
             self._files.ensure()
+        from .firmware.schema import prepare_schema
+
+        prepare_schema(self._backend)
         self._slots = SlotSpace()
         self._books: dict[str, BaseBook] = {}
         self._book_boards: dict[str, ManageBookJobBoard] = {}
@@ -49,24 +52,14 @@ class Bus:
             item = self._books[book]
         except KeyError:
             raise InvalidJobError(f"book {book!r} is not provided by this BUS") from None
-        record_cls = type(item).record_cls
-        if record_cls is None:
-            raise InvalidJobError(f"book {book!r} has no record type")
-        return record_cls
+        return type(item).record_cls
 
-    def mount_book(
-        self,
-        book_cls: type[BaseBook],
-        *,
-        job_type: type[ManageBookJob] = ManageBookJob,
-    ) -> None:
+    def mount_book(self, book_cls: type[BaseBook]) -> None:
         name = book_cls.name
         if not name:
             raise InvalidJobError(f"{book_cls.__name__} must set class variable name")
         if name in self._books:
             raise InvalidJobError(f"book {name!r} is already mounted")
-        if not issubclass(job_type, ManageBookJob):
-            raise InvalidJobError("mount_book job_type must be a ManageBookJob")
         storage = self._backend
         if issubclass(book_cls, BaseFileBook):
             if self._files is None:
@@ -74,9 +67,7 @@ class Bus:
             storage = self._files
         book = book_cls(storage)
         self._books[name] = book
-        self._book_boards[name] = ManageBookJobBoard(
-            book, self._backend, self._slots, job_type=job_type
-        )
+        self._book_boards[name] = ManageBookJobBoard(book, self._backend, self._slots)
 
     def mount_job(
         self,
@@ -88,7 +79,16 @@ class Bus:
             raise InvalidJobError("ManageBookJob is mounted via mount_book, not mount_job")
         if job_type in self._job_boards:
             raise InvalidJobError(f"{job_type.type_name()} is already mounted")
-        board = board_cls(job_type, self._backend, self._slots)
+        if board_cls.job_cls is BaseJob:
+            board_cls = type(
+                f"{job_type.type_name()}Board", (board_cls,), {"job_cls": job_type}
+            )
+        elif board_cls.job_cls is not job_type:
+            raise InvalidJobError(
+                f"{board_cls.__name__} is for {board_cls.job_cls.type_name()}, not "
+                f"{job_type.type_name()}"
+            )
+        board = board_cls(self._backend, self._slots)
         self._job_boards[job_type] = board
         return board
 

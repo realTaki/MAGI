@@ -9,28 +9,28 @@ from magi.new_bus.testing import PingJob, book_job
 
 def test_create_read_update_delete(bus: Bus) -> None:
     created = bus.publish(book_job(BookOp.CREATE, name="alpha", kind="x"))
-    assert created.status is JobStatus.COMPLETED
+    assert bus.result(created).status is JobStatus.COMPLETED
     record = bus.result(created).record
     record_id = record["id"]
     assert record["name"] == "alpha"
 
     by_id = bus.publish(book_job(BookOp.READ, id=record_id))
-    assert by_id.status is JobStatus.COMPLETED
+    assert bus.result(by_id).status is JobStatus.COMPLETED
     assert bus.result(by_id).record["name"] == "alpha"
 
     listed = bus.publish(book_job(BookOp.READ, filter={"kind": "x"}))
-    assert listed.status is JobStatus.COMPLETED
+    assert bus.result(listed).status is JobStatus.COMPLETED
     assert [item["id"] for item in bus.result(listed).records] == [record_id]
 
     updated = bus.publish(book_job(BookOp.UPDATE, id=record_id, name="beta"))
-    assert updated.status is JobStatus.COMPLETED
+    assert bus.result(updated).status is JobStatus.COMPLETED
     assert bus.result(updated).record["name"] == "beta"
 
     deleted = bus.publish(book_job(BookOp.DELETE, id=record_id))
-    assert deleted.status is JobStatus.COMPLETED
+    assert bus.result(deleted).status is JobStatus.COMPLETED
     missing = bus.publish(book_job(BookOp.READ, id=record_id))
-    assert missing.status is JobStatus.FAILED
-    assert missing.error
+    assert bus.result(missing).status is JobStatus.FAILED
+    assert bus.result(missing).error
 
 
 def test_failed_mutation_leaves_book_valid(bus: Bus) -> None:
@@ -38,16 +38,16 @@ def test_failed_mutation_leaves_book_valid(bus: Bus) -> None:
     record_id = bus.result(created).record["id"]
 
     failed = bus.publish(book_job(BookOp.UPDATE, name="no-id"))
-    assert failed.status is JobStatus.FAILED
+    assert bus.result(failed).status is JobStatus.FAILED
 
     still = bus.publish(book_job(BookOp.READ, id=record_id))
-    assert still.status is JobStatus.COMPLETED
+    assert bus.result(still).status is JobStatus.COMPLETED
     assert bus.result(still).record["name"] == "keep"
 
     missing = bus.publish(book_job(BookOp.DELETE, id=999))
-    assert missing.status is JobStatus.FAILED
+    assert bus.result(missing).status is JobStatus.FAILED
     still = bus.publish(book_job(BookOp.READ, id=record_id))
-    assert still.status is JobStatus.COMPLETED
+    assert bus.result(still).status is JobStatus.COMPLETED
 
 
 def test_book_jobs_are_not_claimed(bus: Bus) -> None:
@@ -61,7 +61,7 @@ def test_book_jobs_remain_on_the_board(bus: Bus) -> None:
     bus.publish(book_job(BookOp.UPDATE, name="missing-id"))
     history = bus.list(ManageBookJob, book="items")
     assert [job.id for job in history] == [first.id, history[1].id]
-    assert [job.status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
+    assert [bus.result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     assert bus.get(ManageBookJob, first.id, book="items").values["name"] == "a"
 
 

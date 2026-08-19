@@ -37,7 +37,7 @@ def test_file_book_uses_disk_when_bus_is_sqlite(tmp_path) -> None:
         created = bus.publish(
             ManageBookJob(book="notes", op=BookOp.CREATE, values={"label": "a"})
         )
-        assert created.status is JobStatus.COMPLETED
+        assert bus.result(created).status is JobStatus.COMPLETED
         record_id = bus.result(created).record["id"]
         book = bus._books["notes"]
         assert isinstance(book, NotesBook)

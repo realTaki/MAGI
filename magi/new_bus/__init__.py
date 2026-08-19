@@ -7,16 +7,14 @@ record types (see :class:`Message`). External code talks to Bus, never to BaseBo
 from .base.backends.file import FileBackend
 from .base.backends.postgres import PostgresBackend
 from .base.backends.sqlite import SQLiteBackend
-from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.BaseRecord import BaseRecord
 from .base.errors import (
     BackendError,
     BookNotFoundError,
     BusError,
-    FirmwareCompatibilityError,
     InvalidJobError,
     InvalidJobStateError,
-    JobAlreadyClaimedError,
     JobNotFoundError,
     SlotNotFoundError,
     SlotOccupiedError,
@@ -45,7 +43,6 @@ __all__ = [
     "Bus",
     "BusError",
     "FileBackend",
-    "FirmwareCompatibilityError",
     "InvalidJobError",
     "InvalidJobStateError",
     "FIRMWARE_VERSION",
@@ -53,7 +50,6 @@ __all__ = [
     "BaseJob",
     "BaseJobResult",
     "BaseJobBoard",
-    "JobAlreadyClaimedError",
     "JobNotFoundError",
     "JobStatus",
     "Conversation",

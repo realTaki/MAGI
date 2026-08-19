@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime
+from datetime import datetime
 
 from magi.new_bus import (
     BaseRecord,
@@ -32,11 +32,11 @@ def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     return job
 
 
-def create_conversation(bus: Bus, **payload) -> ManageBookJob:
-    payload.setdefault("delivery_address", "webui:test")
-    payload.setdefault("contact_id", 1)
-    payload.setdefault("channel", "webui")
-    return write_conversation(bus, BookOp.CREATE, **payload)
+def create_conversation(bus: Bus, **values) -> ManageBookJob:
+    values.setdefault("delivery_address", "webui:test")
+    values.setdefault("contact_id", 1)
+    values.setdefault("channel", "webui")
+    return write_conversation(bus, BookOp.CREATE, **values)
 
 
 def test_bus_starts_with_conversation_firmware() -> None:
@@ -65,7 +65,7 @@ def test_create_read_filter_conversation() -> None:
         title="hello",
         summary="hi",
     )
-    assert created.status is JobStatus.COMPLETED
+    assert bus.result(created).status is JobStatus.COMPLETED
     record = bus.result(created).record
     assert record["delivery_address"] == "tg:123"
     assert record["contact_id"] == 7
@@ -80,9 +80,9 @@ def test_create_read_filter_conversation() -> None:
 
 def test_last_compaction_at_round_trips() -> None:
     bus = Bus(InMemoryBackend())
-    stamped = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    stamped = datetime(2026, 8, 18, 12, 0)
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
-    assert created.status is JobStatus.COMPLETED
+    assert bus.result(created).status is JobStatus.COMPLETED
     assert bus.result(created).record["last_compaction_at"] == stamped.isoformat()
 
     loaded = write_conversation(bus, BookOp.READ, id=bus.result(created).record["id"])
@@ -127,4 +127,4 @@ def test_conversation_job_board_publish_claim_complete() -> None:
     assert claimed is not None
     assert claimed.conversation_id == conversation_id
     done = board.complete(claimed.id)
-    assert done.status is JobStatus.COMPLETED
+    assert board.result(done.id).status is JobStatus.COMPLETED
