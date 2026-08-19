@@ -6,21 +6,20 @@ Two tables:
 - ``tool_definitions``   — one row per catalog tool
 
 ``ToolDefinition`` is the sole public DTO — it serves both read and
-write paths. The Book handles serialization of semantic fields
-(``input_schema`` → ``spec_json``, ``allowed_roles`` → ``allowed_roles_json``)
-internally.
+write paths. The Book owns serialization of ``input_schema`` and
+``allowed_roles`` (stored as SQLAlchemy ``JSON`` columns).
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
-    Integer,
+    Boolean,
     Text,
     UniqueConstraint,
     select,
@@ -77,15 +76,15 @@ class ToolDefinition(BaseRecord):
     This is the **only** public DTO for tool definitions.  It is used
     for both reads (returned by :meth:`ToolDefinitionBook.list_enabled`)
     and writes (passed to :meth:`ToolDefinitionBook.upsert_many`).
-    The Book owns serialization of ``input_schema`` (→ ``spec_json``)
-    and ``allowed_roles`` (→ ``allowed_roles_json``).
+    The Book owns serialization of ``input_schema`` and ``allowed_roles``
+    (stored as SQLAlchemy ``JSON`` columns).
     """
 
     name: str  # 工具唯一名
     source: ToolSource  # 工具来源（builtin/mcp/manual）
     description: str  # 工具描述（暴露给 LLM）
     input_schema: dict[str, Any]  # 入参 JSON schema
-    allowed_roles: tuple[str, ...] = ()  # 允许调用此工具的角色
+    allowed_roles: list[str] = field(default_factory=list)  # 允许调用此工具的角色
     enabled: bool = True  # 是否启用
     implementation_version: str | None = None  # 实现版本
     schema_hash: str = ""  # 输入 schema 指纹
@@ -115,18 +114,19 @@ class _ToolDefinitionRow(BaseRecordMixin):
     __tablename__ = "tool_definitions"
 
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    spec_json: Mapped[str] = mapped_column(Text, nullable=False)
-    #: Deprecated duplicate of ``spec_json``; kept for schema compatibility
-    #: but no longer written by ToolDefinitionBook.  New rows get NULL.
-    spec_dict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     source: Mapped[ToolSource] = mapped_column(
         enum_column(ToolSource), nullable=False, default=ToolSource.MANUAL
     )
-    # JSON-serialized list[str] or NULL (no role gate).
-    allowed_roles_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON list[str]; empty list = no role gate.
+    allowed_roles: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
+    )
 
     __table_args__ = (UniqueConstraint("name", name="uq_tool_definitions_name"),)
 
@@ -141,7 +141,7 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
     def get_current(self) -> ToolCatalogState | None:
         with self._session() as s:
             row = s.scalar(select(_ToolCatalogStateRow).limit(1))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def replace_snapshot(
         self,
@@ -167,30 +167,12 @@ class ToolCatalogStateBook(BaseBook[_ToolCatalogStateRow, ToolCatalogState]):
                 row.snapshot_hash = snapshot_hash
             s.commit()
             s.refresh(row)
-        return self._row_to_dto(row)
+        return self.record_cls.from_row(row)
 
 
 class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
     model_cls = _ToolDefinitionRow
     record_cls = ToolDefinition
-
-    # -- mapping ---------------------------------------------------------
-
-    def _row_to_dto(self, row: _ToolDefinitionRow) -> ToolDefinition:
-        """Deserialize storage columns → semantic :class:`ToolDefinition`."""
-        try:
-            input_schema = json.loads(row.spec_json) if row.spec_json else {}
-        except json.JSONDecodeError:
-            input_schema = {}
-        return ToolDefinition(
-            name=row.name,
-            source=row.source,
-            description=row.description or "",
-            input_schema=input_schema,
-            allowed_roles=_parse_allowed_roles(row.allowed_roles_json),
-            enabled=bool(row.enabled),
-            revision=row.revision,
-        )
 
     def _apply_definition(
         self,
@@ -206,13 +188,11 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         source filter, preserve the existing value (the filter already
         guarantees it matches).
         """
-        row.spec_json = json.dumps(dto.input_schema, ensure_ascii=False)
-        row.description = dto.description or None
-        row.enabled = 1 if dto.enabled else 0
+        row.input_schema = dto.input_schema
+        row.description = dto.description
+        row.enabled = dto.enabled
         row.revision = dto.revision
-        row.allowed_roles_json = (
-            json.dumps(list(dto.allowed_roles), ensure_ascii=False) if dto.allowed_roles else None
-        )
+        row.allowed_roles = dto.allowed_roles
         if update_source:
             row.source = dto.source
 
@@ -234,10 +214,10 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         with self._session() as s:
             rows = s.scalars(
                 select(_ToolDefinitionRow)
-                .where(_ToolDefinitionRow.enabled == 1)
+                .where(_ToolDefinitionRow.enabled.is_(True))
                 .order_by(_ToolDefinitionRow.name)
             ).all()
-            dtos = [self._row_to_dto(r) for r in rows]
+            dtos = [self.record_cls.from_row(r) for r in rows]
         if caller_role is None and not caller_admin:
             return dtos
         return [d for d in dtos if _role_allowed(d.allowed_roles, caller_role, caller_admin)]
@@ -248,12 +228,12 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         ``schema_hash`` on the returned DTO is always ``""`` — the
         column doesn't persist it. Callers that need the fingerprint
         recompute it from the semantic fields, which round-trip
-        exactly through :meth:`_apply_definition` / :meth:`_row_to_dto`
+        exactly through :meth:`_apply_definition` / :meth:`ToolDefinition.from_row`
         (see :func:`magi.tools.worker._schema_hash`).
         """
         with self._session() as s:
             row = s.scalar(select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def list_schemas(
         self,
@@ -321,21 +301,8 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
 # -- internal helpers ----------------------------------------------------
 
 
-def _parse_allowed_roles(json_str: str | None) -> tuple[str, ...]:
-    """Decode ``allowed_roles_json`` → tuple, tolerating bad data."""
-    if not json_str:
-        return ()
-    try:
-        raw = json.loads(json_str)
-    except json.JSONDecodeError:
-        return ()
-    if not isinstance(raw, list):
-        return ()
-    return tuple(str(r) for r in raw if isinstance(r, str))
-
-
 def _role_allowed(
-    allowed_roles: tuple[str, ...],
+    allowed_roles: list[str],
     caller_role: str | None,
     caller_admin: bool,
 ) -> bool:

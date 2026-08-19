@@ -190,7 +190,7 @@ def _load_server(payload: dict[str, Any]) -> McpServer:
         name=payload["name"],
         connection_type=payload["connection_type"],
         command=payload.get("command"),
-        args=tuple(payload.get("args") or []),
+        args=list(payload.get("args") or []),
         url=payload.get("url"),
         env=dict(payload.get("env") or {}),
         headers=dict(payload.get("headers") or {}),

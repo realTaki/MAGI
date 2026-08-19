@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime
-from typing import Any, Self
+from typing import Self
 
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,19 +42,16 @@ class BaseRecord:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_row(cls, row: Any) -> Self:
-        """Rebuild a Record from a persisted ORM row.
+    def from_row(cls, row: BaseRecordMixin) -> Self:
+        """Rebuild a Record from its persisted ORM row.
 
-        Inverse of :meth:`to_dict` for the one-to-one case: every field whose
-        name matches a row attribute is copied verbatim, and ``init=False``
-        fields (the database-owned ``id`` / ``created_at`` / ``updated_at``)
-        are assigned after construction.  Records whose storage shape differs —
-        encoded columns, semantic references — override this classmethod
-        locally.
-
-        ``row`` is deliberately ``Any``: the mapping is duck-typed
-        (``hasattr`` / ``getattr``), and each override narrows the parameter
-        to its own ORM row type.
+        Deliberately mechanical: every DTO field whose name matches a row
+        attribute is copied verbatim, and ``init=False`` fields (the
+        database-owned ``id`` / ``created_at`` / ``updated_at``) are assigned
+        after construction.  No subclass customisation is expected — storage
+        shape is kept aligned with the DTO (column names, SQLAlchemy ``JSON``
+        columns), so a read is always a faithful field-for-field projection
+        of the row.
         """
         init_kwargs: dict = {}
         database_values: dict = {}

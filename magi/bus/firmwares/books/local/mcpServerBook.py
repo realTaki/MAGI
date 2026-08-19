@@ -9,7 +9,6 @@ is registered in a different import order.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -73,7 +72,7 @@ class McpServer(BaseRecord):
     name: str  # 操作员面向的唯一名（PK）
     connection_type: MCPConnectionType  # 连接类型（stdio/sse/streamable_http）
     command: str | None = None  # stdio 启动命令
-    args: tuple[str, ...] = ()  # stdio 启动参数
+    args: list[str] = field(default_factory=list)  # stdio 启动参数
     url: str | None = None  # URL 类型连接的端点
     env: dict[str, str] = field(default_factory=dict)  # stdio 进程环境变量
     headers: dict[str, str] = field(default_factory=dict)  # HTTP 自定义请求头
@@ -108,25 +107,25 @@ class _McpServerRow(BaseRecordMixin):
 
     # STDIO
     command: Mapped[str | None] = mapped_column(Text, nullable=True)
-    args_json: Mapped[str] = mapped_column(
-        Text,
+    args: Mapped[list[str]] = mapped_column(
+        JSON,
         nullable=False,
-        default="[]",
+        default=list,
         server_default="[]",
     )
-    env_json: Mapped[str] = mapped_column(
-        Text,
+    env: Mapped[dict[str, str]] = mapped_column(
+        JSON,
         nullable=False,
-        default="{}",
+        default=dict,
         server_default="{}",
     )
 
     # URL-based (sse / streamable_http)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    headers_json: Mapped[str] = mapped_column(
-        Text,
+    headers: Mapped[dict[str, str]] = mapped_column(
+        JSON,
         nullable=False,
-        default="{}",
+        default=dict,
         server_default="{}",
     )
 
@@ -184,40 +183,6 @@ class _UnsetType:
 _UNSET = _UnsetType()
 
 
-def _parse_json_dict(raw: str | None) -> dict[str, str]:
-    """Defensive JSON-object parser for ``env_json`` / ``headers_json``.
-
-    Mirrors ``magi.bus.bases.db.models.local.mcp_server._parse_json_dict``
-    — coerce non-string values to ``str`` rather than dropping
-    them, so a bad row logs and degrades to empty rather than
-    crashing the consumer.
-    """
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return {}
-    if not isinstance(parsed, dict):
-        return {}
-    return {str(k): str(v) for k, v in parsed.items()}
-
-
-def _parse_json_list(raw: str | None) -> list[str]:
-    """Defensive JSON-array parser for ``args_json`` — coerce
-    non-string values to ``str`` and drop anything we can't
-    serialise."""
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
-
-
 # -- Book ----------------------------------------------------------------
 
 
@@ -228,12 +193,12 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
     def get_by_name(self, *, name: str) -> McpServer | None:
         with self._session() as s:
             row = s.scalar(select(_McpServerRow).where(_McpServerRow.name == name))
-            return self._row_to_dto(row) if row else None
+            return self.record_cls.from_row(row) if row else None
 
     def list_all(self) -> list[McpServer]:
         with self._session() as s:
             rows = s.scalars(select(_McpServerRow).order_by(_McpServerRow.name)).all()
-            return [self._row_to_dto(r) for r in rows]
+            return [self.record_cls.from_row(r) for r in rows]
 
     def list_enabled(self) -> list[McpServer]:
         """Return every row whose ``enabled`` column is true.
@@ -248,23 +213,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
                 .where(_McpServerRow.enabled.is_(True))
                 .order_by(_McpServerRow.name)
             ).all()
-            return [self._row_to_dto(r) for r in rows]
-
-    def _record_to_row_values(self, record: McpServer, _session) -> dict:
-        return {
-            "name": record.name,
-            "connection_type": record.connection_type,
-            "command": record.command,
-            "args_json": json.dumps(list(record.args)),
-            "env_json": json.dumps(record.env),
-            "url": record.url,
-            "headers_json": json.dumps(record.headers),
-            "enabled": record.enabled,
-            "connect_timeout": record.connect_timeout,
-            "execute_timeout": record.execute_timeout,
-            "sse_read_timeout": record.sse_read_timeout,
-            "config": record.config,
-        }
+            return [self.record_cls.from_row(r) for r in rows]
 
     # -- convenience methods that the worker / future API use --------
 
@@ -319,7 +268,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
                 name=name,
                 connection_type=conn_type,
                 command=command,
-                args=tuple(args_list),
+                args=args_list,
                 env=env_dict,
                 url=url,
                 headers=headers_dict,
@@ -343,7 +292,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
         self.update(existing.with_changes(
             connection_type=conn_type,
             command=None if new_connection_type != "stdio" else command,
-            args=() if new_connection_type != "stdio" else tuple(args_list),
+            args=[] if new_connection_type != "stdio" else args_list,
             env={} if new_connection_type != "stdio" else env_dict,
             url=None if new_connection_type == "stdio" else url,
             headers={} if new_connection_type == "stdio" else headers_dict,
@@ -380,42 +329,6 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
 
     # -- DTO mapping ----------------------------------------------------
 
-    def _row_to_dto(self, row: _McpServerRow) -> McpServer:
-        # Mirror the base class' field-by-field mapping, then
-        # overlay the JSON-deserialised args / env / headers and
-        # the (read-only) ``config`` blob. The base class falls
-        # back to ``hasattr`` for every field, so missing
-        # attributes silently become ``None`` — we don't rely
-        # on that here.
-        kwargs: dict = {
-            "name": row.name,
-            "connection_type": row.connection_type,
-            "command": row.command,
-            "url": row.url,
-            "enabled": bool(row.enabled),
-            "config": dict(row.config or {}),
-        }
-        for f_name, raw in (
-            ("args", row.args_json),
-            ("env", row.env_json),
-            ("headers", row.headers_json),
-        ):
-            if f_name == "args":
-                kwargs[f_name] = tuple(_parse_json_list(raw))
-            else:
-                kwargs[f_name] = _parse_json_dict(raw)
-        for ts_name in (
-            "connect_timeout",
-            "execute_timeout",
-            "sse_read_timeout",
-        ):
-            kwargs[ts_name] = getattr(row, ts_name, None)
-        server = McpServer(**kwargs)
-        object.__setattr__(server, "id", row.id)
-        object.__setattr__(server, "created_at", row.created_at)
-        object.__setattr__(server, "updated_at", row.updated_at)
-        return server
-
 
 # -- public serialiser ---------------------------------------------------
 #
@@ -435,15 +348,13 @@ def serialize_mcp_server(server: McpServer) -> dict[str, Any]:
 
     Field order is stable (the operator-facing identity fields
     first, then connection details, then timeouts) so the LLM
-    sees the same shape every time. ``args`` is normalised to
-    a list (the DTO stores it as a tuple) so the wire shape
-    doesn't leak the internal ``tuple`` choice.
+    sees the same shape every time.
     """
     return {
         "name": server.name,
         "connection_type": server.connection_type,
         "command": server.command,
-        "args": list(server.args),
+        "args": server.args,
         "url": server.url,
         "enabled": server.enabled,
         "connect_timeout": server.connect_timeout,
