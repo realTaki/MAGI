@@ -8,17 +8,18 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Table, Text, select, update
+from sqlalchemy import JSON, Table, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
-from .time import utcnow
+from .time import dump_dt, utcnow
 
 if TYPE_CHECKING:
     from .slot import SlotSpace
@@ -81,30 +82,26 @@ class BaseJobBoard:
     def _session(self):
         return self._factory.session()
 
-    def publish(self, job: BaseJob) -> BaseJob:
-        if type(job) is not self.job_cls:
-            raise InvalidJobError(
-                f"this board accepts {self.job_cls.__qualname__}, not {type(job).__qualname__}"
-            )
+    def publish(self, job: BaseJob) -> int:
         from .slot import Slot
 
-        if job.id:
-            raise InvalidJobError("publish accepts only a new job (id must be 0)")
+        now = utcnow()
+        prepared = replace(
+            job,
+            id=0,
+            created_at=now,
+            updated_at=now,
+        )
         job_type = type(job)
-        self._slots.fire(job_type, Slot.PRE_PUBLISH, job)
-        job.created_at = utcnow()
-        values = job.to_dict()
-        values.pop("id", None)
-        values["status"] = JobStatus.PENDING.value
-        values["error"] = None
+        self._slots.fire(job_type, Slot.PRE_PUBLISH, prepared)
         with self._session() as session:
-            row = type(self).row_cls(**_row_kwargs(type(self).row_cls, values))
+            row = type(self).row_cls(**_row_kwargs(type(self).row_cls, prepared.to_dict()))
             session.add(row)
             session.commit()
             job.id = int(row.id)
         self._slots.fire(job_type, Slot.PUBLISH, job)
         self._slots.fire(job_type, Slot.POST_PUBLISH, job)
-        return job
+        return job.id
 
     def claim(self) -> BaseJob | None:
         from .slot import Slot
@@ -141,20 +138,25 @@ class BaseJobBoard:
             return job
         return None
 
-    def complete(
-        self,
-        job_id: int,
-        result: BaseJobResult | Mapping[str, Any] | None = None,
-    ) -> BaseJob:
-        return self._finish(job_id, JobStatus.COMPLETED, result=result, error=None)
-
-    def fail(self, job_id: int, error: str) -> BaseJob:
-        return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
-
-    def submit_result(self, job_id: int, result: BaseJobResult) -> BaseJob:
-        if result.status is JobStatus.FAILED:
-            return self.fail(job_id, result.error or "")
-        return self.complete(job_id, result)
+    def submit_result(self, job_id: int, result: BaseJobResult) -> bool:
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+            if row is None:
+                return False
+            if row.status != JobStatus.CLAIMED.value:
+                raise InvalidJobStateError(
+                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not claimed"
+                )
+            prepared = replace(
+                result,
+                id=row.id,
+                created_at=row.created_at,
+                updated_at=utcnow(),
+            )
+            for key, value in _row_kwargs(type(self).row_cls, prepared.to_dict()).items():
+                setattr(row, key, value)
+            session.commit()
+            return True
 
     def get_result(self, job_id: int) -> BaseJobResult | None:
         row = self._get_row(job_id)
@@ -180,43 +182,6 @@ class BaseJobBoard:
             rows = list(session.scalars(stmt))
         return [self.job_cls.from_row(row) for row in rows]
 
-    def _finish(
-        self,
-        job_id: int,
-        status: JobStatus,
-        *,
-        result: BaseJobResult | Mapping[str, Any] | None,
-        error: str | None,
-    ) -> BaseJob:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-            if row is None:
-                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
-            if row.status != JobStatus.CLAIMED.value:
-                raise InvalidJobStateError(
-                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not claimed"
-                )
-            parsed = self._coerce_result(job_id, status, result, error)
-            patch = {
-                "status": status.value,
-                "error": error,
-                **_result_fields(parsed),
-            }
-            changed = session.execute(
-                update(type(self).row_cls)
-                .where(
-                    type(self).row_cls.id == job_id,
-                    type(self).row_cls.status == JobStatus.CLAIMED.value,
-                )
-                .values(**_row_kwargs(type(self).row_cls, patch))
-            )
-            if getattr(changed, "rowcount", 0) != 1:
-                raise InvalidJobStateError(
-                    f"{self.job_cls.__qualname__} {job_id} is no longer claimed"
-                )
-            session.commit()
-        return self.job_cls.from_row(self._get_row(job_id))
-
     def _get_row(self, job_id: int) -> BaseJobRow:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
@@ -236,33 +201,25 @@ class BaseJobBoard:
                 setattr(row, key, value)
             session.commit()
 
-    def _coerce_result(
-        self,
-        job_id: int,
-        status: JobStatus,
-        result: BaseJobResult | Mapping[str, Any] | None,
-        error: str | None,
-    ) -> BaseJobResult:
-        cls = type(self).result_cls
-        if result is None:
-            parsed: BaseJobResult = cls()
-        elif isinstance(result, BaseJobResult):
-            parsed = result
-        else:
-            parsed = cls.parse(result)
-        parsed.id = job_id
-        parsed.status = status
-        parsed.error = error
-        return parsed
 
-
-_RESULT_META = frozenset({"id", "created_at", "updated_at", "status", "error"})
-
-
-def _result_fields(result: BaseJobResult) -> dict[str, Any]:
-    return {key: value for key, value in result.to_dict().items() if key not in _RESULT_META}
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return dump_dt(value)
+    if isinstance(value, Mapping):
+        return {key: _json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    return value
 
 
 def _row_kwargs(row_cls: type[BaseJobRow], values: Mapping[str, Any]) -> dict[str, Any]:
-    names = {column.key for column in row_cls.__table__.columns}
-    return {key: value for key, value in values.items() if key in names}
+    columns = {column.key: column for column in row_cls.__table__.columns}
+    out: dict[str, Any] = {}
+    for key, value in values.items():
+        if key == "id":
+            continue
+        column = columns.get(key)
+        if column is None:
+            continue
+        out[key] = _json_ready(value) if isinstance(column.type, JSON) else value
+    return out

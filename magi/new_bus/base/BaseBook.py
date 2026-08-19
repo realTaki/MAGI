@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from typing import Any, ClassVar, Self, get_type_hints
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .engine import EngineFactory
 from .errors import InvalidJobError
-from .time import dump_dt, load_dt, utcnow
+from .time import load_dt, utcnow
 
 
 @dataclass(kw_only=True)
@@ -24,7 +24,7 @@ class BaseRecord:
     updated_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {item.name: dump_dt(getattr(self, item.name)) for item in fields(self)}
+        return asdict(self)
 
     @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
