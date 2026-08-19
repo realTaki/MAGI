@@ -9,8 +9,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
 
+from sqlalchemy import DateTime, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
 from ...base.BaseBook import BaseBook
 from ...base.BaseRecord import BaseRecord
+from ...base.BaseRecordMixin import BaseRecordMixin
 
 
 @dataclass(kw_only=True)
@@ -33,6 +37,17 @@ class Conversation(BaseRecord):
     last_compaction_at: datetime | None = None
 
     BOOK: ClassVar[str] = "conversations"
+
+
+class ConversationRow(BaseRecordMixin):
+    __tablename__ = "books_conversations"
+
+    delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    last_compaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ConversationBook(BaseBook):

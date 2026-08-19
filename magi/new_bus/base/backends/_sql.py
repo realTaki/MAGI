@@ -18,13 +18,7 @@ from .backend import DatabaseBackend, RecordStore
 from .errors import BackendError
 
 _IDENT = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
-_SQL_TYPES = {
-    "int": "INTEGER",
-    "bool": "INTEGER",
-    "str": "TEXT",
-    "datetime": "TEXT",
-    "json": "TEXT",
-}
+
 
 
 class SqlDriver(Protocol):
@@ -49,17 +43,13 @@ class SqlBackend(DatabaseBackend):
     def ensure(self) -> None:
         return
 
-    def records(
-        self,
-        name: str,
-        *,
-        fields: Sequence[tuple[str, str]] | None = None,
-        foreign_keys: Sequence[tuple[str, str, str]] | None = None,
-    ) -> RecordStore:
+    def records(self, name: str, **_spec: Any) -> RecordStore:
         table = table_name(check_collection(name))
         with self._lock:
-            self._ensure_table(table, fields, foreign_keys)
-        return _SqlStore(self, table, tuple(fields) if fields else None)
+            fields = self._fields_from_table(table)
+            if fields is None and not self._has_table(table):
+                self._ensure_blob_table(table)
+        return _SqlStore(self, table, fields)
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -103,35 +93,50 @@ class SqlBackend(DatabaseBackend):
         if self._tx_depth == 0:
             self._conn.commit()
 
-    def _ensure_table(
-        self,
-        table: str,
-        fields: Sequence[tuple[str, str]] | None,
-        foreign_keys: Sequence[tuple[str, str, str]] | None,
-    ) -> None:
-        if fields:
-            columns = [self._driver.id_column]
-            for name, kind in fields:
-                if name == "id":
-                    continue
-                columns.append(f"{name} {_SQL_TYPES.get(kind, 'TEXT')}")
-            for column, target, target_column in foreign_keys or ():
-                columns.append(
-                    f"FOREIGN KEY ({column}) REFERENCES {table_name(target)} ({target_column})"
-                )
-        else:
-            columns = [
-                self._driver.id_column,
-                "status TEXT",
-                "created_at TEXT",
-                "data TEXT NOT NULL",
-            ]
+    def _has_table(self, table: str) -> bool:
+        engine = self.engine
+        if engine is None:
+            return False
+        from sqlalchemy import inspect
+
+        return inspect(engine).has_table(table)
+
+    def _fields_from_table(self, table: str) -> tuple[tuple[str, str], ...] | None:
+        engine = self.engine
+        if engine is None or not self._has_table(table):
+            return None
+        from sqlalchemy import Boolean, DateTime, Integer, inspect
+
+        columns = inspect(engine).get_columns(table)
+        names = [column["name"] for column in columns]
+        if "data" in names:
+            return None
+        kinds: list[tuple[str, str]] = []
+        for column in columns:
+            sql_type = column["type"]
+            if isinstance(sql_type, Boolean):
+                kind = "bool"
+            elif isinstance(sql_type, DateTime):
+                kind = "datetime"
+            elif isinstance(sql_type, Integer):
+                kind = "int"
+            else:
+                kind = "str"
+            kinds.append((column["name"], kind))
+        return tuple(kinds)
+
+    def _ensure_blob_table(self, table: str) -> None:
+        columns = [
+            self._driver.id_column,
+            "status TEXT",
+            "created_at TEXT",
+            "data TEXT NOT NULL",
+        ]
         try:
             self._execute(f"CREATE TABLE IF NOT EXISTS {table} ({', '.join(columns)})")
-            if not fields:
-                self._execute(
-                    f"CREATE INDEX IF NOT EXISTS ix_{table}_claim ON {table} (status, created_at)"
-                )
+            self._execute(
+                f"CREATE INDEX IF NOT EXISTS ix_{table}_claim ON {table} (status, created_at)"
+            )
             self._autocommit()
         except Exception as exc:
             raise BackendError(f"failed to prepare table {table}") from exc

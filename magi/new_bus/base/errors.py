@@ -6,10 +6,8 @@ __all__ = [
     "BackendError",
     "BookNotFoundError",
     "BusError",
-    "FirmwareCompatibilityError",
     "InvalidJobError",
     "InvalidJobStateError",
-    "JobAlreadyClaimedError",
     "JobNotFoundError",
     "SlotNotFoundError",
     "SlotOccupiedError",
@@ -37,10 +35,6 @@ class InvalidJobStateError(BusError):
     """The requested transition is not allowed from the Job's current status."""
 
 
-class JobAlreadyClaimedError(BusError):
-    """A claim lost the one-time ownership race."""
-
-
 class SlotNotFoundError(BusError):
     """Unknown slot name, or detach target is not bound."""
 
@@ -51,7 +45,3 @@ class SlotOccupiedError(BusError):
 
 class SlotRejected(BusError):
     """A SINGLE pre_* handler aborted the operation."""
-
-
-class FirmwareCompatibilityError(BusError):
-    """Reserved for Firmware protocol checks. Unused in Base."""

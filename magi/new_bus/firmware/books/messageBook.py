@@ -9,8 +9,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import ClassVar
 
+from sqlalchemy import DateTime, ForeignKey, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
 from ...base.BaseBook import BaseBook
 from ...base.BaseRecord import BaseRecord
+from ...base.BaseRecordMixin import BaseRecordMixin
 from ...base.time import utcnow
 
 
@@ -32,6 +36,18 @@ class Message(BaseRecord):
     archived: bool = False
 
     BOOK: ClassVar[str] = "messages"
+
+
+class MessageRow(BaseRecordMixin):
+    __tablename__ = "books_messages"
+
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("books_conversations.id"), nullable=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    archived: Mapped[bool] = mapped_column(Integer, default=False, nullable=False)
 
 
 class MessageBook(BaseBook):

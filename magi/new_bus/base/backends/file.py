@@ -52,11 +52,8 @@ class FileBackend(Backend):
     def collection_dir(self, name: str) -> Path:
         return self.root / name
 
-    def _collection_dir(self, name: str) -> Path:
-        return self.collection_dir(name)
-
     def _path(self, name: str, record_id: int) -> Path:
-        return self._collection_dir(name) / f"{record_id}.json"
+        return self.collection_dir(name) / f"{record_id}.json"
 
     def _read_disk(self, name: str, record_id: int) -> dict[str, Any] | None:
         path = self._path(name, record_id)
@@ -68,7 +65,7 @@ class FileBackend(Backend):
             raise BackendError(f"failed to read {path}") from exc
 
     def _write_disk(self, name: str, record_id: int, record: Mapping[str, Any]) -> None:
-        directory = self._collection_dir(name)
+        directory = self.collection_dir(name)
         directory.mkdir(parents=True, exist_ok=True)
         path = self._path(name, record_id)
         tmp = path.with_suffix(".json.tmp")
@@ -92,7 +89,7 @@ class FileBackend(Backend):
         return True
 
     def _list_disk_ids(self, name: str) -> list[int]:
-        directory = self._collection_dir(name)
+        directory = self.collection_dir(name)
         if not directory.is_dir():
             return []
         ids: list[int] = []

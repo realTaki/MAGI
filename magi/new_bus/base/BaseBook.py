@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any, ClassVar
 
 from .backends.backend import DatabaseBackend
-from .BaseRecord import BaseRecord, field_kinds
+from .BaseRecord import BaseRecord
 from .errors import BookNotFoundError, InvalidJobError
 from .time import utcnow
 
@@ -20,21 +20,13 @@ class BaseBook:
 
     name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
-    model_cls: ClassVar[type | None] = None
-    foreign_keys: ClassVar[tuple[tuple[str, str], ...]] = ()
 
     def __init__(self, backend) -> None:
         if not type(self).name:
             raise InvalidJobError(f"{type(self).__name__} must set class variable name")
         self._require_backend(backend)
         cls = type(self)
-        self._store = backend.records(
-            f"books.{cls.name}",
-            fields=field_kinds(cls.record_cls),
-            foreign_keys=tuple(
-                (column, f"books.{book}", "id") for column, book in cls.foreign_keys
-            ),
-        )
+        self._store = backend.records(f"books.{cls.name}")
 
     def _require_backend(self, backend) -> None:
         if not isinstance(backend, DatabaseBackend):
@@ -54,9 +46,6 @@ class BaseBook:
     def get(self, record_id: int) -> BaseRecord | None:
         data = self._store.get(record_id)
         return None if data is None else self.record_cls.parse(data)
-
-    def require(self, record_id: int) -> bool:
-        return self.get(record_id) is not None
 
     def update(self, record: BaseRecord) -> int:
         if not record.id:

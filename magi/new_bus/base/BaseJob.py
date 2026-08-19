@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-from .backends import RecordStore
 from .backends.backend import DatabaseBackend
 from .BaseRecord import BaseRecord
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
@@ -67,32 +66,6 @@ class BaseJobResult(BaseRecord):
         return parsed
 
 
-def persist_new_job(store: RecordStore, slots: SlotSpace, job: BaseJob) -> BaseJob:
-    """Run publish slots and persist a PENDING job. Does not execute anything."""
-    from .slot import Slot
-
-    if job.id:
-        raise InvalidJobError("publish accepts only a new job (id must be 0)")
-    job_type = type(job)
-    slots.fire(job_type, Slot.PRE_PUBLISH, job)
-    job.created_at = utcnow()
-    record = job.to_record()
-    record["status"] = JobStatus.PENDING.value
-    record["error"] = None
-    stored = store.insert(record)
-    job.id = int(stored["id"])
-    slots.fire(job_type, Slot.PUBLISH, job)
-    slots.fire(job_type, Slot.POST_PUBLISH, job)
-    return job
-
-
-def load_job(store: RecordStore, job_type: type[BaseJob], job_id: int) -> BaseJob:
-    record = store.get(job_id)
-    if record is None:
-        raise JobNotFoundError(f"{job_type.type_name()} {job_id} not found")
-    return job_type.from_record(record)
-
-
 class BaseJobBoard:
     """Running container for one work BaseJob type."""
 
@@ -118,7 +91,21 @@ class BaseJobBoard:
             raise InvalidJobError(
                 f"this board accepts {self.job_cls.type_name()}, not {type(job).type_name()}"
             )
-        return persist_new_job(self._store, self._slots, job)
+        from .slot import Slot
+
+        if job.id:
+            raise InvalidJobError("publish accepts only a new job (id must be 0)")
+        job_type = type(job)
+        self._slots.fire(job_type, Slot.PRE_PUBLISH, job)
+        job.created_at = utcnow()
+        record = job.to_record()
+        record["status"] = JobStatus.PENDING.value
+        record["error"] = None
+        stored = self._store.insert(record)
+        job.id = int(stored["id"])
+        self._slots.fire(job_type, Slot.PUBLISH, job)
+        self._slots.fire(job_type, Slot.POST_PUBLISH, job)
+        return job
 
     def claim(self) -> BaseJob | None:
         from .slot import Slot
@@ -151,7 +138,10 @@ class BaseJobBoard:
         return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
 
     def get(self, job_id: int) -> BaseJob:
-        return load_job(self._store, self.job_cls, job_id)
+        record = self._store.get(job_id)
+        if record is None:
+            raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
+        return self.job_cls.from_record(record)
 
     def result(self, job_id: int) -> BaseJobResult:
         record = self._store.get(job_id)
