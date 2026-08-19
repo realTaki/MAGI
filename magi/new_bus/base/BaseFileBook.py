@@ -11,8 +11,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
-from .file import FileBackend
 from .errors import InvalidJobError
+from .file import FileBackend
 
 
 class BaseFileBook:

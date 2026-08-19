@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ class EngineFactory:
                 f"BUS storage only supports SQLite or PostgreSQL URLs; got {driver!r}"
             )
         self._memory = memory or database_url == "sqlite://"
+        self._lock = threading.RLock()
         self._engine = self._build_engine()
         self._sessions = sessionmaker(
             bind=self._engine,
@@ -45,11 +47,12 @@ class EngineFactory:
 
     @contextmanager
     def session(self) -> Generator[Session, None, None]:
-        item = self._sessions()
-        try:
-            yield item
-        finally:
-            item.close()
+        with self._lock:
+            item = self._sessions()
+            try:
+                yield item
+            finally:
+                item.close()
 
     def close(self) -> None:
         self._engine.dispose()

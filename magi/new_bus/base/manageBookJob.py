@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
-from .backends import Backend
 from .BaseBook import BaseBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .engine import EngineFactory
 from .errors import BookNotFoundError, BusError, InvalidJobError
 from .slot import SlotSpace
 
@@ -60,12 +60,12 @@ class ManageBookJobBoard(BaseJobBoard):
     job_cls: ClassVar[type[BaseJob]] = ManageBookJob
     result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
 
-    def __init__(self, book: BaseBook, backend: Backend, slots: SlotSpace) -> None:
+    def __init__(self, book: BaseBook, db: EngineFactory, slots: SlotSpace) -> None:
         self.book = book
-        super().__init__(backend, slots)
+        super().__init__(db, slots)
 
-    def _collection(self) -> str:
-        return f"jobs.book.{self.book.record_cls.BOOK}"
+    def _table_name(self) -> str:
+        return f"jobs_book_{self.book.record_cls.BOOK}"
 
     def publish(self, job: BaseJob) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):
@@ -78,18 +78,10 @@ class ManageBookJobBoard(BaseJobBoard):
             )
         super().publish(job)
         try:
-            with self._backend.transaction():
-                outcome = self._execute(job)
-                record = job.to_record()
-                record["status"] = JobStatus.COMPLETED.value
-                record["error"] = None
-                record.update(outcome)
-                self._store.replace(job.id, record)
+            outcome = self._execute(job)
+            self._write(job.id, JobStatus.COMPLETED, outcome, None)
         except BusError as exc:
-            record = job.to_record()
-            record["status"] = JobStatus.FAILED.value
-            record["error"] = str(exc)
-            self._store.replace(job.id, record)
+            self._write(job.id, JobStatus.FAILED, {}, str(exc))
         return job
 
     def claim(self) -> BaseJob | None:

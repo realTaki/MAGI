@@ -1,7 +1,5 @@
 """BUS error model — small and direct."""
 
-from .backends.errors import BackendError
-
 __all__ = [
     "BackendError",
     "BookNotFoundError",
@@ -17,6 +15,10 @@ __all__ = [
 
 class BusError(Exception):
     """Base class for every BUS error."""
+
+
+class BackendError(BusError):
+    """Storage failed."""
 
 
 class BookNotFoundError(BusError):
