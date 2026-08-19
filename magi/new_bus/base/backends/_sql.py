@@ -13,6 +13,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any, Protocol
 
+from sqlalchemy.orm import sessionmaker
+
 from ._common import check_collection, coerce_id, copy_record, matches, sort_records
 from .backend import DatabaseBackend, RecordStore
 from .errors import BackendError
@@ -32,6 +34,7 @@ class SqlBackend(DatabaseBackend):
     def __init__(self, driver: SqlDriver, engine=None) -> None:
         self._driver = driver
         self.engine = engine
+        self._sessions = sessionmaker(bind=engine, expire_on_commit=False) if engine else None
         self._lock = threading.RLock()
         self._tx_depth = 0
         try:
@@ -39,6 +42,16 @@ class SqlBackend(DatabaseBackend):
         except Exception as exc:
             raise BackendError("failed to open SQL backend") from exc
         self.ensure()
+
+    @contextmanager
+    def session(self) -> Iterator[Any]:
+        if self._sessions is None:
+            raise BackendError("SQL backend has no engine")
+        item = self._sessions()
+        try:
+            yield item
+        finally:
+            item.close()
 
     def ensure(self) -> None:
         return

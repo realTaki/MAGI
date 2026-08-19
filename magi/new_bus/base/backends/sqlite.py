@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 
 from ._sql import SqlBackend
 
@@ -32,4 +32,11 @@ class SQLiteBackend(SqlBackend):
             f"sqlite:///{path}",
             connect_args={"check_same_thread": False},
         )
+
+        @event.listens_for(engine, "connect")
+        def _fk(dbapi_conn, _record) -> None:
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
         super().__init__(_SQLiteDriver(path), engine=engine)

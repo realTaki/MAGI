@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from typing import Any
 
+from .errors import BackendError
+
 
 class RecordStore(ABC):
     """A named collection of JSON-serializable records.
@@ -83,3 +85,7 @@ class Backend(ABC):
 
 class DatabaseBackend(Backend):
     """SQL or in-memory record table. Required by BaseBook. Not FileBackend."""
+
+    def session(self) -> AbstractContextManager[Any]:
+        """SQLAlchemy Session for Book Row CRUD."""
+        raise BackendError("DatabaseBackend.session is not available")
