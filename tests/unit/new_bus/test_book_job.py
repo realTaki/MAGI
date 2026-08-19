@@ -59,10 +59,10 @@ def test_book_jobs_are_not_claimed(bus: Bus) -> None:
 def test_book_jobs_remain_on_the_board(bus: Bus) -> None:
     first = bus.publish(book_job(BookOp.CREATE, name="a"))
     bus.publish(book_job(BookOp.UPDATE, name="missing-id"))
-    history = bus.list(ManageBookJob, book="items")
+    history = bus.list(ManageBookJob, book="Item")
     assert [job.id for job in history] == [first.id, history[1].id]
     assert [bus.result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
-    assert bus.get(ManageBookJob, first.id, book="items").values["name"] == "a"
+    assert bus.get(ManageBookJob, first.id, book="Item").values["name"] == "a"
 
 
 def test_book_is_not_on_the_public_surface() -> None:

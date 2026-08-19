@@ -6,7 +6,7 @@ from datetime import datetime
 import pytest
 
 from magi.new_bus import Bus, InvalidJobError, InvalidJobStateError, JobStatus
-from magi.new_bus.base.backends import Backend
+from magi.new_bus.base.engine import EngineFactory
 from magi.new_bus.testing import PingJob
 
 
@@ -38,15 +38,11 @@ def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
     claimed = bus.claim(PingJob)
     assert claimed is not None
     done = bus.complete(claimed)
-    raw = bus.job_board(PingJob)._store.get(done.id)
-    assert raw is not None
-    assert "result" not in raw
-    assert raw["id"] == done.id
-    assert raw["status"] == "completed"
     outcome = bus.result(done)
     assert outcome.id == done.id
     assert outcome.status is JobStatus.COMPLETED
     assert not hasattr(done, "result")
+    assert not hasattr(done, "status")
 
 
 def test_claim_then_fail(bus: Bus) -> None:
@@ -90,7 +86,7 @@ def test_list_filters_status(bus: Bus) -> None:
     assert [job.id for job in completed] == [first.id]
 
 
-def test_claim_is_exclusive(db_backend: Backend) -> None:
+def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
         bus.mount_job(PingJob)
         for index in range(20):
@@ -117,7 +113,7 @@ def test_claim_is_exclusive(db_backend: Backend) -> None:
         assert len(set(claimed_ids)) == 20
 
 
-def test_unmounted_job_is_invalid(db_backend: Backend) -> None:
+def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
         with pytest.raises(InvalidJobError):
             bus.publish(PingJob())

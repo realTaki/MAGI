@@ -11,7 +11,7 @@ from magi.new_bus import (
     SlotOccupiedError,
     SlotRejected,
 )
-from magi.new_bus.base.backends import Backend
+from magi.new_bus.base.engine import EngineFactory
 from magi.new_bus.testing import ItemBook, PingJob, book_job
 
 
@@ -88,7 +88,7 @@ def test_slots_are_per_job_type(bus: Bus) -> None:
     assert hits == ["ping", "book"]
 
 
-def test_book_job_slots_do_not_deliver_the_work(db_backend: Backend) -> None:
+def test_book_job_slots_do_not_deliver_the_work(db_backend: EngineFactory) -> None:
     """Slot handlers observe BaseBook jobs; BUS still executes CRUD itself."""
     observed: list[str] = []
     with Bus(db_backend) as bus:

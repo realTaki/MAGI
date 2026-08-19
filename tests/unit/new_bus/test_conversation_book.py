@@ -21,7 +21,7 @@ def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     filt = values.pop("filter", None)
     job = bus.publish(
         ManageBookJob(
-            book=Conversation.BOOK,
+            book=Conversation.__name__,
             op=op,
             record_id=int(record_id),
             filter=filt,
@@ -41,9 +41,9 @@ def create_conversation(bus: Bus, **values) -> ManageBookJob:
 
 def test_bus_starts_with_conversation_firmware() -> None:
     bus = Bus(InMemoryBackend())
-    assert Conversation.BOOK in bus.books
+    assert Conversation.__name__ in bus.books
     assert ManageConversationJob in bus.jobs
-    assert bus.record_type(Conversation.BOOK) is Conversation
+    assert bus.record_type(Conversation.__name__) is Conversation
     owned = {field.name for field in dataclasses.fields(BaseRecord)}
     assert {field.name for field in dataclasses.fields(Conversation)} - owned == {
         "delivery_address",
@@ -98,14 +98,14 @@ def test_messages_can_be_listed_by_conversation() -> None:
 
     bus.publish(
         ManageBookJob(
-            book=Message.BOOK,
+            book=Message.__name__,
             op=BookOp.CREATE,
             values={"role": "user", "content": "hi", "conversation_id": conversation_id},
         )
     )
     listed = bus.publish(
         ManageBookJob(
-            book=Message.BOOK,
+            book=Message.__name__,
             op=BookOp.READ,
             filter={"conversation_id": conversation_id},
         )

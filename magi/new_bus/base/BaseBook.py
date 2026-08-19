@@ -20,13 +20,11 @@ class BaseBook:
     """
 
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
-    row_cls: ClassVar[type[BaseRecordMixin] | None] = None
+    row_cls: ClassVar[type[BaseRecordMixin]]
 
     def __init__(self, backend) -> None:
         cls = type(self)
-        if not getattr(cls.record_cls, "BOOK", None):
-            raise InvalidJobError(f"{cls.__name__} record_cls must set BOOK")
-        if cls.row_cls is None:
+        if getattr(cls, "row_cls", None) is None:
             raise InvalidJobError(f"{cls.__name__} must set row_cls")
         self._backend = backend
 
@@ -55,7 +53,7 @@ class BaseBook:
         with self._backend.session() as session:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
-                raise BookNotFoundError(f"book {self.record_cls.BOOK!r} has no id {record.id}")
+                raise BookNotFoundError(f"book {self._book()!r} has no id {record.id}")
             stored = replace(
                 record, id=row.id, created_at=row.created_at, updated_at=utcnow()
             )
@@ -80,6 +78,9 @@ class BaseBook:
             stmt = stmt.filter_by(**filters)
         with self._backend.session() as session:
             return [self._from_row(row) for row in session.scalars(stmt)]
+
+    def _book(self) -> str:
+        return type(self).record_cls.__name__
 
     def _row_values(self, record: BaseRecord) -> dict[str, Any]:
         return {item.name: getattr(record, item.name) for item in fields(record) if item.name != "id"}

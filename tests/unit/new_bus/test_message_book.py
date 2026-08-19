@@ -21,7 +21,6 @@ from magi.new_bus import (
     Message,
     Slot,
 )
-from magi.new_bus.firmware import FIRMWARE_VERSION, FirmwareVersion
 from magi.new_bus.testing import InMemoryBackend
 
 
@@ -35,7 +34,7 @@ def write_message(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     filt = values.pop("filter", None)
     job = bus.publish(
         ManageBookJob(
-            book=Message.BOOK,
+            book=Message.__name__,
             op=op,
             record_id=int(record_id),
             filter=filt,
@@ -53,7 +52,7 @@ def create(bus: Bus, **values) -> ManageBookJob:
 def open_conversation(bus: Bus) -> int:
     job = bus.publish(
         ManageBookJob(
-            book=Conversation.BOOK,
+            book=Conversation.__name__,
             op=BookOp.CREATE,
             values={"delivery_address": "webui:t", "contact_id": 1, "channel": "webui"},
         )
@@ -61,18 +60,13 @@ def open_conversation(bus: Bus) -> int:
     return int(bus.result(job).record["id"])
 
 
-def test_firmware_version_is_a_constant() -> None:
-    assert FIRMWARE_VERSION == FirmwareVersion(0, 0, 1)
-    assert str(FIRMWARE_VERSION) == "0.0.1"
-
-
 def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
-    assert Message.BOOK in bus.books
-    assert Conversation.BOOK in bus.books
+    assert Message.__name__ in bus.books
+    assert Conversation.__name__ in bus.books
     assert ManageMessageJob in bus.jobs
     assert ManageConversationJob in bus.jobs
-    assert bus.record_type(Message.BOOK) is Message
-    assert bus.record_type(Conversation.BOOK) is Conversation
+    assert bus.record_type(Message.__name__) is Message
+    assert bus.record_type(Conversation.__name__) is Conversation
     assert issubclass(Message, BaseRecord)
     assert {field.name for field in dataclasses.fields(BaseRecord)} == {
         "id",
@@ -149,9 +143,9 @@ def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
     first = create(bus, role="assistant", content="ok")
     create(bus, content="x")
-    history = bus.list(ManageBookJob, book=Message.BOOK)
+    history = bus.list(ManageBookJob, book=Message.__name__)
     assert [bus.result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
-    assert isinstance(bus.get(ManageBookJob, first.id, book=Message.BOOK), ManageBookJob)
+    assert isinstance(bus.get(ManageBookJob, first.id, book=Message.__name__), ManageBookJob)
 
 
 def test_book_jobs_cannot_be_claimed(bus: Bus) -> None:

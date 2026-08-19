@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import ClassVar
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,8 +32,6 @@ class Message(BaseRecord):
     conversation_id: int | None = None
     timestamp: datetime = field(default_factory=utcnow)
     archived: bool = False
-
-    BOOK: ClassVar[str] = "messages"
 
 
 class MessageRow(BaseRecordMixin):

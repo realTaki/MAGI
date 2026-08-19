@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar
 
 from sqlalchemy import DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -34,8 +33,6 @@ class Conversation(BaseRecord):
     title: str = ""
     summary: str = ""
     last_compaction_at: datetime | None = None
-
-    BOOK: ClassVar[str] = "conversations"
 
 
 class ConversationRow(BaseRecordMixin):
