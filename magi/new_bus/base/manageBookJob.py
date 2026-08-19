@@ -65,15 +65,17 @@ class ManageBookJobBoard(BaseJobBoard):
         super().__init__(backend, slots)
 
     def _collection(self) -> str:
-        return f"jobs.book.{self.book.name}"
+        return f"jobs.book.{self.book.record_cls.BOOK}"
 
     def publish(self, job: BaseJob) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):
             raise InvalidJobError("book board only accepts ManageBookJob")
         if not job.book:
             raise InvalidJobError("ManageBookJob.book is required")
-        if job.book != self.book.name:
-            raise InvalidJobError(f"job.book is {job.book!r}, this board is {self.book.name!r}")
+        if job.book != self.book.record_cls.BOOK:
+            raise InvalidJobError(
+                f"job.book is {job.book!r}, this board is {self.book.record_cls.BOOK!r}"
+            )
         super().publish(job)
         try:
             with self._backend.transaction():
@@ -113,12 +115,12 @@ class ManageBookJobBoard(BaseJobBoard):
         if job.op is BookOp.UPDATE:
             current = self.book.get(_record_id(job))
             if current is None:
-                raise BookNotFoundError(f"book {self.book.name!r} has no id {job.record_id}")
+                raise BookNotFoundError(f"book {self.book.record_cls.BOOK!r} has no id {job.record_id}")
             return {"record": self._record(self.book.update(current.merge(job.values)))}
         if job.op is BookOp.DELETE:
             record_id = _record_id(job)
             if not self.book.delete(record_id):
-                raise BookNotFoundError(f"book {self.book.name!r} has no id {record_id}")
+                raise BookNotFoundError(f"book {self.book.record_cls.BOOK!r} has no id {record_id}")
             return {"deleted_id": record_id}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
@@ -126,7 +128,7 @@ class ManageBookJobBoard(BaseJobBoard):
         if job.record_id:
             record = self.book.get(job.record_id)
             if record is None:
-                raise BookNotFoundError(f"book {self.book.name!r} has no id {job.record_id}")
+                raise BookNotFoundError(f"book {self.book.record_cls.BOOK!r} has no id {job.record_id}")
             return {"record": record.to_dict()}
         if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("read filter must be an object")
@@ -135,7 +137,7 @@ class ManageBookJobBoard(BaseJobBoard):
     def _record(self, record_id: int) -> dict[str, Any]:
         record = self.book.get(record_id)
         if record is None:
-            raise BookNotFoundError(f"book {self.book.name!r} has no id {record_id}")
+            raise BookNotFoundError(f"book {self.book.record_cls.BOOK!r} has no id {record_id}")
         return record.to_dict()
 
 

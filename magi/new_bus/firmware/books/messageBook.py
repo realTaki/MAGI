@@ -50,6 +50,5 @@ class MessageRow(BaseRecordMixin):
 
 
 class MessageBook(BaseBook):
-    name = Message.BOOK
     record_cls = Message
     row_cls = MessageRow

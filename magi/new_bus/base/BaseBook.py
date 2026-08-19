@@ -19,14 +19,13 @@ class BaseBook:
     Firmware Books set ``record_cls`` and ``row_cls``. CRUD goes through the Row.
     """
 
-    name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
     row_cls: ClassVar[type[BaseRecordMixin] | None] = None
 
     def __init__(self, backend) -> None:
         cls = type(self)
-        if not cls.name:
-            raise InvalidJobError(f"{cls.__name__} must set class variable name")
+        if not getattr(cls.record_cls, "BOOK", None):
+            raise InvalidJobError(f"{cls.__name__} record_cls must set BOOK")
         if cls.row_cls is None:
             raise InvalidJobError(f"{cls.__name__} must set row_cls")
         self._backend = backend
@@ -56,7 +55,7 @@ class BaseBook:
         with self._backend.session() as session:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
-                raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
+                raise BookNotFoundError(f"book {self.record_cls.BOOK!r} has no id {record.id}")
             stored = replace(
                 record, id=row.id, created_at=row.created_at, updated_at=utcnow()
             )

@@ -50,6 +50,5 @@ class ConversationRow(BaseRecordMixin):
 
 
 class ConversationBook(BaseBook):
-    name = Conversation.BOOK
     record_cls = Conversation
     row_cls = ConversationRow
