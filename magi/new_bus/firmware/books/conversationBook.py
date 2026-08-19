@@ -52,4 +52,4 @@ class ConversationRow(BaseRecordMixin):
 class ConversationBook(BaseBook):
     name = Conversation.BOOK
     record_cls = Conversation
-    __tablename__ = ConversationRow.__tablename__
+    row_cls = ConversationRow

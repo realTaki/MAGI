@@ -52,4 +52,4 @@ class MessageRow(BaseRecordMixin):
 class MessageBook(BaseBook):
     name = Message.BOOK
     record_cls = Message
-    __tablename__ = MessageRow.__tablename__
+    row_cls = MessageRow

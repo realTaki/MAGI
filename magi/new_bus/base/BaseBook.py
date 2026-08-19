@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import fields, replace
 from typing import Any, ClassVar
 
+from sqlalchemy import select
+
 from .backends.backend import DatabaseBackend
-from .BaseRecord import BaseRecord
+from .BaseRecord import BaseRecord, BaseRecordMixin
 from .errors import BookNotFoundError, InvalidJobError
 from .time import utcnow
 
@@ -15,21 +17,21 @@ from .time import utcnow
 class BaseBook:
     """Internal record collection. Only ManageBookJobBoard may call these methods.
 
-    Firmware Books set ``record_cls`` to the dataclass that lists their fields.
+    Firmware Books set ``record_cls`` and ``row_cls``. CRUD goes through the Row.
     """
 
     name: ClassVar[str] = ""
     record_cls: ClassVar[type[BaseRecord]] = BaseRecord
-    __tablename__: ClassVar[str] = ""
+    row_cls: ClassVar[type[BaseRecordMixin] | None] = None
 
     def __init__(self, backend) -> None:
         cls = type(self)
         if not cls.name:
             raise InvalidJobError(f"{cls.__name__} must set class variable name")
-        if not cls.__tablename__:
-            raise InvalidJobError(f"{cls.__name__} must set __tablename__")
+        if cls.row_cls is None:
+            raise InvalidJobError(f"{cls.__name__} must set row_cls")
         self._require_backend(backend)
-        self._store = backend.records(cls.__tablename__)
+        self._backend = backend
 
     def _require_backend(self, backend) -> None:
         if not isinstance(backend, DatabaseBackend):
@@ -43,27 +45,53 @@ class BaseBook:
             created_at=record.created_at or now,
             updated_at=now,
         )
-        stored = self._store.insert(prepared.to_dict())
-        return int(stored["id"])
+        with self._backend.session() as session:
+            row = type(self).row_cls(**self._row_values(prepared))
+            session.add(row)
+            session.commit()
+            return int(row.id)
 
     def get(self, record_id: int) -> BaseRecord | None:
-        data = self._store.get(record_id)
-        return None if data is None else self.record_cls.parse(data)
+        with self._backend.session() as session:
+            row = session.get(type(self).row_cls, record_id)
+            return None if row is None else self._from_row(row)
 
     def update(self, record: BaseRecord) -> int:
         if not record.id:
             raise InvalidJobError("update requires record.id")
-        current = self.get(record.id)
-        if current is None:
-            raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
-        stored = replace(
-            record, id=current.id, created_at=current.created_at, updated_at=utcnow()
-        )
-        self._store.replace(stored.id, stored.to_dict())
-        return stored.id
+        with self._backend.session() as session:
+            row = session.get(type(self).row_cls, record.id)
+            if row is None:
+                raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
+            stored = replace(
+                record, id=row.id, created_at=row.created_at, updated_at=utcnow()
+            )
+            for key, value in self._row_values(stored).items():
+                setattr(row, key, value)
+            session.commit()
+            return int(row.id)
 
     def delete(self, record_id: int) -> bool:
-        return self._store.delete(record_id)
+        with self._backend.session() as session:
+            row = session.get(type(self).row_cls, record_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
 
     def list(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
-        return [self.record_cls.parse(row) for row in self._store.find(eq=filters)]
+        row_cls = type(self).row_cls
+        stmt = select(row_cls).order_by(row_cls.id)
+        if filters:
+            stmt = stmt.filter_by(**filters)
+        with self._backend.session() as session:
+            return [self._from_row(row) for row in session.scalars(stmt)]
+
+    def _row_values(self, record: BaseRecord) -> dict[str, Any]:
+        return {item.name: getattr(record, item.name) for item in fields(record) if item.name != "id"}
+
+    def _from_row(self, row: BaseRecordMixin) -> BaseRecord:
+        return self.record_cls.parse(
+            {item.name: getattr(row, item.name) for item in fields(self.record_cls)}
+        )
