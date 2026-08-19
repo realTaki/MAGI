@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Table, Text, select, update
+from sqlalchemy import JSON, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
@@ -62,15 +62,7 @@ class BaseJobBoard:
     row_cls: ClassVar[type[BaseJobRow]]
 
     def __init__(self, factory: EngineFactory) -> None:
-        cls = type(self)
-        if cls.job_cls is BaseJob:
-            raise InvalidJobError("set job_cls on the BaseJobBoard subclass")
-        if getattr(cls, "row_cls", None) is None:
-            raise InvalidJobError(f"{cls.__name__} must set row_cls")
         self._factory = factory
-        table = cls.row_cls.__table__
-        if isinstance(table, Table):
-            table.create(factory.engine, checkfirst=True)
 
     def _session(self):
         return self._factory.session()
@@ -87,8 +79,7 @@ class BaseJobBoard:
             row = type(self).row_cls(**_row_kwargs(type(self).row_cls, prepared.to_dict()))
             session.add(row)
             session.commit()
-            job.id = int(row.id)
-        return job.id
+            return int(row.id)
 
     def claim(self) -> BaseJob | None:
         with self._session() as session:

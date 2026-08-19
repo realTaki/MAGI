@@ -27,7 +27,7 @@ def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
         filter=filt,
         values=values,
     )
-    bus.publish(job)
+    job.id = bus.publish(job)
     return job
 
 
@@ -107,7 +107,7 @@ def test_messages_can_be_listed_by_conversation() -> None:
         op=BookOp.READ,
         filter={"conversation_id": conversation_id},
     )
-    bus.publish(listed)
+    listed.id = bus.publish(listed)
     records = bus.get_result(listed).records
     assert len(records) == 1
     assert records[0]["conversation_id"] == conversation_id

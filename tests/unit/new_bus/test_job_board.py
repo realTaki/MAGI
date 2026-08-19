@@ -12,15 +12,14 @@ from magi.new_bus.testing import PingJob, PingJobBoard
 
 def test_publish_claim_complete(bus: Bus) -> None:
     published = PingJob(n=1, publisher="worker-a")
-    job_id = bus.publish(published)
-    assert job_id
-    assert published.id == job_id
+    published.id = bus.publish(published)
+    assert published.id
     assert bus.get_result(published) is None
     assert bus.check_job_status(published) is JobStatus.PENDING
 
     claimed = bus.claim(PingJob)
     assert claimed is not None
-    assert claimed.id == job_id
+    assert claimed.id == published.id
     assert bus.get_result(claimed) is None
     assert bus.check_job_status(claimed) is JobStatus.CLAIMED
     assert claimed.n == 1
@@ -64,7 +63,7 @@ def test_claim_empty_board(bus: Bus) -> None:
 
 def test_illegal_complete_from_pending(bus: Bus) -> None:
     job = PingJob()
-    bus.publish(job)
+    job.id = bus.publish(job)
     with pytest.raises(InvalidJobStateError):
         bus.submit_result(job, BaseJobResult(id=job.id))
 

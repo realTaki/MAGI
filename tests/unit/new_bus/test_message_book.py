@@ -39,7 +39,7 @@ def write_message(bus: Bus, op: BookOp, **values) -> ManageBookJob:
         filter=filt,
         values=values,
     )
-    bus.publish(job)
+    job.id = bus.publish(job)
     return job
 
 
@@ -53,7 +53,7 @@ def open_conversation(bus: Bus) -> int:
         op=BookOp.CREATE,
         values={"delivery_address": "webui:t", "contact_id": 1, "channel": "webui"},
     )
-    bus.publish(job)
+    job.id = bus.publish(job)
     return int(bus.get_result(job).record["id"])
 
 
