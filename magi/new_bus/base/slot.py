@@ -53,7 +53,7 @@ class SlotSpace:
             return
         existing = self._single.get(key)
         if existing is not None and existing is not handler:
-            raise SlotOccupiedError(f"{job_type.type_name()}.{slot} is occupied")
+            raise SlotOccupiedError(f"{job_type.__qualname__}.{slot} is occupied")
         self._single[key] = handler
 
     def detach(self, job_type: type[BaseJob], slot: Slot, handler: Handler) -> None:
@@ -62,14 +62,14 @@ class SlotSpace:
         if slot in MULTI_SLOTS:
             handlers = self._multi.get(key)
             if not handlers or handler not in handlers:
-                raise SlotNotFoundError(f"{job_type.type_name()}.{slot} has no such handler")
+                raise SlotNotFoundError(f"{job_type.__qualname__}.{slot} has no such handler")
             handlers.remove(handler)
             if not handlers:
                 self._multi.pop(key, None)
             return
         existing = self._single.get(key)
         if existing is not handler:
-            raise SlotNotFoundError(f"{job_type.type_name()}.{slot} is not bound to this handler")
+            raise SlotNotFoundError(f"{job_type.__qualname__}.{slot} is not bound to this handler")
         del self._single[key]
 
     def fire(self, job_type: type[BaseJob], slot: Slot, job: BaseJob) -> None:

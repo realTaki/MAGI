@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, replace
 from enum import StrEnum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, get_type_hints
+
+from sqlalchemy import JSON, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from .engine import EngineFactory
 from .errors import BookNotFoundError, BusError, InvalidJobError
 from .slot import SlotSpace
+from .time import load_dt
 
 
 class BookOp(StrEnum):
@@ -30,20 +35,11 @@ class ManageBookJob(BaseJob):
     filter: dict[str, Any] | None = None
     values: dict[str, Any] = field(default_factory=dict)
 
-    def to_record(self) -> dict[str, Any]:
-        record = super().to_record()
-        extra = record.pop("values", {}) or {}
-        record.update(extra)
-        return record
-
     @classmethod
-    def from_record(cls, record: dict[str, Any]) -> Self:
-        job = super().from_record(record)
+    def parse(cls, data: Mapping[str, Any]) -> Self:
+        job = super().parse(data)
         if not isinstance(job.op, BookOp):
             job.op = BookOp(job.op)
-        job.values = {
-            key: value for key, value in record.items() if key not in _MANAGE_JOB_KEYS
-        }
         return job
 
 
@@ -52,6 +48,29 @@ class ManageBookJobResult(BaseJobResult):
     record: dict[str, Any] | None = None
     records: list[dict[str, Any]] | None = None
     deleted_id: int | None = None
+
+
+class ManageBookJobRow(BaseJobRow):
+    __abstract__ = True
+
+    book: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    op: Mapped[str] = mapped_column(Text, nullable=False, default=BookOp.READ.value)
+    record_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    filter: Mapped[dict[str, Any] | None] = mapped_column("job_filter", JSON, nullable=True)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    record: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    records: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    deleted_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+_MANAGE_ROWS: dict[str, type[ManageBookJobRow]] = {}
+
+
+def _manage_row(book: str) -> type[ManageBookJobRow]:
+    table = f"jobs_book_{book}"
+    if table not in _MANAGE_ROWS:
+        _MANAGE_ROWS[table] = type(table, (ManageBookJobRow,), {"__tablename__": table})
+    return _MANAGE_ROWS[table]
 
 
 class ManageBookJobBoard(BaseJobBoard):
@@ -64,8 +83,8 @@ class ManageBookJobBoard(BaseJobBoard):
         self.book = book
         super().__init__(factory, slots)
 
-    def _table_name(self) -> str:
-        return f"jobs_book_{self.book.record_cls.__name__}"
+    def _rows(self) -> type[BaseJobRow]:
+        return _manage_row(self.book.record_cls.__name__)
 
     def publish(self, job: BaseJob) -> ManageBookJob:
         if not isinstance(job, ManageBookJob):
@@ -109,7 +128,19 @@ class ManageBookJobBoard(BaseJobBoard):
             if not self.book.exists(record_id):
                 raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {record_id}")
             current = self.book.get(record_id)
-            if current is None or not self.book.update(current.merge(job.values)):
+            if current is None:
+                raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {record_id}")
+            hints = get_type_hints(type(current))
+            allowed = {item.name for item in fields(type(current))}
+            updated = replace(
+                current,
+                **{
+                    key: load_dt(hints.get(key), value)
+                    for key, value in job.values.items()
+                    if key in allowed
+                },
+            )
+            if not self.book.update(updated):
                 raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {record_id}")
             return {"record": self._record(record_id)}
         if job.op is BookOp.DELETE:
@@ -140,23 +171,3 @@ def _record_id(job: ManageBookJob) -> int:
     if not job.record_id:
         raise InvalidJobError("record_id is required")
     return job.record_id
-
-
-_MANAGE_JOB_KEYS = frozenset(
-    {
-        "id",
-        "type",
-        "status",
-        "publisher",
-        "created_at",
-        "error",
-        "book",
-        "op",
-        "record_id",
-        "filter",
-        "record",
-        "records",
-        "deleted_id",
-        "job_id",
-    }
-)

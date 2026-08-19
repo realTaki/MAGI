@@ -7,10 +7,8 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -20,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
-from .time import dump_dt, utcnow
+from .time import utcnow
 
 if TYPE_CHECKING:
     from .slot import SlotSpace
@@ -50,32 +48,15 @@ class BaseJobResult(BaseRecord):
     status: JobStatus = JobStatus.COMPLETED
     error: str | None = None
 
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        parsed = super().parse(data)
-        if not isinstance(parsed.status, JobStatus):
-            parsed.status = JobStatus(parsed.status)
-        return parsed
-
 
 class BaseJobRow(BaseRecordMixin):
-    """One JobBoard table: queue columns plus JSON for the rest."""
+    """Queue columns. Subclasses declare the business columns."""
 
     __abstract__ = True
 
     status: Mapped[str] = mapped_column(Text, nullable=False, default=JobStatus.PENDING.value)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     publisher: Mapped[str | None] = mapped_column(Text, nullable=True)
-    data: Mapped[str] = mapped_column(Text, nullable=False)
-
-
-_JOB_ROWS: dict[str, type[BaseJobRow]] = {}
-
-
-def job_row_type(table: str) -> type[BaseJobRow]:
-    if table not in _JOB_ROWS:
-        _JOB_ROWS[table] = type(table, (BaseJobRow,), {"__tablename__": table})
-    return _JOB_ROWS[table]
 
 
 class BaseJobBoard:
@@ -83,22 +64,26 @@ class BaseJobBoard:
 
     job_cls: ClassVar[type[BaseJob]] = BaseJob
     result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
+    row_cls: ClassVar[type[BaseJobRow]]
 
     def __init__(self, factory: EngineFactory, slots: SlotSpace) -> None:
         if type(self).job_cls is BaseJob:
             raise InvalidJobError("set job_cls on the BaseJobBoard subclass")
         self._factory = factory
         self._slots = slots
-        self._row_cls = job_row_type(self._table_name())
+        self._row_cls = self._rows()
         table = self._row_cls.__table__
         if isinstance(table, Table):
             table.create(factory.engine, checkfirst=True)
 
+    def _rows(self) -> type[BaseJobRow]:
+        row_cls = getattr(type(self), "row_cls", None)
+        if row_cls is None:
+            raise InvalidJobError("set row_cls on the BaseJobBoard subclass")
+        return row_cls
+
     def _session(self):
         return self._factory.session()
-
-    def _table_name(self) -> str:
-        return f"jobs_{self.job_cls.__qualname__}".replace(".", "_")
 
     def publish(self, job: BaseJob) -> BaseJob:
         if type(job) is not self.job_cls:
@@ -112,17 +97,12 @@ class BaseJobBoard:
         job_type = type(job)
         self._slots.fire(job_type, Slot.PRE_PUBLISH, job)
         job.created_at = utcnow()
-        record = job.to_dict()
-        record["status"] = JobStatus.PENDING.value
-        record["error"] = None
+        values = job.to_dict()
+        values.pop("id", None)
+        values["status"] = JobStatus.PENDING.value
+        values["error"] = None
         with self._session() as session:
-            row = self._row_cls(
-                status=JobStatus.PENDING.value,
-                error=None,
-                publisher=job.publisher,
-                created_at=job.created_at,
-                data=_dump(record),
-            )
+            row = self._row_cls(**_row_kwargs(self._row_cls, values))
             session.add(row)
             session.commit()
             job.id = int(row.id)
@@ -142,7 +122,7 @@ class BaseJobBoard:
                 )
             )
         for row in pending:
-            job = self.job_cls.parse(self._load(row))
+            job = self.job_cls.from_row(row)
             self._slots.fire(self.job_cls, Slot.PRE_CLAIM, job)
             with self._session() as session:
                 changed = session.execute(
@@ -159,7 +139,7 @@ class BaseJobBoard:
                 claimed = session.get(self._row_cls, job.id)
             if claimed is None:
                 continue
-            job = self.job_cls.parse(self._load(claimed))
+            job = self.job_cls.from_row(claimed)
             self._slots.fire(self.job_cls, Slot.CLAIM, job)
             self._slots.fire(self.job_cls, Slot.POST_CLAIM, job)
             return job
@@ -176,10 +156,14 @@ class BaseJobBoard:
         return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
 
     def get(self, job_id: int) -> BaseJob:
-        return self.job_cls.parse(self._row(job_id))
+        return self.job_cls.from_row(self._get_row(job_id))
 
     def result(self, job_id: int) -> BaseJobResult:
-        return type(self).result_cls.parse(self._row(job_id))
+        row = self._get_row(job_id)
+        parsed = type(self).result_cls.from_row(row)
+        parsed.status = JobStatus(row.status)
+        parsed.error = row.error
+        return parsed
 
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
         with self._session() as session:
@@ -187,7 +171,7 @@ class BaseJobBoard:
             if status is not None:
                 stmt = stmt.where(self._row_cls.status == status.value)
             rows = list(session.scalars(stmt))
-        return [self.job_cls.parse(self._load(row)) for row in rows]
+        return [self.job_cls.from_row(row) for row in rows]
 
     def _finish(
         self,
@@ -206,17 +190,18 @@ class BaseJobBoard:
                     f"{self.job_cls.__qualname__} {job_id} is {row.status}, not claimed"
                 )
             parsed = self._coerce_result(job_id, status, result, error)
-            record = self._load(row)
-            record.update(_result_fields(parsed))
-            record["status"] = status.value
-            record["error"] = error
+            patch = {
+                "status": status.value,
+                "error": error,
+                **_result_fields(parsed),
+            }
             changed = session.execute(
                 update(self._row_cls)
                 .where(
                     self._row_cls.id == job_id,
                     self._row_cls.status == JobStatus.CLAIMED.value,
                 )
-                .values(status=status.value, error=error, data=_dump(record))
+                .values(**_row_kwargs(self._row_cls, patch))
             )
             if getattr(changed, "rowcount", 0) != 1:
                 raise InvalidJobStateError(
@@ -225,33 +210,23 @@ class BaseJobBoard:
             session.commit()
         return self.get(job_id)
 
-    def _row(self, job_id: int) -> dict[str, Any]:
+    def _get_row(self, job_id: int) -> BaseJobRow:
         with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
-            return self._load(row)
+            return row
 
-    def _load(self, row: BaseJobRow) -> dict[str, Any]:
-        record = json.loads(row.data)
-        record["id"] = row.id
-        record["status"] = row.status
-        record["error"] = row.error
-        record["created_at"] = dump_dt(row.created_at)
-        return record
-
-    def _write(self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None) -> None:
+    def _write(
+        self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None
+    ) -> None:
         with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
-            record = self._load(row)
-            record.update(extra)
-            record["status"] = status.value
-            record["error"] = error
-            row.status = status.value
-            row.error = error
-            row.data = _dump(record)
+            values = {"status": status.value, "error": error, **extra}
+            for key, value in _row_kwargs(self._row_cls, values).items():
+                setattr(row, key, value)
             session.commit()
 
     def _coerce_result(
@@ -281,11 +256,6 @@ def _result_fields(result: BaseJobResult) -> dict[str, Any]:
     return {key: value for key, value in result.to_dict().items() if key not in _RESULT_META}
 
 
-def _dump(data: Mapping[str, Any]) -> str:
-    return json.dumps(data, default=_json_default)
-
-
-def _json_default(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat()
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+def _row_kwargs(row_cls: type[BaseJobRow], values: Mapping[str, Any]) -> dict[str, Any]:
+    names = {column.key for column in row_cls.__table__.columns}
+    return {key: value for key, value in values.items() if key in names}
