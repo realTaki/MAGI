@@ -1,9 +1,8 @@
 """BUS Base primitives. No MAGI domain concepts live here."""
 
-from .BaseBook import BaseBook
+from .BaseBook import BaseBook, BaseRecord
 from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .BaseRecord import BaseRecord
 from .engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .file import FileBackend
 from .manageBookJob import BookOp, ManageBookJob, ManageBookJobBoard

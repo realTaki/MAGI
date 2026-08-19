@@ -60,9 +60,9 @@ class ManageBookJobBoard(BaseJobBoard):
     job_cls: ClassVar[type[BaseJob]] = ManageBookJob
     result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
 
-    def __init__(self, book: BaseBook, db: EngineFactory, slots: SlotSpace) -> None:
+    def __init__(self, book: BaseBook, factory: EngineFactory, slots: SlotSpace) -> None:
         self.book = book
-        super().__init__(db, slots)
+        super().__init__(factory, slots)
 
     def _table_name(self) -> str:
         return f"jobs_book_{self.book._book()}"
@@ -105,10 +105,13 @@ class ManageBookJobBoard(BaseJobBoard):
         if job.op is BookOp.READ:
             return self._read(job)
         if job.op is BookOp.UPDATE:
-            current = self.book.get(_record_id(job))
-            if current is None:
-                raise BookNotFoundError(f"book {self.book._book()!r} has no id {job.record_id}")
-            return {"record": self._record(self.book.update(current.merge(job.values)))}
+            record_id = _record_id(job)
+            if not self.book.exists(record_id):
+                raise BookNotFoundError(f"book {self.book._book()!r} has no id {record_id}")
+            current = self.book.get(record_id)
+            if current is None or not self.book.update(current.merge(job.values)):
+                raise BookNotFoundError(f"book {self.book._book()!r} has no id {record_id}")
+            return {"record": self._record(record_id)}
         if job.op is BookOp.DELETE:
             record_id = _record_id(job)
             if not self.book.delete(record_id):
@@ -124,7 +127,7 @@ class ManageBookJobBoard(BaseJobBoard):
             return {"record": record.to_dict()}
         if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("read filter must be an object")
-        return {"records": [record.to_dict() for record in self.book.list(job.filter)]}
+        return {"records": [record.to_dict() for record in self.book.list(**(job.filter or {}))]}
 
     def _record(self, record_id: int) -> dict[str, Any]:
         record = self.book.get(record_id)

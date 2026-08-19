@@ -14,10 +14,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
-from sqlalchemy import Text, select, update
+from sqlalchemy import Table, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .BaseRecord import BaseRecord, BaseRecordMixin
+from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 from .time import dump_dt, utcnow
@@ -97,15 +97,18 @@ class BaseJobBoard:
     job_cls: ClassVar[type[BaseJob]] = BaseJob
     result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
 
-    def __init__(self, db: EngineFactory, slots: SlotSpace) -> None:
-        job_cls = type(self).job_cls
-        if job_cls is BaseJob:
+    def __init__(self, factory: EngineFactory, slots: SlotSpace) -> None:
+        if type(self).job_cls is BaseJob:
             raise InvalidJobError("set job_cls on the BaseJobBoard subclass")
-        self.job_cls = job_cls
-        self._db = db
+        self._factory = factory
         self._slots = slots
         self._row_cls = job_row_type(self._table_name())
-        self._row_cls.__table__.create(db.engine, checkfirst=True)
+        table = self._row_cls.__table__
+        if isinstance(table, Table):
+            table.create(factory.engine, checkfirst=True)
+
+    def _session(self):
+        return self._factory.session()
 
     def _table_name(self) -> str:
         return f"jobs_{self.job_cls.type_name()}".replace(".", "_")
@@ -125,7 +128,7 @@ class BaseJobBoard:
         record = job.to_record()
         record["status"] = JobStatus.PENDING.value
         record["error"] = None
-        with self._db.session() as session:
+        with self._session() as session:
             row = self._row_cls(
                 status=JobStatus.PENDING.value,
                 error=None,
@@ -143,7 +146,7 @@ class BaseJobBoard:
     def claim(self) -> BaseJob | None:
         from .slot import Slot
 
-        with self._db.session() as session:
+        with self._session() as session:
             pending = list(
                 session.scalars(
                     select(self._row_cls)
@@ -154,7 +157,7 @@ class BaseJobBoard:
         for row in pending:
             job = self.job_cls.from_record(self._load(row))
             self._slots.fire(self.job_cls, Slot.PRE_CLAIM, job)
-            with self._db.session() as session:
+            with self._session() as session:
                 changed = session.execute(
                     update(self._row_cls)
                     .where(
@@ -163,7 +166,7 @@ class BaseJobBoard:
                     )
                     .values(status=JobStatus.CLAIMED.value)
                 )
-                if changed.rowcount != 1:
+                if getattr(changed, "rowcount", 0) != 1:
                     continue
                 session.commit()
                 claimed = session.get(self._row_cls, job.id)
@@ -192,7 +195,7 @@ class BaseJobBoard:
         return type(self).result_cls.parse(self._row(job_id))
 
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
-        with self._db.session() as session:
+        with self._session() as session:
             stmt = select(self._row_cls).order_by(self._row_cls.created_at, self._row_cls.id)
             if status is not None:
                 stmt = stmt.where(self._row_cls.status == status.value)
@@ -207,7 +210,7 @@ class BaseJobBoard:
         result: BaseJobResult | Mapping[str, Any] | None,
         error: str | None,
     ) -> BaseJob:
-        with self._db.session() as session:
+        with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
@@ -228,7 +231,7 @@ class BaseJobBoard:
                 )
                 .values(status=status.value, error=error, data=_dump(record))
             )
-            if changed.rowcount != 1:
+            if getattr(changed, "rowcount", 0) != 1:
                 raise InvalidJobStateError(
                     f"{self.job_cls.type_name()} {job_id} is no longer claimed"
                 )
@@ -236,7 +239,7 @@ class BaseJobBoard:
         return self.get(job_id)
 
     def _row(self, job_id: int) -> dict[str, Any]:
-        with self._db.session() as session:
+        with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
@@ -251,7 +254,7 @@ class BaseJobBoard:
         return record
 
     def _write(self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None) -> None:
-        with self._db.session() as session:
+        with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
