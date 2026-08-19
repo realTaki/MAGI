@@ -52,8 +52,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 from magi.bus.firmwares.books.local import ToolDefinition
+from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
@@ -110,7 +110,7 @@ def _build_definitions_from_tools(
             source=source,
             description=tool.description,
             input_schema=dict(tool.input_schema),
-            allowed_roles=tuple(sorted(tool.ALLOWED_ROLES)),
+            allowed_roles=list(sorted(tool.ALLOWED_ROLES)),
             enabled=True,
             implementation_version=None,
         )

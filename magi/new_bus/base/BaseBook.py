@@ -38,16 +38,6 @@ class BaseRecord:
             }
         )
 
-    def merge(self, changes: Mapping[str, Any]) -> Self:
-        hints = get_type_hints(type(self))
-        allowed = {item.name for item in fields(type(self))}
-        updates = {
-            key: load_dt(hints.get(key), value)
-            for key, value in changes.items()
-            if key in allowed
-        }
-        return replace(self, **updates)
-
     @classmethod
     def from_row(cls, row: BaseRecordMixin) -> Self:
         return cls.parse({item.name: getattr(row, item.name) for item in fields(cls)})

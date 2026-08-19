@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import Table, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
@@ -41,19 +41,6 @@ class BaseJob(BaseRecord):
     """
 
     publisher: str | None = None
-
-    @classmethod
-    def type_name(cls) -> str:
-        return cls.__qualname__
-
-    def to_record(self) -> dict[str, Any]:
-        record = self.to_dict()
-        record["type"] = type(self).type_name()
-        return record
-
-    @classmethod
-    def from_record(cls, record: dict[str, Any]) -> Self:
-        return cls.parse(record)
 
 
 @dataclass
@@ -111,12 +98,12 @@ class BaseJobBoard:
         return self._factory.session()
 
     def _table_name(self) -> str:
-        return f"jobs_{self.job_cls.type_name()}".replace(".", "_")
+        return f"jobs_{self.job_cls.__qualname__}".replace(".", "_")
 
     def publish(self, job: BaseJob) -> BaseJob:
         if type(job) is not self.job_cls:
             raise InvalidJobError(
-                f"this board accepts {self.job_cls.type_name()}, not {type(job).type_name()}"
+                f"this board accepts {self.job_cls.__qualname__}, not {type(job).__qualname__}"
             )
         from .slot import Slot
 
@@ -125,7 +112,7 @@ class BaseJobBoard:
         job_type = type(job)
         self._slots.fire(job_type, Slot.PRE_PUBLISH, job)
         job.created_at = utcnow()
-        record = job.to_record()
+        record = job.to_dict()
         record["status"] = JobStatus.PENDING.value
         record["error"] = None
         with self._session() as session:
@@ -155,7 +142,7 @@ class BaseJobBoard:
                 )
             )
         for row in pending:
-            job = self.job_cls.from_record(self._load(row))
+            job = self.job_cls.parse(self._load(row))
             self._slots.fire(self.job_cls, Slot.PRE_CLAIM, job)
             with self._session() as session:
                 changed = session.execute(
@@ -172,7 +159,7 @@ class BaseJobBoard:
                 claimed = session.get(self._row_cls, job.id)
             if claimed is None:
                 continue
-            job = self.job_cls.from_record(self._load(claimed))
+            job = self.job_cls.parse(self._load(claimed))
             self._slots.fire(self.job_cls, Slot.CLAIM, job)
             self._slots.fire(self.job_cls, Slot.POST_CLAIM, job)
             return job
@@ -189,7 +176,7 @@ class BaseJobBoard:
         return self._finish(job_id, JobStatus.FAILED, result=None, error=error)
 
     def get(self, job_id: int) -> BaseJob:
-        return self.job_cls.from_record(self._row(job_id))
+        return self.job_cls.parse(self._row(job_id))
 
     def result(self, job_id: int) -> BaseJobResult:
         return type(self).result_cls.parse(self._row(job_id))
@@ -200,7 +187,7 @@ class BaseJobBoard:
             if status is not None:
                 stmt = stmt.where(self._row_cls.status == status.value)
             rows = list(session.scalars(stmt))
-        return [self.job_cls.from_record(self._load(row)) for row in rows]
+        return [self.job_cls.parse(self._load(row)) for row in rows]
 
     def _finish(
         self,
@@ -213,10 +200,10 @@ class BaseJobBoard:
         with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
-                raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
+                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
             if row.status != JobStatus.CLAIMED.value:
                 raise InvalidJobStateError(
-                    f"{self.job_cls.type_name()} {job_id} is {row.status}, not claimed"
+                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not claimed"
                 )
             parsed = self._coerce_result(job_id, status, result, error)
             record = self._load(row)
@@ -233,7 +220,7 @@ class BaseJobBoard:
             )
             if getattr(changed, "rowcount", 0) != 1:
                 raise InvalidJobStateError(
-                    f"{self.job_cls.type_name()} {job_id} is no longer claimed"
+                    f"{self.job_cls.__qualname__} {job_id} is no longer claimed"
                 )
             session.commit()
         return self.get(job_id)
@@ -242,7 +229,7 @@ class BaseJobBoard:
         with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
-                raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
+                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
             return self._load(row)
 
     def _load(self, row: BaseJobRow) -> dict[str, Any]:
@@ -257,7 +244,7 @@ class BaseJobBoard:
         with self._session() as session:
             row = session.get(self._row_cls, job_id)
             if row is None:
-                raise JobNotFoundError(f"{self.job_cls.type_name()} {job_id} not found")
+                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
             record = self._load(row)
             record.update(extra)
             record["status"] = status.value

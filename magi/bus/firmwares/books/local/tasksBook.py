@@ -170,11 +170,7 @@ class _TaskRow(BaseRecordMixin):
         nullable=False,
         default=TaskSource.USER,
     )
-    target_channel: Mapped[str] = mapped_column(
-        "channel",
-        Text,
-        nullable=False,
-    )
+    target_channel: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[int] = mapped_column(
         Integer,
         nullable=False,

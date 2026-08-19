@@ -6,6 +6,7 @@ in-memory SQLite via :func:`EngineFactory` to keep them isolated.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 
 import pytest
@@ -77,12 +78,18 @@ def contact_id(factory):
     return c.id
 
 
-def test_base_record_id_is_book_owned() -> None:
-    """The auto-increment primary key cannot be supplied by DTO callers."""
+def test_base_record_id_is_book_owned(factory) -> None:
+    """The auto-increment primary key is stamped by Books, not callers.
+
+    ``id`` is now an ordinary DTO field, so a caller *may* construct a
+    record carrying one — but :meth:`BaseBook.add` refuses non-zero ids
+    because it is a command that mints the key.
+    """
     contact = Contact(name="Unpersisted")
     assert contact.id == 0
-    with pytest.raises(TypeError, match="unexpected keyword"):
-        Contact(name="Unpersisted", id=1)
+    book = MemoryBook(factory)
+    with pytest.raises(ValueError, match="unpersisted"):
+        book.add(Memory(contact_id=1, kind="fact", subject="x", body="y", id=5))
 
 
 # -- SettingBook --------------------------------------------------------
@@ -140,8 +147,12 @@ def test_base_book_add_is_a_command_and_audit_fields_are_database_owned(factory,
     assert record_id > 0
     stored = book.get(record_id)
     assert stored is not None and stored.id == record_id
-    with pytest.raises(TypeError, match="unexpected keyword"):
-        Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
+    # ``id`` is an ordinary DTO field, but ``add`` is a command: a
+    # non-zero id is refused rather than silently minted over.
+    with pytest.raises(ValueError, match="unpersisted"):
+        book.add(
+            Memory(id=record_id, contact_id=contact_id, kind="fact", subject="x", body="y")
+        )
 
 
 def test_record_datetime_fields_remain_native_values() -> None:
@@ -181,7 +192,8 @@ def test_memory_book_full_lifecycle(factory, contact_id):
     assert isinstance(created, Memory)
     assert created.completed_at is None
 
-    candidate = created.with_changes(
+    candidate = replace(
+        created,
         subject="ship the deal (closed)",
         body="signed by both parties",
         priority=4,
@@ -231,7 +243,7 @@ def test_memory_book_update_accepts_complete_free_text_record(factory, contact_i
     book = MemoryBook(factory)
     row = book.get(book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
 
-    candidate = row.with_changes(subject="   ", body="x" * (16 * 1024), priority=7)
+    candidate = replace(row, subject="   ", body="x" * (16 * 1024), priority=7)
     assert book.update(candidate) is True
 
     # A record which disappeared between read and write is an idempotent miss.
@@ -261,7 +273,7 @@ def test_memory_book_update_partial_keeps_other_fields(factory, contact_id):
     field round-trips through unchanged."""
     book = MemoryBook(factory)
     row = book.get(book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
-    assert book.update(row.with_changes(priority=5)) is True
+    assert book.update(replace(row, priority=5)) is True
     after = book.get(row.id)
     assert after is not None
     assert after.subject == "orig"
@@ -474,7 +486,7 @@ def test_conversation_book_update_rejects_unregistered_channel(factory):
     conv = sbook.get(sbook.add(Conversation(delivery_address="tg:1", contact_id=1, channel="tg")))
 
     with pytest.raises(ChannelNotRegisteredError):
-        sbook.update(conv.with_changes(channel="slack"))
+        sbook.update(replace(conv, channel="slack"))
 
 
 def test_conversation_book_skips_validation_when_settings_book_missing(factory):
@@ -523,7 +535,7 @@ def test_mcp_server_book_upsert_and_delete_by_name(factory):
     )
     assert inserted.name == "gmail"
     assert inserted.command == "mcp-gmail"
-    assert inserted.args == ("--flag", "1")
+    assert inserted.args == ["--flag", "1"]
     assert inserted.env == {"TOKEN": "x"}
     assert book.get_by_name(name="gmail") is not None
 
@@ -536,7 +548,7 @@ def test_mcp_server_book_upsert_and_delete_by_name(factory):
     assert updated.connection_type == "streamable_http"
     assert updated.url == "https://mcp.example.com"
     assert updated.command is None
-    assert updated.args == ()
+    assert updated.args == []
     assert updated.env == {}
 
     # delete_by_name returns True when the row existed.
@@ -578,7 +590,7 @@ def test_mcp_server_book_validation(factory):
 
 
 def test_mcp_server_book_dto_json_columns(factory):
-    """args_json / env_json / headers_json are deserialised into
+    """args / env / headers JSON columns are deserialised into
     typed Python objects on the way out. Round-trips preserve
     ordering and string typing.
     """
@@ -593,7 +605,7 @@ def test_mcp_server_book_dto_json_columns(factory):
     )
     row = book.get_by_name(name="gmail")
     assert row is not None
-    assert row.args == ("--flag=1", "positional")
+    assert row.args == ["--flag=1", "positional"]
     assert row.env == {"TOKEN": "secret"}
     assert row.headers == {"X-Trace": "yes"}
 
@@ -865,7 +877,7 @@ def test_task_source_enum_values():
     The DTO field ``Task.source`` is annotated :class:`TaskSource`
     so the LLM tool and dashboard can use ``isinstance`` checks;
     the DB column stays ``Text`` (enum not enforced at the DB layer). The
-    Book's ``_row_to_dto`` coerces the raw string back into the
+    ``BaseRecord.from_row`` coerces the raw string back into the
     enum, so callers see enum members on read AND on write.
     """
     from magi.bus.firmwares.books.local.tasksBook import TaskSource

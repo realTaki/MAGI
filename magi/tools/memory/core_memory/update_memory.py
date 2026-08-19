@@ -24,6 +24,7 @@ own this row?") lives at the tool layer.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
@@ -89,7 +90,8 @@ class UpdateMemoryTool(Tool):
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
         try:
-            candidate = existing.with_changes(
+            candidate = replace(
+                existing,
                 subject=kwargs.get("subject", existing.subject),
                 body=kwargs.get("body", existing.body),
                 priority=kwargs.get("priority", existing.priority),

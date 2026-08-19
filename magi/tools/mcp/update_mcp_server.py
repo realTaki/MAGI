@@ -28,12 +28,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
 from magi.bus.bases.job import JobStatus
 from magi.bus.firmwares.books.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )
+from magi.bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 
@@ -48,7 +48,7 @@ def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
         name=current.name,
         connection_type=kwargs.get("connection_type", current.connection_type),
         command=kwargs.get("command", current.command),
-        args=tuple(kwargs.get("args", list(current.args))),
+        args=list(kwargs.get("args", current.args)),
         url=kwargs.get("url", current.url),
         env=dict(kwargs.get("env", dict(current.env))),
         headers=dict(kwargs.get("headers", dict(current.headers))),

@@ -27,6 +27,7 @@ via ``to_dict`` for the JSON transport.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 from magi.tools.base import Tool, ToolContext, ToolResult
@@ -80,11 +81,11 @@ class UpdateContactNoteTool(Tool):
             # caller-fixable ``ToolResult.err`` rather than
             # tripping the worker's "tool.crashed" envelope.
             return ToolResult.err(f"contact_note {note_id!r} not found")
-        book.update(existing.with_changes(note=note))
+        book.update(replace(existing, note=note))
         # Re-read so ``updated_at`` matches the row the DB stored;
         # fall back to the candidate we just wrote in the unlikely
         # race where the row vanished between update and read.
-        row = book.get(note_id) or existing.with_changes(note=note)
+        row = book.get(note_id) or replace(existing, note=note)
         logger.info(
             "update_contact_note: note=%s updated",
             row.id,

@@ -15,19 +15,19 @@ The Worker is the single writer — see
 
 JSON columns are exposed to the LLM as plain dicts (``env`` /
 ``headers``) — the Job payload serialises to the underlying
-``env_json`` / ``headers_json`` columns automatically.
+``env`` / ``headers`` JSON columns automatically.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
 from magi.bus.bases.job import JobStatus
 from magi.bus.firmwares.books.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )
+from magi.bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 
@@ -54,7 +54,7 @@ def _build_server(
         name=name,
         connection_type=connection_type,
         command=command,
-        args=tuple(args or []),
+        args=list(args or []),
         url=url,
         env=dict(env or {}),
         headers=dict(headers or {}),
