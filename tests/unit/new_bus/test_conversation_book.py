@@ -4,6 +4,7 @@ import dataclasses
 from datetime import datetime
 
 from magi.new_bus import (
+    BaseJobResult,
     BaseRecord,
     BookOp,
     Bus,
@@ -19,16 +20,14 @@ from magi.new_bus.testing import InMemoryBackend
 def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
     filt = values.pop("filter", None)
-    job = bus.publish(
-        ManageBookJob(
-            book=Conversation.__name__,
-            op=op,
-            record_id=int(record_id),
-            filter=filt,
-            values=values,
-        )
+    job = ManageBookJob(
+        book=Conversation.__name__,
+        op=op,
+        record_id=int(record_id),
+        filter=filt,
+        values=values,
     )
-    assert isinstance(job, ManageBookJob)
+    bus.publish(job)
     return job
 
 
@@ -103,13 +102,12 @@ def test_messages_can_be_listed_by_conversation() -> None:
             values={"role": "user", "content": "hi", "conversation_id": conversation_id},
         )
     )
-    listed = bus.publish(
-        ManageBookJob(
-            book=Message.__name__,
-            op=BookOp.READ,
-            filter={"conversation_id": conversation_id},
-        )
+    listed = ManageBookJob(
+        book=Message.__name__,
+        op=BookOp.READ,
+        filter={"conversation_id": conversation_id},
     )
+    bus.publish(listed)
     records = bus.get_result(listed).records
     assert len(records) == 1
     assert records[0]["conversation_id"] == conversation_id
@@ -126,5 +124,5 @@ def test_conversation_job_board_publish_claim_complete() -> None:
     claimed = board.claim()
     assert claimed is not None
     assert claimed.conversation_id == conversation_id
-    done = board.complete(claimed.id)
-    assert board.get_result(done.id).status is JobStatus.COMPLETED
+    board.submit_result(claimed.id, BaseJobResult(id=claimed.id))
+    assert board.get_result(claimed.id).status is JobStatus.COMPLETED
