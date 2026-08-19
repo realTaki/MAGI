@@ -66,8 +66,7 @@ class Backend(ABC):
     def ensure(self) -> None:
         """Prepare storage for this backend.
 
-        File creates the root directory. SQLite and PostgreSQL create each
-        Book / JobBoard table on first use. Safe to call more than once.
+        File creates the root directory. Safe to call more than once.
         """
 
     @abstractmethod

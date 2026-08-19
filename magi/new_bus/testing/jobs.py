@@ -2,9 +2,12 @@
 
 from dataclasses import dataclass
 
+from sqlalchemy import Text
+from sqlalchemy.orm import Mapped, mapped_column
+
 from ..base.BaseBook import BaseBook
 from ..base.BaseJob import BaseJob
-from ..base.BaseRecord import BaseRecord
+from ..base.BaseRecord import BaseRecord, BaseRecordMixin
 from ..base.manageBookJob import BookOp, ManageBookJob
 
 
@@ -19,9 +22,17 @@ class Item(BaseRecord):
     kind: str = ""
 
 
+class ItemRow(BaseRecordMixin):
+    __tablename__ = "books_items"
+
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    kind: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class ItemBook(BaseBook):
     name = "items"
     record_cls = Item
+    row_cls = ItemRow
 
 
 def book_job(op: BookOp, **values) -> ManageBookJob:

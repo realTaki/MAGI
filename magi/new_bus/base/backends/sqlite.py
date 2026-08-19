@@ -2,41 +2,34 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.pool import StaticPool
 
 from ._sql import SqlBackend
 
 
-class _SQLiteDriver:
-    placeholder = "?"
-    id_column = "id INTEGER PRIMARY KEY AUTOINCREMENT"
+def _sqlite_engine(url: str, *, static: bool = False):
+    options: dict = {"connect_args": {"check_same_thread": False}}
+    if static:
+        options["poolclass"] = StaticPool
+    engine = create_engine(url, **options)
 
-    def __init__(self, path: str | Path) -> None:
-        self.path = str(path)
+    @event.listens_for(engine, "connect")
+    def _on_connect(dbapi_conn, _record) -> None:
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        if not static:
+            cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+    return engine
 
 
 class SQLiteBackend(SqlBackend):
-    def __init__(self, path: str | Path) -> None:
-        path = Path(path)
-        engine = create_engine(
-            f"sqlite:///{path}",
-            connect_args={"check_same_thread": False},
-        )
-
-        @event.listens_for(engine, "connect")
-        def _fk(dbapi_conn, _record) -> None:
-            cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.close()
-
-        super().__init__(_SQLiteDriver(path), engine=engine)
+    def __init__(self, path: str | Path | None = None, *, memory: bool = False) -> None:
+        if memory or path is None:
+            super().__init__(_sqlite_engine("sqlite://", static=True))
+            return
+        super().__init__(_sqlite_engine(f"sqlite:///{Path(path)}"))

@@ -1,79 +1,61 @@
-"""BaseFileBook — a BaseBook that must live on FileBackend.
+"""BaseFileBook — named files on disk. Not a SQL Book.
 
-Regular Books store records through whatever Backend the Bus opened.
-File Books always sit on disk as one JSON file per record, even when
-the Bus primary backend is SQLite or PostgreSQL.
+Parallel to BaseBook, not a subclass. SQL Books use Row + Session;
+file Books wrap a directory of named files.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import replace
+import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import ClassVar
 
-from .backends.file import FileBackend, _FileStore
-from .BaseBook import BaseBook
-from .BaseRecord import BaseRecord
-from .errors import BookNotFoundError, InvalidJobError
-from .time import utcnow
+from .backends.file import FileBackend
+from .errors import InvalidJobError
 
 
-class BaseFileBook(BaseBook):
-    """File-backed Book. ``backend`` must be a :class:`FileBackend`."""
+class BaseFileBook:
+    """Directory-backed Book. ``backend`` must be a :class:`FileBackend`."""
 
-    __tablename__: ClassVar[str] = ""
+    name: ClassVar[str] = ""
 
     def __init__(self, backend) -> None:
-        cls = type(self)
-        if not cls.name:
-            raise InvalidJobError(f"{cls.__name__} must set class variable name")
-        if not cls.__tablename__:
-            raise InvalidJobError(f"{cls.__name__} must set __tablename__")
-        self._require_backend(backend)
-        self._backend = backend
-        self._store = backend.records(cls.__tablename__)
-
-    def _require_backend(self, backend) -> None:
+        if not type(self).name:
+            raise InvalidJobError(f"{type(self).__name__} must set class variable name")
         if not isinstance(backend, FileBackend):
             raise InvalidJobError("BaseFileBook requires FileBackend")
-
-    def add(self, record: BaseRecord) -> int:
-        now = utcnow()
-        prepared = replace(
-            record,
-            id=0,
-            created_at=record.created_at or now,
-            updated_at=now,
-        )
-        stored = self._store.insert(prepared.to_dict())
-        return int(stored["id"])
-
-    def get(self, record_id: int) -> BaseRecord | None:
-        data = self._store.get(record_id)
-        return None if data is None else self.record_cls.parse(data)
-
-    def update(self, record: BaseRecord) -> int:
-        if not record.id:
-            raise InvalidJobError("update requires record.id")
-        current = self.get(record.id)
-        if current is None:
-            raise BookNotFoundError(f"book {self.name!r} has no id {record.id}")
-        stored = replace(
-            record, id=current.id, created_at=current.created_at, updated_at=utcnow()
-        )
-        self._store.replace(stored.id, stored.to_dict())
-        return stored.id
-
-    def delete(self, record_id: int) -> bool:
-        return self._store.delete(record_id)
-
-    def list(self, filters: Mapping[str, Any] | None = None) -> list[BaseRecord]:
-        return [self.record_cls.parse(row) for row in self._store.find(eq=filters)]
+        self._root = backend.root / type(self).name
+        self._root.mkdir(parents=True, exist_ok=True)
 
     @property
     def directory(self) -> Path:
-        return cast(_FileStore, self._store).directory
+        return self._root
 
-    def path_for(self, record_id: int) -> Path:
-        return cast(_FileStore, self._store).path_for(record_id)
+    def path_for(self, name: str) -> Path:
+        return self._root / name
+
+    def read(self, name: str) -> str:
+        return self.path_for(name).read_text(encoding="utf-8")
+
+    def write(self, name: str, content: str) -> Path:
+        path = self.path_for(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
+        return path
+
+    def exists(self, name: str) -> bool:
+        return self.path_for(name).is_file()
+
+    def __contains__(self, name: object) -> bool:
+        return isinstance(name, str) and self.exists(name)
+
+    def __iter__(self) -> Iterator[str]:
+        if not self._root.is_dir():
+            return iter(())
+        return iter(sorted(path.name for path in self._root.iterdir() if path.is_file()))
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({str(self._root)!r})"

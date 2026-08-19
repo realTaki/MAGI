@@ -8,7 +8,6 @@ from typing import Any, ClassVar
 
 from sqlalchemy import select
 
-from .backends.backend import DatabaseBackend
 from .BaseRecord import BaseRecord, BaseRecordMixin
 from .errors import BookNotFoundError, InvalidJobError
 from .time import utcnow
@@ -30,12 +29,7 @@ class BaseBook:
             raise InvalidJobError(f"{cls.__name__} must set class variable name")
         if cls.row_cls is None:
             raise InvalidJobError(f"{cls.__name__} must set row_cls")
-        self._require_backend(backend)
         self._backend = backend
-
-    def _require_backend(self, backend) -> None:
-        if not isinstance(backend, DatabaseBackend):
-            raise InvalidJobError("BaseBook requires a database backend")
 
     def add(self, record: BaseRecord) -> int:
         now = utcnow()

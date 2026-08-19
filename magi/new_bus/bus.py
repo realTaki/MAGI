@@ -27,11 +27,11 @@ class Bus:
         self._files = files
         if self._files is not None:
             self._files.ensure()
-        from .firmware.schema import prepare_schema
+        from .firmware.versions.schema import prepare_schema
 
         prepare_schema(self._backend)
         self._slots = SlotSpace()
-        self._books: dict[str, BaseBook] = {}
+        self._books: dict[str, BaseBook | BaseFileBook] = {}
         self._book_boards: dict[str, ManageBookJobBoard] = {}
         self._job_boards: dict[type[BaseJob], BaseJobBoard] = {}
         from .firmware import attach
@@ -52,20 +52,23 @@ class Bus:
             item = self._books[book]
         except KeyError:
             raise InvalidJobError(f"book {book!r} is not provided by this BUS") from None
-        return type(item).record_cls
+        record_cls = getattr(type(item), "record_cls", None)
+        if record_cls is None:
+            raise InvalidJobError(f"book {book!r} has no record type")
+        return record_cls
 
-    def mount_book(self, book_cls: type[BaseBook]) -> None:
+    def mount_book(self, book_cls: type[BaseBook] | type[BaseFileBook]) -> None:
         name = book_cls.name
         if not name:
             raise InvalidJobError(f"{book_cls.__name__} must set class variable name")
         if name in self._books:
             raise InvalidJobError(f"book {name!r} is already mounted")
-        storage = self._backend
         if issubclass(book_cls, BaseFileBook):
             if self._files is None:
                 raise InvalidJobError("BaseFileBook requires a FileBackend")
-            storage = self._files
-        book = book_cls(storage)
+            self._books[name] = book_cls(self._files)
+            return
+        book = book_cls(self._backend)
         self._books[name] = book
         self._book_boards[name] = ManageBookJobBoard(book, self._backend, self._slots)
 
