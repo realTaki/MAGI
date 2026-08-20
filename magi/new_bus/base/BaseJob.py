@@ -37,7 +37,7 @@ def slot(fn):
         self._held[fn.__name__] = (worker_id, now + LEASE)
         return fn(self, *args, worker_id=worker_id, **kwargs)
 
-    wrapped._slot = fn.__name__
+    setattr(wrapped, "_slot", True)
     return wrapped
 
 
@@ -85,9 +85,8 @@ class BaseJobBoard:
         self._held: dict[str, tuple[str, datetime] | None] = {}
         for name in dir(type(self)):
             value = getattr(type(self), name, None)
-            slot_name = getattr(value, "_slot", None)
-            if slot_name:
-                self._held[slot_name] = None
+            if value is not None and getattr(value, "_slot", False):
+                self._held[name] = None
 
     def _session(self):
         return self._factory.session()
