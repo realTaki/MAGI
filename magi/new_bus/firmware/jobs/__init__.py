@@ -1,9 +1,9 @@
-from .manageConversationJob import ManageConversationJob, ManageConversationJobBoard
-from .manageMessageJob import ManageMessageJob, ManageMessageJobBoard
+from .openConversationBookJob import OpenConversationBookJob, OpenConversationBookJobBoard
+from .openMessageBookJob import OpenMessageBookJob, OpenMessageBookJobBoard
 
 __all__ = [
-    "ManageConversationJob",
-    "ManageConversationJobBoard",
-    "ManageMessageJob",
-    "ManageMessageJobBoard",
+    "OpenConversationBookJob",
+    "OpenConversationBookJobBoard",
+    "OpenMessageBookJob",
+    "OpenMessageBookJobBoard",
 ]

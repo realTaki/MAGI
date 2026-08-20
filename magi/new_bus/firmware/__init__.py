@@ -5,26 +5,21 @@ Opening :class:`~magi.new_bus.bus.Bus` loads this set. Callers do not mount it.
 
 from .books.conversationBook import Conversation
 from .books.messageBook import Message
-from .jobs.manageConversationJob import ManageConversationJob, ManageConversationJobBoard
-from .jobs.manageMessageJob import ManageMessageJob, ManageMessageJobBoard
+from .jobs.openConversationBookJob import OpenConversationBookJob, OpenConversationBookJobBoard
+from .jobs.openMessageBookJob import OpenMessageBookJob, OpenMessageBookJobBoard
 
 
 def attach(bus) -> None:
     """Bind this Firmware onto a Bus. Called by Bus itself at start."""
-    from .books.conversationBook import ConversationBook
-    from .books.messageBook import MessageBook
-
-    bus.mount_book(ConversationBook)
-    bus.mount_book(MessageBook)
-    bus.mount_job(ManageConversationJob, board_cls=ManageConversationJobBoard)
-    bus.mount_job(ManageMessageJob, board_cls=ManageMessageJobBoard)
+    bus.mount_book(OpenConversationBookJobBoard)
+    bus.mount_book(OpenMessageBookJobBoard)
 
 
 __all__ = [
     "Conversation",
-    "ManageConversationJob",
-    "ManageConversationJobBoard",
-    "ManageMessageJob",
-    "ManageMessageJobBoard",
+    "OpenConversationBookJob",
+    "OpenConversationBookJobBoard",
+    "OpenMessageBookJob",
+    "OpenMessageBookJobBoard",
     "Message",
 ]

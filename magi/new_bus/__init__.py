@@ -4,11 +4,9 @@ Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
 record types (see :class:`Message`). External code talks to Bus, never to BaseBook.
 """
 
-from .base.backends.file import FileBackend
-from .base.backends.postgres import PostgresBackend
-from .base.backends.sqlite import SQLiteBackend
+from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .base.BaseRecord import BaseRecord
+from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.errors import (
     BackendError,
     BookNotFoundError,
@@ -16,30 +14,28 @@ from .base.errors import (
     InvalidJobError,
     InvalidJobStateError,
     JobNotFoundError,
-    SlotNotFoundError,
-    SlotOccupiedError,
-    SlotRejected,
 )
-from .base.manageBookJob import BookOp, ManageBookJob
-from .base.slot import Slot
+from .base.file import FileBackend
+from .base.openBookJob import BookOp, OpenBookJob
 from .bus import Bus
 from .firmware import (
     Conversation,
-    ManageConversationJob,
-    ManageConversationJobBoard,
-    ManageMessageJob,
-    ManageMessageJobBoard,
+    OpenConversationBookJob,
+    OpenConversationBookJobBoard,
+    OpenMessageBookJob,
+    OpenMessageBookJobBoard,
     Message,
 )
 
 __all__ = [
     "BackendError",
-    "ManageBookJob",
+    "OpenBookJob",
     "BookNotFoundError",
     "BookOp",
     "BaseRecord",
     "Bus",
     "BusError",
+    "EngineFactory",
     "FileBackend",
     "InvalidJobError",
     "InvalidJobStateError",
@@ -49,15 +45,11 @@ __all__ = [
     "JobNotFoundError",
     "JobStatus",
     "Conversation",
-    "ManageConversationJob",
-    "ManageConversationJobBoard",
-    "ManageMessageJob",
-    "ManageMessageJobBoard",
+    "OpenConversationBookJob",
+    "OpenConversationBookJobBoard",
+    "OpenMessageBookJob",
+    "OpenMessageBookJobBoard",
     "Message",
     "PostgresBackend",
     "SQLiteBackend",
-    "Slot",
-    "SlotNotFoundError",
-    "SlotOccupiedError",
-    "SlotRejected",
 ]
