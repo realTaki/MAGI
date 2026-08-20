@@ -12,14 +12,13 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import wraps
-from typing import ClassVar
 
 from sqlalchemy import Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .errors import InvalidJobError, InvalidJobStateError
+from .errors import InvalidJobError
 from .time import utcnow
 
 LEASE = timedelta(seconds=1)
@@ -77,12 +76,12 @@ class BaseJobRow(BaseRecordMixin):
     publisher: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class BaseJobBoard:
+class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     """Running container for one work BaseJob type."""
 
-    job_cls: ClassVar[type[BaseJob]] = BaseJob
-    result_cls: ClassVar[type[BaseJobResult]] = BaseJobResult
-    row_cls: ClassVar[type[BaseJobRow]]
+    job_cls: type[JobT]
+    result_cls: type[ResultT]
+    row_cls: type[RowT]
 
     def __init__(self, factory: EngineFactory) -> None:
         self._factory = factory
@@ -149,7 +148,7 @@ class BaseJobBoard:
                 )
             session.commit()
 
-    def _pull(self, src: JobStatus, dst: JobStatus) -> BaseJob | None:
+    def _pull(self, src: JobStatus, dst: JobStatus) -> JobT | None:
         with self._session() as session:
             waiting = list(
                 session.scalars(
@@ -178,7 +177,7 @@ class BaseJobBoard:
         return None
 
     @slot
-    def publish(self, job: BaseJob, *, worker_id: str) -> int:
+    def publish(self, job: JobT, *, worker_id: str) -> int:
         now = utcnow()
         prepared = replace(
             job,
@@ -199,19 +198,15 @@ class BaseJobBoard:
             return int(row.id)
 
     @slot
-    def post_publish(self, *, worker_id: str) -> BaseJob | None:
+    def post_publish(self, *, worker_id: str) -> JobT | None:
         return self._pull(JobStatus.PREPARING, JobStatus.HOOKING)
 
     @slot
-    def submit_post_publish(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_post_publish(self, job: JobT, result: BaseJobResult, *, worker_id: str) -> bool:
         with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-            if row is None:
+            row = session.get(type(self).row_cls, job.id)
+            if row is None or row.status != JobStatus.HOOKING.value:
                 return False
-            if row.status != JobStatus.HOOKING.value:
-                raise InvalidJobStateError(
-                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not hooking"
-                )
             prepared = replace(
                 result,
                 created_at=row.created_at,
@@ -225,7 +220,7 @@ class BaseJobBoard:
             return True
 
     @slot
-    def claim(self, *, worker_id: str) -> BaseJob | None:
+    def claim(self, *, worker_id: str) -> JobT | None:
         self.release_idle_slots()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
@@ -250,7 +245,7 @@ class BaseJobBoard:
             return True
 
     @slot
-    def post_result(self, *, worker_id: str) -> BaseJob | None:
+    def post_result(self, *, worker_id: str) -> JobT | None:
         return self._pull(JobStatus.SETTLING, JobStatus.FINALIZING)
 
     @slot
@@ -271,7 +266,7 @@ class BaseJobBoard:
             session.commit()
             return True
 
-    def get_result(self, job_id: int) -> BaseJobResult | None:
+    def get_result(self, job_id: int) -> ResultT | None:
         self.release_idle_slots()
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
@@ -290,7 +285,7 @@ class BaseJobBoard:
             return None
         return JobStatus(row.status)
 
-    def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
+    def list(self, *, status: JobStatus | None = None) -> list[JobT]:
         with self._session() as session:
             stmt = select(type(self).row_cls).order_by(type(self).row_cls.created_at, type(self).row_cls.id)
             if status is not None:

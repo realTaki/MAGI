@@ -54,11 +54,11 @@ class OpenBookJobRow(BaseJobRow):
     records: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
 
 
-class OpenBookJobBoard(BaseJobBoard):
+class OpenBookJobBoard(BaseJobBoard[OpenBookJob, OpenBookJobResult, OpenBookJobRow]):
     """Per-BaseBook board. Subclasses set book_cls and row_cls. publish runs the op; claim is not used."""
 
-    job_cls: ClassVar[type[BaseJob]] = OpenBookJob
-    result_cls: ClassVar[type[BaseJobResult]] = OpenBookJobResult
+    job_cls = OpenBookJob
+    result_cls = OpenBookJobResult
     book_cls: ClassVar[type[BaseBook]]
 
     def __init__(self, factory: EngineFactory) -> None:
@@ -73,18 +73,23 @@ class OpenBookJobBoard(BaseJobBoard):
         return job_id
 
     @slot
-    def submit_post_publish(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
-        if not super().submit_post_publish(job_id, result, worker_id=worker_id):
+    def submit_post_publish(self, job: OpenBookJob, result: BaseJobResult, *, worker_id: str) -> bool:
+        if not super().submit_post_publish(job, result, worker_id=worker_id):
             return False
+        payload = job.to_dict()
+        payload.pop("id", None)
+        payload.pop("created_at", None)
+        payload.pop("updated_at", None)
         with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-        if row is None or row.status == JobStatus.FAILED.value:
+            row = session.get(type(self).row_cls, job.id)
+            if row is None:
+                return True
+            for key, value in payload.items():
+                setattr(row, key, value)
+            session.commit()
+        if result.status == JobStatus.FAILED:
             return True
-        job = self.job_cls.from_row(row)
-        if isinstance(job, OpenBookJob):
-            if job.record is not None:
-                job.record = self._parse_record(job.record)
-            self._run(job_id, job)
+        self._run(job.id, job)
         return True
 
     def _write(
@@ -100,7 +105,7 @@ class OpenBookJobBoard(BaseJobBoard):
                 setattr(row, key, value)
             session.commit()
 
-    def claim(self, *, worker_id: str) -> BaseJob | None:
+    def claim(self, *, worker_id: str) -> OpenBookJob | None:
         del worker_id
         raise InvalidJobError("OpenBookJob is executed by BUS and cannot be claimed")
 
@@ -108,7 +113,7 @@ class OpenBookJobBoard(BaseJobBoard):
         del job_id, result, worker_id
         raise InvalidJobError("OpenBookJob completes itself")
 
-    def get_result(self, job_id: int) -> BaseJobResult | None:
+    def get_result(self, job_id: int) -> OpenBookJobResult | None:
         self.release_idle_slots()
         self._run_pending(job_id)
         with self._session() as session:
@@ -131,7 +136,7 @@ class OpenBookJobBoard(BaseJobBoard):
             result.record = self._parse_record(row.record)
         return result
 
-    def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
+    def list(self, *, status: JobStatus | None = None) -> list[OpenBookJob]:
         row_cls = type(self).row_cls
         with self._session() as session:
             stmt = select(row_cls).order_by(row_cls.created_at, row_cls.id)
