@@ -14,7 +14,13 @@ from magi.new_bus import (
     ManageConversationJob,
     ManageConversationJobBoard,
 )
-from magi.new_bus.testing import InMemoryBackend
+from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
+
+
+def _bus() -> Bus:
+    item = Bus(InMemoryBackend())
+    occupy(item)
+    return item
 
 
 def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
@@ -27,7 +33,7 @@ def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
         filter=filt,
         values=values,
     )
-    job.id = bus.publish(job)
+    job.id = bus.publish(job, worker_id=WORKER)
     return job
 
 
@@ -39,7 +45,7 @@ def create_conversation(bus: Bus, **values) -> ManageBookJob:
 
 
 def test_bus_starts_with_conversation_firmware() -> None:
-    bus = Bus(InMemoryBackend())
+    bus = _bus()
     assert Conversation.__name__ in bus.books
     assert ManageConversationJob in bus.jobs
     assert bus.record_type(Conversation.__name__) is Conversation
@@ -55,7 +61,7 @@ def test_bus_starts_with_conversation_firmware() -> None:
 
 
 def test_create_read_filter_conversation() -> None:
-    bus = Bus(InMemoryBackend())
+    bus = _bus()
     created = create_conversation(
         bus,
         delivery_address="tg:123",
@@ -78,7 +84,7 @@ def test_create_read_filter_conversation() -> None:
 
 
 def test_last_compaction_at_round_trips() -> None:
-    bus = Bus(InMemoryBackend())
+    bus = _bus()
     stamped = datetime(2026, 8, 18, 12, 0)
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
     assert bus.get_result(created).status is JobStatus.COMPLETED
@@ -91,7 +97,7 @@ def test_last_compaction_at_round_trips() -> None:
 def test_messages_can_be_listed_by_conversation() -> None:
     from magi.new_bus import Message
 
-    bus = Bus(InMemoryBackend())
+    bus = _bus()
     conversation = create_conversation(bus, title="thread")
     conversation_id = bus.get_result(conversation).record["id"]
 
@@ -100,29 +106,30 @@ def test_messages_can_be_listed_by_conversation() -> None:
             book=Message.__name__,
             op=BookOp.CREATE,
             values={"role": "user", "content": "hi", "conversation_id": conversation_id},
-        )
+        ),
+        worker_id=WORKER,
     )
     listed = ManageBookJob(
         book=Message.__name__,
         op=BookOp.READ,
         filter={"conversation_id": conversation_id},
     )
-    listed.id = bus.publish(listed)
+    listed.id = bus.publish(listed, worker_id=WORKER)
     records = bus.get_result(listed).records
     assert len(records) == 1
     assert records[0]["conversation_id"] == conversation_id
 
 
 def test_conversation_job_board_publish_claim_complete() -> None:
-    bus = Bus(InMemoryBackend())
+    bus = _bus()
     stored = create_conversation(bus, title="inbox")
     conversation_id = bus.get_result(stored).record["id"]
 
     board = bus.job_board(ManageConversationJob)
     assert isinstance(board, ManageConversationJobBoard)
-    board.publish(ManageConversationJob(conversation_id=conversation_id))
-    claimed = board.claim()
+    board.publish(ManageConversationJob(conversation_id=conversation_id), worker_id=WORKER)
+    claimed = board.claim(worker_id=WORKER)
     assert claimed is not None
     assert claimed.conversation_id == conversation_id
-    board.submit_result(claimed.id, BaseJobResult(id=claimed.id))
+    board.submit_result(claimed.id, BaseJobResult(id=claimed.id), worker_id=WORKER)
     assert board.get_result(claimed.id).status is JobStatus.COMPLETED

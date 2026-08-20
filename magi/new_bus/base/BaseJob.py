@@ -7,10 +7,11 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
+from functools import wraps
 from typing import Any, ClassVar
 
 from sqlalchemy import JSON, Text, select, update
@@ -20,6 +21,24 @@ from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
 from .time import dump_dt, utcnow
+
+LEASE = timedelta(seconds=1)
+
+
+def slot(fn):
+    """Mark a JobBoard method as a slot. Caller must hold it via attach()."""
+
+    @wraps(fn)
+    def wrapped(self, *args, worker_id: str, **kwargs):
+        now = utcnow()
+        holder = self._held.get(fn.__name__)
+        if holder is None or holder[0] != worker_id or holder[1] <= now:
+            raise InvalidJobError(f"slot {fn.__name__!r} is not held by {worker_id}")
+        self._held[fn.__name__] = (worker_id, now + LEASE)
+        return fn(self, *args, worker_id=worker_id, **kwargs)
+
+    wrapped._slot = fn.__name__
+    return wrapped
 
 
 class JobStatus(StrEnum):
@@ -63,11 +82,37 @@ class BaseJobBoard:
 
     def __init__(self, factory: EngineFactory) -> None:
         self._factory = factory
+        self._held: dict[str, tuple[str, datetime] | None] = {}
+        for name in dir(type(self)):
+            value = getattr(type(self), name, None)
+            slot_name = getattr(value, "_slot", None)
+            if slot_name:
+                self._held[slot_name] = None
 
     def _session(self):
         return self._factory.session()
 
-    def publish(self, job: BaseJob) -> int:
+    def attach(self, worker_id: str, slots: Sequence[str]) -> None:
+        now = utcnow()
+        until = now + LEASE
+        for name in slots:
+            if name not in self._held:
+                raise InvalidJobError(f"no slot {name!r} on {type(self).__name__}")
+            holder = self._held[name]
+            if holder is not None and holder[1] > now and holder[0] != worker_id:
+                raise InvalidJobError(f"slot {name!r} is occupied by {holder[0]}")
+        for name in slots:
+            self._held[name] = (worker_id, until)
+
+    def heartbeat(self, worker_id: str) -> None:
+        now = utcnow()
+        until = now + LEASE
+        for name, holder in list(self._held.items()):
+            if holder is not None and holder[0] == worker_id and holder[1] > now:
+                self._held[name] = (worker_id, until)
+
+    @slot
+    def publish(self, job: BaseJob, *, worker_id: str) -> int:
         now = utcnow()
         prepared = replace(
             job,
@@ -81,7 +126,8 @@ class BaseJobBoard:
             session.commit()
             return int(row.id)
 
-    def claim(self) -> BaseJob | None:
+    @slot
+    def claim(self, *, worker_id: str) -> BaseJob | None:
         with self._session() as session:
             pending = list(
                 session.scalars(
@@ -109,7 +155,8 @@ class BaseJobBoard:
             return self.job_cls.from_row(claimed)
         return None
 
-    def submit_result(self, job_id: int, result: BaseJobResult) -> bool:
+    @slot
+    def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
             if row is None:

@@ -6,7 +6,7 @@ import pytest
 
 from magi.new_bus import Bus, SQLiteBackend
 from magi.new_bus.base.engine import EngineFactory
-from magi.new_bus.testing import InMemoryBackend, ItemBook, PingJob, PingJobBoard
+from magi.new_bus.testing import InMemoryBackend, ItemBook, PingJob, PingJobBoard, occupy
 
 
 @pytest.fixture(params=["memory", "sqlite"])
@@ -23,4 +23,5 @@ def bus(db_backend: EngineFactory) -> Iterator[Bus]:
     with Bus(db_backend) as item:
         item.mount_book(ItemBook)
         item.mount_job(PingJob, board_cls=PingJobBoard)
+        occupy(item)
         yield item
