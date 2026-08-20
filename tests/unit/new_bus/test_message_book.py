@@ -15,7 +15,7 @@ from magi.new_bus import (
     Conversation,
     InvalidJobError,
     JobStatus,
-    ManageBookJob,
+    OpenBookJob,
     ManageConversationJob,
     ManageMessageJob,
     ManageMessageJobBoard,
@@ -31,10 +31,10 @@ def bus() -> Bus:
     return item
 
 
-def write_message(bus: Bus, op: BookOp, **values) -> ManageBookJob:
+def write_message(bus: Bus, op: BookOp, **values) -> OpenBookJob:
     record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
     filt = values.pop("filter", None)
-    job = ManageBookJob(
+    job = OpenBookJob(
         book=Message.__name__,
         op=op,
         record_id=int(record_id),
@@ -45,12 +45,12 @@ def write_message(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     return job
 
 
-def create(bus: Bus, **values) -> ManageBookJob:
+def create(bus: Bus, **values) -> OpenBookJob:
     return write_message(bus, BookOp.CREATE, **values)
 
 
 def open_conversation(bus: Bus) -> int:
-    job = ManageBookJob(
+    job = OpenBookJob(
         book=Conversation.__name__,
         op=BookOp.CREATE,
         values={"delivery_address": "webui:t", "contact_id": 1, "channel": "webui"},
@@ -142,17 +142,17 @@ def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
     first = create(bus, role="assistant", content="ok")
     create(bus, content="x")
-    history = bus.list(ManageBookJob, book=Message.__name__)
+    history = bus.list(OpenBookJob, book=Message.__name__)
     assert [bus.get_result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     assert isinstance(
-        next(job for job in history if job.id == first.id), ManageBookJob
+        next(job for job in history if job.id == first.id), OpenBookJob
     )
 
 
 def test_book_jobs_cannot_be_claimed(bus: Bus) -> None:
     create(bus, role="system", content="boot")
     with pytest.raises(InvalidJobError):
-        bus.claim(ManageBookJob, worker_id=WORKER)
+        bus.claim(OpenBookJob, worker_id=WORKER)
 
 
 def test_message_job_board_is_on_the_bus(bus: Bus) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus import BookOp, Bus, InvalidJobError, JobStatus, ManageBookJob
+from magi.new_bus import BookOp, Bus, InvalidJobError, JobStatus, OpenBookJob
 from magi.new_bus.base.BaseBook import BaseBook
 from magi.new_bus.testing import WORKER, PingJob, book_job
 
@@ -64,14 +64,14 @@ def test_failed_mutation_leaves_book_valid(bus: Bus) -> None:
 def test_book_jobs_are_not_claimed(bus: Bus) -> None:
     bus.publish(book_job(BookOp.CREATE, name="x"), worker_id=WORKER)
     with pytest.raises(InvalidJobError):
-        bus.claim(ManageBookJob, worker_id=WORKER)
+        bus.claim(OpenBookJob, worker_id=WORKER)
 
 
 def test_book_jobs_remain_on_the_board(bus: Bus) -> None:
     first = book_job(BookOp.CREATE, name="a")
     first_id = bus.publish(first, worker_id=WORKER)
     bus.publish(book_job(BookOp.UPDATE, name="missing-id"), worker_id=WORKER)
-    history = bus.list(ManageBookJob, book="Item")
+    history = bus.list(OpenBookJob, book="Item")
     assert [job.id for job in history] == [first_id, history[1].id]
     assert [bus.get_result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     loaded = next(job for job in history if job.id == first_id)

@@ -42,7 +42,9 @@ def slot(fn):
 
 
 class JobStatus(StrEnum):
+    PREPARING = "preparing"
     PENDING = "pending"
+    HOOKING = "hooking"
     CLAIMED = "claimed"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -110,6 +112,53 @@ class BaseJobBoard:
             if holder is not None and holder[0] == worker_id and holder[1] > now:
                 self._held[name] = (worker_id, until)
 
+    def _slot_held(self, name: str) -> bool:
+        holder = self._held.get(name)
+        return holder is not None and holder[1] > utcnow()
+
+    def _release_preparing_if_idle(self) -> None:
+        if self._slot_held("post_publish"):
+            return
+        with self._session() as session:
+            session.execute(
+                update(type(self).row_cls)
+                .where(
+                    type(self).row_cls.status.in_(
+                        (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
+                    )
+                )
+                .values(status=JobStatus.PENDING.value)
+            )
+            session.commit()
+
+    def _pull(self, src: JobStatus, dst: JobStatus) -> BaseJob | None:
+        with self._session() as session:
+            waiting = list(
+                session.scalars(
+                    select(type(self).row_cls)
+                    .where(type(self).row_cls.status == src.value)
+                    .order_by(type(self).row_cls.created_at, type(self).row_cls.id)
+                )
+            )
+        for row in waiting:
+            with self._session() as session:
+                changed = session.execute(
+                    update(type(self).row_cls)
+                    .where(
+                        type(self).row_cls.id == row.id,
+                        type(self).row_cls.status == src.value,
+                    )
+                    .values(status=dst.value)
+                )
+                if getattr(changed, "rowcount", 0) != 1:
+                    continue
+                session.commit()
+                pulled = session.get(type(self).row_cls, row.id)
+            if pulled is None:
+                continue
+            return self.job_cls.from_row(pulled)
+        return None
+
     @slot
     def publish(self, job: BaseJob, *, worker_id: str) -> int:
         now = utcnow()
@@ -119,40 +168,45 @@ class BaseJobBoard:
             created_at=now,
             updated_at=now,
         )
+        values = _row_kwargs(type(self).row_cls, prepared.to_dict())
+        values["status"] = (
+            JobStatus.PREPARING.value
+            if self._slot_held("post_publish")
+            else JobStatus.PENDING.value
+        )
         with self._session() as session:
-            row = type(self).row_cls(**_row_kwargs(type(self).row_cls, prepared.to_dict()))
+            row = type(self).row_cls(**values)
             session.add(row)
             session.commit()
             return int(row.id)
 
     @slot
-    def claim(self, *, worker_id: str) -> BaseJob | None:
+    def post_publish(self, *, worker_id: str) -> BaseJob | None:
+        return self._pull(JobStatus.PREPARING, JobStatus.HOOKING)
+
+    @slot
+    def submit_post_publish(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
         with self._session() as session:
-            pending = list(
-                session.scalars(
-                    select(type(self).row_cls)
-                    .where(type(self).row_cls.status == JobStatus.PENDING.value)
-                    .order_by(type(self).row_cls.created_at, type(self).row_cls.id)
+            row = session.get(type(self).row_cls, job_id)
+            if row is None:
+                return False
+            if row.status != JobStatus.HOOKING.value:
+                raise InvalidJobStateError(
+                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not hooking"
                 )
-            )
-        for row in pending:
-            with self._session() as session:
-                changed = session.execute(
-                    update(type(self).row_cls)
-                    .where(
-                        type(self).row_cls.id == row.id,
-                        type(self).row_cls.status == JobStatus.PENDING.value,
-                    )
-                    .values(status=JobStatus.CLAIMED.value)
-                )
-                if getattr(changed, "rowcount", 0) != 1:
-                    continue
-                session.commit()
-                claimed = session.get(type(self).row_cls, row.id)
-            if claimed is None:
-                continue
-            return self.job_cls.from_row(claimed)
-        return None
+            if result.status is JobStatus.FAILED:
+                row.status = JobStatus.FAILED.value
+                row.error = result.error
+            else:
+                row.status = JobStatus.PENDING.value
+                row.error = None
+            session.commit()
+            return True
+
+    @slot
+    def claim(self, *, worker_id: str) -> BaseJob | None:
+        self._release_preparing_if_idle()
+        return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
     def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:

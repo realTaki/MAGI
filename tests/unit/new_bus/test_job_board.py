@@ -124,7 +124,7 @@ def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
 
 
 def test_book_jobs_cannot_use_mount_job(bus: Bus) -> None:
-    from magi.new_bus import ManageBookJob
+    from magi.new_bus import OpenBookJob
 
     with pytest.raises(InvalidJobError):
-        bus.mount_job(ManageBookJob)
+        bus.mount_job(OpenBookJob)

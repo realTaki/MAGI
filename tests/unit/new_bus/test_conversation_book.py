@@ -10,7 +10,7 @@ from magi.new_bus import (
     Bus,
     Conversation,
     JobStatus,
-    ManageBookJob,
+    OpenBookJob,
     ManageConversationJob,
     ManageConversationJobBoard,
 )
@@ -23,10 +23,10 @@ def _bus() -> Bus:
     return item
 
 
-def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
+def write_conversation(bus: Bus, op: BookOp, **values) -> OpenBookJob:
     record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
     filt = values.pop("filter", None)
-    job = ManageBookJob(
+    job = OpenBookJob(
         book=Conversation.__name__,
         op=op,
         record_id=int(record_id),
@@ -37,7 +37,7 @@ def write_conversation(bus: Bus, op: BookOp, **values) -> ManageBookJob:
     return job
 
 
-def create_conversation(bus: Bus, **values) -> ManageBookJob:
+def create_conversation(bus: Bus, **values) -> OpenBookJob:
     values.setdefault("delivery_address", "webui:test")
     values.setdefault("contact_id", 1)
     values.setdefault("channel", "webui")
@@ -102,14 +102,14 @@ def test_messages_can_be_listed_by_conversation() -> None:
     conversation_id = bus.get_result(conversation).record["id"]
 
     bus.publish(
-        ManageBookJob(
+        OpenBookJob(
             book=Message.__name__,
             op=BookOp.CREATE,
             values={"role": "user", "content": "hi", "conversation_id": conversation_id},
         ),
         worker_id=WORKER,
     )
-    listed = ManageBookJob(
+    listed = OpenBookJob(
         book=Message.__name__,
         op=BookOp.READ,
         filter={"conversation_id": conversation_id},

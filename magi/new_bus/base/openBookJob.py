@@ -1,4 +1,4 @@
-"""Manage a BaseBook. BUS executes this on publish; workers never claim it."""
+"""Open a BaseBook. BUS executes this on publish; workers never claim it."""
 
 from __future__ import annotations
 
@@ -11,10 +11,9 @@ from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, slot
 from .engine import EngineFactory
 from .errors import BookNotFoundError, BusError, InvalidJobError
-from .slot import SlotSpace
 from .time import load_dt
 
 
@@ -26,7 +25,7 @@ class BookOp(StrEnum):
 
 
 @dataclass
-class ManageBookJob(BaseJob):
+class OpenBookJob(BaseJob):
     """``op`` selects create / read / update / delete on ``book``."""
 
     book: str = ""
@@ -44,13 +43,13 @@ class ManageBookJob(BaseJob):
 
 
 @dataclass
-class ManageBookJobResult(BaseJobResult):
+class OpenBookJobResult(BaseJobResult):
     record: dict[str, Any] | None = None
     records: list[dict[str, Any]] | None = None
     deleted_id: int | None = None
 
 
-class ManageBookJobRow(BaseJobRow):
+class OpenBookJobRow(BaseJobRow):
     __abstract__ = True
 
     book: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -63,58 +62,62 @@ class ManageBookJobRow(BaseJobRow):
     deleted_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
-_MANAGE_ROWS: dict[str, type[ManageBookJobRow]] = {}
+_OPEN_ROWS: dict[str, type[OpenBookJobRow]] = {}
 
 
-def _manage_row(book: str) -> type[ManageBookJobRow]:
+def _open_row(book: str) -> type[OpenBookJobRow]:
     table = f"jobs_book_{book}"
-    if table not in _MANAGE_ROWS:
-        _MANAGE_ROWS[table] = type(table, (ManageBookJobRow,), {"__tablename__": table})
-    return _MANAGE_ROWS[table]
+    if table not in _OPEN_ROWS:
+        _OPEN_ROWS[table] = type(table, (OpenBookJobRow,), {"__tablename__": table})
+    return _OPEN_ROWS[table]
 
 
-class ManageBookJobBoard(BaseJobBoard):
+class OpenBookJobBoard(BaseJobBoard):
     """Per-BaseBook board. publish runs the op; claim is not used."""
 
-    job_cls: ClassVar[type[BaseJob]] = ManageBookJob
-    result_cls: ClassVar[type[BaseJobResult]] = ManageBookJobResult
+    job_cls: ClassVar[type[BaseJob]] = OpenBookJob
+    result_cls: ClassVar[type[BaseJobResult]] = OpenBookJobResult
 
-    def __init__(self, book: BaseBook, factory: EngineFactory, slots: SlotSpace) -> None:
+    def __init__(self, book: BaseBook, factory: EngineFactory) -> None:
         self.book = book
-        super().__init__(factory, slots)
+        super().__init__(factory)
 
-    def _rows(self) -> type[BaseJobRow]:
-        return _manage_row(self.book.record_cls.__name__)
+    @classmethod
+    def for_book(cls, book: BaseBook, factory: EngineFactory) -> OpenBookJobBoard:
+        board_cls = type(
+            f"Open{book.record_cls.__name__}JobBoard",
+            (cls,),
+            {"row_cls": _open_row(book.record_cls.__name__)},
+        )
+        return board_cls(book, factory)
 
-    def publish(self, job: BaseJob) -> ManageBookJob:
-        if not isinstance(job, ManageBookJob):
-            raise InvalidJobError("book board only accepts ManageBookJob")
+    @slot
+    def publish(self, job: BaseJob, *, worker_id: str) -> int:
+        if not isinstance(job, OpenBookJob):
+            raise InvalidJobError("book board only accepts OpenBookJob")
         if not job.book:
-            raise InvalidJobError("ManageBookJob.book is required")
+            raise InvalidJobError("OpenBookJob.book is required")
         if job.book != self.book.record_cls.__name__:
             raise InvalidJobError(
                 f"job.book is {job.book!r}, this board is {self.book.record_cls.__name__!r}"
             )
-        super().publish(job)
+        job_id = super().publish(job, worker_id=worker_id)
         try:
             outcome = self._execute(job)
-            self._write(job.id, JobStatus.COMPLETED, outcome, None)
+            self._write(job_id, JobStatus.COMPLETED, outcome, None)
         except BusError as exc:
-            self._write(job.id, JobStatus.FAILED, {}, str(exc))
-        return job
+            self._write(job_id, JobStatus.FAILED, {}, str(exc))
+        return job_id
 
-    def claim(self) -> BaseJob | None:
-        raise InvalidJobError("ManageBookJob is executed by BUS and cannot be claimed")
+    def claim(self, *, worker_id: str) -> BaseJob | None:
+        del worker_id
+        raise InvalidJobError("OpenBookJob is executed by BUS and cannot be claimed")
 
-    def complete(self, job_id: int, result: Any = None) -> BaseJob:
-        del job_id, result
-        raise InvalidJobError("ManageBookJob completes itself")
+    def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+        del job_id, result, worker_id
+        raise InvalidJobError("OpenBookJob completes itself")
 
-    def fail(self, job_id: int, error: str) -> BaseJob:
-        del job_id, error
-        raise InvalidJobError("ManageBookJob fails itself")
-
-    def _execute(self, job: ManageBookJob) -> Any:
+    def _execute(self, job: OpenBookJob) -> Any:
         if job.op is BookOp.CREATE:
             try:
                 record = self.book.record_cls.parse(job.values)
@@ -150,7 +153,7 @@ class ManageBookJobBoard(BaseJobBoard):
             return {"deleted_id": record_id}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
-    def _read(self, job: ManageBookJob) -> dict[str, Any]:
+    def _read(self, job: OpenBookJob) -> dict[str, Any]:
         if job.record_id:
             record = self.book.get(job.record_id)
             if record is None:
@@ -167,7 +170,7 @@ class ManageBookJobBoard(BaseJobBoard):
         return record.to_dict()
 
 
-def _record_id(job: ManageBookJob) -> int:
+def _record_id(job: OpenBookJob) -> int:
     if not job.record_id:
         raise InvalidJobError("record_id is required")
     return job.record_id

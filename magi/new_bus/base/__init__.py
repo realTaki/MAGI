@@ -5,14 +5,14 @@ from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .file import FileBackend
-from .manageBookJob import BookOp, ManageBookJob, ManageBookJobBoard
+from .openBookJob import BookOp, OpenBookJob, OpenBookJobBoard
 
 __all__ = [
     "BaseBook",
     "BaseFileBook",
     "BaseRecord",
-    "ManageBookJob",
-    "ManageBookJobBoard",
+    "OpenBookJob",
+    "OpenBookJobBoard",
     "BookOp",
     "EngineFactory",
     "FileBackend",
