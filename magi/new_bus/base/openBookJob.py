@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
-from sqlalchemy import JSON, Integer, Text
+from sqlalchemy import JSON, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook, BaseRecord
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, slot
 from .engine import EngineFactory
 from .errors import BookNotFoundError, BusError, InvalidJobError
-from .time import dump_dt
 
 
 class BookOp(StrEnum):
@@ -33,14 +31,6 @@ class OpenBookJob(BaseJob):
     record: BaseRecord | None = None
     filter: dict[str, Any] | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        data = super().to_dict()
-        if data.get("record") is not None:
-            data["record"] = _json_ready(data["record"])
-        if data.get("filter") is not None:
-            data["filter"] = _json_ready(data["filter"])
-        return data
-
     @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
         job = super().parse(data)
@@ -51,9 +41,8 @@ class OpenBookJob(BaseJob):
 
 @dataclass
 class OpenBookJobResult(BaseJobResult):
-    record: dict[str, Any] | None = None
-    records: list[dict[str, Any]] | None = None
-    deleted_id: int | None = None
+    record: BaseRecord | None = None
+    records: list[BaseRecord] | None = None
 
 
 class OpenBookJobRow(BaseJobRow):
@@ -63,7 +52,6 @@ class OpenBookJobRow(BaseJobRow):
     filter: Mapped[dict[str, Any] | None] = mapped_column("job_filter", JSON, nullable=True)
     record: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     records: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
-    deleted_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class OpenBookJobBoard(BaseJobBoard):
@@ -78,16 +66,26 @@ class OpenBookJobBoard(BaseJobBoard):
         self.book = type(self).book_cls(factory)
 
     @slot
-    def publish(self, job: BaseJob, *, worker_id: str) -> int:
-        if not isinstance(job, OpenBookJob):
-            raise InvalidJobError("book board only accepts OpenBookJob")
+    def publish(self, job: OpenBookJob, *, worker_id: str) -> int:
         job_id = super().publish(job, worker_id=worker_id)
-        try:
-            outcome = self._execute(job)
-            self._write(job_id, JobStatus.COMPLETED, outcome, None)
-        except BusError as exc:
-            self._write(job_id, JobStatus.FAILED, {}, str(exc))
+        if not self._slot_held("post_publish"):
+            self._run(job_id, job)
         return job_id
+
+    @slot
+    def submit_post_publish(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+        if not super().submit_post_publish(job_id, result, worker_id=worker_id):
+            return False
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+        if row is None or row.status == JobStatus.FAILED.value:
+            return True
+        job = self.job_cls.from_row(row)
+        if isinstance(job, OpenBookJob):
+            if job.record is not None:
+                job.record = self._parse_record(job.record)
+            self._run(job_id, job)
+        return True
 
     def _write(
         self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None
@@ -110,14 +108,71 @@ class OpenBookJobBoard(BaseJobBoard):
         del job_id, result, worker_id
         raise InvalidJobError("OpenBookJob completes itself")
 
+    def get_result(self, job_id: int) -> BaseJobResult | None:
+        self._release_idle_hooks()
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+        if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
+            return None
+        result = OpenBookJobResult(
+            id=row.id,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            status=JobStatus(row.status),
+            error=row.error,
+        )
+        if row.status == JobStatus.FAILED.value:
+            return result
+        if row.records is not None:
+            result.records = [self._parse_record(item) for item in row.records]
+            return result
+        if row.record is not None:
+            result.record = self._parse_record(row.record)
+        return result
+
     def list(self, *, status: JobStatus | None = None) -> list[BaseJob]:
-        jobs = super().list(status=status)
+        row_cls = type(self).row_cls
+        with self._session() as session:
+            stmt = select(row_cls).order_by(row_cls.created_at, row_cls.id)
+            if status is not None:
+                stmt = stmt.where(row_cls.status == status.value)
+            rows = list(session.scalars(stmt))
+        jobs = [self.job_cls.from_row(row) for row in rows]
         for job in jobs:
-            if isinstance(job, OpenBookJob):
-                job.record = self._stored_record(job.record)
+            if isinstance(job, OpenBookJob) and job.record is not None:
+                job.record = self._parse_record(job.record)
         return jobs
 
-    def _execute(self, job: OpenBookJob) -> Any:
+    def _release_idle_hooks(self) -> None:
+        if self._slot_held("post_publish"):
+            return
+        row_cls = type(self).row_cls
+        with self._session() as session:
+            waiting = list(
+                session.scalars(
+                    select(row_cls)
+                    .where(
+                        row_cls.status.in_(
+                            (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
+                        )
+                    )
+                    .order_by(row_cls.created_at, row_cls.id)
+                )
+            )
+        for row in waiting:
+            job = self.job_cls.from_row(row)
+            if isinstance(job, OpenBookJob):
+                if job.record is not None:
+                    job.record = self._parse_record(job.record)
+                self._run(row.id, job)
+
+    def _run(self, job_id: int, job: OpenBookJob) -> None:
+        try:
+            self._write(job_id, JobStatus.COMPLETED, self._execute(job), None)
+        except BusError as exc:
+            self._write(job_id, JobStatus.FAILED, {}, str(exc))
+
+    def _execute(self, job: OpenBookJob) -> dict[str, Any]:
         if job.op is BookOp.ADD:
             return {"record": self._saved(self.book.add(self._input(job)))}
         if job.op is BookOp.GET:
@@ -139,7 +194,7 @@ class OpenBookJobBoard(BaseJobBoard):
                 raise BookNotFoundError(
                     f"book {self.book.record_cls.__name__!r} has no id {record_id}"
                 )
-            return {"deleted_id": record_id}
+            return {}
         raise InvalidJobError(f"unknown book op {job.op!r}")
 
     def _input(self, job: OpenBookJob) -> BaseRecord:
@@ -150,15 +205,6 @@ class OpenBookJobBoard(BaseJobBoard):
         except TypeError as exc:
             raise InvalidJobError(f"invalid {self.book.record_cls.__name__}: {exc}") from exc
 
-    def _stored_record(self, value: BaseRecord | dict[str, Any] | None) -> BaseRecord | None:
-        if value is None:
-            return None
-        data = value.to_dict() if isinstance(value, BaseRecord) else value
-        try:
-            return self.book.record_cls.parse(data)
-        except TypeError:
-            return BaseRecord.parse(data)
-
     def _get(self, job: OpenBookJob) -> dict[str, Any]:
         if job.record is not None and job.record.id:
             record = self.book.get(job.record.id)
@@ -166,27 +212,21 @@ class OpenBookJobBoard(BaseJobBoard):
                 raise BookNotFoundError(
                     f"book {self.book.record_cls.__name__!r} has no id {job.record.id}"
                 )
-            return {"record": _json_ready(record.to_dict())}
+            return {"record": record.to_dict()}
         if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("get filter must be an object")
-        return {
-            "records": [
-                _json_ready(record.to_dict()) for record in self.book.list(**(job.filter or {}))
-            ]
-        }
+        return {"records": [item.to_dict() for item in self.book.list(**(job.filter or {}))]}
 
     def _saved(self, record_id: int) -> dict[str, Any]:
         record = self.book.get(record_id)
         if record is None:
             raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {record_id}")
-        return _json_ready(record.to_dict())
+        return record.to_dict()
 
-
-def _json_ready(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return dump_dt(value)
-    if isinstance(value, Mapping):
-        return {key: _json_ready(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_ready(item) for item in value]
-    return value
+    def _parse_record(self, data: BaseRecord | Mapping[str, Any]) -> BaseRecord:
+        if isinstance(data, BaseRecord) and not isinstance(data, dict):
+            data = data.to_dict()
+        try:
+            return self.book.record_cls.parse(data)
+        except TypeError:
+            return BaseRecord.parse(data)

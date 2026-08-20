@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -27,15 +28,13 @@ def bus() -> Bus:
     return item
 
 
-def write_message(bus: Bus, op: BookOp, **values) -> OpenBookJob:
-    record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
-    filt = values.pop("filter", None)
-    job = OpenBookJob(
-        op=op,
-        record_id=int(record_id),
-        filter=filt,
-        values=values,
-    )
+def write_message(
+    bus: Bus,
+    op: BookOp,
+    record: BaseRecord | None = None,
+    filter: dict | None = None,
+) -> OpenBookJob:
+    job = OpenBookJob(op=op, record=record, filter=filter)
     job.id = bus.publish(job, worker_id=WORKER, book=Message.__name__)
     return job
 
@@ -45,16 +44,16 @@ def result(bus: Bus, job: OpenBookJob):
 
 
 def create(bus: Bus, **values) -> OpenBookJob:
-    return write_message(bus, BookOp.CREATE, **values)
+    return write_message(bus, BookOp.ADD, record=Message(**values))
 
 
 def open_conversation(bus: Bus) -> int:
     job = OpenBookJob(
-        op=BookOp.CREATE,
-        values={"delivery_address": "webui:t", "contact_id": 1, "channel": "webui"},
+        op=BookOp.ADD,
+        record=Conversation(delivery_address="webui:t", contact_id=1, channel="webui"),
     )
     job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
-    return int(bus.get_result(job, book=Conversation.__name__).record["id"])
+    return int(bus.get_result(job, book=Conversation.__name__).record.id)
 
 
 def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
@@ -83,29 +82,31 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     created = create(bus, role="user", content="hello", conversation_id=conversation_id)
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
-    assert record["role"] == "user"
-    assert record["content"] == "hello"
-    assert record["conversation_id"] == conversation_id
-    assert record["archived"] is False
-    datetime.fromisoformat(record["timestamp"])
-    datetime.fromisoformat(record["created_at"])
-    datetime.fromisoformat(record["updated_at"])
+    assert record.role == "user"
+    assert record.content == "hello"
+    assert record.conversation_id == conversation_id
+    assert record.archived is False
+    assert isinstance(record.timestamp, datetime)
+    assert isinstance(record.created_at, datetime)
+    assert isinstance(record.updated_at, datetime)
 
-    by_id = write_message(bus, BookOp.READ, id=record["id"])
+    by_id = write_message(bus, BookOp.GET, record=BaseRecord(id=record.id))
     assert result(bus, by_id).status is JobStatus.COMPLETED
-    assert result(bus, by_id).record["content"] == "hello"
+    assert result(bus, by_id).record.content == "hello"
 
-    listed = write_message(bus, BookOp.READ, filter={"conversation_id": conversation_id})
-    assert [item["id"] for item in result(bus, listed).records] == [record["id"]]
+    listed = write_message(bus, BookOp.GET, filter={"conversation_id": conversation_id})
+    assert [item.id for item in result(bus, listed).records] == [record.id]
 
-    updated = write_message(bus, BookOp.UPDATE, id=record["id"], content="hello, world")
+    updated = write_message(
+        bus, BookOp.UPDATE, record=replace(record, content="hello, world")
+    )
     assert result(bus, updated).status is JobStatus.COMPLETED
-    assert result(bus, updated).record["content"] == "hello, world"
-    assert result(bus, updated).record["role"] == "user"
+    assert result(bus, updated).record.content == "hello, world"
+    assert result(bus, updated).record.role == "user"
 
-    deleted = write_message(bus, BookOp.DELETE, id=record["id"])
+    deleted = write_message(bus, BookOp.DELETE, record=BaseRecord(id=record.id))
     assert result(bus, deleted).status is JobStatus.COMPLETED
-    missing = write_message(bus, BookOp.READ, id=record["id"])
+    missing = write_message(bus, BookOp.GET, record=BaseRecord(id=record.id))
     assert result(bus, missing).status is JobStatus.FAILED
 
 
@@ -121,23 +122,23 @@ def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
     )
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
-    assert record["timestamp"] == stamped.isoformat()
-    assert record["archived"] is True
+    assert record.timestamp == stamped
+    assert record.archived is True
 
-    listed = write_message(bus, BookOp.READ, filter={"archived": True})
-    assert [item["id"] for item in result(bus, listed).records] == [record["id"]]
+    listed = write_message(bus, BookOp.GET, filter={"archived": True})
+    assert [item.id for item in result(bus, listed).records] == [record.id]
 
 
 def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
-    assert result(bus, create(bus, content="nope")).status is JobStatus.FAILED
-    listed = write_message(bus, BookOp.READ)
+    assert result(bus, write_message(bus, BookOp.ADD)).status is JobStatus.FAILED
+    listed = write_message(bus, BookOp.GET)
     assert result(bus, listed).status is JobStatus.COMPLETED
     assert result(bus, listed).records == []
 
 
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
     first = create(bus, role="assistant", content="ok")
-    create(bus, content="x")
+    write_message(bus, BookOp.ADD)
     history = bus.list(OpenBookJob, book=Message.__name__)
     assert [result(bus, job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     assert isinstance(

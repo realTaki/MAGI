@@ -12,6 +12,3 @@ class FileBackend:
 
     def ensure(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-
-    def close(self) -> None:
-        return

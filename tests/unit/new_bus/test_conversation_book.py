@@ -20,15 +20,13 @@ def _bus() -> Bus:
     return item
 
 
-def write_conversation(bus: Bus, op: BookOp, **values) -> OpenBookJob:
-    record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
-    filt = values.pop("filter", None)
-    job = OpenBookJob(
-        op=op,
-        record_id=int(record_id),
-        filter=filt,
-        values=values,
-    )
+def write_conversation(
+    bus: Bus,
+    op: BookOp,
+    record: BaseRecord | None = None,
+    filter: dict | None = None,
+) -> OpenBookJob:
+    job = OpenBookJob(op=op, record=record, filter=filter)
     job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
     return job
 
@@ -41,7 +39,7 @@ def create_conversation(bus: Bus, **values) -> OpenBookJob:
     values.setdefault("delivery_address", "webui:test")
     values.setdefault("contact_id", 1)
     values.setdefault("channel", "webui")
-    return write_conversation(bus, BookOp.CREATE, **values)
+    return write_conversation(bus, BookOp.ADD, record=Conversation(**values))
 
 
 def test_bus_starts_with_conversation_firmware() -> None:
@@ -71,15 +69,15 @@ def test_create_read_filter_conversation() -> None:
     )
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
-    assert record["delivery_address"] == "tg:123"
-    assert record["contact_id"] == 7
-    assert record["channel"] == "tg"
-    assert record["title"] == "hello"
-    assert record["summary"] == "hi"
-    assert record["last_compaction_at"] is None
+    assert record.delivery_address == "tg:123"
+    assert record.contact_id == 7
+    assert record.channel == "tg"
+    assert record.title == "hello"
+    assert record.summary == "hi"
+    assert record.last_compaction_at is None
 
-    listed = write_conversation(bus, BookOp.READ, filter={"contact_id": 7})
-    assert [item["id"] for item in result(bus, listed).records] == [record["id"]]
+    listed = write_conversation(bus, BookOp.GET, filter={"contact_id": 7})
+    assert [item.id for item in result(bus, listed).records] == [record.id]
 
 
 def test_last_compaction_at_round_trips() -> None:
@@ -87,10 +85,12 @@ def test_last_compaction_at_round_trips() -> None:
     stamped = datetime(2026, 8, 18, 12, 0)
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
     assert result(bus, created).status is JobStatus.COMPLETED
-    assert result(bus, created).record["last_compaction_at"] == stamped.isoformat()
+    assert result(bus, created).record.last_compaction_at == stamped
 
-    loaded = write_conversation(bus, BookOp.READ, id=result(bus, created).record["id"])
-    assert result(bus, loaded).record["last_compaction_at"] == stamped.isoformat()
+    loaded = write_conversation(
+        bus, BookOp.GET, record=BaseRecord(id=result(bus, created).record.id)
+    )
+    assert result(bus, loaded).record.last_compaction_at == stamped
 
 
 def test_messages_can_be_listed_by_conversation() -> None:
@@ -98,21 +98,21 @@ def test_messages_can_be_listed_by_conversation() -> None:
 
     bus = _bus()
     conversation = create_conversation(bus, title="thread")
-    conversation_id = result(bus, conversation).record["id"]
+    conversation_id = result(bus, conversation).record.id
 
     bus.publish(
         OpenBookJob(
-            op=BookOp.CREATE,
-            values={"role": "user", "content": "hi", "conversation_id": conversation_id},
+            op=BookOp.ADD,
+            record=Message(role="user", content="hi", conversation_id=conversation_id),
         ),
         worker_id=WORKER,
         book=Message.__name__,
     )
     listed = OpenBookJob(
-        op=BookOp.READ,
+        op=BookOp.GET,
         filter={"conversation_id": conversation_id},
     )
     listed.id = bus.publish(listed, worker_id=WORKER, book=Message.__name__)
     records = bus.get_result(listed, book=Message.__name__).records
     assert len(records) == 1
-    assert records[0]["conversation_id"] == conversation_id
+    assert records[0].conversation_id == conversation_id
