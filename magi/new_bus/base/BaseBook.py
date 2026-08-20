@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from typing import Any, ClassVar, Self, get_type_hints
+from typing import Any, ClassVar, Self, get_args, get_origin, get_type_hints
 
 from sqlalchemy import DateTime, Integer, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -26,14 +26,25 @@ class BaseRecord:
         return asdict(self)
 
     @classmethod
+    def _type_hints(cls) -> dict[str, Any]:
+        localns: dict[str, Any] = dict(vars(cls))
+        for klass in cls.__mro__:
+            for base in getattr(klass, "__orig_bases__", ()):
+                origin = get_origin(base)
+                if origin is None:
+                    continue
+                for param, arg in zip(getattr(origin, "__type_params__", ()), get_args(base)):
+                    localns[getattr(param, "__name__", str(param))] = arg
+        return get_type_hints(cls, localns=localns)
+
+    @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
-        hints = get_type_hints(cls)
-        allowed = {item.name for item in fields(cls)}
+        hints = cls._type_hints()
         return cls(
             **{
-                key: load_dt(hints.get(key), value)
+                key: load_dt(hints[key], value)
                 for key, value in data.items()
-                if key in allowed
+                if key in hints
             }
         )
 
