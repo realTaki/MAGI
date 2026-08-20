@@ -84,7 +84,6 @@ class BaseBook:
         now = utcnow()
         prepared = replace(
             record,
-            id=0,
             created_at=record.created_at or now,
             updated_at=now,
         )
@@ -113,7 +112,7 @@ class BaseBook:
             if row is None:
                 return False
             stored = replace(
-                record, id=row.id, created_at=row.created_at, updated_at=utcnow()
+                record, created_at=row.created_at, updated_at=utcnow()
             )
             values = stored.to_dict()
             values.pop("id", None)

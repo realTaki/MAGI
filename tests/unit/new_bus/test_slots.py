@@ -59,7 +59,9 @@ def test_post_publish_then_submit_admits_to_pending(bus: Bus) -> None:
     assert inspected.id == job.id
     assert bus.check_job_status(job) is JobStatus.HOOKING
 
-    assert bus.submit_post_publish(inspected, BaseJobResult(), worker_id=inspector)
+    assert bus.submit_post_publish(
+        inspected, BaseJobResult(status=JobStatus.PENDING), worker_id=inspector
+    )
     assert bus.check_job_status(job) is JobStatus.PENDING
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
@@ -95,3 +97,63 @@ def test_expired_post_publish_slot_releases_preparing(bus: Bus) -> None:
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
     assert claimed.id == job.id
+
+
+def test_vacant_post_result_is_readable(bus: Bus) -> None:
+    bus.publish(PingJob(), worker_id=WORKER)
+    claimed = bus.claim(PingJob, worker_id=WORKER)
+    assert claimed is not None
+    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+
+
+def test_post_result_then_submit_admits_result(bus: Bus) -> None:
+    hook = "hook"
+    bus.attach(hook, PingJob, ("post_result", "submit_post_result"))
+    bus.publish(PingJob(), worker_id=WORKER)
+    claimed = bus.claim(PingJob, worker_id=WORKER)
+    assert claimed is not None
+    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    assert bus.check_job_status(claimed) is JobStatus.SETTLING
+    assert bus.get_result(claimed) is None
+
+    hooked = bus.post_result(PingJob, worker_id=hook)
+    assert hooked is not None
+    assert hooked.id == claimed.id
+    assert bus.check_job_status(claimed) is JobStatus.FINALIZING
+
+    assert bus.submit_post_result(hooked, BaseJobResult(), worker_id=hook)
+    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+
+
+def test_submit_post_result_can_fail_the_job(bus: Bus) -> None:
+    hook = "hook"
+    bus.attach(hook, PingJob, ("post_result", "submit_post_result"))
+    bus.publish(PingJob(), worker_id=WORKER)
+    claimed = bus.claim(PingJob, worker_id=WORKER)
+    assert claimed is not None
+    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    hooked = bus.post_result(PingJob, worker_id=hook)
+    assert hooked is not None
+    assert bus.submit_post_result(
+        hooked, BaseJobResult(status=JobStatus.FAILED, error="rejected"), worker_id=hook
+    )
+    outcome = bus.get_result(claimed)
+    assert outcome.status is JobStatus.FAILED
+    assert outcome.error == "rejected"
+
+
+def test_expired_post_result_slot_releases_settling(bus: Bus) -> None:
+    hook = "hook"
+    bus.attach(hook, PingJob, ("post_result", "submit_post_result"))
+    bus.publish(PingJob(), worker_id=WORKER)
+    claimed = bus.claim(PingJob, worker_id=WORKER)
+    assert claimed is not None
+    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    assert bus.check_job_status(claimed) is JobStatus.SETTLING
+    past = utcnow() - timedelta(seconds=1)
+    board = bus.job_board(PingJob)
+    holder = board._held.get("post_result")
+    assert holder is not None
+    board._held["post_result"] = (holder[0], past)
+    assert bus.get_result(claimed).status is JobStatus.COMPLETED

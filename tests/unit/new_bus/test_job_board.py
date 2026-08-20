@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from magi.new_bus import BaseJobResult, Bus, InvalidJobError, InvalidJobStateError, JobStatus
+from magi.new_bus import BaseJobResult, Bus, InvalidJobError, JobStatus
 from magi.new_bus.base.engine import EngineFactory
 from magi.new_bus.testing import WORKER, PingJob, PingJobBoard, occupy
 
@@ -64,8 +64,7 @@ def test_claim_empty_board(bus: Bus) -> None:
 def test_illegal_complete_from_pending(bus: Bus) -> None:
     job = PingJob()
     job.id = bus.publish(job, worker_id=WORKER)
-    with pytest.raises(InvalidJobStateError):
-        bus.submit_result(job, BaseJobResult(id=job.id), worker_id=WORKER)
+    assert not bus.submit_result(job, BaseJobResult(id=job.id), worker_id=WORKER)
 
 
 def test_complete_twice_is_illegal(bus: Bus) -> None:
@@ -73,8 +72,7 @@ def test_complete_twice_is_illegal(bus: Bus) -> None:
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
     bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    with pytest.raises(InvalidJobStateError):
-        bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
+    assert not bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
 
 
 def test_list_filters_status(bus: Bus) -> None:

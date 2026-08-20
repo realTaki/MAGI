@@ -14,13 +14,13 @@ from enum import StrEnum
 from functools import wraps
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Text, select, update
+from sqlalchemy import Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
-from .time import dump_dt, utcnow
+from .time import utcnow
 
 LEASE = timedelta(seconds=1)
 
@@ -46,6 +46,8 @@ class JobStatus(StrEnum):
     PENDING = "pending"
     HOOKING = "hooking"
     CLAIMED = "claimed"
+    SETTLING = "settling"
+    FINALIZING = "finalizing"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -116,19 +118,35 @@ class BaseJobBoard:
         holder = self._held.get(name)
         return holder is not None and holder[1] > utcnow()
 
-    def _release_preparing_if_idle(self) -> None:
-        if self._slot_held("post_publish"):
+    def _release_idle_hooks(self) -> None:
+        skip_publish = self._slot_held("post_publish")
+        skip_result = self._slot_held("post_result")
+        if skip_publish and skip_result:
             return
+        row_cls = type(self).row_cls
         with self._session() as session:
-            session.execute(
-                update(type(self).row_cls)
-                .where(
-                    type(self).row_cls.status.in_(
-                        (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
+            if not skip_publish:
+                session.execute(
+                    update(row_cls)
+                    .where(
+                        row_cls.status.in_(
+                            (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
+                        )
                     )
+                    .values(status=JobStatus.PENDING.value)
                 )
-                .values(status=JobStatus.PENDING.value)
-            )
+            if not skip_result:
+                waiting = (JobStatus.SETTLING.value, JobStatus.FINALIZING.value)
+                session.execute(
+                    update(row_cls)
+                    .where(row_cls.status.in_(waiting), row_cls.error.is_(None))
+                    .values(status=JobStatus.COMPLETED.value)
+                )
+                session.execute(
+                    update(row_cls)
+                    .where(row_cls.status.in_(waiting), row_cls.error.is_not(None))
+                    .values(status=JobStatus.FAILED.value)
+                )
             session.commit()
 
     def _pull(self, src: JobStatus, dst: JobStatus) -> BaseJob | None:
@@ -164,11 +182,11 @@ class BaseJobBoard:
         now = utcnow()
         prepared = replace(
             job,
-            id=0,
             created_at=now,
             updated_at=now,
         )
-        values = _row_kwargs(type(self).row_cls, prepared.to_dict())
+        values = prepared.to_dict()
+        values.pop("id", None)
         values["status"] = (
             JobStatus.PREPARING.value
             if self._slot_held("post_publish")
@@ -194,42 +212,67 @@ class BaseJobBoard:
                 raise InvalidJobStateError(
                     f"{self.job_cls.__qualname__} {job_id} is {row.status}, not hooking"
                 )
-            if result.status is JobStatus.FAILED:
-                row.status = JobStatus.FAILED.value
-                row.error = result.error
-            else:
-                row.status = JobStatus.PENDING.value
-                row.error = None
+            prepared = replace(
+                result,
+                created_at=row.created_at,
+                updated_at=utcnow(),
+            )
+            values = prepared.to_dict()
+            values.pop("id", None)
+            for key, value in values.items():
+                setattr(row, key, value)
             session.commit()
             return True
 
     @slot
     def claim(self, *, worker_id: str) -> BaseJob | None:
-        self._release_preparing_if_idle()
+        self._release_idle_hooks()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
     def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
-            if row is None:
+            if row is None or row.status != JobStatus.CLAIMED.value:
                 return False
-            if row.status != JobStatus.CLAIMED.value:
-                raise InvalidJobStateError(
-                    f"{self.job_cls.__qualname__} {job_id} is {row.status}, not claimed"
-                )
             prepared = replace(
                 result,
-                id=row.id,
                 created_at=row.created_at,
                 updated_at=utcnow(),
             )
-            for key, value in _row_kwargs(type(self).row_cls, prepared.to_dict()).items():
+            values = prepared.to_dict()
+            values.pop("id", None)
+            for key, value in values.items():
+                setattr(row, key, value)
+            if self._slot_held("post_result"):
+                row.status = JobStatus.SETTLING.value
+            session.commit()
+            return True
+
+    @slot
+    def post_result(self, *, worker_id: str) -> BaseJob | None:
+        return self._pull(JobStatus.SETTLING, JobStatus.FINALIZING)
+
+    @slot
+    def submit_post_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+            if row is None or row.status != JobStatus.FINALIZING.value:
+                return False
+            prepared = replace(
+                result,
+                created_at=row.created_at,
+                updated_at=utcnow(),
+            )
+            values = prepared.to_dict()
+            values.pop("id", None)
+            for key, value in values.items():
                 setattr(row, key, value)
             session.commit()
             return True
 
     def get_result(self, job_id: int) -> BaseJobResult | None:
+        self._release_idle_hooks()
         row = self._get_row(job_id)
         if row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
             return None
@@ -239,6 +282,7 @@ class BaseJobBoard:
         return parsed
 
     def check_job_status(self, job_id: int) -> JobStatus | None:
+        self._release_idle_hooks()
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None:
@@ -268,29 +312,7 @@ class BaseJobBoard:
             if row is None:
                 raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
             values = {"status": status.value, "error": error, **extra}
-            for key, value in _row_kwargs(type(self).row_cls, values).items():
+            values.pop("id", None)
+            for key, value in values.items():
                 setattr(row, key, value)
             session.commit()
-
-
-def _json_ready(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return dump_dt(value)
-    if isinstance(value, Mapping):
-        return {key: _json_ready(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_json_ready(item) for item in value]
-    return value
-
-
-def _row_kwargs(row_cls: type[BaseJobRow], values: Mapping[str, Any]) -> dict[str, Any]:
-    columns = {column.key: column for column in row_cls.__table__.columns}
-    out: dict[str, Any] = {}
-    for key, value in values.items():
-        if key == "id":
-            continue
-        column = columns.get(key)
-        if column is None:
-            continue
-        out[key] = _json_ready(value) if isinstance(column.type, JSON) else value
-    return out
