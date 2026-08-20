@@ -2,18 +2,31 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import Text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..base.BaseBook import BaseBook
-from ..base.BaseJob import BaseJob
-from ..base.BaseRecord import BaseRecord, BaseRecordMixin
-from ..base.manageBookJob import BookOp, ManageBookJob
+from ..base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
+from ..base.BaseJob import BaseJob, BaseJobBoard, BaseJobRow
+from ..base.errors import InvalidJobError
+from ..base.openBookJob import BookOp, OpenBookJob, OpenBookJobBoard, OpenBookJobRow
+
+WORKER = "test"
 
 
 @dataclass
 class PingJob(BaseJob):
     n: int = 0
+
+
+class PingJobRow(BaseJobRow):
+    __tablename__ = "jobs_PingJob"
+
+    n: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class PingJobBoard(BaseJobBoard):
+    job_cls = PingJob
+    row_cls = PingJobRow
 
 
 @dataclass(kw_only=True)
@@ -30,18 +43,32 @@ class ItemRow(BaseRecordMixin):
 
 
 class ItemBook(BaseBook):
-    name = "items"
     record_cls = Item
     row_cls = ItemRow
 
 
-def book_job(op: BookOp, **values) -> ManageBookJob:
-    record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
+class OpenItemJobRow(OpenBookJobRow):
+    __tablename__ = "jobs_book_Item"
+
+
+class OpenItemJobBoard(OpenBookJobBoard):
+    book_cls = ItemBook
+    row_cls = OpenItemJobRow
+
+
+def book_job(op: BookOp, record: BaseRecord | None = None, **values) -> OpenBookJob:
     filt = values.pop("filter", None)
-    return ManageBookJob(
-        book="items",
-        op=op,
-        record_id=int(record_id),
-        filter=filt,
-        values=values,
-    )
+    if record is None and values:
+        record = Item(**values)
+    return OpenBookJob(op=op, record=record, filter=filt)
+
+
+def occupy(bus, worker_id: str = WORKER) -> None:
+    """Take publish/claim/submit_result on every mounted work board, and publish on book boards."""
+    for job_type in bus.jobs:
+        bus.attach(worker_id, job_type, ("publish", "claim", "submit_result"))
+    for book in bus.books:
+        try:
+            bus.attach(worker_id, OpenBookJob, ("publish",), book=book)
+        except InvalidJobError:
+            continue

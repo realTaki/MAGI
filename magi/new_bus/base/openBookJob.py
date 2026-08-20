@@ -109,7 +109,8 @@ class OpenBookJobBoard(BaseJobBoard):
         raise InvalidJobError("OpenBookJob completes itself")
 
     def get_result(self, job_id: int) -> BaseJobResult | None:
-        self._release_idle_hooks()
+        self.release_idle_slots()
+        self._run_pending(job_id)
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
@@ -143,28 +144,21 @@ class OpenBookJobBoard(BaseJobBoard):
                 job.record = self._parse_record(job.record)
         return jobs
 
-    def _release_idle_hooks(self) -> None:
-        if self._slot_held("post_publish"):
-            return
-        row_cls = type(self).row_cls
+    def check_job_status(self, job_id: int) -> JobStatus | None:
+        self.release_idle_slots()
+        self._run_pending(job_id)
+        return super().check_job_status(job_id)
+
+    def _run_pending(self, job_id: int) -> None:
         with self._session() as session:
-            waiting = list(
-                session.scalars(
-                    select(row_cls)
-                    .where(
-                        row_cls.status.in_(
-                            (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
-                        )
-                    )
-                    .order_by(row_cls.created_at, row_cls.id)
-                )
-            )
-        for row in waiting:
-            job = self.job_cls.from_row(row)
-            if isinstance(job, OpenBookJob):
-                if job.record is not None:
-                    job.record = self._parse_record(job.record)
-                self._run(row.id, job)
+            row = session.get(type(self).row_cls, job_id)
+        if row is None or row.status != JobStatus.PENDING.value:
+            return
+        job = self.job_cls.from_row(row)
+        if isinstance(job, OpenBookJob):
+            if job.record is not None:
+                job.record = self._parse_record(job.record)
+            self._run(job_id, job)
 
     def _run(self, job_id: int, job: OpenBookJob) -> None:
         try:

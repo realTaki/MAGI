@@ -43,8 +43,8 @@ def slot(fn):
 
 class JobStatus(StrEnum):
     PREPARING = "preparing"
-    PENDING = "pending"
     HOOKING = "hooking"
+    PENDING = "pending"
     CLAIMED = "claimed"
     SETTLING = "settling"
     FINALIZING = "finalizing"
@@ -118,7 +118,7 @@ class BaseJobBoard:
         holder = self._held.get(name)
         return holder is not None and holder[1] > utcnow()
 
-    def _release_idle_hooks(self) -> None:
+    def release_idle_slots(self) -> None:
         skip_publish = self._slot_held("post_publish")
         skip_result = self._slot_held("post_result")
         if skip_publish and skip_result:
@@ -226,7 +226,7 @@ class BaseJobBoard:
 
     @slot
     def claim(self, *, worker_id: str) -> BaseJob | None:
-        self._release_idle_hooks()
+        self.release_idle_slots()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
@@ -272,7 +272,7 @@ class BaseJobBoard:
             return True
 
     def get_result(self, job_id: int) -> BaseJobResult | None:
-        self._release_idle_hooks()
+        self.release_idle_slots()
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
@@ -283,7 +283,7 @@ class BaseJobBoard:
         return parsed
 
     def check_job_status(self, job_id: int) -> JobStatus | None:
-        self._release_idle_hooks()
+        self.release_idle_slots()
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None:

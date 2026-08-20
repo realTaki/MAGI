@@ -1,8 +1,8 @@
-"""In-memory Backend for tests. Not part of the official backend set."""
+"""In-memory EngineFactory for tests. Not part of the official backend set."""
 
 from __future__ import annotations
 
-from ..base.backends.sqlite import SQLiteBackend
+from ..base.engine import SQLiteBackend
 
 
 class InMemoryBackend(SQLiteBackend):
