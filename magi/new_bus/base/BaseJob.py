@@ -7,19 +7,19 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import wraps
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from sqlalchemy import Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .errors import InvalidJobError, InvalidJobStateError, JobNotFoundError
+from .errors import InvalidJobError, InvalidJobStateError
 from .time import utcnow
 
 LEASE = timedelta(seconds=1)
@@ -273,8 +273,9 @@ class BaseJobBoard:
 
     def get_result(self, job_id: int) -> BaseJobResult | None:
         self._release_idle_hooks()
-        row = self._get_row(job_id)
-        if row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+        if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
             return None
         parsed = type(self).result_cls.from_row(row)
         parsed.status = JobStatus(row.status)
@@ -296,23 +297,3 @@ class BaseJobBoard:
                 stmt = stmt.where(type(self).row_cls.status == status.value)
             rows = list(session.scalars(stmt))
         return [self.job_cls.from_row(row) for row in rows]
-
-    def _get_row(self, job_id: int) -> BaseJobRow:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-            if row is None:
-                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
-            return row
-
-    def _write(
-        self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None
-    ) -> None:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-            if row is None:
-                raise JobNotFoundError(f"{self.job_cls.__qualname__} {job_id} not found")
-            values = {"status": status.value, "error": error, **extra}
-            values.pop("id", None)
-            for key, value in values.items():
-                setattr(row, key, value)
-            session.commit()
