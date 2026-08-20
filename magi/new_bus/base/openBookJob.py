@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar, Self, get_type_hints
 
@@ -14,7 +15,7 @@ from .BaseBook import BaseBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, slot
 from .engine import EngineFactory
 from .errors import BookNotFoundError, BusError, InvalidJobError
-from .time import load_dt
+from .time import dump_dt, load_dt
 
 
 class BookOp(StrEnum):
@@ -26,9 +27,8 @@ class BookOp(StrEnum):
 
 @dataclass
 class OpenBookJob(BaseJob):
-    """``op`` selects create / read / update / delete on ``book``."""
+    """``op`` selects create / read / update / delete on this board's book."""
 
-    book: str = ""
     op: BookOp = BookOp.READ
     record_id: int = 0
     filter: dict[str, Any] | None = None
@@ -52,7 +52,6 @@ class OpenBookJobResult(BaseJobResult):
 class OpenBookJobRow(BaseJobRow):
     __abstract__ = True
 
-    book: Mapped[str] = mapped_column(Text, nullable=False, default="")
     op: Mapped[str] = mapped_column(Text, nullable=False, default=BookOp.READ.value)
     record_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     filter: Mapped[dict[str, Any] | None] = mapped_column("job_filter", JSON, nullable=True)
@@ -62,45 +61,26 @@ class OpenBookJobRow(BaseJobRow):
     deleted_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
-_OPEN_ROWS: dict[str, type[OpenBookJobRow]] = {}
-
-
-def _open_row(book: str) -> type[OpenBookJobRow]:
-    table = f"jobs_book_{book}"
-    if table not in _OPEN_ROWS:
-        _OPEN_ROWS[table] = type(table, (OpenBookJobRow,), {"__tablename__": table})
-    return _OPEN_ROWS[table]
-
-
 class OpenBookJobBoard(BaseJobBoard):
-    """Per-BaseBook board. publish runs the op; claim is not used."""
+    """Per-BaseBook board. Subclasses set book_cls and row_cls. publish runs the op; claim is not used."""
 
     job_cls: ClassVar[type[BaseJob]] = OpenBookJob
     result_cls: ClassVar[type[BaseJobResult]] = OpenBookJobResult
+    book_cls: ClassVar[type[BaseBook]]
 
-    def __init__(self, book: BaseBook, factory: EngineFactory) -> None:
-        self.book = book
+    def __init__(self, factory: EngineFactory) -> None:
         super().__init__(factory)
-
-    @classmethod
-    def for_book(cls, book: BaseBook, factory: EngineFactory) -> OpenBookJobBoard:
-        board_cls = type(
-            f"Open{book.record_cls.__name__}JobBoard",
-            (cls,),
-            {"row_cls": _open_row(book.record_cls.__name__)},
-        )
-        return board_cls(book, factory)
+        self.book = type(self).book_cls(factory)
 
     @slot
     def publish(self, job: BaseJob, *, worker_id: str) -> int:
         if not isinstance(job, OpenBookJob):
             raise InvalidJobError("book board only accepts OpenBookJob")
-        if not job.book:
-            raise InvalidJobError("OpenBookJob.book is required")
-        if job.book != self.book.record_cls.__name__:
-            raise InvalidJobError(
-                f"job.book is {job.book!r}, this board is {self.book.record_cls.__name__!r}"
-            )
+        job = replace(
+            job,
+            filter=_json_ready(job.filter) if job.filter is not None else None,
+            values=_json_ready(job.values),
+        )
         job_id = super().publish(job, worker_id=worker_id)
         try:
             outcome = self._execute(job)
@@ -108,6 +88,19 @@ class OpenBookJobBoard(BaseJobBoard):
         except BusError as exc:
             self._write(job_id, JobStatus.FAILED, {}, str(exc))
         return job_id
+
+    def _write(
+        self, job_id: int, status: JobStatus, extra: Mapping[str, Any], error: str | None
+    ) -> None:
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job_id)
+            if row is None:
+                return
+            values = {"status": status.value, "error": error, **extra}
+            values.pop("id", None)
+            for key, value in values.items():
+                setattr(row, key, value)
+            session.commit()
 
     def claim(self, *, worker_id: str) -> BaseJob | None:
         del worker_id
@@ -158,19 +151,33 @@ class OpenBookJobBoard(BaseJobBoard):
             record = self.book.get(job.record_id)
             if record is None:
                 raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {job.record_id}")
-            return {"record": record.to_dict()}
+            return {"record": _json_ready(record.to_dict())}
         if job.filter is not None and not isinstance(job.filter, dict):
             raise InvalidJobError("read filter must be an object")
-        return {"records": [record.to_dict() for record in self.book.list(**(job.filter or {}))]}
+        return {
+            "records": [
+                _json_ready(record.to_dict()) for record in self.book.list(**(job.filter or {}))
+            ]
+        }
 
     def _record(self, record_id: int) -> dict[str, Any]:
         record = self.book.get(record_id)
         if record is None:
             raise BookNotFoundError(f"book {self.book.record_cls.__name__!r} has no id {record_id}")
-        return record.to_dict()
+        return _json_ready(record.to_dict())
 
 
 def _record_id(job: OpenBookJob) -> int:
     if not job.record_id:
         raise InvalidJobError("record_id is required")
     return job.record_id
+
+
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return dump_dt(value)
+    if isinstance(value, Mapping):
+        return {key: _json_ready(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    return value

@@ -35,14 +35,17 @@ def write_message(bus: Bus, op: BookOp, **values) -> OpenBookJob:
     record_id = values.pop("id", 0) or values.pop("record_id", 0) or 0
     filt = values.pop("filter", None)
     job = OpenBookJob(
-        book=Message.__name__,
         op=op,
         record_id=int(record_id),
         filter=filt,
         values=values,
     )
-    job.id = bus.publish(job, worker_id=WORKER)
+    job.id = bus.publish(job, worker_id=WORKER, book=Message.__name__)
     return job
+
+
+def result(bus: Bus, job: OpenBookJob):
+    return bus.get_result(job, book=Message.__name__)
 
 
 def create(bus: Bus, **values) -> OpenBookJob:
@@ -51,12 +54,11 @@ def create(bus: Bus, **values) -> OpenBookJob:
 
 def open_conversation(bus: Bus) -> int:
     job = OpenBookJob(
-        book=Conversation.__name__,
         op=BookOp.CREATE,
         values={"delivery_address": "webui:t", "contact_id": 1, "channel": "webui"},
     )
-    job.id = bus.publish(job, worker_id=WORKER)
-    return int(bus.get_result(job).record["id"])
+    job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
+    return int(bus.get_result(job, book=Conversation.__name__).record["id"])
 
 
 def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
@@ -85,8 +87,8 @@ def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
 def test_create_read_update_delete_message(bus: Bus) -> None:
     conversation_id = open_conversation(bus)
     created = create(bus, role="user", content="hello", conversation_id=conversation_id)
-    assert bus.get_result(created).status is JobStatus.COMPLETED
-    record = bus.get_result(created).record
+    assert result(bus, created).status is JobStatus.COMPLETED
+    record = result(bus, created).record
     assert record["role"] == "user"
     assert record["content"] == "hello"
     assert record["conversation_id"] == conversation_id
@@ -96,21 +98,21 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     datetime.fromisoformat(record["updated_at"])
 
     by_id = write_message(bus, BookOp.READ, id=record["id"])
-    assert bus.get_result(by_id).status is JobStatus.COMPLETED
-    assert bus.get_result(by_id).record["content"] == "hello"
+    assert result(bus, by_id).status is JobStatus.COMPLETED
+    assert result(bus, by_id).record["content"] == "hello"
 
     listed = write_message(bus, BookOp.READ, filter={"conversation_id": conversation_id})
-    assert [item["id"] for item in bus.get_result(listed).records] == [record["id"]]
+    assert [item["id"] for item in result(bus, listed).records] == [record["id"]]
 
     updated = write_message(bus, BookOp.UPDATE, id=record["id"], content="hello, world")
-    assert bus.get_result(updated).status is JobStatus.COMPLETED
-    assert bus.get_result(updated).record["content"] == "hello, world"
-    assert bus.get_result(updated).record["role"] == "user"
+    assert result(bus, updated).status is JobStatus.COMPLETED
+    assert result(bus, updated).record["content"] == "hello, world"
+    assert result(bus, updated).record["role"] == "user"
 
     deleted = write_message(bus, BookOp.DELETE, id=record["id"])
-    assert bus.get_result(deleted).status is JobStatus.COMPLETED
+    assert result(bus, deleted).status is JobStatus.COMPLETED
     missing = write_message(bus, BookOp.READ, id=record["id"])
-    assert bus.get_result(missing).status is JobStatus.FAILED
+    assert result(bus, missing).status is JobStatus.FAILED
 
 
 def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
@@ -123,27 +125,27 @@ def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
         timestamp=stamped,
         archived=True,
     )
-    assert bus.get_result(created).status is JobStatus.COMPLETED
-    record = bus.get_result(created).record
+    assert result(bus, created).status is JobStatus.COMPLETED
+    record = result(bus, created).record
     assert record["timestamp"] == stamped.isoformat()
     assert record["archived"] is True
 
     listed = write_message(bus, BookOp.READ, filter={"archived": True})
-    assert [item["id"] for item in bus.get_result(listed).records] == [record["id"]]
+    assert [item["id"] for item in result(bus, listed).records] == [record["id"]]
 
 
 def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
-    assert bus.get_result(create(bus, content="nope")).status is JobStatus.FAILED
+    assert result(bus, create(bus, content="nope")).status is JobStatus.FAILED
     listed = write_message(bus, BookOp.READ)
-    assert bus.get_result(listed).status is JobStatus.COMPLETED
-    assert bus.get_result(listed).records == []
+    assert result(bus, listed).status is JobStatus.COMPLETED
+    assert result(bus, listed).records == []
 
 
 def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
     first = create(bus, role="assistant", content="ok")
     create(bus, content="x")
     history = bus.list(OpenBookJob, book=Message.__name__)
-    assert [bus.get_result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
+    assert [result(bus, job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
     assert isinstance(
         next(job for job in history if job.id == first.id), OpenBookJob
     )
@@ -163,7 +165,7 @@ def test_message_job_board_is_on_the_bus(bus: Bus) -> None:
 
 def test_message_job_board_publish_claim_complete(bus: Bus) -> None:
     stored = create(bus, role="user", content="ping", conversation_id=open_conversation(bus))
-    message_id = bus.get_result(stored).record["id"]
+    message_id = result(bus, stored).record["id"]
 
     board = bus.job_board(ManageMessageJob)
     published = ManageMessageJob(message_id=message_id, conversation_id=1, publisher="inbox")
