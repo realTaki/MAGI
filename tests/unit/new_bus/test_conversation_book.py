@@ -4,15 +4,12 @@ import dataclasses
 from datetime import datetime
 
 from magi.new_bus import (
-    BaseJobResult,
     BaseRecord,
     BookOp,
     Bus,
     Conversation,
     JobStatus,
     OpenBookJob,
-    ManageConversationJob,
-    ManageConversationJobBoard,
 )
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
 
@@ -50,7 +47,6 @@ def create_conversation(bus: Bus, **values) -> OpenBookJob:
 def test_bus_starts_with_conversation_firmware() -> None:
     bus = _bus()
     assert Conversation.__name__ in bus.books
-    assert ManageConversationJob in bus.jobs
     assert bus.record_type(Conversation.__name__) is Conversation
     owned = {field.name for field in dataclasses.fields(BaseRecord)}
     assert {field.name for field in dataclasses.fields(Conversation)} - owned == {
@@ -120,18 +116,3 @@ def test_messages_can_be_listed_by_conversation() -> None:
     records = bus.get_result(listed, book=Message.__name__).records
     assert len(records) == 1
     assert records[0]["conversation_id"] == conversation_id
-
-
-def test_conversation_job_board_publish_claim_complete() -> None:
-    bus = _bus()
-    stored = create_conversation(bus, title="inbox")
-    conversation_id = result(bus, stored).record["id"]
-
-    board = bus.job_board(ManageConversationJob)
-    assert isinstance(board, ManageConversationJobBoard)
-    board.publish(ManageConversationJob(conversation_id=conversation_id), worker_id=WORKER)
-    claimed = board.claim(worker_id=WORKER)
-    assert claimed is not None
-    assert claimed.conversation_id == conversation_id
-    board.submit_result(claimed.id, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    assert board.get_result(claimed.id).status is JobStatus.COMPLETED

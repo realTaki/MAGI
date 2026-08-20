@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from magi.new_bus import (
-    BaseJobResult,
     BaseRecord,
     BookOp,
     Bus,
@@ -16,9 +15,6 @@ from magi.new_bus import (
     InvalidJobError,
     JobStatus,
     OpenBookJob,
-    ManageConversationJob,
-    ManageMessageJob,
-    ManageMessageJobBoard,
     Message,
 )
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
@@ -64,8 +60,6 @@ def open_conversation(bus: Bus) -> int:
 def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
     assert Message.__name__ in bus.books
     assert Conversation.__name__ in bus.books
-    assert ManageMessageJob in bus.jobs
-    assert ManageConversationJob in bus.jobs
     assert bus.record_type(Message.__name__) is Message
     assert bus.record_type(Conversation.__name__) is Conversation
     assert issubclass(Message, BaseRecord)
@@ -155,54 +149,6 @@ def test_book_jobs_cannot_be_claimed(bus: Bus) -> None:
     create(bus, role="system", content="boot")
     with pytest.raises(InvalidJobError):
         bus.claim(OpenBookJob, worker_id=WORKER)
-
-
-def test_message_job_board_is_on_the_bus(bus: Bus) -> None:
-    board = bus.job_board(ManageMessageJob)
-    assert isinstance(board, ManageMessageJobBoard)
-    assert board is bus.job_board(ManageMessageJob)
-
-
-def test_message_job_board_publish_claim_complete(bus: Bus) -> None:
-    stored = create(bus, role="user", content="ping", conversation_id=open_conversation(bus))
-    message_id = result(bus, stored).record["id"]
-
-    board = bus.job_board(ManageMessageJob)
-    published = ManageMessageJob(message_id=message_id, conversation_id=1, publisher="inbox")
-    job_id = board.publish(published, worker_id=WORKER)
-    assert board.get_result(job_id) is None
-    assert board.check_job_status(job_id) is JobStatus.PENDING
-    assert published.message_id == message_id
-
-    claimed = board.claim(worker_id=WORKER)
-    assert claimed is not None
-    assert claimed.id == job_id
-    assert board.get_result(claimed.id) is None
-    assert board.check_job_status(claimed.id) is JobStatus.CLAIMED
-    assert claimed.message_id == message_id
-    assert claimed.conversation_id == 1
-
-    board.submit_result(claimed.id, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    assert board.get_result(claimed.id).status is JobStatus.COMPLETED
-    outcome = board.get_result(claimed.id)
-    assert outcome.status is JobStatus.COMPLETED
-    assert outcome.id == claimed.id
-    assert board.claim(worker_id=WORKER) is None
-
-
-def test_message_job_board_keeps_history(bus: Bus) -> None:
-    bus.publish(ManageMessageJob(message_id=1), worker_id=WORKER)
-    first = bus.claim(ManageMessageJob, worker_id=WORKER)
-    assert first is not None
-    bus.submit_result(first, BaseJobResult(id=first.id), worker_id=WORKER)
-    bus.publish(ManageMessageJob(message_id=2), worker_id=WORKER)
-    second = bus.claim(ManageMessageJob, worker_id=WORKER)
-    assert second is not None
-    bus.submit_result(second, BaseJobResult(status=JobStatus.FAILED, error="nope"), worker_id=WORKER)
-
-    history = bus.list(ManageMessageJob)
-    assert [job.message_id for job in history] == [1, 2]
-    assert [bus.get_result(job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
 
 
 def test_message_book_is_not_public() -> None:
