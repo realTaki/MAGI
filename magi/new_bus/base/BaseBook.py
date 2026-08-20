@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from datetime import datetime
 from typing import Any, ClassVar, Self, get_type_hints
 
 from sqlalchemy import DateTime, Integer, select
@@ -12,7 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .engine import EngineFactory
 from .errors import InvalidJobError
-from .time import load_dt, utcnow
+from .time import BaseTime, load_dt, utcnow
 
 
 @dataclass(kw_only=True)
@@ -20,8 +19,8 @@ class BaseRecord:
     """id / created_at / updated_at. BUS assigns these."""
 
     id: int = 0
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: BaseTime | None = None
+    updated_at: BaseTime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -49,8 +48,8 @@ class BaseRecordMixin(DeclarativeBase):
     __abstract__ = True
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[BaseTime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[BaseTime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
 
