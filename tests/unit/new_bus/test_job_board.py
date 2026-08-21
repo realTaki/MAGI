@@ -7,7 +7,7 @@ import pytest
 
 from magi.new_bus import BaseJobResult, Bus, InvalidJobError, JobStatus
 from magi.new_bus.base.engine import EngineFactory
-from magi.new_bus.testing import WORKER, PingJob, PingJobBoard, occupy
+from tests.unit.new_bus.support import WORKER, PingJob, PingJobBoard, occupy
 
 
 def test_publish_claim_complete(bus: Bus) -> None:

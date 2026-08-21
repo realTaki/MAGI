@@ -18,7 +18,7 @@ from magi.new_bus import (
     SQLiteBackend,
     UpdateConversationSummaryJob,
 )
-from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
+from tests.unit.new_bus.support import WORKER, InMemoryBackend, occupy
 
 
 def _bus() -> Bus:

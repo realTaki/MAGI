@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from magi.new_bus import BaseJobResult, Bus, JobBoardClient, JobStatus, Slot, WorkerBus, job_board
-from magi.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard
+from tests.unit.new_bus.support import InMemoryBackend, PingJob, PingJobBoard
 
 
 class PingWorkerBus(WorkerBus):

@@ -1,12 +1,12 @@
-"""Sample BaseJob types for tests. Not Firmware."""
+"""Sample job types shared by the BUS tests."""
 
 from dataclasses import dataclass
 
 from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
-from ..base.heartbeat import Slot
+from magi.new_bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from magi.new_bus.base.heartbeat import Slot
 
 WORKER = "test"
 
