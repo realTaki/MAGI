@@ -39,4 +39,4 @@ def test_file_book_uses_disk_when_bus_is_sqlite(tmp_path) -> None:
 
 def test_bus_rejects_file_as_primary_backend(tmp_path) -> None:
     with pytest.raises(InvalidJobError, match="EngineFactory"):
-        Bus(FileBackend(tmp_path / "files"))
+        Bus(FileBackend(tmp_path / "files"))  # type: ignore[arg-type]

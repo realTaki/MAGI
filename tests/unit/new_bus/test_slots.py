@@ -79,7 +79,9 @@ def test_submit_post_publish_can_fail_the_job(bus: Bus) -> None:
         inspected, BaseJobResult(status=JobStatus.FAILED, error="blocked"), worker_id=inspector
     )
     assert bus.check_job_status(job) is JobStatus.FAILED
-    assert bus.get_result(job).error == "blocked"
+    blocked = bus.get_result(job)
+    assert blocked is not None
+    assert blocked.error == "blocked"
     assert bus.claim(PingJob, worker_id=WORKER) is None
 
 
@@ -104,7 +106,9 @@ def test_vacant_post_result_is_readable(bus: Bus) -> None:
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
     bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
-    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+    outcome = bus.get_result(claimed)
+    assert outcome is not None
+    assert outcome.status is JobStatus.COMPLETED
 
 
 def test_post_result_then_submit_admits_result(bus: Bus) -> None:
@@ -123,7 +127,9 @@ def test_post_result_then_submit_admits_result(bus: Bus) -> None:
     assert bus.check_job_status(claimed) is JobStatus.FINALIZING
 
     assert bus.submit_post_result(hooked, BaseJobResult(), worker_id=hook)
-    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+    admitted = bus.get_result(claimed)
+    assert admitted is not None
+    assert admitted.status is JobStatus.COMPLETED
 
 
 def test_submit_post_result_can_fail_the_job(bus: Bus) -> None:
@@ -139,6 +145,7 @@ def test_submit_post_result_can_fail_the_job(bus: Bus) -> None:
         hooked, BaseJobResult(status=JobStatus.FAILED, error="rejected"), worker_id=hook
     )
     outcome = bus.get_result(claimed)
+    assert outcome is not None
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "rejected"
 
@@ -156,4 +163,6 @@ def test_expired_post_result_slot_releases_settling(bus: Bus) -> None:
     holder = board._held.get("post_result")
     assert holder is not None
     board._held["post_result"] = (holder[0], past)
-    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+    released = bus.get_result(claimed)
+    assert released is not None
+    assert released.status is JobStatus.COMPLETED

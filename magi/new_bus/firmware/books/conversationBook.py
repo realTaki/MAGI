@@ -6,13 +6,12 @@ The record type :class:`Conversation` is the field list for this BaseBook.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseBook import BaseBook
-from ...base.BaseRecord import BaseRecord, BaseRecordMixin
+from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
+from ...base.time import BaseTime
 
 
 @dataclass(kw_only=True)
@@ -32,7 +31,7 @@ class Conversation(BaseRecord):
     channel: str
     title: str = ""
     summary: str = ""
-    last_compaction_at: datetime | None = None
+    last_compaction_at: BaseTime | None = None
 
 
 class ConversationRow(BaseRecordMixin):
@@ -43,9 +42,9 @@ class ConversationRow(BaseRecordMixin):
     channel: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    last_compaction_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_compaction_at: Mapped[BaseTime | None] = mapped_column(DateTime, nullable=True)
 
 
-class ConversationBook(BaseBook):
+class ConversationBook(BaseBook[Conversation]):
     record_cls = Conversation
     row_cls = ConversationRow

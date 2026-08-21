@@ -11,6 +11,7 @@ from magi.new_bus import (
     JobStatus,
     OpenBookJob,
 )
+from magi.new_bus.base.openBookJob import OpenBookJobResult
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
 
 
@@ -23,16 +24,18 @@ def _bus() -> Bus:
 def write_conversation(
     bus: Bus,
     op: BookOp,
-    record: BaseRecord | None = None,
+    record: Conversation | None = None,
     filter: dict | None = None,
-) -> OpenBookJob:
-    job = OpenBookJob(op=op, record=record, filter=filter)
+) -> OpenBookJob[Conversation]:
+    job = OpenBookJob[Conversation](op=op, record=record, filter=filter)
     job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
     return job
 
 
-def result(bus: Bus, job: OpenBookJob):
-    return bus.get_result(job, book=Conversation.__name__)
+def result(bus: Bus, job: OpenBookJob[Conversation]) -> OpenBookJobResult[Conversation]:
+    outcome = bus.get_result(job, book=Conversation.__name__)
+    assert outcome is not None
+    return outcome
 
 
 def create_conversation(bus: Bus, **values) -> OpenBookJob:
@@ -69,6 +72,7 @@ def test_create_read_filter_conversation() -> None:
     )
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
+    assert record is not None
     assert record.delivery_address == "tg:123"
     assert record.contact_id == 7
     assert record.channel == "tg"
@@ -77,7 +81,9 @@ def test_create_read_filter_conversation() -> None:
     assert record.last_compaction_at is None
 
     listed = write_conversation(bus, BookOp.GET, filter={"contact_id": 7})
-    assert [item.id for item in result(bus, listed).records] == [record.id]
+    records = result(bus, listed).records
+    assert records is not None
+    assert [item.id for item in records] == [record.id]
 
 
 def test_last_compaction_at_round_trips() -> None:
@@ -85,12 +91,14 @@ def test_last_compaction_at_round_trips() -> None:
     stamped = datetime(2026, 8, 18, 12, 0)
     created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
     assert result(bus, created).status is JobStatus.COMPLETED
-    assert result(bus, created).record.last_compaction_at == stamped
+    created_record = result(bus, created).record
+    assert created_record is not None
+    assert created_record.last_compaction_at == stamped
 
-    loaded = write_conversation(
-        bus, BookOp.GET, record=BaseRecord(id=result(bus, created).record.id)
-    )
-    assert result(bus, loaded).record.last_compaction_at == stamped
+    loaded = write_conversation(bus, BookOp.GET, record=created_record)
+    loaded_record = result(bus, loaded).record
+    assert loaded_record is not None
+    assert loaded_record.last_compaction_at == stamped
 
 
 def test_messages_can_be_listed_by_conversation() -> None:
@@ -98,7 +106,9 @@ def test_messages_can_be_listed_by_conversation() -> None:
 
     bus = _bus()
     conversation = create_conversation(bus, title="thread")
-    conversation_id = result(bus, conversation).record.id
+    conversation_record = result(bus, conversation).record
+    assert conversation_record is not None
+    conversation_id = conversation_record.id
 
     bus.publish(
         OpenBookJob(
@@ -113,6 +123,9 @@ def test_messages_can_be_listed_by_conversation() -> None:
         filter={"conversation_id": conversation_id},
     )
     listed.id = bus.publish(listed, worker_id=WORKER, book=Message.__name__)
-    records = bus.get_result(listed, book=Message.__name__).records
+    listed_result = bus.get_result(listed, book=Message.__name__)
+    assert listed_result is not None
+    records = listed_result.records
+    assert records is not None
     assert len(records) == 1
     assert records[0].conversation_id == conversation_id

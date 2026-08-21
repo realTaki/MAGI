@@ -18,6 +18,7 @@ from magi.new_bus import (
     OpenBookJob,
     Message,
 )
+from magi.new_bus.base.openBookJob import OpenBookJobResult
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
 
 
@@ -31,16 +32,18 @@ def bus() -> Bus:
 def write_message(
     bus: Bus,
     op: BookOp,
-    record: BaseRecord | None = None,
+    record: Message | None = None,
     filter: dict | None = None,
-) -> OpenBookJob:
-    job = OpenBookJob(op=op, record=record, filter=filter)
+) -> OpenBookJob[Message]:
+    job = OpenBookJob[Message](op=op, record=record, filter=filter)
     job.id = bus.publish(job, worker_id=WORKER, book=Message.__name__)
     return job
 
 
-def result(bus: Bus, job: OpenBookJob):
-    return bus.get_result(job, book=Message.__name__)
+def result(bus: Bus, job: OpenBookJob[Message]) -> OpenBookJobResult[Message]:
+    outcome = bus.get_result(job, book=Message.__name__)
+    assert outcome is not None
+    return outcome
 
 
 def create(bus: Bus, **values) -> OpenBookJob:
@@ -53,7 +56,10 @@ def open_conversation(bus: Bus) -> int:
         record=Conversation(delivery_address="webui:t", contact_id=1, channel="webui"),
     )
     job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
-    return int(bus.get_result(job, book=Conversation.__name__).record.id)
+    outcome = bus.get_result(job, book=Conversation.__name__)
+    assert outcome is not None
+    assert outcome.record is not None
+    return int(outcome.record.id)
 
 
 def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
@@ -82,6 +88,7 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     created = create(bus, role="user", content="hello", conversation_id=conversation_id)
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
+    assert record is not None
     assert record.role == "user"
     assert record.content == "hello"
     assert record.conversation_id == conversation_id
@@ -90,23 +97,29 @@ def test_create_read_update_delete_message(bus: Bus) -> None:
     assert isinstance(record.created_at, datetime)
     assert isinstance(record.updated_at, datetime)
 
-    by_id = write_message(bus, BookOp.GET, record=BaseRecord(id=record.id))
+    by_id = write_message(bus, BookOp.GET, record=record)
     assert result(bus, by_id).status is JobStatus.COMPLETED
-    assert result(bus, by_id).record.content == "hello"
+    got = result(bus, by_id).record
+    assert got is not None
+    assert got.content == "hello"
 
     listed = write_message(bus, BookOp.GET, filter={"conversation_id": conversation_id})
-    assert [item.id for item in result(bus, listed).records] == [record.id]
+    records = result(bus, listed).records
+    assert records is not None
+    assert [item.id for item in records] == [record.id]
 
     updated = write_message(
         bus, BookOp.UPDATE, record=replace(record, content="hello, world")
     )
     assert result(bus, updated).status is JobStatus.COMPLETED
-    assert result(bus, updated).record.content == "hello, world"
-    assert result(bus, updated).record.role == "user"
+    updated_record = result(bus, updated).record
+    assert updated_record is not None
+    assert updated_record.content == "hello, world"
+    assert updated_record.role == "user"
 
-    deleted = write_message(bus, BookOp.DELETE, record=BaseRecord(id=record.id))
+    deleted = write_message(bus, BookOp.DELETE, record=record)
     assert result(bus, deleted).status is JobStatus.COMPLETED
-    missing = write_message(bus, BookOp.GET, record=BaseRecord(id=record.id))
+    missing = write_message(bus, BookOp.GET, record=record)
     assert result(bus, missing).status is JobStatus.FAILED
 
 
@@ -122,11 +135,14 @@ def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
     )
     assert result(bus, created).status is JobStatus.COMPLETED
     record = result(bus, created).record
+    assert record is not None
     assert record.timestamp == stamped
     assert record.archived is True
 
     listed = write_message(bus, BookOp.GET, filter={"archived": True})
-    assert [item.id for item in result(bus, listed).records] == [record.id]
+    records = result(bus, listed).records
+    assert records is not None
+    assert [item.id for item in records] == [record.id]
 
 
 def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:

@@ -6,14 +6,12 @@ The record type :class:`Message` is the field list for this BaseBook.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseBook import BaseBook
-from ...base.BaseRecord import BaseRecord, BaseRecordMixin
-from ...base.time import utcnow
+from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
+from ...base.time import BaseTime, utcnow
 
 
 @dataclass(kw_only=True)
@@ -30,7 +28,7 @@ class Message(BaseRecord):
     role: str
     content: str
     conversation_id: int | None = None
-    timestamp: datetime = field(default_factory=utcnow)
+    timestamp: BaseTime = field(default_factory=utcnow)
     archived: bool = False
 
 
@@ -42,10 +40,10 @@ class MessageRow(BaseRecordMixin):
     conversation_id: Mapped[int | None] = mapped_column(
         ForeignKey("books_conversations.id"), nullable=True
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    timestamp: Mapped[BaseTime] = mapped_column(DateTime, default=utcnow, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
-class MessageBook(BaseBook):
+class MessageBook(BaseBook[Message]):
     record_cls = Message
     row_cls = MessageRow

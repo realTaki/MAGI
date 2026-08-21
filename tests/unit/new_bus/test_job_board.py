@@ -27,9 +27,12 @@ def test_publish_claim_complete(bus: Bus) -> None:
 
     bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     outcome = bus.get_result(claimed)
+    assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
     assert outcome.id == claimed.id
-    assert bus.get_result(claimed).status is JobStatus.COMPLETED
+    again = bus.get_result(claimed)
+    assert again is not None
+    assert again.status is JobStatus.COMPLETED
     assert not hasattr(claimed, "result")
     assert not hasattr(claimed, "status")
     assert not hasattr(claimed, "error")
@@ -41,6 +44,7 @@ def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
     assert claimed is not None
     bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     outcome = bus.get_result(claimed)
+    assert outcome is not None
     assert outcome.id == claimed.id
     assert outcome.status is JobStatus.COMPLETED
     assert not hasattr(claimed, "result")
@@ -53,6 +57,7 @@ def test_claim_then_fail(bus: Bus) -> None:
     assert claimed is not None
     bus.submit_result(claimed, BaseJobResult(status=JobStatus.FAILED, error="nope"), worker_id=WORKER)
     outcome = bus.get_result(claimed)
+    assert outcome is not None
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"
 
@@ -94,7 +99,7 @@ def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
         for index in range(20):
             bus.publish(PingJob(n=index), worker_id=WORKER)
 
-        claimed_ids: list[str] = []
+        claimed_ids: list[int] = []
         lock = threading.Lock()
 
         def worker() -> None:
