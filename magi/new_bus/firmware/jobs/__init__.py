@@ -1,9 +1,35 @@
-from .openConversationBookJob import OpenConversationBookJob, OpenConversationBookJobBoard
-from .openMessageBookJob import OpenMessageBookJob, OpenMessageBookJobBoard
+from .chat import (
+    AppendMessageJob,
+    AppendMessageJobBoard,
+    AppendMessageResult,
+    ArchiveMessagesJob,
+    ArchiveMessagesJobBoard,
+    ArchiveMessagesResult,
+    CreateConversationJob,
+    CreateConversationJobBoard,
+    CreateConversationResult,
+    ListConversationMessagesJob,
+    ListConversationMessagesJobBoard,
+    ListConversationMessagesResult,
+    UpdateConversationSummaryJob,
+    UpdateConversationSummaryJobBoard,
+    UpdateConversationSummaryResult,
+)
 
 __all__ = [
-    "OpenConversationBookJob",
-    "OpenConversationBookJobBoard",
-    "OpenMessageBookJob",
-    "OpenMessageBookJobBoard",
+    "AppendMessageJob",
+    "AppendMessageJobBoard",
+    "AppendMessageResult",
+    "ArchiveMessagesJob",
+    "ArchiveMessagesJobBoard",
+    "ArchiveMessagesResult",
+    "CreateConversationJob",
+    "CreateConversationJobBoard",
+    "CreateConversationResult",
+    "ListConversationMessagesJob",
+    "ListConversationMessagesJobBoard",
+    "ListConversationMessagesResult",
+    "UpdateConversationSummaryJob",
+    "UpdateConversationSummaryJobBoard",
+    "UpdateConversationSummaryResult",
 ]

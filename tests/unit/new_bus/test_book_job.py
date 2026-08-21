@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus import BookOp, Bus, InvalidJobError, JobStatus, OpenBookJob
+from magi.new_bus import Bus, InvalidJobError, JobStatus
 from magi.new_bus.base.BaseBook import BaseBook, BaseRecord
-from magi.new_bus.base.openBookJob import OpenBookJobResult
+from magi.new_bus.base.openBookJob import BookOp, OpenBookJob, OpenBookJobResult
 from magi.new_bus.testing import WORKER, PingJob, book_job
 
 ITEM = "Item"
@@ -15,9 +15,7 @@ def _publish[RecordT: BaseRecord](bus: Bus, job: OpenBookJob[RecordT]) -> OpenBo
     return job
 
 
-def _result[RecordT: BaseRecord](
-    bus: Bus, job: OpenBookJob[RecordT]
-) -> OpenBookJobResult[RecordT]:
+def _result[RecordT: BaseRecord](bus: Bus, job: OpenBookJob[RecordT]) -> OpenBookJobResult[RecordT]:
     result = bus.get_result(job, book=ITEM)
     assert result is not None
     return result
@@ -99,6 +97,7 @@ def test_book_is_not_on_the_public_surface() -> None:
     import magi.new_bus as bus_pkg
 
     assert "BaseBook" not in bus_pkg.__all__
+    assert "OpenBookJob" not in bus_pkg.__all__
     assert not hasattr(bus_pkg.Bus, "book")
     assert not hasattr(bus_pkg.Bus, "get_book")
 

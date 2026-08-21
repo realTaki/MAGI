@@ -55,7 +55,9 @@ def test_claim_then_fail(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(status=JobStatus.FAILED, error="nope"), worker_id=WORKER)
+    bus.submit_result(
+        claimed, BaseJobResult(status=JobStatus.FAILED, error="nope"), worker_id=WORKER
+    )
     outcome = bus.get_result(claimed)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
@@ -127,7 +129,7 @@ def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
 
 
 def test_book_jobs_cannot_use_mount_job(bus: Bus) -> None:
-    from magi.new_bus import OpenBookJob
+    from magi.new_bus.base.openBookJob import OpenBookJob
 
     with pytest.raises(InvalidJobError):
         bus.mount_job(OpenBookJob)

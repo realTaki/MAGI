@@ -1,24 +1,19 @@
 from __future__ import annotations
 
 import ast
-import dataclasses
-from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from magi.new_bus import (
-    BaseRecord,
-    BookOp,
+    AppendMessageJob,
+    ArchiveMessagesJob,
     Bus,
-    Conversation,
-    InvalidJobError,
+    CreateConversationJob,
     JobStatus,
-    OpenBookJob,
-    Message,
+    ListConversationMessagesJob,
+    MessageRole,
 )
-from magi.new_bus.base.openBookJob import OpenBookJobResult
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
 
 
@@ -29,154 +24,100 @@ def bus() -> Bus:
     return item
 
 
-def write_message(
-    bus: Bus,
-    op: BookOp,
-    record: Message | None = None,
-    filter: dict | None = None,
-) -> OpenBookJob[Message]:
-    job = OpenBookJob[Message](op=op, record=record, filter=filter)
-    job.id = bus.publish(job, worker_id=WORKER, book=Message.__name__)
+def _publish[JobT](bus: Bus, job: JobT) -> JobT:
+    job.id = bus.publish(job, worker_id=WORKER)
     return job
 
 
-def result(bus: Bus, job: OpenBookJob[Message]) -> OpenBookJobResult[Message]:
-    outcome = bus.get_result(job, book=Message.__name__)
-    assert outcome is not None
-    return outcome
-
-
-def create(bus: Bus, **values) -> OpenBookJob:
-    return write_message(bus, BookOp.ADD, record=Message(**values))
-
-
-def open_conversation(bus: Bus) -> int:
-    job = OpenBookJob(
-        op=BookOp.ADD,
-        record=Conversation(delivery_address="webui:t", contact_id=1, channel="webui"),
+def _conversation_id(bus: Bus) -> int:
+    created = _publish(
+        bus, CreateConversationJob(delivery_address="webui:test", contact_id=1, channel="webui")
     )
-    job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
-    outcome = bus.get_result(job, book=Conversation.__name__)
+    outcome = bus.get_result(created)
     assert outcome is not None
-    assert outcome.record is not None
-    return int(outcome.record.id)
+    assert outcome.conversation is not None
+    return outcome.conversation.id
 
 
-def test_bus_starts_with_firmware_books_and_jobs(bus: Bus) -> None:
-    assert Message.__name__ in bus.books
-    assert Conversation.__name__ in bus.books
-    assert bus.record_type(Message.__name__) is Message
-    assert bus.record_type(Conversation.__name__) is Conversation
-    assert issubclass(Message, BaseRecord)
-    assert {field.name for field in dataclasses.fields(BaseRecord)} == {
-        "id",
-        "created_at",
-        "updated_at",
-    }
-    owned = {field.name for field in dataclasses.fields(BaseRecord)}
-    assert {field.name for field in dataclasses.fields(Message)} - owned == {
-        "role",
-        "content",
-        "conversation_id",
-        "timestamp",
-        "archived",
-    }
-
-
-def test_create_read_update_delete_message(bus: Bus) -> None:
-    conversation_id = open_conversation(bus)
-    created = create(bus, role="user", content="hello", conversation_id=conversation_id)
-    assert result(bus, created).status is JobStatus.COMPLETED
-    record = result(bus, created).record
-    assert record is not None
-    assert record.role == "user"
-    assert record.content == "hello"
-    assert record.conversation_id == conversation_id
-    assert record.archived is False
-    assert isinstance(record.timestamp, datetime)
-    assert isinstance(record.created_at, datetime)
-    assert isinstance(record.updated_at, datetime)
-
-    by_id = write_message(bus, BookOp.GET, record=record)
-    assert result(bus, by_id).status is JobStatus.COMPLETED
-    got = result(bus, by_id).record
-    assert got is not None
-    assert got.content == "hello"
-
-    listed = write_message(bus, BookOp.GET, filter={"conversation_id": conversation_id})
-    records = result(bus, listed).records
-    assert records is not None
-    assert [item.id for item in records] == [record.id]
-
-    updated = write_message(
-        bus, BookOp.UPDATE, record=replace(record, content="hello, world")
-    )
-    assert result(bus, updated).status is JobStatus.COMPLETED
-    updated_record = result(bus, updated).record
-    assert updated_record is not None
-    assert updated_record.content == "hello, world"
-    assert updated_record.role == "user"
-
-    deleted = write_message(bus, BookOp.DELETE, record=record)
-    assert result(bus, deleted).status is JobStatus.COMPLETED
-    missing = write_message(bus, BookOp.GET, record=record)
-    assert result(bus, missing).status is JobStatus.FAILED
-
-
-def test_timestamp_and_archived_round_trip(bus: Bus) -> None:
-    stamped = datetime(2026, 8, 18, 9, 30)
-    created = create(
+def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> None:
+    conversation_id = _conversation_id(bus)
+    first = _publish(
         bus,
-        role="assistant",
-        content="later",
-        conversation_id=open_conversation(bus),
-        timestamp=stamped,
-        archived=True,
+        AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="hello"),
     )
-    assert result(bus, created).status is JobStatus.COMPLETED
-    record = result(bus, created).record
-    assert record is not None
-    assert record.timestamp == stamped
-    assert record.archived is True
+    appended = bus.get_result(first)
+    assert appended is not None
+    assert appended.status is JobStatus.COMPLETED
+    assert appended.message is not None
+    assert appended.message.role is MessageRole.USER
+    assert appended.message.content == "hello"
 
-    listed = write_message(bus, BookOp.GET, filter={"archived": True})
-    records = result(bus, listed).records
-    assert records is not None
-    assert [item.id for item in records] == [record.id]
-
-
-def test_missing_required_fields_fails_and_does_not_write(bus: Bus) -> None:
-    assert result(bus, write_message(bus, BookOp.ADD)).status is JobStatus.FAILED
-    listed = write_message(bus, BookOp.GET)
-    assert result(bus, listed).status is JobStatus.COMPLETED
-    assert result(bus, listed).records == []
+    _publish(
+        bus,
+        AppendMessageJob(conversation_id=conversation_id, role=MessageRole.ASSISTANT, content="hi"),
+    )
+    listed = _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
+    transcript = bus.get_result(listed)
+    assert transcript is not None
+    assert [item.content for item in transcript.messages] == ["hello", "hi"]
 
 
-def test_book_jobs_stay_on_the_book_board(bus: Bus) -> None:
-    first = create(bus, role="assistant", content="ok")
-    write_message(bus, BookOp.ADD)
-    history = bus.list(OpenBookJob, book=Message.__name__)
-    assert [result(bus, job).status for job in history] == [JobStatus.COMPLETED, JobStatus.FAILED]
-    assert isinstance(
-        next(job for job in history if job.id == first.id), OpenBookJob
+def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -> None:
+    conversation_id = _conversation_id(bus)
+    first = _publish(
+        bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="old")
+    )
+    first_outcome = bus.get_result(first)
+    assert first_outcome is not None
+    first_message = first_outcome.message
+    assert first_message is not None
+    _publish(
+        bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="new")
     )
 
+    archived = _publish(
+        bus,
+        ArchiveMessagesJob(conversation_id=conversation_id, before_message_id=first_message.id + 1),
+    )
+    archive_result = bus.get_result(archived)
+    assert archive_result is not None
+    assert archive_result.archived_count == 1
 
-def test_book_jobs_cannot_be_claimed(bus: Bus) -> None:
-    create(bus, role="system", content="boot")
-    with pytest.raises(InvalidJobError):
-        bus.claim(OpenBookJob, worker_id=WORKER)
+    live = bus.get_result(
+        _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
+    )
+    assert live is not None
+    assert [item.content for item in live.messages] == ["new"]
+    all_messages = bus.get_result(
+        _publish(
+            bus, ListConversationMessagesJob(conversation_id=conversation_id, include_archived=True)
+        )
+    )
+    assert all_messages is not None
+    assert [item.content for item in all_messages.messages] == ["old", "new"]
 
 
-def test_message_book_is_not_public() -> None:
+def test_append_rejects_missing_conversation_and_blank_content(bus: Bus) -> None:
+    missing = _publish(bus, AppendMessageJob(conversation_id=999, content="hello"))
+    missing_result = bus.get_result(missing)
+    assert missing_result is not None
+    assert missing_result.status is JobStatus.FAILED
+
+    empty = _publish(bus, AppendMessageJob(conversation_id=_conversation_id(bus), content="  "))
+    empty_result = bus.get_result(empty)
+    assert empty_result is not None
+    assert empty_result.status is JobStatus.FAILED
+    assert empty_result.error == "content is required"
+
+
+def test_message_book_stays_private_to_firmware() -> None:
     import magi.new_bus.firmware as firmware
 
     assert "MessageBook" not in firmware.__all__
     assert not hasattr(firmware, "MessageBook")
-    assert "install" not in firmware.__all__
-    assert "Message" in firmware.__all__
     assert "ConversationBook" not in firmware.__all__
-    assert "Conversation" in firmware.__all__
+    assert not hasattr(firmware, "ConversationBook")
+    assert "AppendMessageJob" in firmware.__all__
 
 
 def test_base_does_not_import_firmware() -> None:

@@ -3,15 +3,21 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime
 
+import pytest
+
 from magi.new_bus import (
-    BaseRecord,
-    BookOp,
+    AppendMessageJob,
+    ArchiveMessagesJob,
     Bus,
     Conversation,
+    CreateConversationJob,
+    InvalidJobError,
     JobStatus,
-    OpenBookJob,
+    ListConversationMessagesJob,
+    MessageRole,
+    SQLiteBackend,
+    UpdateConversationSummaryJob,
 )
-from magi.new_bus.base.openBookJob import OpenBookJobResult
 from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
 
 
@@ -21,111 +27,114 @@ def _bus() -> Bus:
     return item
 
 
-def write_conversation(
-    bus: Bus,
-    op: BookOp,
-    record: Conversation | None = None,
-    filter: dict | None = None,
-) -> OpenBookJob[Conversation]:
-    job = OpenBookJob[Conversation](op=op, record=record, filter=filter)
-    job.id = bus.publish(job, worker_id=WORKER, book=Conversation.__name__)
+def _publish[JobT](bus: Bus, job: JobT) -> JobT:
+    job.id = bus.publish(job, worker_id=WORKER)
     return job
 
 
-def result(bus: Bus, job: OpenBookJob[Conversation]) -> OpenBookJobResult[Conversation]:
-    outcome = bus.get_result(job, book=Conversation.__name__)
-    assert outcome is not None
-    return outcome
-
-
-def create_conversation(bus: Bus, **values) -> OpenBookJob:
-    values.setdefault("delivery_address", "webui:test")
-    values.setdefault("contact_id", 1)
-    values.setdefault("channel", "webui")
-    return write_conversation(bus, BookOp.ADD, record=Conversation(**values))
-
-
-def test_bus_starts_with_conversation_firmware() -> None:
+def test_firmware_exposes_chat_contracts_not_books() -> None:
     bus = _bus()
-    assert Conversation.__name__ in bus.books
-    assert bus.record_type(Conversation.__name__) is Conversation
-    owned = {field.name for field in dataclasses.fields(BaseRecord)}
-    assert {field.name for field in dataclasses.fields(Conversation)} - owned == {
+    assert bus.books == ()
+    assert {
+        CreateConversationJob,
+        ListConversationMessagesJob,
+        ArchiveMessagesJob,
+        UpdateConversationSummaryJob,
+    } <= set(bus.jobs)
+    assert {field.name for field in dataclasses.fields(Conversation)} >= {
         "delivery_address",
         "contact_id",
         "channel",
-        "title",
-        "summary",
-        "last_compaction_at",
     }
 
 
-def test_create_read_filter_conversation() -> None:
+def test_create_conversation_returns_its_stable_record() -> None:
     bus = _bus()
-    created = create_conversation(
+    created = _publish(
         bus,
-        delivery_address="tg:123",
-        contact_id=7,
-        channel="tg",
-        title="hello",
-        summary="hi",
+        CreateConversationJob(delivery_address="tg:123", contact_id=7, channel="tg", title="hello"),
     )
-    assert result(bus, created).status is JobStatus.COMPLETED
-    record = result(bus, created).record
-    assert record is not None
-    assert record.delivery_address == "tg:123"
-    assert record.contact_id == 7
-    assert record.channel == "tg"
-    assert record.title == "hello"
-    assert record.summary == "hi"
-    assert record.last_compaction_at is None
-
-    listed = write_conversation(bus, BookOp.GET, filter={"contact_id": 7})
-    records = result(bus, listed).records
-    assert records is not None
-    assert [item.id for item in records] == [record.id]
+    outcome = bus.get_result(created)
+    assert outcome is not None
+    assert outcome.status is JobStatus.COMPLETED
+    assert outcome.conversation is not None
+    assert outcome.conversation.delivery_address == "tg:123"
+    assert outcome.conversation.contact_id == 7
+    assert outcome.conversation.channel == "tg"
+    assert outcome.conversation.title == "hello"
 
 
-def test_last_compaction_at_round_trips() -> None:
+def test_update_summary_is_a_named_operation() -> None:
     bus = _bus()
-    stamped = datetime(2026, 8, 18, 12, 0)
-    created = create_conversation(bus, title="compacted", last_compaction_at=stamped)
-    assert result(bus, created).status is JobStatus.COMPLETED
-    created_record = result(bus, created).record
-    assert created_record is not None
-    assert created_record.last_compaction_at == stamped
+    created = _publish(
+        bus, CreateConversationJob(delivery_address="webui:1", contact_id=1, channel="webui")
+    )
+    created_outcome = bus.get_result(created)
+    assert created_outcome is not None
+    conversation = created_outcome.conversation
+    assert conversation is not None
 
-    loaded = write_conversation(bus, BookOp.GET, record=created_record)
-    loaded_record = result(bus, loaded).record
-    assert loaded_record is not None
-    assert loaded_record.last_compaction_at == stamped
+    updated = _publish(
+        bus,
+        UpdateConversationSummaryJob(conversation_id=conversation.id, summary="compact context"),
+    )
+    outcome = bus.get_result(updated)
+    assert outcome is not None
+    assert outcome.conversation is not None
+    assert outcome.conversation.summary == "compact context"
+    assert isinstance(outcome.conversation.last_compaction_at, datetime)
 
 
-def test_messages_can_be_listed_by_conversation() -> None:
-    from magi.new_bus import Message
-
+def test_command_validation_becomes_a_terminal_job_result() -> None:
     bus = _bus()
-    conversation = create_conversation(bus, title="thread")
-    conversation_record = result(bus, conversation).record
-    assert conversation_record is not None
-    conversation_id = conversation_record.id
+    invalid = _publish(bus, CreateConversationJob(contact_id=1, channel="webui"))
+    outcome = bus.get_result(invalid)
+    assert outcome is not None
+    assert outcome.status is JobStatus.FAILED
+    assert outcome.error == "delivery_address is required"
 
-    bus.publish(
-        OpenBookJob(
-            op=BookOp.ADD,
-            record=Message(role="user", content="hi", conversation_id=conversation_id),
-        ),
-        worker_id=WORKER,
-        book=Message.__name__,
-    )
-    listed = OpenBookJob(
-        op=BookOp.GET,
-        filter={"conversation_id": conversation_id},
-    )
-    listed.id = bus.publish(listed, worker_id=WORKER, book=Message.__name__)
-    listed_result = bus.get_result(listed, book=Message.__name__)
-    assert listed_result is not None
-    records = listed_result.records
-    assert records is not None
-    assert len(records) == 1
-    assert records[0].conversation_id == conversation_id
+
+def test_firmware_commands_are_not_claimable_work() -> None:
+    bus = _bus()
+    with pytest.raises(InvalidJobError, match="cannot be claimed"):
+        bus.claim(CreateConversationJob, worker_id=WORKER)
+
+
+def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
+    path = tmp_path / "firmware.sqlite"
+    first = Bus(SQLiteBackend(path))
+    try:
+        occupy(first)
+        created = _publish(
+            first,
+            CreateConversationJob(delivery_address="webui:durable", contact_id=3, channel="webui"),
+        )
+        created_result = first.get_result(created)
+        assert created_result is not None
+        assert created_result.conversation is not None
+        appended = _publish(
+            first,
+            AppendMessageJob(
+                conversation_id=created_result.conversation.id,
+                role=MessageRole.USER,
+                content="persist me",
+            ),
+        )
+    finally:
+        first.close()
+
+    reopened = Bus(SQLiteBackend(path))
+    try:
+        occupy(reopened)
+        append_result = reopened.get_result(appended)
+        assert append_result is not None
+        assert append_result.message is not None
+        listed = _publish(
+            reopened,
+            ListConversationMessagesJob(conversation_id=append_result.message.conversation_id),
+        )
+        transcript = reopened.get_result(listed)
+        assert transcript is not None
+        assert [message.content for message in transcript.messages] == ["persist me"]
+    finally:
+        reopened.close()
