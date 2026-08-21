@@ -40,7 +40,7 @@ def slot(fn):
         self._held[fn.__name__] = (worker_id, now + LEASE)
         return fn(self, *args, **kwargs)
 
-    setattr(wrapped, "_slot", True)
+    wrapped._slot = True
     return wrapped
 
 
