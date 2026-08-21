@@ -17,6 +17,8 @@ from .base.errors import (
     JobNotFoundError,
 )
 from .base.file import FileBackend
+from .base.heartbeat import Slot
+from .base.workerBus import JobBoardClient, WorkerBus, job_board
 from .bus import Bus
 from .firmware import (
     AppendMessageJob,
@@ -50,6 +52,10 @@ __all__ = [
     "JobNotFoundError",
     "JobStatus",
     "OrDock",
+    "Slot",
+    "WorkerBus",
+    "JobBoardClient",
+    "job_board",
     "Conversation",
     "Message",
     "MessageRole",

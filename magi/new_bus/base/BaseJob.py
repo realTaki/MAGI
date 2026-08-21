@@ -7,9 +7,7 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import wraps
 
@@ -19,9 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError
+from .heartbeat import Heartbeat, Slot
 from .time import utcnow
-
-LEASE = timedelta(seconds=1)
 
 
 def slot(fn):
@@ -33,11 +30,10 @@ def slot(fn):
 
     @wraps(fn)
     def wrapped(self, *args, worker_id: str, **kwargs):
-        now = utcnow()
-        holder = self._held.get(fn.__name__)
-        if holder is None or holder[0] != worker_id or holder[1] <= now:
+        slot_key = Slot(type(self).job_cls, fn.__name__)
+        if not self._heartbeat.holds(worker_id, slot_key):
             raise InvalidJobError(f"slot {fn.__name__!r} is not held by {worker_id}")
-        self._held[fn.__name__] = (worker_id, now + LEASE)
+        self._heartbeat.heartbeat(worker_id)
         return fn(self, *args, **kwargs)
 
     wrapped._slot = True
@@ -88,40 +84,19 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     result_cls: type[ResultT]
     row_cls: type[RowT]
 
-    def __init__(self, factory: EngineFactory) -> None:
+    def __init__(self, factory: EngineFactory, heartbeat: Heartbeat) -> None:
         self._factory = factory
-        self._held: dict[str, tuple[str, datetime] | None] = {}
-        for name in dir(type(self)):
-            value = getattr(type(self), name, None)
-            if value is not None and getattr(value, "_slot", False):
-                self._held[name] = None
+        self._heartbeat = heartbeat
 
     def _session(self):
         return self._factory.session()
 
-    def attach(self, worker_id: str, slots: Sequence[str]) -> bool:
-        now = utcnow()
-        until = now + LEASE
-        for name in slots:
-            if name not in self._held:
-                return False
-            holder = self._held[name]
-            if holder is not None and holder[1] > now and holder[0] != worker_id:
-                return False
-        for name in slots:
-            self._held[name] = (worker_id, until)
-        return True
-
-    def heartbeat(self, worker_id: str) -> None:
-        now = utcnow()
-        until = now + LEASE
-        for name, holder in list(self._held.items()):
-            if holder is not None and holder[0] == worker_id and holder[1] > now:
-                self._held[name] = (worker_id, until)
-
     def _slot_held(self, name: str) -> bool:
-        holder = self._held.get(name)
-        return holder is not None and holder[1] > utcnow()
+        return self._heartbeat.held(Slot(type(self).job_cls, name))
+
+    @classmethod
+    def has_slot(cls, name: str) -> bool:
+        return bool(getattr(getattr(cls, name, None), "_slot", False))
 
     def release_idle_slots(self) -> None:
         skip_publish = self._slot_held("post_publish")

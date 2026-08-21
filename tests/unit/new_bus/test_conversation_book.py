@@ -14,6 +14,7 @@ from magi.new_bus import (
     JobStatus,
     ListConversationMessagesJob,
     MessageRole,
+    Slot,
     SQLiteBackend,
     UpdateConversationSummaryJob,
 )
@@ -117,7 +118,13 @@ def test_firmware_commands_are_not_claimable_work() -> None:
 def test_book_operation_waits_for_post_publish_approval() -> None:
     bus = _bus()
     checker = "checker"
-    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    bus.attach(
+        checker,
+        (
+            Slot(CreateConversationJob, "post_publish"),
+            Slot(CreateConversationJob, "submit_post_publish"),
+        ),
+    )
     created = _publish(
         bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
     )
@@ -139,7 +146,13 @@ def test_book_operation_waits_for_post_publish_approval() -> None:
 def test_post_publish_rejection_prevents_book_operation() -> None:
     bus = _bus()
     checker = "checker"
-    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    bus.attach(
+        checker,
+        (
+            Slot(CreateConversationJob, "post_publish"),
+            Slot(CreateConversationJob, "submit_post_publish"),
+        ),
+    )
     created = _publish(
         bus, CreateConversationJob(delivery_address="webui:rejected", contact_id=1, channel="webui")
     )
@@ -160,7 +173,13 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
 def test_post_publish_returns_false_for_an_invalid_decision() -> None:
     bus = _bus()
     checker = "checker"
-    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    bus.attach(
+        checker,
+        (
+            Slot(CreateConversationJob, "post_publish"),
+            Slot(CreateConversationJob, "submit_post_publish"),
+        ),
+    )
     created = _publish(
         bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
     )

@@ -1,74 +1,38 @@
-"""Composable owners for one shared JobBoard slot."""
+"""Slot routes that let a group of workers share one Board operation."""
 
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from .BaseJob import LEASE, BaseJob
-from .time import BaseTime, utcnow
-
-if TYPE_CHECKING:
-    from ..bus import Bus
+from .BaseJob import BaseJobBoard
+from .heartbeat import Heartbeat, Slot
 
 
 class OrDock:
-    """Share one attached slot between multiple leased workers.
+    """One slot owner: any attached live worker may invoke the operation."""
 
-    The Dock is the sole BUS-visible slot owner. A worker attaches to the Dock,
-    then calls the one configured Board operation through ``call()``. The
-    JobBoard remains responsible for the operation's atomic state transition.
-    """
-
-    def __init__(self, slot: str, *, name: str | None = None) -> None:
+    def __init__(self, heartbeat: Heartbeat, slot: Slot) -> None:
         self.slot = slot
-        self.dock_id = f"dock:{name or slot}:{slot}"
-        self._bus: Bus | None = None
-        self._job_type: type[BaseJob] | None = None
-        self._workers: dict[str, BaseTime] = {}
+        self.dock_id = f"dock:or:{slot.job_type.__name__}:{slot.name}"
+        self._heartbeat = heartbeat
+        self._members: set[str] = set()
         self._lock = threading.RLock()
 
-    def attach[JobT: BaseJob](self, bus: Bus, worker_id: str, job_type: type[JobT]) -> bool:
-        """Attach a worker and acquire this Dock's one slot."""
-        now = utcnow()
+    def attach(self, worker_id: str) -> bool:
         with self._lock:
-            if self._bus is not None and self._bus is not bus:
+            if not self._heartbeat.attach(self.dock_id, (self.slot,)):
                 return False
-            if self._job_type is not None and self._job_type is not job_type:
-                return False
-            if job_type not in bus.jobs:
-                return False
-            if not bus.attach(self.dock_id, job_type, (self.slot,)):
-                return False
-            self._bus = bus
-            self._job_type = job_type
-            self._workers[worker_id] = now + LEASE
+            self._members.add(worker_id)
             return True
 
     def heartbeat(self, worker_id: str) -> bool:
-        """Renew one attached worker and this Dock's single slot lease."""
-        now = utcnow()
         with self._lock:
-            bus = self._bus
-            until = self._workers.get(worker_id)
-            if bus is None or until is None or until <= now:
+            if worker_id not in self._members or not self._heartbeat.is_alive(worker_id):
                 return False
-            self._workers[worker_id] = now + LEASE
-        bus.heartbeat(self.dock_id)
-        return True
+        return self._heartbeat.heartbeat(self.dock_id)
 
-    def call(self, worker_id: str, *args: object, **kwargs: object) -> Any:
-        """Invoke this Dock's one Board slot as its virtual worker."""
-        now = utcnow()
-        with self._lock:
-            bus = self._bus
-            job_type = self._job_type
-            until = self._workers.get(worker_id)
-            if bus is None or job_type is None or until is None or until <= now:
-                return None
-            self._workers[worker_id] = now + LEASE
-        bus.heartbeat(self.dock_id)
-        operation = getattr(bus.job_board(job_type), self.slot, None)
-        if operation is None:
+    def call(self, worker_id: str, board: BaseJobBoard[Any, Any, Any], *args, **kwargs) -> Any:
+        if not self.heartbeat(worker_id):
             return None
-        return operation(*args, worker_id=self.dock_id, **kwargs)
+        return getattr(board, self.slot.name)(*args, worker_id=self.dock_id, **kwargs)
