@@ -3,8 +3,6 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime
 
-import pytest
-
 from magi.new_bus import (
     AppendMessageJob,
     ArchiveMessagesJob,
@@ -13,7 +11,6 @@ from magi.new_bus import (
     Bus,
     Conversation,
     CreateConversationJob,
-    InvalidJobError,
     JobStatus,
     ListConversationMessagesJob,
     MessageRole,
@@ -87,19 +84,19 @@ def test_update_summary_is_a_named_operation() -> None:
     assert isinstance(outcome.conversation.last_compaction_at, datetime)
 
 
-def test_command_validation_becomes_a_terminal_job_result() -> None:
+def test_create_conversation_keeps_optional_text_unconstrained() -> None:
     bus = _bus()
-    invalid = _publish(bus, CreateConversationJob(contact_id=1, channel="webui"))
-    outcome = bus.get_result(invalid)
+    created = _publish(bus, CreateConversationJob(contact_id=1, channel="webui"))
+    outcome = bus.get_result(created)
     assert outcome is not None
-    assert outcome.status is JobStatus.FAILED
-    assert outcome.error == "delivery_address is required"
+    assert outcome.status is JobStatus.COMPLETED
+    assert outcome.conversation is not None
+    assert outcome.conversation.delivery_address == ""
 
 
 def test_firmware_commands_are_not_claimable_work() -> None:
     bus = _bus()
-    with pytest.raises(InvalidJobError, match="cannot be claimed"):
-        bus.claim(CreateConversationJob, worker_id=WORKER)
+    assert bus.claim(CreateConversationJob, worker_id=WORKER) is None
 
 
 def test_book_operation_waits_for_post_publish_approval() -> None:
@@ -143,6 +140,19 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
     assert result.status is JobStatus.FAILED
     assert result.error == "channel policy rejected"
     assert result.conversation is None
+
+
+def test_post_publish_returns_false_for_an_invalid_decision() -> None:
+    bus = _bus()
+    checker = "checker"
+    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    created = _publish(
+        bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
+    )
+    pending_check = bus.post_publish(CreateConversationJob, worker_id=checker)
+    assert pending_check is not None
+    assert not bus.submit_post_publish(pending_check, BaseJobResult(), worker_id=checker)
+    assert bus.check_job_status(created) is JobStatus.HOOKING
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:

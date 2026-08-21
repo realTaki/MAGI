@@ -98,7 +98,7 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
     assert [item.content for item in all_messages.messages] == ["old", "new"]
 
 
-def test_append_rejects_missing_conversation_and_blank_content(bus: Bus) -> None:
+def test_append_returns_failure_only_when_its_foreign_key_is_missing(bus: Bus) -> None:
     missing = _publish(bus, AppendMessageJob(conversation_id=999, content="hello"))
     missing_result = bus.get_result(missing)
     assert missing_result is not None
@@ -107,8 +107,9 @@ def test_append_rejects_missing_conversation_and_blank_content(bus: Bus) -> None
     empty = _publish(bus, AppendMessageJob(conversation_id=_conversation_id(bus), content="  "))
     empty_result = bus.get_result(empty)
     assert empty_result is not None
-    assert empty_result.status is JobStatus.FAILED
-    assert empty_result.error == "content is required"
+    assert empty_result.status is JobStatus.COMPLETED
+    assert empty_result.message is not None
+    assert empty_result.message.content == "  "
 
 
 def test_message_book_stays_private_to_firmware() -> None:

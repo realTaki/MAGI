@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Self
+from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, Text, and_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
-from ...base.operateBookJob import OperateBookJobBoard
+from ...base.operateBookJob import BookRecordResult, BookRecordsResult, OperateBookJobBoard
 from ...base.time import BaseTime, utcnow
 from ..books.conversationBook import ConversationRow
 from ..books.messageBook import Message, MessageRole, MessageRow
@@ -25,16 +24,10 @@ class AppendMessageJob(BaseJob):
 
 
 @dataclass
-class AppendMessageResult(BaseJobResult):
+class AppendMessageResult(BookRecordResult[Message]):
     message: Message | None = None
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        result = super().parse(data)
-        raw = data.get("message")
-        if isinstance(raw, dict):
-            result.message = Message.parse(raw)
-        return result
+    record_cls = Message
+    record_field = "message"
 
 
 class AppendMessageJobRow(BaseJobRow):
@@ -59,8 +52,6 @@ class AppendMessageJobBoard(
             return AppendMessageResult(
                 status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
             )
-        if not job.content.strip():
-            return AppendMessageResult(status=JobStatus.FAILED, error="content is required")
         try:
             role = MessageRole(job.role)
         except ValueError:
@@ -86,16 +77,10 @@ class ListConversationMessagesJob(BaseJob):
 
 
 @dataclass
-class ListConversationMessagesResult(BaseJobResult):
+class ListConversationMessagesResult(BookRecordsResult[Message]):
     messages: list[Message] = field(default_factory=list)
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        result = super().parse(data)
-        raw = data.get("messages")
-        if isinstance(raw, list):
-            result.messages = [Message.parse(item) for item in raw if isinstance(item, dict)]
-        return result
+    record_cls = Message
+    records_field = "messages"
 
 
 class ListConversationMessagesJobRow(BaseJobRow):
@@ -118,10 +103,6 @@ class ListConversationMessagesJobBoard(
     def _execute(
         self, session: Session, job: ListConversationMessagesJob
     ) -> ListConversationMessagesResult:
-        if session.get(ConversationRow, job.conversation_id) is None:
-            return ListConversationMessagesResult(
-                status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
-            )
         stmt = select(MessageRow).where(MessageRow.conversation_id == job.conversation_id)
         if not job.include_archived:
             stmt = stmt.where(MessageRow.archived.is_(False))
@@ -156,10 +137,6 @@ class ArchiveMessagesJobBoard(
     row_cls = ArchiveMessagesJobRow
 
     def _execute(self, session: Session, job: ArchiveMessagesJob) -> ArchiveMessagesResult:
-        if session.get(ConversationRow, job.conversation_id) is None:
-            return ArchiveMessagesResult(
-                status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
-            )
         conditions = [
             MessageRow.conversation_id == job.conversation_id,
             MessageRow.archived.is_(False),

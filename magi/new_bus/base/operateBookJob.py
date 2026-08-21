@@ -8,14 +8,51 @@ then committed in one transaction.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, ClassVar, Self
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from .BaseBook import BaseRecord
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, slot
-from .errors import InvalidJobError
-from .time import utcnow
+
+
+@dataclass
+class BookRecordResult[RecordT: BaseRecord](BaseJobResult):
+    """A typed single-record result stored in a named JSON column."""
+
+    record_cls: ClassVar[type[RecordT]]
+    record_field: ClassVar[str]
+
+    @classmethod
+    def parse(cls, data: Mapping[str, Any]) -> Self:
+        result = super().parse(data)
+        raw = data.get(cls.record_field)
+        if isinstance(raw, dict):
+            setattr(result, cls.record_field, cls.record_cls.parse(raw))
+        return result
+
+
+@dataclass
+class BookRecordsResult[RecordT: BaseRecord](BaseJobResult):
+    """A typed record-list result stored in a named JSON column."""
+
+    record_cls: ClassVar[type[RecordT]]
+    records_field: ClassVar[str]
+
+    @classmethod
+    def parse(cls, data: Mapping[str, Any]) -> Self:
+        result = super().parse(data)
+        raw = data.get(cls.records_field)
+        if isinstance(raw, list):
+            setattr(
+                result,
+                cls.records_field,
+                [cls.record_cls.parse(item) for item in raw if isinstance(item, dict)],
+            )
+        return result
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -33,7 +70,7 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
     @slot
     def submit_post_publish(self, job: JobT, result: BaseJobResult, *, worker_id: str) -> bool:
         if result.status not in {JobStatus.PENDING, JobStatus.FAILED}:
-            raise InvalidJobError("post_publish must return PENDING to approve or FAILED to reject")
+            return False
         if not super().submit_post_publish(job, result, worker_id=worker_id):
             return False
         if result.status is JobStatus.PENDING:
@@ -42,11 +79,11 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
 
     def claim(self, *, worker_id: str) -> JobT | None:
         del worker_id
-        raise InvalidJobError("Book-operation jobs are executed by BUS and cannot be claimed")
+        return None
 
     def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
         del result, worker_id
-        raise InvalidJobError("Book-operation jobs complete themselves")
+        return False
 
     def get_result(self, job_id: int) -> ResultT | None:
         self.release_idle_slots()
@@ -76,18 +113,9 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
             if row is None:
                 return
             result = self._execute(session, self.job_cls.from_row(row))
-            self._write_result(row, result)
+            self._write_result(
+                row,
+                result,
+                status=JobStatus.SETTLING if self._slot_held("post_result") else None,
+            )
             session.commit()
-
-    def _write_result(self, row: RowT, result: ResultT) -> None:
-        values: dict[str, Any] = result.to_dict()
-        values.pop("id", None)
-        values.pop("created_at", None)
-        values.pop("updated_at", None)
-        for key, value in values.items():
-            setattr(row, key, value)
-        row.status = (
-            JobStatus.SETTLING.value if self._slot_held("post_result") else result.status.value
-        )
-        row.error = result.error
-        row.updated_at = utcnow()

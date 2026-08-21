@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
-from ...base.operateBookJob import OperateBookJobBoard
+from ...base.BaseJob import BaseJob, BaseJobRow, JobStatus
+from ...base.operateBookJob import BookRecordResult, OperateBookJobBoard
 from ...base.time import utcnow
 from ..books.conversationBook import Conversation, ConversationRow
 
@@ -24,16 +23,10 @@ class CreateConversationJob(BaseJob):
 
 
 @dataclass
-class CreateConversationResult(BaseJobResult):
+class CreateConversationResult(BookRecordResult[Conversation]):
     conversation: Conversation | None = None
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        result = super().parse(data)
-        raw = data.get("conversation")
-        if isinstance(raw, dict):
-            result.conversation = Conversation.parse(raw)
-        return result
+    record_cls = Conversation
+    record_field = "conversation"
 
 
 class CreateConversationJobRow(BaseJobRow):
@@ -54,16 +47,6 @@ class CreateConversationJobBoard(
     row_cls = CreateConversationJobRow
 
     def _execute(self, session: Session, job: CreateConversationJob) -> CreateConversationResult:
-        if not job.delivery_address.strip():
-            return CreateConversationResult(
-                status=JobStatus.FAILED, error="delivery_address is required"
-            )
-        if job.contact_id < 0:
-            return CreateConversationResult(
-                status=JobStatus.FAILED, error="contact_id must be non-negative"
-            )
-        if not job.channel.strip():
-            return CreateConversationResult(status=JobStatus.FAILED, error="channel is required")
         row = ConversationRow(
             delivery_address=job.delivery_address,
             contact_id=job.contact_id,
@@ -82,16 +65,10 @@ class UpdateConversationSummaryJob(BaseJob):
 
 
 @dataclass
-class UpdateConversationSummaryResult(BaseJobResult):
+class UpdateConversationSummaryResult(BookRecordResult[Conversation]):
     conversation: Conversation | None = None
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        result = super().parse(data)
-        raw = data.get("conversation")
-        if isinstance(raw, dict):
-            result.conversation = Conversation.parse(raw)
-        return result
+    record_cls = Conversation
+    record_field = "conversation"
 
 
 class UpdateConversationSummaryJobRow(BaseJobRow):

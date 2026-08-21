@@ -128,11 +128,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             if not skip_publish:
                 session.execute(
                     update(row_cls)
-                    .where(
-                        row_cls.status.in_(
-                            (JobStatus.PREPARING.value, JobStatus.HOOKING.value)
-                        )
-                    )
+                    .where(row_cls.status.in_((JobStatus.PREPARING.value, JobStatus.HOOKING.value)))
                     .values(status=JobStatus.PENDING.value)
                 )
             if not skip_result:
@@ -208,15 +204,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             row = session.get(type(self).row_cls, job.id)
             if row is None or row.status != JobStatus.HOOKING.value:
                 return False
-            prepared = replace(
-                result,
-                created_at=row.created_at,
-                updated_at=utcnow(),
-            )
-            values = prepared.to_dict()
-            values.pop("id", None)
-            for key, value in values.items():
-                setattr(row, key, value)
+            self._write_result(row, result)
             session.commit()
             return True
 
@@ -231,17 +219,11 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
                 return False
-            prepared = replace(
+            self._write_result(
+                row,
                 result,
-                created_at=row.created_at,
-                updated_at=utcnow(),
+                status=JobStatus.SETTLING if self._slot_held("post_result") else None,
             )
-            values = prepared.to_dict()
-            values.pop("id", None)
-            for key, value in values.items():
-                setattr(row, key, value)
-            if self._slot_held("post_result"):
-                row.status = JobStatus.SETTLING.value
             session.commit()
             return True
 
@@ -255,17 +237,20 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             row = session.get(type(self).row_cls, job_id)
             if row is None or row.status != JobStatus.FINALIZING.value:
                 return False
-            prepared = replace(
-                result,
-                created_at=row.created_at,
-                updated_at=utcnow(),
-            )
-            values = prepared.to_dict()
-            values.pop("id", None)
-            for key, value in values.items():
-                setattr(row, key, value)
+            self._write_result(row, result)
             session.commit()
             return True
+
+    def _write_result(
+        self, row: RowT, result: BaseJobResult, *, status: JobStatus | None = None
+    ) -> None:
+        prepared = replace(result, created_at=row.created_at, updated_at=utcnow())
+        values = prepared.to_dict()
+        values.pop("id", None)
+        for key, value in values.items():
+            setattr(row, key, value)
+        if status is not None:
+            row.status = status.value
 
     def get_result(self, job_id: int) -> ResultT | None:
         self.release_idle_slots()
@@ -288,7 +273,9 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
 
     def list(self, *, status: JobStatus | None = None) -> list[JobT]:
         with self._session() as session:
-            stmt = select(type(self).row_cls).order_by(type(self).row_cls.created_at, type(self).row_cls.id)
+            stmt = select(type(self).row_cls).order_by(
+                type(self).row_cls.created_at, type(self).row_cls.id
+            )
             if status is not None:
                 stmt = stmt.where(type(self).row_cls.status == status.value)
             rows = list(session.scalars(stmt))
