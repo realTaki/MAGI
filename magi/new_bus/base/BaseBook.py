@@ -66,7 +66,7 @@ class BaseRecordMixin(DeclarativeBase):
 
 
 class BaseBook[RecordT: BaseRecord]:
-    """Internal record collection. Only OpenBookJobBoard may call these methods.
+    """Internal record collection. Firmware jobs operate through Rows.
 
     Firmware Books set ``record_cls`` and ``row_cls``. CRUD goes through the Row.
     """

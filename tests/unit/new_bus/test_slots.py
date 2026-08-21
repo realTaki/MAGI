@@ -105,7 +105,7 @@ def test_vacant_post_result_is_readable(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     outcome = bus.get_result(claimed)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
@@ -117,7 +117,7 @@ def test_post_result_then_submit_admits_result(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     assert bus.check_job_status(claimed) is JobStatus.SETTLING
     assert bus.get_result(claimed) is None
 
@@ -138,7 +138,7 @@ def test_submit_post_result_can_fail_the_job(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     hooked = bus.post_result(PingJob, worker_id=hook)
     assert hooked is not None
     assert bus.submit_post_result(
@@ -156,7 +156,7 @@ def test_expired_post_result_slot_releases_settling(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
     claimed = bus.claim(PingJob, worker_id=WORKER)
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(), worker_id=WORKER)
+    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
     assert bus.check_job_status(claimed) is JobStatus.SETTLING
     past = utcnow() - timedelta(seconds=1)
     board = bus.job_board(PingJob)

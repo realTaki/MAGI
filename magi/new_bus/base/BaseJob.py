@@ -45,6 +45,7 @@ class JobStatus(StrEnum):
     HOOKING = "hooking"
     PENDING = "pending"
     CLAIMED = "claimed"
+    EXECUTING = "executing"
     SETTLING = "settling"
     FINALIZING = "finalizing"
     COMPLETED = "completed"
@@ -225,9 +226,9 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
-    def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
         with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
+            row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
                 return False
             prepared = replace(

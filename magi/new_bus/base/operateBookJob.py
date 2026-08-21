@@ -44,8 +44,8 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         del worker_id
         raise InvalidJobError("Book-operation jobs are executed by BUS and cannot be claimed")
 
-    def submit_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
-        del job_id, result, worker_id
+    def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
+        del result, worker_id
         raise InvalidJobError("Book-operation jobs complete themselves")
 
     def get_result(self, job_id: int) -> ResultT | None:
@@ -68,7 +68,7 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
             claimed = session.execute(
                 update(row_cls)
                 .where(row_cls.id == job_id, row_cls.status == JobStatus.PENDING.value)
-                .values(status=JobStatus.CLAIMED.value)
+                .values(status=JobStatus.EXECUTING.value)
             )
             if getattr(claimed, "rowcount", 0) != 1:
                 return

@@ -8,6 +8,7 @@ import pytest
 from magi.new_bus import (
     AppendMessageJob,
     ArchiveMessagesJob,
+    BaseJob,
     BaseJobResult,
     Bus,
     Conversation,
@@ -28,7 +29,7 @@ def _bus() -> Bus:
     return item
 
 
-def _publish[JobT](bus: Bus, job: JobT) -> JobT:
+def _publish[JobT: BaseJob](bus: Bus, job: JobT) -> JobT:
     job.id = bus.publish(job, worker_id=WORKER)
     return job
 
