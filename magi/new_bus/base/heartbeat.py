@@ -33,10 +33,7 @@ class Heartbeat:
         now = utcnow()
         with self._lock:
             self._expire(now)
-            if any(
-                (owner := self._owners.get(slot)) is not None and owner != worker_id
-                for slot in slots
-            ):
+            if not self._can_attach(worker_id, slots):
                 return False
             self._until[worker_id] = now + LEASE
             owned = self._worker_slots.setdefault(worker_id, set())
@@ -44,6 +41,11 @@ class Heartbeat:
                 self._owners[slot] = worker_id
                 owned.add(slot)
             return True
+
+    def can_attach(self, worker_id: str, slots: tuple[Slot, ...]) -> bool:
+        with self._lock:
+            self._expire(utcnow())
+            return self._can_attach(worker_id, slots)
 
     def heartbeat(self, worker_id: str) -> bool:
         now = utcnow()
@@ -76,3 +78,8 @@ class Heartbeat:
             for slot in self._worker_slots.pop(worker_id, set()):
                 if self._owners.get(slot) == worker_id:
                     self._owners.pop(slot, None)
+
+    def _can_attach(self, worker_id: str, slots: tuple[Slot, ...]) -> bool:
+        return not any(
+            (owner := self._owners.get(slot)) is not None and owner != worker_id for slot in slots
+        )

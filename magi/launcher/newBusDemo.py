@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from .newBus import Launcher, WorkerSpec
 from magi.new_bus import Bus, JobBoardClient, SQLiteBackend, WorkerBus, job_board
 from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJob,
     CreateConversationJobBoard,
     CreateConversationResult,
 )
+
+from .newBus import Launcher, WorkerSpec
 
 
 class ConversationWorkerBus(WorkerBus):

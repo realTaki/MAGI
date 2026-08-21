@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 from typing import Any, TypeVar, cast
 
 from .base.BaseFileBook import BaseFileBook
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .base.dock import OrDock
+from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.errors import InvalidJobError
 from .base.file import FileBackend
@@ -34,8 +35,9 @@ class Bus:
         self._heartbeat = Heartbeat()
         self._books: dict[str, BaseFileBook] = {}
         self._job_boards: dict[type[BaseJob], BaseJobBoard[Any, Any, Any]] = {}
-        self._docks: dict[Slot, OrDock] = {}
-        self._worker_docks: dict[str, set[OrDock]] = {}
+        self._docks: dict[Slot, OrDock | AndDock] = {}
+        self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
+        self._lock = threading.RLock()
         from .firmware import attach
 
         attach(self)
@@ -95,25 +97,38 @@ class Bus:
         self._docks[slot] = OrDock(self._heartbeat, slot)
         return True
 
+    def install_and_dock(self, slot: Slot) -> bool:
+        if slot.job_type not in self._job_boards or not self._job_board(slot.job_type).has_slot(
+            slot.name
+        ):
+            return False
+        if slot in self._docks:
+            return True
+        self._docks[slot] = AndDock(self._heartbeat, slot)
+        return True
+
     def attach(self, worker_id: str, slots: Iterable[Slot]) -> bool:
         """Attach a worker's declared slots, routing each through its Dock if needed."""
         requested = tuple(slots)
-        if any(
-            slot.job_type not in self._job_boards
-            or not self._job_board(slot.job_type).has_slot(slot.name)
-            for slot in requested
-        ):
-            return False
-        direct = tuple(slot for slot in requested if slot not in self._docks)
-        if not self._heartbeat.attach(worker_id, direct):
-            return False
-        for slot in requested:
-            dock = self._docks.get(slot)
-            if dock is None:
-                continue
-            if not dock.attach(worker_id):
+        with self._lock:
+            if any(
+                slot.job_type not in self._job_boards
+                or not self._job_board(slot.job_type).has_slot(slot.name)
+                for slot in requested
+            ):
                 return False
-            self._worker_docks.setdefault(worker_id, set()).add(dock)
+            direct = tuple(slot for slot in requested if slot not in self._docks)
+            docks = tuple(self._docks[slot] for slot in requested if slot in self._docks)
+            if not self._heartbeat.can_attach(worker_id, direct) or not all(
+                dock.can_attach() for dock in docks
+            ):
+                return False
+            if not self._heartbeat.attach(worker_id, direct):
+                return False
+            for dock in docks:
+                if not dock.attach(worker_id):
+                    return False
+                self._worker_docks.setdefault(worker_id, set()).add(dock)
         return True
 
     def heartbeat(self, worker_id: str) -> bool:

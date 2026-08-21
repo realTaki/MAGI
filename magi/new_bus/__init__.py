@@ -6,7 +6,7 @@ record types (see :class:`Message`). External code talks to Bus, never to BaseBo
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .base.dock import OrDock
+from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.errors import (
     BackendError,
@@ -52,6 +52,7 @@ __all__ = [
     "JobNotFoundError",
     "JobStatus",
     "OrDock",
+    "AndDock",
     "Slot",
     "WorkerBus",
     "JobBoardClient",

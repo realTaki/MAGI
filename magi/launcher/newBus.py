@@ -25,7 +25,14 @@ class Launcher:
             for slot in worker.bus_type.declared_slots():
                 requested[slot] = requested.get(slot, 0) + 1
         for slot, count in requested.items():
-            if count > 1 and not self.bus.install_or_dock(slot):
+            if count <= 1:
+                continue
+            install = (
+                self.bus.install_and_dock
+                if slot.name in {"submit_post_publish", "submit_post_result"}
+                else self.bus.install_or_dock
+            )
+            if not install(slot):
                 return None
         started: dict[str, WorkerBus] = {}
         for worker in workers:

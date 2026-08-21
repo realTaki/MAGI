@@ -3,7 +3,7 @@
 from .BaseBook import BaseBook, BaseRecord
 from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .dock import OrDock
+from .dock import AndDock, OrDock
 from .engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .file import FileBackend
 from .heartbeat import Heartbeat, Slot
@@ -23,6 +23,7 @@ __all__ = [
     "BaseJobResult",
     "BaseJobBoard",
     "OrDock",
+    "AndDock",
     "Heartbeat",
     "Slot",
     "WorkerBus",
