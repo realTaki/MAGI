@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from magi.new_bus import FileBackend, SQLiteBackend
-from tests.unit.new_bus.support import InMemoryBackend
+from tests.unit.new_bus.testing import InMemoryBackend
 
 
 def test_sqlite_session_opens(tmp_path) -> None:

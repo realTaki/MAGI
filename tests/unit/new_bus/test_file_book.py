@@ -4,7 +4,7 @@ import pytest
 
 from magi.new_bus import Bus, FileBackend, InvalidJobError, SQLiteBackend
 from magi.new_bus.base.BaseFileBook import BaseFileBook
-from tests.unit.new_bus.support import InMemoryBackend
+from tests.unit.new_bus.testing import InMemoryBackend
 
 
 class NotesBook(BaseFileBook):

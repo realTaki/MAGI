@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from magi.new_bus import BaseJobResult, Bus, JobStatus, Slot
 from magi.new_bus.base.time import utcnow
-from tests.unit.new_bus.support import WORKER, PingJob
+from tests.unit.new_bus.testing import WORKER, PingJob
 
 
 def _attach(bus: Bus, worker_id: str, slots: tuple[str, ...]) -> bool:

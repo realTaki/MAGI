@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from magi.launcher.newBus import Launcher, WorkerSpec
 from magi.new_bus import AndDock, BaseJobResult, Bus, JobBoardClient, Slot, WorkerBus, job_board
-from tests.unit.new_bus.support import InMemoryBackend, PingJob, PingJobBoard
+from tests.unit.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard
 
 
 class SharedPingWorkerBus(WorkerBus):

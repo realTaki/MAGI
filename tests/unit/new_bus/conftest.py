@@ -6,7 +6,7 @@ import pytest
 
 from magi.new_bus import Bus, SQLiteBackend
 from magi.new_bus.base.engine import EngineFactory
-from tests.unit.new_bus.support import InMemoryBackend, PingJob, PingJobBoard, occupy
+from tests.unit.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard, occupy
 
 
 @pytest.fixture(params=["memory", "sqlite"])
