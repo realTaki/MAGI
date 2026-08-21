@@ -56,13 +56,10 @@ class Bus:
             raise InvalidJobError(f"{job_type.__qualname__} is already mounted")
         job_cls = getattr(board_cls, "job_cls", BaseJob)
         if job_cls is BaseJob:
-            board_cls = type(
-                f"{job_type.__qualname__}Board", (board_cls,), {"job_cls": job_type}
-            )
+            board_cls = type(f"{job_type.__qualname__}Board", (board_cls,), {"job_cls": job_type})
         elif job_cls is not job_type:
             raise InvalidJobError(
-                f"{board_cls.__name__} is for {job_cls.__qualname__}, not "
-                f"{job_type.__qualname__}"
+                f"{board_cls.__name__} is for {job_cls.__qualname__}, not {job_type.__qualname__}"
             )
         board = board_cls(self._factory)
         self._job_boards[job_type] = board
@@ -77,8 +74,9 @@ class Bus:
         worker_id: str,
         job_type: type[BaseJob],
         slots: tuple[str, ...] | list[str],
-    ) -> None:
-        self._job_board(job_type).attach(worker_id, slots)
+    ) -> bool:
+        """Try to acquire the requested worker slots."""
+        return self._job_board(job_type).attach(worker_id, slots)
 
     def heartbeat(self, worker_id: str) -> None:
         for board in self._job_boards.values():
@@ -87,14 +85,10 @@ class Bus:
     def publish(self, job: BaseJob, *, worker_id: str) -> int:
         return self._job_board(type(job)).publish(job, worker_id=worker_id)
 
-    def post_publish[JobT: BaseJob](
-        self, job_type: type[JobT], *, worker_id: str
-    ) -> JobT | None:
+    def post_publish[JobT: BaseJob](self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
         return self._job_board(job_type).post_publish(worker_id=worker_id)
 
-    def submit_post_publish(
-        self, job: BaseJob, result: BaseJobResult, *, worker_id: str
-    ) -> bool:
+    def submit_post_publish(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:
         return self._job_board(type(job)).submit_post_publish(job, result, worker_id=worker_id)
 
     def claim[JobT: BaseJob](self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
@@ -103,9 +97,7 @@ class Bus:
     def submit_result(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:
         return self._job_board(type(job)).submit_result(result, worker_id=worker_id)
 
-    def post_result[JobT: BaseJob](
-        self, job_type: type[JobT], *, worker_id: str
-    ) -> JobT | None:
+    def post_result[JobT: BaseJob](self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
         return self._job_board(job_type).post_result(worker_id=worker_id)
 
     def submit_post_result(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:

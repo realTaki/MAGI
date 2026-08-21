@@ -16,7 +16,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from .BaseBook import BaseRecord
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, slot
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 
 
 @dataclass
@@ -60,29 +60,27 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
 ):
     """A transactionally executed Book-operation board with no worker claim."""
 
-    @slot
-    def publish(self, job: JobT, *, worker_id: str) -> int:
-        job_id = super().publish(job, worker_id=worker_id)
+    def _publish(self, job: JobT) -> int:
+        job_id = super()._publish(job)
         if not self._slot_held("post_publish"):
             self._execute_pending(job_id)
         return job_id
 
-    @slot
-    def submit_post_publish(self, job: JobT, result: BaseJobResult, *, worker_id: str) -> bool:
+    def _submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
         if result.status not in {JobStatus.PENDING, JobStatus.FAILED}:
             return False
-        if not super().submit_post_publish(job, result, worker_id=worker_id):
+        if not super()._submit_post_publish(job, result):
             return False
         if result.status is JobStatus.PENDING:
             self._execute_pending(job.id)
         return True
 
-    def claim(self, *, worker_id: str) -> JobT | None:
-        del worker_id
+    def _claim(self) -> JobT | None:
+        """Book operations execute in the BUS and therefore cannot be claimed."""
         return None
 
-    def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
-        del result, worker_id
+    def _submit_result(self, _: BaseJobResult) -> bool:
+        """Book operations have no worker result to submit."""
         return False
 
     def get_result(self, job_id: int) -> ResultT | None:
@@ -112,7 +110,17 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
             row = session.get(row_cls, job_id)
             if row is None:
                 return
-            result = self._execute(session, self.job_cls.from_row(row))
+            try:
+                result = self._execute(session, self.job_cls.from_row(row))
+            except Exception as error:
+                session.rollback()
+                row = session.get(row_cls, job_id)
+                if row is None:
+                    return
+                result = type(self).result_cls(
+                    status=JobStatus.FAILED,
+                    error=str(error) or type(error).__name__,
+                )
             self._write_result(
                 row,
                 result,

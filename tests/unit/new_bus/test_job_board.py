@@ -128,5 +128,3 @@ def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
         with pytest.raises(InvalidJobError):
             bus.publish(PingJob(), worker_id=WORKER)
-
-

@@ -25,7 +25,11 @@ LEASE = timedelta(seconds=1)
 
 
 def slot(fn):
-    """Mark a JobBoard method as a slot. Caller must hold it via attach()."""
+    """Guard a public JobBoard operation with its worker slot.
+
+    The wrapped method declares only business arguments.  ``worker_id`` belongs
+    to this concurrency boundary and is deliberately not passed inward.
+    """
 
     @wraps(fn)
     def wrapped(self, *args, worker_id: str, **kwargs):
@@ -34,7 +38,7 @@ def slot(fn):
         if holder is None or holder[0] != worker_id or holder[1] <= now:
             raise InvalidJobError(f"slot {fn.__name__!r} is not held by {worker_id}")
         self._held[fn.__name__] = (worker_id, now + LEASE)
-        return fn(self, *args, worker_id=worker_id, **kwargs)
+        return fn(self, *args, **kwargs)
 
     setattr(wrapped, "_slot", True)
     return wrapped
@@ -95,17 +99,18 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    def attach(self, worker_id: str, slots: Sequence[str]) -> None:
+    def attach(self, worker_id: str, slots: Sequence[str]) -> bool:
         now = utcnow()
         until = now + LEASE
         for name in slots:
             if name not in self._held:
-                raise InvalidJobError(f"no slot {name!r} on {type(self).__name__}")
+                return False
             holder = self._held[name]
             if holder is not None and holder[1] > now and holder[0] != worker_id:
-                raise InvalidJobError(f"slot {name!r} is occupied by {holder[0]}")
+                return False
         for name in slots:
             self._held[name] = (worker_id, until)
+        return True
 
     def heartbeat(self, worker_id: str) -> None:
         now = utcnow()
@@ -174,7 +179,10 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return None
 
     @slot
-    def publish(self, job: JobT, *, worker_id: str) -> int:
+    def publish(self, job: JobT) -> int:
+        return self._publish(job)
+
+    def _publish(self, job: JobT) -> int:
         now = utcnow()
         prepared = replace(
             job,
@@ -195,11 +203,17 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return int(row.id)
 
     @slot
-    def post_publish(self, *, worker_id: str) -> JobT | None:
+    def post_publish(self) -> JobT | None:
+        return self._post_publish()
+
+    def _post_publish(self) -> JobT | None:
         return self._pull(JobStatus.PREPARING, JobStatus.HOOKING)
 
     @slot
-    def submit_post_publish(self, job: JobT, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
+        return self._submit_post_publish(job, result)
+
+    def _submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job.id)
             if row is None or row.status != JobStatus.HOOKING.value:
@@ -209,12 +223,18 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return True
 
     @slot
-    def claim(self, *, worker_id: str) -> JobT | None:
+    def claim(self) -> JobT | None:
+        return self._claim()
+
+    def _claim(self) -> JobT | None:
         self.release_idle_slots()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
-    def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_result(self, result: BaseJobResult) -> bool:
+        return self._submit_result(result)
+
+    def _submit_result(self, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
@@ -228,11 +248,17 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return True
 
     @slot
-    def post_result(self, *, worker_id: str) -> JobT | None:
+    def post_result(self) -> JobT | None:
+        return self._post_result()
+
+    def _post_result(self) -> JobT | None:
         return self._pull(JobStatus.SETTLING, JobStatus.FINALIZING)
 
     @slot
-    def submit_post_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
+        return self._submit_post_result(job_id, result)
+
+    def _submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
             if row is None or row.status != JobStatus.FINALIZING.value:

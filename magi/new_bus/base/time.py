@@ -38,9 +38,7 @@ class BaseTime(datetime):
 
 def utcnow() -> BaseTime:
     now = datetime.now(UTC).replace(tzinfo=None)
-    return BaseTime(
-        now.year, now.month, now.day, now.hour, now.minute, now.second, now.microsecond
-    )
+    return BaseTime(now.year, now.month, now.day, now.hour, now.minute, now.second, now.microsecond)
 
 
 def dump_json(value: Any) -> str:

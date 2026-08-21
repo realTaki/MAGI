@@ -11,7 +11,9 @@ from magi.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard, occupy
 
 @pytest.fixture(params=["memory", "sqlite"])
 def db_backend(request: pytest.FixtureRequest, tmp_path) -> Iterator[EngineFactory]:
-    store = InMemoryBackend() if request.param == "memory" else SQLiteBackend(tmp_path / "bus.sqlite")
+    store = (
+        InMemoryBackend() if request.param == "memory" else SQLiteBackend(tmp_path / "bus.sqlite")
+    )
     try:
         yield store
     finally:

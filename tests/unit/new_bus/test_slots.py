@@ -11,10 +11,13 @@ from magi.new_bus.testing import WORKER, PingJob
 
 def test_other_worker_cannot_use_occupied_slot(bus: Bus) -> None:
     bus.publish(PingJob(), worker_id=WORKER)
-    with pytest.raises(InvalidJobError, match="occupied"):
-        bus.attach("other", PingJob, ("publish",))
+    assert not bus.attach("other", PingJob, ("publish",))
     with pytest.raises(InvalidJobError, match="not held"):
         bus.claim(PingJob, worker_id="other")
+
+
+def test_attach_returns_false_for_an_unknown_slot(bus: Bus) -> None:
+    assert not bus.attach(WORKER, PingJob, ("missing",))
 
 
 def test_same_worker_reattach_renews(bus: Bus) -> None:
