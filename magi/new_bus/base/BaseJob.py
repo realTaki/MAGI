@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from functools import wraps
+from typing import Any, ClassVar, cast
 
 from sqlalchemy import Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,7 +37,7 @@ def slot(fn):
         self._heartbeat.heartbeat(worker_id)
         return fn(self, *args, **kwargs)
 
-    wrapped._slot = True
+    cast(Any, wrapped)._slot = True
     return wrapped
 
 
@@ -80,7 +81,7 @@ class BaseJobRow(BaseRecordMixin):
 class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     """Running container for one work BaseJob type."""
 
-    job_cls: type[JobT]
+    job_cls: ClassVar[type[BaseJob]]
     result_cls: type[ResultT]
     row_cls: type[RowT]
 
@@ -150,7 +151,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
                 pulled = session.get(type(self).row_cls, row.id)
             if pulled is None:
                 continue
-            return self.job_cls.from_row(pulled)
+            return cast(type[JobT], self.job_cls).from_row(pulled)
         return None
 
     @slot
@@ -280,4 +281,4 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             if status is not None:
                 stmt = stmt.where(type(self).row_cls.status == status.value)
             rows = list(session.scalars(stmt))
-        return [self.job_cls.from_row(row) for row in rows]
+        return [cast(type[JobT], self.job_cls).from_row(row) for row in rows]

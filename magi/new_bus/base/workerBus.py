@@ -64,7 +64,7 @@ class JobBoardBinding[JobT: BaseJob, ResultT: BaseJobResult]:
         slots: Iterable[str],
     ) -> None:
         self.board_cls = board_cls
-        self.job_cls: type[JobT] = board_cls.job_cls
+        self.job_cls: type[JobT] = cast(type[JobT], board_cls.job_cls)
         self.slots = tuple(slots)
         self.name = ""
 

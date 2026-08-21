@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, Self, get_args
+from typing import Any, ClassVar, Self, cast, get_args
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -119,7 +119,7 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
             if row is None:
                 return
             try:
-                result = self._execute(session, self.job_cls.from_row(row))
+                result = self._execute(session, cast(type[JobT], self.job_cls).from_row(row))
             except Exception as error:
                 session.rollback()
                 row = session.get(row_cls, job_id)
