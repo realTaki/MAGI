@@ -1,52 +1,23 @@
 # MAGI-BUS 架构设计书
 
-**状态：** 实现草案  
-**目标版本：** MAGI-BUS vNext  
+**状态：** v0.1.0 实现基线  
+**参考分支：** `v0.1.0`  
 **当前部署模型：** 一个 MAGI 一个进程  
-**用途：** BUS 重构与实现基线
+**定位：** MAGI 内部的软件总线与协议背板
 
 ---
 
 # 1. 设计目标
 
-MAGI-BUS 是一个 MAGI 内部的共享软件总线。
+MAGI-BUS 是单个 MAGI Runtime 内部的共享软件总线。
 
-它的目标不是成为：
-
-- Plugin Framework；
-- Workflow Engine；
-- Plugin Manager；
-- Scheduler；
-- Orchestrator；
-- Service Locator。
-
-BUS 的目标是提供一组足够简单、稳定的基础机制，使 MAGI 中不同模块能够：
-
-- 不直接依赖彼此；
-- 不直接访问共享数据库；
-- 通过统一的 Job 协议交换工作；
-- 通过 BUS 内部维护的 Book 保存共享状态；
-- 通过 Firmware 获得稳定的数据与行为协议；
-- 通过 Job Slot 在固定生命周期节点插入外部行为。
+它不负责实现 Agent、Tools、Channels、Plugins 等具体业务能力，也不负责组织这些模块之间的直接调用关系。BUS 的职责是提供一套稳定、严格、可替换的软件背板协议，使不同组件可以围绕 Book、Job、JobBoard、Slot 与 Firmware 协作，而无需直接依赖彼此。
 
 核心目标是：
 
 > **模块依赖 BUS Firmware，而不是依赖其他模块。**
 
----
-
-# 2. 核心设计哲学
-
-MAGI-BUS 的设计借鉴硬件 BUS。
-
-一个硬件模块：
-
-- 知道总线协议；
-- 知道自己需要读写什么；
-- 不需要知道数据由哪个设备产生；
-- 不需要知道自己的输出最终会被哪个设备消费。
-
-MAGI 中也应该如此：
+因此模块关系应当是：
 
 ```text
 Agent ─────┐
@@ -65,7 +36,27 @@ Tools ─────→ Agent
 Plugin A ──→ Plugin B
 ```
 
-模块之间应该通过 BUS 形成**逻辑解耦**。
+BUS 的目标不是消灭耦合，而是把跨模块耦合统一收敛成对 BUS Firmware 协议的依赖。
+
+---
+
+# 2. 设计哲学
+
+MAGI-BUS 的设计借鉴硬件总线。
+
+一个接入总线的模块：
+
+- 知道总线提供什么协议；
+- 知道自己需要发布什么 Job、处理什么 Job；
+- 不需要知道数据由哪个模块产生；
+- 不需要知道自己的输出最终会被哪个模块消费；
+- 不应该绕过 BUS 直接访问其他模块的内部状态。
+
+因此：
+
+> **BUS 定义协议与线路，Launcher 负责装配组件，Worker 负责执行具体行为。**
+
+BUS 本身应尽量保持机械、稳定和确定，不演化成 Plugin Manager 或 Workflow Engine。
 
 ---
 
@@ -75,30 +66,37 @@ Plugin A ──→ Plugin B
 
 > **一个 MAGI = 一个进程。**
 
-例如：
+典型结构：
 
 ```text
 ┌──────────────────── MAGI Process ────────────────────┐
 │                                                     │
 │  Launcher                                           │
-│     │                                               │
 │     ├── BUS                                         │
 │     ├── Agent                                       │
 │     ├── Tools                                       │
 │     ├── Channels                                    │
-│     └── Plugins / Docks                             │
+│     └── Plugins / Workers                           │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
 
-但是：
+当前 BUS 不要求：
 
-> **同进程不意味着允许模块直接耦合。**
+- IPC；
+- TCP；
+- Unix Socket；
+- Named Pipe；
+- 独立 BUS 进程；
+- 独立 Plugin 进程。
 
-即使实际上只是 Python 对象之间的调用，逻辑上仍然应该：
+但同进程不意味着模块可以直接耦合。逻辑上仍然应该是：
 
 ```text
 Component
+    │
+    ▼
+WorkerBus / JobBoardClient
     │
     ▼
    BUS
@@ -107,1568 +105,1364 @@ Component
 而不是：
 
 ```text
-Component A
-    │
-    ▼
-Component B
+Component A ───→ Component B
 ```
-
-BUS 当前不定义：
-
-- IPC；
-- TCP；
-- Unix Socket；
-- Named Pipe；
-- 多进程；
-- Remote Worker。
-
-这些全部留给未来的 Launcher / Runtime。
 
 因此：
 
-> **BUS 定义逻辑拓扑，不定义部署拓扑。**
+> **BUS 定义逻辑通信边界，不定义部署边界。**
+
+未来 Launcher 可以改变部署方式，但不应该因此改变 Firmware 中 Book、Job、JobBoard 与 Slot 的语义。
 
 ---
 
 # 4. BUS 的职责边界
 
-BUS 负责：
+MAGI-BUS 当前负责：
 
-- Backend 抽象；
-- Book；
-- Job；
+- Book 基础模型；
+- Job 与 JobResult 基础模型；
 - JobBoard；
-- ManageBookJobBoard；
+- Book Operation Job；
 - Job 生命周期；
-- Job Slot；
-- Slot attach / detach；
-- Firmware；
-- Firmware compatibility；
-- Book 与 Job 的持久化。
+- Slot 定义与 ownership；
+- WorkerBus 与 JobBoardClient；
+- Worker liveness 与 Slot lease；
+- Dock routing mechanism；
+- SQLite / PostgreSQL 持久化；
+- FileBook 基础能力；
+- Firmware 加载；
+- Firmware Schema Migration。
 
 BUS 不负责：
 
-- Plugin 安装；
-- Plugin 卸载；
+- Plugin 安装与卸载；
 - Plugin discovery；
-- Plugin enable / disable；
-- Plugin 生命周期；
 - Plugin dependency；
-- Plugin priority；
-- Hook ordering；
-- Dock；
-- 多 Hook composition；
-- Worker routing；
-- Launcher；
-- Process supervision。
+- Plugin enable / disable；
+- Plugin 的业务优先级；
+- Agent / Tool / Channel 业务逻辑；
+- Launcher 的组件规划；
+- 进程管理；
+- 网络通信。
 
-核心原则：
+核心边界是：
 
-> **BUS 管理自己的协议和插槽，不管理插入插槽的组件。**
+> **BUS 管理自己的协议、Job 状态和 Slot；它不理解接入 BUS 的组件具体是什么业务模块。**
 
 ---
 
-# 5. 总体结构
+# 5. 总体架构
 
-新版 BUS 分成两个主要层次：
+当前 BUS 可以分为三层：
 
 ```text
-                    External Components
-
-            Agent / Tools / Plugins / Channels
-                         │
-                         │
-                         ▼
-┌──────────────────────────────────────────────┐
-│                 bus.firmware                 │
-│                                              │
-│          Concrete Books + Concrete Jobs      │
-│               Firmware Version               │
-└─────────────────────┬────────────────────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────────┐
-│                   bus.base                   │
-│                                              │
-│     Backend / Book / Job / JobBoard          │
-│        ManageBookJobBoard / Job Slots          │
-└─────────────────────┬────────────────────────┘
-                      │
-                      ▼
-               Storage Backend
-                      │
-          ┌───────────┼───────────┐
-          ▼           ▼           ▼
-        File        SQLite    PostgreSQL
+                    External Workers
+                          │
+                          ▼
+                     WorkerBus
+                          │
+                          ▼
+┌───────────────────────────────────────────────┐
+│                    BUS                        │
+│                                               │
+│      JobBoards / Slots / Docks / Heartbeat    │
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│                bus.firmware                   │
+│                                               │
+│      Concrete Books + Concrete Jobs           │
+│          Firmware Schema Versions             │
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│                   bus.base                    │
+│                                               │
+│ BaseBook / BaseJob / BaseJobBoard             │
+│ OperateBookJobBoard / Slot / WorkerBus        │
+│ Engine / FileBook primitives                  │
+└───────────────────────┬───────────────────────┘
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+          SQL Storage         File Storage
+        SQLite/PostgreSQL       Directory
 ```
 
-最核心的分工：
+其中最重要的分工是：
 
-> **Base 定义机制。Firmware 定义具体协议。**
+> **Base 定义通用机制。Firmware 定义具体协议。**
 
 ---
 
 # 6. `bus.base`
 
-`bus.base` 是 BUS 最稳定的底层。
+`bus.base` 是 BUS 最稳定、最通用的一层。
 
-它不能包含 MAGI 业务概念。
-
-例如 Base 不应该知道：
+Base 不应该知道：
 
 - Agent；
 - Tool；
 - Channel；
-- LLM；
+- Conversation；
 - Message；
-- Memory；
-- Telegram。
+- LLM；
+- Telegram；
+- MCP。
 
-Base 只提供几个通用 primitive：
+当前 Base 的主要 primitive 包括：
 
 ```text
-Backend
-Book
-Job
-JobBoard
-ManageBookJobBoard
+BaseRecord
+BaseBook
+BaseFileBook
+
+BaseJob
+BaseJobResult
+BaseJobRow
+BaseJobBoard
+OperateBookJobBoard
+
 Slot
+Heartbeat
+
+WorkerBus
+JobBoardClient
+
+OrDock
+AndDock
+
+EngineFactory
+SQLiteBackend
+PostgresBackend
+FileBackend
 ```
 
-其中 Slot 是 Job 的组成能力，而不是与 Job 平级的业务系统。
+Conversation、Message 等具体 MAGI 语义只能出现在 Firmware。
 
 ---
 
-# 7. Backend
-
-## 7.1 Backend 的作用
-
-Backend 负责回答：
-
-> **Book 和 Job 实际存在哪里？**
-
-Base 只依赖统一 Backend 接口。
-
-```text
-Book / JobBoard
-      │
-      ▼
-   Backend
-      │
- ┌────┼─────────────┐
- ▼    ▼             ▼
-File SQLite    PostgreSQL
-```
-
----
-
-# 8. Backend 实现
-
-正式 Backend 应当对应真实持久化方式。
-
-目录建议：
-
-```text
-bus/
-└── backends/
-    ├── file/
-    ├── sqlite/
-    └── postgres/
-```
-
-或者较简单地：
-
-```text
-backends/
-├── file.py
-├── sqlite.py
-└── postgres.py
-```
-
-具体组织方式根据代码量决定。
-
----
-
-## 8.1 File Backend
-
-适用于：
-
-- 极简部署；
-- 本地 standalone；
-- 可读性优先；
-- 不希望依赖数据库服务的环境。
-
-可以使用：
-
-```text
-JSON
-JSONL
-SQLite-like file structures
-其他本地格式
-```
-
-具体文件编码不属于 BUS 协议。
-
----
-
-## 8.2 SQLite Backend
-
-建议作为 MAGI 本地默认 Backend。
-
-优点：
-
-- 单文件；
-- 支持 transaction；
-- 无独立数据库服务；
-- SQL 查询能力完整；
-- Alembic 支持成熟。
-
----
-
-## 8.3 PostgreSQL Backend
-
-适用于未来：
-
-- Server deployment；
-- 更复杂并发；
-- MAGIS；
-- 多实例或远程存储。
-
----
-
-# 9. 测试用内存实现
-
-如果测试时需要内存 Fake：
-
-```text
-FakeBackend
-InMemoryBackend
-```
-
-应该位于：
-
-```text
-tests/
-```
-
-或者：
-
-```text
-testing/
-```
-
-而不是正式：
-
-```text
-bus/backends/
-```
-
-因为它属于测试工具，而不是 MAGI-BUS 的正式存储能力。
-
----
-
-# 10. Schema 与 Migration
-
-数据库 Schema 不需要在 BUS 中另外建立一套独立 Schema 系统。
-
-使用：
-
-> **SQLAlchemy Model + Alembic**
-
-即可。
-
-Firmware 中定义的 Book / Job 持久化结构发生变化时：
-
-```text
-Model change
-     │
-     ▼
-Alembic migration
-```
-
-因此不需要：
-
-```text
-firmware/schemas/
-```
-
-这种额外层。
-
-建议：
-
-```text
-firmware/
-└── migrations/
-    ├── env.py
-    └── versions/
-```
-
-或者根据现有 MAGI 数据库结构与全局 Alembic 合并管理。
-
----
-
-# 11. Book
+# 7. Book：当前状态
 
 Book 表示：
 
 > **BUS 当前保存的状态。**
 
-例如 Firmware 未来可能定义：
+当前 Firmware 已经具有：
 
 ```text
-ToolBook
-AgentBook
-ChannelBook
-SessionBook
+ConversationBook
+MessageBook
 ```
 
-Book 底层可能对应：
+SQL Book 中，一条稳定的数据记录由 Dataclass 表示，例如：
 
 ```text
-SQL Table
-File Collection
-PostgreSQL Table
+Conversation
+Message
 ```
 
-但这些属于 Backend 实现。
+同时存在 BUS 内部 ORM Row：
+
+```text
+Conversation
+      │
+      ▼
+ConversationRow
+      │
+      ▼
+books_conversations
+```
+
+其中：
+
+- Record 表示稳定的数据字段；
+- Row 表示 BUS 内部 SQL 持久化结构；
+- Book 表示一组 Record/Row 的内部集合。
 
 ---
 
-# 12. Book 是 BUS 内部对象
+# 8. Book 是 BUS 内部对象
 
-这是新版 BUS 的硬性规则：
+重要不变量：
 
-> **BUS 外部模块不能直接访问 Book。**
+> **BUS 外部 Worker 不直接读取或修改 Book。**
 
-不仅不能修改，也不应该读取 Book。
-
-禁止：
+正常外部组件不应该直接：
 
 ```python
-tool_book.list()
-tool_book.update(...)
+ConversationBook(...)
+MessageBook(...)
 ```
 
-禁止：
+也不应该直接：
 
-```text
-Plugin → Database
+```python
+book.add(...)
+book.update(...)
+book.delete(...)
+book.list(...)
 ```
 
-禁止：
+虽然 `BaseBook` 内部提供 CRUD 能力，但这些方法属于：
 
-```text
-Agent → Book
-```
+> **BUS Internal API。**
 
-Book 属于 BUS 内部状态。
+它们供 Firmware 中的语义 Job 实现使用，不属于 Worker Public Surface。
+
+外部组件也不应该直接访问：
+
+- SQLAlchemy Row；
+- SQLAlchemy Session；
+- Engine；
+- 数据库表。
 
 ---
 
-# 13. 外部组件只操作 Job
+# 9. 外部组件通过 Semantic Job 操作 Book
 
-外部模块真正与 BUS 交互的主要对象应该是：
+当前实现没有使用一个通用 `EditBookJob` 对外暴露 CRUD。
 
-> **Job / JobBoard。**
+Firmware 为 Book 定义具备明确业务语义的 Job，例如：
+
+```text
+CreateConversationJob
+UpdateConversationSummaryJob
+
+AppendMessageJob
+ListConversationMessagesJob
+ArchiveMessagesJob
+```
+
+这意味着外部组件表达的是：
+
+```text
+UpdateConversationSummary
+```
+
+而不是：
+
+```text
+UPDATE conversation SET ...
+```
+
+表达的是：
+
+```text
+ListConversationMessages
+```
+
+而不是：
+
+```text
+SELECT * FROM messages ...
+```
+
+因此：
+
+> **Firmware 对外暴露语义操作，而不是数据库 CRUD。**
+
+这是当前 BUS 架构的重要原则。
+
+---
+
+# 10. Book Query 同样 Job 化
+
+“外部不触碰 Book”不仅适用于 Mutation，也适用于 Query。
 
 例如：
 
 ```text
-Plugin
-   │
-   │ publish Job
-   ▼
- JobBoard
-```
-
-或者：
-
-```text
 Worker
    │
-   │ claim
+   │ publish ListConversationMessagesJob
    ▼
- JobBoard
+BUS
+   │
+   │ query MessageRow
+   ▼
+ListConversationMessagesResult
 ```
 
-如果某类操作需要修改共享状态：
+因此 Book 可以保持完全 BUS-private。
 
-```text
-External Component
-        │
-        ▼
- ManageBookJob
-        │
-        ▼
-ManageBookJobBoard
-        │
-        ▼
-      Book
-```
+外部组件无需获得 Book reference，也无需增加额外 View 层或 API 层。
 
-这样外部组件永远不需要接触 Book。
+> **JobBoard API 本身就是 BUS 的行为 API。**
 
 ---
 
-# 14. 为什么 Book Mutation 必须经过 Job
+# 11. `OperateBookJobBoard`
 
-如果允许：
-
-```text
-Plugin → Book.update()
-```
-
-那么 Book 中的某条记录变化以后，很难天然知道：
-
-> 谁改的？
-
-而如果统一：
+所有直接操作内部 Book 的 Firmware Job 可以继承：
 
 ```text
-Plugin
-   │
-   ▼
-ManageBookJob
-   │
-   ▼
-Book
+OperateBookJobBoard
 ```
 
-那么 Job 本身就已经记录了：
+与普通 Worker JobBoard 不同，OperateBookJobBoard：
 
-- 谁发布；
-- 什么时候发布；
-- 要求做什么；
-- 操作成功还是失败。
+- 接收正常 publish；
+- 不允许外部 claim；
+- Job 进入可执行状态后由 BUS 自己执行；
+- Book 操作与 Job terminal result 在同一事务中提交。
 
-因此：
+基础路径：
 
-> **Job History 本身就是 Audit Trail。**
+```text
+publish
+   │
+   ▼
+PENDING
+   │
+   ▼
+EXECUTING
+   │
+   ├────→ COMPLETED
+   │
+   └────→ FAILED
+```
 
-不需要另外建立：
+真正的数据修改始终发生在 BUS/Firmware 内部。
+
+---
+
+# 12. Job History 即 Audit Trail
+
+当前 BUS 不建立额外：
 
 ```text
 Audit
 AuditRecord
 MutationProvenance
+EventLog
 ```
 
-等系统。
+系统。
+
+原因是 Job 本身已经持久化：
+
+- publisher；
+- created_at；
+- 输入字段；
+- lifecycle status；
+- result；
+- error。
+
+因此对于一个 Book Operation：
+
+```text
+Job
+ ├── Request
+ ├── Status
+ ├── Result Snapshot
+ └── Error
+```
+
+本身已经构成完整的操作历史。
+
+> **Job History 就是 BUS 的 Audit Trail。**
+
+不需要再维护第二套 Audit 数据。
 
 ---
 
-# 15. Job 是行为历史
+# 13. Job 基础模型
 
-Book 与 Job 的关系可以定义为：
+`BaseJob` 表示：
 
-> **Book 保存当前结果。**
+> **某件需要发生、正在发生或已经发生的事情。**
 
-> **Job 保存产生系统行为的过程。**
-
-例如：
-
-```text
-ToolBook
-```
-
-回答：
-
-> 当前有哪些 Tool。
-
-而：
-
-```text
-EditToolBookJobBoard
-```
-
-回答：
-
-> Tool 曾经发生过哪些注册、更新和删除操作。
-
-因此无需再建立一套独立 Event Log 或 Audit Log。
-
----
-
-# 16. 每个 Book 自带 ManageBookJobBoard
-
-每个具体 Book 都应该对应一个内部的：
-
-```text
-ManageBookJobBoard
-```
-
-例如：
-
-```text
-ToolBook
-└── EditToolBookJobBoard
-
-AgentBook
-└── EditAgentBookJobBoard
-```
-
-这里的关系应当在 Firmware 中定义。
-
----
-
-# 17. ManageBookJob
-
-ManageBookJob 是特殊 Job。
-
-它与普通 Job 最大区别是：
-
-> **不需要被外部 Worker claim。**
-
-它在 publish 后由 BUS 自动处理。
-
-例如：
-
-```text
-Plugin
-   │
-   │ publish
-   ▼
-EditToolBookJobBoard
-   │
-   ▼
-  BUS
-   │
-   ├── validate
-   ├── edit ToolBook
-   └── update Job status
-```
-
----
-
-# 18. ManageBookJob 生命周期
-
-可以非常简单：
-
-```text
-PENDING
-   │
-   ▼
-BUS executes
-   │
-   ├────→ COMPLETED
-   │
-   └────→ FAILED
-```
-
-或者沿用所有 Job 的统一状态定义。
-
-关键不是状态名字。
-
-关键是：
-
-> ManageBookJob 不进入外部 claim 流程。
-
----
-
-# 19. ManageBookJob 不删除
-
-即使 Book edit 已经完成：
-
-```text
-ManageBookJob
-```
-
-仍然应该留在 JobBoard。
-
-因此以后可以查询：
-
-```text
-哪个模块在什么时候请求了这次修改？
-```
-
-不需要 BUS 再额外维护 Audit。
-
----
-
-# 20. Job
-
-Job 表示：
-
-> **某件需要发生、正在发生或者曾经发生的事情。**
-
-普通 Job 可能包含：
+当前 BaseJob 的基础字段保持轻量：
 
 ```text
 id
-type
-status
-publisher
 created_at
-payload
-result
-error
+updated_at
+publisher
 ```
 
-根据实际需求还可以增加：
+具体业务字段由 Firmware Job Dataclass 定义。
+
+例如：
 
 ```text
-priority
-available_at
-attempt
+AppendMessageJob
+├── conversation_id
+├── role
+├── content
+└── timestamp
 ```
 
-但第一版应尽量避免预先加入没有实际用途的字段。
-
----
-
-# 21. 不预设复杂 Trace 字段
-
-当前 BUS 不需要强制加入：
+当前 BUS 不强制加入：
 
 ```text
 correlation_id
 causation_id
-mutation_provenance
 trace_id
 span_id
+revision
+mutation_provenance
 ```
 
-这些属于更复杂的事件追踪或分布式 tracing 机制。
+等复杂事件系统字段。
 
-如果将来发现确实需要：
-
-> Job B 是由哪个 Job A 直接触发的？
-
-可以再考虑一个简单的：
-
-```text
-parent_job_id
-```
-
-但不进入当前 BUS v1 基础模型。
+只有产生明确实际需求以后才增加。
 
 ---
 
-# 22. 不强制 Book Revision
+# 14. Job Result
 
-当前版本也不把：
-
-```text
-Revision
-MVCC
-CAS
-```
-
-作为所有 Book 的基础能力。
-
-因为 Book mutation 已经统一经过：
+Job 的请求和结果使用不同类型：
 
 ```text
-ManageBookJobBoard
+BaseJob
+BaseJobResult
 ```
 
-BUS 可以首先通过确定的 Job 处理顺序保证 mutation 行为。
-
-未来某个 Book 如果确实存在：
+Firmware 可以进一步定义：
 
 ```text
-lost update
-compare-and-swap
-optimistic locking
+CreateConversationJob
+CreateConversationResult
+
+AppendMessageJob
+AppendMessageResult
 ```
 
-需求，可以由那个具体 Book / Firmware 协议扩展。
+Request 与 Result 使用同一 Job Row 持久化。
 
-不需要让所有 Book 一开始承担这个复杂度。
+因此一条 Job Row 同时承担：
+
+```text
+Request
++
+Lifecycle State
++
+Result
+```
+
+这避免再增加 Result Table 或 Audit Table。
 
 ---
 
-# 23. JobBoard
+# 15. Job 状态机
 
-JobBoard 是 Job 的运行容器，同时自己提供操作 API。
-
-因此不需要再建立：
+当前 `JobStatus` 包含：
 
 ```text
-firmware/apis/
+PREPARING
+HOOKING
+PENDING
+CLAIMED
+EXECUTING
+SETTLING
+FINALIZING
+COMPLETED
+FAILED
 ```
 
-一层额外包装。
+不同 Job 类型和不同 Slot 配置并不一定经过所有状态。
 
-JobBoard 可以直接提供：
-
-```python
-publish(...)
-claim(...)
-complete(...)
-fail(...)
-list(...)
-get(...)
-```
-
-具体方法根据 JobBoard 类型决定。
+状态机根据实际是否存在 Hook 自动缩短。
 
 ---
 
-# 24. JobBoard 是主要外部接口
+# 16. 普通 Worker Job 生命周期
 
-从组件视角：
+普通 Job 在没有额外 Hook 时：
 
 ```text
-Plugin
+publish
    │
    ▼
-JobBoard
-```
-
-JobBoard 本身就是 BUS Contract 的一部分。
-
-因此：
-
-> **JobBoard API 就是 API。**
-
-没有必要出现：
-
-```text
-API layer
-   ↓
-JobBoard API
-```
-
-这种重复抽象。
-
----
-
-# 25. 普通 Job 生命周期
-
-普通 Worker Job 可以采用简单生命周期：
-
-```text
 PENDING
    │
    ▼
+claim
+   │
+   ▼
 CLAIMED
+   │
+   ▼
+submit_result
    │
    ├────→ COMPLETED
    │
    └────→ FAILED
 ```
 
-如果后续发现需要：
+`claim` 使用原子状态更新：
 
 ```text
-RUNNING
-RETRYING
-EXPIRED
+PENDING → CLAIMED
 ```
 
-再加入即可。
-
-第一版不应该为了理论完整性提前建立复杂状态机。
+只有成功完成状态转换的 Worker 可以取得该 Job，避免一个 Job 被多个 Worker 同时 claim。
 
 ---
 
-# 26. Claim
+# 17. Post-Publish Gate
 
-普通 Job 可以被 Worker claim。
+当前实现没有把 Job lifecycle 建模成抽象的 `pre_publish / pre_claim / post_claim`。
+
+实际实现采用明确的 pull/submit Gate：
+
+```text
+post_publish
+submit_post_publish
+```
+
+如果没有 Worker 占据 `post_publish`：
+
+```text
+publish
+   │
+   ▼
+PENDING
+```
+
+Job 可以立即进入可执行状态。
+
+如果存在 `post_publish` Handler：
+
+```text
+publish
+   │
+   ▼
+PREPARING
+   │
+   ▼
+post_publish()
+   │
+   ▼
+HOOKING
+   │
+   ▼
+submit_post_publish()
+   │
+   ├──── approve ──→ PENDING
+   │
+   └──── reject ───→ FAILED
+```
+
+因此 `post_publish` 实际表示：
+
+> **Job 已经被记录，但在进入可执行队列之前进行检查。**
+
+例如 Policy 或 Security Worker 可以在这里阻止某个 Job 真正被执行。
+
+---
+
+# 18. Post-Result Gate
+
+Worker Result 同样支持一个可选 Gate：
+
+```text
+post_result
+submit_post_result
+```
+
+如果不存在 post-result Hook：
+
+```text
+submit_result
+   │
+   ├────→ COMPLETED
+   └────→ FAILED
+```
+
+如果存在：
+
+```text
+submit_result
+   │
+   ▼
+SETTLING
+   │
+   ▼
+post_result()
+   │
+   ▼
+FINALIZING
+   │
+   ▼
+submit_post_result()
+   │
+   ├────→ COMPLETED
+   └────→ FAILED
+```
+
+因此外部 Hook 可以在 Worker 提交结果后、结果正式终结前进行最终处理。
+
+---
+
+# 19. OperateBookJob 与 Gate
+
+Book Operation Job 同样可以经过 `post_publish` Gate。
 
 例如：
 
 ```text
-ToolCallJob
-    │
-    ▼
-claim
-    │
-    ▼
-Tool Worker
-```
-
-同一个 Job 的 claim 必须具有明确的一次性 ownership 语义，避免两个不同 Worker 同时认为自己拿到了同一个 Job。
-
-具体并发控制方式由 Backend 实现。
-
----
-
-# 27. Slot
-
-Slot 不是独立于 Job 的业务模块。
-
-Slot 应该理解成：
-
-> **Job 生命周期本身提供的一种 Feature。**
-
-因此不会存在：
-
-```text
-firmware/
-├── jobs/
-└── slots/
-```
-
-而应该是：
-
-```text
-Firmware Job
-    │
-    └── Slots
-```
-
----
-
-# 28. Job 的标准 Slot
-
-一个 Job 可以具有：
-
-```text
-pre_publish
-publish
-post_publish
-
-pre_claim
-claim
-post_claim
-```
-
-这些 Slot 是 Job lifecycle 上的固定 Hook Point。
-
-概念上：
-
-```text
-Job.publish()
-      │
-      ▼
- pre_publish
-      │
-      ▼
-   publish
-      │
-      ▼
- post_publish
-```
-
-以及：
-
-```text
-Job.claim()
-      │
-      ▼
-  pre_claim
-      │
-      ▼
-    claim
-      │
-      ▼
- post_claim
-```
-
----
-
-# 29. Slot 是 Job Base Feature
-
-Base Job 可以提供通用 Slot primitive。
-
-概念上：
-
-```python
-class Job:
-    pre_publish
+CreateConversationJob
+       │
+       ▼
     publish
-    post_publish
-
-    pre_claim
-    claim
-    post_claim
+       │
+       ▼
+   PREPARING
+       │
+       ▼
+ post_publish checker
+       │
+       ├── FAILED
+       │
+       └── PENDING
+              │
+              ▼
+       BUS executes Book mutation
 ```
 
-具体 Firmware Job 可以根据自己的语义使用这些能力。
+因此外部 Policy Worker 可以阻止 Book Operation 真正发生，而仍然不需要接触 Book。
+
+---
+
+# 20. Slot 是 JobBoard Operation 的 Feature
+
+Slot 不是 Firmware 中独立于 Job 的 Domain。
+
+当前 Slot 的身份由：
+
+```text
+(JobType, OperationName)
+```
+
+组成。
+
+例如：
+
+```text
+Slot(PingJob, "publish")
+Slot(PingJob, "claim")
+Slot(PingJob, "post_publish")
+Slot(PingJob, "submit_post_result")
+```
+
+JobBoard 使用 `@slot` 标记一个 operation 是否属于可被 Worker 占用的 Slot。
 
 因此：
 
-> Slot 属于 Job model，而不是单独的一套 Firmware Domain。
+> **Slot 是 Job 生命周期/JobBoard operation 上允许外部 Worker 接入的位置。**
+
+不需要单独的 `firmware/slots/` 模块。
 
 ---
 
-# 30. Slot Cardinality
+# 21. 当前 Slot Operations
 
-当前 BUS 只需要两种 Slot：
-
-```text
-SINGLE
-MULTI
-```
-
----
-
-# 31. SINGLE Slot
-
-以下 Slot 默认为：
+`BaseJobBoard` 当前暴露的 Slot operation 包括：
 
 ```text
-SINGLE
-```
+publish
 
-包括：
-
-```text
-pre_publish
 post_publish
+submit_post_publish
 
-pre_claim
 claim
-post_claim
+submit_result
+
+post_result
+submit_post_result
 ```
 
-一个 SINGLE Slot：
+而以下接口不是 Slot：
 
 ```text
-0 或 1 个 Handler
+get_result
+check_job_status
+list
 ```
 
-如果：
-
-```text
-Plugin A
-```
-
-已经接入：
-
-```text
-pre_claim
-```
-
-那么 Plugin B 再尝试：
-
-```text
-attach(pre_claim)
-```
-
-BUS 直接返回：
-
-```text
-SLOT_OCCUPIED
-```
-
-结束。
+它们属于 JobBoard 的普通查询能力。
 
 ---
 
-# 32. BUS 不解决 SINGLE Slot 冲突
+# 22. 统一单 Owner Slot 模型
 
-BUS 不做：
+当前实现选择：
 
-```text
-谁优先？
-谁先加载？
-谁版本高？
-谁 priority 大？
-```
+> **所有原始 Slot 都采用统一的单 owner 模型。**
 
-也不会自动组成：
+即：
 
 ```text
-Plugin A → Plugin B → Plugin C
+Slot
+ │
+ └── 0..1 owner
 ```
 
-它只维护：
+如果 Worker A 已经直接拥有：
 
-> 这个 Slot 当前有没有被占用。
+```text
+Slot(Job, "claim")
+```
+
+Worker B 不能直接获得同一个 Slot。
+
+BUS 不根据以下信息进行仲裁：
+
+- Plugin priority；
+- load order；
+- Plugin version；
+- random selection。
+
+直接 Slot 冲突会被拒绝。
+
+这种统一模型避免 BUS Core 同时维护 SINGLE/MULTI 两套 Slot ownership 语义。
 
 ---
 
-# 33. MULTI Publish Slot
+# 23. Publish 也使用统一 Slot 模型
 
-`publish` 是例外。
-
-它允许任意数量 Handler 接入。
-
-例如：
+早期设计曾考虑：
 
 ```text
-                    ┌── Plugin A
-                    │
-                    ├── Plugin B
-Job.publish ────────┤
-                    ├── Plugin C
-                    │
-                    └── Plugin N
+publish = MULTI
+control slots = SINGLE
 ```
 
-不存在数量上限。
+当前实现最终选择：
+
+```text
+all raw slots = single owner
+```
+
+因此多个 Publisher 不直接同时拥有 `publish` Slot，而是：
+
+```text
+Publisher A ─┐
+Publisher B ─┼── OrDock ─── publish Slot
+Publisher C ─┘
+```
+
+从 Worker 使用效果来看仍然可以有多个 Publisher，但 BUS Core 不需要为 publish 建立特殊 cardinality。
+
+> **多 Worker 共享问题统一交给 Dock。**
 
 ---
 
-# 34. 为什么 Publish 可以 MULTI
+# 24. Heartbeat 与 Slot Lease
 
-Publish 的核心语义是：
+当前 Slot ownership 由 BUS-private `Heartbeat` 管理。
 
-> **广播 / fan-out。**
-
-多个 Listener 都只是独立接收同一次 Publish。
-
-例如：
+Heartbeat 保存：
 
 ```text
-A receives Job
-B receives Job
-C receives Job
+worker_id → lease expiration
+Slot      → owner
 ```
 
-A 是否存在不会改变 B 能不能收到。
+Worker attach 成功后获得 Slot，之后在调用 Slot 或主动 heartbeat 时刷新 lease。
 
-因此不产生控制权冲突。
+当前 lease 很短，其目的不是做网络健康检查，而是：
+
+> **防止一个已经停止活动的 Worker 永久占据 Slot。**
+
+如果 Worker lease 过期：
+
+```text
+Worker expires
+      │
+      ▼
+Slot ownership released
+```
+
+其他 Worker 可以重新 attach。
+
+因此 Heartbeat 是当前单进程 Runtime 中的 Slot liveness/ownership 机制，并不意味着 BUS 必须采用多进程部署。
 
 ---
 
-# 35. 为什么 Pre/Post/Claim 必须 SINGLE
+# 25. Hook 消失后的 Job 自动释放
 
-这些 Slot 处于控制路径。
+Heartbeat 还用于避免失效 Hook 永久卡住 Job。
 
-例如两个独立 Handler 同时处理：
-
-```text
-pre_claim
-```
-
-一个：
+例如 Job 当前处于：
 
 ```text
-PASS
+PREPARING / HOOKING
 ```
 
-另一个：
+等待 post-publish Handler。
+
+如果对应 Slot 已经没有 live owner，JobBoard 可以自动将其释放为：
 
 ```text
-REJECT
+PENDING
 ```
 
-BUS 就必须决定：
+同样，如果 Result 处于：
 
 ```text
-谁先？
-谁赢？
+SETTLING / FINALIZING
 ```
 
-这不是 BUS 应该做的事情。
-
-所以：
+而 post-result Hook 已经不存在，则 JobBoard 可以根据已有 result/error 自动进入：
 
 ```text
-pre_claim = SINGLE
+COMPLETED
+/
+FAILED
 ```
 
-从协议层直接消灭这种歧义。
+因此一个失效 Hook 不会永久冻结 Job 生命周期。
 
 ---
 
-# 36. BUS 不支持 Priority
+# 26. WorkerBus
 
-特别需要明确：
+外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。
 
-BUS 不提供：
-
-```text
-priority = 10
-priority = 20
-priority = 30
-```
-
-这种 Hook 排序机制。
-
-BUS 也不会为了让多个 Hook 接入而增加：
+BUS 为每个 Worker 创建：
 
 ```text
-pre_claim.security
-pre_claim.policy
-pre_claim.quota
-```
-
-这种动态拓扑。
-
-因为这些都属于：
-
-> **控制逻辑组合。**
-
-不是 BUS 的职责。
-
----
-
-# 37. Dock
-
-如果多个 Plugin 确实需要共享一个 SINGLE Slot：
-
-```text
-Security
-Policy
-Quota
-```
-
-应该由 BUS 外部创建：
-
-```text
-Dock
+WorkerBus
 ```
 
 例如：
 
-```text
-Security ─┐
-Policy ───┼── Dock ─────→ BUS.pre_claim
-Quota ────┘
+```python
+bus.for_worker("worker-a", SomeWorkerBus)
 ```
 
-Dock 自己可以拥有：
+WorkerBus 是：
 
-```text
-priority
-ordering
-pipeline
-parallel execution
-routing
-fallback
-```
+> **绑定到具体 Worker identity 的 typed BUS surface。**
 
-但 BUS 看见的只有：
-
-```text
-pre_claim
-   │
-   ▼
-ONE Handler
-```
+Worker 只看到自己声明需要使用的 JobBoard。
 
 ---
 
-# 38. Launcher
+# 27. `job_board()` 声明
 
-Launcher 位于 BUS 外部。
+WorkerBus 子类通过 `job_board()` 声明：
 
-当前单进程结构：
+- 使用哪个 JobBoard；
+- 需要哪些 Slot。
+
+例如：
+
+```python
+class ToolWorkerBus(WorkerBus):
+    tool_call = job_board(
+        ToolCallJobBoard,
+        slots=("claim", "submit_result"),
+    )
+```
+
+表示该 Worker 使用 ToolCallJobBoard，并请求：
+
+```text
+claim
+submit_result
+```
+
+这些声明最终转换成：
+
+```text
+Slot(JobType, operation)
+```
+
+集合并 attach 到 BUS。
+
+---
+
+# 28. JobBoardClient
+
+Worker 实际拿到的是：
+
+```text
+JobBoardClient
+```
+
+而不是原始 `BaseJobBoard`。
+
+JobBoardClient：
+
+- 自动携带 worker_id；
+- 将 Slot operation 通过 BUS `_invoke()` 调用；
+- 不能绕过 Slot ownership；
+- 暴露 typed Job / Result API。
+
+因此调用方式可以保持接近普通对象调用：
+
+```python
+job_id = worker_bus.messages.publish(job)
+job = worker_bus.messages.claim()
+worker_bus.messages.submit_result(result)
+```
+
+虽然当前所有组件都在同一进程，这种 facade 仍然强制保持 BUS 逻辑边界。
+
+---
+
+# 29. Dock
+
+当前 Base 提供两个通用 Dock：
+
+```text
+OrDock
+AndDock
+```
+
+Dock 的核心作用是：
+
+> **让多个 Worker 在外部组成一个逻辑 Slot owner。**
+
+BUS 内真正拥有原始 Slot 的是 Dock，Worker 成为 Dock 的 member。
+
+因此原始 Slot 仍然维持单 owner 不变量。
+
+---
+
+# 30. OrDock
+
+`OrDock` 的语义是：
+
+> **任意一个 live member 都可以使用这个 Slot。**
+
+例如：
+
+```text
+Worker A ─┐
+Worker B ─┼── OrDock ─── Slot(Job, "publish")
+Worker C ─┘
+```
+
+BUS Slot 本身仍然只有一个 owner：
+
+```text
+OrDock
+```
+
+但多个 Worker 都可以通过 Dock 调用该 operation。
+
+适合：
+
+- publish；
+- claim；
+- submit_result；
+- 其他任意一个成员即可完成的 Slot。
+
+---
+
+# 31. AndDock
+
+`AndDock` 用于：
+
+> **多个 Worker 都需要对同一次提交给出结果。**
+
+例如：
+
+```text
+Worker A ─┐
+Worker B ─┼── AndDock ─── submit_post_result
+Worker C ─┘
+```
+
+AndDock 为同一个 Job 收集当前 live member 的 vote/result。
+
+当前 reducer 规则保持简单：
+
+```text
+任意一个 FAILED
+        │
+        ▼
+整体 FAILED
+```
+
+否则采用成功结果继续提交。
+
+更复杂的业务级 reducer 可以未来扩展，但不属于当前 BUS 核心协议。
+
+---
+
+# 32. Dock 与 BUS / Launcher 的边界
+
+Dock 的通用 mechanism 位于 BUS Base 中，但：
+
+> **BUS 不主动决定什么时候应该使用 Dock。**
+
+决定权属于 Launcher。
+
+边界是：
+
+```text
+BUS:
+    提供 OrDock / AndDock mechanism
+    保证 Slot ownership
+    提供 routing
+
+Launcher:
+    查看 Worker 声明
+    规划 topology
+    决定是否安装 Dock
+    选择 Dock 类型
+```
+
+因此 Dock mechanism 属于 BUS 能力，而 Dock topology / composition policy 属于 Launcher。
+
+BUS 不需要理解 Plugin topology。
+
+---
+
+# 33. Launcher
+
+当前 `magi/launcher/newBus.py` 负责在 Worker 启动前规划 Slot topology。
+
+Launcher 的基本流程：
+
+1. 收集所有 Worker 声明的 Slot；
+2. 统计同一个 Slot 有多少 Worker 请求；
+3. 单 Worker Slot 直接 attach；
+4. 多 Worker Slot 安装对应 Dock；
+5. 创建 WorkerBus；
+6. attach Worker。
+
+概念上：
 
 ```text
 Launcher
    │
-   ├── create BUS
-   ├── load Firmware
-   ├── create Agent
-   ├── create Tools
-   ├── create Channels
-   ├── load Plugins
-   └── create Docks if necessary
+   ├── plan topology
+   ├── install Docks
+   ├── create WorkerBus
+   └── attach Workers
 ```
 
-Launcher 可以聪明。
-
-BUS 应该保持简单。
+BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
 
 ---
 
-# 39. BUS 不知道 Plugin
+# 34. Launcher 当前默认 Dock Policy
 
-严格来说，BUS 甚至不需要把接入 Slot 的对象理解成 Plugin。
-
-BUS 只需要知道：
+当多个 Worker 请求同一个 Slot 时，当前 Launcher 默认：
 
 ```text
-Handler
+submit_post_publish
+submit_post_result
+        │
+        ▼
+      AndDock
 ```
 
-或者：
+其他重复 Slot：
 
 ```text
-Endpoint
+publish
+claim
+submit_result
+...
+        │
+        ▼
+      OrDock
 ```
 
-这个对象满足对应 Slot 所要求的 callable / interface 即可。
+这是：
 
-因此 BUS 不需要知道：
+> **Launcher policy。**
 
-```text
-Plugin name
-Plugin package
-Plugin install state
-Plugin dependency
-```
+不是 Firmware 的业务协议，也不是 Job schema 的组成部分。
+
+未来其他 Launcher 可以采用不同组合策略。
 
 ---
 
-# 40. Slot Attach
+# 35. Backend 总体模型
 
-BUS 提供：
+当前 BUS 存在两条不同持久化路径。
 
-```python
-attach(slot, handler)
-```
-
-对于 SINGLE：
+SQL Book / Job：
 
 ```text
-EMPTY
-  │
-  │ attach A
-  ▼
-BOUND(A)
+BaseBook / BaseJobBoard
+        │
+        ▼
+   EngineFactory
+        │
+   ┌────┴────┐
+   ▼         ▼
+SQLite   PostgreSQL
 ```
 
-第二个：
+File Book：
 
 ```text
-attach B
+BaseFileBook
+     │
+     ▼
+ FileBackend
+     │
+     ▼
+Directory
 ```
 
-得到：
-
-```text
-SlotOccupiedError
-```
+这两条路径当前并不是一个“所有功能完全可互换”的统一 Backend interface。
 
 ---
 
-# 41. Slot Detach
+# 36. SQLite Backend
 
-BUS 同时提供：
+`SQLiteBackend` 基于 `EngineFactory`。
 
-```python
-detach(slot, handler)
-```
+它是当前最适合本地 MAGI 使用的 SQL persistence。
 
-或者：
+当前实现包括：
 
-```python
-binding = attach(...)
-detach(binding)
-```
+- SQLAlchemy Engine；
+- Session；
+- Foreign Key；
+- WAL；
+- busy timeout；
+- Transaction。
 
-当前一个 MAGI 一个进程，因此无需：
+SQLite 支持 memory mode，但：
 
-```text
-lease
-heartbeat
-process liveness
-network timeout
-```
+> **Memory 不是一个独立的正式 Backend 类型。**
 
-这些机制。
-
-Plugin 生命周期由 Launcher 管理。
+测试中的 `InMemoryBackend` 位于 `tests`，不属于生产 BUS API。
 
 ---
 
-# 42. Firmware
+# 37. PostgreSQL Backend
+
+`PostgresBackend` 同样基于 `EngineFactory`。
+
+因此 SQL Book / JobBoard 上层代码不需要关心底层是：
+
+```text
+SQLite
+```
+
+还是：
+
+```text
+PostgreSQL
+```
+
+这构成当前 SQL storage abstraction 的主要边界。
+
+---
+
+# 38. File Backend
+
+`FileBackend` 当前不是 `EngineFactory` 的实现。
+
+它提供一个文件根目录给：
+
+```text
+BaseFileBook
+```
+
+使用。
+
+BaseFileBook 表示：
+
+> **由一组具名文件构成的 Book。**
+
+基础能力包括：
+
+```text
+read
+write
+exists
+iterate
+```
+
+因此：
+
+```text
+BaseBook
+BaseFileBook
+```
+
+是两种平行 primitive。
+
+当前 FileBackend 不是完整 JobBoard persistence 的替代品。
+
+---
+
+# 39. 当前 Backend 定位
+
+因此当前架构应准确理解为：
+
+```text
+SQL BUS persistence:
+    SQLite
+    PostgreSQL
+
+File Book persistence:
+    FileBackend
+```
+
+而不是：
+
+```text
+File / SQLite / PostgreSQL
+三种完全可互换的整个 BUS Runtime Backend
+```
+
+如果未来需要纯文件运行完整 BUS，需要另外实现 File-based Job persistence。
+
+---
+
+# 40. Firmware
 
 Firmware 定义：
 
-> **当前 MAGI BUS 具体有哪些 Book 和 Job，以及它们分别意味着什么。**
+> **这一代 MAGI-BUS 具体有哪些 Book、Job、JobResult 和数据库结构。**
 
-例如：
+当前 Firmware 包含：
 
 ```text
-Firmware
-├── ToolBook
-├── AgentBook
-│
-├── ToolCallJob
-├── AgentRunJob
-└── ...
+Books
+├── ConversationBook
+└── MessageBook
+
+Jobs
+├── CreateConversationJob
+├── UpdateConversationSummaryJob
+├── AppendMessageJob
+├── ListConversationMessagesJob
+└── ArchiveMessagesJob
 ```
 
-Base 完全不知道这些具体名字。
+Base 完全不知道这些具体业务概念。
 
 ---
 
-# 43. Firmware 目录
+# 41. Firmware 自动加载
 
-建议：
+创建：
 
-```text
-bus/
-├── base/
-│   ├── backend.py
-│   ├── book.py
-│   ├── job.py
-│   └── job_board.py
-│
-├── backends/
-│   ├── file/
-│   ├── sqlite/
-│   └── postgres/
-│
-├── firmware/
-│   ├── books/
-│   │   ├── tool.py
-│   │   ├── agent.py
-│   │   └── ...
-│   │
-│   ├── jobs/
-│   │   ├── tool_call.py
-│   │   ├── agent_run.py
-│   │   └── ...
-│   │
-│   ├── migrations/
-│   │   └── ...
-│   │
-│   └── version.py
-│
-└── bus.py
+```python
+Bus(factory)
 ```
 
-这里不存在：
+时，BUS 会自动：
 
 ```text
-views/
-apis/
-slots/
-audit/
-causality/
-revision/
+prepare Firmware schema
+        │
+        ▼
+create Firmware JobBoards
+        │
+        ▼
+mount into BUS runtime
+```
+
+调用方不需要逐个 mount Book / Job / JobBoard。
+
+当前 Firmware 是随该版本 BUS 一起发布的一组固定协议。
+
+---
+
+# 42. Firmware Schema 与 Version
+
+当前 Firmware 不建立额外：
+
+```text
 schemas/
 ```
 
-这些额外层。
+系统。
+
+SQLAlchemy Row 定义就是当前 schema source。
+
+Schema evolution 使用 Alembic 管理：
+
+```text
+firmware/
+└── versions/
+    ├── 0.0.1.py
+    ├── env.py
+    └── schema.py
+```
+
+Alembic revision 使用：
+
+```text
+0.0.1
+```
+
+形式。
+
+因此当前设计选择：
+
+> **数据库 Schema evolution 与 Firmware version history 统一由 Firmware Alembic versions 管理。**
+
+不再额外维护独立 Schema 版本系统。
 
 ---
 
-# 44. 为什么没有 `slots/`
+# 43. Firmware Compatibility
 
-因为：
+当前实现已经具有 Firmware schema revision，但 Worker / Plugin 的最低 Firmware compatibility 声明仍可以继续完善。
 
-```text
-Slot
-```
-
-是：
+目标可以是：
 
 ```text
-Job Feature
+Worker / Plugin
+    requires Firmware >= X
+             │
+             ▼
+Launcher / BUS compatibility check
 ```
 
-而不是 Firmware 中与 Job 平行的 Domain。
+版本来源可以直接基于 Firmware 的版本体系，不需要再创造第二套复杂版本对象。
+
+兼容策略属于协议演进问题，不影响当前 Book / Job / Slot 基本结构。
 
 ---
 
-# 45. 为什么没有 `views/`
+# 44. Public Surface
 
-因为外部根本不直接访问 Book。
-
-没有：
+当前推荐的外部使用路径是：
 
 ```text
-Book → View → Plugin
+Bus
+ │
+ ▼
+WorkerBus
+ │
+ ▼
+JobBoardClient
+ │
+ ▼
+Firmware Job / Result
 ```
 
-这条对外数据链。
+而不是：
 
-因此没有必要为隐藏 ORM 再建立一整层 View architecture。
+```text
+External Worker
+     │
+     ├── BaseBook
+     ├── SQLAlchemy Session
+     ├── Row
+     └── Engine
+```
+
+这保证外部组件即使运行在同一个 Python 进程中，也只能通过逻辑 BUS Contract 工作。
 
 ---
 
-# 46. 为什么没有 `apis/`
+# 45. 核心数据流
 
-因为：
-
-```text
-JobBoard
-```
-
-本身已经有 API。
-
-额外：
-
-```text
-API → JobBoard API
-```
-
-没有必要。
-
----
-
-# 47. 为什么没有 `audit/`
-
-因为：
-
-```text
-Job History
-```
-
-本身就是操作历史。
-
-特别是：
-
-```text
-ManageBookJobBoard
-```
-
-天然就是对应 Book 的变更历史。
-
----
-
-# 48. 为什么没有 `revision/`
-
-Revision 不是所有 Book 必需的机制。
-
-第一版不强迫所有 Book 支持 optimistic concurrency。
-
-有需要时再由特定 Firmware Book 引入。
-
----
-
-# 49. 为什么没有 `schemas/`
-
-Schema 来源于：
-
-```text
-Book / Job persistence model
-```
-
-而 Migration 由：
-
-```text
-Alembic
-```
-
-负责。
-
-不需要再描述一次。
-
----
-
-# 50. Firmware Version
-
-这里仍建议保留一个极轻量：
-
-```python
-FIRMWARE_VERSION = ...
-```
-
-它不是数据库 Schema Version。
-
-它表达的是：
-
-> **当前 BUS Firmware 对外兼容到哪个协议版本。**
-
-例如 Plugin 可以声明：
-
-```text
-requires firmware >= 3
-```
-
-BUS：
-
-```text
-firmware = 5
-```
-
-则可以使用。
-
----
-
-# 51. 为什么 Firmware Version 不直接等于 Alembic Revision
-
-Alembic 管：
-
-> 数据库结构怎么从 A 升级到 B。
-
-Firmware Version 管：
-
-> Plugin 能不能理解当前 BUS 协议。
-
-这两者经常相关，但语义不同。
-
-例如：
-
-```text
-修改数据库 index
-```
-
-可能需要一个 Alembic Migration，却完全没有改变 Plugin ABI。
-
-反过来：
-
-```text
-增加一个新的 Job 类型
-```
-
-可能改变 Firmware 能力，但不一定修改数据库 Schema。
-
-所以仍建议：
-
-```text
-Alembic
-    = storage migration
-
-Firmware Version
-    = protocol compatibility
-```
-
-但 Firmware Version 只需要一个简单常量，不需要复杂版本系统。
-
----
-
-# 52. Error Model
-
-第一版只需要非常直接的错误。
-
-例如：
-
-```text
-BackendError
-
-BookNotFoundError
-
-JobNotFoundError
-InvalidJobError
-InvalidJobStateError
-JobAlreadyClaimedError
-
-SlotNotFoundError
-SlotOccupiedError
-
-FirmwareCompatibilityError
-```
-
-不要为了完整性提前制造大量细粒度 exception。
-
----
-
-# 53. Public BUS Surface
-
-BUS 对外 API 应该尽量小。
-
-核心可以收敛为：
-
-```python
-bus.publish(...)
-bus.claim(...)
-
-bus.attach(...)
-bus.detach(...)
-```
-
-以及 JobBoard 自己暴露的必要查询能力。
-
----
-
-# 54. Book API 不属于 Public Surface
-
-Base Book 可以存在：
-
-```python
-book.get()
-book.insert()
-book.update()
-book.delete()
-```
-
-这样的内部实现方法。
-
-但这些是：
-
-> **BUS Internal API。**
-
-BUS 外部模块不能直接拿到 Book object。
-
-这是非常重要的权限边界。
-
----
-
-# 55. 核心数据流
-
-## 普通 Job
+## 45.1 普通 Worker Job
 
 ```text
 Producer
@@ -1679,542 +1473,289 @@ JobBoard
    │
    │ claim
    ▼
-Consumer
-```
-
-Producer 不需要知道 Consumer 是谁。
-
-Consumer 不需要知道 Producer 是谁。
-
----
-
-# 56. Book Mutation
-
-```text
-External Component
-        │
-        │ publish
-        ▼
- ManageBookJobBoard
-        │
-        │ BUS internal consume
-        ▼
-       Book
-```
-
-外部模块没有：
-
-```text
-Component → Book
-```
-
-路径。
-
----
-
-# 57. Publish Hook
-
-```text
-                     ┌── Handler A
-                     ├── Handler B
-Job.publish ─────────┼── Handler C
-                     └── Handler N
-```
-
-原生支持 MULTI。
-
----
-
-# 58. Control Hook
-
-```text
-Job
- │
- ▼
-pre_claim
- │
- │ exactly 0..1 Handler
- ▼
-claim
- │
- │ exactly 0..1 Handler
- ▼
-post_claim
-```
-
-任何 SINGLE Slot 已占用后的再次 attach 都失败。
-
----
-
-# 59. 外部 Dock
-
-如果需要：
-
-```text
-Hook A
-Hook B
-Hook C
-```
-
-同时处理：
-
-```text
-pre_claim
-```
-
-则：
-
-```text
-Hook A ─┐
-Hook B ─┼── Dock ─────→ pre_claim
-Hook C ─┘
-```
-
-Dock 不属于 BUS。
-
----
-
-# 60. BUS v1 明确实现范围
-
-第一版实现：
-
-- `bus.base`；
-- Backend interface；
-- File Backend；
-- SQLite Backend；
-- PostgreSQL Backend interface / implementation；
-- Book；
-- Job；
-- JobBoard；
-- ManageBookJobBoard；
-- Job Status；
-- Job Slots；
-- SINGLE / MULTI；
-- attach / detach；
-- Firmware Books；
-- Firmware Jobs；
-- Firmware Version；
-- Alembic Migration。
-
----
-
-# 61. BUS v1 明确不实现
-
-不实现：
-
-- Audit System；
-- Event Sourcing；
-- correlation ID；
-- causation ID；
-- tracing；
-- Book Revision Framework；
-- View Layer；
-- API Layer；
-- Schema Framework；
-- Slot Registry Domain；
-- priority；
-- Hook pipeline；
-- Dock；
-- Plugin Manager；
-- Plugin Discovery；
-- IPC；
-- TCP；
-- Heartbeat；
-- Lease；
-- Distributed Lock；
-- Distributed Consensus。
-
----
-
-# 62. 推荐实现阶段
-
-## Phase 1：Base
-
-首先实现：
-
-```text
-Backend
-Book
-Job
+Worker
+   │
+   │ submit_result
+   ▼
 JobBoard
 ```
 
-确保这些 primitive 足够简单。
+Producer 不需要知道最终 Worker 是谁。
+
+Worker 也不需要知道 Job 由哪个业务模块产生。
 
 ---
 
-## Phase 2：Backend
-
-优先完成：
+## 45.2 Book Operation
 
 ```text
-File Backend
-SQLite Backend
+External Worker
+      │
+      │ publish semantic job
+      ▼
+OperateBookJobBoard
+      │
+      │ internal execution
+      ▼
+     Book
+      │
+      ▼
+ Job Result
 ```
 
-PostgreSQL 可以随后补齐。
-
-其中 SQLite 很适合作为当前 MAGI standalone 默认实现。
+外部 Worker 从始至终不接触 Book。
 
 ---
 
-## Phase 3：ManageBookJobBoard
-
-实现：
+## 45.3 带 Post-Publish Gate 的 Book Operation
 
 ```text
-Book
+External Worker
+      │
+      ▼
+    publish
+      │
+      ▼
+  PREPARING
+      │
+      ▼
+ post_publish
+      │
+      ├── FAILED
+      │
+      └── PENDING
+             │
+             ▼
+      BUS executes Book
+```
+
+---
+
+# 46. 当前目录结构
+
+当前实现主要结构：
+
+```text
+magi/
+├── new_bus/
+│   ├── __init__.py
+│   ├── bus.py
+│   │
+│   ├── base/
+│   │   ├── BaseBook.py
+│   │   ├── BaseFileBook.py
+│   │   ├── BaseJob.py
+│   │   ├── operateBookJob.py
+│   │   ├── workerBus.py
+│   │   ├── heartbeat.py
+│   │   ├── dock.py
+│   │   ├── engine.py
+│   │   ├── file.py
+│   │   ├── errors.py
+│   │   └── time.py
+│   │
+│   └── firmware/
+│       ├── __init__.py
+│       ├── books/
+│       │   ├── conversationBook.py
+│       │   └── messageBook.py
+│       ├── jobs/
+│       │   ├── conversationJobs.py
+│       │   └── messageJobs.py
+│       └── versions/
+│           ├── 0.0.1.py
+│           ├── env.py
+│           └── schema.py
+│
+└── launcher/
+    └── newBus.py
+```
+
+目录名未来可以随着 `new_bus` 正式替代旧 BUS 而调整，但逻辑分层保持不变。
+
+---
+
+# 47. 当前核心不变量
+
+以下规则应作为当前 MAGI-BUS 的 Hard Invariants。
+
+1. **模块之间通过 BUS 协议解耦，不直接依赖其他业务模块。**
+
+2. **BUS 外部 Worker 不直接读取或修改 Book。**
+
+3. **BUS 外部 Worker 不直接访问 SQLAlchemy Row、Session 或 Engine。**
+
+4. **对共享 Book 的外部操作通过 Firmware Semantic Job 表达，而不是暴露通用 CRUD。**
+
+5. **Book Query 同样可以通过 Semantic Job 表达，从而维持 Book 完全 BUS-private。**
+
+6. **OperateBookJob 由 BUS 内部执行，不允许外部 claim。**
+
+7. **Book Operation 与 Job Result 保持事务一致性。**
+
+8. **Job History 本身承担操作历史，不额外建立 Audit subsystem。**
+
+9. **Base 不包含 MAGI Domain 概念。**
+
+10. **Firmware 定义具体 Book、Job 与 Result。**
+
+11. **Slot 是 `(JobType, JobBoard Operation)` 的运行时接入点。**
+
+12. **所有原始 Slot 当前统一采用单 owner 模型。**
+
+13. **多个 Worker 共享 Slot 时通过 Dock 形成一个逻辑 owner。**
+
+14. **BUS 不根据 Plugin priority、加载顺序等策略自动决定 Slot ownership。**
+
+15. **Dock mechanism 属于 BUS Base；Dock topology 与选择策略属于 Launcher。**
+
+16. **Heartbeat lease 是 Slot liveness/ownership 机制，不代表 BUS 必须多进程运行。**
+
+17. **当前部署方式不是 Firmware Contract 的组成部分。**
+
+---
+
+# 48. 测试原则
+
+当前 `tests/unit/new_bus` 已经覆盖了一批关键架构性质，后续应持续保证：
+
+```text
+SQLite Backend works
+
+InMemory test backend
+    != production backend
+
+Book Operation Job
+    cannot be externally claimed
+
+Book Operation failure
+    persists FAILED Job Result
+
+Slot conflict
+    rejects second direct owner
+
+Expired Slot owner
+    can be replaced
+
+Post-Publish Hook
+    can approve or reject Job
+
+Post-Result Hook
+    can approve or reject Result
+
+OrDock
+    allows multiple Workers to share one logical Slot
+
+AndDock
+    waits for live member results
+
+Launcher
+    installs Docks before Worker attach
+```
+
+随着 Firmware 增加新 Book / Job，应优先测试协议行为和状态机，而不是只测试具体 SQL 实现。
+
+---
+
+# 49. 架构决策总结
+
+当前实现已经把早期概念方案进一步收敛成几个明确设计决定。
+
+## 49.1 Semantic Operation 优先于 Generic CRUD
+
+不是：
+
+```text
+EditBookJob(operation="update", ...)
+```
+
+而是：
+
+```text
+CreateConversationJob
+UpdateConversationSummaryJob
+AppendMessageJob
+ArchiveMessagesJob
+```
+
+Firmware 对外表达业务语义，不重新暴露数据库接口。
+
+## 49.2 Query 与 Mutation 都通过 Job
+
+外部组件无需 Book View/API 层。
+
+```text
+Worker → JobBoard → Firmware Job → Book
+```
+
+已经构成完整边界。
+
+## 49.3 所有 Slot 使用统一单 Owner 模型
+
+BUS Core 不区分 publish MULTI 与 control SINGLE。
+
+多 Worker 共享统一通过 Dock 处理，使 Slot ownership 规则保持单一。
+
+## 49.4 Hook 使用显式 Gate，而不是抽象 Pre/Post 列表
+
+当前协议采用：
+
+```text
+post_publish / submit_post_publish
+post_result  / submit_post_result
+```
+
+通过显式状态转换形成可观察、可恢复的 Gate。
+
+## 49.5 Heartbeat 服务于 Runtime ownership
+
+Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owner 失活以后如何自动释放的问题。
+
+---
+
+# 50. 设计总结
+
+当前 MAGI-BUS 的核心可以概括为：
+
+> **Book 保存当前状态。**
+
+> **Job 表达系统中需要发生、正在发生或已经发生的语义行为。**
+
+> **JobBoard 持久化 Job 并管理其生命周期。**
+
+> **OperateBookJobBoard 将外部 Book 操作转化为 BUS 内部事务。**
+
+> **Job History 本身承担操作历史。**
+
+> **Slot 定义 Worker 可以接入 JobBoard 生命周期的位置。**
+
+> **所有原始 Slot 使用统一单 owner 模型，多 Worker 共享由 Dock 实现。**
+
+> **WorkerBus 为 Worker 提供受 Slot ownership 约束的 typed BUS surface。**
+
+> **Firmware 定义当前 MAGI 实际拥有的 Book、Job、Result 与数据库版本。**
+
+> **Launcher 决定 Worker 如何装配和共享 Slot，但不改变 Firmware 的业务协议。**
+
+最终希望形成的不是一个越来越聪明的中央 Orchestrator，而是一块行为稳定、协议明确的软件背板：
+
+```text
+External Components
+        │
+        ▼
+     WorkerBus
+        │
+        ▼
+       BUS
+        │
+   ┌────┴────┐
+   ▼         ▼
+ Jobs       Books
    │
-   └── ManageBookJobBoard
-```
-
-重点验证：
-
-```text
-publish EditJob
-      ↓
-BUS automatic consume
-      ↓
-Book mutation
-      ↓
-Job completed
-```
-
-并确保外部没有直接修改 Book 的路径。
-
----
-
-## Phase 4：Firmware
-
-选择一个最简单的现有 Domain。
-
-例如某个基础 Registry。
-
-建立：
-
-```text
-Concrete Book
-Concrete ManageBookJob
-Concrete JobBoard
-```
-
-验证整个模式。
-
----
-
-## Phase 5：Slot
-
-给 Base Job 增加：
-
-```text
-pre_publish
-publish
-post_publish
-pre_claim
-claim
-post_claim
-```
-
-实现：
-
-```text
-SINGLE
-MULTI
-attach
-detach
-```
-
----
-
-## Phase 6：迁移 MAGI 模块
-
-逐步将：
-
-```text
-Agent → Tools
-Tools → Agent
-Plugin → DB
-Module → DB
-```
-
-改成：
-
-```text
-Component → BUS
-```
-
-不要一次性全部重写。
-
----
-
-# 63. 核心测试
-
-## Backend
-
-同一套 Backend Contract Test 应该运行在：
-
-```text
-File
-SQLite
-PostgreSQL
-```
-
-确保它们对 Base 表现一致。
-
----
-
-## Book
-
-测试：
-
-- insert；
-- get；
-- update；
-- delete；
-- query；
-
-这些测试属于 BUS 内部。
-
-同时 Architecture Test 要确保外部模块不能直接 import / acquire Book。
-
----
-
-## ManageBookJob
-
-测试：
-
-```text
-publish
-→ automatic execute
-→ Book changed
-→ Job COMPLETED
-```
-
-失败：
-
-```text
-publish
-→ mutation failed
-→ Job FAILED
-→ Book remains valid
-```
-
----
-
-## JobBoard
-
-测试：
-
-```text
-publish
-claim
-complete
-fail
-```
-
-以及非法 state transition。
-
----
-
-## SINGLE Slot
-
-```text
-attach A
-→ OK
-
-attach B
-→ SlotOccupiedError
-
-detach A
-
-attach B
-→ OK
-```
-
----
-
-## MULTI Publish Slot
-
-```text
-attach A
-attach B
-attach C
-
-publish
-
-A receives
-B receives
-C receives
-```
-
----
-
-# 64. 架构硬性不变量
-
-以下规则应该作为新版 MAGI-BUS 的 Hard Invariants。
-
-### 1.
-
-**模块之间通过 BUS 解耦，不直接相互依赖。**
-
-### 2.
-
-**BUS 外部模块不能直接访问 Book。**
-
-### 3.
-
-**BUS 外部模块不能直接访问数据库 Backend。**
-
-### 4.
-
-**Book 的外部 Mutation 必须通过对应 ManageBookJobBoard。**
-
-### 5.
-
-**ManageBookJob 不需要外部 claim，由 BUS 自动执行。**
-
-### 6.
-
-**Job History 本身承担操作记录，不额外建立 Audit System。**
-
-### 7.
-
-**Base 只定义通用机制，不包含 MAGI Domain。**
-
-### 8.
-
-**Firmware 定义具体 Book 与 Job。**
-
-### 9.
-
-**Slot 是 Job 的 Feature。**
-
-### 10.
-
-**Publish Slot 为 MULTI。**
-
-### 11.
-
-**Pre/Post/Claim Slot 为 SINGLE。**
-
-### 12.
-
-**SINGLE Slot 已占用时，新的 attach 必须被拒绝。**
-
-### 13.
-
-**BUS 不处理 SINGLE Slot 中的多 Handler composition。**
-
-### 14.
-
-**BUS 不提供 Hook Priority。**
-
-### 15.
-
-**多 Handler composition 由 BUS 外部 Dock 解决。**
-
-### 16.
-
-**BUS 不管理 Plugin。**
-
-### 17.
-
-**Launcher 管理组件组合，但不改变 BUS Firmware 语义。**
-
-### 18.
-
-**当前进程模型不是 BUS Contract 的组成部分。**
-
----
-
-# 65. 最终核心模型
-
-经过当前设计收敛以后，MAGI-BUS 实际上只剩下三个最核心的业务抽象：
-
-```text
-Book
-    保存当前状态
-
-Job
-    表示系统中发生或需要发生的行为
-
+   ▼
 Firmware
-    定义当前 MAGI 具体有哪些 Book 和 Job
 ```
 
-而：
+模块可以被替换，Worker 可以重新组合，Launcher 可以改变拓扑，但其他组件只需要继续遵守同一套 Firmware 协议。
 
-```text
-Slot
-```
-
-是 Job 的生命周期能力。
-
-```text
-Backend
-```
-
-则是这些数据的持久化机制。
-
-最终关系：
-
-```text
-                   Firmware
-                      │
-            ┌─────────┴─────────┐
-            │                   │
-          Books                Jobs
-                                │
-                           Job Slots
-            │                   │
-            └─────────┬─────────┘
-                      │
-                   BUS Base
-                      │
-                   Backend
-                      │
-         ┌────────────┼────────────┐
-         ▼            ▼            ▼
-       File         SQLite     PostgreSQL
-```
-
----
-
-# 66. 设计总结
-
-新版 MAGI-BUS 不需要成为一个复杂的分布式事件系统。
-
-也不需要为了未来可能出现的问题提前加入：
-
-```text
-Tracing
-Audit Framework
-Event Sourcing
-Revision Framework
-View Layer
-API Layer
-Priority System
-Orchestration
-```
-
-当前最重要的是建立一个足够简单但足够严格的 Software Backplane：
-
-> **Book 保存状态。**
-
-> **Job 保存行为。**
-
-> **JobBoard 管理 Job。**
-
-> **ManageBookJobBoard 是修改 Book 的唯一外部通道。**
-
-> **Job 自带 Slot，允许外部逻辑在固定生命周期节点接入。**
-
-> **Publish 可以广播，控制 Slot 必须保持单一。**
-
-> **Firmware 定义具体协议，Base 只保证这些机制能够工作。**
-
-> **Backend 决定数据最终存入 File、SQLite 还是 PostgreSQL。**
-
-而 BUS 最重要的边界则可以总结成一句：
-
-> **BUS 负责定义和维护自己的线路；线路外面的组件如何安装、组合、排序和运行，不是 BUS 的事情。**
+这就是 MAGI-BUS 当前架构所追求的模块化边界。

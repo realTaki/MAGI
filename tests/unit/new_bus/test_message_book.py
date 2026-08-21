@@ -15,26 +15,45 @@ from magi.new_bus import (
     ListConversationMessagesJob,
     MessageRole,
 )
-from magi.new_bus.testing import WORKER, InMemoryBackend, occupy
+from magi.new_bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
+from magi.new_bus.firmware.jobs.messageJobs import (
+    AppendMessageJobBoard,
+    ArchiveMessagesJobBoard,
+    ListConversationMessagesJobBoard,
+)
+from tests.unit.new_bus.testing import WORKER, InMemoryBackend, attach_board
+
+BOARD_BY_JOB = {
+    CreateConversationJob: CreateConversationJobBoard,
+    AppendMessageJob: AppendMessageJobBoard,
+    ArchiveMessagesJob: ArchiveMessagesJobBoard,
+    ListConversationMessagesJob: ListConversationMessagesJobBoard,
+}
 
 
 @pytest.fixture
 def bus() -> Bus:
-    item = Bus(InMemoryBackend())
-    occupy(item)
-    return item
+    return Bus(InMemoryBackend())
+
+
+def _board(bus: Bus, job: BaseJob):
+    return attach_board(bus, BOARD_BY_JOB[type(job)], worker_id=WORKER, slots=("publish",))
 
 
 def _publish[JobT: BaseJob](bus: Bus, job: JobT) -> JobT:
-    job.id = bus.publish(job, worker_id=WORKER)
+    job.id = _board(bus, job).publish(job)
     return job
+
+
+def _result(bus: Bus, job: BaseJob):
+    return _board(bus, job).get_result(job.id)
 
 
 def _conversation_id(bus: Bus) -> int:
     created = _publish(
         bus, CreateConversationJob(delivery_address="webui:test", contact_id=1, channel="webui")
     )
-    outcome = bus.get_result(created)
+    outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.conversation is not None
     return outcome.conversation.id
@@ -46,7 +65,7 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
         bus,
         AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="hello"),
     )
-    appended = bus.get_result(first)
+    appended = _result(bus, first)
     assert appended is not None
     assert appended.status is JobStatus.COMPLETED
     assert appended.message is not None
@@ -58,7 +77,7 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
         AppendMessageJob(conversation_id=conversation_id, role=MessageRole.ASSISTANT, content="hi"),
     )
     listed = _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
-    transcript = bus.get_result(listed)
+    transcript = _result(bus, listed)
     assert transcript is not None
     assert [item.content for item in transcript.messages] == ["hello", "hi"]
 
@@ -68,7 +87,7 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
     first = _publish(
         bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="old")
     )
-    first_outcome = bus.get_result(first)
+    first_outcome = _result(bus, first)
     assert first_outcome is not None
     first_message = first_outcome.message
     assert first_message is not None
@@ -80,32 +99,30 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
         bus,
         ArchiveMessagesJob(conversation_id=conversation_id, before_message_id=first_message.id + 1),
     )
-    archive_result = bus.get_result(archived)
+    archive_result = _result(bus, archived)
     assert archive_result is not None
     assert archive_result.archived_count == 1
 
-    live = bus.get_result(
-        _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
-    )
+    live_job = _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
+    live = _result(bus, live_job)
     assert live is not None
     assert [item.content for item in live.messages] == ["new"]
-    all_messages = bus.get_result(
-        _publish(
-            bus, ListConversationMessagesJob(conversation_id=conversation_id, include_archived=True)
-        )
+    all_messages_job = _publish(
+        bus, ListConversationMessagesJob(conversation_id=conversation_id, include_archived=True)
     )
+    all_messages = _result(bus, all_messages_job)
     assert all_messages is not None
     assert [item.content for item in all_messages.messages] == ["old", "new"]
 
 
 def test_append_returns_failure_only_when_its_foreign_key_is_missing(bus: Bus) -> None:
     missing = _publish(bus, AppendMessageJob(conversation_id=999, content="hello"))
-    missing_result = bus.get_result(missing)
+    missing_result = _result(bus, missing)
     assert missing_result is not None
     assert missing_result.status is JobStatus.FAILED
 
     empty = _publish(bus, AppendMessageJob(conversation_id=_conversation_id(bus), content="  "))
-    empty_result = bus.get_result(empty)
+    empty_result = _result(bus, empty)
     assert empty_result is not None
     assert empty_result.status is JobStatus.COMPLETED
     assert empty_result.message is not None

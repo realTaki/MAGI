@@ -25,7 +25,6 @@ class CreateConversationJob(BaseJob):
 @dataclass
 class CreateConversationResult(BookRecordResult[Conversation]):
     conversation: Conversation | None = None
-    record_cls = Conversation
     record_field = "conversation"
 
 
@@ -67,7 +66,6 @@ class UpdateConversationSummaryJob(BaseJob):
 @dataclass
 class UpdateConversationSummaryResult(BookRecordResult[Conversation]):
     conversation: Conversation | None = None
-    record_cls = Conversation
     record_field = "conversation"
 
 

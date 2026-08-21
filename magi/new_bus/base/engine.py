@@ -26,9 +26,7 @@ class EngineFactory:
         elif driver.startswith("postgresql"):
             self._dialect = "postgresql"
         else:
-            raise ValueError(
-                f"BUS storage only supports SQLite or PostgreSQL URLs; got {driver!r}"
-            )
+            raise ValueError(f"BUS storage only supports SQLite or PostgreSQL URLs; got {driver!r}")
         self._memory = memory or database_url == "sqlite://"
         self._lock = threading.RLock()
         self._engine = self._build_engine()

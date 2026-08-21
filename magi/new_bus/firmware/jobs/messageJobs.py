@@ -26,7 +26,6 @@ class AppendMessageJob(BaseJob):
 @dataclass
 class AppendMessageResult(BookRecordResult[Message]):
     message: Message | None = None
-    record_cls = Message
     record_field = "message"
 
 
@@ -79,7 +78,6 @@ class ListConversationMessagesJob(BaseJob):
 @dataclass
 class ListConversationMessagesResult(BookRecordsResult[Message]):
     messages: list[Message] = field(default_factory=list)
-    record_cls = Message
     records_field = "messages"
 
 

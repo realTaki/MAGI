@@ -33,7 +33,9 @@ class BaseRecord:
                 origin = get_origin(base)
                 if origin is None:
                     continue
-                for param, arg in zip(getattr(origin, "__type_params__", ()), get_args(base)):
+                for param, arg in zip(
+                    getattr(origin, "__type_params__", ()), get_args(base), strict=False
+                ):
                     localns[getattr(param, "__name__", str(param))] = arg
         return get_type_hints(cls, localns=localns)
 
@@ -41,11 +43,7 @@ class BaseRecord:
     def parse(cls, data: Mapping[str, Any]) -> Self:
         hints = cls._type_hints()
         return cls(
-            **{
-                key: load_dt(hints[key], value)
-                for key, value in data.items()
-                if key in hints
-            }
+            **{key: load_dt(hints[key], value) for key, value in data.items() if key in hints}
         )
 
     @classmethod
@@ -83,13 +81,6 @@ class BaseBook[RecordT: BaseRecord]:
     def _session(self):
         return self._factory.session()
 
-    def _validate_add(self, record: RecordT) -> None:
-        """Validate a record before it is persisted.
-
-        Subclasses own domain invariants and override this hook where needed.
-        They must not open or commit a separate transaction.
-        """
-
     def add(self, record: RecordT) -> int:
         now = utcnow()
         prepared = replace(
@@ -97,7 +88,6 @@ class BaseBook[RecordT: BaseRecord]:
             created_at=record.created_at or now,
             updated_at=now,
         )
-        self._validate_add(prepared)
         with self._session() as session:
             values = prepared.to_dict()
             values.pop("id", None)
@@ -116,14 +106,11 @@ class BaseBook[RecordT: BaseRecord]:
             return session.get(type(self).row_cls, record_id) is not None
 
     def update(self, record: RecordT) -> bool:
-        self._validate_add(record)
         with self._session() as session:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
                 return False
-            stored = replace(
-                record, created_at=row.created_at, updated_at=utcnow()
-            )
+            stored = replace(record, created_at=row.created_at, updated_at=utcnow())
             values = stored.to_dict()
             values.pop("id", None)
             for key, value in values.items():

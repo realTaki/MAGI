@@ -56,8 +56,8 @@ def _upgrade(engine) -> None:
     def only_revisions(cls, scriptdir, path):
         return [p for p in list_py(cls, scriptdir, path) if _REVISION.fullmatch(p.name)]
 
-    setattr(Script, "_list_py_dir", classmethod(only_revisions))
+    Script._list_py_dir = classmethod(only_revisions)
     try:
         command.upgrade(cfg, "head")
     finally:
-        setattr(Script, "_list_py_dir", classmethod(list_py))
+        Script._list_py_dir = classmethod(list_py)

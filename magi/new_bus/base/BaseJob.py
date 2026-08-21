@@ -7,11 +7,10 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
 from enum import StrEnum
 from functools import wraps
+from typing import Any, ClassVar, cast
 
 from sqlalchemy import Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,24 +18,26 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .errors import InvalidJobError
+from .heartbeat import Heartbeat, Slot
 from .time import utcnow
-
-LEASE = timedelta(seconds=1)
 
 
 def slot(fn):
-    """Mark a JobBoard method as a slot. Caller must hold it via attach()."""
+    """Guard a public JobBoard operation with its worker slot.
+
+    The wrapped method declares only business arguments.  ``worker_id`` belongs
+    to this concurrency boundary and is deliberately not passed inward.
+    """
 
     @wraps(fn)
     def wrapped(self, *args, worker_id: str, **kwargs):
-        now = utcnow()
-        holder = self._held.get(fn.__name__)
-        if holder is None or holder[0] != worker_id or holder[1] <= now:
+        slot_key = Slot(type(self).job_cls, fn.__name__)
+        if not self._heartbeat.holds(worker_id, slot_key):
             raise InvalidJobError(f"slot {fn.__name__!r} is not held by {worker_id}")
-        self._held[fn.__name__] = (worker_id, now + LEASE)
-        return fn(self, *args, worker_id=worker_id, **kwargs)
+        self._heartbeat.heartbeat(worker_id)
+        return fn(self, *args, **kwargs)
 
-    setattr(wrapped, "_slot", True)
+    cast(Any, wrapped)._slot = True
     return wrapped
 
 
@@ -80,43 +81,23 @@ class BaseJobRow(BaseRecordMixin):
 class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     """Running container for one work BaseJob type."""
 
-    job_cls: type[JobT]
+    job_cls: ClassVar[type[BaseJob]]
     result_cls: type[ResultT]
     row_cls: type[RowT]
 
-    def __init__(self, factory: EngineFactory) -> None:
+    def __init__(self, factory: EngineFactory, heartbeat: Heartbeat) -> None:
         self._factory = factory
-        self._held: dict[str, tuple[str, datetime] | None] = {}
-        for name in dir(type(self)):
-            value = getattr(type(self), name, None)
-            if value is not None and getattr(value, "_slot", False):
-                self._held[name] = None
+        self._heartbeat = heartbeat
 
     def _session(self):
         return self._factory.session()
 
-    def attach(self, worker_id: str, slots: Sequence[str]) -> None:
-        now = utcnow()
-        until = now + LEASE
-        for name in slots:
-            if name not in self._held:
-                raise InvalidJobError(f"no slot {name!r} on {type(self).__name__}")
-            holder = self._held[name]
-            if holder is not None and holder[1] > now and holder[0] != worker_id:
-                raise InvalidJobError(f"slot {name!r} is occupied by {holder[0]}")
-        for name in slots:
-            self._held[name] = (worker_id, until)
-
-    def heartbeat(self, worker_id: str) -> None:
-        now = utcnow()
-        until = now + LEASE
-        for name, holder in list(self._held.items()):
-            if holder is not None and holder[0] == worker_id and holder[1] > now:
-                self._held[name] = (worker_id, until)
-
     def _slot_held(self, name: str) -> bool:
-        holder = self._held.get(name)
-        return holder is not None and holder[1] > utcnow()
+        return self._heartbeat.held(Slot(type(self).job_cls, name))
+
+    @classmethod
+    def has_slot(cls, name: str) -> bool:
+        return bool(getattr(getattr(cls, name, None), "_slot", False))
 
     def release_idle_slots(self) -> None:
         skip_publish = self._slot_held("post_publish")
@@ -170,11 +151,14 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
                 pulled = session.get(type(self).row_cls, row.id)
             if pulled is None:
                 continue
-            return self.job_cls.from_row(pulled)
+            return cast(type[JobT], self.job_cls).from_row(pulled)
         return None
 
     @slot
-    def publish(self, job: JobT, *, worker_id: str) -> int:
+    def publish(self, job: JobT) -> int:
+        return self._publish(job)
+
+    def _publish(self, job: JobT) -> int:
         now = utcnow()
         prepared = replace(
             job,
@@ -195,11 +179,17 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return int(row.id)
 
     @slot
-    def post_publish(self, *, worker_id: str) -> JobT | None:
+    def post_publish(self) -> JobT | None:
+        return self._post_publish()
+
+    def _post_publish(self) -> JobT | None:
         return self._pull(JobStatus.PREPARING, JobStatus.HOOKING)
 
     @slot
-    def submit_post_publish(self, job: JobT, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
+        return self._submit_post_publish(job, result)
+
+    def _submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job.id)
             if row is None or row.status != JobStatus.HOOKING.value:
@@ -209,12 +199,18 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return True
 
     @slot
-    def claim(self, *, worker_id: str) -> JobT | None:
+    def claim(self) -> JobT | None:
+        return self._claim()
+
+    def _claim(self) -> JobT | None:
         self.release_idle_slots()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
     @slot
-    def submit_result(self, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_result(self, result: BaseJobResult) -> bool:
+        return self._submit_result(result)
+
+    def _submit_result(self, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
@@ -228,11 +224,17 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return True
 
     @slot
-    def post_result(self, *, worker_id: str) -> JobT | None:
+    def post_result(self) -> JobT | None:
+        return self._post_result()
+
+    def _post_result(self) -> JobT | None:
         return self._pull(JobStatus.SETTLING, JobStatus.FINALIZING)
 
     @slot
-    def submit_post_result(self, job_id: int, result: BaseJobResult, *, worker_id: str) -> bool:
+    def submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
+        return self._submit_post_result(job_id, result)
+
+    def _submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
             if row is None or row.status != JobStatus.FINALIZING.value:
@@ -279,4 +281,4 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             if status is not None:
                 stmt = stmt.where(type(self).row_cls.status == status.value)
             rows = list(session.scalars(stmt))
-        return [self.job_cls.from_row(row) for row in rows]
+        return [cast(type[JobT], self.job_cls).from_row(row) for row in rows]

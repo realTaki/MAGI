@@ -1,11 +1,13 @@
 """MAGI-BUS vNext — software backplane.
 
 Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
-record types (see :class:`Message`). External code talks to Bus, never to BaseBook.
+record types (see :class:`Message`). Workers receive typed :class:`WorkerBus`
+views and never access BaseBooks directly.
 """
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.errors import (
     BackendError,
@@ -16,6 +18,8 @@ from .base.errors import (
     JobNotFoundError,
 )
 from .base.file import FileBackend
+from .base.heartbeat import Slot
+from .base.workerBus import JobBoardClient, WorkerBus, job_board
 from .bus import Bus
 from .firmware import (
     AppendMessageJob,
@@ -48,6 +52,12 @@ __all__ = [
     "BaseJobBoard",
     "JobNotFoundError",
     "JobStatus",
+    "OrDock",
+    "AndDock",
+    "Slot",
+    "WorkerBus",
+    "JobBoardClient",
+    "job_board",
     "Conversation",
     "Message",
     "MessageRole",
