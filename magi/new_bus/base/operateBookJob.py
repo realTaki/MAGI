@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, get_args
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -19,11 +19,18 @@ from .BaseBook import BaseRecord
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 
 
+def _record_type(cls: type) -> type[BaseRecord]:
+    for base in getattr(cls, "__orig_bases__", ()):
+        args = get_args(base)
+        if args:
+            return args[0]
+    raise TypeError(f"{cls.__name__} must specify RecordT")
+
+
 @dataclass
 class BookRecordResult[RecordT: BaseRecord](BaseJobResult):
     """A typed single-record result stored in a named JSON column."""
 
-    record_cls: ClassVar[type[RecordT]]
     record_field: ClassVar[str]
 
     @classmethod
@@ -31,7 +38,7 @@ class BookRecordResult[RecordT: BaseRecord](BaseJobResult):
         result = super().parse(data)
         raw = data.get(cls.record_field)
         if isinstance(raw, dict):
-            setattr(result, cls.record_field, cls.record_cls.parse(raw))
+            setattr(result, cls.record_field, _record_type(cls).parse(raw))
         return result
 
 
@@ -39,7 +46,6 @@ class BookRecordResult[RecordT: BaseRecord](BaseJobResult):
 class BookRecordsResult[RecordT: BaseRecord](BaseJobResult):
     """A typed record-list result stored in a named JSON column."""
 
-    record_cls: ClassVar[type[RecordT]]
     records_field: ClassVar[str]
 
     @classmethod
@@ -47,10 +53,11 @@ class BookRecordsResult[RecordT: BaseRecord](BaseJobResult):
         result = super().parse(data)
         raw = data.get(cls.records_field)
         if isinstance(raw, list):
+            record_cls = _record_type(cls)
             setattr(
                 result,
                 cls.records_field,
-                [cls.record_cls.parse(item) for item in raw if isinstance(item, dict)],
+                [record_cls.parse(item) for item in raw if isinstance(item, dict)],
             )
         return result
 
@@ -79,8 +86,9 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         """Book operations execute in the BUS and therefore cannot be claimed."""
         return None
 
-    def _submit_result(self, _: BaseJobResult) -> bool:
+    def _submit_result(self, result: BaseJobResult) -> bool:
         """Book operations have no worker result to submit."""
+        del result
         return False
 
     def get_result(self, job_id: int) -> ResultT | None:
