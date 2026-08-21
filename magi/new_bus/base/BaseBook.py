@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from typing import Any, ClassVar, Self, get_args, get_origin, get_type_hints
+from typing import Any, Self, get_args, get_origin, get_type_hints
 
 from sqlalchemy import DateTime, Integer, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -65,14 +65,14 @@ class BaseRecordMixin(DeclarativeBase):
     )
 
 
-class BaseBook:
+class BaseBook[RecordT: BaseRecord]:
     """Internal record collection. Only OpenBookJobBoard may call these methods.
 
     Firmware Books set ``record_cls`` and ``row_cls``. CRUD goes through the Row.
     """
 
-    record_cls: ClassVar[type[BaseRecord]] = BaseRecord
-    row_cls: ClassVar[type[BaseRecordMixin]]
+    record_cls: type[RecordT]
+    row_cls: type[BaseRecordMixin]
 
     def __init__(self, factory: EngineFactory) -> None:
         cls = type(self)
@@ -83,14 +83,14 @@ class BaseBook:
     def _session(self):
         return self._factory.session()
 
-    def _validate_add(self, record: BaseRecord) -> None:
+    def _validate_add(self, record: RecordT) -> None:
         """Validate a record before it is persisted.
 
         Subclasses own domain invariants and override this hook where needed.
         They must not open or commit a separate transaction.
         """
 
-    def add(self, record: BaseRecord) -> int:
+    def add(self, record: RecordT) -> int:
         now = utcnow()
         prepared = replace(
             record,
@@ -106,16 +106,16 @@ class BaseBook:
             session.commit()
             return int(row.id)
 
-    def get(self, record_id: int) -> BaseRecord | None:
+    def get(self, record_id: int) -> RecordT | None:
         with self._session() as session:
             row = session.get(type(self).row_cls, record_id)
-            return None if row is None else self.record_cls.from_row(row)
+            return None if row is None else type(self).record_cls.from_row(row)
 
     def exists(self, record_id: int) -> bool:
         with self._session() as session:
             return session.get(type(self).row_cls, record_id) is not None
 
-    def update(self, record: BaseRecord) -> bool:
+    def update(self, record: RecordT) -> bool:
         self._validate_add(record)
         with self._session() as session:
             row = session.get(type(self).row_cls, record.id)
@@ -140,10 +140,10 @@ class BaseBook:
             session.commit()
             return True
 
-    def list(self, **filters: object) -> list[BaseRecord]:
+    def list(self, **filters: object) -> list[RecordT]:
         row_cls = type(self).row_cls
         stmt = select(row_cls).order_by(row_cls.id)
         if filters:
             stmt = stmt.filter_by(**filters)
         with self._session() as session:
-            return [self.record_cls.from_row(row) for row in session.scalars(stmt)]
+            return [type(self).record_cls.from_row(row) for row in session.scalars(stmt)]

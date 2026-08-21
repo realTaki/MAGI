@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, Self, get_args
+from typing import Any, Self, cast, get_args
 
 from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -45,8 +45,9 @@ class OpenBookJob[RecordT: BaseRecord](BaseJob):
         job = super().parse(data)
         if not isinstance(job.op, BookOp):
             job.op = BookOp(job.op)
-        if isinstance(job.record, dict):
-            job.record = _record_type(cls).parse(job.record)
+        raw = data.get("record")
+        if isinstance(raw, dict):
+            job.record = cast(type[RecordT], _record_type(cls)).parse(raw)
         return job
 
 
@@ -58,11 +59,15 @@ class OpenBookJobResult[RecordT: BaseRecord](BaseJobResult):
     @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
         result = super().parse(data)
-        record_cls = _record_type(cls)
-        if isinstance(result.record, dict):
-            result.record = record_cls.parse(result.record)
-        if result.records is not None:
-            result.records = [record_cls.parse(item) for item in result.records]
+        record_cls = cast(type[RecordT], _record_type(cls))
+        raw = data.get("record")
+        if isinstance(raw, dict):
+            result.record = record_cls.parse(raw)
+        raw_records = data.get("records")
+        if isinstance(raw_records, list):
+            result.records = [
+                record_cls.parse(item) for item in raw_records if isinstance(item, dict)
+            ]
         return result
 
 
@@ -82,7 +87,7 @@ class OpenBookJobBoard[RecordT: BaseRecord](
 
     job_cls: type[OpenBookJob[RecordT]]
     result_cls: type[OpenBookJobResult[RecordT]]
-    book_cls: type[BaseBook]
+    book_cls: type[BaseBook[RecordT]]
 
     def __init__(self, factory: EngineFactory) -> None:
         super().__init__(factory)
