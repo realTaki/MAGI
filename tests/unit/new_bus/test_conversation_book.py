@@ -8,6 +8,7 @@ import pytest
 from magi.new_bus import (
     AppendMessageJob,
     ArchiveMessagesJob,
+    BaseJobResult,
     Bus,
     Conversation,
     CreateConversationJob,
@@ -98,6 +99,49 @@ def test_firmware_commands_are_not_claimable_work() -> None:
     bus = _bus()
     with pytest.raises(InvalidJobError, match="cannot be claimed"):
         bus.claim(CreateConversationJob, worker_id=WORKER)
+
+
+def test_book_operation_waits_for_post_publish_approval() -> None:
+    bus = _bus()
+    checker = "checker"
+    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    created = _publish(
+        bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
+    )
+    assert bus.check_job_status(created) is JobStatus.PREPARING
+    assert bus.get_result(created) is None
+
+    pending_check = bus.post_publish(CreateConversationJob, worker_id=checker)
+    assert pending_check is not None
+    assert bus.check_job_status(created) is JobStatus.HOOKING
+    assert bus.submit_post_publish(
+        pending_check, BaseJobResult(status=JobStatus.PENDING), worker_id=checker
+    )
+    result = bus.get_result(created)
+    assert result is not None
+    assert result.status is JobStatus.COMPLETED
+    assert result.conversation is not None
+
+
+def test_post_publish_rejection_prevents_book_operation() -> None:
+    bus = _bus()
+    checker = "checker"
+    bus.attach(checker, CreateConversationJob, ("post_publish", "submit_post_publish"))
+    created = _publish(
+        bus, CreateConversationJob(delivery_address="webui:rejected", contact_id=1, channel="webui")
+    )
+    pending_check = bus.post_publish(CreateConversationJob, worker_id=checker)
+    assert pending_check is not None
+    assert bus.submit_post_publish(
+        pending_check,
+        BaseJobResult(status=JobStatus.FAILED, error="channel policy rejected"),
+        worker_id=checker,
+    )
+    result = bus.get_result(created)
+    assert result is not None
+    assert result.status is JobStatus.FAILED
+    assert result.error == "channel policy rejected"
+    assert result.conversation is None
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:

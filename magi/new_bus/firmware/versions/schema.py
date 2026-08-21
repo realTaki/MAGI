@@ -16,8 +16,15 @@ def firmware_metadata() -> MetaData:
     from ...base.BaseBook import BaseRecordMixin
     from ..books.conversationBook import ConversationRow  # noqa: F401
     from ..books.messageBook import MessageRow  # noqa: F401
-    from ..jobs.openConversationBookJob import OpenConversationBookJobRow  # noqa: F401
-    from ..jobs.openMessageBookJob import OpenMessageBookJobRow  # noqa: F401
+    from ..jobs.conversationJobs import (  # noqa: F401
+        CreateConversationJobRow,
+        UpdateConversationSummaryJobRow,
+    )
+    from ..jobs.messageJobs import (  # noqa: F401
+        AppendMessageJobRow,
+        ArchiveMessagesJobRow,
+        ListConversationMessagesJobRow,
+    )
 
     return BaseRecordMixin.metadata
 
@@ -49,8 +56,8 @@ def _upgrade(engine) -> None:
     def only_revisions(cls, scriptdir, path):
         return [p for p in list_py(cls, scriptdir, path) if _REVISION.fullmatch(p.name)]
 
-    setattr(Script, "_list_py_dir", classmethod(only_revisions))
+    Script._list_py_dir = classmethod(only_revisions)
     try:
         command.upgrade(cfg, "head")
     finally:
-        setattr(Script, "_list_py_dir", classmethod(list_py))
+        Script._list_py_dir = classmethod(list_py)

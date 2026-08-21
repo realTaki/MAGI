@@ -16,22 +16,26 @@ from .base.errors import (
     JobNotFoundError,
 )
 from .base.file import FileBackend
-from .base.openBookJob import BookOp, OpenBookJob
 from .bus import Bus
 from .firmware import (
+    AppendMessageJob,
+    AppendMessageResult,
+    ArchiveMessagesJob,
+    ArchiveMessagesResult,
     Conversation,
-    OpenConversationBookJob,
-    OpenConversationBookJobBoard,
-    OpenMessageBookJob,
-    OpenMessageBookJobBoard,
+    CreateConversationJob,
+    CreateConversationResult,
+    ListConversationMessagesJob,
+    ListConversationMessagesResult,
     Message,
+    MessageRole,
+    UpdateConversationSummaryJob,
+    UpdateConversationSummaryResult,
 )
 
 __all__ = [
     "BackendError",
-    "OpenBookJob",
     "BookNotFoundError",
-    "BookOp",
     "BaseRecord",
     "Bus",
     "BusError",
@@ -45,11 +49,18 @@ __all__ = [
     "JobNotFoundError",
     "JobStatus",
     "Conversation",
-    "OpenConversationBookJob",
-    "OpenConversationBookJobBoard",
-    "OpenMessageBookJob",
-    "OpenMessageBookJobBoard",
     "Message",
+    "MessageRole",
+    "AppendMessageJob",
+    "AppendMessageResult",
+    "ArchiveMessagesJob",
+    "ArchiveMessagesResult",
+    "CreateConversationJob",
+    "CreateConversationResult",
+    "ListConversationMessagesJob",
+    "ListConversationMessagesResult",
+    "UpdateConversationSummaryJob",
+    "UpdateConversationSummaryResult",
     "PostgresBackend",
     "SQLiteBackend",
 ]
