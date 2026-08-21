@@ -6,12 +6,10 @@ import threading
 from collections.abc import Iterable
 from typing import Any, TypeVar, cast
 
-from .base.BaseFileBook import BaseFileBook
-from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.errors import InvalidJobError
-from .base.file import FileBackend
 from .base.heartbeat import Heartbeat, Slot
 from .base.workerBus import WorkerBus
 
@@ -22,18 +20,14 @@ WorkerBusT = TypeVar("WorkerBusT", bound=WorkerBus)
 class Bus:
     """One runtime's source of truth for jobs, slots, docks, and liveness."""
 
-    def __init__(self, factory: EngineFactory, *, files: FileBackend | None = None) -> None:
+    def __init__(self, factory: EngineFactory) -> None:
         if not isinstance(factory, EngineFactory):
             raise InvalidJobError("Bus requires EngineFactory")
         self._factory = factory
-        self._files = files
-        if files is not None:
-            files.ensure()
         from .firmware.versions.schema import prepare_schema
 
         prepare_schema(factory)
         self._heartbeat = Heartbeat()
-        self._books: dict[str, BaseFileBook] = {}
         self._job_boards: dict[type[BaseJob], BaseJobBoard[Any, Any, Any]] = {}
         self._docks: dict[Slot, OrDock | AndDock] = {}
         self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
@@ -41,22 +35,6 @@ class Bus:
         from .firmware import attach
 
         attach(self)
-
-    @property
-    def books(self) -> tuple[str, ...]:
-        return tuple(self._books)
-
-    @property
-    def jobs(self) -> tuple[type[BaseJob], ...]:
-        return tuple(self._job_boards)
-
-    def mount_book(self, mounted: type[BaseFileBook]) -> None:
-        name = _book_key(mounted)
-        if name in self._books:
-            raise InvalidJobError(f"book {name!r} is already mounted")
-        if self._files is None:
-            raise InvalidJobError("BaseFileBook requires a FileBackend")
-        self._books[name] = mounted(self._files)
 
     def mount_job(
         self,
@@ -76,9 +54,6 @@ class Bus:
         board = board_cls(self._factory, self._heartbeat)
         self._job_boards[job_type] = board
         return cast(BaseJobBoard[JobT, Any, Any], board)
-
-    def job_board(self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
-        return self._job_board(job_type)
 
     def for_worker(
         self,
@@ -149,36 +124,6 @@ class Bus:
             return None
         return getattr(board, slot_name)(*args, worker_id=worker_id, **kwargs)
 
-    def publish(self, job: BaseJob, *, worker_id: str) -> int:
-        return int(self._invoke(worker_id, type(job), "publish", job) or 0)
-
-    def post_publish(self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
-        return cast(JobT | None, self._invoke(worker_id, job_type, "post_publish"))
-
-    def submit_post_publish(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:
-        return bool(self._invoke(worker_id, type(job), "submit_post_publish", job, result))
-
-    def claim(self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
-        return cast(JobT | None, self._invoke(worker_id, job_type, "claim"))
-
-    def submit_result(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:
-        return bool(self._invoke(worker_id, type(job), "submit_result", result))
-
-    def post_result(self, job_type: type[JobT], *, worker_id: str) -> JobT | None:
-        return cast(JobT | None, self._invoke(worker_id, job_type, "post_result"))
-
-    def submit_post_result(self, job: BaseJob, result: BaseJobResult, *, worker_id: str) -> bool:
-        return bool(self._invoke(worker_id, type(job), "submit_post_result", job.id, result))
-
-    def get_result(self, job: BaseJob) -> Any:
-        return self._job_board(type(job)).get_result(job.id)
-
-    def check_job_status(self, job: BaseJob) -> JobStatus | None:
-        return self._job_board(type(job)).check_job_status(job.id)
-
-    def list(self, job_type: type[JobT], *, status: JobStatus | None = None) -> list[JobT]:
-        return self._job_board(job_type).list(status=status)
-
     def close(self) -> None:
         self._factory.close()
 
@@ -193,9 +138,3 @@ class Bus:
             return cast(BaseJobBoard[JobT, Any, Any], self._job_boards[job_type])
         except KeyError:
             raise InvalidJobError(f"{job_type.__qualname__} is not mounted") from None
-
-
-def _book_key(book_cls: type[BaseFileBook]) -> str:
-    if not book_cls.name:
-        raise InvalidJobError(f"{book_cls.__name__} must set class variable name")
-    return book_cls.name

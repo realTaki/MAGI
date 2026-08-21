@@ -2,22 +2,19 @@
 
 from __future__ import annotations
 
-from magi.new_bus import Bus, JobBoardClient, SQLiteBackend, WorkerBus, job_board
+from magi.new_bus import Bus, SQLiteBackend, WorkerBus, job_board
 from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJob,
     CreateConversationJobBoard,
-    CreateConversationResult,
 )
 
 from .newBus import Launcher, WorkerSpec
 
 
 class ConversationWorkerBus(WorkerBus):
-    createConversationJobBoard: JobBoardClient[CreateConversationJob, CreateConversationResult] = (
-        job_board(
-            CreateConversationJobBoard,
-            slots=("publish",),
-        )
+    createConversationJobBoard = job_board(
+        CreateConversationJobBoard,
+        slots=("publish",),
     )
 
 

@@ -8,9 +8,9 @@ from magi.new_bus import Bus, Slot, WorkerBus
 
 
 @dataclass(frozen=True)
-class WorkerSpec:
+class WorkerSpec[WorkerBusT: WorkerBus]:
     worker_id: str
-    bus_type: type[WorkerBus]
+    bus_type: type[WorkerBusT]
 
 
 class Launcher:
@@ -19,7 +19,9 @@ class Launcher:
     def __init__(self, bus: Bus) -> None:
         self.bus = bus
 
-    def start(self, workers: tuple[WorkerSpec, ...]) -> dict[str, WorkerBus] | None:
+    def start[WorkerBusT: WorkerBus](
+        self, workers: tuple[WorkerSpec[WorkerBusT], ...]
+    ) -> dict[str, WorkerBusT] | None:
         requested: dict[Slot, int] = {}
         for worker in workers:
             for slot in worker.bus_type.declared_slots():
@@ -34,7 +36,7 @@ class Launcher:
             )
             if not install(slot):
                 return None
-        started: dict[str, WorkerBus] = {}
+        started: dict[str, WorkerBusT] = {}
         for worker in workers:
             view = self.bus.for_worker(worker.worker_id, worker.bus_type)
             if not view.attach():

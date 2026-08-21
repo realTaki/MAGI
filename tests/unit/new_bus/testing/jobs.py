@@ -6,7 +6,6 @@ from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
-from magi.new_bus.base.heartbeat import Slot
 
 WORKER = "test"
 
@@ -26,16 +25,3 @@ class PingJobBoard(BaseJobBoard[PingJob, BaseJobResult, PingJobRow]):
     job_cls = PingJob
     result_cls = BaseJobResult
     row_cls = PingJobRow
-
-
-def occupy(bus, worker_id: str = WORKER) -> None:
-    """Take every slot exposed by mounted test boards."""
-    for job_type in bus.jobs:
-        bus.attach(
-            worker_id,
-            (
-                Slot(job_type, "publish"),
-                Slot(job_type, "claim"),
-                Slot(job_type, "submit_result"),
-            ),
-        )

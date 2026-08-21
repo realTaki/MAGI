@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast, overload
 
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .heartbeat import Slot
 
 if TYPE_CHECKING:
@@ -45,6 +45,15 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
             self._bus._invoke(self._worker_id, self._job_type, "submit_post_result", job_id, result)
         )
 
+    def get_result(self, job_id: int) -> ResultT | None:
+        return cast(ResultT | None, self._bus._job_board(self._job_type).get_result(job_id))
+
+    def check_job_status(self, job_id: int) -> JobStatus | None:
+        return self._bus._job_board(self._job_type).check_job_status(job_id)
+
+    def list(self, *, status: JobStatus | None = None) -> list[JobT]:
+        return self._bus._job_board(self._job_type).list(status=status)
+
 
 class JobBoardBinding[JobT: BaseJob, ResultT: BaseJobResult]:
     """Declare a typed Board property and the slots a worker needs from it."""
@@ -55,16 +64,28 @@ class JobBoardBinding[JobT: BaseJob, ResultT: BaseJobResult]:
         slots: Iterable[str],
     ) -> None:
         self.board_cls = board_cls
+        self.job_cls: type[JobT] = board_cls.job_cls
         self.slots = tuple(slots)
         self.name = ""
 
     def __set_name__(self, _owner: type[WorkerBus], name: str) -> None:
         self.name = name
 
-    def __get__(self, instance: WorkerBus | None, _owner: type[WorkerBus]) -> Any:
+    @overload
+    def __get__(self, instance: None, owner: type[WorkerBus]) -> JobBoardBinding[JobT, ResultT]: ...
+
+    @overload
+    def __get__(
+        self, instance: WorkerBus, owner: type[WorkerBus]
+    ) -> JobBoardClient[JobT, ResultT]: ...
+
+    def __get__(
+        self, instance: WorkerBus | None, owner: type[WorkerBus] | None = None
+    ) -> JobBoardBinding[JobT, ResultT] | JobBoardClient[JobT, ResultT]:
+        del owner
         if instance is None:
             return self
-        return JobBoardClient(instance._bus, instance.worker_id, self.board_cls.job_cls)
+        return JobBoardClient(instance._bus, instance.worker_id, self.job_cls)
 
 
 def job_board[JobT: BaseJob, ResultT: BaseJobResult](
@@ -96,9 +117,7 @@ class WorkerBus:
     @classmethod
     def declared_slots(cls) -> tuple[Slot, ...]:
         return tuple(
-            Slot(binding.board_cls.job_cls, slot)
-            for binding in cls._bindings
-            for slot in binding.slots
+            Slot(binding.job_cls, slot) for binding in cls._bindings for slot in binding.slots
         )
 
     def heartbeat(self) -> bool:

@@ -1,7 +1,8 @@
 """MAGI-BUS vNext — software backplane.
 
 Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
-record types (see :class:`Message`). External code talks to Bus, never to BaseBook.
+record types (see :class:`Message`). Workers receive typed :class:`WorkerBus`
+views and never access BaseBooks directly.
 """
 
 from .base.BaseBook import BaseRecord

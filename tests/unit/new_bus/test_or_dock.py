@@ -31,7 +31,7 @@ def test_or_dock_routes_typed_worker_board_calls() -> None:
             BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="worker-b decided")
         )
         assert not first.pingJobBoard.submit_result(BaseJobResult(id=claimed.id))
-        result = bus.get_result(job)
+        result = first.pingJobBoard.get_result(job.id)
         assert result is not None
         assert result.status is JobStatus.FAILED
         assert result.error == "worker-b decided"

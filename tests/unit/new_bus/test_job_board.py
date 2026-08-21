@@ -3,34 +3,32 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-import pytest
-
-from magi.new_bus import BaseJobResult, Bus, InvalidJobError, JobStatus
+from magi.new_bus import BaseJobResult, Bus, JobStatus, Slot
 from magi.new_bus.base.engine import EngineFactory
-from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, occupy
+from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, attach_board
 
 
-def test_publish_claim_complete(bus: Bus) -> None:
+def test_publish_claim_complete(ping_board) -> None:
     published = PingJob(n=1, publisher="worker-a")
-    published.id = bus.publish(published, worker_id=WORKER)
+    published.id = ping_board.publish(published)
     assert published.id
-    assert bus.get_result(published) is None
-    assert bus.check_job_status(published) is JobStatus.PENDING
+    assert ping_board.get_result(published.id) is None
+    assert ping_board.check_job_status(published.id) is JobStatus.PENDING
 
-    claimed = bus.claim(PingJob, worker_id=WORKER)
+    claimed = ping_board.claim()
     assert claimed is not None
     assert claimed.id == published.id
-    assert bus.get_result(claimed) is None
-    assert bus.check_job_status(claimed) is JobStatus.CLAIMED
+    assert ping_board.get_result(claimed.id) is None
+    assert ping_board.check_job_status(claimed.id) is JobStatus.CLAIMED
     assert claimed.n == 1
     assert isinstance(claimed.created_at, datetime)
 
-    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    outcome = bus.get_result(claimed)
+    ping_board.submit_result(BaseJobResult(id=claimed.id))
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
     assert outcome.id == claimed.id
-    again = bus.get_result(claimed)
+    again = ping_board.get_result(claimed.id)
     assert again is not None
     assert again.status is JobStatus.COMPLETED
     assert not hasattr(claimed, "result")
@@ -38,12 +36,12 @@ def test_publish_claim_complete(bus: Bus) -> None:
     assert not hasattr(claimed, "error")
 
 
-def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
-    bus.publish(PingJob(), worker_id=WORKER)
-    claimed = bus.claim(PingJob, worker_id=WORKER)
+def test_job_and_result_share_one_flat_record(ping_board) -> None:
+    ping_board.publish(PingJob())
+    claimed = ping_board.claim()
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    outcome = bus.get_result(claimed)
+    ping_board.submit_result(BaseJobResult(id=claimed.id))
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.id == claimed.id
     assert outcome.status is JobStatus.COMPLETED
@@ -51,47 +49,43 @@ def test_job_and_result_share_one_flat_record(bus: Bus) -> None:
     assert not hasattr(claimed, "status")
 
 
-def test_claim_then_fail(bus: Bus) -> None:
-    bus.publish(PingJob(), worker_id=WORKER)
-    claimed = bus.claim(PingJob, worker_id=WORKER)
+def test_claim_then_fail(ping_board) -> None:
+    ping_board.publish(PingJob())
+    claimed = ping_board.claim()
     assert claimed is not None
-    bus.submit_result(
-        claimed,
-        BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="nope"),
-        worker_id=WORKER,
-    )
-    outcome = bus.get_result(claimed)
+    ping_board.submit_result(BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="nope"))
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"
 
 
-def test_claim_empty_board(bus: Bus) -> None:
-    assert bus.claim(PingJob, worker_id=WORKER) is None
+def test_claim_empty_board(ping_board) -> None:
+    assert ping_board.claim() is None
 
 
-def test_illegal_complete_from_pending(bus: Bus) -> None:
+def test_illegal_complete_from_pending(ping_board) -> None:
     job = PingJob()
-    job.id = bus.publish(job, worker_id=WORKER)
-    assert not bus.submit_result(job, BaseJobResult(id=job.id), worker_id=WORKER)
+    job.id = ping_board.publish(job)
+    assert not ping_board.submit_result(BaseJobResult(id=job.id))
 
 
-def test_complete_twice_is_illegal(bus: Bus) -> None:
-    bus.publish(PingJob(), worker_id=WORKER)
-    claimed = bus.claim(PingJob, worker_id=WORKER)
+def test_complete_twice_is_illegal(ping_board) -> None:
+    ping_board.publish(PingJob())
+    claimed = ping_board.claim()
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    assert not bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
+    ping_board.submit_result(BaseJobResult(id=claimed.id))
+    assert not ping_board.submit_result(BaseJobResult(id=claimed.id))
 
 
-def test_list_filters_status(bus: Bus) -> None:
-    first_id = bus.publish(PingJob(n=1), worker_id=WORKER)
-    bus.publish(PingJob(n=2), worker_id=WORKER)
-    claimed = bus.claim(PingJob, worker_id=WORKER)
+def test_list_filters_status(ping_board) -> None:
+    first_id = ping_board.publish(PingJob(n=1))
+    ping_board.publish(PingJob(n=2))
+    claimed = ping_board.claim()
     assert claimed is not None
-    bus.submit_result(claimed, BaseJobResult(id=claimed.id), worker_id=WORKER)
-    pending = bus.list(PingJob, status=JobStatus.PENDING)
-    completed = bus.list(PingJob, status=JobStatus.COMPLETED)
+    ping_board.submit_result(BaseJobResult(id=claimed.id))
+    pending = ping_board.list(status=JobStatus.PENDING)
+    completed = ping_board.list(status=JobStatus.COMPLETED)
     assert [job.n for job in pending] == [2]
     assert [job.id for job in completed] == [first_id]
 
@@ -99,16 +93,21 @@ def test_list_filters_status(bus: Bus) -> None:
 def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
         bus.mount_job(PingJob, board_cls=PingJobBoard)
-        occupy(bus)
+        ping_board = attach_board(
+            bus,
+            PingJobBoard,
+            worker_id=WORKER,
+            slots=("publish", "claim", "submit_result"),
+        )
         for index in range(20):
-            bus.publish(PingJob(n=index), worker_id=WORKER)
+            ping_board.publish(PingJob(n=index))
 
         claimed_ids: list[int] = []
         lock = threading.Lock()
 
         def worker() -> None:
             while True:
-                job = bus.claim(PingJob, worker_id=WORKER)
+                job = ping_board.claim()
                 if job is None:
                     return
                 with lock:
@@ -126,5 +125,4 @@ def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
 
 def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
-        with pytest.raises(InvalidJobError):
-            bus.publish(PingJob(), worker_id=WORKER)
+        assert not bus.attach(WORKER, (Slot(PingJob, "publish"),))
