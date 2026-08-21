@@ -4,7 +4,6 @@ import pytest
 
 from magi.new_bus import Bus, FileBackend, InvalidJobError
 from magi.new_bus.base.BaseFileBook import BaseFileBook
-from tests.unit.new_bus.testing import InMemoryBackend
 
 
 class NotesBook(BaseFileBook):
@@ -29,4 +28,3 @@ def test_file_book_uses_its_named_directory(tmp_path) -> None:
 def test_bus_rejects_file_as_primary_backend(tmp_path) -> None:
     with pytest.raises(InvalidJobError, match="EngineFactory"):
         Bus(FileBackend(tmp_path / "files"))  # type: ignore[arg-type]
-

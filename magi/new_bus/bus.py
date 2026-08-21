@@ -28,32 +28,12 @@ class Bus:
 
         prepare_schema(factory)
         self._heartbeat = Heartbeat()
-        self._job_boards: dict[type[BaseJob], BaseJobBoard[Any, Any, Any]] = {}
+        from .firmware import create_job_boards
+
+        self._job_boards = create_job_boards(factory, self._heartbeat)
         self._docks: dict[Slot, OrDock | AndDock] = {}
         self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
         self._lock = threading.RLock()
-        from .firmware import attach
-
-        attach(self)
-
-    def mount_job(
-        self,
-        job_type: type[JobT],
-        *,
-        board_cls: type[BaseJobBoard[Any, Any, Any]] = BaseJobBoard,
-    ) -> BaseJobBoard[JobT, Any, Any]:
-        if job_type in self._job_boards:
-            raise InvalidJobError(f"{job_type.__qualname__} is already mounted")
-        declared = getattr(board_cls, "job_cls", BaseJob)
-        if declared is BaseJob:
-            board_cls = type(f"{job_type.__qualname__}Board", (board_cls,), {"job_cls": job_type})
-        elif declared is not job_type:
-            raise InvalidJobError(
-                f"{board_cls.__name__} is for {declared.__qualname__}, not {job_type.__qualname__}"
-            )
-        board = board_cls(self._factory, self._heartbeat)
-        self._job_boards[job_type] = board
-        return cast(BaseJobBoard[JobT, Any, Any], board)
 
     def for_worker(
         self,

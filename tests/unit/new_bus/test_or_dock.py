@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from magi.new_bus import BaseJobResult, Bus, JobBoardClient, JobStatus, Slot, WorkerBus, job_board
-from tests.unit.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard
+from magi.new_bus import BaseJobResult, JobBoardClient, JobStatus, Slot, WorkerBus, job_board
+from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob, PingJobBoard
 
 
 class PingWorkerBus(WorkerBus):
@@ -12,8 +12,7 @@ class PingWorkerBus(WorkerBus):
 
 
 def test_or_dock_routes_typed_worker_board_calls() -> None:
-    with Bus(InMemoryBackend()) as bus:
-        bus.mount_job(PingJob, board_cls=PingJobBoard)
+    with PingBus(InMemoryBackend()) as bus:
         for name in ("publish", "claim", "submit_result"):
             assert bus.install_or_dock(Slot(PingJob, name))
         first = bus.for_worker("worker-a", PingWorkerBus)
@@ -38,8 +37,7 @@ def test_or_dock_routes_typed_worker_board_calls() -> None:
 
 
 def test_worker_heartbeat_renews_every_dock_membership() -> None:
-    with Bus(InMemoryBackend()) as bus:
-        bus.mount_job(PingJob, board_cls=PingJobBoard)
+    with PingBus(InMemoryBackend()) as bus:
         for name in ("publish", "claim", "submit_result"):
             assert bus.install_or_dock(Slot(PingJob, name))
         worker = bus.for_worker("worker", PingWorkerBus)
@@ -49,8 +47,7 @@ def test_worker_heartbeat_renews_every_dock_membership() -> None:
 
 
 def test_unattached_worker_cannot_use_a_routed_board() -> None:
-    with Bus(InMemoryBackend()) as bus:
-        bus.mount_job(PingJob, board_cls=PingJobBoard)
+    with PingBus(InMemoryBackend()) as bus:
         assert bus.install_or_dock(Slot(PingJob, "claim"))
         worker = bus.for_worker("outsider", PingWorkerBus)
         assert worker.pingJobBoard.claim() is None

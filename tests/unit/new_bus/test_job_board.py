@@ -5,7 +5,7 @@ from datetime import datetime
 
 from magi.new_bus import BaseJobResult, Bus, JobStatus, Slot
 from magi.new_bus.base.engine import EngineFactory
-from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, attach_board
+from tests.unit.new_bus.testing import WORKER, PingBus, PingJob, PingJobBoard, attach_board
 
 
 def test_publish_claim_complete(ping_board) -> None:
@@ -91,8 +91,7 @@ def test_list_filters_status(ping_board) -> None:
 
 
 def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
-    with Bus(db_backend) as bus:
-        bus.mount_job(PingJob, board_cls=PingJobBoard)
+    with PingBus(db_backend) as bus:
         ping_board = attach_board(
             bus,
             PingJobBoard,

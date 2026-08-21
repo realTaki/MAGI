@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from magi.new_bus import BaseJobResult, Bus, JobBoardClient, JobStatus, Slot, WorkerBus, job_board
-from tests.unit.new_bus.testing import InMemoryBackend, PingJob, PingJobBoard, attach_board
+from magi.new_bus import BaseJobResult, JobBoardClient, JobStatus, Slot, WorkerBus, job_board
+from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob, PingJobBoard, attach_board
 
 
 class ResultWorkerBus(WorkerBus):
@@ -12,8 +12,7 @@ class ResultWorkerBus(WorkerBus):
 
 
 def test_and_dock_waits_for_live_members_and_rejects_on_any_failure() -> None:
-    with Bus(InMemoryBackend()) as bus:
-        bus.mount_job(PingJob, board_cls=PingJobBoard)
+    with PingBus(InMemoryBackend()) as bus:
         direct = attach_board(
             bus,
             PingJobBoard,
