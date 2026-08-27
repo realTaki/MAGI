@@ -1,4 +1,9 @@
 from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult, LLMErrorCode
+from .changeProviderJob import (
+    ChangeProviderJob,
+    ChangeProviderJobBoard,
+    ChangeProviderResult,
+)
 from .conversationJobs import (
     CreateConversationJob,
     CreateConversationJobBoard,
@@ -70,6 +75,9 @@ __all__ = [
     "CallLLMJobBoard",
     "CallLLMResult",
     "LLMErrorCode",
+    "ChangeProviderJob",
+    "ChangeProviderJobBoard",
+    "ChangeProviderResult",
     "RecordTokenUsageJob",
     "RecordTokenUsageJobBoard",
     "RecordTokenUsageResult",
