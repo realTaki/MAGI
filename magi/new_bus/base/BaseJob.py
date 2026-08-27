@@ -260,10 +260,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             row = session.get(type(self).row_cls, job_id)
         if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
             return None
-        parsed = type(self).result_cls.from_row(row)
-        parsed.status = JobStatus(row.status)
-        parsed.error = row.error
-        return parsed
+        return type(self).result_cls.from_row(row)
 
     def check_job_status(self, job_id: int) -> JobStatus | None:
         self.release_idle_slots()

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
 
-from sqlalchemy import DateTime, ForeignKey, Text
+from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
-from ...base.time import BaseTime
 
 
 class NoteKind(StrEnum):
@@ -28,14 +25,6 @@ class ContactNote(BaseRecord):
     contact_id: int
     note: str
     kind: NoteKind = NoteKind.PERMANENT
-    note_date: BaseTime | None = None
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        note = super().parse(data)
-        if not isinstance(note.kind, NoteKind):
-            note.kind = NoteKind(note.kind)
-        return note
 
 
 class ContactNoteRow(BaseRecordMixin):
@@ -46,7 +35,6 @@ class ContactNoteRow(BaseRecordMixin):
     )
     note: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False, default=NoteKind.PERMANENT.value)
-    note_date: Mapped[BaseTime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ContactNoteBook(BaseBook[ContactNote]):

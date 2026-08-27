@@ -9,7 +9,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, Text, and_, select, upd
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
-from ...base.operateBookJob import BookRecordsResult, OperateBookJobBoard
+from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import BaseTime, utcnow
 from ..books.conversationBook import ConversationRow
 from ..books.messageBook import Message, MessageRole, MessageRow
@@ -75,9 +75,8 @@ class ListConversationMessagesJob(BaseJob):
 
 
 @dataclass
-class ListConversationMessagesResult(BookRecordsResult[Message]):
+class ListConversationMessagesResult(BaseJobResult):
     messages: list[Message] = field(default_factory=list)
-    records_field = "messages"
 
 
 class ListConversationMessagesJobRow(BaseJobRow):
@@ -96,7 +95,6 @@ class ListConversationMessagesJobBoard(
     job_cls = ListConversationMessagesJob
     result_cls = ListConversationMessagesResult
     row_cls = ListConversationMessagesJobRow
-
     def _execute(
         self, session: Session, job: ListConversationMessagesJob
     ) -> ListConversationMessagesResult:
