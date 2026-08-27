@@ -22,6 +22,9 @@ from .jobs import (
     CallLLMJob,
     CallLLMJobBoard,
     CallLLMResult,
+    ChangeProviderJob,
+    ChangeProviderJobBoard,
+    ChangeProviderResult,
     CreateConversationJob,
     CreateConversationJobBoard,
     CreateConversationResult,
@@ -65,6 +68,7 @@ def create_job_boards(
         DeleteSettingJob: DeleteSettingJobBoard(factory, heartbeat),
         ListSettingsJob: ListSettingsJobBoard(factory, heartbeat),
         CallLLMJob: CallLLMJobBoard(factory, heartbeat),
+        ChangeProviderJob: ChangeProviderJobBoard(factory, heartbeat),
         RecordTokenUsageJob: RecordTokenUsageJobBoard(factory, heartbeat),
     }
 
@@ -105,6 +109,9 @@ __all__ = [
     "CallLLMJob",
     "CallLLMJobBoard",
     "CallLLMResult",
+    "ChangeProviderJob",
+    "ChangeProviderJobBoard",
+    "ChangeProviderResult",
     "LLMErrorCode",
     "RecordTokenUsageJob",
     "RecordTokenUsageJobBoard",
