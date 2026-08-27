@@ -8,6 +8,8 @@ from typing import Any
 from ..base.BaseJob import BaseJob, BaseJobBoard
 from ..base.engine import EngineFactory
 from ..base.heartbeat import Heartbeat
+from .books.contactBook import Contact, ContactRole
+from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
 from .books.messageBook import Message, MessageRole
 from .books.settingsBook import Setting
@@ -75,6 +77,10 @@ def create_job_boards(
 
 __all__ = [
     "Conversation",
+    "Contact",
+    "ContactRole",
+    "ContactNote",
+    "NoteKind",
     "Message",
     "MessageRole",
     "Setting",
