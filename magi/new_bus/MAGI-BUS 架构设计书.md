@@ -96,7 +96,7 @@ BUS 本身应尽量保持机械、稳定和确定，不演化成 Plugin Manager 
 Component
     │
     ▼
-WorkerBus / JobBoardClient
+BusForWorker / JobBoardClient
     │
     ▼
    BUS
@@ -126,7 +126,7 @@ MAGI-BUS 当前负责：
 - Book Operation Job；
 - Job 生命周期；
 - Slot 定义与 ownership；
-- WorkerBus 与 JobBoardClient；
+- BusForWorker 与 JobBoardClient；
 - Worker liveness 与 Slot lease；
 - Dock routing mechanism；
 - SQLite / PostgreSQL 持久化；
@@ -160,7 +160,7 @@ BUS 不负责：
                     External Workers
                           │
                           ▼
-                     WorkerBus
+                    BusForWorker
                           │
                           ▼
 ┌───────────────────────────────────────────────┐
@@ -182,7 +182,7 @@ BUS 不负责：
 │                   bus.base                    │
 │                                               │
 │ BaseBook / BaseJob / BaseJobBoard             │
-│ OperateBookJobBoard / Slot / WorkerBus        │
+│ OperateBookJobBoard / Slot / BusForWorker     │
 │ Engine / FileBook primitives                  │
 └───────────────────────┬───────────────────────┘
                         │
@@ -229,7 +229,7 @@ OperateBookJobBoard
 Slot
 Heartbeat
 
-WorkerBus
+BusForWorker
 JobBoardClient
 
 OrDock
@@ -922,61 +922,58 @@ FAILED
 
 ---
 
-# 26. WorkerBus
+# 26. BusForWorker
 
-外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。
-
-BUS 为每个 Worker 创建：
+外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。Worker 是由
+`RuntimeLauncher` 创建的业务组件；BUS 在为它分配声明的 Slot 后，才交给它
+一个访问切面：
 
 ```text
-WorkerBus
+BusForWorker
 ```
 
-例如：
+例如，Launcher 先创建 Worker，再分配切面并调用其 `attach`：
 
 ```python
-bus.for_worker("worker-a", SomeWorkerBus)
+worker = ProviderWorker()
+bus_for_worker = bus.for_worker("provider-a", provider_slots)
+worker.attach(bus_for_worker)
 ```
 
-WorkerBus 是：
+BusForWorker 是：
 
-> **绑定到具体 Worker identity 的 typed BUS surface。**
+> **绑定到具体 Worker identity、并受已分配 Slot 约束的 BUS access slice。**
 
-Worker 只看到自己声明需要使用的 JobBoard。
+它不是第二个 BUS；所有 Worker 切面仍指向同一个 Runtime BUS。切面通过
+`board(JobType)` 取得 JobBoardClient，而每次写操作仍由共享 BUS 检查 Slot
+ownership。
 
 ---
 
-# 27. `job_board()` 声明
+# 27. WorkerLaunchSpec
 
-WorkerBus 子类通过 `job_board()` 声明：
+Worker topology 不再由 Bus view 子类隐式声明。`WorkerLaunchSpec` 显式声明：
 
-- 使用哪个 JobBoard；
-- 需要哪些 Slot。
+- `worker_id`；
+- `slots`；
+- `create`（Worker 构造器）。
 
 例如：
 
 ```python
-class ToolWorkerBus(WorkerBus):
-    tool_call = job_board(
-        ToolCallJobBoard,
-        slots=("claim", "submit_result"),
-    )
+WorkerLaunchSpec(
+    worker_id="tools-a",
+    slots=(
+        Slot(ToolCallJob, "claim"),
+        Slot(ToolCallJob, "submit_result"),
+    ),
+    create=ToolWorker,
+)
 ```
 
-表示该 Worker 使用 ToolCallJobBoard，并请求：
-
-```text
-claim
-submit_result
-```
-
-这些声明最终转换成：
-
-```text
-Slot(JobType, operation)
-```
-
-集合并 attach 到 BUS。
+RuntimeLauncher 在创建 BUS 后收集这些 Slot，先规划 Dock，再调用
+`bus.for_worker(worker_id, slots)` 分配切面。Worker 只在自己的 `attach()`
+中接收该切面。
 
 ---
 
@@ -1121,7 +1118,7 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/newBus.py` 负责在 Worker 启动前规划 Slot topology。
+当前 `magi/launcher/runtime_launcher.py` 中的 `RuntimeLauncher` 负责在 Worker 启动前规划 Slot topology。
 
 Launcher 的基本流程：
 
@@ -1129,17 +1126,20 @@ Launcher 的基本流程：
 2. 统计同一个 Slot 有多少 Worker 请求；
 3. 单 Worker Slot 直接 attach；
 4. 多 Worker Slot 安装对应 Dock；
-5. 创建 WorkerBus；
-6. attach Worker。
+5. 创建 Worker；
+6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
+7. 调用 `worker.attach(bus_for_worker)`。
 
 概念上：
 
 ```text
-Launcher
+RuntimeLauncher
    │
+   ├── create Bus
    ├── plan topology
    ├── install Docks
-   ├── create WorkerBus
+   ├── create Workers
+   ├── allocate BusForWorker slices
    └── attach Workers
 ```
 
@@ -1436,7 +1436,7 @@ Launcher / BUS compatibility check
 Bus
  │
  ▼
-WorkerBus
+BusForWorker
  │
  ▼
 JobBoardClient
@@ -1540,13 +1540,13 @@ magi/
 ├── new_bus/
 │   ├── __init__.py
 │   ├── bus.py
+│   ├── bus_for_worker.py
 │   │
 │   ├── base/
 │   │   ├── BaseBook.py
 │   │   ├── BaseFileBook.py
 │   │   ├── BaseJob.py
 │   │   ├── operateBookJob.py
-│   │   ├── workerBus.py
 │   │   ├── heartbeat.py
 │   │   ├── dock.py
 │   │   ├── engine.py
@@ -1568,7 +1568,7 @@ magi/
 │           └── schema.py
 │
 └── launcher/
-    └── newBus.py
+    └── runtime_launcher.py
 ```
 
 目录名未来可以随着 `new_bus` 正式替代旧 BUS 而调整，但逻辑分层保持不变。
@@ -1731,7 +1731,7 @@ Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owne
 
 > **所有原始 Slot 使用统一单 owner 模型，多 Worker 共享由 Dock 实现。**
 
-> **WorkerBus 为 Worker 提供受 Slot ownership 约束的 typed BUS surface。**
+> **BusForWorker 为 Worker 提供受 Slot ownership 约束的 BUS access slice。**
 
 > **Firmware 定义当前 MAGI 实际拥有的 Book、Job、Result 与数据库版本。**
 
@@ -1743,7 +1743,7 @@ Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owne
 External Components
         │
         ▼
-     WorkerBus
+   BusForWorker
         │
         ▼
        BUS
