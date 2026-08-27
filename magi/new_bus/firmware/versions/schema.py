@@ -17,6 +17,8 @@ def firmware_metadata() -> MetaData:
     from ..books.conversationBook import ConversationRow  # noqa: F401
     from ..books.messageBook import MessageRow  # noqa: F401
     from ..books.settingsBook import SettingRow  # noqa: F401
+    from ..books.tokenUsageBook import TokenUsageRow  # noqa: F401
+    from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
     from ..jobs.conversationJobs import (  # noqa: F401
         CreateConversationJobRow,
         UpdateConversationSummaryJobRow,
@@ -32,6 +34,7 @@ def firmware_metadata() -> MetaData:
         ListSettingsJobRow,
         SetSettingJobRow,
     )
+    from ..jobs.tokenUsageJobs import RecordTokenUsageJobRow  # noqa: F401
 
     return BaseRecordMixin.metadata
 

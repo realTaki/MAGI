@@ -1,3 +1,4 @@
+from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult, LLMErrorCode
 from .conversationJobs import (
     CreateConversationJob,
     CreateConversationJobBoard,
@@ -31,6 +32,11 @@ from .settingsJobs import (
     SetSettingJobBoard,
     SetSettingResult,
 )
+from .tokenUsageJobs import (
+    RecordTokenUsageJob,
+    RecordTokenUsageJobBoard,
+    RecordTokenUsageResult,
+)
 
 __all__ = [
     "AppendMessageJob",
@@ -60,4 +66,11 @@ __all__ = [
     "SetSettingJob",
     "SetSettingJobBoard",
     "SetSettingResult",
+    "CallLLMJob",
+    "CallLLMJobBoard",
+    "CallLLMResult",
+    "LLMErrorCode",
+    "RecordTokenUsageJob",
+    "RecordTokenUsageJobBoard",
+    "RecordTokenUsageResult",
 ]
