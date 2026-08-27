@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
+from ..books.contactBook import ContactRow
 from ..books.tokenUsageBook import TokenUsageRow
 
 
@@ -74,6 +75,10 @@ class RecordTokenUsageJobBoard(
         if min(token_counts) < 0:
             return RecordTokenUsageResult(
                 status=JobStatus.FAILED, error="token counts must be non-negative"
+            )
+        if job.contact_id is not None and session.get(ContactRow, job.contact_id) is None:
+            return RecordTokenUsageResult(
+                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
             )
         session.add(
             TokenUsageRow(

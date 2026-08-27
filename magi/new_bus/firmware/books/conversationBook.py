@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import DateTime, Integer, Text
+from sqlalchemy import DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -19,7 +19,7 @@ class Conversation(BaseRecord):
     """One row in ConversationBook.
 
     delivery_address: where replies go
-    contact_id: owning contact
+    contact_id: owning Contact.id
     channel: inbound channel name
     title: optional display name
     summary: compacted summary
@@ -38,7 +38,9 @@ class ConversationRow(BaseRecordMixin):
     __tablename__ = "books_conversations"
 
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("books_contacts.id", ondelete="RESTRICT"), nullable=False
+    )
     channel: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")

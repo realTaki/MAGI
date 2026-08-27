@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Integer, Text
+from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -16,8 +16,8 @@ class TokenUsage(BaseRecord):
 
     ``llm_job_id`` is a logical link rather than a SQL foreign key: usage is
     audit data and must remain readable even if job retention is introduced
-    later.  ``contact_id`` likewise remains optional until the vNext contact
-    domain exists.
+    later.  ``contact_id`` is an optional FK; deleting a Contact nulls it so
+    the usage row remains.
     """
 
     llm_job_id: int
@@ -37,7 +37,9 @@ class TokenUsageRow(BaseRecordMixin):
     __tablename__ = "books_token_usage"
 
     llm_job_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contact_id: Mapped[int | None] = mapped_column(
+        ForeignKey("books_contacts.id", ondelete="SET NULL"), nullable=True
+    )
     provider: Mapped[str] = mapped_column(Text, nullable=False, default="")
     model: Mapped[str] = mapped_column(Text, nullable=False, default="")
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
