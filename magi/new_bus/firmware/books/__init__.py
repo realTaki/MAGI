@@ -2,6 +2,7 @@
 from .conversationBook import Conversation, ConversationBook
 from .messageBook import Message, MessageBook, MessageRole
 from .settingsBook import Setting, SettingsBook
+from .tokenUsageBook import TokenUsage, TokenUsageBook
 
 __all__ = [
     "Conversation",
@@ -11,4 +12,6 @@ __all__ = [
     "MessageRole",
     "Setting",
     "SettingsBook",
+    "TokenUsage",
+    "TokenUsageBook",
 ]

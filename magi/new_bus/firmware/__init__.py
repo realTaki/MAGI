@@ -11,6 +11,7 @@ from ..base.heartbeat import Heartbeat
 from .books.conversationBook import Conversation
 from .books.messageBook import Message, MessageRole
 from .books.settingsBook import Setting
+from .books.tokenUsageBook import TokenUsage
 from .jobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -18,6 +19,9 @@ from .jobs import (
     ArchiveMessagesJob,
     ArchiveMessagesJobBoard,
     ArchiveMessagesResult,
+    CallLLMJob,
+    CallLLMJobBoard,
+    CallLLMResult,
     CreateConversationJob,
     CreateConversationJobBoard,
     CreateConversationResult,
@@ -33,6 +37,10 @@ from .jobs import (
     ListSettingsJob,
     ListSettingsJobBoard,
     ListSettingsResult,
+    LLMErrorCode,
+    RecordTokenUsageJob,
+    RecordTokenUsageJobBoard,
+    RecordTokenUsageResult,
     SetSettingJob,
     SetSettingJobBoard,
     SetSettingResult,
@@ -56,6 +64,8 @@ def create_job_boards(
         SetSettingJob: SetSettingJobBoard(factory, heartbeat),
         DeleteSettingJob: DeleteSettingJobBoard(factory, heartbeat),
         ListSettingsJob: ListSettingsJobBoard(factory, heartbeat),
+        CallLLMJob: CallLLMJobBoard(factory, heartbeat),
+        RecordTokenUsageJob: RecordTokenUsageJobBoard(factory, heartbeat),
     }
 
 
@@ -64,6 +74,7 @@ __all__ = [
     "Message",
     "MessageRole",
     "Setting",
+    "TokenUsage",
     "AppendMessageJob",
     "AppendMessageJobBoard",
     "AppendMessageResult",
@@ -91,4 +102,11 @@ __all__ = [
     "SetSettingJob",
     "SetSettingJobBoard",
     "SetSettingResult",
+    "CallLLMJob",
+    "CallLLMJobBoard",
+    "CallLLMResult",
+    "LLMErrorCode",
+    "RecordTokenUsageJob",
+    "RecordTokenUsageJobBoard",
+    "RecordTokenUsageResult",
 ]
