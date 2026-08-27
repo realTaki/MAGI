@@ -5,10 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
-from .BaseJob import BaseJob, BaseJobResult, JobStatus
+from sqlalchemy import select
+
+from .base.BaseJob import BaseJob, BaseJobResult, JobStatus
+from .base.dock import AndDock, OrDock
+from .base.engine import EngineFactory
+from .base.heartbeat import Heartbeat
 
 if TYPE_CHECKING:
-    from ..bus import Bus
+    from .bus import Bus
 
 
 class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
@@ -57,29 +62,60 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
 class BusForWorker:
     """The attached, identity-bound BUS slice passed to one Worker.
 
-    A slice is not a second BUS. It refers to the Runtime's one shared
-    :class:`Bus`, while carrying only the identity whose Slots were allocated
-    during :meth:`Bus.for_worker`.
+    A slice is not a second BUS. It refers to the Runtime's one shared BUS,
+    while holding the dependencies needed for its Worker-facing operations.
     """
 
-    def __init__(self, bus: Bus, worker_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        bus: Bus,
+        factory: EngineFactory,
+        heartbeat: Heartbeat,
+        worker_docks: dict[str, set[OrDock | AndDock]],
+        worker_id: str,
+    ) -> None:
         self._bus = bus
+        self._factory = factory
+        self._heartbeat = heartbeat
+        self._worker_docks = worker_docks
         self.worker_id = worker_id
 
     def board[JobT: BaseJob](self, job_type: type[JobT]) -> JobBoardClient[JobT, Any]:
-        """Return this Worker's client for one mounted Job type.
-
-        The shared BUS checks the Worker's allocated Slot for every mutating
-        operation, so creating a client does not grant an undeclared capability.
-        """
+        """Return this Worker's client for one mounted Job type."""
         return JobBoardClient(self._bus, self.worker_id, job_type)
 
     def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> None:
-        """Register this Worker's missing defaults in the shared Settings Book."""
-        self._bus.boost_default_settings(worker_name=worker_name, settings=settings)
+        """Register this Worker's missing Settings defaults without overwriting values."""
+        from .firmware.books.settingsBook import SettingRow
+
+        namespace = self._setting_segment(worker_name, label="worker name")
+        prepared = {
+            f"{namespace}.{self._setting_segment(name, label='setting name')}": value
+            for name, value in settings.items()
+        }
+        if not all(isinstance(value, str) for value in prepared.values()):
+            raise ValueError("default setting values must be strings")
+
+        with self._factory.session() as session:
+            for key, value in prepared.items():
+                existing = session.scalar(select(SettingRow.id).where(SettingRow.key == key))
+                if existing is None:
+                    session.add(SettingRow(key=key, value=value))
+            session.commit()
 
     def heartbeat(self) -> bool:
-        return self._bus.heartbeat(self.worker_id)
+        if not self._heartbeat.heartbeat(self.worker_id):
+            return False
+        return all(dock.heartbeat(self.worker_id) for dock in self._worker_docks.get(self.worker_id, ()))
 
     def is_alive(self) -> bool:
-        return self._bus.is_alive(self.worker_id)
+        return self._heartbeat.is_alive(self.worker_id)
+
+    @staticmethod
+    def _setting_segment(value: str, *, label: str) -> str:
+        if not isinstance(value, str) or not (normalized := value.strip()):
+            raise ValueError(f"{label} must be non-empty")
+        if "." in normalized:
+            raise ValueError(f"{label} must not contain '.'")
+        return normalized
