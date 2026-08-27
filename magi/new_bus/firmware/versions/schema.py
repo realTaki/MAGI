@@ -22,6 +22,21 @@ def firmware_metadata() -> MetaData:
     from ..books.tokenUsageBook import TokenUsageRow  # noqa: F401
     from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
     from ..jobs.changeProviderJob import ChangeProviderJobRow  # noqa: F401
+    from ..jobs.contactJobs import (  # noqa: F401
+        CreateContactJobRow,
+        DeleteContactJobRow,
+        GetContactJobRow,
+        ListContactsJobRow,
+        TouchContactJobRow,
+        UpdateContactJobRow,
+    )
+    from ..jobs.contactNoteJobs import (  # noqa: F401
+        CreateContactNoteJobRow,
+        DeleteContactNoteJobRow,
+        GetContactNoteJobRow,
+        ListContactNotesJobRow,
+        UpdateContactNoteJobRow,
+    )
     from ..jobs.conversationJobs import (  # noqa: F401
         CreateConversationJobRow,
         UpdateConversationSummaryJobRow,

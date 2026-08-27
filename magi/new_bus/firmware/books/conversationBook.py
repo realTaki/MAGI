@@ -18,9 +18,13 @@ from ...base.time import BaseTime
 class Conversation(BaseRecord):
     """One row in ConversationBook.
 
-    delivery_address: where replies go
-    contact_id: owning Contact.id
-    channel: inbound channel name
+    ``contact_id`` identifies the channel-independent actor. ``channel`` and
+    ``delivery_address`` identify the transport endpoint for this conversation;
+    no channel-specific identity is stored on Contact.
+
+    delivery_address: where replies go on this channel
+    contact_id: participating Contact.id
+    channel: transport/channel name
     title: optional display name
     summary: compacted summary
     last_compaction_at: when summary was last written

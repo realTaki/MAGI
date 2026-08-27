@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -52,13 +51,6 @@ class CallLLMResult(BaseJobResult):
     finish_reason: str | None = None
     model: str = ""
     error_code: LLMErrorCode | None = None
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        result = super().parse(data)
-        if result.error_code is not None and not isinstance(result.error_code, LLMErrorCode):
-            result.error_code = LLMErrorCode(result.error_code)
-        return result
 
 
 class CallLLMJobRow(BaseJobRow):
