@@ -9,7 +9,7 @@ from sqlalchemy import JSON, Boolean, DateTime, Integer, Text, and_, select, upd
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
-from ...base.operateBookJob import BookRecordResult, BookRecordsResult, OperateBookJobBoard
+from ...base.operateBookJob import BookRecordsResult, OperateBookJobBoard
 from ...base.time import BaseTime, utcnow
 from ..books.conversationBook import ConversationRow
 from ..books.messageBook import Message, MessageRole, MessageRow
@@ -24,9 +24,8 @@ class AppendMessageJob(BaseJob):
 
 
 @dataclass
-class AppendMessageResult(BookRecordResult[Message]):
-    message: Message | None = None
-    record_field = "message"
+class AppendMessageResult(BaseJobResult):
+    message_id: int | None = None
 
 
 class AppendMessageJobRow(BaseJobRow):
@@ -36,7 +35,7 @@ class AppendMessageJobRow(BaseJobRow):
     role: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[BaseTime] = mapped_column(DateTime, nullable=False)
-    message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AppendMessageJobBoard(
@@ -66,7 +65,7 @@ class AppendMessageJobBoard(
         )
         session.add(row)
         session.flush()
-        return AppendMessageResult(message=Message.from_row(row))
+        return AppendMessageResult(message_id=row.id)
 
 
 @dataclass

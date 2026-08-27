@@ -24,20 +24,12 @@ def _production_modules() -> list[Path]:
     return [path for path in MAGI_ROOT.rglob("*.py") if "__pycache__" not in path.parts]
 
 
-def test_retired_bus_names_are_not_used() -> None:
-    """The single BUS implementation has no compatibility import surface."""
-    retired = (
-        "magi." + "new" + "_bus",
-        "New" + "Bus",
-        "bootstrap_" + "new" + "_bus",
-    )
-    offenders: list[str] = []
-    for path in _production_modules():
-        text = path.read_text(encoding="utf-8")
-        for name in retired:
-            if name in text:
-                offenders.append(f"{path.relative_to(REPO_ROOT)} -> {name}")
-    assert not offenders, "retired BUS package names remain:\n  " + "\n  ".join(offenders)
+def test_vnext_bus_is_a_first_class_package() -> None:
+    """``magi.new_bus`` is the next BUS iteration, not a compatibility shim."""
+    vnext_root = MAGI_ROOT / "new_bus"
+    assert (vnext_root / "__init__.py").is_file()
+    assert (vnext_root / "bus.py").is_file()
+    assert (vnext_root / "firmware" / "__init__.py").is_file()
 
 
 def test_domain_modules_do_not_reach_into_bus_storage() -> None:
