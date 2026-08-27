@@ -15,6 +15,8 @@ from magi.new_bus import (
     ListConversationMessagesJob,
     MessageRole,
 )
+from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
+from magi.new_bus.firmware.books.messageBook import MessageBook
 from magi.new_bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
 from magi.new_bus.firmware.jobs.messageJobs import (
     AppendMessageJobBoard,
@@ -50,13 +52,17 @@ def _result(bus: Bus, job: BaseJob):
 
 
 def _conversation_id(bus: Bus) -> int:
+    contact_id = ContactBook(bus._factory).add(Contact(name="alice"))
     created = _publish(
-        bus, CreateConversationJob(delivery_address="webui:test", contact_id=1, channel="webui")
+        bus,
+        CreateConversationJob(
+            delivery_address="webui:test", contact_id=contact_id, channel="webui"
+        ),
     )
     outcome = _result(bus, created)
     assert outcome is not None
-    assert outcome.conversation is not None
-    return outcome.conversation.id
+    assert outcome.conversation_id is not None
+    return outcome.conversation_id
 
 
 def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> None:
@@ -68,9 +74,11 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
     appended = _result(bus, first)
     assert appended is not None
     assert appended.status is JobStatus.COMPLETED
-    assert appended.message is not None
-    assert appended.message.role is MessageRole.USER
-    assert appended.message.content == "hello"
+    assert appended.message_id is not None
+    message = MessageBook(bus._factory).get(appended.message_id)
+    assert message is not None
+    assert message.role is MessageRole.USER
+    assert message.content == "hello"
 
     _publish(
         bus,
@@ -89,15 +97,16 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
     )
     first_outcome = _result(bus, first)
     assert first_outcome is not None
-    first_message = first_outcome.message
-    assert first_message is not None
+    assert first_outcome.message_id is not None
     _publish(
         bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="new")
     )
 
     archived = _publish(
         bus,
-        ArchiveMessagesJob(conversation_id=conversation_id, before_message_id=first_message.id + 1),
+        ArchiveMessagesJob(
+            conversation_id=conversation_id, before_message_id=first_outcome.message_id + 1
+        ),
     )
     archive_result = _result(bus, archived)
     assert archive_result is not None
@@ -125,8 +134,10 @@ def test_append_returns_failure_only_when_its_foreign_key_is_missing(bus: Bus) -
     empty_result = _result(bus, empty)
     assert empty_result is not None
     assert empty_result.status is JobStatus.COMPLETED
-    assert empty_result.message is not None
-    assert empty_result.message.content == "  "
+    assert empty_result.message_id is not None
+    message = MessageBook(bus._factory).get(empty_result.message_id)
+    assert message is not None
+    assert message.content == "  "
 
 
 def test_message_book_stays_private_to_firmware() -> None:

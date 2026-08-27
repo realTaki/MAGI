@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
+from ..books.contactBook import ContactRow
 from ..books.conversationBook import ConversationRow
 
 
@@ -44,6 +45,10 @@ class CreateConversationJobBoard(
     row_cls = CreateConversationJobRow
 
     def _execute(self, session: Session, job: CreateConversationJob) -> CreateConversationResult:
+        if session.get(ContactRow, job.contact_id) is None:
+            return CreateConversationResult(
+                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
+            )
         row = ConversationRow(
             delivery_address=job.delivery_address,
             contact_id=job.contact_id,
