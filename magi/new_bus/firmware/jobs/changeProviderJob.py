@@ -20,9 +20,9 @@ PROVIDER_MODEL_KEY = "provider.model"
 class ChangeProviderJob(BaseJob):
     """Replace the Runtime's provider configuration.
 
-    Every field is an exact value, not a partial patch.  An empty value clears
-    its setting.  Publishing persists the three settings atomically before
-    the provider Worker claims this job and rebuilds its in-memory client.
+    A non-empty field replaces its setting; an empty field is skipped.
+    Publishing persists the supplied settings atomically before the provider
+    Worker claims this job and rebuilds its in-memory client.
     """
 
     provider: str = ""
@@ -67,6 +67,8 @@ class ChangeProviderJobBoard(
                 (PROVIDER_API_KEY_KEY, job.api_key),
                 (PROVIDER_MODEL_KEY, job.model),
             ):
+                if value == "":
+                    continue
                 setting = session.scalar(select(SettingRow).where(SettingRow.key == key))
                 if setting is None:
                     session.add(SettingRow(key=key, value=value))
