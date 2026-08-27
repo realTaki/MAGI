@@ -14,6 +14,8 @@ _REVISION = re.compile(r"\d+\.\d+\.\d+\.py$")
 def firmware_metadata() -> MetaData:
     """Load every Firmware Book / Job Row onto BaseRecordMixin.metadata."""
     from ...base.BaseBook import BaseRecordMixin
+    from ..books.contactBook import ContactRow  # noqa: F401
+    from ..books.contactNoteBook import ContactNoteRow  # noqa: F401
     from ..books.conversationBook import ConversationRow  # noqa: F401
     from ..books.messageBook import MessageRow  # noqa: F401
     from ..books.settingsBook import SettingRow  # noqa: F401
