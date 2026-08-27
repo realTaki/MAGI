@@ -1,12 +1,13 @@
 """MAGI-BUS vNext — software backplane.
 
 Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
-record types (see :class:`Message`). Workers receive typed :class:`WorkerBus`
-views and never access BaseBooks directly.
+record types (see :class:`Message`). Workers receive an identity-bound
+:class:`BusForWorker` and never access BaseBooks directly.
 """
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.bus_for_worker import BusForWorker, JobBoardClient
 from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.errors import (
@@ -19,7 +20,6 @@ from .base.errors import (
 )
 from .base.file import FileBackend
 from .base.heartbeat import Slot
-from .base.workerBus import JobBoardClient, WorkerBus, job_board
 from .bus import Bus
 from .firmware import (
     AppendMessageJob,
@@ -29,10 +29,19 @@ from .firmware import (
     Conversation,
     CreateConversationJob,
     CreateConversationResult,
+    DeleteSettingJob,
+    DeleteSettingResult,
+    GetSettingJob,
+    GetSettingResult,
     ListConversationMessagesJob,
     ListConversationMessagesResult,
+    ListSettingsJob,
+    ListSettingsResult,
     Message,
     MessageRole,
+    SetSettingJob,
+    SetSettingResult,
+    Setting,
     UpdateConversationSummaryJob,
     UpdateConversationSummaryResult,
 )
@@ -55,9 +64,8 @@ __all__ = [
     "OrDock",
     "AndDock",
     "Slot",
-    "WorkerBus",
+    "BusForWorker",
     "JobBoardClient",
-    "job_board",
     "Conversation",
     "Message",
     "MessageRole",
@@ -73,4 +81,13 @@ __all__ = [
     "UpdateConversationSummaryResult",
     "PostgresBackend",
     "SQLiteBackend",
+    "Setting",
+    "DeleteSettingJob",
+    "DeleteSettingResult",
+    "GetSettingJob",
+    "GetSettingResult",
+    "ListSettingsJob",
+    "ListSettingsResult",
+    "SetSettingJob",
+    "SetSettingResult",
 ]

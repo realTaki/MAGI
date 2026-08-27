@@ -10,6 +10,7 @@ from ..base.engine import EngineFactory
 from ..base.heartbeat import Heartbeat
 from .books.conversationBook import Conversation
 from .books.messageBook import Message, MessageRole
+from .books.settingsBook import Setting
 from .jobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -20,9 +21,21 @@ from .jobs import (
     CreateConversationJob,
     CreateConversationJobBoard,
     CreateConversationResult,
+    DeleteSettingJob,
+    DeleteSettingJobBoard,
+    DeleteSettingResult,
+    GetSettingJob,
+    GetSettingJobBoard,
+    GetSettingResult,
     ListConversationMessagesJob,
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
+    ListSettingsJob,
+    ListSettingsJobBoard,
+    ListSettingsResult,
+    SetSettingJob,
+    SetSettingJobBoard,
+    SetSettingResult,
     UpdateConversationSummaryJob,
     UpdateConversationSummaryJobBoard,
     UpdateConversationSummaryResult,
@@ -39,6 +52,10 @@ def create_job_boards(
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, heartbeat),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, heartbeat),
         UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(factory, heartbeat),
+        GetSettingJob: GetSettingJobBoard(factory, heartbeat),
+        SetSettingJob: SetSettingJobBoard(factory, heartbeat),
+        DeleteSettingJob: DeleteSettingJobBoard(factory, heartbeat),
+        ListSettingsJob: ListSettingsJobBoard(factory, heartbeat),
     }
 
 
@@ -46,6 +63,7 @@ __all__ = [
     "Conversation",
     "Message",
     "MessageRole",
+    "Setting",
     "AppendMessageJob",
     "AppendMessageJobBoard",
     "AppendMessageResult",
@@ -61,4 +79,16 @@ __all__ = [
     "UpdateConversationSummaryJob",
     "UpdateConversationSummaryJobBoard",
     "UpdateConversationSummaryResult",
+    "DeleteSettingJob",
+    "DeleteSettingJobBoard",
+    "DeleteSettingResult",
+    "GetSettingJob",
+    "GetSettingJobBoard",
+    "GetSettingResult",
+    "ListSettingsJob",
+    "ListSettingsJobBoard",
+    "ListSettingsResult",
+    "SetSettingJob",
+    "SetSettingJobBoard",
+    "SetSettingResult",
 ]

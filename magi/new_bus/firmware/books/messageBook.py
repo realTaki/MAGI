@@ -19,7 +19,7 @@ from ...base.time import BaseTime, utcnow
 
 class MessageRole(StrEnum):
     """Roles accepted by the Firmware chat transcript."""
-
+    # TODO-- 不需要这么多角色
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"

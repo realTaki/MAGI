@@ -17,6 +17,20 @@ from .messageJobs import (
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
 )
+from .settingsJobs import (
+    DeleteSettingJob,
+    DeleteSettingJobBoard,
+    DeleteSettingResult,
+    GetSettingJob,
+    GetSettingJobBoard,
+    GetSettingResult,
+    ListSettingsJob,
+    ListSettingsJobBoard,
+    ListSettingsResult,
+    SetSettingJob,
+    SetSettingJobBoard,
+    SetSettingResult,
+)
 
 __all__ = [
     "AppendMessageJob",
@@ -34,4 +48,16 @@ __all__ = [
     "UpdateConversationSummaryJob",
     "UpdateConversationSummaryJobBoard",
     "UpdateConversationSummaryResult",
+    "DeleteSettingJob",
+    "DeleteSettingJobBoard",
+    "DeleteSettingResult",
+    "GetSettingJob",
+    "GetSettingJobBoard",
+    "GetSettingResult",
+    "ListSettingsJob",
+    "ListSettingsJobBoard",
+    "ListSettingsResult",
+    "SetSettingJob",
+    "SetSettingJobBoard",
+    "SetSettingResult",
 ]
