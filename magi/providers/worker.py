@@ -87,7 +87,7 @@ class ProvidersWorker(BaseWorker):
         self._stop_requested = threading.Event()
         self._ready = threading.Event()
 
-    def on_start(self) -> bool:
+    def on_attached(self) -> bool:
         if self.bus is None:
             return False
         self._boost_default_settings()
@@ -104,10 +104,10 @@ class ProvidersWorker(BaseWorker):
             return False
         return bool(self._loop_thread.is_alive())
 
-    def on_stop_requested(self) -> None:
+    def on_detach_requested(self) -> None:
         self._stop_requested.set()
 
-    def on_stop(self) -> None:
+    def on_detached(self) -> None:
         thread = self._loop_thread
         self._loop_thread = None
         if thread is not None and thread is not threading.current_thread():

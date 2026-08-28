@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from magi.new_bus import BaseWorker, Bus, Slot
+from magi.new_bus import BaseWorker, Bus, EngineFactory, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
 
 @dataclass(frozen=True)
 class WorkerSpec:
-    """One Worker to create, attach, and start."""
+    """One Worker for Launcher to create and attach."""
 
     worker_id: str
     worker_type: type[BaseWorker]
@@ -25,39 +25,52 @@ class Launcher:
     decides topology (when to install which Dock) and when workers run.
     """
 
-    def __init__(self, bus: Bus) -> None:
-        self.bus = bus
+    def __init__(self, database_url: str) -> None:
+        """Create the Runtime BUS directly from its database URL."""
+        self.bus = Bus(EngineFactory(database_url))
+        self._owns_bus = True
         self._workers: dict[str, BaseWorker] = {}
+
+    @classmethod
+    def for_bus(cls, bus: Bus) -> Launcher:
+        """Build a Launcher around a supplied BUS for focused tests."""
+        launcher = cls.__new__(cls)
+        launcher.bus = bus
+        launcher._owns_bus = False
+        launcher._workers = {}
+        return launcher
 
     @property
     def workers(self) -> dict[str, BaseWorker]:
         return dict(self._workers)
 
     def start(self, specs: Sequence[WorkerSpec]) -> dict[str, BaseWorker] | None:
-        """Install Docks, attach slices, then start workers. All or nothing."""
+        """Create workers, arrange Docks, then attach BUS slices."""
         if len({spec.worker_id for spec in specs}) != len(specs):
             raise ValueError("duplicate worker_id")
-        if not self._install_docks(specs):
+        prepared = [
+            (spec, spec.worker_type(), spec.worker_type.declared_slots())
+            for spec in specs
+        ]
+        if not self._install_docks(slots for _, _, slots in prepared):
             return None
 
         started: dict[str, BaseWorker] = {}
-        for spec in specs:
-            worker = spec.worker_type()
-            bus_for_worker = self.bus.for_worker(spec.worker_id, spec.worker_type.declared_slots())
+        for spec, worker, slots in prepared:
+            bus_for_worker = self.bus.for_worker(spec.worker_id, slots)
             if bus_for_worker is None:
-                self._stop_workers(started)
+                self._detach_workers(started)
                 return None
-            worker.attach(bus_for_worker)
-            if not worker.start():
-                worker.stop()
-                self._stop_workers(started)
+            if not worker.attach(bus_for_worker):
+                worker.detach()
+                self._detach_workers(started)
                 return None
             started[spec.worker_id] = worker
         self._workers = started
         return dict(started)
 
     def stop(self) -> None:
-        self._stop_workers(self._workers)
+        self._detach_workers(self._workers)
         self._workers = {}
 
     def health(self) -> list[dict[str, object]]:
@@ -68,11 +81,13 @@ class Launcher:
 
     def __exit__(self, *exc: object) -> None:
         self.stop()
+        if self._owns_bus:
+            self.bus.close()
 
-    def _install_docks(self, specs: Sequence[WorkerSpec]) -> bool:
+    def _install_docks(self, all_slots: Iterable[tuple[Slot, ...]]) -> bool:
         requested: dict[Slot, int] = {}
-        for spec in specs:
-            for slot in spec.worker_type.declared_slots():
+        for slots in all_slots:
+            for slot in slots:
                 requested[slot] = requested.get(slot, 0) + 1
         for slot, count in requested.items():
             if count <= 1:
@@ -87,9 +102,9 @@ class Launcher:
         return True
 
     @staticmethod
-    def _stop_workers(workers: dict[str, BaseWorker]) -> None:
+    def _detach_workers(workers: dict[str, BaseWorker]) -> None:
         for worker in reversed(tuple(workers.values())):
-            worker.stop()
+            worker.detach()
 
 
 def default_specs() -> tuple[WorkerSpec, ...]:

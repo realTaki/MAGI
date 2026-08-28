@@ -3,7 +3,10 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime
 
+from sqlalchemy import create_engine, inspect, text
+
 from magi.new_bus import (
+    AddConversationMemberJob,
     AppendMessageJob,
     ArchiveMessagesJob,
     BaseJob,
@@ -12,8 +15,10 @@ from magi.new_bus import (
     Conversation,
     CreateConversationJob,
     JobStatus,
+    ListConversationMembersJob,
     ListConversationMessagesJob,
     MessageRole,
+    RemoveConversationMemberJob,
     SQLiteBackend,
     UpdateConversationSummaryJob,
 )
@@ -23,6 +28,11 @@ from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJobBoard,
     UpdateConversationSummaryJobBoard,
 )
+from magi.new_bus.firmware.jobs.convMembersJobs import (
+    AddConversationMemberJobBoard,
+    ListConversationMembersJobBoard,
+    RemoveConversationMemberJobBoard,
+)
 from magi.new_bus.firmware.jobs.messageJobs import (
     AppendMessageJobBoard,
     ArchiveMessagesJobBoard,
@@ -31,10 +41,13 @@ from magi.new_bus.firmware.jobs.messageJobs import (
 from tests.unit.new_bus.testing import WORKER, InMemoryBackend, attach_board
 
 BOARD_BY_JOB = {
+    AddConversationMemberJob: AddConversationMemberJobBoard,
     CreateConversationJob: CreateConversationJobBoard,
+    ListConversationMembersJob: ListConversationMembersJobBoard,
     AppendMessageJob: AppendMessageJobBoard,
     ArchiveMessagesJob: ArchiveMessagesJobBoard,
     ListConversationMessagesJob: ListConversationMessagesJobBoard,
+    RemoveConversationMemberJob: RemoveConversationMemberJobBoard,
     UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard,
 }
 
@@ -70,7 +83,7 @@ def _conversation(bus: Bus, conversation_id: int | None):
 def test_conversation_record_keeps_transport_fields() -> None:
     assert {field.name for field in dataclasses.fields(Conversation)} >= {
         "delivery_address",
-        "contact_id",
+        "owner_contact_id",
         "channel",
     }
 
@@ -81,7 +94,7 @@ def test_create_conversation_returns_its_stable_record() -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="tg:123", contact_id=contact_id, channel="tg", title="hello"
+            delivery_address="tg:123", owner_contact_id=contact_id, channel="tg", title="hello"
         ),
     )
     outcome = _result(bus, created)
@@ -90,9 +103,124 @@ def test_create_conversation_returns_its_stable_record() -> None:
     conversation = _conversation(bus, outcome.conversation_id)
     assert conversation is not None
     assert conversation.delivery_address == "tg:123"
-    assert conversation.contact_id == contact_id
+    assert conversation.owner_contact_id == contact_id
     assert conversation.channel == "tg"
     assert conversation.title == "hello"
+
+
+def test_conversation_members_are_current_non_owner_contacts() -> None:
+    bus = _bus()
+    owner_contact_id = _contact_id(bus, "owner")
+    member_contact_id = _contact_id(bus, "member")
+    created = _publish(
+        bus,
+        CreateConversationJob(owner_contact_id=owner_contact_id, channel="tg"),
+    )
+    created_result = _result(bus, created)
+    assert created_result is not None
+    assert created_result.conversation_id is not None
+
+    added = _publish(
+        bus,
+        AddConversationMemberJob(
+            conversation_id=created_result.conversation_id,
+            contact_id=member_contact_id,
+        ),
+    )
+    added_result = _result(bus, added)
+    assert added_result is not None
+    assert added_result.status is JobStatus.COMPLETED
+
+    duplicate_result = _result(
+        bus,
+        _publish(
+            bus,
+            AddConversationMemberJob(
+                conversation_id=created_result.conversation_id,
+                contact_id=member_contact_id,
+            ),
+        ),
+    )
+    assert duplicate_result is not None
+    assert duplicate_result.status is JobStatus.COMPLETED
+
+    listed_result = _result(
+        bus,
+        _publish(
+            bus,
+            ListConversationMembersJob(conversation_id=created_result.conversation_id),
+        ),
+    )
+    assert listed_result is not None
+    assert [member.contact_id for member in listed_result.members] == [member_contact_id]
+
+    removed_result = _result(
+        bus,
+        _publish(
+            bus,
+            RemoveConversationMemberJob(
+                conversation_id=created_result.conversation_id,
+                contact_id=member_contact_id,
+            ),
+        ),
+    )
+    assert removed_result is not None
+    assert removed_result.status is JobStatus.COMPLETED
+
+
+def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
+    path = tmp_path / "legacy-conversations.sqlite"
+    engine = create_engine(f"sqlite:///{path}")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0.0.13')"))
+        connection.execute(
+            text(
+                "CREATE TABLE books_contacts ("
+                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
+                "name TEXT NOT NULL, display_name TEXT, role TEXT NOT NULL, last_seen_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE books_conversations ("
+                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
+                "delivery_address TEXT NOT NULL, contact_id INTEGER NOT NULL, channel TEXT NOT NULL, "
+                "title TEXT NOT NULL, summary TEXT NOT NULL, last_compaction_at DATETIME)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE jobs_create_conversation ("
+                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
+                "status TEXT NOT NULL, error TEXT, delivery_address TEXT NOT NULL, contact_id INTEGER NOT NULL, "
+                "channel TEXT NOT NULL, title TEXT NOT NULL, conversation_id INTEGER)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO books_contacts VALUES "
+                "(1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'owner', NULL, 'guest', CURRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO books_conversations VALUES "
+                "(1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'tg:legacy', 1, 'tg', '', '', NULL)"
+            )
+        )
+
+    bus = Bus(SQLiteBackend(path))
+    try:
+        with bus._factory.engine.connect() as connection:
+            columns = {column["name"] for column in inspect(connection).get_columns("books_conversations")}
+            assert "contact_id" not in columns
+            assert connection.execute(
+                text("SELECT owner_contact_id FROM books_conversations")
+            ).scalar_one() == 1
+            assert "books_conv_members" in inspect(connection).get_table_names()
+    finally:
+        bus.close()
 
 
 def test_update_summary_is_a_named_operation() -> None:
@@ -100,7 +228,7 @@ def test_update_summary_is_a_named_operation() -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:1", contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:1", owner_contact_id=_contact_id(bus), channel="webui"
         ),
     )
     created_outcome = _result(bus, created)
@@ -123,7 +251,7 @@ def test_update_summary_is_a_named_operation() -> None:
 
 def test_create_conversation_keeps_optional_text_unconstrained() -> None:
     bus = _bus()
-    created = _publish(bus, CreateConversationJob(contact_id=_contact_id(bus), channel="webui"))
+    created = _publish(bus, CreateConversationJob(owner_contact_id=_contact_id(bus), channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
@@ -140,7 +268,7 @@ def test_book_operation_persists_unexpected_failure(monkeypatch) -> None:
         raise RuntimeError("storage unavailable")
 
     monkeypatch.setattr(board, "_execute", fail)
-    created = _publish(bus, CreateConversationJob(contact_id=_contact_id(bus), channel="webui"))
+    created = _publish(bus, CreateConversationJob(owner_contact_id=_contact_id(bus), channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
@@ -164,7 +292,7 @@ def test_book_operation_waits_for_post_publish_approval() -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:checked", contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:checked", owner_contact_id=_contact_id(bus), channel="webui"
         ),
     )
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
@@ -192,7 +320,7 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:rejected", contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:rejected", owner_contact_id=_contact_id(bus), channel="webui"
         ),
     )
     pending_check = checker_board.post_publish()
@@ -220,7 +348,7 @@ def test_post_publish_returns_false_for_an_invalid_decision() -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:checked", contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:checked", owner_contact_id=_contact_id(bus), channel="webui"
         ),
     )
     pending_check = checker_board.post_publish()
@@ -237,7 +365,7 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
             first,
             CreateConversationJob(
                 delivery_address="webui:durable",
-                contact_id=_contact_id(first, "durable"),
+                owner_contact_id=_contact_id(first, "durable"),
                 channel="webui",
             ),
         )

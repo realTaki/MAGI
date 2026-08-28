@@ -13,7 +13,7 @@ _HEARTBEAT_INTERVAL = 0.25
 
 
 class BaseWorker:
-    """A BUS-facing component with attach + start/stop lifecycle.
+    """A BUS-facing component with attach/detach lifecycle.
 
     Slot requirements live in the worker package's ``requiredSlots.py``. A
     subclass may set ``required_slots`` to override that file in tests.
@@ -71,22 +71,21 @@ class BaseWorker:
                 continue
         return cls.load_required_slots()
 
-    def attach(self, bus_for_worker: BusForWorker) -> None:
-        """Receive the BUS slice already allocated for this worker identity."""
+    def attach(self, bus_for_worker: BusForWorker) -> bool:
+        """Attach a BUS slice and enter the worker lifecycle.
+
+        Launcher has already allocated this worker's declared Slots.  Attach
+        starts the lease heartbeat and invokes :meth:`on_attached`; there is
+        deliberately no separate public ``worker.start()`` operation.
+        """
+        if self._running:
+            return self.bus is bus_for_worker
         self.bus = bus_for_worker
         self.worker_id = bus_for_worker.worker_id
-
-    def start(self) -> bool:
-        """Start heartbeat and ``on_start``. Return False to abort launch."""
-        if self._running:
-            return True
-        if self.bus is None or not self.bus.heartbeat():
-            return False
-        if self.on_start() is False:
-            return False
-        if not self.bus.heartbeat():
-            return False
         self._stop.clear()
+        if not bus_for_worker.heartbeat():
+            self._clear_attachment()
+            return False
         self._running = True
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
@@ -94,28 +93,38 @@ class BaseWorker:
             daemon=True,
         )
         self._heartbeat_thread.start()
+        if self.on_attached() is False:
+            self.detach()
+            return False
+
+        if not bus_for_worker.heartbeat():
+            self.detach()
+            return False
         return True
 
-    def stop(self) -> None:
-        """Stop the worker loop first, then drop the Slot lease heartbeat."""
+    def detach(self) -> None:
+        """Wind down work and stop the Slot lease heartbeat."""
+        if self.bus is None:
+            return
         self._running = False
-        self.on_stop_requested()
-        self.on_stop()
+        self.on_detach_requested()
+        self.on_detached()
         self._stop.set()
         thread = self._heartbeat_thread
         self._heartbeat_thread = None
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=self.heartbeat_interval + 1.0)
+        self._clear_attachment()
 
-    def on_start(self) -> bool | None:
-        """Optional startup hook; return ``False`` to refuse to run."""
+    def on_attached(self) -> bool | None:
+        """Optional attach hook; return ``False`` to reject the BUS slice."""
         return None
 
-    def on_stop_requested(self) -> None:
+    def on_detach_requested(self) -> None:
         """Optional signal to wind down work while the Slot lease is still held."""
         return None
 
-    def on_stop(self) -> None:
+    def on_detached(self) -> None:
         """Optional cleanup while the Slot lease is still held."""
         return None
 
@@ -139,3 +148,7 @@ class BaseWorker:
             if bus is None or not bus.heartbeat():
                 self._running = False
                 return
+
+    def _clear_attachment(self) -> None:
+        self.bus = None
+        self.worker_id = None

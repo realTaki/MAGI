@@ -56,7 +56,7 @@ def _conversation_id(bus: Bus) -> int:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:test", contact_id=contact_id, channel="webui"
+            delivery_address="webui:test", owner_contact_id=contact_id, channel="webui"
         ),
     )
     outcome = _result(bus, created)
