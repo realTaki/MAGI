@@ -952,7 +952,7 @@ FAILED
 # 26. BusForWorker
 
 外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。Worker 是由
-`RuntimeLauncher` 创建的业务组件；BUS 在为它分配声明的 Slot 后，才交给它
+`Launcher` 创建的业务组件；BUS 在为它分配声明的 Slot 后，才交给它
 一个访问切面：
 
 ```text
@@ -977,30 +977,29 @@ ownership。
 
 ---
 
-# 27. WorkerLaunchSpec
+# 27. WorkerSpec 与 requiredSlots
 
-Worker topology 不再由 Bus view 子类隐式声明。`WorkerLaunchSpec` 显式声明：
+Worker topology 由 Worker 包自己的 `requiredSlots.py` 声明，而不是由
+Launcher 手写 Slot 列表。`WorkerSpec` 只声明：
 
 - `worker_id`；
-- `slots`；
-- `create`（Worker 构造器）。
+- `worker_type`（`BaseWorker` 子类）。
 
 例如：
 
 ```python
-WorkerLaunchSpec(
-    worker_id="tools-a",
-    slots=(
-        Slot(ToolCallJob, "claim"),
-        Slot(ToolCallJob, "submit_result"),
-    ),
-    create=ToolWorker,
+# magi/tools/requiredSlots.py
+REQUIRED_SLOTS = (
+    Slot(ToolCallJob, "claim"),
+    Slot(ToolCallJob, "submit_result"),
 )
+
+WorkerSpec(worker_id="tools-a", worker_type=ToolWorker)
 ```
 
-RuntimeLauncher 在创建 BUS 后收集这些 Slot，先规划 Dock，再调用
-`bus.for_worker(worker_id, slots)` 分配切面。Worker 只在自己的 `attach()`
-中接收该切面。
+Launcher 在启动前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
+Dock，再调用 `bus.for_worker(worker_id, slots)` 分配切面，然后
+`worker.attach(bus_for_worker)` 与 `worker.start()`。
 
 ---
 
@@ -1145,32 +1144,36 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/runtime_launcher.py` 中的 `RuntimeLauncher` 负责在 Worker 启动前规划 Slot topology。
+当前 `magi/launcher/launcher.py` 中的 `Launcher` 负责在 Worker 启动前规划
+Slot topology，并在 attach 之后管理 Worker 生命周期。
 
 Launcher 的基本流程：
 
-1. 收集所有 Worker 声明的 Slot；
+1. 从各 Worker 包的 `requiredSlots.py` 收集 Slot；
 2. 统计同一个 Slot 有多少 Worker 请求；
 3. 单 Worker Slot 直接 attach；
 4. 多 Worker Slot 安装对应 Dock；
 5. 创建 Worker；
 6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
-7. 调用 `worker.attach(bus_for_worker)`。
+7. 调用 `worker.attach(bus_for_worker)`；
+8. 调用 `worker.start()`（heartbeat + `on_start`）；
+9. 停止时按相反顺序 `worker.stop()`。
 
 概念上：
 
 ```text
-RuntimeLauncher
+Launcher
    │
-   ├── create Bus
    ├── plan topology
    ├── install Docks
    ├── create Workers
    ├── allocate BusForWorker slices
-   └── attach Workers
+   ├── attach Workers
+   └── start / stop lifecycle
 ```
 
 BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
+Worker 生命周期属于 Launcher，不属于 BUS。
 
 ---
 
@@ -1595,7 +1598,9 @@ magi/
 │           └── schema.py
 │
 └── launcher/
-    └── runtime_launcher.py
+    ├── launcher.py
+    ├── worker.py
+    └── demo/
 ```
 
 目录名未来可以随着 `new_bus` 正式替代旧 BUS 而调整，但逻辑分层保持不变。
