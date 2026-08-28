@@ -39,13 +39,13 @@ def test_provider_worker_loads_required_slots_from_package_file() -> None:
     assert slots == PROVIDER_SLOTS
 
 
-def test_launcher_starts_bus_and_attaches_provider_worker() -> None:
+def test_launcher_attaches_provider_worker() -> None:
     with Bus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        workers = launcher.start(default_specs())
+        workers = launcher.attach(default_specs())
         assert workers is not None
         worker = workers["providers"]
         assert isinstance(worker, ProvidersWorker)
-        assert worker.is_running
+        assert worker.is_attached()
         assert worker.is_alive()
         for slot in PROVIDER_SLOTS:
             assert slot not in bus._docks
@@ -66,14 +66,14 @@ def test_launcher_starts_bus_and_attaches_provider_worker() -> None:
             LLMErrorCode.UNKNOWN,
         }
 
-        launcher.stop()
-        assert not worker.is_running
+        launcher.detach()
+        assert not worker.is_attached()
         assert launcher.workers == {}
 
 
 def test_launcher_installs_or_docks_before_workers_attach() -> None:
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        workers = launcher.start(
+        workers = launcher.attach(
             (
                 WorkerSpec("one", SharedPingWorker),
                 WorkerSpec("two", SharedPingWorker),
@@ -97,7 +97,7 @@ def test_launcher_installs_or_docks_before_workers_attach() -> None:
 
 def test_launcher_selects_and_dock_for_post_submit_slots() -> None:
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        workers = launcher.start(
+        workers = launcher.attach(
             (
                 WorkerSpec("one", PostResultWorker),
                 WorkerSpec("two", PostResultWorker),
@@ -109,18 +109,18 @@ def test_launcher_selects_and_dock_for_post_submit_slots() -> None:
 
 def test_single_worker_does_not_install_a_dock() -> None:
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        workers = launcher.start((WorkerSpec("only", SharedPingWorker),))
+        workers = launcher.attach((WorkerSpec("only", SharedPingWorker),))
         assert workers is not None
         assert Slot(PingJob, "publish") not in bus._docks
 
 
-def test_start_rolls_back_when_a_worker_refuses() -> None:
+def test_attach_rolls_back_when_a_worker_refuses() -> None:
     class RefusingWorker(SharedPingWorker):
-        def on_attached(self) -> bool:
+        def attach(self, _bus_for_worker) -> bool:
             return False
 
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        workers = launcher.start(
+        workers = launcher.attach(
             (
                 WorkerSpec("one", SharedPingWorker),
                 WorkerSpec("two", RefusingWorker),
@@ -130,18 +130,18 @@ def test_start_rolls_back_when_a_worker_refuses() -> None:
         assert launcher.workers == {}
 
 
-def test_unknown_slot_does_not_start_workers() -> None:
+def test_unknown_slot_does_not_attach_workers() -> None:
     class MissingSlotWorker(SharedPingWorker):
         required_slots = (Slot(PingJob, "missing"),)
 
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
-        assert launcher.start((WorkerSpec("ghost", MissingSlotWorker),)) is None
+        assert launcher.attach((WorkerSpec("ghost", MissingSlotWorker),)) is None
 
 
 def test_duplicate_worker_id_is_rejected() -> None:
     with PingBus(InMemoryBackend()) as bus, Launcher.for_bus(bus) as launcher:
         with pytest.raises(ValueError, match="duplicate worker_id"):
-            launcher.start(
+            launcher.attach(
                 (
                     WorkerSpec("one", SharedPingWorker),
                     WorkerSpec("one", SharedPingWorker),

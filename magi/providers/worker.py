@@ -5,9 +5,9 @@ Book, ORM session, engine, or the old Runtime BUS. Configuration and accounting
 cross the boundary through vNext Firmware Jobs; its static capability defaults
 use the dedicated ``BusForWorker.boost_default_settings`` API.
 
-Provider SDKs are async while vNext's base launcher worker is synchronous, so
-this worker owns one event-loop thread for its claim loop. The launcher still
-owns lifecycle and slot heartbeats.
+Provider SDKs are async while vNext BaseWorker is synchronous, so this
+worker owns one event-loop thread for its claim loop. That thread starts
+on attach and stops on detach.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from typing import Any
 
 from magi.new_bus import (
     BaseWorker,
+    BusForWorker,
     CallLLMJob,
     CallLLMResult,
     ChangeProviderJob,
@@ -73,7 +74,7 @@ class ProvidersWorker(BaseWorker):
 
     A Runtime initially has exactly one provider worker. Multiple workers
     require a durable configuration revision so every cached client sees a
-    ``ChangeProviderJob``; Launcher must not start more than one until then.
+    ``ChangeProviderJob``; Launcher must not attach more than one until then.
     """
 
     worker_name = "providers"
@@ -87,8 +88,8 @@ class ProvidersWorker(BaseWorker):
         self._stop_requested = threading.Event()
         self._ready = threading.Event()
 
-    def on_attached(self) -> bool:
-        if self.bus is None:
+    def attach(self, bus_for_worker: BusForWorker) -> bool:
+        if not super().attach(bus_for_worker):
             return False
         self._boost_default_settings()
         self._stop_requested.clear()
@@ -99,21 +100,20 @@ class ProvidersWorker(BaseWorker):
             daemon=True,
         )
         self._loop_thread.start()
-        if not self._ready.wait(timeout=5.0):
-            self._stop_requested.set()
+        if not self._ready.wait(timeout=5.0) or not self._loop_thread.is_alive():
+            self.detach()
             return False
-        return bool(self._loop_thread.is_alive())
+        return True
 
-    def on_detach_requested(self) -> None:
+    def detach(self) -> None:
         self._stop_requested.set()
-
-    def on_detached(self) -> None:
         thread = self._loop_thread
         self._loop_thread = None
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=self._poll_seconds + 1.0)
         self._provider = None
         self._provider_error = None
+        super().detach()
 
     def _thread_main(self) -> None:
         try:

@@ -1002,9 +1002,9 @@ REQUIRED_SLOTS = (
 WorkerSpec(worker_id="tools-a", worker_type=ToolWorker)
 ```
 
-Launcher 在启动前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
+Launcher 在 attach 前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
 Dock，再调用 `bus.for_worker(worker_id, slots)` 分配切面，然后
-`worker.attach(bus_for_worker)` 与 `worker.start()`。
+`worker.attach(bus_for_worker)`。插上即运行；`worker.detach()` 拔下即停止。
 
 ---
 
@@ -1149,36 +1149,34 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/launcher.py` 中的 `Launcher` 负责在 Worker 启动前规划
-Slot topology，并在 attach 之后管理 Worker 生命周期。
+当前 `magi/launcher/launcher.py` 中的 `Launcher` 按硬件插槽装配 Worker：
+先找到 Slot，插上就跑，拔下就停。
 
 Launcher 的基本流程：
 
 1. 从各 Worker 包的 `requiredSlots.py` 收集 Slot；
 2. 统计同一个 Slot 有多少 Worker 请求；
-3. 单 Worker Slot 直接 attach；
+3. 单 Worker Slot 直接占用；
 4. 多 Worker Slot 安装对应 Dock；
 5. 创建 Worker；
 6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
-7. 调用 `worker.attach(bus_for_worker)`；
-8. 调用 `worker.start()`（heartbeat + `on_start`）；
-9. 停止时按相反顺序 `worker.stop()`。
+7. 调用 `worker.attach(bus_for_worker)`（插上即运行）；
+8. 拔下时按相反顺序 `worker.detach()`。
 
 概念上：
 
 ```text
 Launcher
    │
-   ├── plan topology
-   ├── install Docks
+   ├── find Slots
+   ├── install Docks when shared
    ├── create Workers
    ├── allocate BusForWorker slices
-   ├── attach Workers
-   └── start / stop lifecycle
+   └── attach / detach
 ```
 
 BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
-Worker 生命周期属于 Launcher，不属于 BUS。
+Worker 生命周期就是 attach / detach，不属于 BUS。
 
 ---
 
