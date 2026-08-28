@@ -20,6 +20,12 @@ from magi.providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
 from magi.providers.worker import ProvidersWorker
 from tests.unit.new_bus.testing import attach_board
 
+
+@pytest.fixture(autouse=True)
+def _launcher_workspace(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKSPACE_PATH", str(tmp_path))
+
+
 _SHARED_LLM_SLOTS = (
     Slot(CallLLMJob, "publish"),
     Slot(CallLLMJob, "claim"),

@@ -238,7 +238,7 @@ AndDock
 EngineFactory
 SQLiteBackend
 PostgresBackend
-FileBackend
+FileEngine
 ```
 
 Conversation、Message 等具体 MAGI 语义只能出现在 Firmware。
@@ -1216,7 +1216,7 @@ File Book：
 BaseFileBook
      │
      ▼
- FileBackend
+ FileEngine
      │
      ▼
 Directory
@@ -1269,17 +1269,17 @@ PostgreSQL
 
 ---
 
-# 38. File Backend
+# 38. File Engine
 
-`FileBackend` 当前不是 `EngineFactory` 的实现。
+`FileEngine` 当前不是 `EngineFactory` 的实现。
 
-它提供一个文件根目录给：
+它接收一个 workspace 路径，管理这棵目录树，并创建 Firmware
+file Book 对应的文件夹：
 
 ```text
-BaseFileBook
+<workspace>/prompts   → PromptsBook
+<workspace>/skills    → SkillsBook
 ```
-
-使用。
 
 BaseFileBook 表示：
 
@@ -1291,19 +1291,16 @@ BaseFileBook 表示：
 read
 write
 exists
+delete
 iterate
 ```
 
-因此：
+路径必须落在 Book 目录内，写入是原子的。
+`PromptsBook` 用无后缀相对路径（例如 `agent/soul`）对应 `.md` 文件。
+`SkillsBook` 把每个含 `SKILL.md` 的子目录当成一个 skill，并在空目录时
+从包装内的默认 skills 拷入。
 
-```text
-BaseBook
-BaseFileBook
-```
-
-是两种平行 primitive。
-
-当前 FileBackend 不是完整 JobBoard persistence 的替代品。
+当前 FileEngine 不是完整 JobBoard persistence 的替代品。
 
 ---
 
@@ -1317,7 +1314,7 @@ SQL BUS persistence:
     PostgreSQL
 
 File Book persistence:
-    FileBackend
+    FileEngine
 ```
 
 而不是：

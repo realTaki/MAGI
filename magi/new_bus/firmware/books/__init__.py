@@ -4,9 +4,11 @@ from .contactNoteBook import ContactNote, ContactNoteBook, NoteKind
 from .conversationBook import Conversation, ConversationBook
 from .convMembersBook import ConvMember, ConvMembersBook
 from .messageBook import Message, MessageBook, MessageRole
+from .promptsBook import KNOWN_PROMPTS, PromptsBook
 from .settingsBook import Setting, SettingsBook
-from .taskBook import Task, TaskBook, TaskRunStatus, TaskSource
-from .taskRunBook import TaskRun, TaskRunBook
+from .skillsBook import SkillsBook
+from .taskBook import Task, TaskBook, TaskSource
+from .taskRunBook import TaskRun, TaskRunBook, TaskRunStatus
 from .tokenUsageBook import TokenUsage, TokenUsageBook
 
 __all__ = [
@@ -25,6 +27,9 @@ __all__ = [
     "MessageRole",
     "Setting",
     "SettingsBook",
+    "KNOWN_PROMPTS",
+    "PromptsBook",
+    "SkillsBook",
     "Task",
     "TaskBook",
     "TaskRun",

@@ -17,7 +17,7 @@ from .base.errors import (
     InvalidJobStateError,
     JobNotFoundError,
 )
-from .base.file import FileBackend
+from .base.file import FileEngine
 from .base.heartbeat import Slot
 from .BaseWorker import BaseWorker
 from .bus import Bus
@@ -100,7 +100,7 @@ __all__ = [
     "Bus",
     "BusError",
     "EngineFactory",
-    "FileBackend",
+    "FileEngine",
     "InvalidJobError",
     "InvalidJobStateError",
     "BaseJob",
