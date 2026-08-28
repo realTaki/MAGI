@@ -1,13 +1,10 @@
-"""LLM provider factory — 从 ``bus.settings_book`` 读凭据并构造 provider。
+"""LLM provider factory — 用已解析配置构造 SDK client。
 
 抽象接口 (:class:`LLMProvider` / :class:`LLMStreamEvent` /
 :class:`StreamEventKind`) 在 :mod:`magi.providers.base`。本模块只
-负责"凭据 → SDK client"这一步，**唯一**知道这件事的地方。
-
-凭据来源是 ``bus.settings_book``（key 见
-:mod:`magi.bus.firmwares.jobs.changeProviderConfigJob`）。WebUI / API
-channel 通过 ``changeProviderConfigJobBoard.publish()``（self-contained
-write，会自动落 settings_book）或直接 ``settings_book.set()`` 写入。
+负责"配置 → SDK client"这一步，**唯一**知道具体厂商构造方式的地方。
+provider worker 通过 ``magi.new_bus.BusForWorker`` 发布 ``GetSettingJob``
+读取配置，再把原始值传入这里；factory 不依赖任何 BUS 实现或 Book。
 
 已知厂商（v0）:
 
@@ -31,21 +28,11 @@ write，会自动落 settings_book）或直接 ``settings_book.set()`` 写入。
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
-from magi.bus.firmwares.jobs.changeProviderConfigJob import (
-    PROVIDER_API_KEY_KEY,
-    PROVIDER_MODEL_KEY,
-    PROVIDER_NAME_KEY,
-)
 from magi.providers.base import LLMProvider
 from magi.providers.claude_code import ClaudeProvider
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.minimax import MinimaxProvider
 from magi.providers.openai import OpenAIProvider
-
-if TYPE_CHECKING:
-    from magi.bus import Bus
 
 logger = logging.getLogger("magi.providers.factory")
 
@@ -59,18 +46,22 @@ _KNOWN_PROVIDERS: list[str] = [
 ]
 
 
-# ── factory: 从 settings_book 读凭据并实例化 provider ──────────────────────
+# ── factory: 从已解析配置实例化 provider ───────────────────────────────────
 
 
-def get_provider(*, bus: Bus, model: str | None = None) -> LLMProvider:
-    """从 ``bus.settings_book`` 读凭据并实例化 provider。
+def get_provider(
+    *,
+    provider_name: str | None,
+    api_key: str | None,
+    model: str | None = None,
+) -> LLMProvider:
+    """从已解析的 provider 配置构造 SDK client。
 
     Parameters
     ----------
-    bus
-        组合根注入的 :class:`Bus`。凭据来源唯一是
-        ``settings_book``（key 形如 ``provider.name`` /
-        ``provider.api_key`` / ``provider.model``）。
+    provider_name / api_key
+        由 provider worker 通过 vNext 的 ``GetSettingJob`` 读取的
+        ``provider.name`` / ``provider.api_key`` 配置。
     model
         可选覆盖。``None`` 表示用配置里的默认模型。
 
@@ -81,10 +72,6 @@ def get_provider(*, bus: Bus, model: str | None = None) -> LLMProvider:
     LLMError
         provider 不在已知列表里。
     """
-    provider_name = bus.settings_book.get_value(key=PROVIDER_NAME_KEY)
-    api_key = bus.settings_book.get_value(key=PROVIDER_API_KEY_KEY)
-    effective_model = model or bus.settings_book.get_value(key=PROVIDER_MODEL_KEY)
-
     if not provider_name:
         raise LLMNotConfiguredError("no LLM provider configured; set provider.name in settings")
     if not api_key:
@@ -92,7 +79,7 @@ def get_provider(*, bus: Bus, model: str | None = None) -> LLMProvider:
     return _build_provider(
         provider_name=provider_name,
         api_key=api_key,
-        model=effective_model,
+        model=model,
     )
 
 
