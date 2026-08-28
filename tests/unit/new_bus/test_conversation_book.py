@@ -17,6 +17,8 @@ from magi.new_bus import (
     SQLiteBackend,
     UpdateConversationSummaryJob,
 )
+from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
+from magi.new_bus.firmware.books.conversationBook import ConversationBook
 from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJobBoard,
     UpdateConversationSummaryJobBoard,
@@ -56,6 +58,15 @@ def _result(bus: Bus, job: BaseJob):
     return _board(bus, job).get_result(job.id)
 
 
+def _contact_id(bus: Bus, name: str = "alice") -> int:
+    return ContactBook(bus._factory).add(Contact(name=name))
+
+
+def _conversation(bus: Bus, conversation_id: int | None):
+    assert conversation_id is not None
+    return ConversationBook(bus._factory).get(conversation_id)
+
+
 def test_conversation_record_keeps_transport_fields() -> None:
     assert {field.name for field in dataclasses.fields(Conversation)} >= {
         "delivery_address",
@@ -66,28 +77,35 @@ def test_conversation_record_keeps_transport_fields() -> None:
 
 def test_create_conversation_returns_its_stable_record() -> None:
     bus = _bus()
+    contact_id = _contact_id(bus)
     created = _publish(
         bus,
-        CreateConversationJob(delivery_address="tg:123", contact_id=7, channel="tg", title="hello"),
+        CreateConversationJob(
+            delivery_address="tg:123", contact_id=contact_id, channel="tg", title="hello"
+        ),
     )
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
-    assert outcome.conversation is not None
-    assert outcome.conversation.delivery_address == "tg:123"
-    assert outcome.conversation.contact_id == 7
-    assert outcome.conversation.channel == "tg"
-    assert outcome.conversation.title == "hello"
+    conversation = _conversation(bus, outcome.conversation_id)
+    assert conversation is not None
+    assert conversation.delivery_address == "tg:123"
+    assert conversation.contact_id == contact_id
+    assert conversation.channel == "tg"
+    assert conversation.title == "hello"
 
 
 def test_update_summary_is_a_named_operation() -> None:
     bus = _bus()
     created = _publish(
-        bus, CreateConversationJob(delivery_address="webui:1", contact_id=1, channel="webui")
+        bus,
+        CreateConversationJob(
+            delivery_address="webui:1", contact_id=_contact_id(bus), channel="webui"
+        ),
     )
     created_outcome = _result(bus, created)
     assert created_outcome is not None
-    conversation = created_outcome.conversation
+    conversation = _conversation(bus, created_outcome.conversation_id)
     assert conversation is not None
 
     updated = _publish(
@@ -96,19 +114,22 @@ def test_update_summary_is_a_named_operation() -> None:
     )
     outcome = _result(bus, updated)
     assert outcome is not None
-    assert outcome.conversation is not None
-    assert outcome.conversation.summary == "compact context"
-    assert isinstance(outcome.conversation.last_compaction_at, datetime)
+    assert outcome.status is JobStatus.COMPLETED
+    conversation = _conversation(bus, conversation.id)
+    assert conversation is not None
+    assert conversation.summary == "compact context"
+    assert isinstance(conversation.last_compaction_at, datetime)
 
 
 def test_create_conversation_keeps_optional_text_unconstrained() -> None:
     bus = _bus()
-    created = _publish(bus, CreateConversationJob(contact_id=1, channel="webui"))
+    created = _publish(bus, CreateConversationJob(contact_id=_contact_id(bus), channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
-    assert outcome.conversation is not None
-    assert outcome.conversation.delivery_address == ""
+    conversation = _conversation(bus, outcome.conversation_id)
+    assert conversation is not None
+    assert conversation.delivery_address == ""
 
 
 def test_book_operation_persists_unexpected_failure(monkeypatch) -> None:
@@ -119,7 +140,7 @@ def test_book_operation_persists_unexpected_failure(monkeypatch) -> None:
         raise RuntimeError("storage unavailable")
 
     monkeypatch.setattr(board, "_execute", fail)
-    created = _publish(bus, CreateConversationJob(contact_id=1, channel="webui"))
+    created = _publish(bus, CreateConversationJob(contact_id=_contact_id(bus), channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
@@ -141,7 +162,10 @@ def test_book_operation_waits_for_post_publish_approval() -> None:
         slots=("post_publish", "submit_post_publish"),
     )
     created = _publish(
-        bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
+        bus,
+        CreateConversationJob(
+            delivery_address="webui:checked", contact_id=_contact_id(bus), channel="webui"
+        ),
     )
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
     assert _result(bus, created) is None
@@ -153,7 +177,7 @@ def test_book_operation_waits_for_post_publish_approval() -> None:
     result = _result(bus, created)
     assert result is not None
     assert result.status is JobStatus.COMPLETED
-    assert result.conversation is not None
+    assert result.conversation_id is not None
 
 
 def test_post_publish_rejection_prevents_book_operation() -> None:
@@ -166,7 +190,10 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
         slots=("post_publish", "submit_post_publish"),
     )
     created = _publish(
-        bus, CreateConversationJob(delivery_address="webui:rejected", contact_id=1, channel="webui")
+        bus,
+        CreateConversationJob(
+            delivery_address="webui:rejected", contact_id=_contact_id(bus), channel="webui"
+        ),
     )
     pending_check = checker_board.post_publish()
     assert pending_check is not None
@@ -178,7 +205,7 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
     assert result is not None
     assert result.status is JobStatus.FAILED
     assert result.error == "channel policy rejected"
-    assert result.conversation is None
+    assert result.conversation_id is None
 
 
 def test_post_publish_returns_false_for_an_invalid_decision() -> None:
@@ -191,7 +218,10 @@ def test_post_publish_returns_false_for_an_invalid_decision() -> None:
         slots=("post_publish", "submit_post_publish"),
     )
     created = _publish(
-        bus, CreateConversationJob(delivery_address="webui:checked", contact_id=1, channel="webui")
+        bus,
+        CreateConversationJob(
+            delivery_address="webui:checked", contact_id=_contact_id(bus), channel="webui"
+        ),
     )
     pending_check = checker_board.post_publish()
     assert pending_check is not None
@@ -205,15 +235,19 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
     try:
         created = _publish(
             first,
-            CreateConversationJob(delivery_address="webui:durable", contact_id=3, channel="webui"),
+            CreateConversationJob(
+                delivery_address="webui:durable",
+                contact_id=_contact_id(first, "durable"),
+                channel="webui",
+            ),
         )
         created_result = _result(first, created)
         assert created_result is not None
-        assert created_result.conversation is not None
+        assert created_result.conversation_id is not None
         appended = _publish(
             first,
             AppendMessageJob(
-                conversation_id=created_result.conversation.id,
+                conversation_id=created_result.conversation_id,
                 role=MessageRole.USER,
                 content="persist me",
             ),
@@ -225,10 +259,10 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
     try:
         append_result = _result(reopened, appended)
         assert append_result is not None
-        assert append_result.message is not None
+        assert append_result.message_id is not None
         listed = _publish(
             reopened,
-            ListConversationMessagesJob(conversation_id=append_result.message.conversation_id),
+            ListConversationMessagesJob(conversation_id=created_result.conversation_id),
         )
         transcript = _result(reopened, listed)
         assert transcript is not None

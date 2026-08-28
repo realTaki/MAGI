@@ -11,10 +11,9 @@ from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.errors import InvalidJobError
 from .base.heartbeat import Heartbeat, Slot
-from .base.workerBus import WorkerBus
+from .bus_for_worker import BusForWorker
 
 JobT = TypeVar("JobT", bound=BaseJob)
-WorkerBusT = TypeVar("WorkerBusT", bound=WorkerBus)
 
 
 class Bus:
@@ -38,9 +37,18 @@ class Bus:
     def for_worker(
         self,
         worker_id: str,
-        view_cls: type[WorkerBusT] = WorkerBus,
-    ) -> WorkerBusT:
-        return view_cls(self, worker_id)
+        slots: Iterable[Slot],
+    ) -> BusForWorker | None:
+        """Allocate Slots and return the shared BUS slice for one Worker."""
+        if not self._allocate_worker_slots(worker_id, slots):
+            return None
+        return BusForWorker(
+            bus=self,
+            factory=self._factory,
+            heartbeat=self._heartbeat,
+            worker_docks=self._worker_docks,
+            worker_id=worker_id,
+        )
 
     def install_or_dock(self, slot: Slot) -> bool:
         if slot.job_type not in self._job_boards or not self._job_board(slot.job_type).has_slot(
@@ -62,8 +70,8 @@ class Bus:
         self._docks[slot] = AndDock(self._heartbeat, slot)
         return True
 
-    def attach(self, worker_id: str, slots: Iterable[Slot]) -> bool:
-        """Attach a worker's declared slots, routing each through its Dock if needed."""
+    def _allocate_worker_slots(self, worker_id: str, slots: Iterable[Slot]) -> bool:
+        """Allocate one Worker's declared Slots, routing through Docks when needed."""
         requested = tuple(slots)
         with self._lock:
             if any(
@@ -85,14 +93,6 @@ class Bus:
                     return False
                 self._worker_docks.setdefault(worker_id, set()).add(dock)
         return True
-
-    def heartbeat(self, worker_id: str) -> bool:
-        if not self._heartbeat.heartbeat(worker_id):
-            return False
-        return all(dock.heartbeat(worker_id) for dock in self._worker_docks.get(worker_id, ()))
-
-    def is_alive(self, worker_id: str) -> bool:
-        return self._heartbeat.is_alive(worker_id)
 
     def _invoke(self, worker_id: str, job_type: type[JobT], slot_name: str, *args, **kwargs) -> Any:
         slot = Slot(job_type, slot_name)

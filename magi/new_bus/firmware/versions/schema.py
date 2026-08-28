@@ -14,8 +14,29 @@ _REVISION = re.compile(r"\d+\.\d+\.\d+\.py$")
 def firmware_metadata() -> MetaData:
     """Load every Firmware Book / Job Row onto BaseRecordMixin.metadata."""
     from ...base.BaseBook import BaseRecordMixin
+    from ..books.contactBook import ContactRow  # noqa: F401
+    from ..books.contactNoteBook import ContactNoteRow  # noqa: F401
     from ..books.conversationBook import ConversationRow  # noqa: F401
     from ..books.messageBook import MessageRow  # noqa: F401
+    from ..books.settingsBook import SettingRow  # noqa: F401
+    from ..books.tokenUsageBook import TokenUsageRow  # noqa: F401
+    from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
+    from ..jobs.changeProviderJob import ChangeProviderJobRow  # noqa: F401
+    from ..jobs.contactJobs import (  # noqa: F401
+        CreateContactJobRow,
+        DeleteContactJobRow,
+        GetContactJobRow,
+        ListContactsJobRow,
+        TouchContactJobRow,
+        UpdateContactJobRow,
+    )
+    from ..jobs.contactNoteJobs import (  # noqa: F401
+        CreateContactNoteJobRow,
+        DeleteContactNoteJobRow,
+        GetContactNoteJobRow,
+        ListContactNotesJobRow,
+        UpdateContactNoteJobRow,
+    )
     from ..jobs.conversationJobs import (  # noqa: F401
         CreateConversationJobRow,
         UpdateConversationSummaryJobRow,
@@ -25,6 +46,13 @@ def firmware_metadata() -> MetaData:
         ArchiveMessagesJobRow,
         ListConversationMessagesJobRow,
     )
+    from ..jobs.settingsJobs import (  # noqa: F401
+        DeleteSettingJobRow,
+        GetSettingJobRow,
+        ListSettingsJobRow,
+        SetSettingJobRow,
+    )
+    from ..jobs.tokenUsageJobs import RecordTokenUsageJobRow  # noqa: F401
 
     return BaseRecordMixin.metadata
 

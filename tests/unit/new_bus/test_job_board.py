@@ -124,4 +124,4 @@ def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
 
 def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
     with Bus(db_backend) as bus:
-        assert not bus.attach(WORKER, (Slot(PingJob, "publish"),))
+        assert bus.for_worker(WORKER, (Slot(PingJob, "publish"),)) is None

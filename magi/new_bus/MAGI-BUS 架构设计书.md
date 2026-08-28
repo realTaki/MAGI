@@ -96,7 +96,7 @@ BUS 本身应尽量保持机械、稳定和确定，不演化成 Plugin Manager 
 Component
     │
     ▼
-WorkerBus / JobBoardClient
+BusForWorker / JobBoardClient
     │
     ▼
    BUS
@@ -126,7 +126,7 @@ MAGI-BUS 当前负责：
 - Book Operation Job；
 - Job 生命周期；
 - Slot 定义与 ownership；
-- WorkerBus 与 JobBoardClient；
+- BusForWorker 与 JobBoardClient；
 - Worker liveness 与 Slot lease；
 - Dock routing mechanism；
 - SQLite / PostgreSQL 持久化；
@@ -160,7 +160,7 @@ BUS 不负责：
                     External Workers
                           │
                           ▼
-                     WorkerBus
+                    BusForWorker
                           │
                           ▼
 ┌───────────────────────────────────────────────┐
@@ -182,7 +182,7 @@ BUS 不负责：
 │                   bus.base                    │
 │                                               │
 │ BaseBook / BaseJob / BaseJobBoard             │
-│ OperateBookJobBoard / Slot / WorkerBus        │
+│ OperateBookJobBoard / Slot / BusForWorker     │
 │ Engine / FileBook primitives                  │
 └───────────────────────┬───────────────────────┘
                         │
@@ -229,7 +229,7 @@ OperateBookJobBoard
 Slot
 Heartbeat
 
-WorkerBus
+BusForWorker
 JobBoardClient
 
 OrDock
@@ -256,6 +256,10 @@ Book 表示：
 ```text
 ConversationBook
 MessageBook
+ContactBook
+ContactNoteBook
+SettingsBook
+TokenUsageBook
 ```
 
 SQL Book 中，一条稳定的数据记录由 Dataclass 表示，例如：
@@ -282,6 +286,29 @@ books_conversations
 - Record 表示稳定的数据字段；
 - Row 表示 BUS 内部 SQL 持久化结构；
 - Book 表示一组 Record/Row 的内部集合。
+
+## Contact 与 Conversation 的身份边界
+
+`Contact` 表示一个与 Runtime 有关系的、**不依赖 channel 的参与者**：
+人、MAGI 或第三方 Agent。它保存名称、展示名称、角色和最近活跃时间，
+不保存 Telegram ID、Discord ID、邮箱等 transport identity。
+
+Channel 和投递目标属于 `Conversation`：
+
+```text
+Contact (who)
+    │
+    ▼
+Conversation (which interaction)
+    ├── channel            e.g. telegram / discord / webui
+    └── delivery_address   channel-specific endpoint
+```
+
+这让同一个 Contact 可以经由不同 channel 与 MAGI 交互，而不用为每一种
+channel 给 `Contact` 增加字段。常规模式是 MAGI 与一个 Contact 维持一个
+长期 Conversation；需要事务性协作时，创建包含该用户和 MAGI 的独立群聊，
+并以该群的 channel / delivery address 创建独立 Conversation。这个模式不在
+数据库上强制 `contact_id` 唯一，因为独立群聊本身也是不同的 Conversation。
 
 ---
 
@@ -922,61 +949,57 @@ FAILED
 
 ---
 
-# 26. WorkerBus
+# 26. BusForWorker
 
-外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。
-
-BUS 为每个 Worker 创建：
+外部 Worker 不直接获得原始 Bus、Book 或 JobBoard 内部实现。Worker 是由
+`Launcher` 创建的业务组件；BUS 在为它分配声明的 Slot 后，才交给它
+一个访问切面：
 
 ```text
-WorkerBus
+BusForWorker
 ```
 
-例如：
+例如，Launcher 先创建 Worker，再分配切面并调用其 `attach`：
 
 ```python
-bus.for_worker("worker-a", SomeWorkerBus)
+worker = ProviderWorker()
+bus_for_worker = bus.for_worker("provider-a", provider_slots)
+worker.attach(bus_for_worker)
 ```
 
-WorkerBus 是：
+BusForWorker 是：
 
-> **绑定到具体 Worker identity 的 typed BUS surface。**
+> **绑定到具体 Worker identity、并受已分配 Slot 约束的 BUS access slice。**
 
-Worker 只看到自己声明需要使用的 JobBoard。
+它不是第二个 BUS；所有 Worker 切面仍指向同一个 Runtime BUS。切面通过
+`board(JobType)` 取得 JobBoardClient，而每次写操作仍由共享 BUS 检查 Slot
+ownership。
 
 ---
 
-# 27. `job_board()` 声明
+# 27. WorkerSpec 与 requiredSlots
 
-WorkerBus 子类通过 `job_board()` 声明：
+Worker topology 由 Worker 包自己的 `requiredSlots.py` 声明，而不是由
+Launcher 手写 Slot 列表。`WorkerSpec` 只声明：
 
-- 使用哪个 JobBoard；
-- 需要哪些 Slot。
+- `worker_id`；
+- `worker_type`（`BaseWorker` 子类）。
 
 例如：
 
 ```python
-class ToolWorkerBus(WorkerBus):
-    tool_call = job_board(
-        ToolCallJobBoard,
-        slots=("claim", "submit_result"),
-    )
+# magi/tools/requiredSlots.py
+REQUIRED_SLOTS = (
+    Slot(ToolCallJob, "claim"),
+    Slot(ToolCallJob, "submit_result"),
+)
+
+WorkerSpec(worker_id="tools-a", worker_type=ToolWorker)
 ```
 
-表示该 Worker 使用 ToolCallJobBoard，并请求：
-
-```text
-claim
-submit_result
-```
-
-这些声明最终转换成：
-
-```text
-Slot(JobType, operation)
-```
-
-集合并 attach 到 BUS。
+Launcher 在启动前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
+Dock，再调用 `bus.for_worker(worker_id, slots)` 分配切面，然后
+`worker.attach(bus_for_worker)` 与 `worker.start()`。
 
 ---
 
@@ -1121,16 +1144,20 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/newBus.py` 负责在 Worker 启动前规划 Slot topology。
+当前 `magi/launcher/launcher.py` 中的 `Launcher` 负责在 Worker 启动前规划
+Slot topology，并在 attach 之后管理 Worker 生命周期。
 
 Launcher 的基本流程：
 
-1. 收集所有 Worker 声明的 Slot；
+1. 从各 Worker 包的 `requiredSlots.py` 收集 Slot；
 2. 统计同一个 Slot 有多少 Worker 请求；
 3. 单 Worker Slot 直接 attach；
 4. 多 Worker Slot 安装对应 Dock；
-5. 创建 WorkerBus；
-6. attach Worker。
+5. 创建 Worker；
+6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
+7. 调用 `worker.attach(bus_for_worker)`；
+8. 调用 `worker.start()`（heartbeat + `on_start`）；
+9. 停止时按相反顺序 `worker.stop()`。
 
 概念上：
 
@@ -1139,11 +1166,14 @@ Launcher
    │
    ├── plan topology
    ├── install Docks
-   ├── create WorkerBus
-   └── attach Workers
+   ├── create Workers
+   ├── allocate BusForWorker slices
+   ├── attach Workers
+   └── start / stop lifecycle
 ```
 
 BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
+Worker 生命周期属于 Launcher，不属于 BUS。
 
 ---
 
@@ -1436,7 +1466,7 @@ Launcher / BUS compatibility check
 Bus
  │
  ▼
-WorkerBus
+BusForWorker
  │
  ▼
 JobBoardClient
@@ -1540,13 +1570,13 @@ magi/
 ├── new_bus/
 │   ├── __init__.py
 │   ├── bus.py
+│   ├── bus_for_worker.py
 │   │
 │   ├── base/
 │   │   ├── BaseBook.py
 │   │   ├── BaseFileBook.py
 │   │   ├── BaseJob.py
 │   │   ├── operateBookJob.py
-│   │   ├── workerBus.py
 │   │   ├── heartbeat.py
 │   │   ├── dock.py
 │   │   ├── engine.py
@@ -1568,7 +1598,9 @@ magi/
 │           └── schema.py
 │
 └── launcher/
-    └── newBus.py
+    ├── launcher.py
+    ├── worker.py
+    └── demo/
 ```
 
 目录名未来可以随着 `new_bus` 正式替代旧 BUS 而调整，但逻辑分层保持不变。
@@ -1731,7 +1763,7 @@ Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owne
 
 > **所有原始 Slot 使用统一单 owner 模型，多 Worker 共享由 Dock 实现。**
 
-> **WorkerBus 为 Worker 提供受 Slot ownership 约束的 typed BUS surface。**
+> **BusForWorker 为 Worker 提供受 Slot ownership 约束的 BUS access slice。**
 
 > **Firmware 定义当前 MAGI 实际拥有的 Book、Job、Result 与数据库版本。**
 
@@ -1743,7 +1775,7 @@ Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owne
 External Components
         │
         ▼
-     WorkerBus
+   BusForWorker
         │
         ▼
        BUS

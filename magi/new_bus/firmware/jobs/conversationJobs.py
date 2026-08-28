@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from sqlalchemy import JSON, Integer, Text
+from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobRow, JobStatus
-from ...base.operateBookJob import BookRecordResult, OperateBookJobBoard
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
-from ..books.conversationBook import Conversation, ConversationRow
+from ..books.contactBook import ContactRow
+from ..books.conversationBook import ConversationRow
 
 
 @dataclass
@@ -23,9 +23,8 @@ class CreateConversationJob(BaseJob):
 
 
 @dataclass
-class CreateConversationResult(BookRecordResult[Conversation]):
-    conversation: Conversation | None = None
-    record_field = "conversation"
+class CreateConversationResult(BaseJobResult):
+    conversation_id: int | None = None
 
 
 class CreateConversationJobRow(BaseJobRow):
@@ -35,7 +34,7 @@ class CreateConversationJobRow(BaseJobRow):
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    conversation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class CreateConversationJobBoard(
@@ -46,6 +45,10 @@ class CreateConversationJobBoard(
     row_cls = CreateConversationJobRow
 
     def _execute(self, session: Session, job: CreateConversationJob) -> CreateConversationResult:
+        if session.get(ContactRow, job.contact_id) is None:
+            return CreateConversationResult(
+                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
+            )
         row = ConversationRow(
             delivery_address=job.delivery_address,
             contact_id=job.contact_id,
@@ -54,7 +57,7 @@ class CreateConversationJobBoard(
         )
         session.add(row)
         session.flush()
-        return CreateConversationResult(conversation=Conversation.from_row(row))
+        return CreateConversationResult(conversation_id=row.id)
 
 
 @dataclass
@@ -64,9 +67,8 @@ class UpdateConversationSummaryJob(BaseJob):
 
 
 @dataclass
-class UpdateConversationSummaryResult(BookRecordResult[Conversation]):
-    conversation: Conversation | None = None
-    record_field = "conversation"
+class UpdateConversationSummaryResult(BaseJobResult):
+    pass
 
 
 class UpdateConversationSummaryJobRow(BaseJobRow):
@@ -74,7 +76,6 @@ class UpdateConversationSummaryJobRow(BaseJobRow):
 
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    conversation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class UpdateConversationSummaryJobBoard(
@@ -98,5 +99,4 @@ class UpdateConversationSummaryJobBoard(
             )
         row.summary = job.summary
         row.last_compaction_at = utcnow()
-        session.flush()
-        return UpdateConversationSummaryResult(conversation=Conversation.from_row(row))
+        return UpdateConversationSummaryResult()
