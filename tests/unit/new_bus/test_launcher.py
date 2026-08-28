@@ -28,11 +28,21 @@ _SHARED_LLM_SLOTS = (
 
 
 class SharedLLMWorker(BaseWorker):
+    worker_name = "shared-one"
     required_slots = _SHARED_LLM_SLOTS
 
 
 class GateWorker(BaseWorker):
+    worker_name = "gate-one"
     required_slots = (Slot(CallLLMJob, "submit_post_result"),)
+
+
+class SecondSharedLLMWorker(SharedLLMWorker):
+    worker_name = "shared-two"
+
+
+class SecondGateWorker(GateWorker):
+    worker_name = "gate-two"
 
 
 def _wait_result(board, job_id: int, *, timeout: float = 2.0):
@@ -52,7 +62,7 @@ def test_provider_worker_loads_required_slots_from_package_file() -> None:
 
 def test_launcher_launches_provider_worker() -> None:
     with Launcher() as launcher:
-        assert launcher.launch()
+        assert launcher.run()
         worker = launcher.workers["providers"]
         assert isinstance(worker, ProvidersWorker)
         assert worker.is_alive()
@@ -80,17 +90,20 @@ def test_launcher_launches_provider_worker() -> None:
         assert launcher.workers == {}
 
 
-def test_launcher_installs_or_docks_before_workers_attach() -> None:
+def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "magi.launcher.launcher.WORKERS", (SharedLLMWorker, SecondSharedLLMWorker)
+    )
     with Launcher() as launcher:
-        assert launcher.launch(one=SharedLLMWorker, two=SharedLLMWorker)
+        assert launcher.run()
         workers = launcher.workers
-        assert workers["one"].is_alive()
-        assert workers["two"].is_alive()
+        assert workers["shared-one"].is_alive()
+        assert workers["shared-two"].is_alive()
         for name in ("publish", "claim", "submit_result"):
             assert isinstance(launcher.bus._docks[Slot(CallLLMJob, name)], OrDock)
 
-        one = workers["one"].bus
-        two = workers["two"].bus
+        one = workers["shared-one"].bus
+        two = workers["shared-two"].bus
         assert one is not None and two is not None
         job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
         job.id = one.board(CallLLMJob).publish(job)
@@ -99,43 +112,48 @@ def test_launcher_installs_or_docks_before_workers_attach() -> None:
         assert one.board(CallLLMJob).submit_result(CallLLMResult(id=claimed.id))
 
 
-def test_launcher_selects_and_dock_for_post_submit_slots() -> None:
+def test_launcher_selects_and_dock_for_post_submit_slots(monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (GateWorker, SecondGateWorker))
     with Launcher() as launcher:
-        assert launcher.launch(one=GateWorker, two=GateWorker)
+        assert launcher.run()
         assert isinstance(launcher.bus._docks[Slot(CallLLMJob, "submit_post_result")], AndDock)
 
 
-def test_single_worker_does_not_install_a_dock() -> None:
+def test_single_worker_does_not_install_a_dock(monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker,))
     with Launcher() as launcher:
-        assert launcher.launch(only=SharedLLMWorker)
+        assert launcher.run()
         assert Slot(CallLLMJob, "publish") not in launcher.bus._docks
 
 
-def test_launch_rolls_back_when_a_worker_refuses() -> None:
-    class RefusingWorker(SharedLLMWorker):
+def test_run_rolls_back_when_a_worker_refuses(monkeypatch) -> None:
+    class RefusingWorker(SecondSharedLLMWorker):
         def attach(self, _bus_for_worker) -> bool:
             return False
 
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker, RefusingWorker))
     with Launcher() as launcher:
-        assert not launcher.launch(one=SharedLLMWorker, two=RefusingWorker)
+        assert not launcher.run()
         assert launcher.workers == {}
 
 
-def test_unknown_slot_does_not_launch_workers() -> None:
+def test_unknown_slot_does_not_run_workers(monkeypatch) -> None:
     class MissingSlotWorker(SharedLLMWorker):
         required_slots = (Slot(CallLLMJob, "missing"),)
 
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (MissingSlotWorker,))
     with Launcher() as launcher:
-        assert not launcher.launch(ghost=MissingSlotWorker)
+        assert not launcher.run()
 
 
-def test_duplicate_worker_id_is_rejected() -> None:
+def test_duplicate_worker_id_is_rejected(monkeypatch) -> None:
     class One(SharedLLMWorker):
         worker_name = "same"
 
     class Two(SharedLLMWorker):
         worker_name = "same"
 
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (One, Two))
     with Launcher() as launcher:
         with pytest.raises(ValueError, match="duplicate worker_id"):
-            launcher.launch(One, Two)
+            launcher.run()

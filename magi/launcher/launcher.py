@@ -1,4 +1,4 @@
-"""Control panel for one MAGI-BUS runtime: launch workers, shut them down."""
+"""Start one MAGI-BUS runtime and attach its workers."""
 
 from __future__ import annotations
 
@@ -11,10 +11,11 @@ _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
 
 class Launcher:
-    """The control panel. It opens the BUS, then launches and stops workers.
+    """The runtime entry point.
 
-    ``launch()`` reads the worker set from ``constant``, seats their Slots,
-    and calls ``worker.attach``. ``shutdown()`` calls ``worker.detach``.
+    ``run()`` follows the runtime's one startup sequence: open BUS, read all
+    worker Slots, arrange Docks, create each ``BusForWorker``, then attach the
+    worker.  ``shutdown()`` performs the inverse attachment cleanup.
     """
 
     def __init__(self) -> None:
@@ -26,29 +27,34 @@ class Launcher:
     def workers(self) -> dict[str, BaseWorker]:
         return dict(self._workers)
 
-    def launch(self, *worker_types: type[BaseWorker], **named: type[BaseWorker]) -> bool:
-        """Plug in workers. With no arguments, uses ``constant.WORKERS``."""
+    def run(self) -> bool:
+        """Open the configured workers on this runtime's BUS."""
         if self._workers:
-            raise ValueError("already launched")
-        if not worker_types and not named:
-            worker_types = WORKERS
-        items = self._items(*worker_types, **named)
-        prepared = [
-            (worker_id, worker_type(), worker_type.declared_slots())
-            for worker_id, worker_type in items
-        ]
+            raise ValueError("already running")
+
+        prepared: list[tuple[str, BaseWorker, tuple[Slot, ...]]] = []
+        for worker_type in WORKERS:
+            worker_id = worker_type.worker_name
+            if not worker_id:
+                raise ValueError(f"{worker_type.__qualname__} needs worker_name")
+            prepared.append((worker_id, worker_type(), worker_type.declared_slots()))
+        if not prepared:
+            raise ValueError("no workers")
+        if len({worker_id for worker_id, _, _ in prepared}) != len(prepared):
+            raise ValueError("duplicate worker_id")
+
         if not self._install_docks(slots for _, _, slots in prepared):
             return False
 
-        launched: dict[str, BaseWorker] = {}
+        attached: dict[str, BaseWorker] = {}
         for worker_id, worker, slots in prepared:
             bus_for_worker = self.bus.for_worker(worker_id, slots)
             if bus_for_worker is None or not worker.attach(bus_for_worker):
                 worker.detach()
-                self._detach_workers(launched)
+                self._detach_workers(attached)
                 return False
-            launched[worker_id] = worker
-        self._workers = launched
+            attached[worker_id] = worker
+        self._workers = attached
         return True
 
     def shutdown(self) -> None:
@@ -62,24 +68,6 @@ class Launcher:
     def __exit__(self, *exc: object) -> None:
         self.shutdown()
         self.bus.close()
-
-    @staticmethod
-    def _items(
-        *worker_types: type[BaseWorker],
-        **named: type[BaseWorker],
-    ) -> list[tuple[str, type[BaseWorker]]]:
-        items: list[tuple[str, type[BaseWorker]]] = []
-        for worker_type in worker_types:
-            if not worker_type.worker_name:
-                raise ValueError(f"{worker_type.__qualname__} needs worker_name")
-            items.append((worker_type.worker_name, worker_type))
-        items.extend(named.items())
-        if not items:
-            raise ValueError("no workers")
-        ids = [worker_id for worker_id, _ in items]
-        if len(set(ids)) != len(ids):
-            raise ValueError("duplicate worker_id")
-        return items
 
     def _install_docks(self, all_slots: Iterable[tuple[Slot, ...]]) -> bool:
         requested: dict[Slot, int] = {}
