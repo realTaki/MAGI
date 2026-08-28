@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus import Bus, FileEngine, InvalidJobError
+from magi.new_bus import Bus, FileEngine, Slot
 from magi.new_bus.base.BaseFileBook import BaseFileBook
 from magi.new_bus.firmware.books.promptsBook import PromptsBook
 from magi.new_bus.firmware.books.skillsBook import SkillsBook
+from magi.new_bus.firmware.jobs.skillJobs import GetSkillJob
 
 
 class NotesBook(BaseFileBook):
@@ -19,7 +20,7 @@ def test_file_engine_creates_book_directories(tmp_path) -> None:
 
 
 def test_file_book_requires_a_file_engine() -> None:
-    with pytest.raises(InvalidJobError, match="FileEngine"):
+    with pytest.raises(ValueError, match="FileEngine"):
         NotesBook(object())  # type: ignore[arg-type]
 
 
@@ -37,9 +38,9 @@ def test_file_book_uses_its_named_directory(tmp_path) -> None:
 
 def test_file_book_rejects_path_escape(tmp_path) -> None:
     book = NotesBook(FileEngine(tmp_path / "workspace"))
-    with pytest.raises(InvalidJobError, match="workspace"):
+    with pytest.raises(ValueError, match="workspace"):
         book.write("../escape.md", "no")
-    with pytest.raises(InvalidJobError, match="workspace"):
+    with pytest.raises(ValueError, match="workspace"):
         book.read("/etc/passwd")
 
 
@@ -87,3 +88,22 @@ def test_bus_opens_file_books(tmp_path) -> None:
 def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
     with Bus(tmp_path / "workspace") as bus:
         assert bus.workspace == (tmp_path / "workspace").resolve()
+
+
+def test_file_book_job_persists_external_failure(tmp_path, monkeypatch) -> None:
+    with Bus(tmp_path / "workspace") as bus:
+        worker = bus.for_worker("tester", (Slot(GetSkillJob, "publish"),))
+        assert worker is not None
+        client = worker.board(GetSkillJob)
+        board = bus._job_board(GetSkillJob)
+        assert board is not None
+
+        def fail(*_args, **_kwargs):
+            raise OSError("workspace is unavailable")
+
+        monkeypatch.setattr(board, "_execute", fail)
+        job_id = client.publish(GetSkillJob(name="web_lookup"))
+        result = client.get_result(job_id)
+        assert result is not None
+        assert result.status.value == "failed"
+        assert result.error == "workspace is unavailable"

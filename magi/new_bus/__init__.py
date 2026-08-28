@@ -9,14 +9,6 @@ from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
-from .base.errors import (
-    BackendError,
-    BookNotFoundError,
-    BusError,
-    InvalidJobError,
-    InvalidJobStateError,
-    JobNotFoundError,
-)
 from .base.file import FileEngine
 from .base.heartbeat import Slot
 from .BaseWorker import BaseWorker
@@ -101,20 +93,14 @@ from .firmware import (
 )
 
 __all__ = [
-    "BackendError",
-    "BookNotFoundError",
     "BaseRecord",
     "BaseWorker",
     "Bus",
-    "BusError",
     "EngineFactory",
     "FileEngine",
-    "InvalidJobError",
-    "InvalidJobStateError",
     "BaseJob",
     "BaseJobResult",
     "BaseJobBoard",
-    "JobNotFoundError",
     "JobStatus",
     "OrDock",
     "AndDock",
