@@ -45,8 +45,6 @@ class _BusStub:
     memory_book: MemoryBook
     contacts_book: ContactBook
 
-    # Tool.gate() reads ``magis_admins_book``; we don't
-    # exercise the gate here, so None is safe.
     magis_admins_book: object | None = None
 
 

@@ -59,6 +59,7 @@ def firmware_metadata() -> MetaData:
         ResetPromptJobRow,
         SetPromptJobRow,
     )
+    from ..jobs.runToolJob import RunToolJobRow  # noqa: F401
     from ..jobs.settingsJobs import (  # noqa: F401
         DeleteSettingJobRow,
         GetSettingJobRow,

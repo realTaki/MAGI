@@ -14,9 +14,10 @@ The protocol is intentionally tiny:
   - ``input_schema`` — JSON Schema dict (Anthropic wants
                       it; we don't validate it ourselves —
                       the model emits the input)
-  - ``gate(ctx)``   — in-run authorization (default: role
-                      check via ``ctx.bus.contacts_book``)
   - ``run(ctx, **kwargs)`` — actually execute
+
+Role visibility lives on the catalog (agent menu /
+``ALLOWED_ROLES``), not on the execution path.
 
 Execution-facing DTOs — :class:`ToolContext` (what the
 worker hands the tool) and :class:`ToolResult` (what the
@@ -71,11 +72,7 @@ class ToolContext:
     ``bus`` is the bus facade the worker is attached to.
     Tools that need to read/write persistent state reach for
     ``ctx.bus.<book>.X(...)`` instead of holding their own
-    reference. Role gating is handled centrally by
-    :meth:`Tool.gate` (reads ``ctx.bus.contacts_book``); tools
-    don't carry caller-role fields on the context — they let
-    ``gate()`` re-resolve fresh on every call so role flips
-    take effect without a process restart.
+    reference.
 
     ``bus`` is ``None`` for tests / boot probes — tools that
     require bus access should fail closed when ``ctx.bus``
@@ -160,9 +157,8 @@ class Tool(ABC):
 
     Subclass and set ``name`` / ``description`` /
     ``input_schema`` / ``ALLOWED_ROLES`` as class attributes,
-    then implement :meth:`run`. Override :meth:`gate` when
-    the default role check isn't enough (e.g. contact-
-    ownership on top of role).
+    then implement :meth:`run`. ``ALLOWED_ROLES`` is catalog
+    metadata for the agent menu; it is not checked at run.
 
     Tools that touch the bus (``ctx.bus.<book>.X(...)``)
     should decorate their :meth:`run` with
@@ -197,23 +193,9 @@ class Tool(ABC):
     #: upstream before the request even leaves).
     input_schema: dict[str, Any] = {}
 
-    #: Roles permitted to invoke this tool.
-    #:
-    #: Empty set (the default) means "no role-based gating" —
-    #: every operator can invoke the tool regardless of role.
-    #: Setting a non-empty set causes :meth:`gate` to refuse
-    #: callers whose role isn't in the set.
-    #:
-    #: ``"admin"`` is a *virtual* role: it never appears in
-    #: :attr:`Contact.role` (the role enum is just
-    #: ``assigned`` / ``guest``), but :meth:`gate` treats it
-    #: as a synonym for "the caller is an admin of at least
-    #: one MAGIS per :class:`~magi.bus.firmwares.books.magis.magisBook.MagisAdminBook`".
-    #: That lets tools declare ``ALLOWED_ROLES = {"admin",
-    #: "assigned"}`` without carrying a parallel ``admin``
-    #: boolean on the contact row. A user can be both
-    #: ``role='assigned'`` and a MAGIS admin — both branches
-    #: pass independently.
+    #: Roles that may see this tool in the agent catalog.
+    #: Empty means unrestricted. The worker does not re-check
+    #: this at execution — the menu filter is the gate.
     ALLOWED_ROLES: frozenset[str] = frozenset()
 
     @staticmethod
@@ -281,91 +263,6 @@ class Tool(ABC):
         see the Tool class docstring for the opt-in
         contract.
         """
-
-    def gate(self, ctx: ToolContext) -> str | None:
-        """Runtime authorization check — called by the worker
-        before :meth:`run`.
-
-        Returns ``None`` when the caller is permitted, or an
-        error message string when the caller should be denied.
-        The worker turns a non-``None`` return into
-        ``RunToolResult(is_error=True, ...)``.
-
-        Default implementation builds the caller's
-        **effective role-tag set**:
-
-        - ``ctx.bus.contacts_book.get(...)`` →
-          the MAGI-local role (``assigned`` / ``guest`` /
-          ``contact``) — lives on ``Contact.role``.
-        - ``Contact.magis_admin_id`` → shared ``MagisAdmin`` existence.
-          The nullable link denotes this runtime's local projection of a
-          MAGIS administrator; authority itself remains MAGIS-level.
-
-        The caller passes when their effective role-tag set
-        intersects :attr:`ALLOWED_ROLES`. So a tool with
-        ``ALLOWED_ROLES = frozenset({"admin", "assigned"})``
-        admits both the served user and any MAGIS admin;
-        a tool with ``ALLOWED_ROLES = frozenset({"admin"})``
-        admits only MAGIS admins.
-
-        Re-resolving on every call (no caching on the
-        context) means a role or admin flip in the database
-        takes effect on the very next tool call without a
-        process restart.
-
-        Override for tools that need additional checks on
-        top of the role (e.g. ``UpdateContactNoteTool`` adds
-        "can only edit your own contact"). Always call
-        ``super().gate(ctx)`` first inside the override so
-        the role check stays in one place.
-        """
-        if not self.ALLOWED_ROLES:
-            return None  # no gate configured — every caller passes
-
-        try:
-            ct_id = int(ctx.contact_id)
-        except (TypeError, ValueError):
-            return f"contact_id {ctx.contact_id!r} is not a valid id"
-        if ct_id == 0:
-            # The chat / TG handlers always set a real id;
-            # ``0`` is the loop's placeholder for "no caller
-            # resolved yet". Refuse rather than silently
-            # letting an unset-context caller through.
-            return (
-                "tool requires a known contact_id (got 0); "
-                "caller did not authenticate through a "
-                "cookie / TG binding."
-            )
-        if ctx.bus is None:
-            # bus ToolContext (MCP-side callers until
-            # MCP migrates) — no role resolution is possible.
-            return (
-                "role check unavailable: tool context has no bus; "
-                "the caller side has not migrated to bus"
-            )
-
-        # Build effective role-tag set: local Contact.role plus the shared
-        # administrator identity when this is its local projection.
-        contact = ctx.bus.contacts_book.get(ct_id)
-        if contact is None:
-            return f"contact {ct_id!r} not found"
-        effective: set[str] = {contact.role}
-        admins_book = getattr(ctx.bus, "magis_admins_book", None)
-        magis_admin_id = getattr(contact, "magis_admin_id", None)
-        if (
-            admins_book is not None
-            and magis_admin_id is not None
-            and admins_book.get(magis_admin_id) is not None
-        ):
-            effective.add("admin")
-
-        if effective.isdisjoint(self.ALLOWED_ROLES):
-            return (
-                f"role(s) {sorted(effective)!r} is not permitted for "
-                f"tool {self.name!r} "
-                f"(allowed: {', '.join(sorted(self.ALLOWED_ROLES))})"
-            )
-        return None
 
     def to_anthropic_schema(self) -> dict[str, Any]:
         """Render this tool's metadata into the dict shape
