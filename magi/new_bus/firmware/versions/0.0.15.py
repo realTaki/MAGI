@@ -1,4 +1,4 @@
-"""Add scheduled task definition and run-ledger Books.
+"""Add scheduled task definition Book.
 
 Revision ID: 0.0.15
 Revises: 0.0.14

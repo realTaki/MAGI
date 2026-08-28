@@ -80,11 +80,10 @@ def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
 def test_bus_opens_file_books(tmp_path) -> None:
     workspace = tmp_path / "workspace"
     with Bus(workspace) as bus:
-        assert bus._prompts is not None
-        assert bus._skills is not None
-        assert bus._prompts.directory == workspace / "prompts"
-        assert "web_lookup" in bus._skills.list()
+        assert (workspace / "prompts").is_dir()
+        assert (workspace / "skills").is_dir()
         assert (workspace / "memories" / "magi.db").is_file()
+        assert bus._job_boards
 
 
 def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
