@@ -306,10 +306,9 @@ Boards above.
 | `magi.mcp` | MCP connection lifecycle, `ChangeMCPServerJob` glue | `magi.bus`, `magi.tools` |
 | `magi.channels` | HTTP, WebUI, Telegram, task adapters | `magi.bus` |
 | `magi.proactive` | system-level proactive policies + Worker | `magi.bus` |
-| `magi.connectors` | long-lived external data sources, in-process event bus | `magi.bus` (configs) |
 
 Dependency direction is enforced one-way: `magi.{agent,channels,tools,mcp,
-providers,proactive,connectors} → magi.bus`. Domain code must never import
+providers,proactive} → magi.bus`. Domain code must never import
 `magi.bus.bases.db` (tests/architecture/test_import_boundaries.py).
 
 ### `magi.agent` — AgentWorker
@@ -508,20 +507,6 @@ setting.
   `magi.proactive.credentials_action.ensure_for_admin`.
 - Main loop drains `seed_preset_tasks_job_board` via
   `magi.proactive.preset_tasks.handle_seed_job`.
-
-### `magi.connectors` — external data streams
-
-- Long-lived objects with `connect()` / `disconnect()` / `fetch()` /
-  `name()` / `config()` (see `magi.connectors.base.Connector`).
-- Lifecycle: operator adds a `ConnectorConfig` row; the runtime calls
-  `connectors.registry.load_connectors()` at boot, which constructs one
-  connector per enabled config and calls `await connector.connect()`.
-- Emits `ConnectorEvent`s into an in-process pub/sub bus
-  (`magi.connectors.bus.EventBus`) — shared with the plugins subsystem.
-  The bus is in-process only; cross-MAGI event sharing would route via
-  a2a (deferred).
-- The LLM never calls a connector directly; tool wrappers call
-  `connector.fetch(...)` (Gmail, Calendar, Linear, …).
 
 ## Storage ownership
 

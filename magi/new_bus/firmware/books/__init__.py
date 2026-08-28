@@ -5,6 +5,8 @@ from .conversationBook import Conversation, ConversationBook
 from .convMembersBook import ConvMember, ConvMembersBook
 from .messageBook import Message, MessageBook, MessageRole
 from .settingsBook import Setting, SettingsBook
+from .taskBook import Task, TaskBook, TaskRunStatus, TaskSource
+from .taskRunBook import TaskRun, TaskRunBook
 from .tokenUsageBook import TokenUsage, TokenUsageBook
 
 __all__ = [
@@ -23,6 +25,12 @@ __all__ = [
     "MessageRole",
     "Setting",
     "SettingsBook",
+    "Task",
+    "TaskBook",
+    "TaskRun",
+    "TaskRunBook",
+    "TaskRunStatus",
+    "TaskSource",
     "TokenUsage",
     "TokenUsageBook",
 ]
