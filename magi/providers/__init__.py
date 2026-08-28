@@ -49,10 +49,11 @@ package does its own thing"):
 - ``ChatMessage`` / ``ChatResult`` — deleted; wire format is plain
   ``list[dict]``.
 - ``known_providers`` / ``is_known_provider`` /
-  ``provider_options_for_ui`` — all deleted. The supported-provider
-  list now lives at the ``providers.options`` default setting, which the
-  worker registers through ``BusForWorker.boost_default_settings`` and the
-  WebUI reads through BUS queries without importing :mod:`magi.providers`.
+  ``provider_options_for_ui`` — all deleted. The supported
+  ``{provider, model}`` catalog now lives at the ``providers.options``
+  default setting, which the worker registers through
+  ``BusForWorker.boost_default_settings`` so an operator can pick a
+  combination and only supply the API key.
 - ``enqueue_llm_job`` — callers publish vNext ``CallLLMJob`` through
   their ``BusForWorker`` slice.
 - token estimators — moved to :mod:`magi.agent.tokens` since they

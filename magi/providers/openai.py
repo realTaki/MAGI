@@ -49,7 +49,7 @@ from magi.providers.errors import (
 logger = logging.getLogger("magi.providers.openai")
 
 _MAX_TOKENS_DEFAULT = 1024
-_DEFAULT_MODEL = "gpt-4o-mini"
+_DEFAULT_MODEL = "gpt-5.6-terra"
 _PROVIDER_NAME = "openai"
 
 
