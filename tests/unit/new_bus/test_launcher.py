@@ -1,41 +1,73 @@
+from __future__ import annotations
+
+import time
+
 import pytest
 
-from magi.launcher import Launcher, WorkerSpec
-from magi.launcher.demo import DemoWorker
+from magi.launcher import Launcher, WorkerSpec, default_specs
 from magi.new_bus import (
     AndDock,
     BaseJobResult,
     Bus,
-    CreateConversationJob,
+    CallLLMJob,
+    JobStatus,
+    LLMErrorCode,
     OrDock,
     Slot,
 )
-from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob
+from magi.new_bus.firmware.jobs.callLLMJob import CallLLMJobBoard
+from magi.providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
+from magi.providers.worker import ProvidersWorker
+from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob, attach_board
 from tests.unit.new_bus.workers.post_result import PostResultWorker
 from tests.unit.new_bus.workers.shared_ping import SharedPingWorker
 
 
-def test_demo_worker_loads_required_slots_from_package_file() -> None:
-    slots = DemoWorker.declared_slots()
-    assert slots == DemoWorker.load_required_slots()
-    assert slots == (Slot(CreateConversationJob, "publish"),)
+def _wait_result(board, job_id: int, *, timeout: float = 2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = board.get_result(job_id)
+        if result is not None:
+            return result
+        time.sleep(0.05)
+    return None
 
 
-def test_launcher_docks_demo_workers_and_runs_them() -> None:
+def test_provider_worker_loads_required_slots_from_package_file() -> None:
+    slots = ProvidersWorker.declared_slots()
+    assert slots == ProvidersWorker.load_required_slots()
+    assert slots == PROVIDER_SLOTS
+
+
+def test_launcher_starts_bus_and_attaches_provider_worker() -> None:
     with Bus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start(
-            (
-                WorkerSpec("conversation-a", DemoWorker),
-                WorkerSpec("conversation-b", DemoWorker),
-            )
-        )
+        workers = launcher.start(default_specs())
         assert workers is not None
-        assert workers["conversation-a"].is_running
-        assert workers["conversation-b"].is_alive()
-        assert isinstance(bus._docks[Slot(CreateConversationJob, "publish")], OrDock)
+        worker = workers["providers"]
+        assert isinstance(worker, ProvidersWorker)
+        assert worker.is_running
+        assert worker.is_alive()
+        for slot in PROVIDER_SLOTS:
+            assert slot not in bus._docks
+
+        publisher = attach_board(
+            bus,
+            CallLLMJobBoard,
+            worker_id="caller",
+            slots=("publish",),
+        )
+        job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
+        job.id = publisher.publish(job)
+        result = _wait_result(publisher, job.id)
+        assert result is not None
+        assert result.status is JobStatus.FAILED
+        assert result.error_code in {
+            LLMErrorCode.CREDENTIALS_REQUIRED,
+            LLMErrorCode.UNKNOWN,
+        }
 
         launcher.stop()
-        assert not workers["conversation-a"].is_running
+        assert not worker.is_running
         assert launcher.workers == {}
 
 
