@@ -54,7 +54,6 @@ def firmware_metadata() -> MetaData:
         ListConversationMessagesJobRow,
     )
     from ..jobs.promptJobs import (  # noqa: F401
-        DeletePromptJobRow,
         GetPromptJobRow,
         RegisterPromptJobRow,
         ResetPromptJobRow,
