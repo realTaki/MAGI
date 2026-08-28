@@ -39,6 +39,7 @@ from magi.providers.errors import (
     LLMNotConfiguredError,
     LLMRateLimitError,
 )
+from magi.providers.requiredSlots import REQUIRED_SLOTS
 
 logger = logging.getLogger("magi.providers.worker")
 
@@ -47,10 +48,13 @@ PROVIDER_API_KEY_KEY = "provider.api_key"
 PROVIDER_MODEL_KEY = "provider.model"
 
 _PROVIDER_OPTIONS: list[dict[str, str]] = [
-    {"value": "claude", "label": "Anthropic (Claude)"},
-    {"value": "minimax-global", "label": "Minimax (Global)"},
-    {"value": "minimax-cn", "label": "Minimax (China)"},
-    {"value": "openai", "label": "OpenAI"},
+    {"provider": "claude", "model": "claude-fable-5"},
+    {"provider": "claude", "model": "claude-opus-5"},
+    {"provider": "minimax-global", "model": "MiniMax-M3"},
+    {"provider": "minimax-cn", "model": "MiniMax-M3"},
+    {"provider": "openai", "model": "gpt-5.6-sol"},
+    {"provider": "openai", "model": "gpt-5.6-terra"},
+    {"provider": "openai", "model": "gpt-5.6-luna"},
 ]
 
 
@@ -78,6 +82,7 @@ class ProvidersWorker(BaseWorker):
     """
 
     worker_name = "providers"
+    required_slots = REQUIRED_SLOTS
 
     def __init__(self, *, poll_seconds: float = 0.25) -> None:
         super().__init__()

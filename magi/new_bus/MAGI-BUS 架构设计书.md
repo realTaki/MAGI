@@ -982,15 +982,10 @@ ownership。
 
 ---
 
-# 27. WorkerSpec 与 requiredSlots
+# 27. requiredSlots
 
 Worker topology 由 Worker 包自己的 `requiredSlots.py` 声明，而不是由
-Launcher 手写 Slot 列表。`WorkerSpec` 只声明：
-
-- `worker_id`；
-- `worker_type`（`BaseWorker` 子类）。
-
-例如：
+Launcher 手写 Slot 列表。调用方把 Worker 类交给控制面板的 `launch`：
 
 ```python
 # magi/tools/requiredSlots.py
@@ -999,12 +994,13 @@ REQUIRED_SLOTS = (
     Slot(ToolCallJob, "submit_result"),
 )
 
-WorkerSpec(worker_id="tools-a", worker_type=ToolWorker)
+launcher.launch(ToolWorker)
+launcher.launch(one=SharedPingWorker, two=SharedPingWorker)
 ```
 
-Launcher 在 attach 前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
-Dock，再调用 `bus.for_worker(worker_id, slots)` 分配切面，然后
-`worker.attach(bus_for_worker)`。插上即运行；`worker.detach()` 拔下即停止。
+身份默认用类上的 `worker_name`；同一类插两块时用关键字参数命名。
+`launch` 一次做完：收集 Slot、规划 Dock、实例化 Worker、分配切面，再调用
+每个 `worker.attach`（插上即运行）。`shutdown` 调用每个 `worker.detach`。
 
 ---
 
@@ -1149,30 +1145,13 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/launcher.py` 中的 `Launcher` 按硬件插槽装配 Worker：
-先找到 Slot，插上就跑，拔下就停。
+`Launcher` 是控制面板，不是硬件。Worker 才是插在 BUS 上的卡；
+attach / detach 是 Worker 的操作，由 Launcher 代为按下。
 
-Launcher 的基本流程：
-
-1. 从各 Worker 包的 `requiredSlots.py` 收集 Slot；
-2. 统计同一个 Slot 有多少 Worker 请求；
-3. 单 Worker Slot 直接占用；
-4. 多 Worker Slot 安装对应 Dock；
-5. 创建 Worker；
-6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
-7. 调用 `worker.attach(bus_for_worker)`（插上即运行）；
-8. 拔下时按相反顺序 `worker.detach()`。
-
-概念上：
-
-```text
-Launcher
-   │
-   ├── find Slots
-   ├── install Docks when shared
-   ├── create Workers
-   ├── allocate BusForWorker slices
-   └── attach / detach
+```python
+with Launcher("sqlite://") as launcher:
+    launcher.launch(ProvidersWorker)  # 内部：找 Slot、装 Dock、worker.attach
+    launcher.shutdown()               # 内部：worker.detach
 ```
 
 BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。

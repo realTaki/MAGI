@@ -16,7 +16,7 @@ that fixes the per-region config.
 A bare ``"minimax"`` is treated as a synonym for
 ``"minimax-cn"``; the factory handles that.
 
-Default model: ``MiniMax-M2.7``. Operators can override
+Default model: ``MiniMax-M3``. Operators can override
 per-MAGI by publishing a vNext ``ChangeProviderJob`` with ``model``.
 
 Note on the URL path: the ``/anthropic`` segment is
@@ -41,7 +41,7 @@ _BASE_URLS: dict[str, str] = {
 
 # Default model. Operators can override per-MAGI by
 # publishing a vNext ``ChangeProviderJob``.
-_DEFAULT_MODEL = "MiniMax-M2.7"
+_DEFAULT_MODEL = "MiniMax-M3"
 
 
 class MinimaxProvider(AnthropicProvider):

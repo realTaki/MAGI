@@ -1,85 +1,88 @@
-"""Composition root for one MAGI-BUS runtime: topology, then lifecycle."""
+"""Control panel for one MAGI-BUS runtime: launch workers, shut them down."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable
 
 from magi.new_bus import BaseWorker, Bus, EngineFactory, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
 
-@dataclass(frozen=True)
-class WorkerSpec:
-    """One Worker for Launcher to create and attach."""
-
-    worker_id: str
-    worker_type: type[BaseWorker]
-
-
 class Launcher:
-    """Find slots, plug workers in, unplug them to stop.
+    """The control panel. Workers are the hardware; this launches and stops them.
 
-    BUS provides OrDock / AndDock and Slot ownership. Launcher decides
-    topology, then attach/detach is the whole worker lifecycle.
+    ``launch(ProvidersWorker)`` instantiates the worker, seats its Slots, and
+    calls ``worker.attach``. ``shutdown()`` calls ``worker.detach`` on each one.
     """
 
-    def __init__(self, database_url: str) -> None:
-        """Create the Runtime BUS directly from its database URL."""
-        self.bus = Bus(EngineFactory(database_url))
-        self._owns_bus = True
+    def __init__(self, bus: str | Bus) -> None:
+        """Open a Runtime BUS from a database URL, or wrap an existing BUS."""
+        if isinstance(bus, str):
+            self.bus = Bus(EngineFactory(bus))
+            self._owns_bus = True
+        else:
+            self.bus = bus
+            self._owns_bus = False
         self._workers: dict[str, BaseWorker] = {}
-
-    @classmethod
-    def for_bus(cls, bus: Bus) -> Launcher:
-        """Build a Launcher around a supplied BUS for focused tests."""
-        launcher = cls.__new__(cls)
-        launcher.bus = bus
-        launcher._owns_bus = False
-        launcher._workers = {}
-        return launcher
 
     @property
     def workers(self) -> dict[str, BaseWorker]:
         return dict(self._workers)
 
-    def attach(self, specs: Sequence[WorkerSpec]) -> dict[str, BaseWorker] | None:
-        """Create workers, arrange Docks, then attach each one to a BUS slice."""
-        if len({spec.worker_id for spec in specs}) != len(specs):
-            raise ValueError("duplicate worker_id")
+    def launch(self, *worker_types: type[BaseWorker], **named: type[BaseWorker]) -> bool:
+        """Take these Worker classes, plug each one in, and keep them."""
+        if self._workers:
+            raise ValueError("already launched")
+        items = self._items(*worker_types, **named)
         prepared = [
-            (spec, spec.worker_type(), spec.worker_type.declared_slots())
-            for spec in specs
+            (worker_id, worker_type(), worker_type.declared_slots())
+            for worker_id, worker_type in items
         ]
         if not self._install_docks(slots for _, _, slots in prepared):
-            return None
+            return False
 
-        attached: dict[str, BaseWorker] = {}
-        for spec, worker, slots in prepared:
-            bus_for_worker = self.bus.for_worker(spec.worker_id, slots)
+        launched: dict[str, BaseWorker] = {}
+        for worker_id, worker, slots in prepared:
+            bus_for_worker = self.bus.for_worker(worker_id, slots)
             if bus_for_worker is None or not worker.attach(bus_for_worker):
                 worker.detach()
-                self._detach_workers(attached)
-                return None
-            attached[spec.worker_id] = worker
-        self._workers = attached
-        return dict(attached)
+                self._detach_workers(launched)
+                return False
+            launched[worker_id] = worker
+        self._workers = launched
+        return True
 
-    def detach(self) -> None:
+    def shutdown(self) -> None:
+        """Unplug every worker this panel is holding."""
         self._detach_workers(self._workers)
         self._workers = {}
-
-    def health(self) -> list[dict[str, object]]:
-        return [worker.health() for worker in self._workers.values()]
 
     def __enter__(self) -> Launcher:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self.detach()
+        self.shutdown()
         if self._owns_bus:
             self.bus.close()
+
+    @staticmethod
+    def _items(
+        *worker_types: type[BaseWorker],
+        **named: type[BaseWorker],
+    ) -> list[tuple[str, type[BaseWorker]]]:
+        items: list[tuple[str, type[BaseWorker]]] = []
+        for worker_type in worker_types:
+            if not worker_type.worker_name:
+                raise ValueError(f"{worker_type.__qualname__} needs worker_name")
+            items.append((worker_type.worker_name, worker_type))
+        items.extend(named.items())
+        if not items:
+            raise ValueError("no workers")
+        ids = [worker_id for worker_id, _ in items]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate worker_id")
+        return items
 
     def _install_docks(self, all_slots: Iterable[tuple[Slot, ...]]) -> bool:
         requested: dict[Slot, int] = {}
@@ -102,10 +105,3 @@ class Launcher:
     def _detach_workers(workers: dict[str, BaseWorker]) -> None:
         for worker in reversed(tuple(workers.values())):
             worker.detach()
-
-
-def default_specs() -> tuple[WorkerSpec, ...]:
-    """The MAGI-BUS worker set this Launcher currently knows how to assemble."""
-    from magi.providers.worker import ProvidersWorker
-
-    return (WorkerSpec(ProvidersWorker.worker_name, ProvidersWorker),)

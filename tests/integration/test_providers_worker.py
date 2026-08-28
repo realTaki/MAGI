@@ -633,8 +633,16 @@ async def test_worker_publishes_provider_options_to_settings_book(bus: Bus):
         raw = bus.settings_book.get_value(key="providers.options")
         assert raw is not None
         options = json.loads(raw)
-        ids = {row["value"] for row in options}
-        assert {"claude", "minimax-cn", "minimax-global", "openai"} <= ids
+        pairs = {(row["provider"], row["model"]) for row in options}
+        assert {
+            ("claude", "claude-fable-5"),
+            ("claude", "claude-opus-5"),
+            ("minimax-cn", "MiniMax-M3"),
+            ("minimax-global", "MiniMax-M3"),
+            ("openai", "gpt-5.6-sol"),
+            ("openai", "gpt-5.6-terra"),
+            ("openai", "gpt-5.6-luna"),
+        } <= pairs
     finally:
         await stop_provider_worker()
 
