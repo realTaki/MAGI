@@ -14,8 +14,8 @@ from .books.conversationBook import Conversation
 from .books.convMembersBook import ConvMember
 from .books.messageBook import Message, MessageRole
 from .books.settingsBook import Setting
-from .books.taskBook import Task, TaskRunStatus, TaskSource
-from .books.taskRunBook import TaskRun
+from .books.taskBook import Task, TaskSource
+from .books.taskRunBook import TaskRun, TaskRunStatus
 from .books.tokenUsageBook import TokenUsage
 from .jobs import (
     AddConversationMemberJob,
