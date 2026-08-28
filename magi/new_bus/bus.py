@@ -41,12 +41,11 @@ class Bus:
         self._heartbeat = Heartbeat()
         from .firmware import create_job_boards
 
-        self._job_boards = create_job_boards(self._factory, self._heartbeat)
-        from .firmware.books.promptsBook import PromptsBook
-        from .firmware.books.skillsBook import SkillsBook
-
-        self._prompts = PromptsBook(self._files)
-        self._skills = SkillsBook(self._files)
+        self._job_boards = create_job_boards(
+            self._factory,
+            self._heartbeat,
+            files=self._files,
+        )
         self._docks: dict[Slot, OrDock | AndDock] = {}
         self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
         self._lock = threading.RLock()

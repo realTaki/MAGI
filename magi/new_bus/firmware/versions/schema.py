@@ -21,7 +21,6 @@ def firmware_metadata() -> MetaData:
     from ..books.messageBook import MessageRow  # noqa: F401
     from ..books.settingsBook import SettingRow  # noqa: F401
     from ..books.taskBook import TaskRow  # noqa: F401
-    from ..books.taskRunBook import TaskRunRow  # noqa: F401
     from ..books.tokenUsageBook import TokenUsageRow  # noqa: F401
     from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
     from ..jobs.changeProviderJob import ChangeProviderJobRow  # noqa: F401
@@ -54,12 +53,20 @@ def firmware_metadata() -> MetaData:
         ArchiveMessagesJobRow,
         ListConversationMessagesJobRow,
     )
+    from ..jobs.promptJobs import (  # noqa: F401
+        DeletePromptJobRow,
+        GetPromptJobRow,
+        RegisterPromptJobRow,
+        ResetPromptJobRow,
+        SetPromptJobRow,
+    )
     from ..jobs.settingsJobs import (  # noqa: F401
         DeleteSettingJobRow,
         GetSettingJobRow,
         ListSettingsJobRow,
         SetSettingJobRow,
     )
+    from ..jobs.skillJobs import GetSkillJobRow, ListSkillsJobRow  # noqa: F401
     from ..jobs.tokenUsageJobs import RecordTokenUsageJobRow  # noqa: F401
 
     return BaseRecordMixin.metadata

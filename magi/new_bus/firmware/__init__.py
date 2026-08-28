@@ -7,15 +7,17 @@ from typing import Any
 
 from ..base.BaseJob import BaseJob, BaseJobBoard
 from ..base.engine import EngineFactory
+from ..base.file import FileEngine
 from ..base.heartbeat import Heartbeat
 from .books.contactBook import Contact, ContactRole
 from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
 from .books.convMembersBook import ConvMember
 from .books.messageBook import Message, MessageRole
+from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
+from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskSource
-from .books.taskRunBook import TaskRun, TaskRunStatus
 from .books.tokenUsageBook import TokenUsage
 from .jobs import (
     AddConversationMemberJob,
@@ -48,6 +50,9 @@ from .jobs import (
     DeleteContactNoteJobBoard,
     DeleteContactNoteResult,
     DeleteContactResult,
+    DeletePromptJob,
+    DeletePromptJobBoard,
+    DeletePromptResult,
     DeleteSettingJob,
     DeleteSettingJobBoard,
     DeleteSettingResult,
@@ -57,6 +62,9 @@ from .jobs import (
     GetContactNoteJobBoard,
     GetContactNoteResult,
     GetContactResult,
+    GetPromptJob,
+    GetPromptJobBoard,
+    GetPromptResult,
     GetSettingJob,
     GetSettingJobBoard,
     GetSettingResult,
@@ -75,13 +83,25 @@ from .jobs import (
     ListSettingsJob,
     ListSettingsJobBoard,
     ListSettingsResult,
+    ListSkillsJob,
+    ListSkillsJobBoard,
+    ListSkillsResult,
     LLMErrorCode,
     RecordTokenUsageJob,
     RecordTokenUsageJobBoard,
     RecordTokenUsageResult,
+    RegisterPromptJob,
+    RegisterPromptJobBoard,
+    RegisterPromptResult,
     RemoveConversationMemberJob,
     RemoveConversationMemberJobBoard,
     RemoveConversationMemberResult,
+    ResetPromptJob,
+    ResetPromptJobBoard,
+    ResetPromptResult,
+    SetPromptJob,
+    SetPromptJobBoard,
+    SetPromptResult,
     SetSettingJob,
     SetSettingJobBoard,
     SetSettingResult,
@@ -101,9 +121,14 @@ from .jobs import (
 
 
 def create_job_boards(
-    factory: EngineFactory, heartbeat: Heartbeat
+    factory: EngineFactory,
+    heartbeat: Heartbeat,
+    *,
+    files: FileEngine,
 ) -> dict[type[BaseJob], BaseJobBoard[Any, Any, Any]]:
     """Create the fixed Board set shipped by Firmware."""
+    prompts = PromptsBook(files)
+    skills = SkillsBook(files)
     return {
         CreateConversationJob: CreateConversationJobBoard(factory, heartbeat),
         AddConversationMemberJob: AddConversationMemberJobBoard(factory, heartbeat),
@@ -113,10 +138,17 @@ def create_job_boards(
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, heartbeat),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, heartbeat),
         UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(factory, heartbeat),
+        GetPromptJob: GetPromptJobBoard(factory, heartbeat, prompts=prompts),
+        SetPromptJob: SetPromptJobBoard(factory, heartbeat, prompts=prompts),
+        RegisterPromptJob: RegisterPromptJobBoard(factory, heartbeat, prompts=prompts),
+        ResetPromptJob: ResetPromptJobBoard(factory, heartbeat, prompts=prompts),
+        DeletePromptJob: DeletePromptJobBoard(factory, heartbeat, prompts=prompts),
         GetSettingJob: GetSettingJobBoard(factory, heartbeat),
         SetSettingJob: SetSettingJobBoard(factory, heartbeat),
         DeleteSettingJob: DeleteSettingJobBoard(factory, heartbeat),
         ListSettingsJob: ListSettingsJobBoard(factory, heartbeat),
+        GetSkillJob: GetSkillJobBoard(factory, heartbeat, skills=skills),
+        ListSkillsJob: ListSkillsJobBoard(factory, heartbeat, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory, heartbeat),
         ChangeProviderJob: ChangeProviderJobBoard(factory, heartbeat),
         CreateContactJob: CreateContactJobBoard(factory, heartbeat),
@@ -145,8 +177,6 @@ __all__ = [
     "MessageRole",
     "Setting",
     "Task",
-    "TaskRun",
-    "TaskRunStatus",
     "TaskSource",
     "TokenUsage",
     "AppendMessageJob",
@@ -173,6 +203,21 @@ __all__ = [
     "UpdateConversationSummaryJob",
     "UpdateConversationSummaryJobBoard",
     "UpdateConversationSummaryResult",
+    "DeletePromptJob",
+    "DeletePromptJobBoard",
+    "DeletePromptResult",
+    "GetPromptJob",
+    "GetPromptJobBoard",
+    "GetPromptResult",
+    "RegisterPromptJob",
+    "RegisterPromptJobBoard",
+    "RegisterPromptResult",
+    "ResetPromptJob",
+    "ResetPromptJobBoard",
+    "ResetPromptResult",
+    "SetPromptJob",
+    "SetPromptJobBoard",
+    "SetPromptResult",
     "DeleteSettingJob",
     "DeleteSettingJobBoard",
     "DeleteSettingResult",
@@ -185,6 +230,12 @@ __all__ = [
     "SetSettingJob",
     "SetSettingJobBoard",
     "SetSettingResult",
+    "GetSkillJob",
+    "GetSkillJobBoard",
+    "GetSkillResult",
+    "ListSkillsJob",
+    "ListSkillsJobBoard",
+    "ListSkillsResult",
     "CallLLMJob",
     "CallLLMJobBoard",
     "CallLLMResult",

@@ -1,7 +1,7 @@
-"""Add scheduled task definition Book.
+"""Add BUS Jobs for workspace prompts and skills.
 
-Revision ID: 0.0.15
-Revises: 0.0.14
+Revision ID: 0.0.16
+Revises: 0.0.15
 Create Date: 2026-08-28
 """
 
@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision = "0.0.15"
-down_revision = "0.0.14"
+revision = "0.0.16"
+down_revision = "0.0.15"
 branch_labels = None
 depends_on = None
 
