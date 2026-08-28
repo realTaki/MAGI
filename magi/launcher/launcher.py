@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from magi.new_bus import Bus, Slot
-
-from .worker import BaseWorker
+from magi.new_bus import BaseWorker, Bus, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 

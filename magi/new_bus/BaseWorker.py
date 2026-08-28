@@ -1,4 +1,4 @@
-"""BaseWorker: lifecycle and Slot declaration for one runtime component."""
+"""BaseWorker: lifecycle and Slot declaration for one BUS component."""
 
 from __future__ import annotations
 
@@ -6,44 +6,17 @@ import importlib
 import threading
 from typing import ClassVar
 
-from magi.new_bus import BusForWorker, Slot
+from .base.heartbeat import Slot
+from .bus_for_worker import BusForWorker
 
 _HEARTBEAT_INTERVAL = 0.25
 
 
-def load_required_slots(worker_type: type[BaseWorker]) -> tuple[Slot, ...]:
-    """Load ``REQUIRED_SLOTS`` from the worker package's ``requiredSlots.py``.
-
-    Search order is the worker's own module, then its parent package, so both
-    ``magi.agent.requiredSlots`` (class lives in ``magi.agent``) and
-    ``magi.agent.worker`` + sibling ``requiredSlots.py`` resolve.
-    """
-    module_name = worker_type.__module__
-    packages = (module_name, module_name.rpartition(".")[0])
-    for package in packages:
-        if not package:
-            continue
-        name = f"{package}.requiredSlots"
-        try:
-            module = importlib.import_module(name)
-        except ModuleNotFoundError as error:
-            if error.name and name.endswith(error.name):
-                continue
-            raise
-        slots = getattr(module, "REQUIRED_SLOTS", None)
-        if slots is None:
-            raise LookupError(f"{name} must export REQUIRED_SLOTS")
-        return tuple(slots)
-    raise LookupError(
-        f"{worker_type.__qualname__} needs a requiredSlots.py next to the worker package"
-    )
-
-
 class BaseWorker:
-    """A BUS-facing runtime component with attach + start/stop lifecycle.
+    """A BUS-facing component with attach + start/stop lifecycle.
 
     Slot requirements live in the worker package's ``requiredSlots.py``. A
-    subclass may set ``required_slots`` to override that file (tests only).
+    subclass may set ``required_slots`` to override that file in tests.
     """
 
     required_slots: ClassVar[tuple[Slot, ...] | None] = None
@@ -57,6 +30,34 @@ class BaseWorker:
         self._heartbeat_thread: threading.Thread | None = None
 
     @classmethod
+    def load_required_slots(cls) -> tuple[Slot, ...]:
+        """Load this class's ``REQUIRED_SLOTS`` from ``requiredSlots.py``.
+
+        Search the worker's own module first, then its parent package, so both
+        ``magi.agent.requiredSlots`` and ``magi.agent.worker`` plus a sibling
+        file work without Launcher knowing the worker's package layout.
+        """
+        module_name = cls.__module__
+        packages = (module_name, module_name.rpartition(".")[0])
+        for package in packages:
+            if not package:
+                continue
+            name = f"{package}.requiredSlots"
+            try:
+                module = importlib.import_module(name)
+            except ModuleNotFoundError as error:
+                if error.name and name.endswith(error.name):
+                    continue
+                raise
+            slots = getattr(module, "REQUIRED_SLOTS", None)
+            if slots is None:
+                raise LookupError(f"{name} must export REQUIRED_SLOTS")
+            return tuple(slots)
+        raise LookupError(
+            f"{cls.__qualname__} needs a requiredSlots.py next to the worker package"
+        )
+
+    @classmethod
     def declared_slots(cls) -> tuple[Slot, ...]:
         for ancestor in cls.__mro__:
             if ancestor is BaseWorker or ancestor is object:
@@ -65,10 +66,10 @@ class BaseWorker:
             if override is not None:
                 return tuple(override)
             try:
-                return load_required_slots(ancestor)
+                return ancestor.load_required_slots()
             except LookupError:
                 continue
-        return load_required_slots(cls)
+        return cls.load_required_slots()
 
     def attach(self, bus_for_worker: BusForWorker) -> None:
         """Receive the BUS slice already allocated for this worker identity."""

@@ -1,4 +1,4 @@
-from magi.launcher import BaseWorker
+from magi.new_bus import BaseWorker
 
 
 class PostResultWorker(BaseWorker):

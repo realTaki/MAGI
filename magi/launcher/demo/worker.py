@@ -1,6 +1,6 @@
 """Demo worker used to exercise Launcher topology and lifecycle."""
 
-from magi.launcher.worker import BaseWorker
+from magi.new_bus import BaseWorker
 
 
 class DemoWorker(BaseWorker):

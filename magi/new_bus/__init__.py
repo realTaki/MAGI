@@ -19,6 +19,7 @@ from .base.errors import (
 )
 from .base.file import FileBackend
 from .base.heartbeat import Slot
+from .BaseWorker import BaseWorker
 from .bus import Bus
 from .bus_for_worker import BusForWorker, JobBoardClient
 from .firmware import (
@@ -84,6 +85,7 @@ __all__ = [
     "BackendError",
     "BookNotFoundError",
     "BaseRecord",
+    "BaseWorker",
     "Bus",
     "BusError",
     "EngineFactory",
