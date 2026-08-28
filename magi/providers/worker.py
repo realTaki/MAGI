@@ -18,8 +18,8 @@ import logging
 import threading
 from typing import Any
 
-from magi.launcher import BaseWorker
 from magi.new_bus import (
+    BaseWorker,
     CallLLMJob,
     CallLLMResult,
     ChangeProviderJob,

@@ -1,6 +1,6 @@
 import pytest
 
-from magi.launcher import Launcher, WorkerSpec, load_required_slots
+from magi.launcher import Launcher, WorkerSpec
 from magi.launcher.demo import DemoWorker
 from magi.new_bus import (
     AndDock,
@@ -17,7 +17,7 @@ from tests.unit.new_bus.workers.shared_ping import SharedPingWorker
 
 def test_demo_worker_loads_required_slots_from_package_file() -> None:
     slots = DemoWorker.declared_slots()
-    assert slots == load_required_slots(DemoWorker)
+    assert slots == DemoWorker.load_required_slots()
     assert slots == (Slot(CreateConversationJob, "publish"),)
 
 
