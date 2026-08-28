@@ -8,7 +8,7 @@ from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, attach_boa
 
 
 def _attach(bus: Bus, worker_id: str, slots: tuple[str, ...]) -> bool:
-    return bus.attach(worker_id, tuple(Slot(PingJob, slot) for slot in slots))
+    return bus.for_worker(worker_id, tuple(Slot(PingJob, slot) for slot in slots)) is not None
 
 
 def _board(bus: Bus, worker_id: str, slots: tuple[str, ...]):
@@ -34,7 +34,12 @@ def test_same_worker_reattach_renews(bus: Bus, ping_board) -> None:
 
 
 def test_heartbeat_keeps_lease(bus: Bus, ping_board) -> None:
-    assert bus.heartbeat(WORKER)
+    worker = bus.for_worker(
+        WORKER,
+        (Slot(PingJob, "publish"), Slot(PingJob, "claim"), Slot(PingJob, "submit_result")),
+    )
+    assert worker is not None
+    assert worker.heartbeat()
     ping_board.publish(PingJob())
 
 

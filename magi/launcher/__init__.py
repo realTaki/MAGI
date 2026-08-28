@@ -1,6 +1,6 @@
 """Composition-root primitives for one MAGI-BUS runtime."""
 
-from .runtime_launcher import RuntimeLauncher, WorkerLaunchSpec
-from .worker import Worker
+from .launcher import Launcher, WorkerSpec
+from .worker import BaseWorker, load_required_slots
 
-__all__ = ["RuntimeLauncher", "Worker", "WorkerLaunchSpec"]
+__all__ = ["BaseWorker", "Launcher", "WorkerSpec", "load_required_slots"]
