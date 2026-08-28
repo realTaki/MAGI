@@ -90,3 +90,10 @@ class Launcher:
     def _stop_workers(workers: dict[str, BaseWorker]) -> None:
         for worker in reversed(tuple(workers.values())):
             worker.stop()
+
+
+def default_specs() -> tuple[WorkerSpec, ...]:
+    """The MAGI-BUS worker set this Launcher currently knows how to assemble."""
+    from magi.providers.worker import ProvidersWorker
+
+    return (WorkerSpec(ProvidersWorker.worker_name, ProvidersWorker),)

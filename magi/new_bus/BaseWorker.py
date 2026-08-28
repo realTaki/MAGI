@@ -97,20 +97,26 @@ class BaseWorker:
         return True
 
     def stop(self) -> None:
-        self._stop.set()
+        """Stop the worker loop first, then drop the Slot lease heartbeat."""
         self._running = False
+        self.on_stop_requested()
+        self.on_stop()
+        self._stop.set()
         thread = self._heartbeat_thread
         self._heartbeat_thread = None
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=self.heartbeat_interval + 1.0)
-        self.on_stop()
 
     def on_start(self) -> bool | None:
         """Optional startup hook; return ``False`` to refuse to run."""
         return None
 
+    def on_stop_requested(self) -> None:
+        """Optional signal to wind down work while the Slot lease is still held."""
+        return None
+
     def on_stop(self) -> None:
-        """Optional cleanup after the heartbeat thread has stopped."""
+        """Optional cleanup while the Slot lease is still held."""
         return None
 
     @property

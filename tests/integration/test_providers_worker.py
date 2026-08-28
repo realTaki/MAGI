@@ -38,6 +38,10 @@ from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.worker import ProvidersWorker
 
+pytestmark = pytest.mark.skip(
+    reason="ProvidersWorker now attaches through magi.launcher and magi.new_bus"
+)
+
 _worker: ProvidersWorker | None = None
 
 

@@ -85,22 +85,29 @@ class ProvidersWorker(BaseWorker):
         self._provider_error: LLMError | None = None
         self._loop_thread: threading.Thread | None = None
         self._stop_requested = threading.Event()
+        self._ready = threading.Event()
 
     def on_start(self) -> bool:
         if self.bus is None:
             return False
         self._boost_default_settings()
         self._stop_requested.clear()
+        self._ready.clear()
         self._loop_thread = threading.Thread(
             target=self._thread_main,
             name=f"magi-{self.worker_id}-providers",
             daemon=True,
         )
         self._loop_thread.start()
-        return True
+        if not self._ready.wait(timeout=5.0):
+            self._stop_requested.set()
+            return False
+        return bool(self._loop_thread.is_alive())
+
+    def on_stop_requested(self) -> None:
+        self._stop_requested.set()
 
     def on_stop(self) -> None:
-        self._stop_requested.set()
         thread = self._loop_thread
         self._loop_thread = None
         if thread is not None and thread is not threading.current_thread():
@@ -113,9 +120,12 @@ class ProvidersWorker(BaseWorker):
             asyncio.run(self._run())
         except Exception:  # noqa: BLE001 -- a worker must not kill Launcher
             logger.exception("providers worker stopped unexpectedly")
+        finally:
+            self._ready.set()
 
     async def _run(self) -> None:
         self._rebuild_provider()
+        self._ready.set()
         while not self._stop_requested.is_set():
             try:
                 config_job = self._change_provider_board().claim()
@@ -163,9 +173,9 @@ class ProvidersWorker(BaseWorker):
 
     def _rebuild_provider(self) -> None:
         """Build the cached SDK client from vNext Settings Firmware."""
-        from magi.providers.factory import get_provider
-
         try:
+            from magi.providers.factory import get_provider
+
             provider = get_provider(
                 provider_name=self._setting_value(PROVIDER_NAME_KEY),
                 api_key=self._setting_value(PROVIDER_API_KEY_KEY),
@@ -178,6 +188,10 @@ class ProvidersWorker(BaseWorker):
         except LLMError as exc:
             self._provider = None
             self._provider_error = exc
+            logger.warning("providers worker: cannot build LLM (%s)", exc)
+        except Exception as exc:  # noqa: BLE001 -- missing extras must not kill the loop
+            self._provider = None
+            self._provider_error = LLMError(str(exc) or type(exc).__name__)
             logger.warning("providers worker: cannot build LLM (%s)", exc)
         else:
             self._provider = provider
@@ -300,7 +314,6 @@ class ProvidersWorker(BaseWorker):
         if not usage:
             return
         assert self.bus is not None
-        token = lambda key: int(usage.get(key, 0) or 0)
         board = self.bus.board(RecordTokenUsageJob)
         job_id = board.publish(
             RecordTokenUsageJob(
@@ -308,13 +321,13 @@ class ProvidersWorker(BaseWorker):
                 contact_id=job.contact_id,
                 provider=provider.name or "unknown",
                 model=model,
-                input_tokens=token("input_tokens"),
-                output_tokens=token("output_tokens"),
-                cache_hit_tokens=token("cache_hit_tokens"),
-                cache_miss_tokens=token("cache_miss_tokens"),
-                cache_write_tokens=token("cache_write_tokens"),
-                thinking_tokens=token("thinking_tokens"),
-                response_tokens=token("response_tokens"),
+                input_tokens=int(usage.get("input_tokens", 0) or 0),
+                output_tokens=int(usage.get("output_tokens", 0) or 0),
+                cache_hit_tokens=int(usage.get("cache_hit_tokens", 0) or 0),
+                cache_miss_tokens=int(usage.get("cache_miss_tokens", 0) or 0),
+                cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
+                thinking_tokens=int(usage.get("thinking_tokens", 0) or 0),
+                response_tokens=int(usage.get("response_tokens", 0) or 0),
             )
         )
         result = board.get_result(job_id)
