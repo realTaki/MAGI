@@ -1,11 +1,10 @@
 """Run ``python -m magi.launcher`` to start BUS and attach the provider worker."""
 
 from magi.launcher import Launcher, default_specs
-from magi.new_bus import Bus, SQLiteBackend
 
 
 def main() -> int:
-    with Bus(SQLiteBackend(memory=True)) as bus, Launcher(bus) as launcher:
+    with Launcher("sqlite://") as launcher:
         workers = launcher.start(default_specs())
         if workers is None:
             return 1

@@ -300,15 +300,20 @@ Contact (who)
     │
     ▼
 Conversation (which interaction)
+    ├── owner_contact_id   private context / ownership
     ├── channel            e.g. telegram / discord / webui
     └── delivery_address   channel-specific endpoint
+
+ConvMembersBook
+    └── additional current Contact participants for a group Conversation
 ```
 
 这让同一个 Contact 可以经由不同 channel 与 MAGI 交互，而不用为每一种
 channel 给 `Contact` 增加字段。常规模式是 MAGI 与一个 Contact 维持一个
 长期 Conversation；需要事务性协作时，创建包含该用户和 MAGI 的独立群聊，
-并以该群的 channel / delivery address 创建独立 Conversation。这个模式不在
-数据库上强制 `contact_id` 唯一，因为独立群聊本身也是不同的 Conversation。
+并以该群的 channel / delivery address 创建独立 Conversation。`owner_contact_id`
+定义会话归属；其余当前成员存入 `ConvMembersBook`。成员退出时直接删除对应
+记录，不保留额外的角色或离开时间字段。
 
 ---
 

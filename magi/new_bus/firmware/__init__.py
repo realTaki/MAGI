@@ -11,10 +11,14 @@ from ..base.heartbeat import Heartbeat
 from .books.contactBook import Contact, ContactRole
 from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
+from .books.convMembersBook import ConvMember
 from .books.messageBook import Message, MessageRole
 from .books.settingsBook import Setting
 from .books.tokenUsageBook import TokenUsage
 from .jobs import (
+    AddConversationMemberJob,
+    AddConversationMemberJobBoard,
+    AddConversationMemberResult,
     AppendMessageJob,
     AppendMessageJobBoard,
     AppendMessageResult,
@@ -60,6 +64,9 @@ from .jobs import (
     ListContactsJob,
     ListContactsJobBoard,
     ListContactsResult,
+    ListConversationMembersJob,
+    ListConversationMembersJobBoard,
+    ListConversationMembersResult,
     ListConversationMessagesJob,
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
@@ -70,6 +77,9 @@ from .jobs import (
     RecordTokenUsageJob,
     RecordTokenUsageJobBoard,
     RecordTokenUsageResult,
+    RemoveConversationMemberJob,
+    RemoveConversationMemberJobBoard,
+    RemoveConversationMemberResult,
     SetSettingJob,
     SetSettingJobBoard,
     SetSettingResult,
@@ -94,6 +104,9 @@ def create_job_boards(
     """Create the fixed Board set shipped by Firmware."""
     return {
         CreateConversationJob: CreateConversationJobBoard(factory, heartbeat),
+        AddConversationMemberJob: AddConversationMemberJobBoard(factory, heartbeat),
+        ListConversationMembersJob: ListConversationMembersJobBoard(factory, heartbeat),
+        RemoveConversationMemberJob: RemoveConversationMemberJobBoard(factory, heartbeat),
         AppendMessageJob: AppendMessageJobBoard(factory, heartbeat),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, heartbeat),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, heartbeat),
@@ -121,6 +134,7 @@ def create_job_boards(
 
 __all__ = [
     "Conversation",
+    "ConvMember",
     "Contact",
     "ContactRole",
     "ContactNote",
@@ -138,6 +152,15 @@ __all__ = [
     "CreateConversationJob",
     "CreateConversationJobBoard",
     "CreateConversationResult",
+    "AddConversationMemberJob",
+    "AddConversationMemberJobBoard",
+    "AddConversationMemberResult",
+    "ListConversationMembersJob",
+    "ListConversationMembersJobBoard",
+    "ListConversationMembersResult",
+    "RemoveConversationMemberJob",
+    "RemoveConversationMemberJobBoard",
+    "RemoveConversationMemberResult",
     "ListConversationMessagesJob",
     "ListConversationMessagesJobBoard",
     "ListConversationMessagesResult",
