@@ -8,14 +8,14 @@ the ``_BASE_URL`` invariant in the base class is
 checked.
 
 Provider id: ``"claude"``. Operator-facing label (in
-``bus.settings_book["providers.options"]``):
+``providers.options`` default setting registered by the provider worker):
 ``"Anthropic (Claude)"``.
 
 Default model: ``claude-opus-4-7`` — Anthropic's
 strongest general-purpose model as of the v0 cut.
 Operators can override per-MAGI by writing
-``bus.settings_book["provider.model"]`` (the worker
-picks it up on the next ``changeProviderConfig`` job).
+the provider configuration (the worker applies it on the next
+``ChangeProviderJob``).
 """
 
 from __future__ import annotations
