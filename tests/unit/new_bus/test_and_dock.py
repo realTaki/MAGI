@@ -1,9 +1,9 @@
 from magi.new_bus import BaseJobResult, JobStatus, Slot
-from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob, PingJobBoard, attach_board
+from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
 
 
-def test_and_dock_waits_for_live_members_and_rejects_on_any_failure() -> None:
-    with PingBus(InMemoryBackend()) as bus:
+def test_and_dock_waits_for_live_members_and_rejects_on_any_failure(tmp_path) -> None:
+    with PingBus(tmp_path) as bus:
         direct = attach_board(
             bus,
             PingJobBoard,

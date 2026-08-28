@@ -19,7 +19,6 @@ from magi.new_bus import (
     ListConversationMessagesJob,
     MessageRole,
     RemoveConversationMemberJob,
-    SQLiteBackend,
     UpdateConversationSummaryJob,
 )
 from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
@@ -38,7 +37,7 @@ from magi.new_bus.firmware.jobs.messageJobs import (
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,
 )
-from tests.unit.new_bus.testing import WORKER, InMemoryBackend, attach_board
+from tests.unit.new_bus.testing import WORKER, attach_board
 
 BOARD_BY_JOB = {
     AddConversationMemberJob: AddConversationMemberJobBoard,
@@ -52,8 +51,8 @@ BOARD_BY_JOB = {
 }
 
 
-def _bus() -> Bus:
-    return Bus(InMemoryBackend())
+def _bus(workspace) -> Bus:
+    return Bus(workspace)
 
 
 def _board(
@@ -88,8 +87,8 @@ def test_conversation_record_keeps_transport_fields() -> None:
     }
 
 
-def test_create_conversation_returns_its_stable_record() -> None:
-    bus = _bus()
+def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
+    bus = _bus(tmp_path)
     contact_id = _contact_id(bus)
     created = _publish(
         bus,
@@ -108,8 +107,8 @@ def test_create_conversation_returns_its_stable_record() -> None:
     assert conversation.title == "hello"
 
 
-def test_conversation_members_are_current_non_owner_contacts() -> None:
-    bus = _bus()
+def test_conversation_members_are_current_non_owner_contacts(tmp_path) -> None:
+    bus = _bus(tmp_path)
     owner_contact_id = _contact_id(bus, "owner")
     member_contact_id = _contact_id(bus, "member")
     created = _publish(
@@ -169,7 +168,9 @@ def test_conversation_members_are_current_non_owner_contacts() -> None:
 
 
 def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
-    path = tmp_path / "legacy-conversations.sqlite"
+    workspace = tmp_path / "legacy-workspace"
+    path = workspace / "memories" / "magi.db"
+    path.parent.mkdir(parents=True)
     engine = create_engine(f"sqlite:///{path}")
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
@@ -210,7 +211,7 @@ def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
             )
         )
 
-    bus = Bus(SQLiteBackend(path))
+    bus = Bus(workspace)
     try:
         with bus._factory.engine.connect() as connection:
             columns = {column["name"] for column in inspect(connection).get_columns("books_conversations")}
@@ -223,8 +224,8 @@ def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
         bus.close()
 
 
-def test_update_summary_is_a_named_operation() -> None:
-    bus = _bus()
+def test_update_summary_is_a_named_operation(tmp_path) -> None:
+    bus = _bus(tmp_path)
     created = _publish(
         bus,
         CreateConversationJob(
@@ -249,8 +250,8 @@ def test_update_summary_is_a_named_operation() -> None:
     assert isinstance(conversation.last_compaction_at, datetime)
 
 
-def test_create_conversation_keeps_optional_text_unconstrained() -> None:
-    bus = _bus()
+def test_create_conversation_keeps_optional_text_unconstrained(tmp_path) -> None:
+    bus = _bus(tmp_path)
     created = _publish(bus, CreateConversationJob(owner_contact_id=_contact_id(bus), channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
@@ -260,8 +261,8 @@ def test_create_conversation_keeps_optional_text_unconstrained() -> None:
     assert conversation.delivery_address == ""
 
 
-def test_book_operation_persists_unexpected_failure(monkeypatch) -> None:
-    bus = _bus()
+def test_book_operation_persists_unexpected_failure(tmp_path, monkeypatch) -> None:
+    bus = _bus(tmp_path)
     board = bus._job_board(CreateConversationJob)
 
     def fail(*_args):
@@ -275,13 +276,13 @@ def test_book_operation_persists_unexpected_failure(monkeypatch) -> None:
     assert outcome.error == "storage unavailable"
 
 
-def test_firmware_commands_are_not_claimable_work() -> None:
-    bus = _bus()
+def test_firmware_commands_are_not_claimable_work(tmp_path) -> None:
+    bus = _bus(tmp_path)
     assert _board(bus, CreateConversationJob(), slots=("claim",)).claim() is None
 
 
-def test_book_operation_waits_for_post_publish_approval() -> None:
-    bus = _bus()
+def test_book_operation_waits_for_post_publish_approval(tmp_path) -> None:
+    bus = _bus(tmp_path)
     checker = "checker"
     checker_board = _board(
         bus,
@@ -308,8 +309,8 @@ def test_book_operation_waits_for_post_publish_approval() -> None:
     assert result.conversation_id is not None
 
 
-def test_post_publish_rejection_prevents_book_operation() -> None:
-    bus = _bus()
+def test_post_publish_rejection_prevents_book_operation(tmp_path) -> None:
+    bus = _bus(tmp_path)
     checker = "checker"
     checker_board = _board(
         bus,
@@ -336,8 +337,8 @@ def test_post_publish_rejection_prevents_book_operation() -> None:
     assert result.conversation_id is None
 
 
-def test_post_publish_returns_false_for_an_invalid_decision() -> None:
-    bus = _bus()
+def test_post_publish_returns_false_for_an_invalid_decision(tmp_path) -> None:
+    bus = _bus(tmp_path)
     checker = "checker"
     checker_board = _board(
         bus,
@@ -358,8 +359,8 @@ def test_post_publish_returns_false_for_an_invalid_decision() -> None:
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
-    path = tmp_path / "firmware.sqlite"
-    first = Bus(SQLiteBackend(path))
+    workspace = tmp_path / "workspace"
+    first = Bus(workspace)
     try:
         created = _publish(
             first,
@@ -383,7 +384,7 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
     finally:
         first.close()
 
-    reopened = Bus(SQLiteBackend(path))
+    reopened = Bus(workspace)
     try:
         append_result = _result(reopened, appended)
         assert append_result is not None

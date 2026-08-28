@@ -11,20 +11,20 @@ from pathlib import Path
 from typing import ClassVar
 
 from .errors import InvalidJobError
-from .file import FileBackend, atomic_write, resolve_under
+from .file import FileEngine, atomic_write, resolve_under
 
 
 class BaseFileBook:
-    """Directory-backed Book. ``backend`` must be a :class:`FileBackend`."""
+    """Directory-backed Book. ``engine`` must be a :class:`FileEngine`."""
 
     name: ClassVar[str] = ""
 
-    def __init__(self, backend: FileBackend) -> None:
+    def __init__(self, engine: FileEngine) -> None:
         if not type(self).name:
             raise InvalidJobError(f"{type(self).__name__} must set class variable name")
-        if not isinstance(backend, FileBackend):
-            raise InvalidJobError("BaseFileBook requires FileBackend")
-        self._root = backend.directory(type(self).name)
+        if not isinstance(engine, FileEngine):
+            raise InvalidJobError("BaseFileBook requires FileEngine")
+        self._root = engine.directory(type(self).name)
 
     @property
     def directory(self) -> Path:

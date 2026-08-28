@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from magi.launcher.constant import DATABASE_URL, WORKERS
-from magi.new_bus import BaseWorker, Bus, EngineFactory, Slot
+from magi.launcher.constant import WORKERS, WORKSPACE_PATH
+from magi.new_bus import BaseWorker, Bus, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
@@ -13,14 +13,15 @@ _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 class Launcher:
     """The runtime entry point.
 
-    ``run()`` follows the runtime's one startup sequence: open BUS, read all
-    worker Slots, arrange Docks, create each ``BusForWorker``, then attach the
-    worker.  ``shutdown()`` performs the inverse attachment cleanup.
+    ``run()`` follows the runtime's one startup sequence: open BUS and the
+    workspace file tree, read all worker Slots, arrange Docks, create each
+    ``BusForWorker``, then attach the worker.  ``shutdown()`` performs the
+    inverse attachment cleanup.
     """
 
     def __init__(self) -> None:
-        """Open the Runtime BUS from ``constant.DATABASE_URL``."""
-        self.bus = Bus(EngineFactory(DATABASE_URL))
+        """Open the Runtime BUS from its configured workspace."""
+        self.bus = Bus(WORKSPACE_PATH)
         self._workers: dict[str, BaseWorker] = {}
 
     @property
