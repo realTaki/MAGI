@@ -1,13 +1,13 @@
 """Sample job types shared by the BUS tests."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from magi.new_bus import Bus
 from magi.new_bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
-from magi.new_bus.base.engine import EngineFactory
 
 WORKER = "test"
 
@@ -32,6 +32,6 @@ class PingJobBoard(BaseJobBoard[PingJob, BaseJobResult, PingJobRow]):
 class PingBus(Bus):
     """BUS fixture with the test-only PingJobBoard preconfigured."""
 
-    def __init__(self, factory: EngineFactory) -> None:
-        super().__init__(factory)
-        self._job_boards[PingJob] = PingJobBoard(factory, self._heartbeat)
+    def __init__(self, workspace: str | Path) -> None:
+        super().__init__(workspace)
+        self._job_boards[PingJob] = PingJobBoard(self._factory, self._heartbeat)

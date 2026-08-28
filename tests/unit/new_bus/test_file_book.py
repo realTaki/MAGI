@@ -6,7 +6,6 @@ from magi.new_bus import Bus, FileEngine, InvalidJobError
 from magi.new_bus.base.BaseFileBook import BaseFileBook
 from magi.new_bus.firmware.books.promptsBook import PromptsBook
 from magi.new_bus.firmware.books.skillsBook import SkillsBook
-from tests.unit.new_bus.testing import InMemoryBackend
 
 
 class NotesBook(BaseFileBook):
@@ -79,14 +78,15 @@ def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
 
 
 def test_bus_opens_file_books(tmp_path) -> None:
-    files = FileEngine(tmp_path / "workspace")
-    with Bus(InMemoryBackend(), files) as bus:
+    workspace = tmp_path / "workspace"
+    with Bus(workspace) as bus:
         assert bus._prompts is not None
         assert bus._skills is not None
-        assert bus._prompts.directory == files.root / "prompts"
+        assert bus._prompts.directory == workspace / "prompts"
         assert "web_lookup" in bus._skills.list()
+        assert (workspace / "memories" / "magi.db").is_file()
 
 
-def test_bus_rejects_file_as_primary_backend(tmp_path) -> None:
-    with pytest.raises(InvalidJobError, match="EngineFactory"):
-        Bus(FileEngine(tmp_path / "workspace"))  # type: ignore[arg-type]
+def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
+    with Bus(tmp_path / "workspace") as bus:
+        assert bus.workspace == (tmp_path / "workspace").resolve()

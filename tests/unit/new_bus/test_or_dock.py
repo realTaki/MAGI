@@ -1,5 +1,5 @@
 from magi.new_bus import BaseJobResult, JobStatus, Slot
-from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob
+from tests.unit.new_bus.testing import PingBus, PingJob
 
 _SLOTS = (
     Slot(PingJob, "publish"),
@@ -8,8 +8,8 @@ _SLOTS = (
 )
 
 
-def test_or_dock_routes_typed_worker_board_calls() -> None:
-    with PingBus(InMemoryBackend()) as bus:
+def test_or_dock_routes_typed_worker_board_calls(tmp_path) -> None:
+    with PingBus(tmp_path) as bus:
         for slot in _SLOTS:
             assert bus.install_or_dock(slot)
         first = bus.for_worker("worker-a", _SLOTS)
@@ -33,8 +33,8 @@ def test_or_dock_routes_typed_worker_board_calls() -> None:
         assert result.error == "worker-b decided"
 
 
-def test_worker_heartbeat_renews_every_dock_membership() -> None:
-    with PingBus(InMemoryBackend()) as bus:
+def test_worker_heartbeat_renews_every_dock_membership(tmp_path) -> None:
+    with PingBus(tmp_path) as bus:
         for slot in _SLOTS:
             assert bus.install_or_dock(slot)
         worker = bus.for_worker("worker", _SLOTS)
@@ -43,8 +43,8 @@ def test_worker_heartbeat_renews_every_dock_membership() -> None:
         assert worker.is_alive()
 
 
-def test_worker_without_claim_slot_cannot_claim_a_routed_board() -> None:
-    with PingBus(InMemoryBackend()) as bus:
+def test_worker_without_claim_slot_cannot_claim_a_routed_board(tmp_path) -> None:
+    with PingBus(tmp_path) as bus:
         assert bus.install_or_dock(Slot(PingJob, "claim"))
         publisher = bus.for_worker("publisher", (Slot(PingJob, "publish"),))
         assert publisher is not None

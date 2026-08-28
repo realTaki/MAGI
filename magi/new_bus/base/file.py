@@ -47,7 +47,7 @@ def atomic_write(path: Path, content: str) -> Path:
     return path
 
 
-class FileBackend:
+class FileEngine:
     """One MAGI workspace tree. File Books live in named folders under it."""
 
     book_dirs: ClassVar[tuple[str, ...]] = BOOK_DIRS

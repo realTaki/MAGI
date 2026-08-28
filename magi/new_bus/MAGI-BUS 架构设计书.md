@@ -1358,7 +1358,7 @@ Base 完全不知道这些具体业务概念。
 创建：
 
 ```python
-Bus(factory)
+Bus(workspace)
 ```
 
 时，BUS 会自动：

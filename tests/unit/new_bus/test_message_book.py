@@ -23,7 +23,7 @@ from magi.new_bus.firmware.jobs.messageJobs import (
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,
 )
-from tests.unit.new_bus.testing import WORKER, InMemoryBackend, attach_board
+from tests.unit.new_bus.testing import WORKER, attach_board
 
 BOARD_BY_JOB = {
     CreateConversationJob: CreateConversationJobBoard,
@@ -34,8 +34,8 @@ BOARD_BY_JOB = {
 
 
 @pytest.fixture
-def bus() -> Bus:
-    return Bus(InMemoryBackend())
+def bus(tmp_path) -> Bus:
+    return Bus(tmp_path)
 
 
 def _board(bus: Bus, job: BaseJob):
