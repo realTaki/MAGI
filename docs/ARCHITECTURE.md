@@ -37,10 +37,19 @@ user-facing documentation. They are the only supported names.
 `open_bus(magis_url=…)` returns a deliberately narrower `MagisBus`: a
 database-only control-plane facade, not a second node runtime or compatibility
 layer. It does not create a workspace, local SQLite database, file shelf, or
-workers. There is no fallback singleton, dual-write path, or alternate node BUS
-implementation. The retired
-`magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are banned by
-`tests/architecture/test_import_boundaries.py`.
+workers. There is no fallback singleton or dual-write path in the current
+runtime.
+
+The naming has two generations: the live `magi.bus` is the evolved, adopted
+successor of the previous **new BUS** work; `magi.new_bus` is the next
+**MAGI-BUS vNext** iteration now being developed alongside it. The latter is
+not a retired compatibility package. It currently has its own `Bus`,
+`BusForWorker`, Dock/Slot lifecycle, storage backends, and Firmware contract; its
+design baseline lives in
+[`magi/new_bus/MAGI-BUS 架构设计书.md`](../magi/new_bus/MAGI-BUS%20架构设计书.md).
+The production runtime described below is still composed through
+`magi.bus.bootstrap.open_bus(...)` until that migration is explicitly wired
+through the startup composition root.
 
 Identifiers follow one name per concept — `magi_id`, `contact_id`,
 `conversation_id`, `job_id`, `tgid` — across ORM columns, DTO fields,
@@ -81,11 +90,10 @@ still appear in git history and old database dumps, is in
                 └─────────────────────────────────────┘
 ```
 
-A single process owns one `Bus`; the Bus facade is built by
+A single process owns one runtime `Bus`; the facade is built by
 `magi.bus.bootstrap.open_bus(...)` and injected (by constructor) into every
-Worker. There is no process-global `BUS` singleton and no alternate Bus
-implementation — the import-boundary tests in `tests/architecture/` enforce
-this.
+Worker. There is no process-global `BUS` singleton. `magi.new_bus` is the
+separate vNext implementation and is not yet the runtime composition root.
 
 ## Composition root
 
@@ -180,10 +188,12 @@ Durable runtime rules (enforced by the architecture guard):
 | `magi/bus/firmwares/books/magis/membershipBook.py` | `MagisMembershipBook.responsibility` + collaboration directory |
 | `magi/proactive/worker.py` | system-level proactive policies (last to start) |
 | `magi/connectors/` | long-lived external data sources + in-process event bus |
+| `magi/new_bus/` | Next MAGI-BUS vNext iteration: next-generation protocol backplane under active integration |
 
-There is no alternate BUS implementation or compatibility import path; the
-retired `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are
-forbidden by `tests/architecture/test_import_boundaries.py`.
+The current runtime and the next MAGI-BUS vNext iteration coexist during the
+migration: `magi.bus` is the live, evolved form of the previous new BUS, while
+`magi.new_bus` is the next BUS implementation being validated independently.
+Do not treat either package as a compatibility alias for the other.
 
 ## Channel egress — `ChannelWorker` template
 
@@ -570,8 +580,9 @@ enforces:
 - Domain code does not import `magi.bus.bases.db`.
 - `magi/bus/bases/` does not import firmwares. Table and column definitions live only in `magi/bus/firmwares/`.
 - BUS does not import domain worker implementations.
-- The retired `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names never
-  reappear in production code.
+- `magi.new_bus` is MAGI-BUS vNext, not a retired import path. Its adoption by
+  the runtime must be an explicit composition-root migration rather than an
+  implicit compatibility shim.
 
 The hook subsystem has its own guard tests (`test_hook_import_boundaries.py`
 and `test_hook_envelope_purity.py`).

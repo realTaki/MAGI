@@ -5,10 +5,8 @@ The record type :class:`Message` is the field list for this BaseBook.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Self
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -19,7 +17,7 @@ from ...base.time import BaseTime, utcnow
 
 class MessageRole(StrEnum):
     """Roles accepted by the Firmware chat transcript."""
-
+    # TODO-- 不需要这么多角色
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -42,13 +40,6 @@ class Message(BaseRecord):
     conversation_id: int | None = None
     timestamp: BaseTime = field(default_factory=utcnow)
     archived: bool = False
-
-    @classmethod
-    def parse(cls, data: Mapping[str, Any]) -> Self:
-        message = super().parse(data)
-        if not isinstance(message.role, MessageRole):
-            message.role = MessageRole(message.role)
-        return message
 
 
 class MessageRow(BaseRecordMixin):
