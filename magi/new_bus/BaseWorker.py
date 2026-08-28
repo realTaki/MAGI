@@ -1,4 +1,4 @@
-"""BaseWorker: lifecycle and Slot declaration for one BUS component."""
+"""BaseWorker: attach a BUS slice, detach to stop."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ _HEARTBEAT_INTERVAL = 0.25
 
 
 class BaseWorker:
-    """A BUS-facing component with attach/detach lifecycle.
+    """A BUS-facing component. Attach starts it; detach stops it.
 
     Slot requirements live in the worker package's ``requiredSlots.py``. A
     subclass may set ``required_slots`` to override that file in tests.
@@ -25,7 +25,6 @@ class BaseWorker:
     def __init__(self) -> None:
         self.worker_id: str | None = None
         self.bus: BusForWorker | None = None
-        self._running = False
         self._stop = threading.Event()
         self._heartbeat_thread: threading.Thread | None = None
 
@@ -72,13 +71,12 @@ class BaseWorker:
         return cls.load_required_slots()
 
     def attach(self, bus_for_worker: BusForWorker) -> bool:
-        """Attach a BUS slice and enter the worker lifecycle.
+        """Bind this worker to a BUS slice and keep its Slot lease alive.
 
-        Launcher has already allocated this worker's declared Slots.  Attach
-        starts the lease heartbeat and invokes :meth:`on_attached`; there is
-        deliberately no separate public ``worker.start()`` operation.
+        Launcher has already allocated the declared Slots. Heartbeat is
+        internal to the attachment; there is no separate start step.
         """
-        if self._running:
+        if self.bus is not None:
             return self.bus is bus_for_worker
         self.bus = bus_for_worker
         self.worker_id = bus_for_worker.worker_id
@@ -86,29 +84,22 @@ class BaseWorker:
         if not bus_for_worker.heartbeat():
             self._clear_attachment()
             return False
-        self._running = True
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
             name=f"magi-{self.worker_id}-heartbeat",
             daemon=True,
         )
         self._heartbeat_thread.start()
-        if self.on_attached() is False:
-            self.detach()
-            return False
-
-        if not bus_for_worker.heartbeat():
-            self.detach()
-            return False
         return True
 
     def detach(self) -> None:
-        """Wind down work and stop the Slot lease heartbeat."""
+        """Drop the BUS slice and stop the Slot lease heartbeat.
+
+        Subclasses that own extra threads should stop them first, then call
+        ``super().detach()``.
+        """
         if self.bus is None:
             return
-        self._running = False
-        self.on_detach_requested()
-        self.on_detached()
         self._stop.set()
         thread = self._heartbeat_thread
         self._heartbeat_thread = None
@@ -116,21 +107,8 @@ class BaseWorker:
             thread.join(timeout=self.heartbeat_interval + 1.0)
         self._clear_attachment()
 
-    def on_attached(self) -> bool | None:
-        """Optional attach hook; return ``False`` to reject the BUS slice."""
-        return None
-
-    def on_detach_requested(self) -> None:
-        """Optional signal to wind down work while the Slot lease is still held."""
-        return None
-
-    def on_detached(self) -> None:
-        """Optional cleanup while the Slot lease is still held."""
-        return None
-
-    @property
-    def is_running(self) -> bool:
-        return self._running
+    def is_attached(self) -> bool:
+        return self.bus is not None
 
     def is_alive(self) -> bool:
         return self.bus is not None and self.bus.is_alive()
@@ -138,7 +116,7 @@ class BaseWorker:
     def health(self) -> dict[str, object]:
         return {
             "worker_id": self.worker_id,
-            "running": self.is_running,
+            "attached": self.is_attached(),
             "alive": self.is_alive(),
         }
 
@@ -146,7 +124,6 @@ class BaseWorker:
         while not self._stop.wait(self.heartbeat_interval):
             bus = self.bus
             if bus is None or not bus.heartbeat():
-                self._running = False
                 return
 
     def _clear_attachment(self) -> None:

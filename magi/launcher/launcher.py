@@ -19,10 +19,10 @@ class WorkerSpec:
 
 
 class Launcher:
-    """Plan Docks, attach workers to BUS slices, and own their lifecycle.
+    """Find slots, plug workers in, unplug them to stop.
 
-    BUS provides OrDock / AndDock mechanism and Slot ownership. This class
-    decides topology (when to install which Dock) and when workers run.
+    BUS provides OrDock / AndDock and Slot ownership. Launcher decides
+    topology, then attach/detach is the whole worker lifecycle.
     """
 
     def __init__(self, database_url: str) -> None:
@@ -44,8 +44,8 @@ class Launcher:
     def workers(self) -> dict[str, BaseWorker]:
         return dict(self._workers)
 
-    def start(self, specs: Sequence[WorkerSpec]) -> dict[str, BaseWorker] | None:
-        """Create workers, arrange Docks, then attach BUS slices."""
+    def attach(self, specs: Sequence[WorkerSpec]) -> dict[str, BaseWorker] | None:
+        """Create workers, arrange Docks, then attach each one to a BUS slice."""
         if len({spec.worker_id for spec in specs}) != len(specs):
             raise ValueError("duplicate worker_id")
         prepared = [
@@ -55,21 +55,18 @@ class Launcher:
         if not self._install_docks(slots for _, _, slots in prepared):
             return None
 
-        started: dict[str, BaseWorker] = {}
+        attached: dict[str, BaseWorker] = {}
         for spec, worker, slots in prepared:
             bus_for_worker = self.bus.for_worker(spec.worker_id, slots)
-            if bus_for_worker is None:
-                self._detach_workers(started)
-                return None
-            if not worker.attach(bus_for_worker):
+            if bus_for_worker is None or not worker.attach(bus_for_worker):
                 worker.detach()
-                self._detach_workers(started)
+                self._detach_workers(attached)
                 return None
-            started[spec.worker_id] = worker
-        self._workers = started
-        return dict(started)
+            attached[spec.worker_id] = worker
+        self._workers = attached
+        return dict(attached)
 
-    def stop(self) -> None:
+    def detach(self) -> None:
         self._detach_workers(self._workers)
         self._workers = {}
 
@@ -80,7 +77,7 @@ class Launcher:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self.stop()
+        self.detach()
         if self._owns_bus:
             self.bus.close()
 
