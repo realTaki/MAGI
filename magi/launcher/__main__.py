@@ -1,12 +1,11 @@
-"""Run ``python -m magi.launcher`` to open BUS and plug in the provider worker."""
+"""Run ``python -m magi.launcher`` to open BUS and plug in the default workers."""
 
 from magi.launcher import Launcher
-from magi.providers.worker import ProvidersWorker
 
 
 def main() -> int:
-    with Launcher("sqlite://") as launcher:
-        return 0 if launcher.launch(ProvidersWorker) else 1
+    with Launcher() as launcher:
+        return 0 if launcher.launch() else 1
 
 
 if __name__ == "__main__":
