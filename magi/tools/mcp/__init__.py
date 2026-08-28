@@ -26,6 +26,6 @@ Tools
 
 Scope (admin-only): MCP servers are infrastructure — only
 ``admin`` operators can create / update / delete them. The
-``ALLOWED_ROLES`` constant on each tool is enforced centrally
-by :meth:`~magi.tools.base.Tool.gate`.
+``ALLOWED_ROLES`` constant on each tool is catalog metadata
+for the agent menu.
 """

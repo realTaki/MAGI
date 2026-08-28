@@ -85,6 +85,7 @@ from .promptJobs import (
     SetPromptJobBoard,
     SetPromptResult,
 )
+from .runToolJob import RunToolJob, RunToolJobBoard, RunToolResult
 from .settingsJobs import (
     DeleteSettingJob,
     DeleteSettingJobBoard,
@@ -172,6 +173,9 @@ __all__ = [
     "CallLLMJobBoard",
     "CallLLMResult",
     "LLMErrorCode",
+    "RunToolJob",
+    "RunToolJobBoard",
+    "RunToolResult",
     "ChangeProviderJob",
     "ChangeProviderJobBoard",
     "ChangeProviderResult",

@@ -672,7 +672,7 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
 
     ``HOST_WORKSPACE_DIR`` must be set so the registry's
     tool-construction path can build the SQLAlchemy engine
-    (the LLM tools gate on roles, which requires a DB lookup).
+    so builtin tools can construct.
     """
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "state"))
     from magi.tools.registry import get_tool
