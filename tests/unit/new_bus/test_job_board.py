@@ -124,3 +124,16 @@ def test_claim_is_exclusive(tmp_path) -> None:
 def test_unmounted_job_is_invalid(tmp_path) -> None:
     with Bus(tmp_path) as bus:
         assert bus.for_worker(WORKER, (Slot(PingJob, "publish"),)) is None
+
+
+def test_worker_client_hides_backend_failure(tmp_path, monkeypatch) -> None:
+    with PingBus(tmp_path) as bus:
+        client = attach_board(bus, PingJobBoard, worker_id=WORKER, slots=("publish",))
+        board = bus._job_board(PingJob)
+        assert board is not None
+
+        def fail(*_args, **_kwargs):
+            raise OSError("database unavailable")
+
+        monkeypatch.setattr(board, "publish", fail)
+        assert client.publish(PingJob()) == 0

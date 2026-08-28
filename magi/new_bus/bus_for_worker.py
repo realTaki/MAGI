@@ -50,13 +50,31 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
         )
 
     def get_result(self, job_id: int) -> ResultT | None:
-        return cast(ResultT | None, self._bus._job_board(self._job_type).get_result(job_id))
+        board = self._bus._job_board(self._job_type)
+        if board is None:
+            return None
+        try:
+            return cast(ResultT | None, board.get_result(job_id))
+        except Exception:
+            return None
 
     def check_job_status(self, job_id: int) -> JobStatus | None:
-        return self._bus._job_board(self._job_type).check_job_status(job_id)
+        board = self._bus._job_board(self._job_type)
+        if board is None:
+            return None
+        try:
+            return board.check_job_status(job_id)
+        except Exception:
+            return None
 
     def list(self, *, status: JobStatus | None = None) -> list[JobT]:
-        return self._bus._job_board(self._job_type).list(status=status)
+        board = self._bus._job_board(self._job_type)
+        if board is None:
+            return []
+        try:
+            return board.list(status=status)
+        except Exception:
+            return []
 
 
 class BusForWorker:
@@ -85,24 +103,31 @@ class BusForWorker:
         """Return this Worker's client for one mounted Job type."""
         return JobBoardClient(self._bus, self.worker_id, job_type)
 
-    def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> None:
+    def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> bool:
         """Register this Worker's missing Settings defaults without overwriting values."""
         from .firmware.books.settingsBook import SettingRow
 
-        namespace = self._setting_segment(worker_name, label="worker name")
+        namespace = self._setting_segment(worker_name)
+        if namespace is None:
+            return False
         prepared = {
-            f"{namespace}.{self._setting_segment(name, label='setting name')}": value
+            f"{namespace}.{segment}": value
             for name, value in settings.items()
+            if (segment := self._setting_segment(name)) is not None
         }
-        if not all(isinstance(value, str) for value in prepared.values()):
-            raise ValueError("default setting values must be strings")
+        if len(prepared) != len(settings) or not all(isinstance(value, str) for value in prepared.values()):
+            return False
 
-        with self._factory.session() as session:
-            for key, value in prepared.items():
-                existing = session.scalar(select(SettingRow.id).where(SettingRow.key == key))
-                if existing is None:
-                    session.add(SettingRow(key=key, value=value))
-            session.commit()
+        try:
+            with self._factory.session() as session:
+                for key, value in prepared.items():
+                    existing = session.scalar(select(SettingRow.id).where(SettingRow.key == key))
+                    if existing is None:
+                        session.add(SettingRow(key=key, value=value))
+                session.commit()
+        except Exception:
+            return False
+        return True
 
     def heartbeat(self) -> bool:
         if not self._heartbeat.heartbeat(self.worker_id):
@@ -113,9 +138,9 @@ class BusForWorker:
         return self._heartbeat.is_alive(self.worker_id)
 
     @staticmethod
-    def _setting_segment(value: str, *, label: str) -> str:
+    def _setting_segment(value: str) -> str | None:
         if not isinstance(value, str) or not (normalized := value.strip()):
-            raise ValueError(f"{label} must be non-empty")
+            return None
         if "." in normalized:
-            raise ValueError(f"{label} must not contain '.'")
+            return None
         return normalized

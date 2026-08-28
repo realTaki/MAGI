@@ -10,7 +10,6 @@ from typing import Any, TypeVar, cast
 from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
-from .base.errors import InvalidJobError
 from .base.file import FileEngine
 from .base.heartbeat import Heartbeat, Slot
 from .bus_for_worker import BusForWorker
@@ -67,9 +66,8 @@ class Bus:
         )
 
     def install_or_dock(self, slot: Slot) -> bool:
-        if slot.job_type not in self._job_boards or not self._job_board(slot.job_type).has_slot(
-            slot.name
-        ):
+        board = self._job_board(slot.job_type)
+        if board is None or not board.has_slot(slot.name):
             return False
         if slot in self._docks:
             return True
@@ -77,9 +75,8 @@ class Bus:
         return True
 
     def install_and_dock(self, slot: Slot) -> bool:
-        if slot.job_type not in self._job_boards or not self._job_board(slot.job_type).has_slot(
-            slot.name
-        ):
+        board = self._job_board(slot.job_type)
+        if board is None or not board.has_slot(slot.name):
             return False
         if slot in self._docks:
             return True
@@ -91,8 +88,7 @@ class Bus:
         requested = tuple(slots)
         with self._lock:
             if any(
-                slot.job_type not in self._job_boards
-                or not self._job_board(slot.job_type).has_slot(slot.name)
+                (board := self._job_board(slot.job_type)) is None or not board.has_slot(slot.name)
                 for slot in requested
             ):
                 return False
@@ -111,14 +107,23 @@ class Bus:
         return True
 
     def _invoke(self, worker_id: str, job_type: type[JobT], slot_name: str, *args, **kwargs) -> Any:
-        slot = Slot(job_type, slot_name)
         board = self._job_board(job_type)
-        dock = self._docks.get(slot)
-        if dock is not None:
-            return dock.call(worker_id, board, *args, **kwargs)
-        if not self._heartbeat.holds(worker_id, slot):
+        if board is None:
             return None
-        return getattr(board, slot_name)(*args, worker_id=worker_id, **kwargs)
+        slot = Slot(job_type, slot_name)
+        try:
+            dock = self._docks.get(slot)
+            if dock is not None:
+                return dock.call(worker_id, board, *args, **kwargs)
+            if not self._heartbeat.holds(worker_id, slot):
+                return None
+            return getattr(board, slot_name)(*args, worker_id=worker_id, **kwargs)
+        except Exception:
+            # A worker-facing BUS call must not leak backend failures. Jobs
+            # that already exist turn failures into durable FAILED results at
+            # their execution boundary; calls with no persisted Job use their
+            # ordinary empty result instead.
+            return None
 
     def close(self) -> None:
         self._factory.close()
@@ -129,8 +134,5 @@ class Bus:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def _job_board(self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
-        try:
-            return cast(BaseJobBoard[JobT, Any, Any], self._job_boards[job_type])
-        except KeyError:
-            raise InvalidJobError(f"{job_type.__qualname__} is not mounted") from None
+    def _job_board(self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any] | None:
+        return cast(BaseJobBoard[JobT, Any, Any] | None, self._job_boards.get(job_type))

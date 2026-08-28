@@ -5,9 +5,9 @@ Book, ORM session, engine, or the old Runtime BUS. Configuration and accounting
 cross the boundary through vNext Firmware Jobs; its static capability defaults
 use the dedicated ``BusForWorker.boost_default_settings`` API.
 
-Provider SDKs are async while vNext BaseWorker is synchronous, so this
-worker owns one event-loop thread for its claim loop. That thread starts
-on attach and stops on detach.
+Provider SDKs are async, so vNext ``BaseWorker`` supplies its event loop,
+task lifetime, and bounded in-process concurrency are shared worker mechanics,
+not provider-specific lifecycle code.
 """
 
 from __future__ import annotations
@@ -15,12 +15,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import threading
 from typing import Any
 
 from magi.new_bus import (
     BaseWorker,
-    BusForWorker,
     CallLLMJob,
     CallLLMResult,
     ChangeProviderJob,
@@ -76,74 +74,56 @@ def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
 class ProvidersWorker(BaseWorker):
     """Claim vNext provider jobs and invoke the configured SDK client.
 
-    A Runtime initially has exactly one provider worker. Multiple workers
-    require a durable configuration revision so every cached client sees a
-    ``ChangeProviderJob``; Launcher must not attach more than one until then.
+    A Runtime initially has exactly one provider worker. ``concurrency``
+    bounds simultaneously-running LLM calls inside that one worker.
     """
 
     worker_name = "providers"
     required_slots = REQUIRED_SLOTS
 
-    def __init__(self, *, poll_seconds: float = 0.25) -> None:
-        super().__init__()
-        self._poll_seconds = poll_seconds
+    def __init__(
+        self,
+        *,
+        poll_seconds: float = 0.25,
+        concurrency: int | None = None,
+    ) -> None:
+        super().__init__(poll_seconds=poll_seconds, concurrency=concurrency)
         self._provider: LLMProvider | None = None
         self._provider_error: LLMError | None = None
-        self._loop_thread: threading.Thread | None = None
-        self._stop_requested = threading.Event()
-        self._ready = threading.Event()
 
-    def attach(self, bus_for_worker: BusForWorker) -> bool:
-        if not super().attach(bus_for_worker):
-            return False
+    async def on_attached(self) -> None:
         self._boost_default_settings()
-        self._stop_requested.clear()
-        self._ready.clear()
-        self._loop_thread = threading.Thread(
-            target=self._thread_main,
-            name=f"magi-{self.worker_id}-providers",
-            daemon=True,
-        )
-        self._loop_thread.start()
-        if not self._ready.wait(timeout=5.0) or not self._loop_thread.is_alive():
-            self.detach()
-            return False
-        return True
+        self._rebuild_provider()
 
-    def detach(self) -> None:
-        self._stop_requested.set()
-        thread = self._loop_thread
-        self._loop_thread = None
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=self._poll_seconds + 1.0)
+    async def on_detached(self) -> None:
         self._provider = None
         self._provider_error = None
-        super().detach()
-
-    def _thread_main(self) -> None:
-        try:
-            asyncio.run(self._run())
-        except Exception:  # noqa: BLE001 -- a worker must not kill Launcher
-            logger.exception("providers worker stopped unexpectedly")
-        finally:
-            self._ready.set()
 
     async def _run(self) -> None:
-        self._rebuild_provider()
-        self._ready.set()
-        while not self._stop_requested.is_set():
+        while not self._stop.is_set():
+            reserved = False
             try:
-                config_job = self._change_provider_board().claim()
+                config_job = await self.call(self._change_provider_board().claim)
                 if config_job is not None:
-                    self._handle_config_job(config_job)
+                    await self._handle_config_job(config_job)
                     continue
-                llm_job = self._llm_board().claim()
+                await self.reserve_capacity()
+                reserved = True
+                llm_job = await self.call(self._llm_board().claim)
                 if llm_job is not None:
-                    await self._invoke_safe(llm_job)
+                    self.spawn_reserved(
+                        self._invoke_safe(llm_job),
+                        name=f"provider-job-{llm_job.id}",
+                    )
+                    reserved = False
                     continue
+                self.release_capacity()
+                reserved = False
             except Exception:  # noqa: BLE001 -- retry after a BUS failure
+                if reserved:
+                    self.release_capacity()
                 logger.exception("providers worker: BUS operation failed")
-            await asyncio.sleep(self._poll_seconds)
+            await asyncio.sleep(self.poll_seconds)
 
     # -- BUS helpers -----------------------------------------------------
 
@@ -203,8 +183,13 @@ class ProvidersWorker(BaseWorker):
             self._provider_error = None
             logger.info("providers worker: cached LLM client (%s)", type(provider).__name__)
 
-    def _handle_config_job(self, job: ChangeProviderJob) -> None:
-        self._rebuild_provider()
+    async def _handle_config_job(self, job: ChangeProviderJob) -> None:
+        if job.provider or job.api_key:
+            self._rebuild_provider()
+        elif job.model and self._provider is not None:
+            self._update_model(job.model)
+        else:
+            self._rebuild_provider()
         if self._provider is None:
             result = ChangeProviderResult(
                 id=job.id,
@@ -213,8 +198,14 @@ class ProvidersWorker(BaseWorker):
             )
         else:
             result = ChangeProviderResult(id=job.id)
-        if not self._change_provider_board().submit_result(result):
+        if not await self.call(self._change_provider_board().submit_result, result):
             logger.warning("providers worker: failed to submit config result for %s", job.id)
+
+    def _update_model(self, model: str) -> None:
+        """Apply a model-only configuration change without rebuilding the SDK."""
+        assert self._provider is not None
+        self._provider.model = model
+        logger.info("providers worker: updated cached model to %r", model)
 
     # -- inference -------------------------------------------------------
 
@@ -222,7 +213,7 @@ class ProvidersWorker(BaseWorker):
         try:
             await self._invoke_provider(job)
         except asyncio.CancelledError:
-            self._submit_llm_failure(
+            await self._submit_llm_failure(
                 job,
                 error_code=LLMErrorCode.RUN_CANCELLED,
                 error_detail="providers worker cancelled",
@@ -230,7 +221,7 @@ class ProvidersWorker(BaseWorker):
             raise
         except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
             logger.exception("providers worker: unhandled exception on job %s", job.id)
-            self._submit_llm_failure(
+            await self._submit_llm_failure(
                 job,
                 error_code=LLMErrorCode.PROVIDER_CRASHED,
                 error_detail=str(exc),
@@ -242,7 +233,7 @@ class ProvidersWorker(BaseWorker):
             missing = self._provider_error or LLMNotConfiguredError(
                 "MAGI runtime has no LLM provider configured"
             )
-            self._submit_llm_failure(
+            await self._submit_llm_failure(
                 job,
                 error_code=_map_exception_to_code(missing),
                 error_detail=str(missing),
@@ -258,7 +249,7 @@ class ProvidersWorker(BaseWorker):
                 tools=job.tools or None,
             )
         except LLMError as exc:
-            self._submit_llm_failure(
+            await self._submit_llm_failure(
                 job,
                 error_code=_map_exception_to_code(exc),
                 error_detail=str(exc),
@@ -274,10 +265,15 @@ class ProvidersWorker(BaseWorker):
             finish_reason=response.get("stop_reason"),
             model=response.get("model") or provider.model,
         )
-        if not self._llm_board().submit_result(result):
+        if not await self.call(self._llm_board().submit_result, result):
             logger.warning("providers worker: failed to submit LLM result for %s", job.id)
             return
-        self._record_token_usage(job, provider=provider, model=result.model, usage=response.get("usage"))
+        await self._record_token_usage(
+            job,
+            provider=provider,
+            model=result.model,
+            usage=response.get("usage"),
+        )
 
     @staticmethod
     def _split_system_message(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
@@ -292,7 +288,7 @@ class ProvidersWorker(BaseWorker):
                 non_system.append(message)
         return system, non_system
 
-    def _submit_llm_failure(
+    async def _submit_llm_failure(
         self,
         job: CallLLMJob,
         *,
@@ -305,10 +301,10 @@ class ProvidersWorker(BaseWorker):
             error=error_detail,
             error_code=error_code,
         )
-        if not self._llm_board().submit_result(result):
+        if not await self.call(self._llm_board().submit_result, result):
             logger.warning("providers worker: failed to submit failure for %s", job.id)
 
-    def _record_token_usage(
+    async def _record_token_usage(
         self,
         job: CallLLMJob,
         *,
@@ -320,7 +316,8 @@ class ProvidersWorker(BaseWorker):
             return
         assert self.bus is not None
         board = self.bus.board(RecordTokenUsageJob)
-        job_id = board.publish(
+        job_id = await self.call(
+            board.publish,
             RecordTokenUsageJob(
                 llm_job_id=job.id,
                 contact_id=job.contact_id,
@@ -333,9 +330,9 @@ class ProvidersWorker(BaseWorker):
                 cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
                 thinking_tokens=int(usage.get("thinking_tokens", 0) or 0),
                 response_tokens=int(usage.get("response_tokens", 0) or 0),
-            )
+            ),
         )
-        result = board.get_result(job_id)
+        result = await self.call(board.get_result, job_id)
         if result is None or result.status is not JobStatus.COMPLETED:
             logger.warning("providers worker: failed to record token usage for %s", job.id)
 
