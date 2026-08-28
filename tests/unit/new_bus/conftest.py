@@ -1,28 +1,22 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
-from magi.new_bus import Bus, SQLiteBackend
-from magi.new_bus.base.engine import EngineFactory
-from tests.unit.new_bus.testing import WORKER, InMemoryBackend, PingBus, PingJobBoard, attach_board
-
-
-@pytest.fixture(params=["memory", "sqlite"])
-def db_backend(request: pytest.FixtureRequest, tmp_path) -> Iterator[EngineFactory]:
-    store = (
-        InMemoryBackend() if request.param == "memory" else SQLiteBackend(tmp_path / "bus.sqlite")
-    )
-    try:
-        yield store
-    finally:
-        store.close()
+from magi.new_bus import Bus
+from tests.unit.new_bus.testing import WORKER, PingBus, PingJobBoard, attach_board
 
 
 @pytest.fixture
-def bus(db_backend: EngineFactory) -> Iterator[PingBus]:
-    with PingBus(db_backend) as item:
+def workspace(tmp_path: Path) -> Path:
+    return tmp_path / "workspace"
+
+
+@pytest.fixture
+def bus(workspace: Path) -> Iterator[PingBus]:
+    with PingBus(workspace) as item:
         yield item
 
 

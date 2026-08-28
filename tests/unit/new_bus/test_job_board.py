@@ -4,7 +4,6 @@ import threading
 from datetime import datetime
 
 from magi.new_bus import BaseJobResult, Bus, JobStatus, Slot
-from magi.new_bus.base.engine import EngineFactory
 from tests.unit.new_bus.testing import WORKER, PingBus, PingJob, PingJobBoard, attach_board
 
 
@@ -90,8 +89,8 @@ def test_list_filters_status(ping_board) -> None:
     assert [job.id for job in completed] == [first_id]
 
 
-def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
-    with PingBus(db_backend) as bus:
+def test_claim_is_exclusive(tmp_path) -> None:
+    with PingBus(tmp_path) as bus:
         ping_board = attach_board(
             bus,
             PingJobBoard,
@@ -122,6 +121,6 @@ def test_claim_is_exclusive(db_backend: EngineFactory) -> None:
         assert len(set(claimed_ids)) == 20
 
 
-def test_unmounted_job_is_invalid(db_backend: EngineFactory) -> None:
-    with Bus(db_backend) as bus:
+def test_unmounted_job_is_invalid(tmp_path) -> None:
+    with Bus(tmp_path) as bus:
         assert bus.for_worker(WORKER, (Slot(PingJob, "publish"),)) is None

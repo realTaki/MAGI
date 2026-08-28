@@ -7,15 +7,14 @@ URL explicitly so the subclass is self-describing and
 the ``_BASE_URL`` invariant in the base class is
 checked.
 
-Provider id: ``"claude"``. Operator-facing label (in
-``bus.settings_book["providers.options"]``):
-``"Anthropic (Claude)"``.
+Provider id: ``"claude"``. The worker's ``providers.options`` catalog
+pairs this id with the default model below.
 
-Default model: ``claude-opus-4-7`` — Anthropic's
-strongest general-purpose model as of the v0 cut.
+Default model: ``claude-opus-5``. The worker catalog also
+offers ``claude-fable-5``.
 Operators can override per-MAGI by writing
-``bus.settings_book["provider.model"]`` (the worker
-picks it up on the next ``changeProviderConfig`` job).
+the provider configuration (the worker applies it on the next
+``ChangeProviderJob``).
 """
 
 from __future__ import annotations
@@ -37,5 +36,5 @@ class ClaudeProvider(AnthropicProvider):
     # this default, but we set it explicitly so the
     # subclass self-describes.
     _BASE_URL = "https://api.anthropic.com"
-    _DEFAULT_MODEL = "claude-opus-4-7"
+    _DEFAULT_MODEL = "claude-opus-5"
     _ERROR_LABEL = "claude"

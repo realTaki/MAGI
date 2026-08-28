@@ -40,8 +40,8 @@ logger = logging.getLogger("magi.api.runtime_provider")
 
 router = APIRouter(tags=["runtime-provider"])
 
-# Setting key under which ProvidersWorker publishes the supported-
-# provider list (JSON array of {"value": ..., "label": ...}).
+# Setting key under which ProvidersWorker publishes the supported
+# provider+model catalog (JSON array of {"provider": ..., "model": ...}).
 # Fallback used when the worker hasn't seeded settings yet.
 _PROVIDERS_OPTIONS_KEY = "providers.options"
 _FALLBACK_KNOWN_PROVIDERS = {"claude", "minimax-global", "minimax-cn", "openai"}
@@ -86,7 +86,7 @@ def _known_providers(bus) -> set[str]:
     if raw:
         try:
             options = json.loads(raw)
-            return {o["value"] for o in options}
+            return {o["provider"] for o in options}
         except (json.JSONDecodeError, TypeError, KeyError):
             pass
     return _FALLBACK_KNOWN_PROVIDERS

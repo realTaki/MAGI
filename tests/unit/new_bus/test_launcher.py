@@ -1,117 +1,165 @@
+from __future__ import annotations
+
+import time
+
 import pytest
 
-from magi.launcher import Launcher, WorkerSpec, load_required_slots
-from magi.launcher.demo import DemoWorker
+from magi.launcher import Launcher
 from magi.new_bus import (
     AndDock,
-    BaseJobResult,
-    Bus,
-    CreateConversationJob,
+    BaseWorker,
+    CallLLMJob,
+    CallLLMResult,
+    JobStatus,
+    LLMErrorCode,
     OrDock,
     Slot,
 )
-from tests.unit.new_bus.testing import InMemoryBackend, PingBus, PingJob
-from tests.unit.new_bus.workers.post_result import PostResultWorker
-from tests.unit.new_bus.workers.shared_ping import SharedPingWorker
+from magi.new_bus.firmware.jobs.callLLMJob import CallLLMJobBoard
+from magi.providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
+from magi.providers.worker import ProvidersWorker
+from tests.unit.new_bus.testing import attach_board
 
 
-def test_demo_worker_loads_required_slots_from_package_file() -> None:
-    slots = DemoWorker.declared_slots()
-    assert slots == load_required_slots(DemoWorker)
-    assert slots == (Slot(CreateConversationJob, "publish"),)
+@pytest.fixture(autouse=True)
+def _launcher_workspace(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKSPACE_PATH", str(tmp_path))
 
 
-def test_launcher_docks_demo_workers_and_runs_them() -> None:
-    with Bus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start(
-            (
-                WorkerSpec("conversation-a", DemoWorker),
-                WorkerSpec("conversation-b", DemoWorker),
-            )
+_SHARED_LLM_SLOTS = (
+    Slot(CallLLMJob, "publish"),
+    Slot(CallLLMJob, "claim"),
+    Slot(CallLLMJob, "submit_result"),
+)
+
+
+class SharedLLMWorker(BaseWorker):
+    worker_name = "shared-one"
+    required_slots = _SHARED_LLM_SLOTS
+
+
+class GateWorker(BaseWorker):
+    worker_name = "gate-one"
+    required_slots = (Slot(CallLLMJob, "submit_post_result"),)
+
+
+class SecondSharedLLMWorker(SharedLLMWorker):
+    worker_name = "shared-two"
+
+
+class SecondGateWorker(GateWorker):
+    worker_name = "gate-two"
+
+
+def _wait_result(board, job_id: int, *, timeout: float = 2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = board.get_result(job_id)
+        if result is not None:
+            return result
+        time.sleep(0.05)
+    return None
+
+
+def test_provider_worker_loads_required_slots_from_package_file() -> None:
+    assert ProvidersWorker.required_slots == PROVIDER_SLOTS
+    assert ProvidersWorker.declared_slots() == PROVIDER_SLOTS
+
+
+def test_launcher_launches_provider_worker() -> None:
+    with Launcher() as launcher:
+        assert launcher.run()
+        worker = launcher.workers["providers"]
+        assert isinstance(worker, ProvidersWorker)
+        assert worker.is_alive()
+        for slot in PROVIDER_SLOTS:
+            assert slot not in launcher.bus._docks
+
+        publisher = attach_board(
+            launcher.bus,
+            CallLLMJobBoard,
+            worker_id="caller",
+            slots=("publish",),
         )
-        assert workers is not None
-        assert workers["conversation-a"].is_running
-        assert workers["conversation-b"].is_alive()
-        assert isinstance(bus._docks[Slot(CreateConversationJob, "publish")], OrDock)
+        job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
+        job.id = publisher.publish(job)
+        result = _wait_result(publisher, job.id)
+        assert result is not None
+        assert result.status is JobStatus.FAILED
+        assert result.error_code in {
+            LLMErrorCode.CREDENTIALS_REQUIRED,
+            LLMErrorCode.UNKNOWN,
+        }
 
-        launcher.stop()
-        assert not workers["conversation-a"].is_running
+        launcher.shutdown()
+        assert not worker.is_alive()
         assert launcher.workers == {}
 
 
-def test_launcher_installs_or_docks_before_workers_attach() -> None:
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start(
-            (
-                WorkerSpec("one", SharedPingWorker),
-                WorkerSpec("two", SharedPingWorker),
-            )
-        )
-        assert workers is not None
-        assert workers["one"].is_alive()
-        assert workers["two"].is_alive()
+def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "magi.launcher.launcher.WORKERS", (SharedLLMWorker, SecondSharedLLMWorker)
+    )
+    with Launcher() as launcher:
+        assert launcher.run()
+        workers = launcher.workers
+        assert workers["shared-one"].is_alive()
+        assert workers["shared-two"].is_alive()
         for name in ("publish", "claim", "submit_result"):
-            assert isinstance(bus._docks[Slot(PingJob, name)], OrDock)
+            assert isinstance(launcher.bus._docks[Slot(CallLLMJob, name)], OrDock)
 
-        one = workers["one"].bus
-        two = workers["two"].bus
+        one = workers["shared-one"].bus
+        two = workers["shared-two"].bus
         assert one is not None and two is not None
-        job = PingJob(n=1)
-        job.id = one.board(PingJob).publish(job)
-        claimed = two.board(PingJob).claim()
+        job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
+        job.id = one.board(CallLLMJob).publish(job)
+        claimed = two.board(CallLLMJob).claim()
         assert claimed is not None
-        assert one.board(PingJob).submit_result(BaseJobResult(id=claimed.id))
+        assert one.board(CallLLMJob).submit_result(CallLLMResult(id=claimed.id))
 
 
-def test_launcher_selects_and_dock_for_post_submit_slots() -> None:
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start(
-            (
-                WorkerSpec("one", PostResultWorker),
-                WorkerSpec("two", PostResultWorker),
-            )
-        )
-        assert workers is not None
-        assert isinstance(bus._docks[Slot(PingJob, "submit_post_result")], AndDock)
+def test_launcher_selects_and_dock_for_post_submit_slots(monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (GateWorker, SecondGateWorker))
+    with Launcher() as launcher:
+        assert launcher.run()
+        assert isinstance(launcher.bus._docks[Slot(CallLLMJob, "submit_post_result")], AndDock)
 
 
-def test_single_worker_does_not_install_a_dock() -> None:
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start((WorkerSpec("only", SharedPingWorker),))
-        assert workers is not None
-        assert Slot(PingJob, "publish") not in bus._docks
+def test_single_worker_does_not_install_a_dock(monkeypatch) -> None:
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker,))
+    with Launcher() as launcher:
+        assert launcher.run()
+        assert Slot(CallLLMJob, "publish") not in launcher.bus._docks
 
 
-def test_start_rolls_back_when_a_worker_refuses() -> None:
-    class RefusingWorker(SharedPingWorker):
-        def on_start(self) -> bool:
+def test_run_rolls_back_when_a_worker_refuses(monkeypatch) -> None:
+    class RefusingWorker(SecondSharedLLMWorker):
+        def attach(self, _bus_for_worker) -> bool:
             return False
 
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        workers = launcher.start(
-            (
-                WorkerSpec("one", SharedPingWorker),
-                WorkerSpec("two", RefusingWorker),
-            )
-        )
-        assert workers is None
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker, RefusingWorker))
+    with Launcher() as launcher:
+        assert not launcher.run()
         assert launcher.workers == {}
 
 
-def test_unknown_slot_does_not_start_workers() -> None:
-    class MissingSlotWorker(SharedPingWorker):
-        required_slots = (Slot(PingJob, "missing"),)
+def test_unknown_slot_does_not_run_workers(monkeypatch) -> None:
+    class MissingSlotWorker(SharedLLMWorker):
+        required_slots = (Slot(CallLLMJob, "missing"),)
 
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
-        assert launcher.start((WorkerSpec("ghost", MissingSlotWorker),)) is None
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (MissingSlotWorker,))
+    with Launcher() as launcher:
+        assert not launcher.run()
 
 
-def test_duplicate_worker_id_is_rejected() -> None:
-    with PingBus(InMemoryBackend()) as bus, Launcher(bus) as launcher:
+def test_duplicate_worker_id_is_rejected(monkeypatch) -> None:
+    class One(SharedLLMWorker):
+        worker_name = "same"
+
+    class Two(SharedLLMWorker):
+        worker_name = "same"
+
+    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (One, Two))
+    with Launcher() as launcher:
         with pytest.raises(ValueError, match="duplicate worker_id"):
-            launcher.start(
-                (
-                    WorkerSpec("one", SharedPingWorker),
-                    WorkerSpec("one", SharedPingWorker),
-                )
-            )
+            launcher.run()

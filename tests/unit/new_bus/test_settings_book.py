@@ -8,7 +8,6 @@ from magi.new_bus import (
     JobStatus,
     ListSettingsJob,
     SetSettingJob,
-    SQLiteBackend,
 )
 from magi.new_bus.firmware.jobs.settingsJobs import (
     DeleteSettingJobBoard,
@@ -16,7 +15,7 @@ from magi.new_bus.firmware.jobs.settingsJobs import (
     ListSettingsJobBoard,
     SetSettingJobBoard,
 )
-from tests.unit.new_bus.testing import WORKER, InMemoryBackend, attach_board
+from tests.unit.new_bus.testing import WORKER, attach_board
 
 BOARD_BY_JOB = {
     DeleteSettingJob: DeleteSettingJobBoard,
@@ -37,8 +36,8 @@ def _result(bus: Bus, job: BaseJob):
     return board.get_result(job.id)
 
 
-def test_settings_accept_keys_without_a_predeclared_vocabulary() -> None:
-    bus = Bus(InMemoryBackend())
+def test_settings_accept_keys_without_a_predeclared_vocabulary(tmp_path) -> None:
+    bus = Bus(tmp_path)
     arbitrary = _publish(bus, SetSettingJob(key="plugin.weather.retry_limit", value="3"))
     outcome = _result(bus, arbitrary)
     assert outcome is not None
@@ -47,8 +46,8 @@ def test_settings_accept_keys_without_a_predeclared_vocabulary() -> None:
     assert fetched is not None and fetched.value == "3"
 
 
-def test_set_replaces_a_value_without_creating_a_second_key() -> None:
-    bus = Bus(InMemoryBackend())
+def test_set_replaces_a_value_without_creating_a_second_key(tmp_path) -> None:
+    bus = Bus(tmp_path)
     first = _publish(bus, SetSettingJob(key="system.timezone", value="UTC"))
     first_outcome = _result(bus, first)
     assert first_outcome is not None and first_outcome.status is JobStatus.COMPLETED
@@ -62,8 +61,8 @@ def test_set_replaces_a_value_without_creating_a_second_key() -> None:
     assert listed.settings == {"system.timezone": "Asia/Tokyo"}
 
 
-def test_get_and_delete_setting() -> None:
-    bus = Bus(InMemoryBackend())
+def test_get_and_delete_setting(tmp_path) -> None:
+    bus = Bus(tmp_path)
     _publish(bus, SetSettingJob(key="feature.enabled", value="true"))
 
     fetched = _result(bus, _publish(bus, GetSettingJob(key="feature.enabled")))
@@ -76,8 +75,8 @@ def test_get_and_delete_setting() -> None:
     assert missing is not None and missing.value is None
 
 
-def test_blank_setting_keys_fail_without_a_mutation() -> None:
-    bus = Bus(InMemoryBackend())
+def test_blank_setting_keys_fail_without_a_mutation(tmp_path) -> None:
+    bus = Bus(tmp_path)
     outcome = _result(bus, _publish(bus, SetSettingJob(key="  ", value="ignored")))
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
@@ -87,14 +86,14 @@ def test_blank_setting_keys_fail_without_a_mutation() -> None:
 
 
 def test_settings_survive_sqlite_reopen(tmp_path) -> None:
-    path = tmp_path / "settings.sqlite"
-    first = Bus(SQLiteBackend(path))
+    workspace = tmp_path / "workspace"
+    first = Bus(workspace)
     try:
         created = _publish(first, SetSettingJob(key="ui.theme", value="dark"))
     finally:
         first.close()
 
-    reopened = Bus(SQLiteBackend(path))
+    reopened = Bus(workspace)
     try:
         outcome = _result(reopened, _publish(reopened, GetSettingJob(key="ui.theme")))
         assert outcome is not None and outcome.value == "dark"

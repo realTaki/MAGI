@@ -238,7 +238,7 @@ AndDock
 EngineFactory
 SQLiteBackend
 PostgresBackend
-FileBackend
+FileEngine
 ```
 
 Conversation、Message 等具体 MAGI 语义只能出现在 Firmware。
@@ -300,15 +300,20 @@ Contact (who)
     │
     ▼
 Conversation (which interaction)
+    ├── owner_contact_id   private context / ownership
     ├── channel            e.g. telegram / discord / webui
     └── delivery_address   channel-specific endpoint
+
+ConvMembersBook
+    └── additional current Contact participants for a group Conversation
 ```
 
 这让同一个 Contact 可以经由不同 channel 与 MAGI 交互，而不用为每一种
 channel 给 `Contact` 增加字段。常规模式是 MAGI 与一个 Contact 维持一个
 长期 Conversation；需要事务性协作时，创建包含该用户和 MAGI 的独立群聊，
-并以该群的 channel / delivery address 创建独立 Conversation。这个模式不在
-数据库上强制 `contact_id` 唯一，因为独立群聊本身也是不同的 Conversation。
+并以该群的 channel / delivery address 创建独立 Conversation。`owner_contact_id`
+定义会话归属；其余当前成员存入 `ConvMembersBook`。成员退出时直接删除对应
+记录，不保留额外的角色或离开时间字段。
 
 ---
 
@@ -977,15 +982,10 @@ ownership。
 
 ---
 
-# 27. WorkerSpec 与 requiredSlots
+# 27. requiredSlots
 
 Worker topology 由 Worker 包自己的 `requiredSlots.py` 声明，而不是由
-Launcher 手写 Slot 列表。`WorkerSpec` 只声明：
-
-- `worker_id`；
-- `worker_type`（`BaseWorker` 子类）。
-
-例如：
+Launcher 手写 Slot 列表。调用方把 Worker 类交给控制面板的 `launch`：
 
 ```python
 # magi/tools/requiredSlots.py
@@ -994,12 +994,13 @@ REQUIRED_SLOTS = (
     Slot(ToolCallJob, "submit_result"),
 )
 
-WorkerSpec(worker_id="tools-a", worker_type=ToolWorker)
+launcher.launch(ToolWorker)
+launcher.launch(one=ClaimWorker, two=ClaimWorker)
 ```
 
-Launcher 在启动前从 `worker_type.declared_slots()` 收集这些 Slot，先规划
-Dock，再调用 `bus.for_worker(worker_id, slots)` 分配切面，然后
-`worker.attach(bus_for_worker)` 与 `worker.start()`。
+身份默认用类上的 `worker_name`；同一类插两块时用关键字参数命名。
+`launch` 一次做完：收集 Slot、规划 Dock、实例化 Worker、分配切面，再调用
+每个 `worker.attach`（插上即运行）。`shutdown` 调用每个 `worker.detach`。
 
 ---
 
@@ -1144,36 +1145,17 @@ BUS 不需要理解 Plugin topology。
 
 # 33. Launcher
 
-当前 `magi/launcher/launcher.py` 中的 `Launcher` 负责在 Worker 启动前规划
-Slot topology，并在 attach 之后管理 Worker 生命周期。
+`Launcher` 是控制面板，不是硬件。Worker 才是插在 BUS 上的卡；
+attach / detach 是 Worker 的操作，由 Launcher 代为按下。
 
-Launcher 的基本流程：
-
-1. 从各 Worker 包的 `requiredSlots.py` 收集 Slot；
-2. 统计同一个 Slot 有多少 Worker 请求；
-3. 单 Worker Slot 直接 attach；
-4. 多 Worker Slot 安装对应 Dock；
-5. 创建 Worker；
-6. 通过 `bus.for_worker(worker_id, slots)` 分配 BusForWorker；
-7. 调用 `worker.attach(bus_for_worker)`；
-8. 调用 `worker.start()`（heartbeat + `on_start`）；
-9. 停止时按相反顺序 `worker.stop()`。
-
-概念上：
-
-```text
-Launcher
-   │
-   ├── plan topology
-   ├── install Docks
-   ├── create Workers
-   ├── allocate BusForWorker slices
-   ├── attach Workers
-   └── start / stop lifecycle
+```python
+with Launcher() as launcher:
+    launcher.launch()  # 内部：读 constant、开 BUS、找 Slot、装 Dock、worker.attach
+    launcher.shutdown()               # 内部：worker.detach
 ```
 
 BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
-Worker 生命周期属于 Launcher，不属于 BUS。
+Worker 生命周期就是 attach / detach，不属于 BUS。
 
 ---
 
@@ -1234,7 +1216,7 @@ File Book：
 BaseFileBook
      │
      ▼
- FileBackend
+ FileEngine
      │
      ▼
 Directory
@@ -1287,17 +1269,17 @@ PostgreSQL
 
 ---
 
-# 38. File Backend
+# 38. File Engine
 
-`FileBackend` 当前不是 `EngineFactory` 的实现。
+`FileEngine` 当前不是 `EngineFactory` 的实现。
 
-它提供一个文件根目录给：
+它接收一个 workspace 路径，管理这棵目录树，并创建 Firmware
+file Book 对应的文件夹：
 
 ```text
-BaseFileBook
+<workspace>/prompts   → PromptsBook
+<workspace>/skills    → SkillsBook
 ```
-
-使用。
 
 BaseFileBook 表示：
 
@@ -1309,19 +1291,16 @@ BaseFileBook 表示：
 read
 write
 exists
+delete
 iterate
 ```
 
-因此：
+路径必须落在 Book 目录内，写入是原子的。
+`PromptsBook` 用无后缀相对路径（例如 `agent/soul`）对应 `.md` 文件。
+`SkillsBook` 把每个含 `SKILL.md` 的子目录当成一个 skill，并在空目录时
+从包装内的默认 skills 拷入。
 
-```text
-BaseBook
-BaseFileBook
-```
-
-是两种平行 primitive。
-
-当前 FileBackend 不是完整 JobBoard persistence 的替代品。
+当前 FileEngine 不是完整 JobBoard persistence 的替代品。
 
 ---
 
@@ -1335,7 +1314,7 @@ SQL BUS persistence:
     PostgreSQL
 
 File Book persistence:
-    FileBackend
+    FileEngine
 ```
 
 而不是：
@@ -1379,7 +1358,7 @@ Base 完全不知道这些具体业务概念。
 创建：
 
 ```python
-Bus(factory)
+Bus(workspace)
 ```
 
 时，BUS 会自动：

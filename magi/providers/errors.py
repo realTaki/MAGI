@@ -36,14 +36,14 @@ class LLMError(Exception):
 class LLMNotConfiguredError(LLMError):
     """No LLM provider / API key is configured for the runtime.
 
-    :func:`magi.providers.factory.get_provider` reads the
-    credentials from ``bus.settings_book`` (keys
-    ``provider.name`` / ``provider.api_key``); when those are
-    unset, it raises this. Distinct from :class:`LLMAuthError`
+    The provider worker reads credentials through vNext
+    ``GetSettingJob`` (keys ``provider.name`` / ``provider.api_key``)
+    and passes them to :func:`magi.providers.factory.get_provider`.
+    When either is unset, it raises this. Distinct from :class:`LLMAuthError`
     (key rejected by the vendor) — this one means the operator
     hasn't configured the runtime yet (and the worker's
     ``CallLLMResult.error_code`` will read
-    ``"magi.llm_credentials_required"``).
+    ``"llm.credentials_required"``).
     """
 
 
