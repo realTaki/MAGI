@@ -1,7 +1,7 @@
 """LLM provider layer — abstracts the upstream chat API.
 
 The runtime speaks one interface (:class:`LLMProvider`) regardless of
-which vendor actually serves the request. v0 ships four concrete
+which vendor actually serves the request. vNext ships four concrete
 implementations:
 
 - :class:`magi.providers.claude_code.ClaudeProvider` — Anthropic's
@@ -27,14 +27,6 @@ This package is a **pure implementation** — it is consumed only by
 submodules themselves. External modules interact with providers
 exclusively through the bus job boards.
 
-Re-exported here:
-
-- :func:`get_provider` — kept solely so tests can monkey-patch via
-  ``magi.providers.get_provider = fake``. Internal callers (the
-  worker) reach the factory directly via
-  :mod:`magi.providers.factory`; the re-export is a back-compat
-  seam, not a recommended import path.
-
 Everything else lives in the appropriate submodule:
 
 - :class:`LLMProvider` / :class:`LLMStreamEvent` →
@@ -57,16 +49,13 @@ package does its own thing"):
 - ``ChatMessage`` / ``ChatResult`` — deleted; wire format is plain
   ``list[dict]``.
 - ``known_providers`` / ``is_known_provider`` /
-  ``provider_options_for_ui`` — all deleted. The supported-provider
-  list now lives at ``bus.settings_book["providers.options"]``,
-  which the worker writes at startup and WebUI reads from a Book
-  without importing :mod:`magi.providers`.
-- ``enqueue_llm_job`` — deleted; callers do
-  ``bus.llm_job_board.publish(CallLLMJob(...))``.
+  ``provider_options_for_ui`` — all deleted. The supported
+  ``{provider, model}`` catalog now lives at the ``providers.options``
+  default setting, which the worker registers through
+  ``BusForWorker.boost_default_settings`` so an operator can pick a
+  combination and only supply the API key.
+- ``enqueue_llm_job`` — callers publish vNext ``CallLLMJob`` through
+  their ``BusForWorker`` slice.
 - token estimators — moved to :mod:`magi.agent.tokens` since they
   serve the agent layer's compaction concern, not LLM calling.
 """
-
-from magi.providers.factory import get_provider
-
-__all__ = ["get_provider"]

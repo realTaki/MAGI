@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.errors import InvalidJobError
+from .base.file import FileEngine
 from .base.heartbeat import Heartbeat, Slot
 from .bus_for_worker import BusForWorker
 
@@ -19,17 +21,31 @@ JobT = TypeVar("JobT", bound=BaseJob)
 class Bus:
     """One runtime's source of truth for jobs, slots, docks, and liveness."""
 
-    def __init__(self, factory: EngineFactory) -> None:
-        if not isinstance(factory, EngineFactory):
-            raise InvalidJobError("Bus requires EngineFactory")
-        self._factory = factory
+    def __init__(self, workspace: str | Path) -> None:
+        """Open one private BUS store rooted at *workspace*.
+
+        The current Firmware has no MAGIS storage yet, so its SQL state always
+        lives in ``<workspace>/memories/magi.db``.  File Books share the same
+        workspace root.  Backend construction remains BUS-private until a
+        MAGIS-aware storage contract is introduced.
+        """
+        self.workspace = Path(workspace).resolve()
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        database_path = self.workspace / "memories" / "magi.db"
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        self._factory = EngineFactory(f"sqlite:///{database_path}")
+        self._files = FileEngine(self.workspace)
         from .firmware.versions.schema import prepare_schema
 
-        prepare_schema(factory)
+        prepare_schema(self._factory)
         self._heartbeat = Heartbeat()
         from .firmware import create_job_boards
 
-        self._job_boards = create_job_boards(factory, self._heartbeat)
+        self._job_boards = create_job_boards(
+            self._factory,
+            self._heartbeat,
+            files=self._files,
+        )
         self._docks: dict[Slot, OrDock | AndDock] = {}
         self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
         self._lock = threading.RLock()

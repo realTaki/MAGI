@@ -18,12 +18,12 @@ from ...base.time import BaseTime
 class Conversation(BaseRecord):
     """One row in ConversationBook.
 
-    ``contact_id`` identifies the channel-independent actor. ``channel`` and
+    ``owner_contact_id`` identifies the channel-independent owner. ``channel`` and
     ``delivery_address`` identify the transport endpoint for this conversation;
     no channel-specific identity is stored on Contact.
 
     delivery_address: where replies go on this channel
-    contact_id: participating Contact.id
+    owner_contact_id: owner Contact.id
     channel: transport/channel name
     title: optional display name
     summary: compacted summary
@@ -31,7 +31,7 @@ class Conversation(BaseRecord):
     """
 
     delivery_address: str
-    contact_id: int
+    owner_contact_id: int
     channel: str
     title: str = ""
     summary: str = ""
@@ -42,7 +42,7 @@ class ConversationRow(BaseRecordMixin):
     __tablename__ = "books_conversations"
 
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
-    contact_id: Mapped[int] = mapped_column(
+    owner_contact_id: Mapped[int] = mapped_column(
         ForeignKey("books_contacts.id", ondelete="RESTRICT"), nullable=False
     )
     channel: Mapped[str] = mapped_column(Text, nullable=False)

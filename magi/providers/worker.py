@@ -1,37 +1,13 @@
-"""ProvidersWorker — bus 上唯一的 LLM 调用执行点。
+"""vNext provider worker — the sole owner of vendor SDK calls.
 
-设计原则
-========
+The launcher attaches the worker to a ``BusForWorker`` slice. It never sees a
+Book, ORM session, engine, or the old Runtime BUS. Configuration and accounting
+cross the boundary through vNext Firmware Jobs; its static capability defaults
+use the dedicated ``BusForWorker.boost_default_settings`` API.
 
-- **只依赖 bus**。老的 bus store / StreamHub / chat_notify_jobs 一概
-  不碰。Agent 暂时不会感知 LLM 完成事件（等它迁到 bus 再说）。
-
-- **配置变更单一触发**：worker 只在 claim 到
-  ``bus.change_provider_config_job_board`` 上的 job 时才重建
-  SDK client。``publish()`` 已经 self-contained write 了
-  ``settings_book``，调用方 publish 一次 = 改 settings + 排队。
-  worker 不做漂移轮询 —— 避免 DB 一变就热 build、紧接着
-  claim 到 job 又 rebuild 的双重重置。
-
-- **dumb invoker**。Worker 不知道这次调用来自 agent turn /
-  compaction / auto_title —— 全部统一走 :class:`CallLLMJob` → SDK →
-  :class:`CallLLMResult`。调用方需要区分由调用方在自己的层做。
-
-- **stream = async iterator**。``provider.stream()`` 返回
-  ``AsyncIterator[LLMStreamEvent]``，worker 内部 iterate 聚合文本
-  和 tool_use，最后写一个 :class:`CallLLMResult`。不需要任何外部
-  消息队列（StreamHub 已退役）。
-
-- **provider 列表 publish**：startup 时 worker 把当前代码支持的
-  provider id 列表写到 ``bus.settings``（key ``providers.options``），
-  WebUI 从 Book 读，不 import :mod:`magi.providers`。
-
-入队 helper
-===========
-
-旧的 :func:`enqueue_llm_job` helper 已删除。调用方直接
-``bus.llm_job_board.publish(CallLLMJob(...))``。Agent / tool 等模块
-目前还在老 bus 上，会暂时坏掉——按 user 指示"以后再修"。
+Provider SDKs are async while vNext BaseWorker is synchronous, so this
+worker owns one event-loop thread for its claim loop. That thread starts
+on attach and stops on detach.
 """
 
 from __future__ import annotations
@@ -39,18 +15,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any
+import threading
+from typing import Any
 
-from magi.bus.firmwares.jobs import (
+from magi.new_bus import (
+    BaseWorker,
+    BusForWorker,
     CallLLMJob,
     CallLLMResult,
-    ChangeProviderConfigJob,
-    ChangeProviderConfigResult,
+    ChangeProviderJob,
+    ChangeProviderResult,
+    GetSettingJob,
+    JobStatus,
     LLMErrorCode,
+    RecordTokenUsageJob,
 )
-from magi.bus.bases.job import JobStatus
-from magi.providers.base import LLMProvider, LLMStreamEvent
+from magi.providers.base import LLMProvider
 from magi.providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
@@ -59,20 +39,27 @@ from magi.providers.errors import (
     LLMNotConfiguredError,
     LLMRateLimitError,
 )
-from magi.runtime_worker import RuntimeWorker
-
-if TYPE_CHECKING:
-    from magi.bus import Bus
+from magi.providers.requiredSlots import REQUIRED_SLOTS
 
 logger = logging.getLogger("magi.providers.worker")
 
-def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
-    """Map a provider-side exception to a stable :class:`LLMErrorCode`.
+PROVIDER_NAME_KEY = "provider.name"
+PROVIDER_API_KEY_KEY = "provider.api_key"
+PROVIDER_MODEL_KEY = "provider.model"
 
-    Closed mapping — any class not listed collapses to
-    :attr:`LLMErrorCode.UNKNOWN`. The original class name stays
-    on :attr:`CallLLMResult.error` for diagnostics.
-    """
+_PROVIDER_OPTIONS: list[dict[str, str]] = [
+    {"provider": "claude", "model": "claude-fable-5"},
+    {"provider": "claude", "model": "claude-opus-5"},
+    {"provider": "minimax-global", "model": "MiniMax-M3"},
+    {"provider": "minimax-cn", "model": "MiniMax-M3"},
+    {"provider": "openai", "model": "gpt-5.6-sol"},
+    {"provider": "openai", "model": "gpt-5.6-terra"},
+    {"provider": "openai", "model": "gpt-5.6-luna"},
+]
+
+
+def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
+    """Translate provider-private errors to the public Firmware enum."""
     if isinstance(exc, LLMNotConfiguredError):
         return LLMErrorCode.CREDENTIALS_REQUIRED
     if isinstance(exc, LLMAuthError):
@@ -85,317 +72,193 @@ def _map_exception_to_code(exc: BaseException) -> LLMErrorCode:
         return LLMErrorCode.CONTEXT_TOO_LONG
     return LLMErrorCode.UNKNOWN
 
-# Setting key under which the worker publishes the supported-provider
-# list (id + human label). WebUI reads this from ``bus.settings_book``
-# — it never imports :mod:`magi.providers` for the dropdown source.
-_PROVIDERS_KEY = "providers.options"
 
-# The provider-list payload is code-defined: it never changes between
-# worker reloads, so writing it once at startup is enough. If a new
-# provider ships, the next worker start re-publishes.
-_PROVIDER_OPTIONS: list[dict[str, str]] = [
-    {"value": "claude", "label": "Anthropic (Claude)"},
-    {"value": "minimax-global", "label": "Minimax (Global)"},
-    {"value": "minimax-cn", "label": "Minimax (China)"},
-    {"value": "openai", "label": "OpenAI"},
-]
+class ProvidersWorker(BaseWorker):
+    """Claim vNext provider jobs and invoke the configured SDK client.
 
-
-class ProvidersWorker(RuntimeWorker):
-    """Consumer that owns every LLM API call in a MAGI process.
-
-    Receives a fully-wired :class:`Bus` via constructor injection.
+    A Runtime initially has exactly one provider worker. Multiple workers
+    require a durable configuration revision so every cached client sees a
+    ``ChangeProviderJob``; Launcher must not attach more than one until then.
     """
 
     worker_name = "providers"
+    required_slots = REQUIRED_SLOTS
 
-    def __init__(
-        self,
-        bus: Bus,
-        *,
-        poll_seconds: float = 0.25,
-        concurrency: int | None = None,
-    ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
-
-        # Cached LLM client + the typed error that prevented us from
-        # building one. The cache is refreshed only on a claimed
-        # ``ChangeProviderConfigJob`` — never by drift polling.
+    def __init__(self, *, poll_seconds: float = 0.25) -> None:
+        super().__init__()
+        self._poll_seconds = poll_seconds
         self._provider: LLMProvider | None = None
         self._provider_error: LLMError | None = None
+        self._loop_thread: threading.Thread | None = None
+        self._stop_requested = threading.Event()
+        self._ready = threading.Event()
 
-    async def on_start(self) -> None:
-        # Publish supported-provider list to bus.settings so the
-        # WebUI can read it from a Book without importing
-        # :mod:`magi.providers`. Fire-and-forget — failure here
-        # doesn't block boot.
-        await self.call(self._publish_provider_options)
+    def attach(self, bus_for_worker: BusForWorker) -> bool:
+        if not super().attach(bus_for_worker):
+            return False
+        self._boost_default_settings()
+        self._stop_requested.clear()
+        self._ready.clear()
+        self._loop_thread = threading.Thread(
+            target=self._thread_main,
+            name=f"magi-{self.worker_id}-providers",
+            daemon=True,
+        )
+        self._loop_thread.start()
+        if not self._ready.wait(timeout=5.0) or not self._loop_thread.is_alive():
+            self.detach()
+            return False
+        return True
 
-        # Build the cached provider client from current config.
-        await self.call(self._rebuild_provider)
-
-    async def on_stopped(self) -> None:
+    def detach(self) -> None:
+        self._stop_requested.set()
+        thread = self._loop_thread
+        self._loop_thread = None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=self._poll_seconds + 1.0)
         self._provider = None
         self._provider_error = None
+        super().detach()
 
-    # ----- main loop ----------------------------------------------------
+    def _thread_main(self) -> None:
+        try:
+            asyncio.run(self._run())
+        except Exception:  # noqa: BLE001 -- a worker must not kill Launcher
+            logger.exception("providers worker stopped unexpectedly")
+        finally:
+            self._ready.set()
 
     async def _run(self) -> None:
-        while not self._stopping:
-            # 1. Drain any explicitly-published config-change job.
-            #    The api channel doesn't publish yet (still on old
-            #    bus), but this is the future hook.
-            cfg_job = await self.call(
-                self.bus.change_provider_config_job_board.claim,
-                worker_id=self.worker_id,
-            )
-            if cfg_job is not None:
-                await self._handle_config_job(cfg_job)
-                continue
-
-            # 2. Reserve local capacity before claiming one LLM job.
-            await self.reserve_capacity()
+        self._rebuild_provider()
+        self._ready.set()
+        while not self._stop_requested.is_set():
             try:
-                job = await self.call(
-                    self.bus.llm_job_board.claim,
-                    worker_id=self.worker_id,
-                )
-            except Exception:
-                self.release_capacity()
-                logger.exception("providers worker: claim failed")
-                await asyncio.sleep(self.poll_seconds)
-                continue
-            if job is None:
-                self.release_capacity()
-                await asyncio.sleep(self.poll_seconds)
-                continue
+                config_job = self._change_provider_board().claim()
+                if config_job is not None:
+                    self._handle_config_job(config_job)
+                    continue
+                llm_job = self._llm_board().claim()
+                if llm_job is not None:
+                    await self._invoke_safe(llm_job)
+                    continue
+            except Exception:  # noqa: BLE001 -- retry after a BUS failure
+                logger.exception("providers worker: BUS operation failed")
+            await asyncio.sleep(self._poll_seconds)
 
-            self.spawn_reserved(
-                self._invoke_safe(job),
-                name=f"provider-job-{job.job_id}",
-            )
+    # -- BUS helpers -----------------------------------------------------
 
-    # ----- config change -------------------------------------------------
+    def _llm_board(self):
+        assert self.bus is not None
+        return self.bus.board(CallLLMJob)
 
-    async def _handle_config_job(self, job: ChangeProviderConfigJob) -> None:
-        """Apply a config-change job to the cached provider.
+    def _change_provider_board(self):
+        assert self.bus is not None
+        return self.bus.board(ChangeProviderJob)
 
-        ``provider`` / ``api_key`` change the SDK client (vendor,
-        base_url, auth) and require a full rebuild via
-        :meth:`_rebuild_provider`. ``model`` is only a per-call
-        parameter on the SDK — the SDK clients (Anthropic / OpenAI)
-        read it from ``self.model`` at every call, so a model-only
-        change can be propagated in place via :meth:`_update_model`,
-        skipping the cost of tearing down the HTTP connection pool.
-        """
-        if job.provider is not None or job.api_key is not None:
-            logger.info(
-                "providers worker: changeProviderConfig (provider/auth) — rebuilding client"
-            )
-            await self.call(self._rebuild_provider)
-        elif job.model is not None and self._provider is not None:
-            # Pure model change: the SDK client is unaffected.
-            await self.call(self._update_model, job.model)
-        else:
-            # Either model came in without a cached provider (try
-            # to bootstrap from the freshly-written settings_book),
-            # or no fields are set at all. Rebuild either way —
-            # it's cheap and matches the previously-missing-then-
-            # fixed state.
-            logger.info(
-                "providers worker: changeProviderConfig (bootstrap / no-op) — rebuilding client"
-            )
-            await self.call(self._rebuild_provider)
+    def _setting_value(self, key: str) -> str | None:
+        """Read one setting only through the Firmware query Job."""
+        assert self.bus is not None
+        board = self.bus.board(GetSettingJob)
+        job_id = board.publish(GetSettingJob(key=key))
+        result = board.get_result(job_id)
+        if result is None or result.status is not JobStatus.COMPLETED:
+            return None
+        return result.value
 
-        if self._provider is not None:
-            result = ChangeProviderConfigResult(job_id=job.job_id, status=JobStatus.COMPLETED)
-        else:
-            result = ChangeProviderConfigResult(
-                job_id=job.job_id,
-                status=JobStatus.FAILED,
-                error=str(self._provider_error) if self._provider_error else "unknown",
-            )
-        try:
-            await self.call(
-                self.bus.change_provider_config_job_board.submit_result,
-                job_id=job.job_id,
-                worker_id=self.worker_id,
-                result=result,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "providers worker: failed to submit changeProviderConfig result for %s",
-                job.job_id,
-            )
+    # -- configuration ---------------------------------------------------
+
+    def _boost_default_settings(self) -> None:
+        assert self.bus is not None
+        self.bus.boost_default_settings(
+            worker_name=self.worker_name,
+            settings={
+                "options": json.dumps(_PROVIDER_OPTIONS, ensure_ascii=False),
+            },
+        )
 
     def _rebuild_provider(self) -> None:
-        """(Re)build the cached :class:`LLMProvider` from current config.
-
-        Only invoked when the incoming config-change job touches
-        ``provider`` or ``api_key`` — both seal the SDK client
-        (vendor, base_url, auth).  A ``model``-only change is
-        fast-pathed through :meth:`_update_model` because the SDK
-        clients only read ``model`` per call.
-
-        Never raises: a missing / invalid config logs once and leaves
-        ``self._provider = None`` so the next claimed job settles
-        with the operator-facing envelope instead of crashing the
-        worker.
-        """
-        from magi.providers import get_provider
-
+        """Build the cached SDK client from vNext Settings Firmware."""
         try:
-            provider = get_provider(bus=self.bus)
+            from magi.providers.factory import get_provider
+
+            provider = get_provider(
+                provider_name=self._setting_value(PROVIDER_NAME_KEY),
+                api_key=self._setting_value(PROVIDER_API_KEY_KEY),
+                model=self._setting_value(PROVIDER_MODEL_KEY),
+            )
         except LLMNotConfiguredError as exc:
             self._provider = None
             self._provider_error = exc
-            logger.warning(
-                "providers worker: no LLM configured (%s); jobs will fail-fast",
-                exc,
-            )
+            logger.warning("providers worker: no LLM configured (%s)", exc)
         except LLMError as exc:
             self._provider = None
             self._provider_error = exc
-            logger.warning(
-                "providers worker: cannot build LLM (%s); jobs will fail-fast",
-                exc,
-            )
+            logger.warning("providers worker: cannot build LLM (%s)", exc)
+        except Exception as exc:  # noqa: BLE001 -- missing extras must not kill the loop
+            self._provider = None
+            self._provider_error = LLMError(str(exc) or type(exc).__name__)
+            logger.warning("providers worker: cannot build LLM (%s)", exc)
         else:
             self._provider = provider
             self._provider_error = None
-            logger.info(
-                "providers worker: cached LLM client (%s)",
-                type(provider).__name__,
+            logger.info("providers worker: cached LLM client (%s)", type(provider).__name__)
+
+    def _handle_config_job(self, job: ChangeProviderJob) -> None:
+        self._rebuild_provider()
+        if self._provider is None:
+            result = ChangeProviderResult(
+                id=job.id,
+                status=JobStatus.FAILED,
+                error=str(self._provider_error or "unknown provider configuration error"),
             )
+        else:
+            result = ChangeProviderResult(id=job.id)
+        if not self._change_provider_board().submit_result(result):
+            logger.warning("providers worker: failed to submit config result for %s", job.id)
 
-    def _update_model(self, model: str) -> None:
-        """Swap ``provider.model`` on the cached provider in place.
-
-        The SDK clients (Anthropic / OpenAI) only read ``model`` per
-        call, so a model change does not require destroying the
-        client — that would tear down the HTTP connection pool
-        for what's effectively a string swap.
-
-        The caller is expected to have already verified
-        ``self._provider is not None``; the assert exists so a
-        future refactor that breaks that invariant fails loudly
-        instead of silently AttributeError-ing.
-        """
-        assert self._provider is not None, (
-            "_update_model requires a cached provider; caller must guard before calling"
-        )
-        self._provider.model = model
-        logger.info(
-            "providers worker: updated cached model to %r (no rebuild)",
-            model,
-        )
-
-    # ----- provider-options publishing ----------------------------------
-
-    def _publish_provider_options(self) -> None:
-        """Write supported-provider list to ``bus.settings_book``.
-
-        The data is code-defined: a new provider ships when this
-        module is updated, so re-publishing on every worker start is
-        enough — no live reload needed. WebUI reads this key from
-        the same ``settings_book`` and never imports
-        :mod:`magi.providers`.
-        """
-        sb = getattr(self.bus, "settings_book", None)
-        if sb is None:
-            return
-        try:
-            sb.set(
-                key=_PROVIDERS_KEY,
-                value=json.dumps(_PROVIDER_OPTIONS, ensure_ascii=False),
-            )
-            logger.info(
-                "providers worker: published known providers to bus.settings_book[%s]",
-                _PROVIDERS_KEY,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("providers worker: failed to publish known providers")
-
-    # ----- LLM invocation -----------------------------------------------
+    # -- inference -------------------------------------------------------
 
     async def _invoke_safe(self, job: CallLLMJob) -> None:
         try:
             await self._invoke_provider(job)
         except asyncio.CancelledError:
-            await self._safe_submit_failure(
+            self._submit_llm_failure(
                 job,
                 error_code=LLMErrorCode.RUN_CANCELLED,
                 error_detail="providers worker cancelled",
             )
             raise
-        except Exception as exc:  # noqa: BLE001 -- worker MUST NOT crash
-            logger.exception(
-                "providers worker: unhandled exception on job %s",
-                job.job_id,
-            )
-            await self._safe_submit_failure(
+        except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
+            logger.exception("providers worker: unhandled exception on job %s", job.id)
+            self._submit_llm_failure(
                 job,
                 error_code=LLMErrorCode.PROVIDER_CRASHED,
                 error_detail=str(exc),
             )
+
     async def _invoke_provider(self, job: CallLLMJob) -> None:
-        """Deserialize the job, call the provider, submit the result."""
-        # Resolve cached provider.
         provider = self._provider
         if provider is None:
-            exc = self._provider_error or LLMNotConfiguredError(
+            missing = self._provider_error or LLMNotConfiguredError(
                 "MAGI runtime has no LLM provider configured"
             )
-            error_code = _map_exception_to_code(exc)
-            await self._safe_submit_failure(
+            self._submit_llm_failure(
                 job,
-                error_code=error_code,
-                error_detail=str(exc),
+                error_code=_map_exception_to_code(missing),
+                error_detail=str(missing),
             )
             return
 
-        messages = list(job.messages or [])
-        max_tokens = int(job.max_tokens or 1024)
-        tools = job.tools or None
-        streaming = bool(job.streaming)
-
-        # Wire format is ``list[dict]``; system prompt is the first
-        # message with ``role="system"`` (caller's convention).
-        system: str | None = None
-        chat_messages: list[dict] = []
-        for m in messages:
-            if not isinstance(m, dict):
-                continue
-            if system is None and m.get("role") == "system":
-                system = m.get("content") or ""
-                continue
-            chat_messages.append(m)
-
+        system, messages = self._split_system_message(job.messages)
         try:
-            if streaming:
-                result_dict = await self._consume_stream(
-                    provider=provider,
-                    system=system,
-                    messages=chat_messages,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                )
-            else:
-                result_dict = await provider.chat(
-                    system=system,
-                    messages=chat_messages,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                )
-        except LLMNotConfiguredError as exc:
-            await self._safe_submit_failure(
-                job,
-                error_code=LLMErrorCode.CREDENTIALS_REQUIRED,
-                error_detail=str(exc),
+            response = await provider.chat(
+                system=system,
+                messages=messages,
+                max_tokens=int(job.max_tokens or 1024),
+                tools=job.tools or None,
             )
-            return
         except LLMError as exc:
-            await self._safe_submit_failure(
+            self._submit_llm_failure(
                 job,
                 error_code=_map_exception_to_code(exc),
                 error_detail=str(exc),
@@ -403,189 +266,78 @@ class ProvidersWorker(RuntimeWorker):
             return
 
         result = CallLLMResult(
-            job_id=job.job_id,
-            status=JobStatus.COMPLETED,
-            response={
-                "text": result_dict.get("text") or "(empty reply)",
-                "thinking": result_dict.get("thinking"),
-                "tool_uses": list(result_dict.get("tool_uses") or []),
-                "raw_blocks": list(result_dict.get("raw_blocks") or []),
-            },
-            finish_reason=result_dict.get("stop_reason"),
-            model=result_dict.get("model") or "",
-            stream_key=result_dict.get("stream_key") or "",
+            id=job.id,
+            text=response.get("text") or "(empty reply)",
+            thinking=response.get("thinking"),
+            tool_uses=list(response.get("tool_uses") or []),
+            raw_blocks=list(response.get("raw_blocks") or []),
+            finish_reason=response.get("stop_reason"),
+            model=response.get("model") or provider.model,
         )
-        try:
-            await self.call(
-                self.bus.llm_job_board.submit_result,
-                job_id=job.job_id,
-                worker_id=self.worker_id,
-                result=result,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "providers worker: failed to submit llm result for %s",
-                job.job_id,
-            )
-        # Best-effort billing — the provider is closest to the usage
-        # data, so it records ``token_usage`` here instead of shipping
-        # the dict back to the agent for the same write.
-        await self.call(
-            self._record_token_usage,
-            job,
-            model=result.model,
-            usage=result_dict.get("usage"),
-        )
-
-    async def _consume_stream(
-        self,
-        *,
-        provider: LLMProvider,
-        system: str | None,
-        messages: list[dict],
-        max_tokens: int,
-        tools: list[dict] | None,
-    ) -> dict[str, Any]:
-        """Drain ``provider.stream()``, push text deltas to StreamHub.
-
-        Returns a dict with the complete result plus ``stream_key``
-        so the caller can read incremental text from
-        ``bus.stream_hub.get(stream_key)``.
-
-        Fallback semantics
-        ------------------
-
-        If the provider stream yields *no* ``usage.updated`` terminal
-        event (e.g. an SDK bug returns an empty stream, or the iterator
-        is closed before the trailing payload), we transparently fall
-        back to a non-streaming ``provider.chat()``. The caller is
-        billed for exactly one request — the failed stream attempt is
-        not separately charged — and the resulting dict carries no
-        ``stream_key`` because no incremental text was ever published.
-
-        Two caveats worth noting in the audit log:
-
-        - No timeout protection on this fallback today. The SDK call
-          uses its own ``timeout=30s`` (see provider base classes),
-          which bounds the wait but doesn't surface a distinct error
-          envelope for the fallback path.
-        - Callers relying on ``stream_key`` for live UX *will not see
-          anything* in that case. If that becomes a problem, swap the
-          fallback for a hard error instead.
-        """
-        import uuid as _uuid
-
-        stream_key = _uuid.uuid4().hex
-        q: asyncio.Queue[Any] = self.bus.stream_hub.create(stream_key)
-
-        iterator: AsyncIterator[LLMStreamEvent] = provider.stream(
-            system=system,
-            messages=messages,
-            max_tokens=max_tokens,
-            tools=tools,
-        )
-        terminal: dict[str, Any] | None = None
-        try:
-            async for event in iterator:
-                if event.kind == "text.delta":
-                    text = event.payload.get("text")
-                    if text:
-                        q.put_nowait(text)
-                elif event.kind == "usage.updated":
-                    terminal = event.payload
-        finally:
-            q.put_nowait(None)  # sentinel — consumer stops
-            self.bus.stream_hub.close(stream_key)
-
-        if terminal is None:
-            logger.warning(
-                "providers worker: stream yielded no usage.updated for stream_key=%s; "
-                "falling back to non-streaming chat()",
-                stream_key,
-            )
-            return await provider.chat(
-                system=system,
-                messages=messages,
-                max_tokens=max_tokens,
-                tools=tools,
-            )
-        return {
-            "text": terminal.get("text") or "(empty reply)",
-            "thinking": terminal.get("thinking"),
-            "tool_uses": list(terminal.get("tool_uses") or []),
-            "raw_blocks": list(terminal.get("raw_blocks") or []),
-            "model": terminal.get("model") or "",
-            "usage": terminal.get("usage"),
-            "stop_reason": terminal.get("stop_reason"),
-            "stream_key": stream_key,
-        }
-
-    # ----- helpers ------------------------------------------------------
-
-    def _record_token_usage(self, job: CallLLMJob, *, model: str, usage: dict | None) -> None:
-        """Write a best-effort ``token_usage`` billing row for a successful call.
-
-        The provider is the closest point to the usage data, so billing
-        lives here rather than shipping the dict back to the agent. The
-        ``contact_id`` billing owner rides on :class:`CallLLMJob` — ``None``
-        (e.g. a compaction call with no bound contact) falls back to ``0``.
-        Provider-specific metadata keys beyond ``input_tokens`` /
-        ``output_tokens`` are folded into the row's ``extra`` JSON.
-        """
-        if not usage:
+        if not self._llm_board().submit_result(result):
+            logger.warning("providers worker: failed to submit LLM result for %s", job.id)
             return
-        book = getattr(self.bus, "token_usage_book", None)
-        if book is None:
-            return
-        input_tokens = int(usage.get("input_tokens", 0) or 0)
-        output_tokens = int(usage.get("output_tokens", 0) or 0)
-        extra: dict[str, Any] = {
-            key: value
-            for key, value in usage.items()
-            if key not in {"input_tokens", "output_tokens"}
-        }
-        provider = model.split(":")[0] if model else "unknown"
-        try:
-            from magi.bus.firmwares.books.local.tokenUsageBook import TokenUsage
+        self._record_token_usage(job, provider=provider, model=result.model, usage=response.get("usage"))
 
-            book.add(TokenUsage(
-                contact_id=job.contact_id or 0,
-                provider=provider,
-                model=model or "",
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                extra=extra or None,
-            ))
-        except Exception:  # noqa: BLE001
-            logger.exception("providers worker: failed to record token usage for %s", job.job_id)
+    @staticmethod
+    def _split_system_message(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
+        system: str | None = None
+        non_system: list[dict[str, Any]] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if system is None and message.get("role") == "system":
+                system = str(message.get("content") or "")
+            else:
+                non_system.append(message)
+        return system, non_system
 
-    async def _safe_submit_failure(
+    def _submit_llm_failure(
         self,
         job: CallLLMJob,
         *,
         error_code: LLMErrorCode,
         error_detail: str,
     ) -> None:
-        """Submit a failed :class:`CallLLMResult`. Swallows errors so
-        the worker loop never crashes on a transient DB blip."""
         result = CallLLMResult(
-            job_id=job.job_id,
+            id=job.id,
             status=JobStatus.FAILED,
             error=error_detail,
             error_code=error_code,
         )
-        try:
-            await self.call(
-                self.bus.llm_job_board.submit_result,
-                job_id=job.job_id,
-                worker_id=self.worker_id,
-                result=result,
+        if not self._llm_board().submit_result(result):
+            logger.warning("providers worker: failed to submit failure for %s", job.id)
+
+    def _record_token_usage(
+        self,
+        job: CallLLMJob,
+        *,
+        provider: LLMProvider,
+        model: str,
+        usage: dict[str, Any] | None,
+    ) -> None:
+        if not usage:
+            return
+        assert self.bus is not None
+        board = self.bus.board(RecordTokenUsageJob)
+        job_id = board.publish(
+            RecordTokenUsageJob(
+                llm_job_id=job.id,
+                contact_id=job.contact_id,
+                provider=provider.name or "unknown",
+                model=model,
+                input_tokens=int(usage.get("input_tokens", 0) or 0),
+                output_tokens=int(usage.get("output_tokens", 0) or 0),
+                cache_hit_tokens=int(usage.get("cache_hit_tokens", 0) or 0),
+                cache_miss_tokens=int(usage.get("cache_miss_tokens", 0) or 0),
+                cache_write_tokens=int(usage.get("cache_write_tokens", 0) or 0),
+                thinking_tokens=int(usage.get("thinking_tokens", 0) or 0),
+                response_tokens=int(usage.get("response_tokens", 0) or 0),
             )
-        except Exception:  # noqa: BLE001
-            logger.exception(
-                "providers worker: failed to submit failure for %s",
-                job.job_id,
-            )
+        )
+        result = board.get_result(job_id)
+        if result is None or result.status is not JobStatus.COMPLETED:
+            logger.warning("providers worker: failed to record token usage for %s", job.id)
 
 
 __all__ = ["ProvidersWorker"]

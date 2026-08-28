@@ -5,12 +5,12 @@
 
 :class:`LLMProvider` 是 providers 包的**唯一**对外契约，运行时
 (:class:`~magi.providers.worker.ProvidersWorker`) 只通过它调用
-模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（bus
-的 :class:`~magi.bus.firmwares.jobs.callLLMJob.CallLLMJob` 上的
+模型，与具体厂商解耦。Wire format 直接是 ``list[dict]``（vNext
+:class:`~magi.new_bus.firmware.jobs.callLLMJob.CallLLMJob` 上的
 ``messages`` 字段），不再使用中间 dataclass；每个 provider 子类
 内部自行翻成 SDK 期望的形状。返回值是 plain dict，与
-:class:`~magi.bus.firmwares.jobs.callLLMJob.CallLLMResult.response` 直
-接对齐。
+:class:`~magi.new_bus.firmware.jobs.callLLMJob.CallLLMResult` 的结果
+字段直接对齐。
 
 设计要点
 ========
@@ -23,17 +23,12 @@
   表达。
 
 - :meth:`LLMProvider.stream` 返回 :class:`AsyncIterator` yield
-  :class:`LLMStreamEvent`。**调用方只有 worker 一个**——它 iterate
-  拿到增量事件，自己决定哪些字段推到 ``bus.stream_hub`` 管道
-  （v0 是 text delta 直推 plain string + None 哨兵）、哪些聚合
-  到最终 ``CallLLMResult``。provider 包不维护广播给多个订阅者的
-  message queue。
+  :class:`LLMStreamEvent`。这是 provider SDK 的可选能力；vNext
+  provider worker 的首个版本只调用 ``chat()``，直到 BUS 定义持久化
+  的 streaming 协议。provider 包本身不维护 message queue。
 
 - :class:`LLMStreamEvent` 是 **provider ↔ worker 之间**的 typed
-  契约，**不进 bus**。``bus.stream_hub`` 是 in-process named
-  pipe 传输层（``asyncio.Queue[Any]``），item 形状由 worker 决定。
-  外部消费者通过 ``CallLLMResult.stream_key`` 拿 hub 句柄，不
-  需要知道 ``LLMStreamEvent`` 存在。
+  契约，不属于 BUS Firmware，也不会出现在 vNext 的 Job result 中。
 
 - :class:`LLMStreamEvent.kind` 是 ``"text.delta"`` /
   ``"tool_arguments.delta"`` / ``"usage.updated"`` 之一。
@@ -76,7 +71,7 @@ class LLMProvider(ABC):
     子类需要：
 
     - 设置 :attr:`name`（实例 / 类属性均可）：canonical provider id，
-      出现在 audit row 和 ``bus.settings_book`` 配置里。
+      出现在 token audit row 和 provider 配置里。
     - 实现 :meth:`default_model`：调用方没显式传 model 时用这个。
     - 实现 :meth:`chat`：返回 dict（见模块 docstring）。
     - 可选覆写 :meth:`stream`：默认实现是 chat() 的退化版
