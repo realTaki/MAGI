@@ -61,9 +61,6 @@ def test_prompts_book_round_trip(tmp_path) -> None:
     assert book.get(key="agent/soul") == "custom soul"
     book.reset(key="agent/soul")
     assert book.get(key="agent/soul") == "newer default"
-    assert book.list() == ["agent/soul"]
-    assert book.delete(key="agent/soul") is True
-    assert book.get(key="agent/soul") == "newer default"
 
 
 def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
@@ -72,6 +69,7 @@ def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
     assert book.exists("web_lookup")
     body = book.read("web_lookup")
     assert "Web 检索" in body
+    assert book.read("does-not-exist") is None
     (book.directory / "web_lookup" / "SKILL.md").write_text("operator copy", encoding="utf-8")
     again = SkillsBook(FileEngine(tmp_path / "workspace"))
     assert again.read("web_lookup") == "operator copy"

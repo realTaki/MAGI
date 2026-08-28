@@ -72,9 +72,6 @@ from .messageJobs import (
     ListConversationMessagesResult,
 )
 from .promptJobs import (
-    DeletePromptJob,
-    DeletePromptJobBoard,
-    DeletePromptResult,
     GetPromptJob,
     GetPromptJobBoard,
     GetPromptResult,
@@ -141,9 +138,6 @@ __all__ = [
     "UpdateConversationSummaryJob",
     "UpdateConversationSummaryJobBoard",
     "UpdateConversationSummaryResult",
-    "DeletePromptJob",
-    "DeletePromptJobBoard",
-    "DeletePromptResult",
     "GetPromptJob",
     "GetPromptJobBoard",
     "GetPromptResult",
