@@ -995,7 +995,7 @@ REQUIRED_SLOTS = (
 )
 
 launcher.launch(ToolWorker)
-launcher.launch(one=SharedPingWorker, two=SharedPingWorker)
+launcher.launch(one=ClaimWorker, two=ClaimWorker)
 ```
 
 身份默认用类上的 `worker_name`；同一类插两块时用关键字参数命名。
@@ -1149,8 +1149,8 @@ BUS 不需要理解 Plugin topology。
 attach / detach 是 Worker 的操作，由 Launcher 代为按下。
 
 ```python
-with Launcher("sqlite://") as launcher:
-    launcher.launch(ProvidersWorker)  # 内部：找 Slot、装 Dock、worker.attach
+with Launcher() as launcher:
+    launcher.launch()  # 内部：读 constant、开 BUS、找 Slot、装 Dock、worker.attach
     launcher.shutdown()               # 内部：worker.detach
 ```
 

@@ -4,26 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from magi.launcher.constant import DATABASE_URL, WORKERS
 from magi.new_bus import BaseWorker, Bus, EngineFactory, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
 
 class Launcher:
-    """The control panel. Workers are the hardware; this launches and stops them.
+    """The control panel. It opens the BUS, then launches and stops workers.
 
-    ``launch(ProvidersWorker)`` instantiates the worker, seats its Slots, and
-    calls ``worker.attach``. ``shutdown()`` calls ``worker.detach`` on each one.
+    ``launch()`` reads the worker set from ``constant``, seats their Slots,
+    and calls ``worker.attach``. ``shutdown()`` calls ``worker.detach``.
     """
 
-    def __init__(self, bus: str | Bus) -> None:
-        """Open a Runtime BUS from a database URL, or wrap an existing BUS."""
-        if isinstance(bus, str):
-            self.bus = Bus(EngineFactory(bus))
-            self._owns_bus = True
-        else:
-            self.bus = bus
-            self._owns_bus = False
+    def __init__(self) -> None:
+        """Open the Runtime BUS from ``constant.DATABASE_URL``."""
+        self.bus = Bus(EngineFactory(DATABASE_URL))
         self._workers: dict[str, BaseWorker] = {}
 
     @property
@@ -31,9 +27,11 @@ class Launcher:
         return dict(self._workers)
 
     def launch(self, *worker_types: type[BaseWorker], **named: type[BaseWorker]) -> bool:
-        """Take these Worker classes, plug each one in, and keep them."""
+        """Plug in workers. With no arguments, uses ``constant.WORKERS``."""
         if self._workers:
             raise ValueError("already launched")
+        if not worker_types and not named:
+            worker_types = WORKERS
         items = self._items(*worker_types, **named)
         prepared = [
             (worker_id, worker_type(), worker_type.declared_slots())
@@ -63,8 +61,7 @@ class Launcher:
 
     def __exit__(self, *exc: object) -> None:
         self.shutdown()
-        if self._owns_bus:
-            self.bus.close()
+        self.bus.close()
 
     @staticmethod
     def _items(
