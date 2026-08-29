@@ -792,9 +792,17 @@ SlotTag(PingJob, "claim_post_publish")
 SlotTag(PingJob, "submit_post_result")
 ```
 
-BUS 将每个 `SlotTag` 解析成唯一的运行时 `Slot`。`Slot` 保存成员、心跳触达，
-以及需要时的 per-Worker JobId cursor 和 post-gate 缓存。JobBoard 使用 `@slot`
-标记一个 operation 是否属于可被 Worker 占用的 Slot。
+`slot.py` 中的模块级 `slots` 为每个 `(JobBoard, SlotTag)` 保存唯一的运行时
+`Slot`。它保存成员、心跳触达，以及需要时的 per-Worker JobId cursor 和
+post-gate 缓存。JobBoard 只声明 operation 的类型，例如：
+
+```python
+@slot(SlotType.CLAIM_POST)
+def claim_post_publish(...): ...
+```
+
+装饰器通过全局 `slots` 找到这个函数对应的运行时实例并执行；JobBoard 不持有
+Slot runtime，也不维护 cursor 或投票缓存。
 
 因此：
 
