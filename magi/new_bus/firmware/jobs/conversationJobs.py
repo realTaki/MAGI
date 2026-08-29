@@ -10,16 +10,16 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
-from ..books.contactBook import ContactRow
 from ..books.conversationBook import ConversationRow
 
 
 @dataclass
 class CreateConversationJob(BaseJob):
     delivery_address: str = ""
-    owner_contact_id: int = 0
     channel: str = ""
-    title: str = ""
+    topic: str = ""
+    instruction: str = ""
+    info: str = ""
 
 
 @dataclass
@@ -31,9 +31,10 @@ class CreateConversationJobRow(BaseJobRow):
     __tablename__ = "jobs_create_conversation"
 
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
-    owner_contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    info: Mapped[str] = mapped_column(Text, nullable=False, default="")
     conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
@@ -45,15 +46,12 @@ class CreateConversationJobBoard(
     row_cls = CreateConversationJobRow
 
     def _execute(self, session: Session, job: CreateConversationJob) -> CreateConversationResult:
-        if session.get(ContactRow, job.owner_contact_id) is None:
-            return CreateConversationResult(
-                status=JobStatus.FAILED, error=f"contact {job.owner_contact_id} does not exist"
-            )
         row = ConversationRow(
             delivery_address=job.delivery_address,
-            owner_contact_id=job.owner_contact_id,
             channel=job.channel,
-            title=job.title,
+            topic=job.topic,
+            instruction=job.instruction,
+            info=job.info,
         )
         session.add(row)
         session.flush()

@@ -15,9 +15,9 @@ from magi.new_bus import (
     CreateConversationJob,
     JobStatus,
     ListConversationMessagesJob,
-    MessageRole,
     UpdateConversationSummaryJob,
 )
+from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
 from magi.new_bus.firmware.books.conversationBook import ConversationBook
 from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJobBoard,
@@ -67,6 +67,8 @@ def test_conversation_record_keeps_transport_fields() -> None:
     assert {field.name for field in dataclasses.fields(Conversation)} >= {
         "delivery_address",
         "channel",
+        "instruction",
+        "info",
     }
 
 
@@ -74,7 +76,13 @@ def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
     bus = _bus(tmp_path)
     created = _publish(
         bus,
-        CreateConversationJob(delivery_address="tg:123", channel="tg", title="hello"),
+        CreateConversationJob(
+            delivery_address="tg:123",
+            channel="tg",
+            topic="hello",
+            instruction="a chat",
+            info="from telegram",
+        ),
     )
     outcome = _result(bus, created)
     assert outcome is not None
@@ -83,7 +91,9 @@ def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
     assert conversation is not None
     assert conversation.delivery_address == "tg:123"
     assert conversation.channel == "tg"
-    assert conversation.title == "hello"
+    assert conversation.topic == "hello"
+    assert conversation.instruction == "a chat"
+    assert conversation.info == "from telegram"
 
 
 def test_conversation_owner_migration_drops_legacy_owner_and_members(tmp_path) -> None:
@@ -288,7 +298,7 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
             first,
             AppendMessageJob(
                 conversation_id=created_result.conversation_id,
-                role=MessageRole.USER,
+                contact_id=ContactBook(first._factory).add(Contact(name="durable")),
                 content="persist me",
             ),
         )

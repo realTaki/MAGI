@@ -13,8 +13,8 @@ from magi.new_bus import (
     CreateConversationJob,
     JobStatus,
     ListConversationMessagesJob,
-    MessageRole,
 )
+from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
 from magi.new_bus.firmware.books.messageBook import MessageBook
 from magi.new_bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
 from magi.new_bus.firmware.jobs.messageJobs import (
@@ -50,6 +50,10 @@ def _result(bus: Bus, job: BaseJob):
     return _board(bus, job).get_result(job.id)
 
 
+def _contact_id(bus: Bus, name: str = "alice") -> int:
+    return ContactBook(bus._factory).add(Contact(name=name))
+
+
 def _conversation_id(bus: Bus) -> int:
     created = _publish(
         bus,
@@ -63,9 +67,10 @@ def _conversation_id(bus: Bus) -> int:
 
 def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> None:
     conversation_id = _conversation_id(bus)
+    speaker_id = _contact_id(bus)
     first = _publish(
         bus,
-        AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="hello"),
+        AppendMessageJob(conversation_id=conversation_id, contact_id=speaker_id, content="hello"),
     )
     appended = _result(bus, first)
     assert appended is not None
@@ -73,12 +78,16 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
     assert appended.message_id is not None
     message = MessageBook(bus._factory).get(appended.message_id)
     assert message is not None
-    assert message.role is MessageRole.USER
+    assert message.contact_id == speaker_id
     assert message.content == "hello"
 
     _publish(
         bus,
-        AppendMessageJob(conversation_id=conversation_id, role=MessageRole.ASSISTANT, content="hi"),
+        AppendMessageJob(
+            conversation_id=conversation_id,
+            contact_id=_contact_id(bus, "magi"),
+            content="hi",
+        ),
     )
     listed = _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
     transcript = _result(bus, listed)
@@ -88,14 +97,17 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
 
 def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -> None:
     conversation_id = _conversation_id(bus)
+    speaker_id = _contact_id(bus)
     first = _publish(
-        bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="old")
+        bus,
+        AppendMessageJob(conversation_id=conversation_id, contact_id=speaker_id, content="old"),
     )
     first_outcome = _result(bus, first)
     assert first_outcome is not None
     assert first_outcome.message_id is not None
     _publish(
-        bus, AppendMessageJob(conversation_id=conversation_id, role=MessageRole.USER, content="new")
+        bus,
+        AppendMessageJob(conversation_id=conversation_id, contact_id=speaker_id, content="new"),
     )
 
     archived = _publish(
@@ -121,12 +133,26 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
 
 
 def test_append_returns_failure_only_when_its_foreign_key_is_missing(bus: Bus) -> None:
-    missing = _publish(bus, AppendMessageJob(conversation_id=999, content="hello"))
+    speaker_id = _contact_id(bus)
+    conversation_id = _conversation_id(bus)
+    missing = _publish(
+        bus, AppendMessageJob(conversation_id=999, contact_id=speaker_id, content="hello")
+    )
     missing_result = _result(bus, missing)
     assert missing_result is not None
     assert missing_result.status is JobStatus.FAILED
 
-    empty = _publish(bus, AppendMessageJob(conversation_id=_conversation_id(bus), content="  "))
+    missing_contact = _publish(
+        bus, AppendMessageJob(conversation_id=conversation_id, contact_id=999, content="hello")
+    )
+    missing_contact_result = _result(bus, missing_contact)
+    assert missing_contact_result is not None
+    assert missing_contact_result.status is JobStatus.FAILED
+
+    empty = _publish(
+        bus,
+        AppendMessageJob(conversation_id=conversation_id, contact_id=speaker_id, content="  "),
+    )
     empty_result = _result(bus, empty)
     assert empty_result is not None
     assert empty_result.status is JobStatus.COMPLETED

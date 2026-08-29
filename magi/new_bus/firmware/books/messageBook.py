@@ -6,34 +6,26 @@ The record type :class:`Message` is the field list for this BaseBook.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
 from ...base.time import BaseTime, utcnow
 
 
-class MessageRole(StrEnum):
-    """The two durable speakers in a conversation transcript."""
-
-    USER = "user"
-    ASSISTANT = "assistant"
-
-
 @dataclass(kw_only=True)
 class Message(BaseRecord):
     """One row in MessageBook.
 
-    role: durable speaker (``user`` or ``assistant``)
+    contact_id: speaker Contact.id
     content: non-empty text
     conversation_id: optional Conversation.id
     timestamp: when the message was produced
     archived: hidden from the live transcript
     """
 
-    role: MessageRole
+    contact_id: int
     content: str
     conversation_id: int | None = None
     timestamp: BaseTime = field(default_factory=utcnow)
@@ -43,7 +35,9 @@ class Message(BaseRecord):
 class MessageRow(BaseRecordMixin):
     __tablename__ = "books_messages"
 
-    role: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("books_contacts.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     conversation_id: Mapped[int | None] = mapped_column(
         ForeignKey("books_conversations.id"), nullable=True

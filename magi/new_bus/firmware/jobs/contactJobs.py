@@ -22,8 +22,8 @@ def _valid_name(name: str) -> bool:
 @dataclass
 class CreateContactJob(BaseJob):
     name: str = ""
-    display_name: str | None = None
-    role: ContactRole = ContactRole.GUEST
+    nickname: str | None = None
+    role: ContactRole = ContactRole.STRANGER
 
 
 @dataclass
@@ -35,7 +35,7 @@ class CreateContactJobRow(BaseJobRow):
     __tablename__ = "jobs_create_contact"
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False)
     contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -52,7 +52,7 @@ class CreateContactJobBoard(
             return CreateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
         row = ContactRow(
             name=job.name.strip(),
-            display_name=job.display_name,
+            nickname=job.nickname,
             role=job.role.value,
             last_seen_at=utcnow(),
         )
@@ -123,8 +123,8 @@ class UpdateContactJob(BaseJob):
 
     contact_id: int = 0
     name: str = ""
-    display_name: str | None = None
-    role: ContactRole = ContactRole.GUEST
+    nickname: str | None = None
+    role: ContactRole = ContactRole.STRANGER
 
 
 @dataclass
@@ -137,7 +137,7 @@ class UpdateContactJobRow(BaseJobRow):
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False)
 
 
@@ -157,7 +157,7 @@ class UpdateContactJobBoard(
         if not _valid_name(job.name):
             return UpdateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
         row.name = job.name.strip()
-        row.display_name = job.display_name
+        row.nickname = job.nickname
         row.role = job.role.value
         return UpdateContactResult()
 

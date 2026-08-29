@@ -12,7 +12,7 @@ from ..base.heartbeat import Heartbeat
 from .books.contactBook import Contact, ContactRole
 from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
-from .books.messageBook import Message, MessageRole
+from .books.messageBook import Message
 from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
 from .books.skillsBook import SkillsBook
@@ -163,7 +163,6 @@ __all__ = [
     "ContactNote",
     "NoteKind",
     "Message",
-    "MessageRole",
     "Setting",
     "Task",
     "TaskSource",

@@ -10,6 +10,8 @@ from magi.new_bus import Contact, ContactRole
 @pytest.mark.parametrize(
     ("role", "value"),
     [
+        (ContactRole.AUTHORIZED, "authorized"),
+        (ContactRole.STRANGER, "stranger"),
         (ContactRole.MAGI, "magi"),
         (ContactRole.THIRD_PARTY_AGENT, "third_party_agent"),
     ],

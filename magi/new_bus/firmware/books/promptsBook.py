@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Final
 
 from ...base.BaseFileBook import BaseFileBook
@@ -10,8 +9,6 @@ from ...base.BaseFileBook import BaseFileBook
 KNOWN_PROMPTS: Final[dict[str, str]] = {
     "agent/soul": "Active workspace persona used for every agent turn.",
     "agent/defaults/soul": "AgentWorker upgrade-managed soul reset default.",
-    "agent/chat_titles": "Active system prompt for automatic conversation titles.",
-    "agent/defaults/chat_titles": "Upgrade-managed automatic-title reset default.",
     "agent/compaction": "Active system prompt for conversation compaction.",
     "agent/defaults/compaction": "Upgrade-managed compaction reset default.",
     "agent/skills_block": "Active header template for the available-skills block.",
@@ -21,10 +18,6 @@ KNOWN_PROMPTS: Final[dict[str, str]] = {
     "proactive/morning_brief": "Morning brief preset prompt.",
     "proactive/night_summary": "Night summary preset prompt.",
 }
-
-
-def _mtime(path) -> datetime:
-    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).replace(tzinfo=None)
 
 
 class PromptsBook(BaseFileBook):
@@ -46,8 +39,8 @@ class PromptsBook(BaseFileBook):
             except (FileNotFoundError, ValueError):
                 return None
 
-    def set(self, *, key: str, value: str) -> datetime:
-        """Atomically replace one prompt record and return its UTC mtime."""
+    def set(self, *, key: str, value: str) -> bool:
+        """Atomically replace one prompt record."""
         self._require_active_key(key)
         return self._set_exact(key=key, value=value)
 
@@ -60,12 +53,12 @@ class PromptsBook(BaseFileBook):
         self.set(key=key, value=value)
         return True
 
-    def reset(self, *, key: str) -> datetime:
+    def reset(self, *, key: str) -> bool:
         """Replace one active prompt with its current managed default."""
         try:
             return self.set(key=key, value=self._read_exact(self._default_key(active_key=key)))
-        except FileNotFoundError as error:
-            raise KeyError(f"no default prompt registered for {key!r}") from error
+        except FileNotFoundError:
+            return False
 
     @staticmethod
     def _file_name(key: str) -> str:
@@ -90,9 +83,9 @@ class PromptsBook(BaseFileBook):
         if cls._is_default_key(key):
             raise ValueError(f"default prompt key {key!r} is managed by PromptsBook")
 
-    def _set_exact(self, *, key: str, value: str) -> datetime:
-        path = self.write(self._file_name(key), value)
-        return _mtime(path)
+    def _set_exact(self, *, key: str, value: str) -> bool:
+        self.write(self._file_name(key), value)
+        return True
 
     def _read_exact(self, key: str) -> str:
         return self.read(self._file_name(key))
