@@ -213,7 +213,7 @@ def test_book_operation_waits_for_post_publish_approval(tmp_path) -> None:
         bus,
         CreateConversationJob(),
         worker_id=checker,
-        slots=("post_publish", "submit_post_publish"),
+        slots=("claim_post_publish", "submit_post_publish"),
     )
     created = _publish(
         bus,
@@ -224,9 +224,9 @@ def test_book_operation_waits_for_post_publish_approval(tmp_path) -> None:
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
     assert _result(bus, created) is None
 
-    pending_check = checker_board.post_publish()
+    pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
-    assert _board(bus, created).check_job_status(created.id) is JobStatus.HOOKING
+    assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
     assert checker_board.submit_post_publish(pending_check, BaseJobResult(status=JobStatus.PENDING))
     result = _result(bus, created)
     assert result is not None
@@ -241,7 +241,7 @@ def test_post_publish_rejection_prevents_book_operation(tmp_path) -> None:
         bus,
         CreateConversationJob(),
         worker_id=checker,
-        slots=("post_publish", "submit_post_publish"),
+        slots=("claim_post_publish", "submit_post_publish"),
     )
     created = _publish(
         bus,
@@ -249,7 +249,7 @@ def test_post_publish_rejection_prevents_book_operation(tmp_path) -> None:
             delivery_address="webui:rejected", channel="webui"
         ),
     )
-    pending_check = checker_board.post_publish()
+    pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
     assert checker_board.submit_post_publish(
         pending_check,
@@ -269,7 +269,7 @@ def test_post_publish_returns_false_for_an_invalid_decision(tmp_path) -> None:
         bus,
         CreateConversationJob(),
         worker_id=checker,
-        slots=("post_publish", "submit_post_publish"),
+        slots=("claim_post_publish", "submit_post_publish"),
     )
     created = _publish(
         bus,
@@ -277,10 +277,10 @@ def test_post_publish_returns_false_for_an_invalid_decision(tmp_path) -> None:
             delivery_address="webui:checked", channel="webui"
         ),
     )
-    pending_check = checker_board.post_publish()
+    pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
     assert not checker_board.submit_post_publish(pending_check, BaseJobResult())
-    assert _board(bus, created).check_job_status(created.id) is JobStatus.HOOKING
+    assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:

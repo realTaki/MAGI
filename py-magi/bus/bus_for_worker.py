@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlalchemy import select
 
 from .base.BaseJob import BaseJob, BaseJobResult, JobStatus
-from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.heartbeat import Heartbeat
 
@@ -27,8 +26,10 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
     def publish(self, job: JobT) -> int:
         return int(self._bus._invoke(self._worker_id, self._job_type, "publish", job) or 0)
 
-    def post_publish(self) -> JobT | None:
-        return cast(JobT | None, self._bus._invoke(self._worker_id, self._job_type, "post_publish"))
+    def claim_post_publish(self) -> JobT | None:
+        return cast(
+            JobT | None, self._bus._invoke(self._worker_id, self._job_type, "claim_post_publish")
+        )
 
     def submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
         return bool(
@@ -41,8 +42,10 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
     def submit_result(self, result: ResultT) -> bool:
         return bool(self._bus._invoke(self._worker_id, self._job_type, "submit_result", result))
 
-    def post_result(self) -> JobT | None:
-        return cast(JobT | None, self._bus._invoke(self._worker_id, self._job_type, "post_result"))
+    def claim_post_result(self) -> JobT | None:
+        return cast(
+            JobT | None, self._bus._invoke(self._worker_id, self._job_type, "claim_post_result")
+        )
 
     def submit_post_result(self, job_id: int, result: ResultT) -> bool:
         return bool(
@@ -90,13 +93,11 @@ class BusForWorker:
         bus: Bus,
         factory: EngineFactory,
         heartbeat: Heartbeat,
-        worker_docks: dict[str, set[OrDock | AndDock]],
         worker_id: str,
     ) -> None:
         self._bus = bus
         self._factory = factory
         self._heartbeat = heartbeat
-        self._worker_docks = worker_docks
         self.worker_id = worker_id
 
     def board[JobT: BaseJob](self, job_type: type[JobT]) -> JobBoardClient[JobT, Any]:
@@ -130,9 +131,7 @@ class BusForWorker:
         return True
 
     def heartbeat(self) -> bool:
-        if not self._heartbeat.heartbeat(self.worker_id):
-            return False
-        return all(dock.heartbeat(self.worker_id) for dock in self._worker_docks.get(self.worker_id, ()))
+        return self._heartbeat.heartbeat(self.worker_id)
 
     def is_alive(self) -> bool:
         return self._heartbeat.is_alive(self.worker_id)

@@ -125,10 +125,9 @@ MAGI-BUS 当前负责：
 - JobBoard；
 - Book Operation Job；
 - Job 生命周期；
-- Slot 定义与 ownership；
+- Slot 定义与 membership；
 - BusForWorker 与 JobBoardClient；
 - Worker liveness 与 Slot lease；
-- Dock routing mechanism；
 - SQLite / PostgreSQL 持久化；
 - FileBook 基础能力；
 - Firmware 加载；
@@ -166,7 +165,7 @@ BUS 不负责：
 ┌───────────────────────────────────────────────┐
 │                    BUS                        │
 │                                               │
-│      JobBoards / Slots / Docks / Heartbeat    │
+│        JobBoards / Slots / Heartbeat          │
 └───────────────────────┬───────────────────────┘
                         │
                         ▼
@@ -231,9 +230,6 @@ Heartbeat
 
 BusForWorker
 JobBoardClient
-
-OrDock
-AndDock
 
 EngineFactory
 SQLiteBackend
@@ -602,12 +598,10 @@ Result
 
 ```text
 PREPARING
-HOOKING
 PENDING
 CLAIMED
 EXECUTING
 SETTLING
-FINALIZING
 COMPLETED
 FAILED
 ```
@@ -659,11 +653,11 @@ PENDING → CLAIMED
 实际实现采用明确的 pull/submit Gate：
 
 ```text
-post_publish
+claim_post_publish
 submit_post_publish
 ```
 
-如果没有 Worker 占据 `post_publish`：
+如果没有 Worker attach `claim_post_publish`：
 
 ```text
 publish
@@ -674,7 +668,7 @@ PENDING
 
 Job 可以立即进入可执行状态。
 
-如果存在 `post_publish` Handler：
+如果存在 post-publish Worker：
 
 ```text
 publish
@@ -683,20 +677,20 @@ publish
 PREPARING
    │
    ▼
-post_publish()
+claim_post_publish()
    │
    ▼
-HOOKING
+PREPARING（可被所有 claim-post-publish Worker 读取）
    │
    ▼
-submit_post_publish()
+submit_post_publish()（所有 live submitter 都提交）
    │
    ├──── approve ──→ PENDING
    │
    └──── reject ───→ FAILED
 ```
 
-因此 `post_publish` 实际表示：
+因此 `claim_post_publish` 实际表示：
 
 > **Job 已经被记录，但在进入可执行队列之前进行检查。**
 
@@ -709,7 +703,7 @@ submit_post_publish()
 Worker Result 同样支持一个可选 Gate：
 
 ```text
-post_result
+claim_post_result
 submit_post_result
 ```
 
@@ -731,13 +725,13 @@ submit_result
 SETTLING
    │
    ▼
-post_result()
+claim_post_result()
    │
    ▼
-FINALIZING
+SETTLING（可被所有 claim-post-result Worker 读取）
    │
    ▼
-submit_post_result()
+submit_post_result()（所有 live submitter 都提交）
    │
    ├────→ COMPLETED
    └────→ FAILED
@@ -749,7 +743,7 @@ submit_post_result()
 
 # 19. OperateBookJob 与 Gate
 
-Book Operation Job 同样可以经过 `post_publish` Gate。
+Book Operation Job 同样可以经过 `claim_post_publish` Gate。
 
 例如：
 
@@ -763,7 +757,7 @@ CreateConversationJob
    PREPARING
        │
        ▼
- post_publish checker
+claim_post_publish checker
        │
        ├── FAILED
        │
@@ -794,7 +788,7 @@ Slot 不是 Firmware 中独立于 Job 的 Domain。
 ```text
 Slot(PingJob, "publish")
 Slot(PingJob, "claim")
-Slot(PingJob, "post_publish")
+Slot(PingJob, "claim_post_publish")
 Slot(PingJob, "submit_post_result")
 ```
 
@@ -815,13 +809,13 @@ JobBoard 使用 `@slot` 标记一个 operation 是否属于可被 Worker 占用�
 ```text
 publish
 
-post_publish
+claim_post_publish
 submit_post_publish
 
 claim
 submit_result
 
-post_result
+claim_post_result
 submit_post_result
 ```
 
@@ -837,135 +831,55 @@ list
 
 ---
 
-# 22. 统一单 Owner Slot 模型
+# 22. Slot 是多 Worker Membership
 
-当前实现选择：
-
-> **所有原始 Slot 都采用统一的单 owner 模型。**
-
-即：
+一个 Slot 可以由任意多个 Worker attach；BUS 不再为重复 Slot 仲裁 owner，也没有 Dock。
 
 ```text
-Slot
- │
- └── 0..1 owner
+Slot(Job, "publish") ── 0..n live Workers
 ```
 
-如果 Worker A 已经直接拥有：
-
-```text
-Slot(Job, "claim")
-```
-
-Worker B 不能直接获得同一个 Slot。
-
-BUS 不根据以下信息进行仲裁：
-
-- Plugin priority；
-- load order；
-- Plugin version；
-- random selection。
-
-直接 Slot 冲突会被拒绝。
-
-这种统一模型避免 BUS Core 同时维护 SINGLE/MULTI 两套 Slot ownership 语义。
+因此所有 attach `publish` 的 Worker 都可以直接入队；所有 attach `claim` 的
+Worker 都可尝试原子 `PENDING → CLAIMED`，但同一个 Job 仍然只有一个成功的
+claimant。
 
 ---
 
-# 23. Publish 也使用统一 Slot 模型
+# 23. Heartbeat 与 Slot Lease
 
-早期设计曾考虑：
-
-```text
-publish = MULTI
-control slots = SINGLE
-```
-
-当前实现最终选择：
-
-```text
-all raw slots = single owner
-```
-
-因此多个 Publisher 不直接同时拥有 `publish` Slot，而是：
-
-```text
-Publisher A ─┐
-Publisher B ─┼── OrDock ─── publish Slot
-Publisher C ─┘
-```
-
-从 Worker 使用效果来看仍然可以有多个 Publisher，但 BUS Core 不需要为 publish 建立特殊 cardinality。
-
-> **多 Worker 共享问题统一交给 Dock。**
-
----
-
-# 24. Heartbeat 与 Slot Lease
-
-当前 Slot ownership 由 BUS-private `Heartbeat` 管理。
-
-Heartbeat 保存：
+BUS-private `Heartbeat` 保存：
 
 ```text
 worker_id → lease expiration
-Slot      → owner
+Slot      → live Worker set
 ```
 
-Worker attach 成功后获得 Slot，之后在调用 Slot 或主动 heartbeat 时刷新 lease。
-
-当前 lease 很短，其目的不是做网络健康检查，而是：
-
-> **防止一个已经停止活动的 Worker 永久占据 Slot。**
-
-如果 Worker lease 过期：
-
-```text
-Worker expires
-      │
-      ▼
-Slot ownership released
-```
-
-其他 Worker 可以重新 attach。
-
-因此 Heartbeat 是当前单进程 Runtime 中的 Slot liveness/ownership 机制，并不意味着 BUS 必须采用多进程部署。
+Worker 调用 Slot 或主动 heartbeat 会刷新自己的 lease。过期 Worker 会从其所有
+Slot membership 中移除，不会影响仍存活的其他成员。
 
 ---
 
-# 25. Hook 消失后的 Job 自动释放
+# 24. Post Gate 的 all-members 提交
 
-Heartbeat 还用于避免失效 Hook 永久卡住 Job。
-
-例如 Job 当前处于：
-
-```text
-PREPARING / HOOKING
-```
-
-等待 post-publish Handler。
-
-如果对应 Slot 已经没有 live owner，JobBoard 可以自动将其释放为：
+`claim_post_publish` 与 `claim_post_result` 不改变 JobStatus；每个 attach 的
+Worker 都可以读取同一个 PREPARING 或 SETTLING Job。对应的 `submit_post_*`
+在第一次提交时快照当前 live submitter，并收集每个 Worker 的一份结果。
 
 ```text
-PENDING
+所有预期 Worker 都提交 → 结算
+任意一个 FAILED        → FAILED，合并 error
+全部非 FAILED          → PENDING / COMPLETED
 ```
 
-同样，如果 Result 处于：
+过期 Worker 会从尚未结算的预期集合移除；若整个 claim-post Slot 已无人存活，
+JobBoard 会直接释放 Gate，避免 Job 永久卡住。
 
-```text
-SETTLING / FINALIZING
-```
+---
 
-而 post-result Hook 已经不存在，则 JobBoard 可以根据已有 result/error 自动进入：
+# 25. `submit_result` 是 first-result-wins
 
-```text
-COMPLETED
-/
-FAILED
-```
-
-因此一个失效 Hook 不会永久冻结 Job 生命周期。
+`claim` 后第一个有效 `submit_result` 写入最终结果（或进入 post-result Gate）。
+后续提交被忽略，既不覆盖第一个结果，也不会重新触发 post-result Gate。
 
 ---
 

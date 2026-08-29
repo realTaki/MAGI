@@ -6,13 +6,11 @@ import pytest
 
 from launcher import Launcher
 from bus import (
-    AndDock,
     BaseWorker,
     CallLLMJob,
     CallLLMResult,
     JobStatus,
     LLMErrorCode,
-    OrDock,
     Slot,
 )
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
@@ -72,9 +70,6 @@ def test_launcher_launches_provider_worker() -> None:
         worker = launcher.workers["providers"]
         assert isinstance(worker, ProvidersWorker)
         assert worker.is_alive()
-        for slot in PROVIDER_SLOTS:
-            assert slot not in launcher.bus._docks
-
         publisher = attach_board(
             launcher.bus,
             CallLLMJobBoard,
@@ -96,7 +91,7 @@ def test_launcher_launches_provider_worker() -> None:
         assert launcher.workers == {}
 
 
-def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
+def test_launcher_attaches_workers_with_shared_slots(monkeypatch) -> None:
     monkeypatch.setattr(
         "launcher.launcher.WORKERS", (SharedLLMWorker, SecondSharedLLMWorker)
     )
@@ -105,9 +100,6 @@ def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
         workers = launcher.workers
         assert workers["shared-one"].is_alive()
         assert workers["shared-two"].is_alive()
-        for name in ("publish", "claim", "submit_result"):
-            assert isinstance(launcher.bus._docks[Slot(CallLLMJob, name)], OrDock)
-
         one = workers["shared-one"].bus
         two = workers["shared-two"].bus
         assert one is not None and two is not None
@@ -118,18 +110,12 @@ def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
         assert one.board(CallLLMJob).submit_result(CallLLMResult(id=claimed.id))
 
 
-def test_launcher_selects_and_dock_for_post_submit_slots(monkeypatch) -> None:
+def test_launcher_attaches_workers_with_shared_post_submit_slot(monkeypatch) -> None:
     monkeypatch.setattr("launcher.launcher.WORKERS", (GateWorker, SecondGateWorker))
     with Launcher() as launcher:
         assert launcher.run()
-        assert isinstance(launcher.bus._docks[Slot(CallLLMJob, "submit_post_result")], AndDock)
-
-
-def test_single_worker_does_not_install_a_dock(monkeypatch) -> None:
-    monkeypatch.setattr("launcher.launcher.WORKERS", (SharedLLMWorker,))
-    with Launcher() as launcher:
-        assert launcher.run()
-        assert Slot(CallLLMJob, "publish") not in launcher.bus._docks
+        assert launcher.workers["gate-one"].is_alive()
+        assert launcher.workers["gate-two"].is_alive()
 
 
 def test_run_rolls_back_when_a_worker_refuses(monkeypatch) -> None:
