@@ -114,6 +114,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 
 # -----------------------------------------------------------------------------
 # pyright / Pylance — exclude directories that don't need to be indexed.

@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def test_loop_module_does_not_exist() -> None:
     """The legacy ``magi/agent/loop.py`` module must remain gone."""
-    loop_path = REPO_ROOT / "magi" / "agent" / "loop.py"
+    loop_path = REPO_ROOT / "agent" / "loop.py"
     assert not loop_path.exists(), (
         f"{loop_path} re-introduces the legacy single-turn loop; "
         "this is the post-Phase-6 cleanup. Move all logic to "
@@ -47,7 +47,7 @@ def test_agent_init_does_not_re_export_legacy_symbols() -> None:
     ``agent.loop`` module. Attribute lookups must raise
     ``AttributeError``.
     """
-    init_path = REPO_ROOT / "magi" / "agent" / "__init__.py"
+    init_path = REPO_ROOT / "agent" / "__init__.py"
     tree = ast.parse(init_path.read_text())
     has_lazy_attr = any(
         isinstance(node, ast.FunctionDef) and node.name == "__getattr__" for node in ast.walk(tree)
@@ -85,7 +85,7 @@ def test_handle_message_not_in_legacy_agent_loop_path() -> None:
     # Static check: walk every Python file under magi/agent/ and
     # confirm no module imports the legacy path.
     offenders: list[str] = []
-    for path in (REPO_ROOT / "magi" / "agent").rglob("*.py"):
+    for path in (REPO_ROOT / "agent").rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         src = path.read_text()

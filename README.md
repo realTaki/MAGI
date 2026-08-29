@@ -67,9 +67,8 @@ ts-magi/   TypeScript BUS playground and its launcher
 app/       Operator UI (browser now; desktop shell later)
 ```
 
-The three projects are siblings. Python production code remains under
-`py-magi/magi/`; moving that project directory does not change imports such as
-`from magi.bus import Bus`.
+The three projects are siblings. Python production code lives at the
+`py-magi/` project root (`from bus import Bus`, `from startup.cli import main`).
 
 ## Toward governed collective intelligence
 

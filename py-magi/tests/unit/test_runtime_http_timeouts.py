@@ -119,7 +119,7 @@ def test_the_generic_proxy_keeps_a_read_budget_for_third_party_calls() -> None:
 
 def _telegram_socket_timeout() -> float:
     """The ``urlopen(..., timeout=N)`` budget in the Telegram helpers."""
-    source = pathlib.Path("magi/channels/telegram/bot.py").read_text(encoding="utf-8")
+    source = pathlib.Path("channels/telegram/bot.py").read_text(encoding="utf-8")
     timeouts = {float(m) for m in re.findall(r"urlopen\([^)]*timeout=(\d+(?:\.\d+)?)", source)}
     assert timeouts, "expected urlopen(..., timeout=N) in the Telegram helpers"
     return max(timeouts)
@@ -150,13 +150,13 @@ def test_telegram_backed_call_sites_use_the_relay_budget() -> None:
     """The two legs that reach api.telegram.org must not be on the tight
     control budget. Checked against the source so a future edit that swaps
     the constant back is caught here."""
-    control_runtime = pathlib.Path("magi/channels/api/control_runtime.py").read_text(
+    control_runtime = pathlib.Path("channels/api/control_runtime.py").read_text(
         encoding="utf-8"
     )
     assert "AsyncClient(timeout=RELAY_TIMEOUT)" in control_runtime
     assert "CONTROL_TIMEOUT" not in control_runtime
 
-    auth = pathlib.Path("magi/channels/api/auth.py").read_text(encoding="utf-8")
+    auth = pathlib.Path("channels/api/auth.py").read_text(encoding="utf-8")
     send_login_code = auth[auth.index("async def target_send_login_code") :][:900]
     assert "timeout=RELAY_TIMEOUT" in send_login_code
 

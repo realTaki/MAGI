@@ -17,31 +17,31 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Modules that are allowed to import from channels.api.
 # Today only the test suite and the api layer itself.
 EXEMPT_PREFIXES: tuple[str, ...] = (
-    "magi/channels/api/",
+    "channels/api/",
     "tests/",
 )
 
 # Modules we are enforcing the rule on.
 SCAN_PREFIXES: tuple[str, ...] = (
-    "magi/agent/",
-    "magi/tools/",
-    "magi/proactive/",
+    "agent/",
+    "tools/",
+    "proactive/",
 )
 
 # These are the remaining production Actor/Tool entry paths that must retain
 # their BUS-only boundary. Delivery is now represented by the durable
 # ``deliveryNotifyJob`` board and no longer has a channels/delivery.py module.
 BUS_ONLY_PATHS: tuple[str, ...] = (
-    "magi/agent/worker.py",
-    "magi/agent/agent_context.py",
-    "magi/tools/base.py",
-    "magi/tools/worker.py",
+    "agent/worker.py",
+    "agent/agent_context.py",
+    "tools/base.py",
+    "tools/worker.py",
 )
 
 _FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {
-    "magi/agent/": ("bus.bases.db", "tools", "channels"),
-    "magi/tools/": ("bus.bases.db", "agent", "channels"),
-    "magi/channels/": ("bus.bases.db", "agent", "tools"),
+    "agent/": ("bus.bases.db", "tools", "channels"),
+    "tools/": ("bus.bases.db", "agent", "channels"),
+    "channels/": ("bus.bases.db", "agent", "tools"),
 }
 
 
@@ -123,7 +123,7 @@ def test_migrated_actor_tool_delivery_paths_only_depend_on_bus() -> None:
 
 def test_agent_module_does_not_import_api() -> None:
     offenders: list[str] = []
-    for prefix in ("magi/agent/",):
+    for prefix in ("agent/",):
         for path in (REPO_ROOT / prefix).rglob("*.py"):
             if "__pycache__" in path.parts:
                 continue
@@ -131,7 +131,7 @@ def test_agent_module_does_not_import_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/agent/ imports from channels.api.* — this "
+        "agent/ imports from channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
         "(a neutral BUS contract or agent helper):\n  " + "\n  ".join(offenders)
     )
@@ -139,7 +139,7 @@ def test_agent_module_does_not_import_api() -> None:
 
 def test_tools_module_does_not_import_api() -> None:
     offenders: list[str] = []
-    for prefix in ("magi/tools/",):
+    for prefix in ("tools/",):
         for path in (REPO_ROOT / prefix).rglob("*.py"):
             if "__pycache__" in path.parts:
                 continue
@@ -147,7 +147,7 @@ def test_tools_module_does_not_import_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/tools/ imports from channels.api.* — this "
+        "tools/ imports from channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
         "(a neutral BUS contract or agent helper):\n  " + "\n  ".join(offenders)
     )
@@ -156,13 +156,13 @@ def test_tools_module_does_not_import_api() -> None:
 def test_proactive_module_does_not_import_api() -> None:
     """Same rule for the proactive subsystem (future workers will live here)."""
     offenders: list[str] = []
-    for path in (REPO_ROOT / "magi/proactive/").rglob("*.py"):
+    for path in (REPO_ROOT / "proactive/").rglob("*.py"):
         if "__pycache__" in path.parts:
             continue
         for module, lineno in _collect_imports(path):
             rel = path.relative_to(REPO_ROOT)
             offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/proactive/ imports from channels.api.* — this "
+        "proactive/ imports from channels.api.* — this "
         "violates design §18:\n  " + "\n  ".join(offenders)
     )
