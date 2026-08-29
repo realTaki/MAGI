@@ -5,7 +5,7 @@
 
 ## 1. 审计目标
 
-对比 [`magi/channels/api/`][api-dir] 下注册的所有 FastAPI 端点与 [`magi/WebUI/src/`][webui-src]
+对比 [`magi/channels/api/`][api-dir] 下注册的所有 FastAPI 端点与 [`WebUI/src/`][webui-src]
 前端代码中实际发出的请求，统计：
 
 1. 路由已注册但前端从未调用（pure dead code）。
@@ -176,7 +176,7 @@ proxy 路径，控制面这层挂载对前端不可达。runtime 那一侧的同
 
 ### 4.1 通过 `lib/queries.ts` 的 hook（中心化层）
 
-来源：[`magi/WebUI/src/lib/queries.ts`][queries-ts]。
+来源：[`WebUI/src/lib/queries.ts`][queries-ts]。
 
 | 方法 | 路径 | Hook |
 | --- | --- | --- |

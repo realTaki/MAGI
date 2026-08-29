@@ -15,10 +15,10 @@ FROM node:20-alpine AS web-builder
 WORKDIR /web
 
 # Install deps in a separate layer so source edits don't bust the cache.
-COPY magi/WebUI/package.json magi/WebUI/package-lock.json* ./
+COPY WebUI/package.json WebUI/package-lock.json* ./
 RUN npm ci
 
-COPY magi/WebUI ./
+COPY WebUI ./
 RUN npm run build
 # /web/dist now contains the built SPA (index.html + assets/).
 
@@ -33,12 +33,12 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
-# The Python project (pyproject.toml at root, package at magi/) is
-# copied as a unit. uv finds pyproject at the project root and
+# The Python project lives in py-magi/ and keeps its import package at magi/.
+# uv finds pyproject at the project root and
 # installs deps into the venv. README.md is also copied because
 # pyproject declares it under [project] readme.
-COPY pyproject.toml uv.lock* README.md ./
-COPY magi ./magi
+COPY py-magi/pyproject.toml py-magi/uv.lock* py-magi/README.md ./
+COPY py-magi/magi ./magi
 RUN uv sync --frozen --no-dev --extra adam --extra eva
 
 # -----------------------------------------------------------------------------
@@ -50,10 +50,10 @@ RUN useradd --create-home --shell /bin/bash magi \
     && chown -R magi:magi /workspace
 
 COPY --from=python-builder /opt/venv /opt/venv
-COPY magi /app/magi
+COPY py-magi/magi /app/magi
 # Prebuilt SPA is consumed only by ``magi webui``. It stays in the same image
 # as MAGI runtimes to keep installation and versioning to one artifact.
-COPY --from=web-builder /web/dist /app/magi/WebUI/dist
+COPY --from=web-builder /web/dist /app/WebUI/dist
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
