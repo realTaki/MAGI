@@ -81,6 +81,27 @@ def test_claim_post_publish_is_shared_and_all_submitters_must_vote(bus: Bus, pin
     assert ping_board.check_job_status(job.id) is JobStatus.PENDING
 
 
+def test_claim_post_publish_keeps_one_cursor_per_worker(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_publish", "submit_post_publish"))
+    second = _board(bus, "second", ("claim_post_publish", "submit_post_publish"))
+    first_job = PingJob(id=ping_board.publish(PingJob(n=1)))
+    second_job = PingJob(id=ping_board.publish(PingJob(n=2)))
+
+    first_claim = first.claim_post_publish()
+    assert first_claim is not None and first_claim.id == first_job.id
+    first_second_claim = first.claim_post_publish()
+    assert first_second_claim is not None and first_second_claim.id == second_job.id
+
+    second_claim = second.claim_post_publish()
+    assert second_claim is not None and second_claim.id == first_job.id
+    assert first.submit_post_publish(first_claim, BaseJobResult())
+    assert second.submit_post_publish(second_claim, BaseJobResult())
+    assert ping_board.check_job_status(first_job.id) is JobStatus.PENDING
+
+    second_claim = second.claim_post_publish()
+    assert second_claim is not None and second_claim.id == second_job.id
+
+
 def test_post_publish_failure_merges_errors_from_all_workers(bus: Bus, ping_board) -> None:
     first = _board(bus, "first", ("claim_post_publish", "submit_post_publish"))
     second = _board(bus, "second", ("claim_post_publish", "submit_post_publish"))
@@ -152,6 +173,8 @@ def test_post_result_failure_merges_errors_from_all_workers(bus: Bus, ping_board
     claimed = ping_board.claim()
     assert claimed is not None
     assert ping_board.submit_result(BaseJobResult(id=job.id))
+    assert first.claim_post_result() is not None
+    assert second.claim_post_result() is not None
     assert first.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="first reject"))
     assert second.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="second reject"))
     outcome = ping_board.get_result(job.id)

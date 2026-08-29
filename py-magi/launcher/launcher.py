@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from bus import BaseWorker, Bus, SlotTag
 from launcher.constant import WORKERS, WORKSPACE_PATH
-from bus import BaseWorker, Bus, Slot
 
 
 class Launcher:
@@ -29,7 +29,7 @@ class Launcher:
         if self._workers:
             raise ValueError("already running")
 
-        prepared: list[tuple[str, BaseWorker, tuple[Slot, ...]]] = []
+        prepared: list[tuple[str, BaseWorker, tuple[SlotTag, ...]]] = []
         for worker_type in WORKERS:
             worker_id = worker_type.worker_name
             if not worker_id:
