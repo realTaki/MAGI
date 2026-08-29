@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from bus import BaseJobResult, Bus, JobStatus, Slot
+from bus import BaseJobResult, Bus, JobStatus, SlotTag
 from bus.base.time import utcnow
 from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, attach_board
 
 
 def _attach(bus: Bus, worker_id: str, slots: tuple[str, ...]) -> bool:
-    return bus.for_worker(worker_id, tuple(Slot(PingJob, slot) for slot in slots)) is not None
+    return bus.for_worker(worker_id, tuple(SlotTag(PingJob, slot) for slot in slots)) is not None
 
 
 def _board(bus: Bus, worker_id: str, slots: tuple[str, ...]):
@@ -37,7 +37,11 @@ def test_same_worker_reattach_renews(bus: Bus, ping_board) -> None:
 def test_heartbeat_keeps_lease(bus: Bus, ping_board) -> None:
     worker = bus.for_worker(
         WORKER,
-        (Slot(PingJob, "publish"), Slot(PingJob, "claim"), Slot(PingJob, "submit_result")),
+        (
+            SlotTag(PingJob, "publish"),
+            SlotTag(PingJob, "claim"),
+            SlotTag(PingJob, "submit_result"),
+        ),
     )
     assert worker is not None
     assert worker.heartbeat()

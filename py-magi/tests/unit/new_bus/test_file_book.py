@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bus import Bus, FileEngine, Slot
+from bus import Bus, FileEngine, SlotTag
 from bus.base.BaseFileBook import BaseFileBook
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
@@ -92,7 +92,7 @@ def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
 
 def test_file_book_job_persists_external_failure(tmp_path, monkeypatch) -> None:
     with Bus(tmp_path / "workspace") as bus:
-        worker = bus.for_worker("tester", (Slot(GetSkillJob, "publish"),))
+        worker = bus.for_worker("tester", (SlotTag(GetSkillJob, "publish"),))
         assert worker is not None
         client = worker.board(GetSkillJob)
         board = bus._job_board(GetSkillJob)
