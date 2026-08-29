@@ -12,9 +12,9 @@ _SKILL_FILE = "SKILL.md"
 
 def _bundle_skills_dir() -> Path:
     try:
-        import magi
+        import bus
 
-        candidate = Path(magi.__file__).resolve().parent / "skills"
+        candidate = Path(bus.__file__).resolve().parent.parent / "skills"
         if candidate.is_dir():
             return candidate
     except Exception:

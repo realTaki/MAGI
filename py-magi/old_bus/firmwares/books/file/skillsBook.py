@@ -741,18 +741,14 @@ def _resolve_bundle_skills_dir() -> Path:
     See ARCHITECTURE_REVIEW_2026-08-10 P2.
     """
     try:
-        import magi
+        import bus
 
-        candidate = Path(magi.__file__).resolve().parent / "skills"
+        candidate = Path(bus.__file__).resolve().parent.parent / "skills"
         if candidate.is_dir():
             return candidate
     except Exception:
         pass
-
-    # Tier 2: ``__file__`` fallback. This module lives at
-    # ``magi/bus/firmwares/books/file/skillsBook.py``; three levels up is ``magi/``.
-    # ``+ "skills"`` gives ``magi/skills/``.
-    return Path(__file__).resolve().parents[3] / "skills"
+    return Path(__file__).resolve().parents[4] / "skills"
 
 
 def build_default_skills_book(workspace_dir: Path) -> SkillsBook:
