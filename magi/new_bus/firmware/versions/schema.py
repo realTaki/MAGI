@@ -17,6 +17,7 @@ def firmware_metadata() -> MetaData:
     from ..books.contactBook import ContactRow  # noqa: F401
     from ..books.contactNoteBook import ContactNoteRow  # noqa: F401
     from ..books.conversationBook import ConversationRow  # noqa: F401
+    from ..books.memoryBook import MemoryRow  # noqa: F401
     from ..books.messageBook import MessageRow  # noqa: F401
     from ..books.settingsBook import SettingRow  # noqa: F401
     from ..books.taskBook import TaskRow  # noqa: F401
@@ -41,6 +42,13 @@ def firmware_metadata() -> MetaData:
     from ..jobs.conversationJobs import (  # noqa: F401
         CreateConversationJobRow,
         UpdateConversationSummaryJobRow,
+    )
+    from ..jobs.memoryJobs import (  # noqa: F401
+        CreateMemoryJobRow,
+        DeleteMemoryJobRow,
+        GetMemoryJobRow,
+        ListMemoriesJobRow,
+        UpdateMemoryJobRow,
     )
     from ..jobs.messageJobs import (  # noqa: F401
         AppendMessageJobRow,
