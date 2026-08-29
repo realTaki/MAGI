@@ -4,7 +4,7 @@ The same :func:`create_app` factory builds three flavours of the FastAPI
 application (see :mod:`magi.channels.api.app`):
 
 - the singleton browser-facing control service (``create_control_app``) —
-  serves the sibling React SPA under ``WebUI/`` and the WebUI-only login
+  serves the sibling React SPA under ``app/`` and the control-plane login
   surface;
 - every MAGI runtime's internal API (``create_runtime_app``) — serves the
   runtime-private ``/api/*`` surface.

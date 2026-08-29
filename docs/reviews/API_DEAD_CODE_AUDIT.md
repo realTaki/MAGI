@@ -5,7 +5,7 @@
 
 ## 1. 审计目标
 
-对比 [`magi/channels/api/`][api-dir] 下注册的所有 FastAPI 端点与 [`WebUI/src/`][webui-src]
+对比 [`magi/channels/api/`][api-dir] 下注册的所有 FastAPI 端点与 [`app/src/`][webui-src]
 前端代码中实际发出的请求，统计：
 
 1. 路由已注册但前端从未调用（pure dead code）。
@@ -176,7 +176,7 @@ proxy 路径，控制面这层挂载对前端不可达。runtime 那一侧的同
 
 ### 4.1 通过 `lib/queries.ts` 的 hook（中心化层）
 
-来源：[`WebUI/src/lib/queries.ts`][queries-ts]。
+来源：[`app/src/lib/queries.ts`][queries-ts]。
 
 | 方法 | 路径 | Hook |
 | --- | --- | --- |
@@ -383,59 +383,59 @@ proxy 路径，控制面这层挂载对前端不可达。runtime 那一侧的同
   - D 类：0 死（保留）
 - 健康探针（不计入 dead）：**2**
 
-[api-dir]: /root/GitHub/MAGI/magi/channels/api/
-[webui-src]: /root/GitHub/MAGI/magi/WebUI/src/
-[app-py]: /root/GitHub/MAGI/magi/channels/api/app.py
-[queries-ts]: /root/GitHub/MAGI/magi/WebUI/src/lib/queries.ts
-[runtime-proxy]: /root/GitHub/MAGI/magi/channels/api/runtime_proxy.py
-[magi-py]: /root/GitHub/MAGI/magi/channels/api/magi.py
-[magi-py-top]: /root/GitHub/MAGI/magi/channels/api/magi.py#L1
-[magis-py]: /root/GitHub/MAGI/magi/channels/api/magis.py
-[contacts-py]: /root/GitHub/MAGI/magi/channels/api/contacts.py
-[mcp-py]: /root/GitHub/MAGI/magi/channels/api/mcp_servers.py
-[skills-py]: /root/GitHub/MAGI/magi/channels/api/skills.py
-[chat-convs-py]: /root/GitHub/MAGI/magi/channels/api/chat_conversations.py
-[rc-py]: /root/GitHub/MAGI/magi/channels/api/runtime_control.py
-[rp-py]: /root/GitHub/MAGI/magi/channels/api/runtime_provider.py
-[health-py]: /root/GitHub/MAGI/magi/channels/api/health.py
-[deploy-probes]: /root/GitHub/MAGI/deploy/
+[api-dir]: ../../py-magi/magi/channels/api/
+[webui-src]: ../../app/src/
+[app-py]: ../../py-magi/magi/channels/api/app.py
+[queries-ts]: ../../app/src/lib/queries.ts
+[runtime-proxy]: ../../py-magi/magi/channels/api/runtime_proxy.py
+[magi-py]: ../../py-magi/magi/channels/api/magi.py
+[magi-py-top]: ../../py-magi/magi/channels/api/magi.py#L1
+[magis-py]: ../../py-magi/magi/channels/api/magis.py
+[contacts-py]: ../../py-magi/magi/channels/api/contacts.py
+[mcp-py]: ../../py-magi/magi/channels/api/mcp_servers.py
+[skills-py]: ../../py-magi/magi/channels/api/skills.py
+[chat-convs-py]: ../../py-magi/magi/channels/api/chat_conversations.py
+[rc-py]: ../../py-magi/magi/channels/api/runtime_control.py
+[rp-py]: ../../py-magi/magi/channels/api/runtime_provider.py
+[health-py]: ../../py-magi/magi/channels/api/health.py
+[deploy-probes]: ../../deploy/
 
-[tz-card]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsSystemTimezoneCard.tsx#L62
-[chat-tab-270]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L270
-[chat-tab-363]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L363
-[chat-tab-397]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L397
-[chat-tab-431]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L431
-[chat-tab-530]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L530
-[chat-tab-571]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L571
-[chat-tab-608]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L608
-[chat-tab-446]: /root/GitHub/MAGI/magi/WebUI/src/pages/ChatTab.tsx#L446
-[magis-pane-94]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagisPane.tsx#L94
-[magis-pane-107]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagisPane.tsx#L107
-[magis-pane-118]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagisPane.tsx#L118
-[magic-pane-78]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagicPane.tsx#L78
-[magic-pane-96]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagicPane.tsx#L96
-[magic-pane-109]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagicPane.tsx#L109
-[magic-pane-122]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagicPane.tsx#L122
-[magic-pane-283]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/MagicPane.tsx#L283
-[skills-pane-24]: /root/GitHub/MAGI/magi/WebUI/src/pages/knowledge/KnowledgeSkillsPane.tsx#L24
-[action-pane-155]: /root/GitHub/MAGI/magi/WebUI/src/pages/chat/ActionItemsPane.tsx#L155
-[task-pane-214]: /root/GitHub/MAGI/magi/WebUI/src/pages/chat/TaskListPane.tsx#L214
-[task-pane-242]: /root/GitHub/MAGI/magi/WebUI/src/pages/chat/TaskListPane.tsx#L242
-[channels-card-86]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsChannelsCard.tsx#L86
-[bot-56]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/BotTokenField.tsx#L56
-[bot-80]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/BotTokenField.tsx#L80
-[sec-22]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsSecurityCard.tsx#L22
-[sec-35]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsSecurityCard.tsx#L35
-[ins-card-7]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsInstructionCard.tsx#L7
-[ins-card-8]: /root/GitHub/MAGI/magi/WebUI/src/components/settings/SettingsInstructionCard.tsx#L8
-[society-12]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/SocietyControls.tsx#L12
-[society-15]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/SocietyControls.tsx#L15
-[society-16]: /root/GitHub/MAGI/magi/WebUI/src/pages/agentic-society/SocietyControls.tsx#L16
-[contacts-34]: /root/GitHub/MAGI/magi/WebUI/src/pages/knowledge/KnowledgeContactsPane.tsx#L34
-[contacts-86]: /root/GitHub/MAGI/magi/WebUI/src/pages/knowledge/KnowledgeContactsPane.tsx#L86
-[mcp-119]: /root/GitHub/MAGI/magi/WebUI/src/pages/knowledge/KnowledgeMCPPane.tsx#L119
+[tz-card]: ../../app/src/components/settings/SettingsSystemTimezoneCard.tsx#L62
+[chat-tab-270]: ../../app/src/pages/ChatTab.tsx#L270
+[chat-tab-363]: ../../app/src/pages/ChatTab.tsx#L363
+[chat-tab-397]: ../../app/src/pages/ChatTab.tsx#L397
+[chat-tab-431]: ../../app/src/pages/ChatTab.tsx#L431
+[chat-tab-530]: ../../app/src/pages/ChatTab.tsx#L530
+[chat-tab-571]: ../../app/src/pages/ChatTab.tsx#L571
+[chat-tab-608]: ../../app/src/pages/ChatTab.tsx#L608
+[chat-tab-446]: ../../app/src/pages/ChatTab.tsx#L446
+[magis-pane-94]: ../../app/src/pages/agentic-society/MagisPane.tsx#L94
+[magis-pane-107]: ../../app/src/pages/agentic-society/MagisPane.tsx#L107
+[magis-pane-118]: ../../app/src/pages/agentic-society/MagisPane.tsx#L118
+[magic-pane-78]: ../../app/src/pages/agentic-society/MagicPane.tsx#L78
+[magic-pane-96]: ../../app/src/pages/agentic-society/MagicPane.tsx#L96
+[magic-pane-109]: ../../app/src/pages/agentic-society/MagicPane.tsx#L109
+[magic-pane-122]: ../../app/src/pages/agentic-society/MagicPane.tsx#L122
+[magic-pane-283]: ../../app/src/pages/agentic-society/MagicPane.tsx#L283
+[skills-pane-24]: ../../app/src/pages/knowledge/KnowledgeSkillsPane.tsx#L24
+[action-pane-155]: ../../app/src/pages/chat/ActionItemsPane.tsx#L155
+[task-pane-214]: ../../app/src/pages/chat/TaskListPane.tsx#L214
+[task-pane-242]: ../../app/src/pages/chat/TaskListPane.tsx#L242
+[channels-card-86]: ../../app/src/components/settings/SettingsChannelsCard.tsx#L86
+[bot-56]: ../../app/src/components/settings/BotTokenField.tsx#L56
+[bot-80]: ../../app/src/components/settings/BotTokenField.tsx#L80
+[sec-22]: ../../app/src/components/settings/SettingsSecurityCard.tsx#L22
+[sec-35]: ../../app/src/components/settings/SettingsSecurityCard.tsx#L35
+[ins-card-7]: ../../app/src/components/settings/SettingsInstructionCard.tsx#L7
+[ins-card-8]: ../../app/src/components/settings/SettingsInstructionCard.tsx#L8
+[society-12]: ../../app/src/pages/agentic-society/SocietyControls.tsx#L12
+[society-15]: ../../app/src/pages/agentic-society/SocietyControls.tsx#L15
+[society-16]: ../../app/src/pages/agentic-society/SocietyControls.tsx#L16
+[contacts-34]: ../../app/src/pages/knowledge/KnowledgeContactsPane.tsx#L34
+[contacts-86]: ../../app/src/pages/knowledge/KnowledgeContactsPane.tsx#L86
+[mcp-119]: ../../app/src/pages/knowledge/KnowledgeMCPPane.tsx#L119
 [mcp-dup]: #mcp_knowledgepane_tsx119-与-lib_queries_ts228-重复实现
-[dashboard-21]: /root/GitHub/MAGI/magi/WebUI/src/pages/DashboardPage.tsx#L21
-[dashboard-224]: /root/GitHub/MAGI/magi/WebUI/src/pages/DashboardPage.tsx#L224
+[dashboard-21]: ../../app/src/pages/DashboardPage.tsx#L21
+[dashboard-224]: ../../app/src/pages/DashboardPage.tsx#L224
 [rec]: #7-处置建议
 [c-class]: #c-class-mount-在控制面但前端不可达控制面这一侧死代码runtime-端仍然可达-3-处

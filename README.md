@@ -59,6 +59,18 @@ That leads to three principles:
 The long-term goal is to build the infrastructure in which autonomous
 intelligences can collaborate freely **within explicit, inspectable constraints**.
 
+## Repository layout
+
+```text
+py-magi/   Python backend and launcher (import package: magi)
+ts-magi/   TypeScript BUS playground and its launcher
+app/       Operator UI (browser now; desktop shell later)
+```
+
+The three projects are siblings. Python production code remains under
+`py-magi/magi/`; moving that project directory does not change imports such as
+`from magi.bus import Bus`.
+
 ## Toward governed collective intelligence
 
 A MAGIS should become better because it has existed — while remaining

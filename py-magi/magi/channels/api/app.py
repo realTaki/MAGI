@@ -7,7 +7,7 @@ authenticated WebUI proxy.
 
 Mounting order (matters for routing precedence):
   1. ``/health``         — process-level liveness probe.
-  2. ``/``               — SPA static files (built by Vite at web/dist/).
+  2. ``/``               — SPA static files (built by Vite at /app/dist).
      Uses ``html=True`` so unknown paths fall back to index.html and
      the SPA's client-side router can take over.
 
@@ -89,11 +89,11 @@ class _SpaFallback(StaticFiles):
                 return FileResponse(str(index), media_type="text/html")
             raise
 
-# In-container and monorepo paths for the sibling WebUI project. In dev (vite
+# In-container and monorepo paths for the sibling ``app`` project. In dev (vite
 # dev), no dist exists and Vite handles the UI itself on :42069.
 _SPA_DIST_CANDIDATES: tuple[Path, ...] = (
-    Path("/app/WebUI/dist"),  # Dockerfile runtime stage
-    Path(__file__).resolve().parents[4] / "WebUI" / "dist",  # repository checkout
+    Path("/app/dist"),  # Dockerfile runtime stage
+    Path(__file__).resolve().parents[4] / "app" / "dist",  # repository checkout
 )
 
 
@@ -321,7 +321,7 @@ def create_app(
 
     app.include_router(skills.router, prefix="/api")
 
-    # SPA. In Docker this is /app/WebUI/dist (baked in by the web-builder
+    # SPA. In Docker this is /app/dist (baked in by the web-builder
     # stage). In a local dev checkout with `npm run build` it also gets
     # picked up; if neither produced a dist the mount is skipped and
     # vite dev (on the same :42069) serves the UI itself.
@@ -344,7 +344,7 @@ def create_app(
     else:
         logger.info(
             "SPA dist not found; serving API only "
-            "(run `npm run build` in WebUI/ or use vite dev to serve the UI)"
+            "(run `npm run build` in app/ or use vite dev to serve the UI)"
         )
 
     return app
