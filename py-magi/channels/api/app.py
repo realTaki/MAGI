@@ -32,8 +32,8 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse
 
-from magi import __version__
 from channels.api import auth, contacts, magi, magis
+from startup import __version__
 
 if TYPE_CHECKING:
     from old_bus import Bus
@@ -93,7 +93,7 @@ class _SpaFallback(StaticFiles):
 # dev), no dist exists and Vite handles the UI itself on :42069.
 _SPA_DIST_CANDIDATES: tuple[Path, ...] = (
     Path("/app/dist"),  # Dockerfile runtime stage
-    Path(__file__).resolve().parents[4] / "app" / "dist",  # repository checkout
+    Path(__file__).resolve().parents[3] / "app" / "dist",  # repository checkout
 )
 
 

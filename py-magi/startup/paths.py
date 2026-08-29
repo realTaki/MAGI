@@ -226,26 +226,18 @@ def resolve_bundle_skills_dir() -> Path:
     """Return the path to the image-shipped skills bundle.
 
     Two-tier resolution, mirroring the prompts-bundle resolver:
-    prefer anchoring on the ``magi`` package (normal installs and
-    wheel / zip-app installs), fall back to deriving from
-    ``__file__`` (when the package is not importable — e.g. ad-hoc
-    test runs).
+    prefer anchoring on the installed ``bus`` package, fall back to
+    deriving from ``__file__``.
     """
-    # Tier 1: ``magi/__init__.py`` is the canonical anchor for the
-    # bundle, which is shipped inside the installed package.
     try:
-        import magi
+        import bus
 
-        candidate = Path(magi.__file__).resolve().parent / "skills"
+        candidate = Path(bus.__file__).resolve().parent.parent / "skills"
         if candidate.is_dir():
             return candidate
     except Exception:
         pass
-
-    # Tier 2: ``__file__`` fallback. This file lives at
-    # ``magi/startup/paths.py``; three levels up is ``magi/``.
-    # ``+ "skills"`` gives ``magi/skills/``.
-    return Path(__file__).resolve().parents[2] / "skills"
+    return Path(__file__).resolve().parents[1] / "skills"
 
 
 def resolve_memories_dir(workspace_dir: Path) -> Path:
