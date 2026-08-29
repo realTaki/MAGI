@@ -306,7 +306,7 @@ def _role_allowed(
     caller_role: str | None,
     caller_admin: bool,
 ) -> bool:
-    """Mirror of :meth:`Tool.gate` (role + admin check)."""
+    """Whether this catalog row is visible to the caller."""
     if caller_admin:
         return True
     if not allowed_roles:

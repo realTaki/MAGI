@@ -90,8 +90,8 @@ class Contact(BaseRecord):
     :class:`~magi.bus.firmwares.books.magis.magisBook.MagisAdminBook`
     (``magis_admins`` table). A user can be ``assigned`` in
     this MAGI **and** admin in any MAGIS — the two flags
-    are orthogonal. Tool gating combines both via
-    :meth:`magi.tools.base.Tool.gate`.
+    are orthogonal. The agent catalog combines both when
+    filtering the tool menu.
     """
 
     name: str  # 联系人唯一名

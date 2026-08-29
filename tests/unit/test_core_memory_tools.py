@@ -5,10 +5,7 @@ in-memory SQLite via :class:`EngineFactory`, plus a
 small :class:`Bus` stub carrying the books the
 tool worker actually touches (``memory_book`` /
 ``contacts_book``). Tools are exercised through their
-public ``run()`` method with a real :class:`ToolContext`
-— the gate path is not exercised (the action-item tools
-follow the same convention); role enforcement lives in
-:meth:`Tool.gate` and is covered elsewhere.
+public ``run()`` method with a real :class:`ToolContext`.
 """
 
 from __future__ import annotations

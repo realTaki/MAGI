@@ -15,7 +15,6 @@ from magi.new_bus import (
     ListConversationMessagesJob,
     MessageRole,
 )
-from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
 from magi.new_bus.firmware.books.messageBook import MessageBook
 from magi.new_bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
 from magi.new_bus.firmware.jobs.messageJobs import (
@@ -52,12 +51,9 @@ def _result(bus: Bus, job: BaseJob):
 
 
 def _conversation_id(bus: Bus) -> int:
-    contact_id = ContactBook(bus._factory).add(Contact(name="alice"))
     created = _publish(
         bus,
-        CreateConversationJob(
-            delivery_address="webui:test", owner_contact_id=contact_id, channel="webui"
-        ),
+        CreateConversationJob(delivery_address="webui:test", channel="webui"),
     )
     outcome = _result(bus, created)
     assert outcome is not None
