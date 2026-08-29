@@ -4,7 +4,6 @@ import time
 
 import pytest
 
-from launcher import Launcher
 from bus import (
     BaseWorker,
     CallLLMJob,
@@ -14,6 +13,7 @@ from bus import (
     SlotTag,
 )
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
+from launcher import Launcher
 from providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
 from providers.worker import ProvidersWorker
 from tests.unit.new_bus.testing import attach_board

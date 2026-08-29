@@ -5,14 +5,14 @@ from bus import (
     ChangeProviderJob,
     GetSettingJob,
     RecordTokenUsageJob,
-    Slot,
+    SlotTag,
 )
 
-REQUIRED_SLOTS: tuple[Slot, ...] = (
-    Slot(CallLLMJob, "claim"),
-    Slot(CallLLMJob, "submit_result"),
-    Slot(ChangeProviderJob, "claim"),
-    Slot(ChangeProviderJob, "submit_result"),
-    Slot(GetSettingJob, "publish"),
-    Slot(RecordTokenUsageJob, "publish"),
+REQUIRED_SLOTS: tuple[SlotTag, ...] = (
+    SlotTag(CallLLMJob, "claim"),
+    SlotTag(CallLLMJob, "submit_result"),
+    SlotTag(ChangeProviderJob, "claim"),
+    SlotTag(ChangeProviderJob, "submit_result"),
+    SlotTag(GetSettingJob, "publish"),
+    SlotTag(RecordTokenUsageJob, "publish"),
 )

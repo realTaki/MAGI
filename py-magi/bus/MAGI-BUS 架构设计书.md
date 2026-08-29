@@ -775,7 +775,7 @@ claim_post_publish checker
 
 Slot 不是 Firmware 中独立于 Job 的 Domain。
 
-当前 Slot 的身份由：
+Worker 声明的是 `SlotTag`；它的身份由：
 
 ```text
 (JobType, OperationName)
@@ -786,13 +786,15 @@ Slot 不是 Firmware 中独立于 Job 的 Domain。
 例如：
 
 ```text
-Slot(PingJob, "publish")
-Slot(PingJob, "claim")
-Slot(PingJob, "claim_post_publish")
-Slot(PingJob, "submit_post_result")
+SlotTag(PingJob, "publish")
+SlotTag(PingJob, "claim")
+SlotTag(PingJob, "claim_post_publish")
+SlotTag(PingJob, "submit_post_result")
 ```
 
-JobBoard 使用 `@slot` 标记一个 operation 是否属于可被 Worker 占用的 Slot。
+BUS 将每个 `SlotTag` 解析成唯一的运行时 `Slot`。`Slot` 保存成员、心跳触达，
+以及需要时的 per-Worker JobId cursor 和 post-gate 缓存。JobBoard 使用 `@slot`
+标记一个 operation 是否属于可被 Worker 占用的 Slot。
 
 因此：
 
@@ -851,11 +853,10 @@ BUS-private `Heartbeat` 保存：
 
 ```text
 worker_id → lease expiration
-Slot      → live Worker set
 ```
 
-Worker 调用 Slot 或主动 heartbeat 会刷新自己的 lease。过期 Worker 会从其所有
-Slot membership 中移除，不会影响仍存活的其他成员。
+Worker 调用 Slot 或主动 heartbeat 会刷新自己的 lease。运行时 Slot 在访问时
+剔除已过期 Worker，不会影响仍存活的其他成员。
 
 ---
 
@@ -919,8 +920,8 @@ Launcher 手写 Slot 列表。调用方把 Worker 类交给控制面板的 `laun
 ```python
 # magi/tools/requiredSlots.py
 REQUIRED_SLOTS = (
-    Slot(ToolCallJob, "claim"),
-    Slot(ToolCallJob, "submit_result"),
+    SlotTag(ToolCallJob, "claim"),
+    SlotTag(ToolCallJob, "submit_result"),
 )
 
 launcher.launch(ToolWorker)

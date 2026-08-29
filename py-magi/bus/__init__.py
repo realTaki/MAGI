@@ -9,7 +9,7 @@ from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.file import FileEngine
-from .base.heartbeat import Slot
+from .base.slot import SlotTag
 from .BaseWorker import BaseWorker
 from .bus import Bus
 from .bus_for_worker import BusForWorker, JobBoardClient
@@ -56,10 +56,10 @@ from .firmware import (
     ListContactNotesResult,
     ListContactsJob,
     ListContactsResult,
-    ListMemoriesJob,
-    ListMemoriesResult,
     ListConversationMessagesJob,
     ListConversationMessagesResult,
+    ListMemoriesJob,
+    ListMemoriesResult,
     ListSettingsJob,
     ListSettingsResult,
     ListSkillsJob,
@@ -107,7 +107,7 @@ __all__ = [
     "BaseJobResult",
     "BaseJobBoard",
     "JobStatus",
-    "Slot",
+    "SlotTag",
     "BusForWorker",
     "JobBoardClient",
     "Conversation",

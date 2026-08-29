@@ -8,7 +8,7 @@ from collections.abc import Coroutine
 from contextlib import suppress
 from typing import Any, ClassVar, TypeVar
 
-from .base.heartbeat import Slot
+from .base.slot import SlotTag
 from .bus_for_worker import BusForWorker
 
 _HEARTBEAT_INTERVAL = 0.25
@@ -26,7 +26,7 @@ class BaseWorker:
     """
 
     worker_name: ClassVar[str | None] = None
-    required_slots: ClassVar[tuple[Slot, ...] | None] = None
+    required_slots: ClassVar[tuple[SlotTag, ...] | None] = None
     heartbeat_interval: float = _HEARTBEAT_INTERVAL
 
     def __init__(
@@ -51,12 +51,12 @@ class BaseWorker:
         self._attached_ok = False
 
     @classmethod
-    def load_required_slots(cls) -> tuple[Slot, ...]:
+    def load_required_slots(cls) -> tuple[SlotTag, ...]:
         """Return this class's imported ``required_slots``."""
         return tuple(cls.required_slots or ())
 
     @classmethod
-    def declared_slots(cls) -> tuple[Slot, ...]:
+    def declared_slots(cls) -> tuple[SlotTag, ...]:
         return cls.load_required_slots()
 
     def attach(self, bus_for_worker: BusForWorker) -> bool:
