@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI web frontend — single Vite SPA. Currently C1.0b: skeleton + first onboarding page (step 1 only).",
+  "description": "MAGI operator UI — Vite SPA for the browser now, desktop shell later.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
