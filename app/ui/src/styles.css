@@ -1,3 +1,4 @@
+@import "tailwindcss";
 
 :root {
   --page: #fdfdfd;
@@ -28,27 +29,6 @@ body {
 }
 
 * { box-sizing: border-box; }
-
-.product-demo {
-  padding-top: 0;
-  height: 100%;
-}
-
-.product-demo__frame {
-  height: 100% !important;
-  border-radius: 0 !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-
-.product-demo__caption { display: none; }
-
-@media (max-width: 860px) {
-  .product-demo__frame,
-  .product-demo__frame.is-collapsed {
-    height: 100% !important;
-  }
-}
 
 .demo-btn {
   display: inline-flex;
@@ -1245,32 +1225,14 @@ body {
   }
 }
 @media (max-width: 860px) {
-  .site-header {
-    gap: 12px;
-    padding: 16px 0;
-  }
-
-  .site-nav,
-  .site-header__cta {
-    display: none;
-  }
-
-  .site-menu {
-    display: block;
-  }
-
-  /* One screen at a time, like the mobile app: the bot list slides in from the
-     hamburger and the computer panel covers the thread while it is open. */
   .product-demo__frame,
   .product-demo__frame.is-collapsed {
     grid-template-columns: minmax(0, 1fr);
     height: min(620px, 82vh);
   }
-
   .product-demo__menu-btn {
     display: grid;
   }
-
   .product-demo__sidebar {
     position: absolute;
     z-index: 6;
@@ -1286,21 +1248,17 @@ body {
       transform 0.22s ease,
       visibility 0.22s ease;
   }
-
   .product-demo__sidebar.is-open {
     visibility: visible;
     transform: none;
   }
-
   .product-demo__traffic {
     display: none;
   }
-
   .product-demo__drawer-title,
   .product-demo__sidebar-close {
     display: block;
   }
-
   .product-demo__scrim {
     position: absolute;
     z-index: 5;
@@ -1310,7 +1268,6 @@ body {
     padding: 0;
     background: rgba(4, 4, 5, 0.6);
   }
-
   .product-demo__panel {
     position: absolute;
     z-index: 4;
@@ -1320,35 +1277,28 @@ body {
 }
 
 @media (max-width: 720px) {
-  .container {
-    width: min(100% - 32px, 1150px);
-  }
-
-  .hero {
-    padding-top: 26px;
-  }
-
-  .hero h1 {
-    font-size: clamp(2.375rem, 9vw, 3rem);
-  }
-
-  .hero__pill {
-    margin-bottom: 22px;
-    padding: 5px 12px 5px 6px;
-    font-size: 12.5px;
-  }
-
-  .lead {
-    margin-top: 18px;
-    font-size: 17px;
-  }
-
-  .hero__actions {
-    margin-top: 26px;
-
-@media (max-width: 720px) {
   .product-demo__topbar { padding: 12px 14px; }
   .product-demo__thread { padding-inline: 16px; }
   .product-demo__composer { padding: 12px 16px 16px; }
   .product-demo__bubble { max-width: 100%; }
+}
+
+
+.product-demo {
+  padding-top: 0;
+  height: 100%;
+}
+.product-demo__frame {
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+.product-demo__caption { display: none; }
+
+@media (max-width: 860px) {
+  .product-demo__frame,
+  .product-demo__frame.is-collapsed {
+    height: 100% !important;
+  }
 }
