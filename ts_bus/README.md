@@ -64,21 +64,20 @@ plain JSON DTOs; only Firmware touches SQL.
 1. Edit `src/db/schema.ts`.
 2. Run `npm run generate:migration`; review the newly generated `drizzle/*.sql`.
 3. Commit the schema file and its migration together.
-4. On next `Bus.open(...)`, `base/migrations.ts` applies each unseen SQL file
-   inside `BEGIN IMMEDIATE` and stores its SHA-256 in `__drizzle_migrations`.
+4. On next `Bus.open(...)`, Drizzle's `better-sqlite3` migrator applies each
+   unseen SQL file and records it in `__drizzle_migrations`.
 
-The migration runner deliberately rejects an edited, already-applied SQL file.
 During disposable local experiments you may use Drizzle's `push`, but do not
 use it once a workspace has data worth preserving.
 
 ```bash
-nvm use 22 # or another Node 22+ runtime
+nvm use 20 # or another Node 20+ runtime
 npm install
 npm run generate:migration # after editing src/db/schema.ts
 npm run demo
 npm test
 ```
 
-This package requires Node 22+ for the built-in `node:sqlite` driver. A
-PostgreSQL adapter can replace `base/sqlite.ts` without changing the
-provider-facing API.
+This package uses `better-sqlite3`; its small adapter is the only persistence
+entrypoint for Books and JobBoards. A PostgreSQL adapter can replace
+`base/sqlite.ts` without changing the provider-facing API.

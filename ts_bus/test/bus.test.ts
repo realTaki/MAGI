@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 import test from "node:test";
 
 import { launchDemo } from "../demo/launcher.js";
@@ -72,19 +72,19 @@ test("Firmware creates explicit SQLite tables", async () => {
   try {
     const bus = await Bus.open(workspace);
     bus.close();
-    const database = new DatabaseSync(join(workspace, "memories", "magi.db"));
+    const database = new Database(join(workspace, "memories", "magi.db"), { readonly: true });
     const tables = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .all()
-      .map((row) => row.name);
+      .pluck()
+      .all() as string[];
     const callLLMColumns = database
       .prepare("SELECT name FROM pragma_table_info('jobs_call_llm') ORDER BY cid")
-      .all()
-      .map((row) => row.name);
+      .pluck()
+      .all() as string[];
     const migrations = database
-      .prepare("SELECT name FROM __drizzle_migrations ORDER BY name")
+      .prepare("SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at")
       .all()
-      .map((row) => row.name);
+      as Array<{ hash: string; created_at: number }>;
     database.close();
 
     assert.deepEqual(tables, [
@@ -114,7 +114,9 @@ test("Firmware creates explicit SQLite tables", async () => {
       "created_at",
       "updated_at",
     ]);
-    assert.deepEqual(migrations, ["0000_mute_jubilee.sql"]);
+    assert.equal(migrations.length, 1);
+    assert.match(migrations[0].hash, /^[a-f0-9]{64}$/);
+    assert.equal(migrations[0].created_at, 1787971490481);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

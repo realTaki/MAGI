@@ -1,23 +1,26 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-
-import { applyMigrations } from "./migrations.js";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 export class Sqlite {
-  readonly database: DatabaseSync;
+  readonly database: Database.Database;
 
   private constructor(file: string) {
     mkdirSync(dirname(file), { recursive: true });
-    this.database = new DatabaseSync(file);
-    this.database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+    this.database = new Database(file);
+    this.database.pragma("foreign_keys = ON");
+    this.database.pragma("journal_mode = WAL");
   }
 
   static async open(file: string): Promise<Sqlite> {
     const sqlite = new Sqlite(file);
     try {
-      await applyMigrations(sqlite.database, fileURLToPath(new URL("../../drizzle", import.meta.url)));
+      migrate(drizzle(sqlite.database), {
+        migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)),
+      });
       return sqlite;
     } catch (error) {
       sqlite.close();
@@ -26,15 +29,7 @@ export class Sqlite {
   }
 
   transaction<T>(work: () => T): T {
-    this.database.exec("BEGIN IMMEDIATE");
-    try {
-      const result = work();
-      this.database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      this.database.exec("ROLLBACK");
-      throw error;
-    }
+    return this.database.transaction(work).immediate();
   }
 
   close(): void {
