@@ -1,16 +1,31 @@
 {
-  "name": "magi-web",
+  "name": "magi-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI operator UI — Vite SPA for the browser now, desktop shell later.",
+  "main": "electron/main.mjs",
+  "description": "MAGI operator UI — Vite SPA in the browser, Electron on the desktop.",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "concurrently -k \"vite\" \"electron .\"",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
+    "build:desktop": "npm run build && electron-builder",
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
     "lint:i18n": "node scripts/i18n-lint.cjs",
     "test": "echo 'test placeholder — wired up later'"
+  },
+  "build": {
+    "appId": "ai.magi.app",
+    "productName": "MAGI",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
@@ -23,6 +38,9 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "concurrently": "^10.0.5",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"

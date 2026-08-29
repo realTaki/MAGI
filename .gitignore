@@ -224,6 +224,7 @@ __marimo__/
 node_modules/
 app/dist/
 app/build/
+app/release/
 .vite/
 app/.vite/
 app/coverage/
