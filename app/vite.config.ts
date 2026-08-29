@@ -1,6 +1,11 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+
+const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 // Vite dev proxies /api and /ws to whichever FastAPI instance the
 // developer started. ``VITE_BACKEND_URL`` wins when set (used inside
@@ -17,6 +22,8 @@ const BACKEND_URL =
 const WS_URL = BACKEND_URL.replace(/^http/, "ws");
 
 export default defineConfig({
+  root: "ui",
+  publicDir: "public",
   plugins: [react(), tailwindcss()],
   server: {
     // Operator UI origin. py-magi no longer serves this page.
@@ -48,7 +55,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",
+    outDir: path.resolve(APP_ROOT, "dist"),
+    emptyOutDir: true,
     sourcemap: true,
   },
 });
