@@ -146,11 +146,27 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return cast(type[JobT], self.job_cls).from_row(pulled)
         return None
 
-    @slot(SlotType.PUBLISH)
-    def publish(self, job: JobT, *, _slot_post_active: bool) -> int:
-        return self._publish(job, post_publish_active=_slot_post_active)
+    def pass_claim_post_publish(self, job_id: int) -> None:
+        """Skip an unstaffed post-publish stage and make the Job claimable."""
+        with self._session() as session:
+            session.execute(
+                update(type(self).row_cls)
+                .where(
+                    type(self).row_cls.id == job_id,
+                    type(self).row_cls.status == JobStatus.PREPARING.value,
+                )
+                .values(status=JobStatus.PENDING.value)
+            )
+            session.commit()
 
-    def _publish(self, job: JobT, *, post_publish_active: bool) -> int:
+    @slot(
+        SlotType.PUBLISH,
+        next_slot="claim_post_publish",
+    )
+    def publish(self, job: JobT) -> int:
+        return self._publish(job)
+
+    def _publish(self, job: JobT) -> int:
         now = utcnow()
         prepared = replace(
             job,
@@ -159,9 +175,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
-        values["status"] = (
-            JobStatus.PREPARING.value if post_publish_active else JobStatus.PENDING.value
-        )
+        values["status"] = JobStatus.PREPARING.value
         with self._session() as session:
             row = type(self).row_cls(**values)
             session.add(row)
@@ -169,7 +183,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             job_id = int(row.id)
         return job_id
 
-    @slot(SlotType.CLAIM_POST)
+    @slot(SlotType.CLAIM_POST, pass_if_no_worker=pass_claim_post_publish)
     def claim_post_publish(self, *, _slot_cursor: int) -> JobT | None:
         return self._next_gate_job(JobStatus.PREPARING, _slot_cursor)
 
@@ -209,7 +223,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         self.release_idle_slots()
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
-    @slot(SlotType.SUBMIT_RESULT)
+    @slot(SlotType.SUBMIT_RESULT, next_slot="claim_post_result")
     def submit_result(self, result: BaseJobResult, *, _slot_post_active: bool) -> bool:
         return self._submit_result(result, post_result_active=_slot_post_active)
 
