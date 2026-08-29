@@ -2,7 +2,7 @@
  * SettingsTab — left-nav + 8 setting cards.
  *
  * Each card is its own component in
- * ``magi/WebUI/src/components/settings/``; this file is
+ * ``app/src/components/settings/``; this file is
  * the dispatch shell that picks which card to render based
  * on the sidebar selection. The Shell mounts
  * ``<SettingsTab data=… onBotUpdated=… onAdminsChanged=… onRestart=… />``

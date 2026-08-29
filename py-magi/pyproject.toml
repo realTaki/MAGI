@@ -103,7 +103,7 @@ testpaths = ["tests"]
 # -----------------------------------------------------------------------------
 # pyright / Pylance — exclude directories that don't need to be indexed.
 # The defaults scan ``.venv`` (305 MB of site-packages) and ``node_modules``
-# (103 MB of JS deps under the sibling ``WebUI`` project), which blows Pylance's RSS up to
+# (103 MB of JS deps under the sibling ``app`` project), which blows Pylance's RSS up to
 # ~1.9 GB. These globs are relative to the project root.
 # -----------------------------------------------------------------------------
 [tool.pyright]

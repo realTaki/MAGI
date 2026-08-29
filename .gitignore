@@ -218,23 +218,23 @@ __marimo__/
 .streamlit/secrets.toml
 
 # -----------------------------------------------------------------------------
-# Frontend (WebUI/) — single Vite SPA, sibling to the Python and TypeScript
+# Frontend (app/) — operator UI, sibling to the Python and TypeScript
 # projects.
 # -----------------------------------------------------------------------------
 node_modules/
-WebUI/dist/
-WebUI/build/
+app/dist/
+app/build/
 .vite/
-WebUI/.vite/
-WebUI/coverage/
-WebUI/.env
-WebUI/.env.local
-WebUI/.env.*.local
-WebUI/npm-debug.log*
-WebUI/yarn-debug.log*
-WebUI/yarn-error.log*
-WebUI/pnpm-debug.log*
-WebUI/*.tsbuildinfo
+app/.vite/
+app/coverage/
+app/.env
+app/.env.local
+app/.env.*.local
+app/npm-debug.log*
+app/yarn-debug.log*
+app/yarn-error.log*
+app/pnpm-debug.log*
+app/*.tsbuildinfo
 
 # -----------------------------------------------------------------------------
 # Runtime data — local SQLite / bind-mounted volumes

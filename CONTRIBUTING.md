@@ -26,7 +26,7 @@ uv sync --group dev
 ## Code conventions
 
 - **Python 3.12+** with `ruff` for linting
-- **TypeScript** + **React** for the WebUI
+- **TypeScript** + **React** for the operator app
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
   - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`)
@@ -56,7 +56,7 @@ docs: Update README with new architecture
 |-----------|---------|
 | `py-magi/magi/agent/` | Agent loop, LLM providers, memory, tools |
 | `py-magi/magi/channels/` | Telegram + WebUI channel adapters |
-| `WebUI/` | React frontend |
+| `app/` | Operator UI (browser / future desktop) |
 | `py-magi/tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
 

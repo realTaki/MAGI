@@ -15,10 +15,10 @@ FROM node:20-alpine AS web-builder
 WORKDIR /web
 
 # Install deps in a separate layer so source edits don't bust the cache.
-COPY WebUI/package.json WebUI/package-lock.json* ./
+COPY app/package.json app/package-lock.json* ./
 RUN npm ci
 
-COPY WebUI ./
+COPY app ./
 RUN npm run build
 # /web/dist now contains the built SPA (index.html + assets/).
 
@@ -53,7 +53,7 @@ COPY --from=python-builder /opt/venv /opt/venv
 COPY py-magi/magi /app/magi
 # Prebuilt SPA is consumed only by ``magi webui``. It stays in the same image
 # as MAGI runtimes to keep installation and versioning to one artifact.
-COPY --from=web-builder /web/dist /app/WebUI/dist
+COPY --from=web-builder /web/dist /app/dist
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
