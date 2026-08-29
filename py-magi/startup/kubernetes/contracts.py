@@ -2,8 +2,8 @@
 
 Consolidated from the legacy ``magi.orchestrator.contracts`` module
 per plan §20.4. The orchestrator service lives in
-:mod:`magi.startup.kubernetes.service`; the ADAM-side client lives
-in :mod:`magi.startup.kubernetes.client`.
+:mod:`startup.kubernetes.service`; the ADAM-side client lives
+in :mod:`startup.kubernetes.client`.
 """
 
 from __future__ import annotations

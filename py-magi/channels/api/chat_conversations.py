@@ -30,14 +30,14 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.old_bus.firmwares.books.local.conversationBook import (
+from old_bus.firmwares.books.local.conversationBook import (
     Conversation,
     ConversationNotFoundError,
     Message,
 )
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep, get_bus
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep, get_bus
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_conversations")
 
@@ -84,7 +84,7 @@ class ConversationOut(BaseModel):
     """Wire shape for one conversation row.
 
     ``created_at`` / ``updated_at`` are typed ``datetime | None``
-    to match :class:`magi.bus.firmwares.books.local.conversationBook.Conversation`'s
+    to match :class:`bus.firmwares.books.local.conversationBook.Conversation`'s
     ``BaseRecord`` mixin (which leaves them as ``None`` until the row
     is persisted). The DB schema (via :class:`BaseRecordMixin`) is
     non-nullable in practice, but Python-side optionality keeps the
@@ -126,7 +126,7 @@ class CreateConversationResponse(BaseModel):
 class UpdateConversationRequest(BaseModel):
     """Body for ``PATCH /api/chat/conversations/{conversation_id}``.
 
-    Mirrors :class:`magi.channels.api.contacts.ContactUpdate`
+    Mirrors :class:`channels.api.contacts.ContactUpdate`
     semantics (``model_fields_set``): a field's *absence*
     means "don't change". An explicit ``None`` or empty string
     means "clear the title".
@@ -210,7 +210,7 @@ def _delivery_address_for_contact_id(request: Request, contact_id: int) -> str:
 def _resolve_contact_id(request: Request) -> int:
     """Resolve the current caller's contact id.
 
-    Mirrors :func:`magi.channels.api.auth_gates.admin_gate`'s two-leg
+    Mirrors :func:`channels.api.auth_gates.admin_gate`'s two-leg
     strategy:
 
     1. **Proxy leg** — when the request carries a signed WebUI proxy
@@ -224,9 +224,9 @@ def _resolve_contact_id(request: Request) -> int:
     an identity — same code as chat.py so the frontend's friendly
     message covers both endpoints.
     """
-    from magi.channels.api.auth import resolve_session
-    from magi.channels.api.auth_gates import _proxy_identity
-    from magi.channels.api.dependencies import get_bus
+    from channels.api.auth import resolve_session
+    from channels.api.auth_gates import _proxy_identity
+    from channels.api.dependencies import get_bus
 
     proxy = _proxy_identity(request)
     if proxy is not None:

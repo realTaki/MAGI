@@ -22,7 +22,7 @@ phase is what makes the failure legible:
     target lookup and Telegram bootstrap) are small
     local writes that finish in milliseconds, so :data:`CONTROL_TIMEOUT`
     caps them tightly.  The generic proxy in
-    :mod:`magi.channels.api.runtime_proxy` forwards *arbitrary* Runtime
+    :mod:`channels.api.runtime_proxy` forwards *arbitrary* Runtime
     endpoints, some legitimately slow — ``GET
     /api/mcp-servers/{name}/tools`` dials a third-party MCP server under
     its own 60-second ``execute_timeout`` — so :data:`PROXY_TIMEOUT`
@@ -46,7 +46,7 @@ CONTROL_TIMEOUT = httpx.Timeout(connect=2.0, read=10.0, write=10.0, pool=2.0)
 # failure for work that is about to succeed.
 #
 # The inner budget here is Telegram: every helper in
-# :mod:`magi.channels.telegram.bot` calls ``urllib.request.urlopen(...,
+# :mod:`channels.telegram.bot` calls ``urllib.request.urlopen(...,
 # timeout=10)``. That ten seconds is a *socket* timeout — it applies per
 # operation (connect, then each read), not to the request as a whole — so a
 # slow-but-alive api.telegram.org can legitimately keep the runtime busy for

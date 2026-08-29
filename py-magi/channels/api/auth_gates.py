@@ -11,14 +11,14 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from magi.old_bus.firmwares.books.magis import AUTH_MODE_DISABLED
-from magi.old_bus.firmwares.books.local import Role
-from magi.channels.api.dependencies import get_bus
-from magi.channels.api.errors import MagiHTTPException
+from old_bus.firmwares.books.magis import AUTH_MODE_DISABLED
+from old_bus.firmwares.books.local import Role
+from channels.api.dependencies import get_bus
+from channels.api.errors import MagiHTTPException
 
 
 def _session_contact_id(request: Request) -> int | None:
-    from magi.channels.api.auth import resolve_session
+    from channels.api.auth import resolve_session
 
     session = resolve_session(get_bus(request), request.cookies.get("magi_session"))
     if session is None:
@@ -27,7 +27,7 @@ def _session_contact_id(request: Request) -> int | None:
 
 
 def _session_is_current_admin(request: Request) -> bool:
-    from magi.channels.api.auth import resolve_session
+    from channels.api.auth import resolve_session
 
     bus = get_bus(request)
     session = resolve_session(bus, request.cookies.get("magi_session"))
@@ -46,7 +46,7 @@ def _session_is_current_admin(request: Request) -> bool:
 
 def _proxy_identity(request: Request) -> tuple[int, bool] | None:
     """Return ``(local_contact_id, is_admin)`` for a signed runtime call."""
-    from magi.channels.api.proxy_auth import ensure_runtime_operator, verified_proxy_operator, verified_proxy_scope
+    from channels.api.proxy_auth import ensure_runtime_operator, verified_proxy_operator, verified_proxy_scope
 
     bus = get_bus(request)
     if verified_proxy_operator(bus, request) is None:

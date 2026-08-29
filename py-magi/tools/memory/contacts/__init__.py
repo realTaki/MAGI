@@ -1,18 +1,18 @@
 """Contact directory tools.
 
 LLM-managed directory of people the MAGI knows about.
-One module per tool — see :mod:`magi.tools.registry` for
+One module per tool — see :mod:`tools.registry` for
 the dispatcher that wires them up.
 
 All tools declare ``ALLOWED_ROLES = {admin, assigned}``;
 the LLM-side menu filter strips them out for other roles.
 
-  - :mod:`magi.tools.memory.contacts.add_contact`
-  - :mod:`magi.tools.memory.contacts.add_contact_note`
-  - :mod:`magi.tools.memory.contacts.update_contact_note`
-  - :mod:`magi.tools.memory.contacts.delete_contact_note`
-  - :mod:`magi.tools.memory.contacts.update_daily_note`
-  - :mod:`magi.tools.memory.contacts.search_contacts`
+  - :mod:`tools.memory.contacts.add_contact`
+  - :mod:`tools.memory.contacts.add_contact_note`
+  - :mod:`tools.memory.contacts.update_contact_note`
+  - :mod:`tools.memory.contacts.delete_contact_note`
+  - :mod:`tools.memory.contacts.update_daily_note`
+  - :mod:`tools.memory.contacts.search_contacts`
 
 Notes are individual rows in ``contact_notes`` — each
 call to ``add_contact_note`` creates one row. The agent

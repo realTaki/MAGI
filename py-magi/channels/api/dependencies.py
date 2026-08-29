@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request
 
-from magi.old_bus import Bus
+from old_bus import Bus
 
 if TYPE_CHECKING:
-    from magi.startup.workers import WorkerRegistry
+    from startup.workers import WorkerRegistry
 
 
 def get_bus(request: Request) -> Bus:

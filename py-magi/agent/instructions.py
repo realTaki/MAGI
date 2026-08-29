@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
-logger = logging.getLogger("magi.agent.instructions")
+logger = logging.getLogger("agent.instructions")
 
 
 def _render(personal_instruction: str, memberships: list[dict[str, Any]]) -> str:
@@ -39,11 +39,11 @@ def runtime_instruction_block(bus: Bus, *, magi_id: int | None = None) -> str:
 
     ``magi_id`` is the runtime's own ``magis_memberships.id`` —
     propagated in from the provisioned ``RuntimeSpec`` at boot
-    (:mod:`magi.startup.runtime` → :class:`WorkerRegistry` →
+    (:mod:`startup.runtime` → :class:`WorkerRegistry` →
     :class:`AgentWorker`). When provided, the per-MAGI
     memberships and joined MAGIS/role instructions are
     materialised through
-    :meth:`magi.bus.firmwares.books.magis.membershipBook.MagisMembershipBook.instruction_context`
+    :meth:`bus.firmwares.books.magis.membershipBook.MagisMembershipBook.instruction_context`
     (which performs the ``magis_memberships × magis_roles × magis``
     JOIN in one query).
 

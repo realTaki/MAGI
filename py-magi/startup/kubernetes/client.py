@@ -2,9 +2,9 @@
 
 Consolidated from the legacy ``magi.orchestrator.client`` module
 per plan §20.4. Talks to the FastAPI service in
-:mod:`magi.startup.kubernetes.service` over HMAC-signed HTTP.
+:mod:`startup.kubernetes.service` over HMAC-signed HTTP.
 
-The HMAC key is resolved at call time by :mod:`magi.startup.kubernetes._secret`,
+The HMAC key is resolved at call time by :mod:`startup.kubernetes._secret`,
 which prefers the DB-backed ``control_secrets`` row and falls back to the
 ``MAGI_CONTROL_SECRET`` env var as a deployment-side bootstrap bridge
 (for the cluster-init phase that creates the MAGIS database).
@@ -19,8 +19,8 @@ import time
 
 import httpx
 
-from magi.startup.kubernetes._secret import get_control_secret
-from magi.startup.kubernetes.contracts import (
+from startup.kubernetes._secret import get_control_secret
+from startup.kubernetes.contracts import (
     EvaOperationResult,
     EvaSpec,
     MagisBinding,

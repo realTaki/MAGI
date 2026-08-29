@@ -15,9 +15,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["telegram"])
 

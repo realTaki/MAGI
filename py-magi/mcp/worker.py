@@ -1,24 +1,24 @@
 """MCP Worker — sole writer to :class:`McpServerBook`, owner of every MCP connection.
 
 ``McpWorker`` follows the same constructor-injection pattern as
-:class:`~magi.providers.worker.ProvidersWorker` and
-:class:`~magi.tools.worker.ToolsWorker`:
+:class:`~providers.worker.ProvidersWorker` and
+:class:`~tools.worker.ToolsWorker`:
 
 - **Only depends on bus**. The composition root (see
-  :mod:`magi.startup.runtime`) wires a :class:`~magi.bus.Bus`
+  :mod:`startup.runtime`) wires a :class:`~bus.Bus`
   with a ready-to-use :class:`changeMCPServerJobBoard` and
-  :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServerBook`.
+  :class:`~bus.firmwares.books.local.mcpServerBook.McpServerBook`.
 - **No environment reads**. Timeouts and per-server config come
   from ``bus.settings_book`` / the row, never from ``os.environ``.
 - **No environment concurrency knob** — bounded in-process concurrency is
-  constructor-injected through :class:`~magi.runtime_worker.RuntimeWorker`.
+  constructor-injected through :class:`~runtime_worker.RuntimeWorker`.
 
 Write authority
 ---------------
 
 The Worker is the **only writer** to ``McpServerBook``. The LLM
-manage tools (under :mod:`magi.tools.mcp`) only publish a
-:class:`~magi.bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
+manage tools (under :mod:`tools.mcp`) only publish a
+:class:`~bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
 — they never call ``book.upsert`` / ``book.delete`` /
 ``book.update`` themselves. The Worker claims the job, applies the
 write, and reconnects the live connection in the same handler.
@@ -45,8 +45,8 @@ Tool registration
 
 The four CRUD tools (``add_mcp_server`` / ``list_mcp_servers`` /
 ``update_mcp_server`` / ``delete_mcp_server``) live under
-:mod:`magi.tools.mcp` and are registered by the standard builtin
-tools path (``magi.tools.registry._build_tools``) — the MCP
+:mod:`tools.mcp` and are registered by the standard builtin
+tools path (``tools.registry._build_tools``) — the MCP
 worker does **not** import or register them. Discovered tools are
 still registered under source ``"mcp"`` here, so the ToolsWorker
 listener re-publishes the catalog whenever the connection set
@@ -67,21 +67,21 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
     MCPKind,
 )
-from magi.runtime_worker import RuntimeWorker
-from magi.tools.registry import register_tools
+from runtime_worker import RuntimeWorker
+from tools.registry import register_tools
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
-    from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
+    from old_bus import Bus
+    from old_bus.firmwares.books.local.mcpServerBook import McpServer
+    from mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
 
-logger = logging.getLogger("magi.mcp.worker")
+logger = logging.getLogger("mcp.worker")
 
 #: How long the tool side waits for the worker to finish
 #: processing a change job before giving up. Generous enough
@@ -94,12 +94,12 @@ _DEFAULT_TOOL_WAIT_TIMEOUT = 5.0
 class McpWorker(RuntimeWorker):
     """Consumer that owns every MCP server connection in a MAGI process.
 
-    Receives a fully-wired :class:`~magi.bus.Bus` via
+    Receives a fully-wired :class:`~bus.Bus` via
     constructor injection. The :class:`changeMCPServerJobBoard` is
     drained in the background; :meth:`_bootstrap_connections`
     reads the current enabled set on startup. Every change job the
     worker claims carries enough payload to write
-    :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServerBook`
+    :class:`~bus.firmwares.books.local.mcpServerBook.McpServerBook`
     *and* refresh the live connection — the worker is the only
     code that touches either side after startup.
     """
@@ -391,7 +391,7 @@ class McpWorker(RuntimeWorker):
         import :class:`McpWorker` don't drag the ``mcp`` SDK at
         import time.
         """
-        from magi.mcp.MCPClient import MCPServerConnection
+        from mcp.MCPClient import MCPServerConnection
 
         return MCPServerConnection(
             name=server.name,
@@ -410,12 +410,12 @@ class McpWorker(RuntimeWorker):
         """Return the canonical MCP timeout defaults.
 
         MCP timeouts are an implementation detail of this subsystem;
-        the values live on :class:`~magi.mcp.MCPClient.MCPTimeoutConfig`
+        the values live on :class:`~mcp.MCPClient.MCPTimeoutConfig`
         as field defaults rather than on the settings book.  This
         helper exists so call sites read symmetrically with the
         per-server row's optional overrides.
         """
-        from magi.mcp.MCPClient import MCPTimeoutConfig
+        from mcp.MCPClient import MCPTimeoutConfig
 
         return MCPTimeoutConfig()
 
@@ -423,7 +423,7 @@ class McpWorker(RuntimeWorker):
         """Aggregate tools from every live connection + republish.
 
         Fires the ``on_tools_changed`` listener registered by
-        :class:`~magi.tools.worker.ToolsWorker` — the worker
+        :class:`~tools.worker.ToolsWorker` — the worker
         observes the dirty flag on its next iteration and
         republishes the catalog.
         """

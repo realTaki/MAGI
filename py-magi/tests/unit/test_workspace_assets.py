@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from magi.agent.worker import AgentWorker
-from magi.old_bus.firmwares.books.file import PromptBook
-from magi.old_bus.provision import provision_node_storage
-from magi.proactive.preset_tasks import _load_preset
-from magi.proactive.worker import ProactiveWorker
+from agent.worker import AgentWorker
+from old_bus.firmwares.books.file import PromptBook
+from old_bus.provision import provision_node_storage
+from proactive.preset_tasks import _load_preset
+from proactive.worker import ProactiveWorker
 
 
 async def test_workers_seed_only_their_prompt_records_and_skills_seed_at_bus_open(tmp_path) -> None:

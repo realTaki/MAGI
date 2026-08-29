@@ -15,14 +15,14 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from magi.old_bus.firmwares.books.local.conversationBook import (
+from old_bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_conversations import _admin_contact_id
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.chat_conversations import _admin_contact_id
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat_search")
 

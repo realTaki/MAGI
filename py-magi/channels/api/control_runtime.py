@@ -6,9 +6,9 @@ import os
 
 import httpx
 
-from magi.old_bus import Bus
-from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import RELAY_TIMEOUT
+from old_bus import Bus
+from channels.api.proxy_auth import build_proxy_headers
+from channels.api.runtime_http import RELAY_TIMEOUT
 
 
 async def _post(bus: Bus, path: str, payload: dict[str, object]) -> None:

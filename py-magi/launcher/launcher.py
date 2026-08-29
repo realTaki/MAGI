@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from magi.launcher.constant import WORKERS, WORKSPACE_PATH
-from magi.bus import BaseWorker, Bus, Slot
+from launcher.constant import WORKERS, WORKSPACE_PATH
+from bus import BaseWorker, Bus, Slot
 
 _AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 

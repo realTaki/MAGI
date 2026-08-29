@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from magi.bus import (
+from bus import (
     BaseJob,
     Bus,
     CreateMemoryJob,
@@ -11,7 +11,7 @@ from magi.bus import (
     MemoryKind,
     UpdateMemoryJob,
 )
-from magi.bus.firmware.jobs.memoryJobs import (
+from bus.firmware.jobs.memoryJobs import (
     CreateMemoryJobBoard,
     DeleteMemoryJobBoard,
     GetMemoryJobBoard,

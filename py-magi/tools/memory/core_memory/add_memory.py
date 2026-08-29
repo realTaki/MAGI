@@ -7,7 +7,7 @@ something ("记住 X" / "记下 Y" / "the contract is due on
 for the prose.
 
 Person records are NOT writable here — they live in
-:mod:`magi.tools.memory.contacts` and have their own
+:mod:`tools.memory.contacts` and have their own
 tool set (the LLM-managed directory of people the MAGI
 knows about).
 
@@ -18,7 +18,7 @@ write tool. Reads (no read tool yet — the system-prompt
 block is the read path for v0) would carry the same
 gate when added.
 
-Bus plumbing: this tool talks to bus (:class:`magi.bus.Bus`) via
+Bus plumbing: this tool talks to bus (:class:`bus.Bus`) via
 ``ctx.bus.memory_book``.  It validates its command vocabulary at ingress;
 the Book persists free text without imposing a second input policy.
 """
@@ -28,13 +28,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.memoryBook import (
+from old_bus.firmwares.books.local.memoryBook import (
     Memory,
     MemoryKind,
 )
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.add_memory")
+logger = logging.getLogger("tools.memory.add_memory")
 
 
 class AddMemoryTool(Tool):

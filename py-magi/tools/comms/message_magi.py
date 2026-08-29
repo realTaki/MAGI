@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
 
 class MessageMagiTool(Tool):

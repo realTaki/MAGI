@@ -10,8 +10,8 @@ Each MAGI is one OS process. This module owns:
 - The "first MAGI also starts the WebUI" hook.
 
 It does **not** build Kubernetes resources (see
-:mod:`magi.startup.kubernetes`). It does **not** own the WebUI
-implementation — only its lifecycle (see :mod:`magi.startup.webui`).
+:mod:`startup.kubernetes`). It does **not** own the WebUI
+implementation — only its lifecycle (see :mod:`startup.webui`).
 """
 
 from __future__ import annotations
@@ -26,17 +26,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from magi.startup.config import ConfigurationError, StartupConfig
-from magi.startup.paths import (
+from startup.config import ConfigurationError, StartupConfig
+from startup.paths import (
     resolve_magis_database_url,
     resolve_runtime_log_paths,
     resolve_runtime_pid_path,
     resolve_runtime_state_path,
 )
-from magi.startup.process import is_alive, read_pid, reap_orphan_listener
-from magi.startup.spec import load_runtime_spec
+from startup.process import is_alive, read_pid, reap_orphan_listener
+from startup.spec import load_runtime_spec
 
-logger = logging.getLogger("magi.startup.local")
+logger = logging.getLogger("startup.local")
 
 
 HEALTH_POLL_TIMEOUT_S = 30.0
@@ -215,11 +215,11 @@ def restart_magi(*, config: StartupConfig) -> int:
 def _mark_registry_stopped(config: StartupConfig) -> None:
     """Thin wrapper kept for any legacy callers.
 
-    New code should import :func:`magi.startup.process.mark_registry_stopped`
+    New code should import :func:`startup.process.mark_registry_stopped`
     directly — the implementation now lives there so the foreground
     ``run_magi`` SIGTERM/SIGINT handler can share it.
     """
-    from magi.startup.process import mark_registry_stopped
+    from startup.process import mark_registry_stopped
 
     mark_registry_stopped(config)
 
@@ -247,7 +247,7 @@ def status_magi(*, config: StartupConfig) -> LocalSlotStatus:
 
 def list_slots(host_workspace_dir: Path) -> list[str]:
     """Enumerate MAGI slots under ``<host>/MAGI_Citizens/``."""
-    from magi.startup.config import MAGI_CITIZENS_DIR
+    from startup.config import MAGI_CITIZENS_DIR
 
     host = Path(host_workspace_dir).expanduser().resolve()
     citizens = host / MAGI_CITIZENS_DIR
@@ -264,14 +264,14 @@ def list_slots(host_workspace_dir: Path) -> list[str]:
 def _load_spec_from_db(config: StartupConfig):
     """Resolve :class:`RuntimeSpec` from the MAGIS shared database.
 
-    Mirrors :func:`magi.startup.runtime._startup_context`'s setup so the
+    Mirrors :func:`startup.runtime._startup_context`'s setup so the
     detached `magi node run` path reads the same identity the foreground
     factory reads.  The MAGIS URL is reconstructed from
     ``host_workspace_dir`` + ``magis_name`` via
     :func:`paths.resolve_magis_database_url` so we never need a file
     cache to bootstrap.
     """
-    from magi.old_bus import open_bus
+    from old_bus import open_bus
 
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
@@ -345,7 +345,7 @@ __all__ = [
     "restart_magi",
     "status_magi",
     "list_slots",
-    # platform (merged from :mod:`magi.startup.platform`)
+    # platform (merged from :mod:`startup.platform`)
     "PlatformName",
     "current_platform",
     "open_browser",
@@ -354,7 +354,7 @@ __all__ = [
 
 
 # ----------------------------------------------------------------------
-# OS detection helpers (was :mod:`magi.startup.platform`)
+# OS detection helpers (was :mod:`startup.platform`)
 # ----------------------------------------------------------------------
 
 # Tiny, dependency-free. The managed node launcher uses these to

@@ -2,16 +2,16 @@
 directory.
 
 Notes about an existing contact are recorded separately
-via :mod:`magi.tools.memory.contacts.add_contact_note`; this
+via :mod:`tools.memory.contacts.add_contact_note`; this
 tool accepts an optional ``notes`` argument as a convenience
 for "create + first observation" flows and forwards it to
-:mod:`magi.tools.memory.contacts.add_contact_note` so both
+:mod:`tools.memory.contacts.add_contact_note` so both
 paths land on the same ``contact_notes`` row shape.
 
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
+(:class:`bus.Bus`) via ``ctx.bus.contacts_book``
 and ``ctx.bus.contact_notes_book`` — the Books own
 write invariants (length caps,
 empty-content rejection) and expose ``add(...)`` plus
@@ -25,10 +25,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.contactBook import Contact, ContactNote, Role
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.local.contactBook import Contact, ContactNote, Role
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.add_contact")
+logger = logging.getLogger("tools.memory.add_contact")
 
 
 class AddContactTool(Tool):

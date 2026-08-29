@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.api.health import health_channels
-from magi.channels.worker_base import ChannelWorker
+from channels.api.health import health_channels
+from channels.worker_base import ChannelWorker
 
 
 class _FakeHealthWorker(ChannelWorker):

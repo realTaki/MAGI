@@ -15,7 +15,7 @@ worker 重试预算与审计排查，不是给调用方的业务回执。
 （cron / run_at）触发。
 
 ``conversation_id`` / ``contact_id`` **不在 job 上** —— 这些
-字段由 :class:`~magi.bus.firmwares.books.local.tasksBook.Task` 持有，
+字段由 :class:`~bus.firmwares.books.local.tasksBook.Task` 持有，
 TaskWorker claim 后通过 :meth:`tasks_book.get` 读取。这样
 任务的所有 run 都自动共享同一个会话上下文（创建时由
 ``conversations_book.create_task_conversation`` 分配并落到
@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from sqlalchemy import Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,11 +43,11 @@ class RunTaskJob(BaseJob):
 
     ``manual`` 标记触发是否由用户/工具主动发起 — 影响后续
     ``plans`` 的写入决策（如 manual run 跳过 since-recent 判定）。
-    与 :class:`~magi.bus.firmwares.books.local.tasksBook.TaskRun.manual`
+    与 :class:`~bus.firmwares.books.local.tasksBook.TaskRun.manual`
     同构。
 
     只携带 ``task_id`` —— 会话/联系人上下文由 worker 从
-    :class:`~magi.bus.firmwares.books.local.tasksBook.Task` 读取，
+    :class:`~bus.firmwares.books.local.tasksBook.Task` 读取，
     确保任务创建时分配的 conversation 在所有 run 间共享。
     """
 
@@ -76,7 +76,7 @@ class _RunTaskJobRow(BaseJobRowMixin):
     task_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     #: 是否用户/工具主动触发。``manual=True`` 跳过 since-recent
     #: 判定；``False`` 表示 cron / run_at 系统自触发。与
-    #: :class:`~magi.bus.firmwares.books.local.tasksBook.TaskRun.manual`
+    #: :class:`~bus.firmwares.books.local.tasksBook.TaskRun.manual`
     #: 同构（两者都是 ``Boolean`` 列 + ``bool`` DTO，无 int 转换）。
     manual: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

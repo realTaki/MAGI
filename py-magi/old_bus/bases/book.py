@@ -12,8 +12,8 @@ from typing import Self
 from sqlalchemy import DateTime, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.db.base import Base, utcnow_naive
-from magi.old_bus.bases.db.engine import EngineFactory
+from old_bus.bases.db.base import Base, utcnow_naive
+from old_bus.bases.db.engine import EngineFactory
 
 
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)

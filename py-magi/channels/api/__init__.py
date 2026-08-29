@@ -1,7 +1,7 @@
 """MAGI HTTP API surface (FastAPI).
 
 The same :func:`create_app` factory builds three flavours of the FastAPI
-application (see :mod:`magi.channels.api.app`):
+application (see :mod:`channels.api.app`):
 
 - the singleton browser-facing control service (``create_control_app``) —
   serves the sibling React SPA under ``app/`` and the control-plane login
@@ -10,7 +10,7 @@ application (see :mod:`magi.channels.api.app`):
   runtime-private ``/api/*`` surface.
 
 Because both flavours go through this package, the routers under
-:func:`magi.channels.api.app.create_app` group endpoints by feature
+:func:`channels.api.app.create_app` group endpoints by feature
 (``auth``, ``contacts``, ``chat``, ``tasks``, etc). The package name
 "api" — not "webui" — reflects that the surface is consumed by the
 React SPA and by the in-cluster runtime proxy.

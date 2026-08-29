@@ -1,8 +1,8 @@
-"""Unit tests for ``magi.agent.compaction``.
+"""Unit tests for ``agent.compaction``.
 
 Real :class:`ConversationBook` + :class:`MessageBook` against an
 in-memory SQLite. The LLM call is stubbed via
-``magi.agent.compaction.call_llm_for_summary`` so no real provider /
+``agent.compaction.call_llm_for_summary`` so no real provider /
 job board is required.
 """
 
@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from magi.agent.compaction import maybe_compact
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.firmwares.books.local import (
+from agent.compaction import maybe_compact
+from old_bus.bases.db import EngineFactory
+from old_bus.firmwares.books.local import (
     Contact,
     Conversation,
     ConversationBook,
@@ -53,7 +53,7 @@ def _seeded_settings_book(factory) -> SettingBook:
 
 @pytest.fixture
 def contact_id(factory):
-    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
+    from old_bus.firmwares.books.local.contactBook import ContactBook
 
     return ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture'))).id
 
@@ -86,7 +86,7 @@ def _make_bus(*, sbook: ConversationBook, mbook: MessageBook) -> MagicMock:
 def _stub_summary(monkeypatch, return_value: str | None) -> AsyncMock:
     """Patch ``call_llm_for_summary`` to return a fixed string (or None)."""
     stub = AsyncMock(return_value=return_value)
-    monkeypatch.setattr("magi.agent.compaction.call_llm_for_summary", stub)
+    monkeypatch.setattr("agent.compaction.call_llm_for_summary", stub)
     return stub
 
 
@@ -346,7 +346,7 @@ async def test_maybe_compact_keeps_at_least_one_when_summary_fills_budget(
 
 async def test_build_messages_prepends_summary(seed_conversation, contact_id):
     """Summary set → returned list[0] is the summary dict."""
-    from magi.agent.agent_context import build_messages_from_conversation
+    from agent.agent_context import build_messages_from_conversation
 
     sbook, mbook, cid = seed_conversation
     sbook.set_summary(contact_id=contact_id, conversation_id=cid, summary="S")
@@ -371,7 +371,7 @@ async def test_build_messages_prepends_summary(seed_conversation, contact_id):
 
 async def test_build_messages_no_summary(seed_conversation, contact_id):
     """summary=None → no summary dict prepended."""
-    from magi.agent.agent_context import build_messages_from_conversation
+    from agent.agent_context import build_messages_from_conversation
 
     sbook, mbook, cid = seed_conversation
     mbook.get(mbook.add(Message(conversation_id=cid, role='user', text='u1', ts=datetime(2026, 8, 5, 0, 0, 1))))

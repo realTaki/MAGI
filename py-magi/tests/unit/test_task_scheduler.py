@@ -9,7 +9,7 @@ import asyncio
 from datetime import UTC
 from unittest.mock import MagicMock
 
-from magi.channels.tasks.worker import TaskWorker
+from channels.tasks.worker import TaskWorker
 
 
 def test_init_populates_required_attributes():

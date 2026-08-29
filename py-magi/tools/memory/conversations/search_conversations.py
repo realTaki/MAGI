@@ -79,11 +79,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.conversationBook import (
+from old_bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
 _MAX_HITS = 20
 _DEFAULT_CONTEXT_N = 5

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.shell._manager import _BackgroundShellManager
+from tools.base import Tool, ToolContext, ToolResult
+from tools.shell._manager import _BackgroundShellManager
 
 
 class BashKillTool(Tool):
@@ -24,7 +24,7 @@ class BashKillTool(Tool):
 
     # Visible only to ``admin`` and ``assigned``
     # operators — same gate as the WebUI dashboard and
-    # as :class:`~magi.tools.tasks.schedule.ScheduleTaskTool`
+    # as :class:`~tools.tasks.schedule.ScheduleTaskTool`
     # / the action-item trio.
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 

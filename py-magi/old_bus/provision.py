@@ -3,7 +3,7 @@
 Opening a BUS synchronises its existing databases before exposing Books.  This
 module remains the sole production owner of first-time workspace creation,
 MAGI/MAGIS identity setup, and node defaults.  It is called by provisioning
-commands only; a runtime uses :func:`magi.bus.open_bus` instead.
+commands only; a runtime uses :func:`bus.open_bus` instead.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def provision_node_storage(
 
     # Importing and wiring Books registers all BUS-owned metadata before the
     # one explicit schema synchronisation below.
-    from magi.old_bus.bootstrap import _open_with_dirs
+    from old_bus.bootstrap import _open_with_dirs
 
     bus = _open_with_dirs(
         state_dir=str(state_path),

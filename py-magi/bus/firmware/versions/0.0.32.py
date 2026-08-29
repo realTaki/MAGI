@@ -16,7 +16,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    from magi.bus.firmware.versions.schema import firmware_metadata
+    from bus.firmware.versions.schema import firmware_metadata
 
     firmware_metadata().create_all(bind=op.get_bind())
 

@@ -1,7 +1,7 @@
-"""Unit tests for :class:`magi.providers.openai.OpenAIProvider`.
+"""Unit tests for :class:`providers.openai.OpenAIProvider`.
 
 The OpenAI SDK is fully mocked — every test patches
-``magi.providers.openai.AsyncOpenAI`` so no network call
+``providers.openai.AsyncOpenAI`` so no network call
 or real ``AsyncOpenAI`` instantiation ever happens. The
 tests focus on:
 
@@ -28,21 +28,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from magi.old_bus.firmwares.jobs.changeProviderConfigJob import (
+from old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
 )
-from magi.providers.base import LLMStreamEvent
-from magi.providers.errors import (
+from providers.base import LLMStreamEvent
+from providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
     LLMError,
     LLMNetworkError,
     LLMRateLimitError,
 )
-from magi.providers.factory import get_provider
-from magi.providers.openai import OpenAIProvider
+from providers.factory import get_provider
+from providers.openai import OpenAIProvider
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -124,7 +124,7 @@ def mock_openai():
     ``AsyncOpenAI`` that doesn't try to validate the API
     key or open a real connection.
     """
-    with patch("magi.providers.openai.AsyncOpenAI") as mock_cls:
+    with patch("providers.openai.AsyncOpenAI") as mock_cls:
         instance = mock_cls.return_value
         instance.chat.completions.create = AsyncMock()
         yield instance
@@ -141,7 +141,7 @@ def test_constructor_requires_api_key():
 
 
 def test_constructor_uses_default_model_when_unspecified():
-    with patch("magi.providers.openai.AsyncOpenAI") as mock_cls:
+    with patch("providers.openai.AsyncOpenAI") as mock_cls:
         provider = OpenAIProvider(api_key="sk-test")
     assert provider.model == provider.default_model()
     assert provider.name == "openai"
@@ -149,7 +149,7 @@ def test_constructor_uses_default_model_when_unspecified():
 
 
 def test_default_model_is_a_string():
-    with patch("magi.providers.openai.AsyncOpenAI"):
+    with patch("providers.openai.AsyncOpenAI"):
         provider = OpenAIProvider(api_key="sk-test")
     assert isinstance(provider.default_model(), str)
     assert provider.default_model()  # non-empty

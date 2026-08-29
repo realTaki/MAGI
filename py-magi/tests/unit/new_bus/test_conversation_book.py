@@ -5,7 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import create_engine, inspect, text
 
-from magi.bus import (
+from bus import (
     AppendMessageJob,
     ArchiveMessagesJob,
     BaseJob,
@@ -17,13 +17,13 @@ from magi.bus import (
     ListConversationMessagesJob,
     UpdateConversationSummaryJob,
 )
-from magi.bus.firmware.books.contactBook import Contact, ContactBook
-from magi.bus.firmware.books.conversationBook import ConversationBook
-from magi.bus.firmware.jobs.conversationJobs import (
+from bus.firmware.books.contactBook import Contact, ContactBook
+from bus.firmware.books.conversationBook import ConversationBook
+from bus.firmware.jobs.conversationJobs import (
     CreateConversationJobBoard,
     UpdateConversationSummaryJobBoard,
 )
-from magi.bus.firmware.jobs.messageJobs import (
+from bus.firmware.jobs.messageJobs import (
     AppendMessageJobBoard,
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,

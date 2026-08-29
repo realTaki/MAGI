@@ -27,9 +27,9 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.requests import Request
 
-from magi.channels.api import runtime_proxy
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.runtime_http import (
+from channels.api import runtime_proxy
+from channels.api.errors import MagiHTTPException
+from channels.api.runtime_http import (
     CONTROL_TIMEOUT,
     LIVENESS_TIMEOUT,
     PROXY_TIMEOUT,
@@ -204,7 +204,7 @@ async def test_runtime_is_live_uses_a_shared_http_client() -> None:
     ~600 ms per page that no caller would notice locally.  We assert
     on the singleton rather than the wall clock so the test stays fast
     and deterministic across machines."""
-    from magi.channels.api import runtime_http
+    from channels.api import runtime_http
 
     # The probe was just used by the earlier tests, so the singleton
     # has been created.  All later calls must reach for the SAME object.
@@ -264,7 +264,7 @@ async def test_proxy_answers_503_instead_of_stalling_on_an_unresponsive_runtime(
     )
     monkeypatch.setattr(runtime_proxy, "get_bus", lambda _request: proxy_bus)
 
-    from magi.channels.api import auth as auth_mod
+    from channels.api import auth as auth_mod
 
     # Match the v5 session payload shape ``_sign_selected_session`` mints —
     # the proxy reaches into ``contact_id``, ``tgid``, ``admin``, ``assigned``

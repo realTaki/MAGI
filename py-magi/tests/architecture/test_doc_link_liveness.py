@@ -14,7 +14,7 @@ This test extracts three kinds of references from each
    against the repo root. Missing files (retired modules,
    reorgs) fail the test.
 
-2. **Module paths** like ``magi.bus.bases.job``. Importable
+2. **Module paths** like ``bus.bases.job``. Importable
    modules fail the test.
 
 3. **Relative file paths** like ``channels/worker.py`` (no
@@ -27,8 +27,8 @@ Scope policy
 ------------
 
 - **Only ``business-flows.md`` is skipped.** It explicitly notes
-  "旧的 ``magi.bus.BusStore`` / ``agent_turn_store`` /
-  ``magi.agent.step.run_agent_step`` / ``magic`` 表 等已删除"
+  "旧的 ``bus.BusStore`` / ``agent_turn_store`` /
+  ``agent.step.run_agent_step`` / ``magic`` 表 等已删除"
   — recording retired symbols as behavioural anchors is part of
   what that document is for.
 - ``ROADMAP.md`` is **not** skipped. It used to be an archived
@@ -64,9 +64,9 @@ _FILE_RE = re.compile(
 )
 
 # Module / attribute paths: dotted, must start with ``magi.``.
-# Matches anything from ``magi.bus`` (module) to
-# ``magi.bus.bases.job._cas_claim`` (function) to
-# ``magi.bus.BusStore`` (class). The test logic below
+# Matches anything from ``bus`` (module) to
+# ``bus.bases.job._cas_claim`` (function) to
+# ``bus.BusStore`` (class). The test logic below
 # splits on the last dot: the prefix must be importable as
 # a module; the suffix, when present, must resolve as an
 # attribute on that module.
@@ -80,15 +80,15 @@ _PATH_RE = re.compile(
 # would defeat the historical-context purpose.
 _SKIP_DOCS = {
     # ``business-flows.md`` explicitly notes
-    # "旧的 ``magi.bus.BusStore`` / ``agent_turn_store`` /
-    # ``magi.agent.step.run_agent_step`` / ``magic`` 表 等已删除"
+    # "旧的 ``bus.BusStore`` / ``agent_turn_store`` /
+    # ``agent.step.run_agent_step`` / ``magic`` 表 等已删除"
     # — its references to retired code are part of the
     # documentation.
     "docs/business-flows.md",
     # ``IMPORT_ORGANIZATION_REVIEW.md`` records the pre-Book-record
     # file layout (``local/contactBook.py`` etc. before the
-    # magis-vs-local split, ``magi.bus.errors`` /
-    # ``magi.bus.firmwares.books.local.exceptions`` before the unified
+    # magis-vs-local split, ``bus.errors`` /
+    # ``bus.firmwares.books.local.exceptions`` before the unified
     # ``library/exceptions`` module); references are by design stale.
     "docs/reviews/IMPORT_ORGANIZATION_REVIEW.md",
     # ``BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md`` records the
@@ -98,7 +98,7 @@ _SKIP_DOCS = {
     # tree); references are by design stale.
     "docs/reviews/BOOK_RECORD_VALIDATION_REMOVAL_REVIEW.md",
     # Snapshot of mid-file import findings against the pre-bases/firmwares
-    # layout (`magi.bus.guild` / `magi.bus.library` / `magi.bus.db`).
+    # layout (`bus.guild` / `bus.library` / `bus.db`).
     "docs/MID_FILE_IMPORTS_AUDIT.md",
     }
 
@@ -178,8 +178,8 @@ def test_module_paths_in_doc_are_importable(doc_path: Path) -> None:
     module (the full path imports) or an attribute on a module
     (the dotted prefix imports, the suffix exists on it).
 
-    Both classes (``magi.bus.Bus``) and functions
-    (``magi.startup.runtime.run_magi``) are checked the same
+    Both classes (``bus.Bus``) and functions
+    (``startup.runtime.run_magi``) are checked the same
     way: split on the last dot, import the prefix, verify
     the suffix as an attribute.
     """

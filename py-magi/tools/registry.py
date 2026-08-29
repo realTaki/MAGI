@@ -3,10 +3,10 @@ instances the tools worker dispatches to.
 
 This is **not** the agent-visible catalog. The catalog (what
 the LLM sees as its menu) lives in the bus
-:mod:`magi.bus.firmwares.books.local.toolsBook` and is fed by
+:mod:`bus.firmwares.books.local.toolsBook` and is fed by
 the worker via :meth:`ToolsWorker._publish_full_catalog`.
 This module owns only the dispatch half: a cache of
-:class:`~magi.tools.base.Tool` instances.
+:class:`~tools.base.Tool` instances.
 
 Builtin tools are hard-coded here. External subsystems (MCP,
 skills) inject additional tools at runtime through the public
@@ -27,9 +27,9 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.tools.base import Tool
+    from tools.base import Tool
 
-logger = logging.getLogger("magi.tools.registry")
+logger = logging.getLogger("tools.registry")
 
 #: Single-shot cache of builtin :class:`Tool` instances — the
 #: dispatch backend. Populated lazily on the first
@@ -61,35 +61,35 @@ def _build_tools() -> list[Tool]:
     worker itself only injects the *discovered* tools under
     source ``"mcp"``; the CRUD tools are registered here.
     """
-    from magi.tools.comms.message_magi import MessageMagiTool
-    from magi.tools.comms.send_message import SendMessageTool
-    from magi.tools.filesystem.edit_file import EditFileTool
-    from magi.tools.filesystem.list_files import ListFilesTool
-    from magi.tools.filesystem.read_file import ReadFileTool
-    from magi.tools.filesystem.write_file import WriteFileTool
-    from magi.tools.mcp.add_mcp_server import AddMcpServerTool
-    from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
-    from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
-    from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
-    from magi.tools.memory.contacts.add_contact import AddContactTool
-    from magi.tools.memory.contacts.add_contact_note import AddContactNoteTool
-    from magi.tools.memory.contacts.delete_contact_note import DeleteContactNoteTool
-    from magi.tools.memory.contacts.search_contacts import SearchContactsTool
-    from magi.tools.memory.contacts.update_contact_note import UpdateContactNoteTool
-    from magi.tools.memory.contacts.update_daily_note import UpdateDailyNoteTool
-    from magi.tools.memory.core_memory.add_memory import AddMemoryTool
-    from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
-    from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
-    from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
-    from magi.tools.memory.conversations.search_conversations import SearchConversationsTool
-    from magi.tools.shell.kill import BashKillTool
-    from magi.tools.shell.output import BashOutputTool
-    from magi.tools.shell.run import BashRunTool
-    from magi.tools.skills.load_skill import LoadSkillTool
-    from magi.tools.tasks.add_action_item import AddActionItemTool
-    from magi.tools.tasks.complete_action_item import CompleteActionItemTool
-    from magi.tools.tasks.list_action_items import ListActionItemsTool
-    from magi.tools.tasks.schedule import ScheduleTaskTool
+    from tools.comms.message_magi import MessageMagiTool
+    from tools.comms.send_message import SendMessageTool
+    from tools.filesystem.edit_file import EditFileTool
+    from tools.filesystem.list_files import ListFilesTool
+    from tools.filesystem.read_file import ReadFileTool
+    from tools.filesystem.write_file import WriteFileTool
+    from tools.mcp.add_mcp_server import AddMcpServerTool
+    from tools.mcp.delete_mcp_server import DeleteMcpServerTool
+    from tools.mcp.list_mcp_servers import ListMcpServersTool
+    from tools.mcp.update_mcp_server import UpdateMcpServerTool
+    from tools.memory.contacts.add_contact import AddContactTool
+    from tools.memory.contacts.add_contact_note import AddContactNoteTool
+    from tools.memory.contacts.delete_contact_note import DeleteContactNoteTool
+    from tools.memory.contacts.search_contacts import SearchContactsTool
+    from tools.memory.contacts.update_contact_note import UpdateContactNoteTool
+    from tools.memory.contacts.update_daily_note import UpdateDailyNoteTool
+    from tools.memory.core_memory.add_memory import AddMemoryTool
+    from tools.memory.core_memory.complete_memory import CompleteMemoryTool
+    from tools.memory.core_memory.delete_memory import DeleteMemoryTool
+    from tools.memory.core_memory.update_memory import UpdateMemoryTool
+    from tools.memory.conversations.search_conversations import SearchConversationsTool
+    from tools.shell.kill import BashKillTool
+    from tools.shell.output import BashOutputTool
+    from tools.shell.run import BashRunTool
+    from tools.skills.load_skill import LoadSkillTool
+    from tools.tasks.add_action_item import AddActionItemTool
+    from tools.tasks.complete_action_item import CompleteActionItemTool
+    from tools.tasks.list_action_items import ListActionItemsTool
+    from tools.tasks.schedule import ScheduleTaskTool
 
     return [
         ReadFileTool(),

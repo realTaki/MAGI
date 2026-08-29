@@ -9,11 +9,11 @@ from typing import Literal
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
-from magi.old_bus.firmwares.books.local.tasksBook import Task, preset_to_cron, validate_run_at
-from magi.old_bus.firmwares.jobs.runTaskJob import RunTaskJob
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from old_bus.firmwares.books.local.tasksBook import Task, preset_to_cron, validate_run_at
+from old_bus.firmwares.jobs.runTaskJob import RunTaskJob
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["tasks"])
 

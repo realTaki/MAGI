@@ -23,8 +23,8 @@ import os
 import tempfile
 from typing import Any
 
-from magi.tools._safe_path import safe_resolve
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools._safe_path import safe_resolve
+from tools.base import Tool, ToolContext, ToolResult
 
 _MAX_CONTENT_BYTES = 256 * 1024
 

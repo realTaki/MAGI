@@ -1,7 +1,7 @@
 """Anthropic-API 兼容 chat completions 的公共基类。
 
-:class:`magi.providers.claude_code.ClaudeProvider`（Anthropic 自家 API）
-和 :class:`magi.providers.minimax.MinimaxProvider`（Minimax 的中国/海外
+:class:`providers.claude_code.ClaudeProvider`（Anthropic 自家 API）
+和 :class:`providers.minimax.MinimaxProvider`（Minimax 的中国/海外
 节点）都继承本类。两个厂商 wire 协议一致（Anthropic Messages API），
 差异只有 base_url / 默认模型 / 错误标签。本基类统一处理：
 
@@ -32,9 +32,9 @@ from typing import Any
 
 import anthropic
 
-from magi.providers._utils import is_context_length_error, safe_dump
-from magi.providers.base import LLMProvider, LLMStreamEvent, StreamEventKind
-from magi.providers.errors import (
+from providers._utils import is_context_length_error, safe_dump
+from providers.base import LLMProvider, LLMStreamEvent, StreamEventKind
+from providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
     LLMError,
@@ -42,7 +42,7 @@ from magi.providers.errors import (
     LLMRateLimitError,
 )
 
-logger = logging.getLogger("magi.providers.anthropic")
+logger = logging.getLogger("providers.anthropic")
 
 _MAX_TOKENS_DEFAULT = 1024
 

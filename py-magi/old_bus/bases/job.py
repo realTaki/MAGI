@@ -14,8 +14,8 @@ from sqlalchemy import DateTime, Integer, Text, and_, func, or_, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 from sqlalchemy.sql.elements import ColumnElement
 
-from magi.old_bus.bases.db.base import Base, enum_column, utcnow_naive
-from magi.old_bus.bases.db.engine import EngineFactory
+from old_bus.bases.db.base import Base, enum_column, utcnow_naive
+from old_bus.bases.db.engine import EngineFactory
 
 # -- 公共基类 / 列 mixin ---------------------------------------------------
 
@@ -29,7 +29,7 @@ class JobStatus(StrEnum):
 
     :class:`~enum.StrEnum`——成员继承 ``str``，``JobStatus.COMPLETED ==
     "completed"`` 恒为真、JSON 序列化直接输出 ``"completed"``。存储走
-    :func:`magi.bus.bases.db.base.enum_column`（``values_callable`` 把存储
+    :func:`bus.bases.db.base.enum_column`（``values_callable`` 把存储
     / CHECK 锁定到 ``.value``），业务代码比较用 ``JobStatus.COMPLETED``
     而不是字符串字面量。
     """
@@ -107,12 +107,12 @@ class BaseJobRowMixin(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Native enum column — see :class:`JobStatus` docstring. The full SAEnum
     # configuration (values_callable / length / create_constraint / name)
-    # lives in :func:`magi.bus.bases.db.base.enum_column` so all 10 Job boards
+    # lives in :func:`bus.bases.db.base.enum_column` so all 10 Job boards
     # share one source of truth. ``name="job_status"`` is the PG
     # ``CREATE TYPE`` / SQLite CHECK constraint label emitted by the
     # collapsed initial schema (see
-    # :mod:`magi.bus.firmwares.alembic.versions.0001_initial_schema` and
-    # :mod:`magi.bus.firmwares.alembic.magis_versions.0001_initial_schema` —
+    # :mod:`bus.firmwares.alembic.versions.0001_initial_schema` and
+    # :mod:`bus.firmwares.alembic.magis_versions.0001_initial_schema` —
     # the 2026.08 dev-mode collapse folded the historical migration
     # chain into a single baseline per scope).
     status: Mapped[JobStatus] = mapped_column(
@@ -290,8 +290,8 @@ class BaseJobBoard[RowT: BaseJobRowMixin, JobT: BaseJob, ResultT: BaseJobResult]
 
         Useful for callers that need to confirm a write reached
         the durable side before reporting success to the LLM /
-        API (e.g. :mod:`magi.tools.mcp` waits for
-        :class:`~magi.mcp.worker.McpWorker` to finish upserting
+        API (e.g. :mod:`tools.mcp` waits for
+        :class:`~mcp.worker.McpWorker` to finish upserting
         a row before returning). Returns ``None`` on timeout so
         the caller can surface "the worker hasn't answered yet"
         as a distinct failure mode from "the worker said no".

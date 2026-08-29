@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from bus import Bus
 
-logger = logging.getLogger("magi.agent.agent_context")
+logger = logging.getLogger("agent.agent_context")
 
 
 def build_messages_from_conversation(

@@ -21,9 +21,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
-from magi.channels.worker_base import ChannelWorker
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+from channels.worker_base import ChannelWorker
 
 
 class _FakeChannelWorker(ChannelWorker):

@@ -38,9 +38,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from magi.old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
-from magi.old_bus.bases.db.base import enum_column, utcnow_naive
-from magi.old_bus.firmwares.books.local.conversationBook import _ConversationRow
+from old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from old_bus.bases.db.base import enum_column, utcnow_naive
+from old_bus.firmwares.books.local.conversationBook import _ConversationRow
 
 
 def _new_task_id() -> str:
@@ -73,7 +73,7 @@ class TaskSource(StrEnum):
 class TaskRunStatus(StrEnum):
     """Closed set of values for ``TaskRun.status`` + ``Task.last_status``.
 
-    Stored as native ENUM via :func:`magi.bus.bases.db.base.enum_column` (PG) / CHECK (SQLite).
+    Stored as native ENUM via :func:`bus.bases.db.base.enum_column` (PG) / CHECK (SQLite).
     ``StrEnum`` keeps raw-string ↔ enum value equivalence so callers
     can pass either shape without a coercion shim.
     """
@@ -157,7 +157,7 @@ class TaskRun(BaseRecord):
 
 class _TaskRow(BaseRecordMixin):
     __tablename__ = "tasks"
-    # ``scheduleTaskNotify`` (in ``magi.bus.firmwares.jobs``) registers
+    # ``scheduleTaskNotify`` (in ``bus.firmwares.jobs``) registers
     # the same Table for its fire-and-forget path; whichever
     # module is imported first wins, and the other must opt-in.
     __table_args__ = {"extend_existing": True}
@@ -260,7 +260,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
     (:attr:`TaskSource.PROACTIVE`); the row shape is the same. The
     Book refuses ``add()`` calls whose ``source`` isn't in
     :class:`TaskSource` — same convention as
-    :class:`~magi.bus.firmwares.books.local.actionItemBook`.
+    :class:`~bus.firmwares.books.local.actionItemBook`.
     """
 
     model_cls = _TaskRow
@@ -599,7 +599,7 @@ class TaskBook(BaseBook[_TaskRow, Task]):
 
         ``manual=True`` 表示用户/工具主动触发（API / UI / tool）；
         ``False`` 表示 task 模块按自身规则（cron / run_at）触发。
-        与 :class:`~magi.bus.firmwares.jobs.runTaskJob.RunTaskJob.manual`
+        与 :class:`~bus.firmwares.jobs.runTaskJob.RunTaskJob.manual`
         同构。
         """
         new_run_id = run_id or _new_task_id()

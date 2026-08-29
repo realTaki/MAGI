@@ -14,8 +14,8 @@ reply, etc.) land here in the same shape.
 
 Both handlers are admin-only (``AdminGate``). The deployed
 node's TG channel reads the same values via
-:func:`magi.channels.telegram.config.get_read_reaction_emoji`
-/ :func:`magi.channels.telegram.config.get_done_reaction_emoji`
+:func:`channels.telegram.config.get_read_reaction_emoji`
+/ :func:`channels.telegram.config.get_done_reaction_emoji`
 on every inbound message, so a Save in the UI takes effect
 on the next message — no restart, no reload.
 """
@@ -27,9 +27,9 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.telegram.config import (
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.telegram.config import (
     DEFAULT_DONE_REACTION_EMOJI,
     DEFAULT_READ_REACTION_EMOJI,
     REACTION_CHOICES,
@@ -122,7 +122,7 @@ def put_read_reaction(
     so the operator gets a clear "pick from the list" hint
     instead of a silent write that the bot then can't use.
     """
-    from magi.channels.api.errors import MagiHTTPException
+    from channels.api.errors import MagiHTTPException
 
     allowed = {v for v, _ in REACTION_CHOICES}
     if payload.emoji not in allowed:
@@ -166,7 +166,7 @@ def put_done_reaction(
     here with the same 400 code so the UI can surface a
     consistent error.
     """
-    from magi.channels.api.errors import MagiHTTPException
+    from channels.api.errors import MagiHTTPException
 
     allowed = {v for v, _ in REACTION_CHOICES}
     if payload.emoji not in allowed:

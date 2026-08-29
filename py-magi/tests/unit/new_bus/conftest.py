@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.bus import Bus
+from bus import Bus
 from tests.unit.new_bus.testing import WORKER, PingBus, PingJobBoard, attach_board
 
 

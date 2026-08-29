@@ -1,4 +1,4 @@
-"""Unit tests for :class:`magi.tools.skills.load_skill.LoadSkillTool`.
+"""Unit tests for :class:`tools.skills.load_skill.LoadSkillTool`.
 
 The tool is a thin wrapper around ``ctx.bus.skills_book``. We
 construct a real :class:`SkillsBook` against tmp_path roots and
@@ -17,10 +17,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from magi.old_bus.bases.db.file import FileShelf
-from magi.old_bus.firmwares.books.file.skillsBook import SkillsBook
-from magi.tools.base import ToolContext
-from magi.tools.skills.load_skill import LoadSkillTool
+from old_bus.bases.db.file import FileShelf
+from old_bus.firmwares.books.file.skillsBook import SkillsBook
+from tools.base import ToolContext
+from tools.skills.load_skill import LoadSkillTool
 
 # ──────────────────────────────────────────────────────────────────────── #
 # Fixtures + helpers
@@ -152,7 +152,7 @@ async def test_load_skill_path_traversal_is_error(
 
 async def test_load_skill_no_bus_returns_require_bus_error():
     """The ``@Tool.require_bus`` decorator fails closed when
-    ``ctx.bus is None`` — see :class:`magi.tools.base.Tool`'s
+    ``ctx.bus is None`` — see :class:`tools.base.Tool`'s
     decorator."""
     tool = LoadSkillTool()
     ctx = ToolContext(workspace="", contact_id=1, channel="test", bus=None)

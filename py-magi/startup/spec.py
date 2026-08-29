@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from magi.startup.config import ConfigurationError
+from startup.config import ConfigurationError
 
 
 @dataclass(frozen=True, slots=True)

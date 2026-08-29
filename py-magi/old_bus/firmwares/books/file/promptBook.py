@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Final
 
-from magi.old_bus.bases.db.file import FileShelf
+from old_bus.bases.db.file import FileShelf
 
 KNOWN_PROMPTS: Final[dict[str, str]] = {
     # AgentWorker-owned prompts.

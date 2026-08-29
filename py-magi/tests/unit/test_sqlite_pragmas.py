@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 
 def test_bus_engine_sets_required_sqlite_pragmas(tmp_path) -> None:
-    from magi.old_bus.bases.db.engine import build_local_factory
+    from old_bus.bases.db.engine import build_local_factory
 
     factory = build_local_factory(str(tmp_path))
     with factory.session() as session:

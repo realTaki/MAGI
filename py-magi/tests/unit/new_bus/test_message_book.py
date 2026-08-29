@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.bus import (
+from bus import (
     AppendMessageJob,
     ArchiveMessagesJob,
     BaseJob,
@@ -14,10 +14,10 @@ from magi.bus import (
     JobStatus,
     ListConversationMessagesJob,
 )
-from magi.bus.firmware.books.contactBook import Contact, ContactBook
-from magi.bus.firmware.books.messageBook import MessageBook
-from magi.bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
-from magi.bus.firmware.jobs.messageJobs import (
+from bus.firmware.books.contactBook import Contact, ContactBook
+from bus.firmware.books.messageBook import MessageBook
+from bus.firmware.jobs.conversationJobs import CreateConversationJobBoard
+from bus.firmware.jobs.messageJobs import (
     AppendMessageJobBoard,
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,
@@ -163,7 +163,7 @@ def test_append_returns_failure_only_when_its_foreign_key_is_missing(bus: Bus) -
 
 
 def test_message_book_stays_private_to_firmware() -> None:
-    import magi.bus.firmware as firmware
+    import bus.firmware as firmware
 
     assert "MessageBook" not in firmware.__all__
     assert not hasattr(firmware, "MessageBook")

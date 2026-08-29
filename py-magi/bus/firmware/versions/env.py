@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 
-from magi.bus.firmware.versions.schema import firmware_metadata
+from bus.firmware.versions.schema import firmware_metadata
 
 config = context.config
 target_metadata = firmware_metadata()

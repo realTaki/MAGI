@@ -1,7 +1,7 @@
 """Lock the post-Phase-6 cleanup of the legacy ``handle_message`` re-export.
 
 Design §19 / Phase 6 commits to removing the single-turn
-``magi.agent.loop.handle_message`` shim once all production call
+``agent.loop.handle_message`` shim once all production call
 sites have migrated to the actor runtime
 (``submit_agent_message`` + ``wait_for_agent_run``). The current
 state — confirmed by audit — is:
@@ -40,11 +40,11 @@ def test_loop_module_does_not_exist() -> None:
 
 
 def test_agent_init_does_not_re_export_legacy_symbols() -> None:
-    """``magi.agent.handle_message`` must NOT resolve.
+    """``agent.handle_message`` must NOT resolve.
 
     Static AST scan: the ``__init__`` module must not declare a
     ``__getattr__`` that returns symbols from a deleted
-    ``magi.agent.loop`` module. Attribute lookups must raise
+    ``agent.loop`` module. Attribute lookups must raise
     ``AttributeError``.
     """
     init_path = REPO_ROOT / "magi" / "agent" / "__init__.py"
@@ -55,12 +55,12 @@ def test_agent_init_does_not_re_export_legacy_symbols() -> None:
     assert not has_lazy_attr, (
         f"{init_path} defines a __getattr__; that was the Phase-2 "
         "PEP 562 shim. Phase 6 removes it. Use the explicit "
-        "magi.agent.worker API instead."
+        "agent.worker API instead."
     )
 
 
 def test_handle_message_not_importable_from_magi_agent() -> None:
-    """The runtime contract: ``from magi.agent import handle_message`` raises.
+    """The runtime contract: ``from agent import handle_message`` raises.
 
     Verified at import time: a regression that re-introduces the
     lazy re-export would let this succeed silently.
@@ -71,7 +71,7 @@ def test_handle_message_not_importable_from_magi_agent() -> None:
         # ``__getattr__`` surfaces as ``ImportError``.
         importlib = __import__("importlib")
         try:
-            _ = importlib.import_module("magi.agent").handle_message
+            _ = importlib.import_module("agent").handle_message
         except AttributeError as exc:
             # Python's import machinery maps ``__getattr__``
             # AttributeError to ``ImportError`` in some
@@ -99,10 +99,10 @@ def test_handle_message_not_in_legacy_agent_loop_path() -> None:
                 mod = node.module
             elif isinstance(node, ast.Import):
                 mod = next((a.name for a in node.names), None)
-            if mod and "magi.agent.loop" in mod:
+            if mod and "agent.loop" in mod:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}: imports from {mod!r}")
     assert not offenders, (
-        "magi/agent/ imports from magi.agent.loop; the legacy "
+        "magi/agent/ imports from agent.loop; the legacy "
         "loop module is supposed to be gone:\n  " + "\n  ".join(offenders)
     )

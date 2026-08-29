@@ -13,7 +13,7 @@ Scope (per-contact, role-gated): only ``admin`` (per
 items. ``guest`` callers don't see the tool in their menu.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.action_items_book``
+(:class:`bus.Bus`) via ``ctx.bus.action_items_book``
 — the Book is pure CRUD and exposes ``add(...)`` plus
 ``to_dict`` on the returned DTO. ``source`` is decided by
 the caller (default ``'user'``): chat-driven operator
@@ -32,10 +32,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.tasks.add_action_item")
+logger = logging.getLogger("tools.tasks.add_action_item")
 
 
 class AddActionItemTool(Tool):

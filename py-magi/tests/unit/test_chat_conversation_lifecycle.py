@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.firmwares.books.local import Conversation, ConversationBook, Message, MessageBook
-from magi.channels.api.chat import ChatSendRequest, send_chat
-from magi.channels.api.chat_conversations import create_conversation
+from old_bus.bases.db import EngineFactory
+from old_bus.firmwares.books.local import Conversation, ConversationBook, Message, MessageBook
+from channels.api.chat import ChatSendRequest, send_chat
+from channels.api.chat_conversations import create_conversation
 
 
 @pytest.mark.asyncio
@@ -21,7 +21,7 @@ async def test_first_webui_send_uses_generated_conversation_id(monkeypatch) -> N
     bus.conversations_book.add.return_value = 41
     bus.agent_job_board.publish.return_value = 73
     monkeypatch.setattr(
-        "magi.channels.api.auth_gates._proxy_identity", lambda _request: (17, True)
+        "channels.api.auth_gates._proxy_identity", lambda _request: (17, True)
     )
 
     result = await send_chat(
@@ -43,7 +43,7 @@ def test_explicit_conversation_create_returns_generated_id(monkeypatch) -> None:
     bus.contacts_book.get.return_value = SimpleNamespace(id=17, tgid=None)
     bus.conversations_book.add.return_value = 41
     monkeypatch.setattr(
-        "magi.channels.api.auth_gates._proxy_identity", lambda _request: (17, True)
+        "channels.api.auth_gates._proxy_identity", lambda _request: (17, True)
     )
 
     request = SimpleNamespace(

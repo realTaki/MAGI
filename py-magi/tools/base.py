@@ -24,10 +24,10 @@ worker hands the tool) and :class:`ToolResult` (what the
 tool returns) — live in this module because they're part
 of the ``Tool`` abstraction itself, not a bus concept.
 LLM-contract DTOs (``ToolDefinition`` / ``ToolCatalogSnapshot``)
-live in :mod:`magi.bus.firmwares.books.local.toolsBook` next to
+live in :mod:`bus.firmwares.books.local.toolsBook` next to
 the Books that publish them. Job-side DTOs (``RunToolJob`` /
 ``RunToolResult``) live in
-:mod:`magi.bus.firmwares.jobs.runToolJob`.
+:mod:`bus.firmwares.jobs.runToolJob`.
 
 Each tool implementation lives in its own module under
 ``magi/tools/`` and exports a single class.
@@ -46,7 +46,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
 
 # -- execution I/O DTOs ---------------------------------------------------
@@ -65,7 +65,7 @@ class ToolContext:
     bus books rather than handling paths themselves. Only the
     user-facing ``workspace`` (resolved from
     ``HOST_WORKSPACE_DIR`` + ``MAGI_NAME`` via
-    :func:`magi.startup.paths.resolve_workspace_dir`) is part of
+    :func:`startup.paths.resolve_workspace_dir`) is part of
     the tool context, because it's the boundary tools operate
     against (``safe_resolve`` etc.).
 
@@ -87,7 +87,7 @@ class ToolContext:
 
 
 #: Truncation budget for :meth:`ToolResult.ok`. Mirrors the worker's
-#: own cut in ``magi.tools.worker._to_result`` (``content[:8000]``) —
+#: own cut in ``tools.worker._to_result`` (``content[:8000]``) —
 #: the worker truncates unconditionally to fit the column, so a
 #: payload that overflows would be cut anyway, just silently. Cutting
 #: here instead lets us append an explicit marker so the model knows
@@ -170,7 +170,7 @@ class Tool(ABC):
     tests and boot probes.
 
     Keeping the decorator on the base class means tool
-    files don't grow a new ``from magi.tools.base import
+    files don't grow a new ``from tools.base import
     ..., require_bus`` line — :class:`Tool` is already
     imported by every concrete tool, so
     ``@Tool.require_bus`` just works.

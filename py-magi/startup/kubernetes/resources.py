@@ -6,7 +6,7 @@ Kubernetes path lives directly here per plan §6 and §17.
 
 This module also owns :class:`KubernetesEvaBackend`, the in-process
 K8s resource client used by the orchestrator service in
-:mod:`magi.startup.kubernetes.service` (consolidated from the
+:mod:`startup.kubernetes.service` (consolidated from the
 legacy ``magi.orchestrator.kubernetes`` per plan §20.4).
 """
 
@@ -23,20 +23,20 @@ from typing import Any
 
 import httpx
 
-from magi.startup.kubernetes._secret import get_control_secret
+from startup.kubernetes._secret import get_control_secret
 
-from magi.startup.config import (
+from startup.config import (
     DEFAULT_MAGI_NAME,
     RUNTIME_PORT,
     WEBUI_PORT,
     StartupConfig,
 )
-from magi.startup.kubernetes.contracts import (
+from startup.kubernetes.contracts import (
     EvaOperationResult,
     MagisProvisionResult,
 )
 
-logger = logging.getLogger("magi.startup.kubernetes")
+logger = logging.getLogger("startup.kubernetes")
 
 
 # ----------------------------------------------------------------------
@@ -99,7 +99,7 @@ def create_magi_resources(*, config: StartupConfig, magi_id: int) -> dict[str, A
     The Service is intentionally ClusterIP (internal-only) per
     plan §15 — only the singleton WebUI is externally exposed.
     The Service ``port`` / ``targetPort`` forward to the Runtime's
-    internal port from :data:`magi.startup.config.RUNTIME_PORT`,
+    internal port from :data:`startup.config.RUNTIME_PORT`,
     *not* the operator-facing WebUI port.
     """
     if config.is_first_magi and config.magi_name != DEFAULT_MAGI_NAME:
@@ -329,7 +329,7 @@ class KubernetesEvaBackend:
 
     Consolidated from the legacy ``magi.orchestrator.kubernetes``
     module per plan §20.4 — the orchestrator service in
-    :mod:`magi.startup.kubernetes.service` is the only caller.
+    :mod:`startup.kubernetes.service` is the only caller.
     """
 
     def __init__(self) -> None:

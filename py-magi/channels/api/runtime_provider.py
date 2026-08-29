@@ -26,15 +26,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from magi.old_bus.firmwares.jobs.changeProviderConfigJob import (
+from old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
     ChangeProviderConfigJob,
 )
-from magi.channels.api.auth_gates import admin_gate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import admin_gate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.runtime_provider")
 
@@ -79,7 +79,7 @@ def _known_providers(bus) -> set[str]:
     """Return the set of known provider ids from settings_book.
 
     Falls back to a hardcoded list matching
-    :data:`magi.providers.factory._KNOWN_PROVIDERS` when the
+    :data:`providers.factory._KNOWN_PROVIDERS` when the
     worker hasn't seeded ``providers.options`` yet.
     """
     raw = bus.settings_book.get_value(key=_PROVIDERS_OPTIONS_KEY)

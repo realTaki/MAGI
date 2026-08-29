@@ -7,7 +7,7 @@ Bot tokens and private contacts out of the WebUI service.
 
 All data access goes through the bus facade — no ``magi.db`` imports
 (``channels → db`` boundary).  Bot delivery still calls the
-``magi.channels.telegram.bot`` module directly because that's a
+``channels.telegram.bot`` module directly because that's a
 transport, not a database.
 """
 
@@ -22,17 +22,17 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.books.local import Role
-from magi.old_bus.firmwares.books.magis import (
+from old_bus import Bus
+from old_bus.firmwares.books.local import Role
+from old_bus.firmwares.books.magis import (
     AUTH_MODE_IM_2FA_ENABLED,
     AUTH_MODE_LOCAL_NO_2FA,
     AUTH_MODE_RECOVERY_LOCAL_NO_2FA,
 )
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import verified_proxy_operator, verified_proxy_scope
-from magi.channels.telegram import bot as tg_bot
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
+from channels.api.proxy_auth import verified_proxy_operator, verified_proxy_scope
+from channels.telegram import bot as tg_bot
 
 router = APIRouter(tags=["runtime-access"])
 
@@ -440,7 +440,7 @@ async def verify_two_factor_setup_code(
     bus.magis_admins_book.bind_telegram(admin_id=admin_id, tgid=payload.tgid)
     projection = bus.contacts_book.get_by_magis_admin_id(magis_admin_id=admin_id)
     if projection is not None:
-        from magi.proactive.two_factor_action import reconcile_for_admin
+        from proactive.two_factor_action import reconcile_for_admin
 
         reconcile_for_admin(
             book=bus.action_items_book,

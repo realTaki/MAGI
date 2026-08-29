@@ -19,8 +19,8 @@ import zoneinfo
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.system_settings")
 
@@ -114,7 +114,7 @@ def put_system_timezone(
     400 ``validation.unknown_timezone`` so the operator gets a clear
     hint instead of a silent fallback to UTC.
     """
-    from magi.channels.api.errors import MagiHTTPException
+    from channels.api.errors import MagiHTTPException
 
     tz = payload.timezone
     svc = _settings(bus)

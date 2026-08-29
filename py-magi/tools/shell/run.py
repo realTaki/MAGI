@@ -22,15 +22,15 @@ import time
 import uuid
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.shell._manager import (
+from tools.base import Tool, ToolContext, ToolResult
+from tools.shell._manager import (
     _BASH_ID_LEN,
     _FOREGROUND_TIMEOUT_DEFAULT,
     _FOREGROUND_TIMEOUT_MAX,
     _BackgroundShellManager,
 )
 
-logger = logging.getLogger("magi.tools.shell.run")
+logger = logging.getLogger("tools.shell.run")
 
 
 class BashRunTool(Tool):
@@ -45,7 +45,7 @@ class BashRunTool(Tool):
 
     # Visible only to ``admin`` and ``assigned``
     # operators — same gate as the WebUI dashboard and
-    # as :class:`~magi.tools.tasks.schedule.ScheduleTaskTool`
+    # as :class:`~tools.tasks.schedule.ScheduleTaskTool`
     # / the action-item trio.
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 

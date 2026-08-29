@@ -1,4 +1,4 @@
-"""Unit tests for ``magi.bus.firmwares.books.file.skillsBook.SkillsBook``.
+"""Unit tests for ``bus.firmwares.books.file.skillsBook.SkillsBook``.
 
 Two tmp_path-based roots per test (bundle + operator) so each test
 gets an isolated, predictable filesystem layout.  The Book scans
@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from magi.old_bus.bases.db.file import FileShelf
-from magi.old_bus.firmwares.books.file.skillsBook import (
+from old_bus.bases.db.file import FileShelf
+from old_bus.firmwares.books.file.skillsBook import (
     _BODY_MAX_BYTES,
     SkillBody,
     SkillMeta,

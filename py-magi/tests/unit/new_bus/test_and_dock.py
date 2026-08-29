@@ -1,4 +1,4 @@
-from magi.bus import BaseJobResult, JobStatus, Slot
+from bus import BaseJobResult, JobStatus, Slot
 from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
 
 

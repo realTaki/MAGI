@@ -6,11 +6,11 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
-from magi.old_bus.firmwares.books.local import ActionPriority
+from old_bus.firmwares.books.local import ActionPriority
 
-logger = logging.getLogger("magi.agent.system_prompt")
+logger = logging.getLogger("agent.system_prompt")
 
 
 def _format_memory_block(rows) -> str:
@@ -99,7 +99,7 @@ def build_system_prompt(
     parts: list[str] = [soul]
 
     # 2. Instructions — runtime, magi/team/role-aware operating context.
-    from magi.agent.instructions import runtime_instruction_block
+    from agent.instructions import runtime_instruction_block
 
     instruction_block = runtime_instruction_block(bus, magi_id=magi_id)
     if instruction_block:

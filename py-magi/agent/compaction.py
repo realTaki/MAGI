@@ -20,7 +20,7 @@ Skipped when:
   - conversation_id is missing
   - total tokens (summary + history) under threshold_pct of context_window
 
-Settings keys (must match ``magi.channels.api.system_settings`` so the
+Settings keys (must match ``channels.api.system_settings`` so the
 frontend "compact" panel actually controls behaviour):
   - ``system.compact_keep_recent`` — target number of recent active
     messages to keep verbatim after compaction (default 20, range
@@ -41,20 +41,20 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.agent.tokens import (
+from agent.tokens import (
     TOKENS_PER_MESSAGE_OVERHEAD,
     estimate_messages_tokens,
     estimate_string_tokens,
 )
-from magi.old_bus.bases.job import JobStatus
+from old_bus.bases.job import JobStatus
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.books.local.conversationBook import Message
+    from old_bus import Bus
+    from old_bus.firmwares.books.local.conversationBook import Message
 
-logger = logging.getLogger("magi.agent.compaction")
+logger = logging.getLogger("agent.compaction")
 
-# Defaults + bounds mirror magi.channels.api.system_settings so the code
+# Defaults + bounds mirror channels.api.system_settings so the code
 # path stays in lockstep with the API/UI surface.
 _DEFAULT_KEEP_RECENT = 20
 _MIN_KEEP_RECENT = 5
@@ -266,7 +266,7 @@ async def call_llm_for_summary(
         else:
             return None
 
-    from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMJob
+    from old_bus.firmwares.jobs.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
         messages=[

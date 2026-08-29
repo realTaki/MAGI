@@ -1,4 +1,4 @@
-"""Tests for :mod:`magi.startup.process` — PID file + orphan-port helpers."""
+"""Tests for :mod:`startup.process` — PID file + orphan-port helpers."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import time
 
 import pytest
 
-from magi.startup import process as proc
-from magi.startup.process import reap_orphan_listener
+from startup import process as proc
+from startup.process import reap_orphan_listener
 
 
 def _free_port() -> int:

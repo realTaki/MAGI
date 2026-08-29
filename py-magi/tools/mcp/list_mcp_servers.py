@@ -5,9 +5,9 @@ Read-only. Metadata only (name, type, enabled, timeouts) — the
 intentionally never serialised.
 
 Reads through the bus
-:class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServerBook.list_all`
+:class:`~bus.firmwares.books.local.mcpServerBook.McpServerBook.list_all`
 so the result reflects every row the
-:class:`~magi.mcp.worker.McpWorker` would see on its next
+:class:`~mcp.worker.McpWorker` would see on its next
 bootstrap. The bus ``McpService.list()`` continues to back
 the WebUI in the meantime; both sides share the same physical
 SQLite table.
@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
+from tools.base import Tool, ToolContext, ToolResult
 
 
 class ListMcpServersTool(Tool):

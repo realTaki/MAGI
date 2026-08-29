@@ -16,21 +16,21 @@ from pathlib import Path
 
 import pytest
 
-from magi.old_bus.bases.db.engine import EngineFactory
-from magi.old_bus.firmwares.books.local.contactBook import Contact, ContactBook
-from magi.old_bus.firmwares.books.local.memoryBook import Memory, MemoryBook
-from magi.tools.base import ToolContext, ToolResult
-from magi.tools.memory.core_memory.add_memory import AddMemoryTool
-from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool
-from magi.tools.memory.core_memory.delete_memory import DeleteMemoryTool
-from magi.tools.memory.core_memory.update_memory import UpdateMemoryTool
+from old_bus.bases.db.engine import EngineFactory
+from old_bus.firmwares.books.local.contactBook import Contact, ContactBook
+from old_bus.firmwares.books.local.memoryBook import Memory, MemoryBook
+from tools.base import ToolContext, ToolResult
+from tools.memory.core_memory.add_memory import AddMemoryTool
+from tools.memory.core_memory.complete_memory import CompleteMemoryTool
+from tools.memory.core_memory.delete_memory import DeleteMemoryTool
+from tools.memory.core_memory.update_memory import UpdateMemoryTool
 
 # -- minimal Bus surface -----------------------------------------------
 
 
 @dataclass
 class _BusStub:
-    """Stand-in for :class:`magi.bus.Bus` carrying
+    """Stand-in for :class:`bus.Bus` carrying
     only the Books the core-memory tools use.
 
     Constructing a real Bus in tests pulls in every

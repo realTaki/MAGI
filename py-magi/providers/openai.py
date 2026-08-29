@@ -36,9 +36,9 @@ from openai import (
     RateLimitError,
 )
 
-from magi.providers._utils import is_context_length_error, safe_dump
-from magi.providers.base import LLMProvider, LLMStreamEvent
-from magi.providers.errors import (
+from providers._utils import is_context_length_error, safe_dump
+from providers.base import LLMProvider, LLMStreamEvent
+from providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
     LLMError,
@@ -46,7 +46,7 @@ from magi.providers.errors import (
     LLMRateLimitError,
 )
 
-logger = logging.getLogger("magi.providers.openai")
+logger = logging.getLogger("providers.openai")
 
 _MAX_TOKENS_DEFAULT = 1024
 _DEFAULT_MODEL = "gpt-5.6-terra"

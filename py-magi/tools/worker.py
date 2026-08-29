@@ -1,13 +1,13 @@
 """Durable tool-effect consumer — bus 上唯一的工具执行点。
 
-孪生结构对齐 :class:`~magi.providers.worker.ProvidersWorker`：
+孪生结构对齐 :class:`~providers.worker.ProvidersWorker`：
 
 - **只依赖 bus**。老的 bus tool_jobs / tool_catalog 一概不碰。
 - **构造靠注入**。Composition root 显式构造并传进来，
   ``concurrency`` 由调用方注入（无环境变量回退）。
 - **启动时 publish full tool catalog** — builtin + 所有已注入的外部工具
   (MCP, skills) 写到 ``bus.tool_definitions_book``。
-  外部子系统通过 :func:`magi.tools.registry.register_tools` 注入后，
+  外部子系统通过 :func:`tools.registry.register_tools` 注入后，
   worker 自动检测并重发布。
 - **dumb invoker**。Worker 不区分调用来自 agent turn / 哪个 conversation，
   全走 :class:`RunToolJob` → :class:`RunToolResult`。
@@ -49,23 +49,23 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.books.local import ToolDefinition
-from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
-from magi.runtime_worker import RuntimeWorker
-from magi.tools.base import Tool, ToolContext, ToolResult
-from magi.tools.registry import get_tool
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.books.local import ToolDefinition
+from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+from runtime_worker import RuntimeWorker
+from tools.base import Tool, ToolContext, ToolResult
+from tools.registry import get_tool
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
+    from old_bus import Bus
+    from old_bus.firmwares.jobs.runToolJob import RunToolJob
 
-logger = logging.getLogger("magi.tools.worker")
+logger = logging.getLogger("tools.worker")
 
 #: Stable error codes moved to
-#: :class:`~magi.bus.firmwares.jobs.runToolJob.ToolErrorCode` (StrEnum) so the
+#: :class:`~bus.firmwares.jobs.runToolJob.ToolErrorCode` (StrEnum) so the
 #: agent layer can treat tool and LLM failures with the same retry
-#: logic — see :class:`~magi.bus.firmwares.jobs.callLLMJob.LLMErrorCode` for the
+#: logic — see :class:`~bus.firmwares.jobs.callLLMJob.LLMErrorCode` for the
 #: mirror on the provider side.
 
 def _canonical_json(value: object) -> str:
@@ -158,7 +158,7 @@ class ToolsWorker(RuntimeWorker):
     async def on_start(self) -> None:
         # Subscribe to runtime tool injection so we can republish
         # the catalog when MCP / skills register their tools.
-        from magi.tools.registry import on_tools_changed
+        from tools.registry import on_tools_changed
 
         on_tools_changed(self._on_injected_tools_changed)
 
@@ -176,7 +176,7 @@ class ToolsWorker(RuntimeWorker):
         # shutdown as orphans. Best-effort: a stuck child must not
         # block the rest of the shutdown chain.
         try:
-            from magi.tools.shell._manager import shutdown_background_shells
+            from tools.shell._manager import shutdown_background_shells
 
             await shutdown_background_shells()
         except Exception:
@@ -239,7 +239,7 @@ class ToolsWorker(RuntimeWorker):
         one source never clobber another.  The catalog revision
         is bumped once after all sources are written.
         """
-        from magi.tools.registry import _build_tools, list_injected
+        from tools.registry import _build_tools, list_injected
 
         # 1. Builtin tools — always present.
         builtin_defs = _build_definitions_from_tools(
@@ -407,7 +407,7 @@ def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
 
     ``content`` is truncated to 8 KB to fit the column.
     """
-    from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+    from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 
     return RunToolResult(
         job_id=job.job_id,

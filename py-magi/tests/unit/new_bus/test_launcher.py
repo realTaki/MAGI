@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from magi.launcher import Launcher
-from magi.bus import (
+from launcher import Launcher
+from bus import (
     AndDock,
     BaseWorker,
     CallLLMJob,
@@ -15,15 +15,15 @@ from magi.bus import (
     OrDock,
     Slot,
 )
-from magi.bus.firmware.jobs.callLLMJob import CallLLMJobBoard
-from magi.providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
-from magi.providers.worker import ProvidersWorker
+from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
+from providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
+from providers.worker import ProvidersWorker
 from tests.unit.new_bus.testing import attach_board
 
 
 @pytest.fixture(autouse=True)
 def _launcher_workspace(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("magi.launcher.launcher.WORKSPACE_PATH", str(tmp_path))
+    monkeypatch.setattr("launcher.launcher.WORKSPACE_PATH", str(tmp_path))
 
 
 _SHARED_LLM_SLOTS = (
@@ -98,7 +98,7 @@ def test_launcher_launches_provider_worker() -> None:
 
 def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
     monkeypatch.setattr(
-        "magi.launcher.launcher.WORKERS", (SharedLLMWorker, SecondSharedLLMWorker)
+        "launcher.launcher.WORKERS", (SharedLLMWorker, SecondSharedLLMWorker)
     )
     with Launcher() as launcher:
         assert launcher.run()
@@ -119,14 +119,14 @@ def test_launcher_installs_or_docks_before_workers_attach(monkeypatch) -> None:
 
 
 def test_launcher_selects_and_dock_for_post_submit_slots(monkeypatch) -> None:
-    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (GateWorker, SecondGateWorker))
+    monkeypatch.setattr("launcher.launcher.WORKERS", (GateWorker, SecondGateWorker))
     with Launcher() as launcher:
         assert launcher.run()
         assert isinstance(launcher.bus._docks[Slot(CallLLMJob, "submit_post_result")], AndDock)
 
 
 def test_single_worker_does_not_install_a_dock(monkeypatch) -> None:
-    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker,))
+    monkeypatch.setattr("launcher.launcher.WORKERS", (SharedLLMWorker,))
     with Launcher() as launcher:
         assert launcher.run()
         assert Slot(CallLLMJob, "publish") not in launcher.bus._docks
@@ -137,7 +137,7 @@ def test_run_rolls_back_when_a_worker_refuses(monkeypatch) -> None:
         def attach(self, _bus_for_worker) -> bool:
             return False
 
-    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (SharedLLMWorker, RefusingWorker))
+    monkeypatch.setattr("launcher.launcher.WORKERS", (SharedLLMWorker, RefusingWorker))
     with Launcher() as launcher:
         assert not launcher.run()
         assert launcher.workers == {}
@@ -147,7 +147,7 @@ def test_unknown_slot_does_not_run_workers(monkeypatch) -> None:
     class MissingSlotWorker(SharedLLMWorker):
         required_slots = (Slot(CallLLMJob, "missing"),)
 
-    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (MissingSlotWorker,))
+    monkeypatch.setattr("launcher.launcher.WORKERS", (MissingSlotWorker,))
     with Launcher() as launcher:
         assert not launcher.run()
 
@@ -159,7 +159,7 @@ def test_duplicate_worker_id_is_rejected(monkeypatch) -> None:
     class Two(SharedLLMWorker):
         worker_name = "same"
 
-    monkeypatch.setattr("magi.launcher.launcher.WORKERS", (One, Two))
+    monkeypatch.setattr("launcher.launcher.WORKERS", (One, Two))
     with Launcher() as launcher:
         with pytest.raises(ValueError, match="duplicate worker_id"):
             launcher.run()

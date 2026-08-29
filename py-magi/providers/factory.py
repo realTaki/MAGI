@@ -1,9 +1,9 @@
 """LLM provider factory — 用已解析配置构造 SDK client。
 
 抽象接口 (:class:`LLMProvider` / :class:`LLMStreamEvent` /
-:class:`StreamEventKind`) 在 :mod:`magi.providers.base`。本模块只
+:class:`StreamEventKind`) 在 :mod:`providers.base`。本模块只
 负责"配置 → SDK client"这一步，**唯一**知道具体厂商构造方式的地方。
-provider worker 通过 ``magi.bus.BusForWorker`` 发布 ``GetSettingJob``
+provider worker 通过 ``bus.BusForWorker`` 发布 ``GetSettingJob``
 读取配置，再把原始值传入这里；factory 不依赖任何 BUS 实现或 Book。
 
 已知厂商（v0）:
@@ -18,8 +18,8 @@ provider worker 通过 ``magi.bus.BusForWorker`` 发布 ``GetSettingJob``
 添加新厂商
 ==========
 
-1. 在 :mod:`magi.providers` 下新增一个 Python 文件，继承
-   :class:`~magi.providers.base.LLMProvider`（或 :class:`LLMProvider`，
+1. 在 :mod:`providers` 下新增一个 Python 文件，继承
+   :class:`~providers.base.LLMProvider`（或 :class:`LLMProvider`，
    若 wire 协议不是 Anthropic 兼容）。
 2. 在本文件 :func:`_build_provider` 加分支。
 3. ``_KNOWN_PROVIDERS`` 列表里加 id（私有，供工厂内部错误消息用）。
@@ -28,13 +28,13 @@ provider worker 通过 ``magi.bus.BusForWorker`` 发布 ``GetSettingJob``
 from __future__ import annotations
 
 import logging
-from magi.providers.base import LLMProvider
-from magi.providers.claude_code import ClaudeProvider
-from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.minimax import MinimaxProvider
-from magi.providers.openai import OpenAIProvider
+from providers.base import LLMProvider
+from providers.claude_code import ClaudeProvider
+from providers.errors import LLMError, LLMNotConfiguredError
+from providers.minimax import MinimaxProvider
+from providers.openai import OpenAIProvider
 
-logger = logging.getLogger("magi.providers.factory")
+logger = logging.getLogger("providers.factory")
 
 # ── known provider ids (module-private; for error messages) ───────────────
 

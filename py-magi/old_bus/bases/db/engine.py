@@ -2,7 +2,7 @@
 
 支持多实例共存：local SQLite + MAGIS SQLite 或 PostgreSQL 各持一个 EngineFactory::
 
-    from magi.bus.bases.db.engine import build_local_factory, build_magis_factory
+    from bus.bases.db.engine import build_local_factory, build_magis_factory
 
     local = build_local_factory("/var/magi/state")          # → EngineFactory("sqlite:////var/magi/state/magi.db")
     magis = build_magis_factory("postgresql://user:pw@db/magis")
@@ -11,7 +11,7 @@
         ...
 
 每个 ``EngineFactory`` 拥有自己的 ``Engine`` 和 ``sessionmaker``，
-所有 ORM 类注册到同一份 ``magi.bus.bases.db.base.Base.metadata``。
+所有 ORM 类注册到同一份 ``bus.bases.db.base.Base.metadata``。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from magi.old_bus.bases.db.base import Base
+from old_bus.bases.db.base import Base
 
 
 class EngineFactory:
@@ -35,7 +35,7 @@ class EngineFactory:
 
     可以创建多个 EngineFactory 实例（一个 local，一个 magis），
     每个实例独立维护 Engine + sessionmaker，但共享同一份
-    ``magi.bus.bases.db.base.Base.metadata``。
+    ``bus.bases.db.base.Base.metadata``。
     """
 
     def __init__(self, database_url: str):

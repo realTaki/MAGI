@@ -1,7 +1,7 @@
 """Authentication and contracts for the restricted control plane.
 
 Tests the FastAPI orchestrator service that lives in
-:meth:`magi.startup.kubernetes.service.create_app` per plan §20.4.
+:meth:`startup.kubernetes.service.create_app` per plan §20.4.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 
 def test_orchestrator_rejects_missing_hmac(monkeypatch):
-    from magi.startup.kubernetes.service import _verify_request
+    from startup.kubernetes.service import _verify_request
 
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
     with pytest.raises(HTTPException, match="missing control authentication"):
@@ -24,7 +24,7 @@ def test_orchestrator_rejects_missing_hmac(monkeypatch):
 
 
 def test_orchestrator_accepts_valid_hmac(monkeypatch):
-    from magi.startup.kubernetes.service import _verify_request
+    from startup.kubernetes.service import _verify_request
 
     secret, body, timestamp = "test-control-secret", b'{"magi_id":7}', str(int(time.time()))
     signature = hmac.new(
@@ -35,7 +35,7 @@ def test_orchestrator_accepts_valid_hmac(monkeypatch):
 
 
 def test_control_plane_exposes_magis_provision_route():
-    from magi.startup.kubernetes.service import create_app
+    from startup.kubernetes.service import create_app
 
     paths = {route.path for route in create_app().routes}
     assert "/v1/magis/{magis_id}/provision" in paths
@@ -43,8 +43,8 @@ def test_control_plane_exposes_magis_provision_route():
 
 
 def test_kubernetes_magis_share_one_postgres_service_but_use_distinct_databases(monkeypatch):
-    from magi.startup.kubernetes.contracts import MagisBinding
-    from magi.startup.kubernetes.resources import KubernetesEvaBackend
+    from startup.kubernetes.contracts import MagisBinding
+    from startup.kubernetes.resources import KubernetesEvaBackend
 
     monkeypatch.setenv("MAGI_CONTROL_SECRET", "test-control-secret")
     backend = object.__new__(KubernetesEvaBackend)

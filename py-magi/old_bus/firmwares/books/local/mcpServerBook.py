@@ -23,8 +23,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
-from magi.old_bus.bases.db.base import enum_column
+from old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from old_bus.bases.db.base import enum_column
 
 
 class MCPConnectionType(StrEnum):
@@ -32,7 +32,7 @@ class MCPConnectionType(StrEnum):
 
     Closed set — adding a transport requires a schema migration. The
     three members are the canonical MCP transports the runtime can
-    bootstrap (see :class:`magi.mcp.MCPClient`). Values are the same
+    bootstrap (see :class:`mcp.MCPClient`). Values are the same
     strings the upstream MCP SDK uses, so they round-trip through
     the loader / worker without translation.
 
@@ -42,7 +42,7 @@ class MCPConnectionType(StrEnum):
     so ``isinstance(x, str)`` checks, ``json.dumps`` serialisation,
     and existing ``connection_type == "stdio"`` comparisons keep
     working unchanged. Mirrors
-    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
+    :class:`bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     STDIO = "stdio"
@@ -335,7 +335,7 @@ class McpServerBook(BaseBook[_McpServerRow, McpServer]):
 #
 # Lives next to the DTO so the wire shape evolves together
 # with the row schema. The LLM manage tools (see
-# :mod:`magi.tools.mcp`) import this directly; nothing in the
+# :mod:`tools.mcp`) import this directly; nothing in the
 # loader or the worker reaches for it.
 #
 # Privacy: ``env`` / ``headers`` carry API keys / tokens and

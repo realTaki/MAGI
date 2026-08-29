@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.channels.api.channels import list_channels
+from channels.api.channels import list_channels
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 """PID-file process supervision primitives.
 
-Both local supervisors — :mod:`magi.startup.local` (one process per
-MAGI) and :mod:`magi.startup.webui` (the single WebUI process) —
+Both local supervisors — :mod:`startup.local` (one process per
+MAGI) and :mod:`startup.webui` (the single WebUI process) —
 follow the same pattern: write a PID file on spawn, then read it back
 to answer "is that process still up?". These helpers are that
 pattern's whole surface; they lived duplicated (byte-identical) in
@@ -13,7 +13,7 @@ once its process exits — shared by the detached ``stop_magi`` path
 and the foreground ``run_magi`` SIGTERM/SIGINT cleanup hook.
 
 Deliberately narrow: no spawning, no path resolution (that's
-:mod:`magi.startup.paths`). Signals are scoped to a single
+:mod:`startup.paths`). Signals are scoped to a single
 purpose — the orphan-worker recovery that both supervisors need so
 they can recover from a crashed process that leaves a listener orphaned on the
 runtime socket.
@@ -32,10 +32,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
-    from magi.startup.config import StartupConfig
+    from startup.config import StartupConfig
 
 if TYPE_CHECKING:
-    from magi.startup.config import StartupConfig
+    from startup.config import StartupConfig
 
 
 def read_pid(pid_path: Path) -> int | None:
@@ -214,13 +214,13 @@ def reap_orphan_listener(port: int, *, label: str = "orphan worker") -> int | No
 # ----------------------------------------------------------------------
 
 
-logger = logging.getLogger("magi.startup.process")
+logger = logging.getLogger("startup.process")
 
 
 def mark_registry_stopped(config: "StartupConfig") -> None:
     """Flip ``runtime_state`` to STOPPED for one MAGI — best-effort.
 
-    Called from :func:`magi.startup.local.stop_magi` after the
+    Called from :func:`startup.local.stop_magi` after the
     detached subprocess exits, and from the ``run_magi`` SIGTERM/SIGINT
     handler so a foreground-launched runtime also reconciles the
     singleton WebUI's ``/api/auth/available-magi`` view.
@@ -231,10 +231,10 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
     via :meth:`set_desired_state` / :meth:`set_observed_state` on
     its own, so a registry-write failure here never strands the slot.
     """
-    from magi.startup.paths import resolve_magis_database_url
-    from magi.startup.spec import load_runtime_spec
-    from magi.old_bus.bases.db.base import utcnow_naive
-    from magi.old_bus.firmwares.books.magis.runtimeBook import (
+    from startup.paths import resolve_magis_database_url
+    from startup.spec import load_runtime_spec
+    from old_bus.bases.db.base import utcnow_naive
+    from old_bus.firmwares.books.magis.runtimeBook import (
         RuntimeDesiredState,
         RuntimeObservedState,
     )
@@ -243,7 +243,7 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
         magis_url = config.magis_database_url or resolve_magis_database_url(
             config.host_workspace_dir, config.magis_name
         )
-        from magi.old_bus.bootstrap import open_bus
+        from old_bus.bootstrap import open_bus
 
         bus = open_bus(magis_url=magis_url)
         spec = load_runtime_spec(
@@ -281,13 +281,13 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
 def claim_pid_file(pid_path: Path) -> None:
     """Write ``os.getpid()`` into ``pid_path``; refuse if a live run is on record.
 
-    Mirrors the PID-file half of :func:`magi.startup.local.start_magi`
+    Mirrors the PID-file half of :func:`startup.local.start_magi`
     so the foreground and detached paths are interchangeable from the
     operator's perspective.  A stale PID file pointing at a dead PID
     is overwritten without complaint — same PID-reuse caveat.
 
     The ``current == existing`` short-circuit handles the detach case:
-    :func:`magi.startup.local.start_magi` writes the supervisor's PID
+    :func:`startup.local.start_magi` writes the supervisor's PID
     before spawning the foreground subprocess; that subprocess is the
     foreground process itself, so re-claiming its own PID is not a conflict.
     """

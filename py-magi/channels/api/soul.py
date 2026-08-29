@@ -2,7 +2,7 @@
 
 The persona lives at ``<workspace_root>/prompts/agent/soul.md`` and is
 read on every chat turn by
-:meth:`magi.agent.system_prompt.read_soul`. There is one
+:meth:`agent.system_prompt.read_soul`. There is one
 one managed persona per **MAGI node** (ADAM container, EVA container) —
 not one per contact. Per-contact personas are C4+ and out
 of scope here.
@@ -32,8 +32,8 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminOrAssignedGate
-from magi.channels.api.dependencies import BusDep
+from channels.api.auth_gates import AdminOrAssignedGate
+from channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.soul")
 
@@ -112,7 +112,7 @@ def update_soul(
         # Pydantic's ``min_length=1`` catches the raw body,
         # but the trim happens here — refuse the post-trim
         # whitespace-only case too.
-        from magi.channels.api.errors import MagiHTTPException
+        from channels.api.errors import MagiHTTPException
 
         raise MagiHTTPException(
             status_code=400,
@@ -135,7 +135,7 @@ def reset_soul(
     try:
         modified_at = bus.prompt_book.reset(key="agent/soul")
     except KeyError:
-        from magi.channels.api.errors import MagiHTTPException
+        from channels.api.errors import MagiHTTPException
 
         raise MagiHTTPException(
             status_code=503,

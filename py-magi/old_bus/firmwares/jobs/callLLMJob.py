@@ -11,8 +11,8 @@ from enum import StrEnum
 from sqlalchemy import JSON, Boolean, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.db.base import enum_column
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from old_bus.bases.db.base import enum_column
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 # -- public enum -----------------------------------------------------------
 
@@ -26,11 +26,11 @@ class LLMErrorCode(StrEnum):
       set an error". Stored as ``""`` so the existing
       ``if result.error_code:`` truthy check still works.
     - ``CREDENTIALS_REQUIRED`` / ``PROVIDER_CRASHED`` / ``RUN_CANCELLED``
-      — bus-wide codes already in use by :class:`magi.bus.bases.job.JobStatus`
+      — bus-wide codes already in use by :class:`bus.bases.job.JobStatus`
       neighbours; keeping them verbatim avoids cross-board wire churn.
     - ``AUTH_FAILED`` / ``RATE_LIMITED`` / ``NETWORK_ERROR`` /
       ``CONTEXT_TOO_LONG`` — one member per known provider exception
-      class under :mod:`magi.providers.errors`; the provider worker
+      class under :mod:`providers.errors`; the provider worker
       maps ``isinstance(exc, ...)`` to the matching member instead of
       leaking ``type(exc).__name__`` into the wire format.
     - ``UNKNOWN`` — fallback for a brand-new exception class not yet

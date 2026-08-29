@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from sqlalchemy import Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
 
 # Channel names are deliberately persisted strings, not a Python Enum.  A
 # worker advertises its capability as it comes online, so a new adapter does

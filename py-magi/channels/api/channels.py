@@ -13,9 +13,9 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.channels")
 
@@ -24,7 +24,7 @@ router = APIRouter(tags=["channels"])
 _SETTINGS_KEY = "channels.enabled"
 
 #: Channels the operator-facing toggle API refuses to disable.
-#: Mirrors :data:`magi.startup.workers._REQUIRED_CHANNELS` — both
+#: Mirrors :data:`startup.workers._REQUIRED_CHANNELS` — both
 #: The WebUI dashboard is the one mandatory human-facing channel. A2A is a
 #: MAGIS-shared durable board, so it is deliberately absent from this API.
 _REQUIRED_CHANNELS: frozenset[str] = frozenset({"webui"})

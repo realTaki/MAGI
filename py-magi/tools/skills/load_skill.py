@@ -8,7 +8,7 @@ markdown body.
 Body size cap
 -------------
 We cap the tool's returned body at the same 32 KB mark
-:meth:`magi.bus.firmwares.books.file.skillsBook.SkillsBook.read_body`
+:meth:`bus.firmwares.books.file.skillsBook.SkillsBook.read_body`
 enforces internally — the agent loop truncates at 8 KB regardless
 (``agent.py``:642-645), so anything past that is operator-visible
 metadata only: an LLM that sees a truncation marker can decide to
@@ -32,8 +32,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from magi.old_bus.firmwares.books.file.skillsBook import SkillBookError
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.file.skillsBook import SkillBookError
+from tools.base import Tool, ToolContext, ToolResult
 
 # Same name regex the book enforces at scan time. Anyone calling
 # the tool with a name we wouldn't have accepted at load time gets

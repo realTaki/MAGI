@@ -18,20 +18,20 @@ from sqlalchemy import inspect, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from magi.old_bus import open_bus
-from magi.old_bus.bases.db.engine import EngineFactory
-from magi.old_bus.firmwares.books.local.contactBook import _ContactRow
-from magi.old_bus.firmwares.books.magis.magisBook import _MagisAdminRow
-from magi.old_bus.provision import StorageNotProvisioned
-from magi.startup import runtime
-from magi.startup.config import (
+from old_bus import open_bus
+from old_bus.bases.db.engine import EngineFactory
+from old_bus.firmwares.books.local.contactBook import _ContactRow
+from old_bus.firmwares.books.magis.magisBook import _MagisAdminRow
+from old_bus.provision import StorageNotProvisioned
+from startup import runtime
+from startup.config import (
     DEFAULT_MAGI_NAME,
     ConfigurationError,
     StartupConfig,
     StartupContext,
 )
-from magi.startup.provision import create_node, init_first_magi
-from magi.startup.spec import load_runtime_spec
+from startup.provision import create_node, init_first_magi
+from startup.spec import load_runtime_spec
 
 
 LOCAL_HEAD_REVISION = "0001_initial_schema"
@@ -62,7 +62,7 @@ def _load_spec_from_db(*, workspace_dir: Path, magis_name: str = "genesis") -> R
     (``tmp_path/MAGI_Citizens/<name>``); the host root that owns the
     MAGIS shared DB is the directory *above* ``MAGI_Citizens/``.
     """
-    from magi.startup.paths import resolve_magis_database_url
+    from startup.paths import resolve_magis_database_url
 
     # workspace_dir is ``<host>/MAGI_Citizens/<name>``; the host root
     # is two levels up (``<host>``).
@@ -254,7 +254,7 @@ def test_runtime_open_recreates_a_missing_bus_table_before_books_are_wired(tmp_p
     or "rename column" DDL. The ``0001_initial_schema`` migration's
     :func:`upgrade` is itself ``Base.metadata.create_all``, which
     acts as the additive repair path during
-    :func:`magi.bus.firmwares.schema.synchronise_schema` (the legacy
+    :func:`bus.firmwares.schema.synchronise_schema` (the legacy
     ``create_all`` half was kept for exactly this situation).
     """
     config = _first_config(tmp_path)
@@ -294,7 +294,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
 
     with factory.engine.begin() as connection:
         # Initial-schema bring-up: create_all + alembic stamp.
-        from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+        from old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
 
     # Use ``synchronise_schema`` indirectly by going through ``open_bus``
     # — first, drop the existing DB so the boot is truly from scratch.
@@ -371,7 +371,7 @@ def test_run_magi_serves_the_in_process_runtime_app_without_reload(
         return startup
 
     monkeypatch.setattr(runtime.uvicorn, "run", _run)
-    monkeypatch.setattr("magi.bus.open_bus", _open_bus)
+    monkeypatch.setattr("bus.open_bus", _open_bus)
     monkeypatch.setattr(runtime, "_startup_context", _startup_context)
     monkeypatch.setattr(
         runtime.RuntimeContext,
@@ -409,8 +409,8 @@ def test_initial_schema_declares_native_enum_on_a2a_tables(tmp_path: Path) -> No
     CHECK being present and bounded, not on a specific dialect
     syntax.
     """
-    from magi.old_bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
-    from magi.old_bus.bases.db.engine import EngineFactory
+    from old_bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
+    from old_bus.bases.db.engine import EngineFactory
 
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(factory, scope=MAGIS_SCOPE)

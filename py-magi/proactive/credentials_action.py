@@ -11,11 +11,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.books.local.actionItemBook import ActionItemBook
+    from old_bus.firmwares.books.local.actionItemBook import ActionItemBook
 
-from magi.old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionSource
+from old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionSource
 
-logger = logging.getLogger("magi.proactive.credentials_action")
+logger = logging.getLogger("proactive.credentials_action")
 COMPLETED_VISIBLE_DAYS = 7
 
 

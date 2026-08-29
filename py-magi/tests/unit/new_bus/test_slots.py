@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from magi.bus import BaseJobResult, Bus, JobStatus, Slot
-from magi.bus.base.time import utcnow
+from bus import BaseJobResult, Bus, JobStatus, Slot
+from bus.base.time import utcnow
 from tests.unit.new_bus.testing import WORKER, PingJob, PingJobBoard, attach_board
 
 

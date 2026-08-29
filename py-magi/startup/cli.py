@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from magi.startup import local, webui
-from magi.startup.config import DEFAULT_MAGI_NAME, WEBUI_PORT, StartupConfig
-from magi.startup.paths import resolve_runtime_state_path
-from magi.startup.provision import create_node, init_first_magi
+from startup import local, webui
+from startup.config import DEFAULT_MAGI_NAME, WEBUI_PORT, StartupConfig
+from startup.paths import resolve_runtime_state_path
+from startup.provision import create_node, init_first_magi
 
 
 def _config(args: argparse.Namespace) -> StartupConfig:
@@ -61,7 +61,7 @@ def cmd_node_run(args: argparse.Namespace) -> int:
     config = _config(args)
     if not args.foreground:
         return local.start_magi(config=config)
-    from magi.startup.runtime import run_magi
+    from startup.runtime import run_magi
 
     run_magi(config)
     return 0

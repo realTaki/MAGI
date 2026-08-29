@@ -3,8 +3,8 @@
 Pure CRUD over the ``action_items`` table. The Book owns
 **data access** only; the **decision** of what to write,
 when, and with which provenance tag belongs to callers
-(LLM-driven tools under ``magi.tools`` and proactive
-policies under ``magi.proactive``).
+(LLM-driven tools under ``tools`` and proactive
+policies under ``proactive``).
 
 Schema for the ``action_items`` table.
 """
@@ -24,8 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
-from magi.old_bus.bases.db.base import enum_column, utcnow_naive
+from old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from old_bus.bases.db.base import enum_column, utcnow_naive
 
 # -- public dataclass ----------------------------------------------------
 
@@ -41,7 +41,7 @@ from magi.old_bus.bases.db.base import enum_column, utcnow_naive
 #   * ``ActionSource.PROACTIVE`` — the system discovered /
 #     scheduled this row without an operator in the loop.
 #     Covers: proactive policies (e.g. the onboarding
-#     credentials nudge in ``magi.proactive.worker``),
+#     credentials nudge in ``proactive.worker``),
 #     cron-triggered agents, system-defined nudges.
 #
 # Dashboards and future filters group rows by this tag.
@@ -139,8 +139,8 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     """CRUD for the ``action_items`` dashboard surface.
 
     Pure data access. Callers — chat-driven tools in
-    :mod:`magi.tools.tasks` and proactive policies in
-    :mod:`magi.proactive` — pass the ``source`` tag
+    :mod:`tools.tasks` and proactive policies in
+    :mod:`proactive` — pass the ``source`` tag
     explicitly so the audit trail reflects who caused
     the write.
 
@@ -158,7 +158,7 @@ class ActionItemBook(BaseBook[_ActionItemRow, ActionItem]):
     # write is a policy concern (proactive decides which
     # specific rows to de-dupe on, usually by ``title``), not
     # a Book primitive — the only caller, the credentials
-    # nudge in :mod:`magi.proactive.worker`,
+    # nudge in :mod:`proactive.worker`,
     # composes the check via :meth:`list_actions` with
     # ``source=ActionSource.PROACTIVE`` and a client-side title
     # match. The Book stays query-neutral.

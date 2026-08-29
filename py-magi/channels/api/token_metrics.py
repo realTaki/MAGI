@@ -39,8 +39,8 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.token_metrics")
 

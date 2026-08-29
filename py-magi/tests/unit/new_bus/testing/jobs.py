@@ -6,8 +6,8 @@ from pathlib import Path
 from sqlalchemy import Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.bus import Bus
-from magi.bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from bus import Bus
+from bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 
 WORKER = "test"
 

@@ -12,7 +12,7 @@ an id it doesn't own — the row is missing rather than
 shared.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
+(:class:`bus.Bus`) via ``ctx.bus.memory_book``
 — the Book owns the write invariants for ``subject``,
 ``body`` and ``priority`` (non-empty + length caps,
 ``priority`` 1..5) and surfaces any violation as
@@ -27,9 +27,9 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.update_memory")
+logger = logging.getLogger("tools.memory.update_memory")
 
 
 class UpdateMemoryTool(Tool):

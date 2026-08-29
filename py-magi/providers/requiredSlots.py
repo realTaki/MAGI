@@ -1,6 +1,6 @@
 """vNext BUS operations the single provider worker owns."""
 
-from magi.bus import (
+from bus import (
     CallLLMJob,
     ChangeProviderJob,
     GetSettingJob,

@@ -9,7 +9,7 @@ Architecture
 
 After the worker refactor (see ``docs/MCP_WORKER_DESIGN.md``),
 this package no longer owns the long-lived subprocesses itself.
-The :class:`~magi.mcp.worker.McpWorker` is the single
+The :class:`~mcp.worker.McpWorker` is the single
 lifecycle owner for every MCP connection in one MAGI process;
 the loader is reduced to a small library of primitives the
 worker composes.
@@ -21,13 +21,13 @@ worker composes.
       ├─ writes ChangeMCPServerJob         (bus Job Board, payload
       │                                     carries the full DTO)
       └─ injects discovered tools into
-         magi.tools.registry.register_tools("mcp", ...)
+         tools.registry.register_tools("mcp", ...)
          → on_tools_changed listener → ToolsWorker re-publishes catalog
 
 The four CRUD tools (``add_mcp_server`` /
 ``list_mcp_servers`` / ``update_mcp_server`` /
-``delete_mcp_server``) live in :mod:`magi.tools.mcp` and are
-registered as builtins by :mod:`magi.tools.registry`. They publish
+``delete_mcp_server``) live in :mod:`tools.mcp` and are
+registered as builtins by :mod:`tools.registry`. They publish
 to ``bus.change_mcp_server_job_board`` and wait for the worker
 to apply the change; the worker is the **only** writer to the
 Book so the LLM's view of the world and the live connections
@@ -36,7 +36,7 @@ stay in sync.
 Module layout
 -------------
 
-- :mod:`magi.mcp.MCPClient` — :class:`MCPServerConnection` /
+- :mod:`mcp.MCPClient` — :class:`MCPServerConnection` /
   :class:`MCPTool` / :class:`MCPTimeoutConfig` (the small set of
   primitives the worker composes). The previous module-level
   ``_connections`` cache, ``load_mcp_tools_async`` /
@@ -45,9 +45,9 @@ Module layout
   removed — the worker is the only connection owner now, and
   the WebUI detail page reads the Book directly when it needs
   metadata.
-- :mod:`magi.mcp.worker` — :class:`McpWorker`, started by the
-  startup-owned :class:`magi.startup.workers.WorkerRegistry`.
-- :mod:`magi.mcp.sharing` — *future*. MAGIS-level sharing of
+- :mod:`mcp.worker` — :class:`McpWorker`, started by the
+  startup-owned :class:`startup.workers.WorkerRegistry`.
+- :mod:`mcp.sharing` — *future*. MAGIS-level sharing of
   MCP server configs. Defining point only today; the table /
   API / LLM tools land in a follow-up PR.
 
@@ -60,12 +60,12 @@ table (see ``magi/bus/firmwares/books/local/mcpServerBook.py``).
 
 from __future__ import annotations
 
-from magi.mcp.MCPClient import (
+from mcp.MCPClient import (
     MCPServerConnection,
     MCPTimeoutConfig,
     MCPTool,
 )
-from magi.mcp.worker import McpWorker
+from mcp.worker import McpWorker
 
 __all__ = [
     # Client primitives

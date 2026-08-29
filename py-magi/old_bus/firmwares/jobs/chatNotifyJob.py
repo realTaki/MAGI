@@ -21,10 +21,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, Text, or_
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
+    from old_bus.firmwares.books.local.contactBook import ContactBook
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._contact_book = contact_book
         # ``messages_book`` and ``conversations_book`` are optional
         # so existing tests can build a board with just a factory.
-        # In production, :func:`magi.bus.bootstrap.open_bus` wires
+        # In production, :func:`bus.bootstrap.open_bus` wires
         # both — :meth:`publish` uses them to (a) enforce the
         # D.22 cross-channel guard and (b) persist the user message
         # to ``chat_messages`` at the same chokepoint as the chatNotifyJob
@@ -179,7 +179,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
         self._stamp_last_seen(job)
         if self._messages_book is not None:
             try:
-                from magi.old_bus.firmwares.books.local.conversationBook import (
+                from old_bus.firmwares.books.local.conversationBook import (
                     AgentMessageRole,
                     Message,
                 )
@@ -249,7 +249,7 @@ class chatNotifyBoard(BaseJobBoard[_ChatNotifyRow, ChatNotifyJob, ChatNotifyResu
             contact_id=cid_int, conversation_id=job.conversation_id or 0
         )
         if conversation is not None and conversation.channel != channel:
-            from magi.old_bus.firmwares.books.local.conversationBook import ChannelMismatchError
+            from old_bus.firmwares.books.local.conversationBook import ChannelMismatchError
 
             raise ChannelMismatchError(conversation.channel)
 

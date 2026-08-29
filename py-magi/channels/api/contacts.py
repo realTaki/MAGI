@@ -23,12 +23,12 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.books.local import Contact, Role
-from magi.old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from old_bus import Bus
+from old_bus.firmwares.books.local import Contact, Role
+from old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.contacts")
 
@@ -114,13 +114,13 @@ def _two_factor_is_enabled(request: Request, bus: Bus) -> bool:
     This is deliberately not a general API gate: a bootstrap admin can use
     every other normal feature without IM verification.
     """
-    from magi.channels.api.proxy_auth import verified_proxy_scope
+    from channels.api.proxy_auth import verified_proxy_scope
 
     scope = verified_proxy_scope(bus, request)
     if scope is not None:
         is_admin, _assigned, two_factor, _admin_id = scope
         return is_admin and two_factor
-    from magi.channels.api.auth import resolve_session
+    from channels.api.auth import resolve_session
 
     session = resolve_session(bus, request.cookies.get("magi_session"))
     return bool(session and session.get("admin") and session.get("two_factor"))

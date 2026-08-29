@@ -24,13 +24,13 @@ import httpx
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.books.magis.runtimeBook import RuntimeDesiredState
-from magi.channels.api.auth_gates import admin_gate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import PROXY_TIMEOUT
+from old_bus import Bus
+from old_bus.firmwares.books.magis.runtimeBook import RuntimeDesiredState
+from channels.api.auth_gates import admin_gate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
+from channels.api.proxy_auth import build_proxy_headers
+from channels.api.runtime_http import PROXY_TIMEOUT
 
 logger = logging.getLogger("magi.api.magi")
 
@@ -286,7 +286,7 @@ def create_magi(payload: MagiCreate, _admin: AdminGate, bus: BusDep) -> MagiOut:
         raise MagiHTTPException(
             400, "validation.magi_role", "role must belong to the selected MAGIS"
         )
-    from magi.old_bus.firmwares.books.magis.membershipBook import MagisMembership
+    from old_bus.firmwares.books.magis.membershipBook import MagisMembership
 
     membership_id = bus.memberships_book.add(
         MagisMembership(magis_id=payload.magis_id, role_id=role.id)

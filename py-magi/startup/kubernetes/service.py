@@ -3,16 +3,16 @@
 Consolidated from the legacy ``magi.orchestrator.service`` module
 per plan §20.4. Per plan §6 — there is no Backend abstraction layer;
 the service uses the Kubernetes path directly via the in-cluster
-:class:`magi.startup.kubernetes.resources.KubernetesEvaBackend` and the
+:class:`startup.kubernetes.resources.KubernetesEvaBackend` and the
 ``KubernetesEvaBackend`` semantics that wrap it.
 
 The HMAC key for verifying ``X-MAGI-Timestamp`` / ``X-MAGI-Signature``
-is resolved by :mod:`magi.startup.kubernetes._secret`.  See that
+is resolved by :mod:`startup.kubernetes._secret`.  See that
 module for the env-var → DB fallback order.
 
 Run via:
 
-    uvicorn magi.startup.kubernetes.service:create_app --factory --host 0.0.0.0 --port 42100
+    uvicorn startup.kubernetes.service:create_app --factory --host 0.0.0.0 --port 42100
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import time
 
 from fastapi import FastAPI, Header, HTTPException, Request
 
-from magi.startup.kubernetes._secret import get_control_secret
-from magi.startup.kubernetes.contracts import (
+from startup.kubernetes._secret import get_control_secret
+from startup.kubernetes.contracts import (
     EvaSpec,
     MagisBinding,
     MagisProvisionResult,
@@ -32,7 +32,7 @@ from magi.startup.kubernetes.contracts import (
     RuntimeOperationResult,
     RuntimeSpec,
 )
-from magi.startup.kubernetes.resources import KubernetesEvaBackend
+from startup.kubernetes.resources import KubernetesEvaBackend
 
 
 def _verify_request(body: bytes, timestamp: str | None, signature: str | None) -> None:

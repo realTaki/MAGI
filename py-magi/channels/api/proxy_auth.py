@@ -227,7 +227,7 @@ def ensure_runtime_operator(request: Request) -> int | None:
     explicit system marker covers WebUI-only operators.  The returned local
     contact ID keeps existing chat/conversation APIs correctly scoped.
     """
-    from magi.channels.api.dependencies import get_bus
+    from channels.api.dependencies import get_bus
 
     bus = get_bus(request)
     identity = verified_proxy_operator(bus, request)

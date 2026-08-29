@@ -1,7 +1,7 @@
 """Firmware schema synchronisation — table sets, scopes, and Alembic.
 
-Owned by :mod:`magi.bus.firmwares` because it names the concrete
-tables each store materialises. :mod:`magi.bus.bases.db` supplies
+Owned by :mod:`bus.firmwares` because it names the concrete
+tables each store materialises. :mod:`bus.bases.db` supplies
 ``Base`` and the engine; it does not know which tables exist.
 
 The provisioning flow has two phases:
@@ -10,7 +10,7 @@ The provisioning flow has two phases:
    table the ORM knows about is present (idempotent on already-present
    tables — safe to run whenever a BUS is opened).
 2. :func:`upgrade_schema` runs the migration versions stored in
-   :mod:`magi.bus.firmwares.alembic.versions` against the live DB.
+   :mod:`bus.firmwares.alembic.versions` against the live DB.
    This brings existing schemas forward (renames, drops, column changes)
    without requiring an operator to invoke ``alembic`` from a shell.
 
@@ -35,15 +35,15 @@ from sqlalchemy import Connection, Table, text
 
 # Pull in every firmware ORM module so ``Base.registry.mappers`` is fully
 # populated by the time ``_tables_for_scope`` or any caller walks it.
-# :mod:`magi.bus.firmwares` imports the jobs / local / magis packages
+# :mod:`bus.firmwares` imports the jobs / local / magis packages
 # that register tables.  Without this, a fresh import of
-# ``magi.bus.firmwares.schema`` would leave the mapper registry empty
+# ``bus.firmwares.schema`` would leave the mapper registry empty
 # and ``synchronise_schema`` would silently build zero tables.
-import magi.old_bus.firmwares  # noqa: F401  (side-effect: registers firmware tables)
-from magi.old_bus.bases.db.base import Base
-from magi.old_bus.bases.db.engine import EngineFactory
+import old_bus.firmwares  # noqa: F401  (side-effect: registers firmware tables)
+from old_bus.bases.db.base import Base
+from old_bus.bases.db.engine import EngineFactory
 
-logger = logging.getLogger("magi.bus.firmwares.schema")
+logger = logging.getLogger("bus.firmwares.schema")
 
 LOCAL_SCOPE = "local"
 MAGIS_SCOPE = "magis"
@@ -73,8 +73,8 @@ def _tables_for_scope(scope: str) -> list[Table]:
     tables: dict[str, Table] = {}
     for mapper in Base.registry.mappers:
         is_magis_table = (
-            mapper.class_.__module__.startswith("magi.bus.firmwares.books.magis.")
-            or mapper.class_.__module__ == "magi.bus.firmwares.jobs.a2aJob"
+            mapper.class_.__module__.startswith("bus.firmwares.books.magis.")
+            or mapper.class_.__module__ == "bus.firmwares.jobs.a2aJob"
         )
         if (scope == MAGIS_SCOPE) == is_magis_table:
             # Every ORM class in MAGI is table-mapped (no joins / aliases
@@ -113,7 +113,7 @@ def synchronise_schema(factory: EngineFactory, *, scope: str) -> None:
     # starts/reloads cannot observe or apply a partial schema transition.
     with factory.engine.begin() as connection:
         if factory.dialect == "postgresql":
-            connection.execute(text("SELECT pg_advisory_xact_lock(hashtext('magi.bus.schema'))"))
+            connection.execute(text("SELECT pg_advisory_xact_lock(hashtext('bus.schema'))"))
         Base.metadata.create_all(connection, tables=_tables_for_scope(scope))
         try:
             upgrade_schema(factory, scope=scope, connection=connection)

@@ -46,9 +46,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.action_items")
 

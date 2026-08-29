@@ -1,9 +1,9 @@
 """AgentWorker — bus 上唯一的 agent turn consumer.
 
-设计原则（与 :class:`~magi.tools.worker.ToolsWorker` 、
-:class:`~magi.providers.worker.ProvidersWorker` 对齐）：
+设计原则（与 :class:`~tools.worker.ToolsWorker` 、
+:class:`~providers.worker.ProvidersWorker` 对齐）：
 
-- **只依赖 bus**。老的 ``magi.bus`` store / facade 一概不碰。
+- **只依赖 bus**。老的 ``bus`` store / facade 一概不碰。
 - **构造靠注入**。``AgentWorker(bus: Bus)`` 由 composition root 显式注入。
 - **board claim steering**：steering 不通过进程内队列，而是在
   ``_gather_all`` 中主动 ``claim_for_steering`` 认领同 session 的新
@@ -27,15 +27,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from magi.old_bus.bases.job import JobStatus
-from magi.runtime_worker import RuntimeWorker
+from old_bus.bases.job import JobStatus
+from runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMResult
-    from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
+    from old_bus import Bus
+    from old_bus.firmwares.jobs.callLLMJob import CallLLMResult
+    from old_bus.firmwares.jobs.runToolJob import RunToolJob
 
-logger = logging.getLogger("magi.agent.worker")
+logger = logging.getLogger("agent.worker")
 
 # ---------------------------------------------------------------------------
 # constants
@@ -127,7 +127,7 @@ class AgentWorker(RuntimeWorker):
         # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
         # propagated in from :class:`WorkerRegistry`, which reads it
         # from the provisioned RuntimeSpec at boot
-        # (:mod:`magi.startup.runtime`). Used by
+        # (:mod:`startup.runtime`). Used by
         # :meth:`_system_prompt` to render the per-MAGI instruction
         # block (team + role layers from MAGIS Books); ``None``
         # short-circuits that lookup and renders only the personal
@@ -140,7 +140,7 @@ class AgentWorker(RuntimeWorker):
 
     async def on_start(self) -> None:
         """Register AgentWorker-owned defaults before consuming turns."""
-        from magi.agent.prompt_defaults import ensure_agent_prompt_defaults
+        from agent.prompt_defaults import ensure_agent_prompt_defaults
 
         await self.call(ensure_agent_prompt_defaults, self.bus.prompt_book)
 
@@ -157,7 +157,7 @@ class AgentWorker(RuntimeWorker):
         await asyncio.gather(*(self._run_consumer() for _ in range(self.concurrency)))
 
     async def _run_consumer(self) -> None:
-        from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
+        from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
         while not self._stopping:
             source, job = await self._claim_next_turn()
@@ -231,7 +231,7 @@ class AgentWorker(RuntimeWorker):
                         ),
                     )
                 elif source == "a2a.request":
-                    from magi.old_bus.firmwares.jobs.a2aJob import A2ARequestResult
+                    from old_bus.firmwares.jobs.a2aJob import A2ARequestResult
 
                     board = self.bus.a2a_request_job_board
                     if board is not None:
@@ -247,7 +247,7 @@ class AgentWorker(RuntimeWorker):
                             ),
                         )
                 elif source == "a2a.notify":
-                    from magi.old_bus.firmwares.jobs.a2aJob import A2ANotifyResult
+                    from old_bus.firmwares.jobs.a2aJob import A2ANotifyResult
 
                     board = self.bus.a2a_notify_job_board
                     if board is not None:
@@ -459,7 +459,7 @@ class AgentWorker(RuntimeWorker):
             return
         if not ctx.conversation_id or ctx.contact_id is None:
             return
-        from magi.agent.agent_context import build_messages_from_conversation
+        from agent.agent_context import build_messages_from_conversation
 
         try:
             msgs = await self.call(
@@ -480,7 +480,7 @@ class AgentWorker(RuntimeWorker):
         # Awaited (not fire-and-forget) because the result feeds back
         # into ctx.messages. Compaction is rare so the await cost is OK.
         try:
-            from magi.agent.compaction import maybe_compact
+            from agent.compaction import maybe_compact
 
             dtos = self.bus.messages_book.list_for_conversation(
                 conversation_id=ctx.conversation_id, include_archived=False
@@ -502,7 +502,7 @@ class AgentWorker(RuntimeWorker):
 
     async def _build_llm_job(self, ctx: RunContext) -> Any:
         """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""
-        from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMJob
+        from old_bus.firmwares.jobs.callLLMJob import CallLLMJob
 
         system = await self._system_prompt(ctx)
         messages = [{"role": "system", "content": system}] + list(ctx.messages)
@@ -517,7 +517,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _system_prompt(self, ctx: RunContext) -> str:
-        from magi.agent.system_prompt import build_system_prompt, read_soul
+        from agent.system_prompt import build_system_prompt, read_soul
 
         try:
             system = await self.call(
@@ -608,7 +608,7 @@ class AgentWorker(RuntimeWorker):
         arguments: dict,
         context: dict,
     ) -> RunToolJob:
-        from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
+        from old_bus.firmwares.jobs.runToolJob import RunToolJob
 
         return RunToolJob(
             tool_call_id=tool_call_id,
@@ -617,7 +617,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
-        from magi.old_bus.firmwares.jobs.a2aJob import A2ANotifyJob, A2ARequestJob
+        from old_bus.firmwares.jobs.a2aJob import A2ANotifyJob, A2ARequestJob
 
         tool_jobs: list[RunToolJob] = []
         a2a_request_jobs: list[tuple[str, A2ARequestJob]] = []
@@ -788,7 +788,7 @@ class AgentWorker(RuntimeWorker):
                     text = steer.text or ""
                     if text:
                         steering_parts.append(text)
-                    from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
+                    from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
                     chat_steer_job_id = steer.job_id
                     await self.call(
@@ -827,7 +827,7 @@ class AgentWorker(RuntimeWorker):
                 break
             await asyncio.sleep(0.1)
 
-        from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+        from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 
         for tool_call_id, tool_job_id in pending_tool_jobs.items():
             tool_results[tool_call_id] = RunToolResult(
@@ -838,7 +838,7 @@ class AgentWorker(RuntimeWorker):
                 tool_call_id=tool_call_id,
             )
 
-        from magi.old_bus.firmwares.jobs.a2aJob import A2AErrorCode, A2ARequestResult
+        from old_bus.firmwares.jobs.a2aJob import A2AErrorCode, A2ARequestResult
 
         for tool_call_id, a2a_request_job_id in pending_a2a_jobs.items():
             a2a_results[tool_call_id] = A2ARequestResult(
@@ -858,7 +858,7 @@ class AgentWorker(RuntimeWorker):
     # -- output --------------------------------------------------------------
 
     def _append_tool_result_user_message(self, ctx: RunContext, gather: _GatherResult) -> None:
-        from magi.old_bus.firmwares.jobs.runToolJob import ToolErrorCode
+        from old_bus.firmwares.jobs.runToolJob import ToolErrorCode
 
         blocks: list[dict] = []
         for tool_call_id, r in gather.tool_results.items():
@@ -896,7 +896,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _publish_delivery(self, ctx: RunContext) -> None:
-        from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+        from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
         # A2A has its own terminal path in ``_run``.  Its text is either the
         # single request response or deliberately discarded for a notify.
@@ -930,7 +930,7 @@ class AgentWorker(RuntimeWorker):
     def _maybe_title(self, ctx: RunContext) -> None:
         if not ctx.conversation_id or ctx.contact_id is None:
             return
-        from magi.agent.auto_title import request_conversation_title
+        from agent.auto_title import request_conversation_title
 
         self.spawn(
             request_conversation_title(ctx.contact_id, ctx.conversation_id, bus=self.bus),
@@ -974,7 +974,7 @@ class AgentWorker(RuntimeWorker):
 
 
 async def submit_agent_message(bus: Bus, message: Any) -> int:
-    from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+    from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
     job = ChatNotifyJob(
         # ``job_id`` is database-owned and is filled after publish().
@@ -1017,7 +1017,7 @@ def _format_llm_error(result: Any) -> str:
     the agent forwards both verbatim. The question of "is this too
     detailed for the end user" belongs upstream — if a future
     ``LLMAuthError`` starts quoting API-key material in ``error``,
-    fix it in :mod:`magi.providers.errors`, not by paraphrasing here.
+    fix it in :mod:`providers.errors`, not by paraphrasing here.
 
     Returns just the ``error_code`` when ``error`` is empty, and a
     constant placeholder when both are missing.

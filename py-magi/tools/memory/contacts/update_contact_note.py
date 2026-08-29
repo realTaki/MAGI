@@ -8,7 +8,7 @@ result and the ``search_contacts`` output.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``.
+(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``.
 The flow is ``get`` → ``with_changes`` → base ``update``;
 a missing row is rendered as ``ToolResult.err`` so the
 LLM sees a caller-fixable message rather than a worker
@@ -22,9 +22,9 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.update_contact_note")
+logger = logging.getLogger("tools.memory.update_contact_note")
 
 
 class UpdateContactNoteTool(Tool):

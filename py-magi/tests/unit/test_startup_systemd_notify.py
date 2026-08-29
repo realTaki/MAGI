@@ -1,4 +1,4 @@
-"""Tests for :mod:`magi.startup.systemd_notify` — sd_notify wrapper."""
+"""Tests for :mod:`startup.systemd_notify` — sd_notify wrapper."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from magi.startup import systemd_notify
+from startup import systemd_notify
 
 
 @pytest.fixture

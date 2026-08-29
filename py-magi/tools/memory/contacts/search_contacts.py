@@ -7,7 +7,7 @@ notes. Use when the operator says '查一下 Lily / 谁在财务部'.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contacts_book``
+(:class:`bus.Bus`) via ``ctx.bus.contacts_book``
 for the contact-side join (name + note match,
 ``last_seen_at`` ordering) and ``ctx.bus.contact_notes_book``
 for the per-contact note sample. The legacy service at
@@ -20,9 +20,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.search_contacts")
+logger = logging.getLogger("tools.memory.search_contacts")
 
 
 class SearchContactsTool(Tool):

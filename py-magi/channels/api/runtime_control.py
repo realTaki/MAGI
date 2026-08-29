@@ -9,9 +9,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.channels.api.dependencies import get_bus, get_workers
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import verified_proxy_operator
+from channels.api.dependencies import get_bus, get_workers
+from channels.api.errors import MagiHTTPException
+from channels.api.proxy_auth import verified_proxy_operator
 
 router = APIRouter(tags=["runtime-control"])
 
@@ -58,7 +58,7 @@ async def bootstrap_telegram(payload: TelegramBootstrap, request: Request) -> di
 async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str, object]:
     bus = get_bus(request)
     _require_control(request, bus)
-    from magi.channels.telegram import bot as tg_bot
+    from channels.telegram import bot as tg_bot
 
     try:
         username = await tg_bot.verify_token(payload.token)
@@ -71,7 +71,7 @@ async def verify_telegram(payload: TelegramVerify, request: Request) -> dict[str
 async def send_telegram(payload: TelegramSend, request: Request) -> dict[str, bool]:
     bus = get_bus(request)
     _require_control(request, bus)
-    from magi.channels.telegram import bot as tg_bot
+    from channels.telegram import bot as tg_bot
 
     token = bus.settings_book.get_value(key="telegram.bot_token")
     if not token:
