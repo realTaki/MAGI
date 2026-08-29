@@ -33,12 +33,10 @@ ENV UV_LINK_MODE=copy \
     UV_PROJECT_ENVIRONMENT=/opt/venv
 
 WORKDIR /app
-# The Python project lives in py-magi/ and keeps its import package at magi/.
-# uv finds pyproject at the project root and
-# installs deps into the venv. README.md is also copied because
-# pyproject declares it under [project] readme.
+# The Python project lives in py-magi/; packages (bus, agent, …) sit at
+# that project root. uv finds pyproject here and installs deps into the venv.
 COPY py-magi/pyproject.toml py-magi/uv.lock* py-magi/README.md ./
-COPY py-magi/magi ./magi
+COPY py-magi ./
 RUN uv sync --frozen --no-dev --extra adam --extra eva
 
 # -----------------------------------------------------------------------------
@@ -50,7 +48,7 @@ RUN useradd --create-home --shell /bin/bash magi \
     && chown -R magi:magi /workspace
 
 COPY --from=python-builder /opt/venv /opt/venv
-COPY py-magi/magi /app/magi
+COPY py-magi /app
 # Prebuilt SPA is consumed only by ``magi webui``. It stays in the same image
 # as MAGI runtimes to keep installation and versioning to one artifact.
 COPY --from=web-builder /web/dist /app/dist
