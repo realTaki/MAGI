@@ -19,9 +19,10 @@ def _expire(bus: Bus, worker_id: str) -> None:
     bus._heartbeat._until[worker_id] = utcnow() - timedelta(seconds=1)
 
 
-def test_other_worker_cannot_use_occupied_slot(bus: Bus, ping_board) -> None:
-    ping_board.publish(PingJob())
-    assert not _attach(bus, "other", ("publish",))
+def test_multiple_workers_can_attach_and_use_one_slot(bus: Bus, ping_board) -> None:
+    other = _board(bus, "other", ("publish",))
+    assert ping_board.publish(PingJob())
+    assert other.publish(PingJob())
 
 
 def test_attach_returns_false_for_an_unknown_slot(bus: Bus) -> None:
@@ -43,10 +44,10 @@ def test_heartbeat_keeps_lease(bus: Bus, ping_board) -> None:
     ping_board.publish(PingJob())
 
 
-def test_expired_lease_can_be_taken(bus: Bus, ping_board) -> None:
+def test_expired_lease_removes_only_that_worker(bus: Bus, ping_board) -> None:
+    other = _board(bus, "other", ("publish",))
     _expire(bus, WORKER)
-    other = _board(bus, "other", ("publish", "claim", "submit_result"))
-    other.publish(PingJob())
+    assert other.publish(PingJob())
 
 
 def test_vacant_post_publish_goes_pending(ping_board) -> None:
@@ -58,107 +59,108 @@ def test_vacant_post_publish_goes_pending(ping_board) -> None:
     assert claimed.id == job.id
 
 
-def test_post_publish_then_submit_admits_to_pending(bus: Bus, ping_board) -> None:
-    inspector = _board(bus, "inspector", ("post_publish", "submit_post_publish"))
+def test_claim_post_publish_is_shared_and_all_submitters_must_vote(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_publish", "submit_post_publish"))
+    second = _board(bus, "second", ("claim_post_publish", "submit_post_publish"))
     job = PingJob()
     job.id = ping_board.publish(job)
+
+    first_claim = first.claim_post_publish()
+    second_claim = second.claim_post_publish()
+    assert first_claim is not None and second_claim is not None
+    assert first_claim.id == second_claim.id == job.id
     assert ping_board.check_job_status(job.id) is JobStatus.PREPARING
-    assert ping_board.claim() is None
 
-    inspected = inspector.post_publish()
-    assert inspected is not None
-    assert inspected.id == job.id
-    assert ping_board.check_job_status(job.id) is JobStatus.HOOKING
-
-    assert inspector.submit_post_publish(inspected, BaseJobResult(status=JobStatus.PENDING))
+    assert first.submit_post_publish(first_claim, BaseJobResult())
+    assert ping_board.check_job_status(job.id) is JobStatus.PREPARING
+    assert second.submit_post_publish(second_claim, BaseJobResult())
     assert ping_board.check_job_status(job.id) is JobStatus.PENDING
-    claimed = ping_board.claim()
-    assert claimed is not None
-    assert claimed.id == job.id
 
 
-def test_submit_post_publish_can_fail_the_job(bus: Bus, ping_board) -> None:
-    inspector = _board(bus, "inspector", ("post_publish", "submit_post_publish"))
-    job = PingJob()
-    job.id = ping_board.publish(job)
-    inspected = inspector.post_publish()
-    assert inspected is not None
-    assert inspector.submit_post_publish(
-        inspected, BaseJobResult(status=JobStatus.FAILED, error="blocked")
+def test_post_publish_failure_merges_errors_from_all_workers(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_publish", "submit_post_publish"))
+    second = _board(bus, "second", ("claim_post_publish", "submit_post_publish"))
+    job = PingJob(id=ping_board.publish(PingJob()))
+    first_claim = first.claim_post_publish()
+    second_claim = second.claim_post_publish()
+    assert first_claim is not None and second_claim is not None
+    assert first.submit_post_publish(
+        first_claim, BaseJobResult(status=JobStatus.FAILED, error="first block")
     )
-    assert ping_board.check_job_status(job.id) is JobStatus.FAILED
-    blocked = ping_board.get_result(job.id)
-    assert blocked is not None
-    assert blocked.error == "blocked"
-    assert ping_board.claim() is None
+    assert second.submit_post_publish(
+        second_claim, BaseJobResult(status=JobStatus.FAILED, error="second block")
+    )
+    outcome = ping_board.get_result(job.id)
+    assert outcome is not None and outcome.status is JobStatus.FAILED
+    assert outcome.error == "first block\nsecond block"
 
 
-def test_expired_post_publish_slot_releases_preparing(bus: Bus, ping_board) -> None:
-    _board(bus, "inspector", ("post_publish", "submit_post_publish"))
-    job = PingJob()
-    job.id = ping_board.publish(job)
-    assert ping_board.check_job_status(job.id) is JobStatus.PREPARING
+def test_expired_post_publish_workers_release_preparing(bus: Bus, ping_board) -> None:
+    _board(bus, "inspector", ("claim_post_publish", "submit_post_publish"))
+    job = PingJob(id=ping_board.publish(PingJob()))
     _expire(bus, "inspector")
     claimed = ping_board.claim()
-    assert claimed is not None
-    assert claimed.id == job.id
+    assert claimed is not None and claimed.id == job.id
 
 
-def test_vacant_post_result_is_readable(ping_board) -> None:
+def test_claim_is_first_claimant_wins(bus: Bus, ping_board) -> None:
+    other = _board(bus, "other", ("claim",))
     ping_board.publish(PingJob())
+    assert ping_board.claim() is not None
+    assert other.claim() is None
+
+
+def test_duplicate_submit_result_does_not_replace_the_first_result(bus: Bus, ping_board) -> None:
+    other = _board(bus, "other", ("submit_result",))
+    job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
-    ping_board.submit_result(BaseJobResult(id=claimed.id))
-    outcome = ping_board.get_result(claimed.id)
-    assert outcome is not None
-    assert outcome.status is JobStatus.COMPLETED
+    assert ping_board.submit_result(BaseJobResult(id=job.id, error="first"))
+    assert not other.submit_result(BaseJobResult(id=job.id, status=JobStatus.FAILED, error="late"))
+    outcome = ping_board.get_result(job.id)
+    assert outcome is not None and outcome.status is JobStatus.COMPLETED
+    assert outcome.error == "first"
 
 
-def test_post_result_then_submit_admits_result(bus: Bus, ping_board) -> None:
-    hook = _board(bus, "hook", ("post_result", "submit_post_result"))
-    ping_board.publish(PingJob())
+def test_claim_post_result_is_shared_and_all_submitters_must_vote(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_result", "submit_post_result"))
+    second = _board(bus, "second", ("claim_post_result", "submit_post_result"))
+    job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
-    ping_board.submit_result(BaseJobResult(id=claimed.id))
-    assert ping_board.check_job_status(claimed.id) is JobStatus.SETTLING
-    assert ping_board.get_result(claimed.id) is None
+    assert ping_board.submit_result(BaseJobResult(id=job.id))
 
-    hooked = hook.post_result()
-    assert hooked is not None
-    assert hooked.id == claimed.id
-    assert ping_board.check_job_status(claimed.id) is JobStatus.FINALIZING
-
-    assert hook.submit_post_result(hooked.id, BaseJobResult())
-    admitted = ping_board.get_result(claimed.id)
-    assert admitted is not None
-    assert admitted.status is JobStatus.COMPLETED
+    first_claim = first.claim_post_result()
+    second_claim = second.claim_post_result()
+    assert first_claim is not None and second_claim is not None
+    assert first_claim.id == second_claim.id == job.id
+    assert first.submit_post_result(job.id, BaseJobResult())
+    assert ping_board.get_result(job.id) is None
+    assert second.submit_post_result(job.id, BaseJobResult())
+    outcome = ping_board.get_result(job.id)
+    assert outcome is not None and outcome.status is JobStatus.COMPLETED
 
 
-def test_submit_post_result_can_fail_the_job(bus: Bus, ping_board) -> None:
-    hook = _board(bus, "hook", ("post_result", "submit_post_result"))
-    ping_board.publish(PingJob())
+def test_post_result_failure_merges_errors_from_all_workers(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_result", "submit_post_result"))
+    second = _board(bus, "second", ("claim_post_result", "submit_post_result"))
+    job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
-    ping_board.submit_result(BaseJobResult(id=claimed.id))
-    hooked = hook.post_result()
-    assert hooked is not None
-    assert hook.submit_post_result(
-        hooked.id, BaseJobResult(status=JobStatus.FAILED, error="rejected")
-    )
-    outcome = ping_board.get_result(claimed.id)
-    assert outcome is not None
-    assert outcome.status is JobStatus.FAILED
-    assert outcome.error == "rejected"
+    assert ping_board.submit_result(BaseJobResult(id=job.id))
+    assert first.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="first reject"))
+    assert second.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="second reject"))
+    outcome = ping_board.get_result(job.id)
+    assert outcome is not None and outcome.status is JobStatus.FAILED
+    assert outcome.error == "first reject\nsecond reject"
 
 
-def test_expired_post_result_slot_releases_settling(bus: Bus, ping_board) -> None:
-    _board(bus, "hook", ("post_result", "submit_post_result"))
-    ping_board.publish(PingJob())
+def test_expired_post_result_workers_release_settling(bus: Bus, ping_board) -> None:
+    _board(bus, "hook", ("claim_post_result", "submit_post_result"))
+    job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
-    ping_board.submit_result(BaseJobResult(id=claimed.id))
-    assert ping_board.check_job_status(claimed.id) is JobStatus.SETTLING
+    assert ping_board.submit_result(BaseJobResult(id=job.id))
     _expire(bus, "hook")
-    released = ping_board.get_result(claimed.id)
-    assert released is not None
-    assert released.status is JobStatus.COMPLETED
+    outcome = ping_board.get_result(job.id)
+    assert outcome is not None and outcome.status is JobStatus.COMPLETED

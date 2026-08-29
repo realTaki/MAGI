@@ -7,7 +7,6 @@ record types (see :class:`Message`). Workers receive an identity-bound
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.file import FileEngine
 from .base.heartbeat import Slot
@@ -108,8 +107,6 @@ __all__ = [
     "BaseJobResult",
     "BaseJobBoard",
     "JobStatus",
-    "OrDock",
-    "AndDock",
     "Slot",
     "BusForWorker",
     "JobBoardClient",

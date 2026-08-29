@@ -1,4 +1,4 @@
-"""Shared worker liveness and slot ownership for one BUS runtime."""
+"""Shared worker liveness and Slot membership for one BUS runtime."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ class Slot:
 
 
 class Heartbeat:
-    """The BUS-private source of worker liveness and slot ownership."""
+    """The BUS-private source of worker liveness and Slot membership."""
 
     def __init__(self) -> None:
         self._until: dict[str, datetime] = {}
-        self._owners: dict[Slot, str] = {}
+        self._members: dict[Slot, set[str]] = {}
         self._worker_slots: dict[str, set[Slot]] = {}
         self._lock = threading.RLock()
 
@@ -33,19 +33,17 @@ class Heartbeat:
         now = utcnow()
         with self._lock:
             self._expire(now)
-            if not self._can_attach(worker_id, slots):
-                return False
             self._until[worker_id] = now + LEASE
-            owned = self._worker_slots.setdefault(worker_id, set())
+            attached = self._worker_slots.setdefault(worker_id, set())
             for slot in slots:
-                self._owners[slot] = worker_id
-                owned.add(slot)
+                self._members.setdefault(slot, set()).add(worker_id)
+                attached.add(slot)
             return True
 
     def can_attach(self, worker_id: str, slots: tuple[Slot, ...]) -> bool:
         with self._lock:
             self._expire(utcnow())
-            return self._can_attach(worker_id, slots)
+            return True
 
     def heartbeat(self, worker_id: str) -> bool:
         now = utcnow()
@@ -64,22 +62,27 @@ class Heartbeat:
     def holds(self, worker_id: str, slot: Slot) -> bool:
         with self._lock:
             self._expire(utcnow())
-            return self._owners.get(slot) == worker_id
+            return worker_id in self._members.get(slot, set())
 
     def held(self, slot: Slot) -> bool:
         with self._lock:
             self._expire(utcnow())
-            return slot in self._owners
+            return bool(self._members.get(slot))
+
+    def members(self, slot: Slot) -> set[str]:
+        """Return the current live Workers attached to *slot*."""
+        with self._lock:
+            self._expire(utcnow())
+            return set(self._members.get(slot, set()))
 
     def _expire(self, now: datetime) -> None:
         expired = [worker_id for worker_id, until in self._until.items() if until <= now]
         for worker_id in expired:
             self._until.pop(worker_id, None)
             for slot in self._worker_slots.pop(worker_id, set()):
-                if self._owners.get(slot) == worker_id:
-                    self._owners.pop(slot, None)
-
-    def _can_attach(self, worker_id: str, slots: tuple[Slot, ...]) -> bool:
-        return not any(
-            (owner := self._owners.get(slot)) is not None and owner != worker_id for slot in slots
-        )
+                members = self._members.get(slot)
+                if members is None:
+                    continue
+                members.discard(worker_id)
+                if not members:
+                    self._members.pop(slot, None)

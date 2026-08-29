@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from launcher.constant import WORKERS, WORKSPACE_PATH
 from bus import BaseWorker, Bus, Slot
-
-_AND_DOCK_SLOTS = frozenset({"submit_post_publish", "submit_post_result"})
 
 
 class Launcher:
     """The runtime entry point.
 
     ``run()`` follows the runtime's one startup sequence: open BUS and the
-    workspace file tree, read all worker Slots, arrange Docks, create each
-    ``BusForWorker``, then attach the worker.  ``shutdown()`` performs the
+    workspace file tree, read all worker Slots, create each ``BusForWorker``,
+    then attach the worker.  ``shutdown()`` performs the
     inverse attachment cleanup.
     """
 
@@ -44,9 +40,6 @@ class Launcher:
         if len({worker_id for worker_id, _, _ in prepared}) != len(prepared):
             raise ValueError("duplicate worker_id")
 
-        if not self._install_docks(slots for _, _, slots in prepared):
-            return False
-
         attached: dict[str, BaseWorker] = {}
         for worker_id, worker, slots in prepared:
             bus_for_worker = self.bus.for_worker(worker_id, slots)
@@ -69,23 +62,6 @@ class Launcher:
     def __exit__(self, *exc: object) -> None:
         self.shutdown()
         self.bus.close()
-
-    def _install_docks(self, all_slots: Iterable[tuple[Slot, ...]]) -> bool:
-        requested: dict[Slot, int] = {}
-        for slots in all_slots:
-            for slot in slots:
-                requested[slot] = requested.get(slot, 0) + 1
-        for slot, count in requested.items():
-            if count <= 1:
-                continue
-            install = (
-                self.bus.install_and_dock
-                if slot.name in _AND_DOCK_SLOTS
-                else self.bus.install_or_dock
-            )
-            if not install(slot):
-                return False
-        return True
 
     @staticmethod
     def _detach_workers(workers: dict[str, BaseWorker]) -> None:
