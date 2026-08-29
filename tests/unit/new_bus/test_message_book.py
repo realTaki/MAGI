@@ -173,7 +173,7 @@ def test_message_book_stays_private_to_firmware() -> None:
 
 
 def test_base_does_not_import_firmware() -> None:
-    root = Path(__file__).resolve().parents[3] / "magi" / "new_bus" / "base"
+    root = Path(__file__).resolve().parents[3] / "magi" / "bus" / "base"
     offenders: list[str] = []
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
