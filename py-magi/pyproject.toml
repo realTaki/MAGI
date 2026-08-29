@@ -62,21 +62,36 @@ dev = [
 
 [project.scripts]
 # Single entry point. Whether the process plays ADAM or EVA is decided at
-# runtime by MAGI_NODE_ROLE (see `magi.__main__`). One image, one binary,
+# runtime by MAGI_NODE_ROLE (see `startup.cli`). One image, one binary,
 # one supply chain.
-magi = "magi.__main__:main"
+magi = "startup.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.8,<0.12.0"]
-build-backend = "uv_build"
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.uv.build-backend]
-# Flat package layout: pyproject.toml and the `magi` Python package both live
-# directly under py-magi/. ``module-root = ""`` (empty) means
-# "look for the package directly under the project root" instead of the
-# default ``src/`` layout.
-module-name = "magi"
-module-root = ""
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "agent*",
+    "bus*",
+    "channels*",
+    "launcher*",
+    "mcp*",
+    "old_bus*",
+    "proactive*",
+    "providers*",
+    "skills*",
+    "startup*",
+    "tools*",
+]
+exclude = ["tests*", "tests.*"]
+
+[tool.setuptools]
+py-modules = ["runtime_worker"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*/SKILL.md"]
 
 [tool.uv]
 # Single project, NOT a workspace — see architecture plan.
