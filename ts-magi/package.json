@@ -8,10 +8,10 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @magi/bus && npm run build -w @magi/caller && npm run build -w @magi/provider && npm run build -w @magi/result-reader && npm run build -w @magi/runtime",
+    "build": "npm run build -w @magi/bus && npm run build -w @magi/caller && npm run build -w @magi/provider && npm run build -w @magi/result-reader && npm run build -w @magi/launcher",
     "generate:migration": "npm run generate:migration -w @magi/bus",
-    "demo": "npm run build && npm run demo -w @magi/runtime",
-    "test": "npm run build && npm run test -w @magi/runtime"
+    "demo": "npm run build && npm run demo -w @magi/launcher",
+    "test": "npm run build && npm run test -w @magi/launcher"
   },
   "engines": {
     "node": ">=20"

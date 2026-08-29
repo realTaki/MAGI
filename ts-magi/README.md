@@ -1,7 +1,7 @@
 # ts-magi
 
 This is a small npm-workspaces TypeScript monorepo. BUS and each plugin are
-separate packages; runtime is a separate application:
+separate packages; the launcher is a separate application:
 
 ## Development environment
 
@@ -35,7 +35,7 @@ packages/
   provider/             @magi/provider: execution-only worker
   result-reader/        @magi/result-reader: completed-result-only worker
 apps/
-  runtime/              @magi/runtime: the only composition root and integration tests
+  launcher/             @magi/launcher: the only composition root and integration tests
 ```
 
 Each plugin package declares only `@magi/bus` as a dependency, never another
