@@ -5,15 +5,7 @@ Notes are individual ``contact_notes`` rows; the LLM can
 update or delete by id without rewriting anything else
 about the same person.
 
-Tool author gate. ``role`` only carries ``assigned`` /
-``guest`` — there is no ``role='admin'`` value. Admin is
-a MAGIS-level concept, resolved at runtime via
-:attr:`ctx.bus.magis_admins_book` (see
-:meth:`magi.tools.base.Tool.gate`). The
-``ALLOWED_ROLES = {"admin", "assigned"}`` whitelist
-admits callers whose effective role-tag set intersects
-it — ``admin`` from a MAGIS admin row, ``assigned``
-from the contact's local role.
+Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
@@ -29,7 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.firmwares.books.local.contactBook import ContactNote
+from magi.old_bus.firmwares.books.local.contactBook import ContactNote
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.memory.add_contact_note")

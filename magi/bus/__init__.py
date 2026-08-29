@@ -1,36 +1,199 @@
-"""bus — 消息总线模块。
+"""MAGI-BUS vNext — software backplane.
 
-BUS 分成两层：
-
-- :mod:`magi.bus.bases` — Job/Book 基类，以及 ``db``（ORM / engine / FileShelf）
-- :mod:`magi.bus.firmwares` — 具体 Job Boards 与 Books
-
-组合根通过 :func:`open_bus` 构造统一门面 ``Bus``，再经**构造器注入**
-传入各 Worker。没有进程级单例::
-
-    from magi.bus import open_bus
-
-    bus = open_bus(workspace_dir="/path/to/workspace", magis_url="...")
-    worker = AgentWorker(bus=bus)
-    job = bus.tool_job_board.claim(worker_id="worker-1")
-    adam = bus.memberships_book.get(1)
-
-需要具体的 Book / Job 类型时，从 firmwares 导入::
-
-    from magi.bus.firmwares.books.local import ConversationBook
-    from magi.bus.firmwares.books.file import PromptBook
-    from magi.bus.firmwares.jobs import RunToolJob, runToolJobBoard
-
-基类从 :mod:`magi.bus.bases` 导入；底层存储从 :mod:`magi.bus.bases.db`
-导入。领域代码不得导入 ``magi.bus.bases.db``。
+Constructing :class:`Bus` starts Firmware with it. BaseBook fields live on the
+record types (see :class:`Message`). Workers receive an identity-bound
+:class:`BusForWorker` and never access BaseBooks directly.
 """
 
-from __future__ import annotations
-
-from magi.bus.bootstrap import Bus, MagisBus, open_bus
+from .base.BaseBook import BaseRecord
+from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.dock import AndDock, OrDock
+from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
+from .base.file import FileEngine
+from .base.heartbeat import Slot
+from .BaseWorker import BaseWorker
+from .bus import Bus
+from .bus_for_worker import BusForWorker, JobBoardClient
+from .firmware import (
+    AppendMessageJob,
+    AppendMessageResult,
+    ArchiveMessagesJob,
+    ArchiveMessagesResult,
+    CallLLMJob,
+    CallLLMResult,
+    ChangeProviderJob,
+    ChangeProviderResult,
+    Contact,
+    ContactNote,
+    ContactRole,
+    Conversation,
+    CreateContactJob,
+    CreateContactNoteJob,
+    CreateContactNoteResult,
+    CreateContactResult,
+    CreateConversationJob,
+    CreateConversationResult,
+    CreateMemoryJob,
+    CreateMemoryResult,
+    DeleteContactJob,
+    DeleteContactNoteJob,
+    DeleteContactNoteResult,
+    DeleteContactResult,
+    DeleteMemoryJob,
+    DeleteMemoryResult,
+    DeleteSettingJob,
+    DeleteSettingResult,
+    GetContactJob,
+    GetContactNoteJob,
+    GetContactNoteResult,
+    GetContactResult,
+    GetMemoryJob,
+    GetMemoryResult,
+    GetPromptJob,
+    GetPromptResult,
+    GetSettingJob,
+    GetSettingResult,
+    ListContactNotesJob,
+    ListContactNotesResult,
+    ListContactsJob,
+    ListContactsResult,
+    ListMemoriesJob,
+    ListMemoriesResult,
+    ListConversationMessagesJob,
+    ListConversationMessagesResult,
+    ListSettingsJob,
+    ListSettingsResult,
+    ListSkillsJob,
+    ListSkillsResult,
+    LLMErrorCode,
+    Memory,
+    MemoryKind,
+    Message,
+    NoteKind,
+    RecordTokenUsageJob,
+    RecordTokenUsageResult,
+    RegisterPromptJob,
+    RegisterPromptResult,
+    ResetPromptJob,
+    ResetPromptResult,
+    RunToolJob,
+    RunToolResult,
+    SetPromptJob,
+    SetPromptResult,
+    SetSettingJob,
+    SetSettingResult,
+    Setting,
+    Task,
+    TaskSource,
+    TokenUsage,
+    TouchContactJob,
+    TouchContactResult,
+    UpdateContactJob,
+    UpdateContactNoteJob,
+    UpdateContactNoteResult,
+    UpdateContactResult,
+    UpdateConversationSummaryJob,
+    UpdateConversationSummaryResult,
+    UpdateMemoryJob,
+    UpdateMemoryResult,
+)
 
 __all__ = [
+    "BaseRecord",
+    "BaseWorker",
     "Bus",
-    "MagisBus",
-    "open_bus",
+    "EngineFactory",
+    "FileEngine",
+    "BaseJob",
+    "BaseJobResult",
+    "BaseJobBoard",
+    "JobStatus",
+    "OrDock",
+    "AndDock",
+    "Slot",
+    "BusForWorker",
+    "JobBoardClient",
+    "Conversation",
+    "Contact",
+    "ContactNote",
+    "ContactRole",
+    "CreateContactJob",
+    "CreateContactResult",
+    "CreateContactNoteJob",
+    "CreateContactNoteResult",
+    "DeleteContactJob",
+    "DeleteContactResult",
+    "DeleteContactNoteJob",
+    "DeleteContactNoteResult",
+    "GetContactJob",
+    "GetContactResult",
+    "GetContactNoteJob",
+    "GetContactNoteResult",
+    "GetPromptJob",
+    "GetPromptResult",
+    "ListContactNotesJob",
+    "ListContactNotesResult",
+    "ListContactsJob",
+    "ListContactsResult",
+    "CallLLMJob",
+    "CallLLMResult",
+    "RunToolJob",
+    "RunToolResult",
+    "ChangeProviderJob",
+    "ChangeProviderResult",
+    "Memory",
+    "MemoryKind",
+    "Message",
+    "NoteKind",
+    "TouchContactJob",
+    "TouchContactResult",
+    "UpdateContactJob",
+    "UpdateContactResult",
+    "UpdateContactNoteJob",
+    "UpdateContactNoteResult",
+    "LLMErrorCode",
+    "RecordTokenUsageJob",
+    "RecordTokenUsageResult",
+    "RegisterPromptJob",
+    "RegisterPromptResult",
+    "AppendMessageJob",
+    "AppendMessageResult",
+    "ArchiveMessagesJob",
+    "ArchiveMessagesResult",
+    "CreateConversationJob",
+    "CreateConversationResult",
+    "CreateMemoryJob",
+    "CreateMemoryResult",
+    "DeleteMemoryJob",
+    "DeleteMemoryResult",
+    "GetMemoryJob",
+    "GetMemoryResult",
+    "ListMemoriesJob",
+    "ListMemoriesResult",
+    "UpdateMemoryJob",
+    "UpdateMemoryResult",
+    "ListConversationMessagesJob",
+    "ListConversationMessagesResult",
+    "UpdateConversationSummaryJob",
+    "UpdateConversationSummaryResult",
+    "PostgresBackend",
+    "SQLiteBackend",
+    "Setting",
+    "Task",
+    "TaskSource",
+    "TokenUsage",
+    "DeleteSettingJob",
+    "DeleteSettingResult",
+    "GetSettingJob",
+    "GetSettingResult",
+    "ListSettingsJob",
+    "ListSettingsResult",
+    "ListSkillsJob",
+    "ListSkillsResult",
+    "SetSettingJob",
+    "SetSettingResult",
+    "ResetPromptJob",
+    "ResetPromptResult",
+    "SetPromptJob",
+    "SetPromptResult",
 ]

@@ -14,11 +14,9 @@
 - **并发执行**。通过 ``asyncio.Semaphore`` 控制并发槽位，
   默认值 2，通过 ``concurrency`` 构造参数覆盖。
 
-GATE（enqueue 时由调用方校验角色）已在 publish 之前完成；
-worker 拿到 job 后直接查 tool 名 → 跑 gate → 执行，不再重做角色
-门控（那一步属于 publish 时刻的权限检查）。Catalog 过期校验
-（revision / schema_hash）也已移除——schema 不一致时工具执行本身
-会失败并回传错误。
+角色菜单过滤在 catalog / agent 侧完成；worker 拿到 job 后按
+tool 名查找并执行。Catalog 过期校验（revision / schema_hash）
+已移除——schema 不一致时工具执行本身会失败并回传错误。
 
 执行流程
 ========
@@ -51,16 +49,16 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.books.local import ToolDefinition
-from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+from magi.old_bus.bases.job import JobStatus
+from magi.old_bus.firmwares.books.local import ToolDefinition
+from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 from magi.runtime_worker import RuntimeWorker
 from magi.tools.base import Tool, ToolContext, ToolResult
 from magi.tools.registry import get_tool
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.jobs.runToolJob import RunToolJob
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.tools.worker")
 
@@ -323,10 +321,8 @@ class ToolsWorker(RuntimeWorker):
     async def _execute(self, job: RunToolJob) -> None:
         ctx_data = dict(job.payload.get("context") or {})
 
-        # 1. Look up the tool by name. Role gating happens in
-        #    ``tool.gate(ctx)`` below — registry dispatch is
-        #    no longer role-aware (the menu filter lives on
-        #    the agent side via the catalog, not here).
+        # 1. Look up the tool by name. The agent catalog is
+        #    the role filter; this worker just dispatches.
         tool = get_tool(job.tool_name)
         if tool is None:
             await self._submit_failure(
@@ -336,10 +332,6 @@ class ToolsWorker(RuntimeWorker):
             )
             return
 
-        # 2. Build execution context and run the runtime gate.
-        #    ``Tool.gate`` re-resolves the caller's role from
-        #    ``ctx.bus.contacts_book`` on every call, so we
-        #    don't carry a stale role on the context.
         ctx = ToolContext(
             workspace=str(ctx_data.get("workspace") or ""),
             contact_id=int(ctx_data.get("contact_id") or 0),
@@ -347,16 +339,8 @@ class ToolsWorker(RuntimeWorker):
             conversation_id=int(ctx_data.get("conversation_id") or 0),
             bus=self.bus,
         )
-        denied = tool.gate(ctx)
-        if denied:
-            await self._submit_failure(
-                job,
-                content=denied,
-                error_code=ToolErrorCode.UNAUTHORIZED,
-            )
-            return
 
-        # 3. Execute. The worker MUST NOT raise to surface
+        # 2. Execute. The worker MUST NOT raise to surface
         #    "expected failure" — Tool.run() returns ToolResult
         #    with is_error=True in that case. Real bugs raise;
         #    we catch and translate.
@@ -374,7 +358,7 @@ class ToolsWorker(RuntimeWorker):
             )
             return
 
-        # 4. Submit the result if this worker still owns the lease.  A lease
+        # 3. Submit the result if this worker still owns the lease.  A lease
         #    reclaimed by another worker makes this durable write a no-op.
         await self.call(
             self.bus.tool_job_board.submit_result,
@@ -423,7 +407,7 @@ def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:
 
     ``content`` is truncated to 8 KB to fit the column.
     """
-    from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+    from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 
     return RunToolResult(
         job_id=job.job_id,

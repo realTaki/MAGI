@@ -4,9 +4,8 @@ LLM-managed directory of people the MAGI knows about.
 One module per tool — see :mod:`magi.tools.registry` for
 the dispatcher that wires them up.
 
-All tools gate on ``ALLOWED_ROLES = {admin, assigned}``;
-the LLM-side menu filter strips them out for other
-roles and :meth:`Tool.gate` is the second-layer defence.
+All tools declare ``ALLOWED_ROLES = {admin, assigned}``;
+the LLM-side menu filter strips them out for other roles.
 
   - :mod:`magi.tools.memory.contacts.add_contact`
   - :mod:`magi.tools.memory.contacts.add_contact_note`

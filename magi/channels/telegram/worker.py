@@ -6,12 +6,12 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.bus.firmwares.books.local import Contact, Role
+from magi.old_bus.firmwares.books.local import Contact, Role
 from magi.channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.telegram.worker")
 
@@ -123,7 +123,7 @@ class TelegramWorker(ChannelWorker):
         # The user message is persisted to ``chat_messages`` inside
         # :meth:`chatNotifyBoard.publish` — see ``magi.bus.firmwares.jobs.chatNotifyJob``.
         # Channels must not reach into ``messages_book`` directly anymore.
-        from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+        from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
         try:
             job_id = self.bus.agent_job_board.publish(
@@ -176,9 +176,8 @@ def _resolve_contact(bus: Bus, tgid: str) -> tuple[int, str, str] | None:
     if contact is None:
         return None
     # Telegram contacts are MAGI-local, so only the local ``role`` is resolved
-    # here.  MAGIS administrator identity lives on ``magis_admins`` and is
-    # intentionally not inferred from a local Contact's TG binding; downstream
-    # tool gating combines both via ``Tool.gate``.
+    # here. MAGIS administrator identity lives on ``magis_admins`` and is
+    # not inferred from a local Contact's TG binding.
     name = (contact.display_name or contact.name or f"stranger-{tgid[-5:]}").strip()
     return (contact.id, contact.role, name)
 
@@ -253,7 +252,7 @@ async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
     pass through PROCESSING between polls, but as soon as we observe
     any non-pending state we react once and return.
     """
-    from magi.bus.bases.job import JobStatus
+    from magi.old_bus.bases.job import JobStatus
 
     # 120 × 0.25s = 30s ceiling for an Agent to claim the turn.
     # Beyond that we give up silently — no reaction is better than a
