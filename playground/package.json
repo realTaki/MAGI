@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": "./dist/src/index.js",
-  "types": "./dist/src/index.d.ts",
+  "exports": "./dist/bus/index.js",
+  "types": "./dist/bus/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
     "generate:migration": "drizzle-kit generate",
-    "demo": "npm run build && node dist/demo/main.js",
+    "demo": "npm run build && node dist/runtime/main.js",
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "engines": {

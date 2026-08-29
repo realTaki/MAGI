@@ -1,7 +1,7 @@
-import { Bus } from "../src/index.js";
-import { Caller } from "./modules/caller.js";
-import { DemoProvider } from "./modules/provider.js";
-import { ResultReader } from "./modules/resultReader.js";
+import { Bus } from "../bus/index.js";
+import { Caller } from "../caller/worker.js";
+import { DemoProvider } from "../provider/worker.js";
+import { ResultReader } from "../result-reader/worker.js";
 
 export type PlaygroundRuntime = {
   bus: Bus;

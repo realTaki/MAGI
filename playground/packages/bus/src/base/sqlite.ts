@@ -19,7 +19,7 @@ export class Sqlite {
     const sqlite = new Sqlite(file);
     try {
       migrate(drizzle(sqlite.database), {
-        migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)),
+        migrationsFolder: fileURLToPath(new URL("../migrations", import.meta.url)),
       });
       return sqlite;
     } catch (error) {

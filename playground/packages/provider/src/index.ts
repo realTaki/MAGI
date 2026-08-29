@@ -4,7 +4,7 @@ import {
   GetSettingJob,
   slot,
   type Slot,
-} from "../../src/index.js";
+} from "../bus/index.js";
 
 export class DemoProvider extends BaseWorker {
   readonly workerName = "provider";

@@ -1,4 +1,4 @@
-import { BaseWorker, CallLLMJob, slot, type Slot } from "../../src/index.js";
+import { BaseWorker, CallLLMJob, slot, type Slot } from "../bus/index.js";
 
 /** An Agent-facing module: it can create a request but cannot run a provider. */
 export class Caller extends BaseWorker {
