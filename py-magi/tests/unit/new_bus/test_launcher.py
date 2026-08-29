@@ -11,7 +11,7 @@ from bus import (
     CallLLMResult,
     JobStatus,
     LLMErrorCode,
-    Slot,
+    SlotTag,
 )
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
@@ -25,9 +25,9 @@ def _launcher_workspace(tmp_path, monkeypatch) -> None:
 
 
 _SHARED_LLM_SLOTS = (
-    Slot(CallLLMJob, "publish"),
-    Slot(CallLLMJob, "claim"),
-    Slot(CallLLMJob, "submit_result"),
+    SlotTag(CallLLMJob, "publish"),
+    SlotTag(CallLLMJob, "claim"),
+    SlotTag(CallLLMJob, "submit_result"),
 )
 
 
@@ -38,7 +38,7 @@ class SharedLLMWorker(BaseWorker):
 
 class GateWorker(BaseWorker):
     worker_name = "gate-one"
-    required_slots = (Slot(CallLLMJob, "submit_post_result"),)
+    required_slots = (SlotTag(CallLLMJob, "submit_post_result"),)
 
 
 class SecondSharedLLMWorker(SharedLLMWorker):
@@ -131,7 +131,7 @@ def test_run_rolls_back_when_a_worker_refuses(monkeypatch) -> None:
 
 def test_unknown_slot_does_not_run_workers(monkeypatch) -> None:
     class MissingSlotWorker(SharedLLMWorker):
-        required_slots = (Slot(CallLLMJob, "missing"),)
+        required_slots = (SlotTag(CallLLMJob, "missing"),)
 
     monkeypatch.setattr("launcher.launcher.WORKERS", (MissingSlotWorker,))
     with Launcher() as launcher:

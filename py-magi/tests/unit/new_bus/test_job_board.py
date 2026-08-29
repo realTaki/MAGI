@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-from bus import BaseJobResult, Bus, JobStatus, Slot
+from bus import BaseJobResult, Bus, JobStatus, SlotTag
 from tests.unit.new_bus.testing import WORKER, PingBus, PingJob, PingJobBoard, attach_board
 
 
@@ -123,7 +123,7 @@ def test_claim_is_exclusive(tmp_path) -> None:
 
 def test_unmounted_job_is_invalid(tmp_path) -> None:
     with Bus(tmp_path) as bus:
-        assert bus.for_worker(WORKER, (Slot(PingJob, "publish"),)) is None
+        assert bus.for_worker(WORKER, (SlotTag(PingJob, "publish"),)) is None
 
 
 def test_worker_client_hides_backend_failure(tmp_path, monkeypatch) -> None:
