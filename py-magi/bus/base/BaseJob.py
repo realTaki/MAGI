@@ -7,6 +7,8 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
+import threading
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from functools import wraps
@@ -19,6 +21,8 @@ from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .heartbeat import Heartbeat, Slot
 from .time import utcnow
+
+_slot_worker_id: ContextVar[str | None] = ContextVar("slot_worker_id", default=None)
 
 
 def slot(fn):
@@ -34,7 +38,11 @@ def slot(fn):
         if not self._heartbeat.holds(worker_id, slot_key):
             return None
         self._heartbeat.heartbeat(worker_id)
-        return fn(self, *args, **kwargs)
+        token = _slot_worker_id.set(worker_id)
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            _slot_worker_id.reset(token)
 
     cast(Any, wrapped)._slot = True
     return wrapped
@@ -82,6 +90,14 @@ class BaseJobRow(BaseRecordMixin):
     publisher: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+@dataclass
+class _VoteRound:
+    """One in-memory all-members submission round for one Job gate."""
+
+    expected: set[str]
+    votes: dict[str, BaseJobResult]
+
+
 class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     """Running container for one work BaseJob type."""
 
@@ -92,6 +108,8 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def __init__(self, factory: EngineFactory, heartbeat: Heartbeat) -> None:
         self._factory = factory
         self._heartbeat = heartbeat
+        self._vote_rounds: dict[tuple[str, int], _VoteRound] = {}
+        self._vote_lock = threading.RLock()
 
     def _session(self):
         return self._factory.session()
@@ -104,31 +122,44 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return bool(getattr(getattr(cls, name, None), "_slot", False))
 
     def release_idle_slots(self) -> None:
-        skip_publish = self._slot_held("post_publish")
-        skip_result = self._slot_held("post_result")
-        if skip_publish and skip_result:
-            return
-        row_cls = type(self).row_cls
-        with self._session() as session:
-            if not skip_publish:
+        with self._vote_lock:
+            self._settle_ready_vote_rounds()
+            skip_publish = self._slot_held("claim_post_publish")
+            skip_result = self._slot_held("claim_post_result")
+            row_cls = type(self).row_cls
+            with self._session() as session:
+                # Rows written by the previous one-claimer post-gate protocol
+                # remain usable after the operation names changed.
                 session.execute(
                     update(row_cls)
-                    .where(row_cls.status.in_((JobStatus.PREPARING.value, JobStatus.HOOKING.value)))
-                    .values(status=JobStatus.PENDING.value)
-                )
-            if not skip_result:
-                waiting = (JobStatus.SETTLING.value, JobStatus.FINALIZING.value)
-                session.execute(
-                    update(row_cls)
-                    .where(row_cls.status.in_(waiting), row_cls.error.is_(None))
-                    .values(status=JobStatus.COMPLETED.value)
+                    .where(row_cls.status == JobStatus.HOOKING.value)
+                    .values(status=JobStatus.PREPARING.value)
                 )
                 session.execute(
                     update(row_cls)
-                    .where(row_cls.status.in_(waiting), row_cls.error.is_not(None))
-                    .values(status=JobStatus.FAILED.value)
+                    .where(row_cls.status == JobStatus.FINALIZING.value)
+                    .values(status=JobStatus.SETTLING.value)
                 )
-            session.commit()
+                if not skip_publish:
+                    session.execute(
+                        update(row_cls)
+                        .where(row_cls.status == JobStatus.PREPARING.value)
+                        .values(status=JobStatus.PENDING.value)
+                    )
+                    self._discard_vote_rounds("post_publish")
+                if not skip_result:
+                    session.execute(
+                        update(row_cls)
+                        .where(row_cls.status == JobStatus.SETTLING.value, row_cls.error.is_(None))
+                        .values(status=JobStatus.COMPLETED.value)
+                    )
+                    session.execute(
+                        update(row_cls)
+                        .where(row_cls.status == JobStatus.SETTLING.value, row_cls.error.is_not(None))
+                        .values(status=JobStatus.FAILED.value)
+                    )
+                    self._discard_vote_rounds("post_result")
+                session.commit()
 
     def _pull(self, src: JobStatus, dst: JobStatus) -> JobT | None:
         with self._session() as session:
@@ -173,7 +204,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         values.pop("id", None)
         values["status"] = (
             JobStatus.PREPARING.value
-            if self._slot_held("post_publish")
+            if self._slot_held("claim_post_publish")
             else JobStatus.PENDING.value
         )
         with self._session() as session:
@@ -183,24 +214,26 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return int(row.id)
 
     @slot
-    def post_publish(self) -> JobT | None:
-        return self._post_publish()
+    def claim_post_publish(self) -> JobT | None:
+        return self._claim_gate(JobStatus.PREPARING)
 
-    def _post_publish(self) -> JobT | None:
-        return self._pull(JobStatus.PREPARING, JobStatus.HOOKING)
+    def _claim_gate(self, status: JobStatus) -> JobT | None:
+        with self._session() as session:
+            row = session.scalar(
+                select(type(self).row_cls)
+                .where(type(self).row_cls.status == status.value)
+                .order_by(type(self).row_cls.created_at, type(self).row_cls.id)
+            )
+        if row is None:
+            return None
+        return cast(type[JobT], self.job_cls).from_row(row)
 
     @slot
     def submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
         return self._submit_post_publish(job, result)
 
     def _submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job.id)
-            if row is None or row.status != JobStatus.HOOKING.value:
-                return False
-            self._write_result(row, result)
-            session.commit()
-            return True
+        return self._submit_gate("post_publish", int(job.id), result)
 
     @slot
     def claim(self) -> JobT | None:
@@ -222,30 +255,81 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             self._write_result(
                 row,
                 result,
-                status=JobStatus.SETTLING if self._slot_held("post_result") else None,
+                status=JobStatus.SETTLING if self._slot_held("claim_post_result") else None,
             )
             session.commit()
             return True
 
     @slot
-    def post_result(self) -> JobT | None:
-        return self._post_result()
-
-    def _post_result(self) -> JobT | None:
-        return self._pull(JobStatus.SETTLING, JobStatus.FINALIZING)
+    def claim_post_result(self) -> JobT | None:
+        return self._claim_gate(JobStatus.SETTLING)
 
     @slot
     def submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
         return self._submit_post_result(job_id, result)
 
     def _submit_post_result(self, job_id: int, result: BaseJobResult) -> bool:
+        return self._submit_gate("post_result", job_id, result)
+
+    def _submit_gate(self, stage: str, job_id: int, result: BaseJobResult) -> bool:
+        worker_id = _slot_worker_id.get()
+        if worker_id is None:
+            return False
+        with self._vote_lock:
+            expected_status = (
+                JobStatus.PREPARING if stage == "post_publish" else JobStatus.SETTLING
+            )
+            with self._session() as session:
+                row = session.get(type(self).row_cls, job_id)
+                if row is None or row.status != expected_status.value:
+                    return False
+            key = (stage, job_id)
+            round_ = self._vote_rounds.get(key)
+            if round_ is None:
+                round_ = _VoteRound(
+                    expected=self._heartbeat.members(Slot(type(self).job_cls, f"submit_{stage}")),
+                    votes={},
+                )
+                self._vote_rounds[key] = round_
+            if worker_id not in round_.expected or worker_id in round_.votes:
+                return False
+            round_.votes[worker_id] = result
+            self._settle_vote_round(stage, job_id, round_)
+            return True
+
+    def _settle_ready_vote_rounds(self) -> None:
+        for (stage, job_id), round_ in tuple(self._vote_rounds.items()):
+            self._settle_vote_round(stage, job_id, round_)
+
+    def _settle_vote_round(self, stage: str, job_id: int, round_: _VoteRound) -> None:
+        slot = Slot(type(self).job_cls, f"submit_{stage}")
+        round_.expected.intersection_update(self._heartbeat.members(slot))
+        if not round_.expected or not round_.expected <= set(round_.votes):
+            return
+        failed = [vote for vote in round_.votes.values() if vote.status is JobStatus.FAILED]
+        result = failed[0] if failed else next(iter(round_.votes.values()))
+        if failed:
+            errors = [vote.error for vote in failed if vote.error]
+            result = replace(result, status=JobStatus.FAILED, error="\n".join(errors) or None)
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
-            if row is None or row.status != JobStatus.FINALIZING.value:
-                return False
-            self._write_result(row, result)
+            expected_status = JobStatus.PREPARING if stage == "post_publish" else JobStatus.SETTLING
+            if row is None or row.status != expected_status.value:
+                self._vote_rounds.pop((stage, job_id), None)
+                return
+            next_status = (
+                JobStatus.FAILED
+                if failed
+                else (JobStatus.PENDING if stage == "post_publish" else JobStatus.COMPLETED)
+            )
+            self._write_result(row, result, status=next_status)
             session.commit()
-            return True
+        self._vote_rounds.pop((stage, job_id), None)
+
+    def _discard_vote_rounds(self, stage: str) -> None:
+        for key in tuple(self._vote_rounds):
+            if key[0] == stage:
+                self._vote_rounds.pop(key, None)
 
     def _write_result(
         self, row: RowT, result: BaseJobResult, *, status: JobStatus | None = None

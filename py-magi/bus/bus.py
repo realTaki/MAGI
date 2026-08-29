@@ -1,4 +1,4 @@
-"""Runtime BUS: JobBoards, shared heartbeat, and slot routing."""
+"""Runtime BUS: JobBoards, shared heartbeat, and Slot routing."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from .base.BaseJob import BaseJob, BaseJobBoard
-from .base.dock import AndDock, OrDock
 from .base.engine import EngineFactory
 from .base.file import FileEngine
 from .base.heartbeat import Heartbeat, Slot
@@ -18,7 +17,7 @@ JobT = TypeVar("JobT", bound=BaseJob)
 
 
 class Bus:
-    """One runtime's source of truth for jobs, slots, docks, and liveness."""
+    """One runtime's source of truth for jobs, Slots, and liveness."""
 
     def __init__(self, workspace: str | Path) -> None:
         """Open one private BUS store rooted at *workspace*.
@@ -45,8 +44,6 @@ class Bus:
             self._heartbeat,
             files=self._files,
         )
-        self._docks: dict[Slot, OrDock | AndDock] = {}
-        self._worker_docks: dict[str, set[OrDock | AndDock]] = {}
         self._lock = threading.RLock()
 
     def for_worker(
@@ -61,30 +58,11 @@ class Bus:
             bus=self,
             factory=self._factory,
             heartbeat=self._heartbeat,
-            worker_docks=self._worker_docks,
             worker_id=worker_id,
         )
 
-    def install_or_dock(self, slot: Slot) -> bool:
-        board = self._job_board(slot.job_type)
-        if board is None or not board.has_slot(slot.name):
-            return False
-        if slot in self._docks:
-            return True
-        self._docks[slot] = OrDock(self._heartbeat, slot)
-        return True
-
-    def install_and_dock(self, slot: Slot) -> bool:
-        board = self._job_board(slot.job_type)
-        if board is None or not board.has_slot(slot.name):
-            return False
-        if slot in self._docks:
-            return True
-        self._docks[slot] = AndDock(self._heartbeat, slot)
-        return True
-
     def _allocate_worker_slots(self, worker_id: str, slots: Iterable[Slot]) -> bool:
-        """Allocate one Worker's declared Slots, routing through Docks when needed."""
+        """Attach one Worker to each of its declared Slots."""
         requested = tuple(slots)
         with self._lock:
             if any(
@@ -92,18 +70,8 @@ class Bus:
                 for slot in requested
             ):
                 return False
-            direct = tuple(slot for slot in requested if slot not in self._docks)
-            docks = tuple(self._docks[slot] for slot in requested if slot in self._docks)
-            if not self._heartbeat.can_attach(worker_id, direct) or not all(
-                dock.can_attach() for dock in docks
-            ):
+            if not self._heartbeat.attach(worker_id, requested):
                 return False
-            if not self._heartbeat.attach(worker_id, direct):
-                return False
-            for dock in docks:
-                if not dock.attach(worker_id):
-                    return False
-                self._worker_docks.setdefault(worker_id, set()).add(dock)
         return True
 
     def _invoke(self, worker_id: str, job_type: type[JobT], slot_name: str, *args, **kwargs) -> Any:
@@ -112,9 +80,6 @@ class Bus:
             return None
         slot = Slot(job_type, slot_name)
         try:
-            dock = self._docks.get(slot)
-            if dock is not None:
-                return dock.call(worker_id, board, *args, **kwargs)
             if not self._heartbeat.holds(worker_id, slot):
                 return None
             return getattr(board, slot_name)(*args, worker_id=worker_id, **kwargs)
