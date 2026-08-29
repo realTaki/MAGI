@@ -2,7 +2,7 @@
 from .contactBook import Contact, ContactBook, ContactRole
 from .contactNoteBook import ContactNote, ContactNoteBook, NoteKind
 from .conversationBook import Conversation, ConversationBook
-from .messageBook import Message, MessageBook, MessageRole
+from .messageBook import Message, MessageBook
 from .promptsBook import KNOWN_PROMPTS, PromptsBook
 from .settingsBook import Setting, SettingsBook
 from .skillsBook import SkillsBook
@@ -20,7 +20,6 @@ __all__ = [
     "ConversationBook",
     "Message",
     "MessageBook",
-    "MessageRole",
     "Setting",
     "SettingsBook",
     "KNOWN_PROMPTS",

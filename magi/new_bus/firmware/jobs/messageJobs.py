@@ -11,14 +11,15 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import BaseTime, utcnow
+from ..books.contactBook import ContactRow
 from ..books.conversationBook import ConversationRow
-from ..books.messageBook import Message, MessageRole, MessageRow
+from ..books.messageBook import Message, MessageRow
 
 
 @dataclass
 class AppendMessageJob(BaseJob):
     conversation_id: int = 0
-    role: MessageRole = MessageRole.USER
+    contact_id: int = 0
     content: str = ""
     timestamp: BaseTime = field(default_factory=utcnow)
 
@@ -32,7 +33,7 @@ class AppendMessageJobRow(BaseJobRow):
     __tablename__ = "jobs_append_message"
 
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    role: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[BaseTime] = mapped_column(DateTime, nullable=False)
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -50,15 +51,13 @@ class AppendMessageJobBoard(
             return AppendMessageResult(
                 status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
             )
-        try:
-            role = MessageRole(job.role)
-        except ValueError:
+        if session.get(ContactRow, job.contact_id) is None:
             return AppendMessageResult(
-                status=JobStatus.FAILED, error=f"unsupported message role {job.role!r}"
+                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
             )
         row = MessageRow(
             conversation_id=job.conversation_id,
-            role=role.value,
+            contact_id=job.contact_id,
             content=job.content,
             timestamp=job.timestamp,
             archived=False,
