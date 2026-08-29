@@ -5,15 +5,7 @@ Use when the operator says '改一下那条 / 把 ... 改成 ...'.
 The ``note_id`` is visible in the ``add_contact_note``
 result and the ``search_contacts`` output.
 
-Tool author gate. ``role`` only carries ``assigned`` /
-``guest`` — there is no ``role='admin'`` value. Admin is
-a MAGIS-level concept, resolved at runtime via
-:attr:`ctx.bus.magis_admins_book` (see
-:meth:`magi.tools.base.Tool.gate`). The
-``ALLOWED_ROLES = {"admin", "assigned"}`` whitelist
-admits callers whose effective role-tag set intersects
-it — ``admin`` from a MAGIS admin row, ``assigned``
-from the contact's local role.
+Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
 (:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``.

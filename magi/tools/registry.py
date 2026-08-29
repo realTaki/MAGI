@@ -148,7 +148,7 @@ def get_tool(name: str) -> Tool | None:
     Searches builtin tools first, then injected sources.
     Returns ``None`` if no such tool is registered.
 
-    Role gating lives on :meth:`Tool.gate`, not here.
+    Role visibility lives on the catalog, not here.
     """
     global _tools_cache
     if _tools_cache is None:

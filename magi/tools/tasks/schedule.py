@@ -46,29 +46,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.firmwares.books.local.tasksBook import preset_to_cron
+from magi.old_bus.firmwares.books.local.tasksBook import preset_to_cron
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.schedule")
 
-# ``admin`` and ``assigned`` may create a task. ``guest``
-# (and any operator without a MAGIS admin row) gets
-# ``is_error=True`` — enforced centrally by
-# :meth:`Tool.gate` which checks the role enum against
-# ``ALLOWED_ROLES`` and, when ``"admin"`` is in the set,
-# consults :attr:`ctx.bus.magis_admins_book` for a
-# per-MAGIS admin row. Mirrors the API's
-# ``_enforce_creator_can_create`` helper.
+# ``admin`` and ``assigned`` may see this tool in the
+# catalog. ``guest`` is filtered out of the agent menu.
 
 
 class ScheduleTaskTool(Tool):
     name = "schedule_task"
 
-    # ``admin`` is the virtual role resolved from the MAGIS
-    # admin rows (see :class:`Tool.gate`) — not a value
-    # the contact ``role`` enum ever carries. Tools
-    # declaring this whitelist therefore admit both
-    # ``role='assigned'`` operators and MAGIS admins.
+    # ``admin`` is catalog metadata, not a Contact.role value.
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create or update a recurring scheduled task. Requires "
@@ -291,10 +281,6 @@ class ScheduleTaskTool(Tool):
                 content=f"channel is not a registered task delivery target: {target_channel!r}",
                 is_error=True,
             )
-
-        # Role gate: ``ALLOWED_ROLES = {"admin", "assigned"}``
-        # is enforced by the worker via ``Tool.gate(ctx)``
-        # before ``run()`` is called — no manual re-check here.
 
         # Stamp the Contact-owned Telegram address on the new conversation as a
         # breadcrumb. Resolve it outside the task write transaction because
