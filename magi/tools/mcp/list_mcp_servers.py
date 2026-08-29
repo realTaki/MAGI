@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
+from magi.old_bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 

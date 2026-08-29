@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from magi.old_bus import Bus
 
-from magi.bus.firmwares.books.local import ActionPriority
+from magi.old_bus.firmwares.books.local import ActionPriority
 
 logger = logging.getLogger("magi.agent.system_prompt")
 

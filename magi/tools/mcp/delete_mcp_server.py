@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
-from magi.bus.bases.job import JobStatus
+from magi.old_bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
+from magi.old_bus.bases.job import JobStatus
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 

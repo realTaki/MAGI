@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # import-only — kept as a string for cycle safety
-    from magi.bus import MagisBus
+    from magi.old_bus import MagisBus
 
 
 @dataclass(frozen=True, slots=True)

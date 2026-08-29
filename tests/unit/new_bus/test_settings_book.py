@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from magi.new_bus import (
+from magi.bus import (
     BaseJob,
     Bus,
     DeleteSettingJob,
@@ -9,7 +9,7 @@ from magi.new_bus import (
     ListSettingsJob,
     SetSettingJob,
 )
-from magi.new_bus.firmware.jobs.settingsJobs import (
+from magi.bus.firmware.jobs.settingsJobs import (
     DeleteSettingJobBoard,
     GetSettingJobBoard,
     ListSettingsJobBoard,

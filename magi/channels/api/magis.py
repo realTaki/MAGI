@@ -15,18 +15,18 @@ from typing import TYPE_CHECKING, Annotated, Any, cast
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from magi.bus import Bus
+from magi.old_bus import Bus
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException
 
 if TYPE_CHECKING:
-    from magi.bus.firmwares.books.magis.magisBook import (
+    from magi.old_bus.firmwares.books.magis.magisBook import (
         Magis,
         MagisAdmin,
         MagisAdminBook,
         MagisBook,
     )
-    from magi.bus.firmwares.books.magis.membershipBook import (
+    from magi.old_bus.firmwares.books.magis.membershipBook import (
         MagisMembership,
         MagisMembershipBook,
         MagisRole,
@@ -314,7 +314,7 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
         _magis_or_404(bus, payload.parent_id)
         _require_managed(bus, payload.parent_id)
     try:
-        from magi.bus.firmwares.books.magis.magisBook import Magis
+        from magi.old_bus.firmwares.books.magis.magisBook import Magis
 
         magis_id = _magis_book(bus).add(Magis(
             name=payload.name,
@@ -331,10 +331,10 @@ def create_magis(payload: MAGISCreate, _admin: AdminGate, bus: BusDep) -> MAGISO
     # Every new MAGIS has the reserved role vocabulary before a MAGI can be
     # created in it.  This is an API-level composition step over public Books;
     # membership creation still owns the role/MAGIS invariant itself.
-    from magi.bus.firmwares.books.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS
+    from magi.old_bus.firmwares.books.magis.membershipBook import DEFAULT_ROLE_INSTRUCTIONS
 
     for role_name in ("ADAM", "EVA"):
-        from magi.bus.firmwares.books.magis.membershipBook import MagisRole
+        from magi.old_bus.firmwares.books.magis.membershipBook import MagisRole
 
         _roles_book(bus).add(MagisRole(
             magis_id=view.id,
@@ -398,7 +398,7 @@ def create_role(magis_id: int, payload: RoleCreate, _admin: AdminGate, bus: BusD
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        from magi.bus.firmwares.books.magis.membershipBook import MagisRole
+        from magi.old_bus.firmwares.books.magis.membershipBook import MagisRole
 
         role_id = _roles_book(bus).add(MagisRole(
             magis_id=magis_id,
@@ -487,7 +487,7 @@ def create_membership(
     _magis_or_404(bus, magis_id)
     _require_managed(bus, magis_id)
     try:
-        from magi.bus.firmwares.books.magis.membershipBook import MagisMembership
+        from magi.old_bus.firmwares.books.magis.membershipBook import MagisMembership
 
         membership_id = _memberships_book(bus).add(MagisMembership(
             magis_id=magis_id,
@@ -584,7 +584,7 @@ def add_magis_admin(
             "Enable IM two-factor verification before adding a MAGIS administrator",
         )
     try:
-        from magi.bus.firmwares.books.magis.magisBook import MagisAdmin
+        from magi.old_bus.firmwares.books.magis.magisBook import MagisAdmin
 
         admin_id = _admins_book(bus).add(MagisAdmin(
             magis_id=magis_id,

@@ -15,7 +15,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from magi.bus.firmwares.books.local.conversationBook import (
+from magi.old_bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from magi.bus.provision import provision_node_storage
+from magi.old_bus.provision import provision_node_storage
 from magi.startup.config import DEFAULT_MAGI_NAME, RUNTIME_PORT, ConfigurationError, StartupConfig
 from magi.startup.paths import (
     resolve_magis_database_path,
@@ -15,7 +15,7 @@ from magi.startup.spec import RuntimeSpec
 
 def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     """Create one MAGIS root and its sole ADAM membership if absent."""
-    from magi.bus.firmwares.books.magis import (
+    from magi.old_bus.firmwares.books.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
         Magis,
         MagisBook,
@@ -74,7 +74,7 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     membership = bus.memberships_book.get(magi_id) if bus.memberships_book else None
     if membership is None or bus.magis_admins_book is None:
         raise RuntimeError("MAGIS admin registry unavailable")
-    from magi.bus.firmwares.books.magis import MagisAdmin
+    from magi.old_bus.firmwares.books.magis import MagisAdmin
 
     grants = bus.magis_admins_book.list_for_magis(magis_id=membership.magis_id)
     existing = next((admin for admin in grants if admin.name == "admin"), None)
@@ -194,8 +194,8 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
-    from magi.bus import open_bus
-    from magi.bus.firmwares.books.magis import (
+    from magi.old_bus import open_bus
+    from magi.old_bus.firmwares.books.magis import (
         MagisBook,
         MagisMembership,
         MagisMembershipBook,

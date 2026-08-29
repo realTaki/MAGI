@@ -1,4 +1,4 @@
-from magi.new_bus import BaseJobResult, JobStatus, Slot
+from magi.bus import BaseJobResult, JobStatus, Slot
 from tests.unit.new_bus.testing import PingBus, PingJob
 
 _SLOTS = (

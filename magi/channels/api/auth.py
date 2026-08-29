@@ -20,8 +20,8 @@ import httpx
 from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.bus import Bus
-from magi.bus.firmwares.books.magis.runtimeBook import RuntimeObservedState
+from magi.old_bus import Bus
+from magi.old_bus.firmwares.books.magis.runtimeBook import RuntimeObservedState
 from magi.channels.api import control_store
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException

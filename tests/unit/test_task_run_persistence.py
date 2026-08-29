@@ -10,9 +10,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from magi.bus.bases.db import EngineFactory
-from magi.bus.firmwares.books.local.contactBook import Contact, Role
-from magi.bus.firmwares.books.local.tasksBook import Task, TaskBook, TaskRunBook
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.firmwares.books.local.contactBook import Contact, Role
+from magi.old_bus.firmwares.books.local.tasksBook import Task, TaskBook, TaskRunBook
 
 
 @pytest.fixture
@@ -21,9 +21,9 @@ def factory():
     # ``EngineFactory.create_all`` lays down the whole schema —
     # otherwise the FKs on ``tasks`` (chat_conversations, contacts) are
     # left dangling and the INSERT below fails.
-    from magi.bus.firmwares.books.local.contactBook import ContactBook  # noqa: F401
-    from magi.bus.firmwares.books.local.conversationBook import ConversationBook  # noqa: F401
-    from magi.bus.firmwares.books.magis.membershipBook import MagisMembershipBook  # noqa: F401
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook  # noqa: F401
+    from magi.old_bus.firmwares.books.local.conversationBook import ConversationBook  # noqa: F401
+    from magi.old_bus.firmwares.books.magis.membershipBook import MagisMembershipBook  # noqa: F401
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()
@@ -47,7 +47,7 @@ def _seed_contact(factory, *, name="test-contact", role: Role = Role.ASSIGNED) -
     test don't exist in another. This helper guarantees an FK target
     is present whenever a test needs ``tasks.uid``.
     """
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     cbook = ContactBook(factory)
     existing = cbook.list_all()
@@ -112,7 +112,7 @@ class TestMarkRunAtConsumed:
 
 class TestListAllEnabledForWorkers:
     def test_lists_enabled_user_tasks_across_uids(self, task_book, factory):
-        from magi.bus.firmwares.books.local.contactBook import ContactBook
+        from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
         # Two contacts so the test can assert both uids appear in
         # the worker-visible list.
@@ -153,7 +153,7 @@ class TestReapStale:
         stale_time = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=600)
         from sqlalchemy import select
 
-        from magi.bus.firmwares.books.local.tasksBook import _TaskRunRow
+        from magi.old_bus.firmwares.books.local.tasksBook import _TaskRunRow
 
         with task_run_book._session() as s:
             row = s.scalar(select(_TaskRunRow).where(_TaskRunRow.id == run.id))

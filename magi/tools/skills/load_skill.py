@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from magi.bus.firmwares.books.file.skillsBook import SkillBookError
+from magi.old_bus.firmwares.books.file.skillsBook import SkillBookError
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 # Same name regex the book enforces at scan time. Anyone calling

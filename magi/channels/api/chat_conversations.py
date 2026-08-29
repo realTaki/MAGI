@@ -30,7 +30,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus.firmwares.books.local.conversationBook import (
+from magi.old_bus.firmwares.books.local.conversationBook import (
     Conversation,
     ConversationNotFoundError,
     Message,

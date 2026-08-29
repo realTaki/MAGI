@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from magi.bus.bases.db.engine import EngineFactory
-from magi.bus.firmwares.books.local.contactBook import Contact, ContactBook
-from magi.bus.firmwares.books.local.memoryBook import Memory, MemoryBook
+from magi.old_bus.bases.db.engine import EngineFactory
+from magi.old_bus.firmwares.books.local.contactBook import Contact, ContactBook
+from magi.old_bus.firmwares.books.local.memoryBook import Memory, MemoryBook
 from magi.tools.base import ToolContext, ToolResult
 from magi.tools.memory.core_memory.add_memory import AddMemoryTool
 from magi.tools.memory.core_memory.complete_memory import CompleteMemoryTool

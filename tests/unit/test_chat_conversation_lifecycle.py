@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.bus.bases.db import EngineFactory
-from magi.bus.firmwares.books.local import Conversation, ConversationBook, Message, MessageBook
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.firmwares.books.local import Conversation, ConversationBook, Message, MessageBook
 from magi.channels.api.chat import ChatSendRequest, send_chat
 from magi.channels.api.chat_conversations import create_conversation
 

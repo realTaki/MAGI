@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from magi.old_bus import Bus
 
 logger = logging.getLogger("magi.channels.telegram.config")
 

@@ -21,19 +21,19 @@ from typing import Any
 
 import pytest
 
-from magi.bus import Bus, open_bus
-from magi.bus.firmwares.jobs import (
+from magi.old_bus import Bus, open_bus
+from magi.old_bus.firmwares.jobs import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
 )
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.jobs.changeProviderConfigJob import (
+from magi.old_bus.bases.job import JobStatus
+from magi.old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
 )
-from magi.bus.provision import provision_node_storage
+from magi.old_bus.provision import provision_node_storage
 from magi.providers.base import LLMProvider, LLMStreamEvent
 from magi.providers.errors import LLMError, LLMNotConfiguredError
 from magi.providers.worker import ProvidersWorker
@@ -424,7 +424,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         # The config-change job was drained (status advanced past pending).
         from sqlalchemy import select
 
-        from magi.bus.firmwares.jobs.changeProviderConfigJob import _ChangeProviderConfigRow
+        from magi.old_bus.firmwares.jobs.changeProviderConfigJob import _ChangeProviderConfigRow
 
         with bus._local_factory.session() as s:
             leftovers = s.scalar(

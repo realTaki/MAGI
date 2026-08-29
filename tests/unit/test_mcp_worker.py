@@ -34,23 +34,23 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from magi.bus.bootstrap import Bus
-from magi.bus.bases.db import EngineFactory
-from magi.bus.bases.db.file import FileShelf
-from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
-from magi.bus.firmwares.jobs import (
+from magi.old_bus.bootstrap import Bus
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.bases.db.file import FileShelf
+from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+from magi.old_bus.firmwares.jobs import (
     ChangeMCPServerJob,
     MCPKind,
     changeMCPServerJobBoard,
 )
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.books.file.promptBook import PromptBook
-from magi.bus.firmwares.books.local import (
+from magi.old_bus.bases.job import JobStatus
+from magi.old_bus.firmwares.books.file.promptBook import PromptBook
+from magi.old_bus.firmwares.books.local import (
     McpServerBook,
     SettingBook,
 )
-from magi.bus.firmwares.books.local.mcpServerBook import McpServer
-from magi.bus.firmwares.books.local.toolsBook import ToolDefinitionBook
+from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
+from magi.old_bus.firmwares.books.local.toolsBook import ToolDefinitionBook
 from magi.mcp.worker import McpWorker
 from magi.tools import registry as tool_registry
 from magi.tools.mcp.add_mcp_server import AddMcpServerTool

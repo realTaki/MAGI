@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from magi.bus.firmwares.jobs.changeProviderConfigJob import (
+from magi.old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,

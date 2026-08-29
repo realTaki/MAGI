@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.firmwares.books.local.actionItemBook import ActionSource
+from magi.old_bus.firmwares.books.local.actionItemBook import ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.list_action_item")

@@ -55,7 +55,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.comms.send_message")

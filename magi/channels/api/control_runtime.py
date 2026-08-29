@@ -6,7 +6,7 @@ import os
 
 import httpx
 
-from magi.bus import Bus
+from magi.old_bus import Bus
 from magi.channels.api.proxy_auth import build_proxy_headers
 from magi.channels.api.runtime_http import RELAY_TIMEOUT
 
