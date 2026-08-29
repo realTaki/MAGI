@@ -10,12 +10,12 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar
 
-from magi.bus.bases.job import JobStatus
+from magi.old_bus.bases.job import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
 logger = logging.getLogger("magi.channels.worker")
 _backpressure_last_warn: dict[str, float] = {}
@@ -120,7 +120,7 @@ class ChannelWorker(RuntimeWorker):
         channel_label: str,
     ) -> None:
         """Deliver one already-claimed row under RuntimeWorker capacity."""
-        from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyResult
+        from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyResult
 
         self.polled()
         try:
