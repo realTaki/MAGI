@@ -129,7 +129,7 @@ def _resolve_file(ref: str) -> bool:
         for candidate in (
             REPO_ROOT / ref,
             PYTHON_ROOT / ref,
-            PYTHON_ROOT / "magi" / ref,
+            PYTHON_ROOT / ref.removeprefix("magi/"),
         )
     )
 
@@ -189,10 +189,22 @@ def test_module_paths_in_doc_are_importable(doc_path: Path) -> None:
         module_path, _, attr = ref.rpartition(".")
         if not module_path:
             continue
-        try:
-            mod = importlib.import_module(module_path)
-        except ImportError as exc:
-            broken.append((ref, f"module '{module_path}' not importable: {exc}"))
+        candidates = [module_path]
+        if module_path == "magi" or module_path.startswith("magi."):
+            stripped = module_path.removeprefix("magi.").lstrip(".")
+            if stripped:
+                candidates.append(stripped)
+        mod = None
+        last_error: ImportError | None = None
+        for candidate in candidates:
+            try:
+                mod = importlib.import_module(candidate)
+                module_path = candidate
+                break
+            except ImportError as exc:
+                last_error = exc
+        if mod is None:
+            broken.append((ref, f"module '{module_path}' not importable: {last_error}"))
             continue
         if not hasattr(mod, attr):
             broken.append((ref, f"attribute '{attr}' missing on '{module_path}'"))

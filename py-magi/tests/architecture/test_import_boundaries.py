@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MAGI_ROOT = REPO_ROOT / "magi"
+MAGI_ROOT = REPO_ROOT
 
 
 def _imports(path: Path) -> list[tuple[str, int]]:

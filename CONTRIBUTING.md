@@ -54,8 +54,8 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `py-magi/magi/agent/` | Agent loop, LLM providers, memory, tools |
-| `py-magi/magi/channels/` | Telegram + WebUI channel adapters |
+| `py-magi/agent/` | Agent loop, memory, tools |
+| `py-magi/channels/` | Telegram + HTTP channel adapters |
 | `app/` | Operator UI (browser / future desktop) |
 | `py-magi/tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
