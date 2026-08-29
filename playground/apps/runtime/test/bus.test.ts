@@ -5,8 +5,8 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import test from "node:test";
 
-import { launchPlayground } from "../demo/launcher.js";
-import { Bus, CallLLMJob, slot } from "../src/index.js";
+import { Bus, CallLLMJob, slot } from "../bus/index.js";
+import { launchPlayground } from "../runtime/launcher.js";
 
 test("launcher attaches isolated modules and SettingsBook stays behind Jobs", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-playground-"));

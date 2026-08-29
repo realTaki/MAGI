@@ -4,7 +4,7 @@ import {
   slot,
   type JobResult,
   type Slot,
-} from "../../src/index.js";
+} from "../bus/index.js";
 
 /** A delivery module: it can observe completed calls but cannot publish or execute them. */
 export class ResultReader extends BaseWorker {

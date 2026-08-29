@@ -11,5 +11,5 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["src", "demo", "test"]
+  "include": ["bus", "caller", "provider", "result-reader", "runtime", "test"]
 }
