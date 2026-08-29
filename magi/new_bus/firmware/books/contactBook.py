@@ -26,7 +26,7 @@ class Contact(BaseRecord):
     """A channel-independent human or agent known to this Runtime."""
 
     name: str
-    display_name: str | None = None
+    nickname: str | None = None
     role: ContactRole = ContactRole.GUEST
     last_seen_at: BaseTime = field(default_factory=utcnow)
 
@@ -35,7 +35,7 @@ class ContactRow(BaseRecordMixin):
     __tablename__ = "books_contacts"
 
     name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False, default=ContactRole.GUEST.value)
     last_seen_at: Mapped[BaseTime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
