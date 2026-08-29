@@ -10,7 +10,6 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
-from .errors import InvalidJobError
 from .file import FileEngine, atomic_write, resolve_under
 
 
@@ -21,9 +20,9 @@ class BaseFileBook:
 
     def __init__(self, engine: FileEngine) -> None:
         if not type(self).name:
-            raise InvalidJobError(f"{type(self).__name__} must set class variable name")
+            raise ValueError(f"{type(self).__name__} must set class variable name")
         if not isinstance(engine, FileEngine):
-            raise InvalidJobError("BaseFileBook requires FileEngine")
+            raise ValueError("BaseFileBook requires FileEngine")
         self._root = engine.directory(type(self).name)
 
     @property
@@ -38,13 +37,13 @@ class BaseFileBook:
 
     def write(self, name: str, content: str) -> Path:
         if not isinstance(content, str):
-            raise InvalidJobError("file content must be text")
+            raise ValueError("file content must be text")
         return atomic_write(self.path_for(name), content)
 
     def exists(self, name: str) -> bool:
         try:
             return self.path_for(name).is_file()
-        except InvalidJobError:
+        except ValueError:
             return False
 
     def delete(self, name: str) -> bool:

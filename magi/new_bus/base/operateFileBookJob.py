@@ -6,7 +6,7 @@ from typing import cast
 
 from sqlalchemy import update
 
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
 
 
 class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -52,7 +52,7 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
         try:
             result = self._execute(job)
         except Exception as error:  # noqa: BLE001 -- make file failures durable results
-            result = type(self).result_cls(status=JobStatus.FAILED, error=str(error) or type(error).__name__)
+            result = type(self).result_cls(status=JobStatus.FAILED, error=error_message(error))
 
         with self._session() as session:
             row = session.get(row_cls, job_id)

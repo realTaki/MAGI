@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from ...base.errors import InvalidJobError
 from ...base.file import FileEngine, resolve_under
 
 _SKILL_FILE = "SKILL.md"
@@ -34,7 +33,7 @@ class SkillsBook:
 
     def __init__(self, engine: FileEngine) -> None:
         if not isinstance(engine, FileEngine):
-            raise InvalidJobError("SkillsBook requires FileEngine")
+            raise ValueError("SkillsBook requires FileEngine")
         self._root = engine.directory(self.name)
         self._seed_defaults()
 
@@ -48,13 +47,13 @@ class SkillsBook:
     def exists(self, name: str) -> bool:
         try:
             return self._skill_file(name).is_file()
-        except InvalidJobError:
+        except ValueError:
             return False
 
     def read(self, name: str) -> str | None:
         try:
             path = self._skill_file(name)
-        except InvalidJobError:
+        except ValueError:
             return None
         if not path.is_file():
             return None
@@ -81,7 +80,7 @@ class SkillsBook:
                 continue
             try:
                 target = resolve_under(self._root, source.name)
-            except InvalidJobError:
+            except ValueError:
                 continue
             if target.exists():
                 continue

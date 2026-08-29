@@ -15,8 +15,8 @@ from ...base.time import BaseTime, utcnow
 class ContactRole(StrEnum):
     """One Runtime's relationship to a human or agent contact."""
 
-    ASSIGNED = "assigned"
-    GUEST = "guest"
+    AUTHORIZED = "authorized"
+    STRANGER = "stranger"
     MAGI = "magi"
     THIRD_PARTY_AGENT = "third_party_agent"
 
@@ -27,7 +27,7 @@ class Contact(BaseRecord):
 
     name: str
     nickname: str | None = None
-    role: ContactRole = ContactRole.GUEST
+    role: ContactRole = ContactRole.STRANGER
     last_seen_at: BaseTime = field(default_factory=utcnow)
 
 
@@ -36,7 +36,7 @@ class ContactRow(BaseRecordMixin):
 
     name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
-    role: Mapped[str] = mapped_column(Text, nullable=False, default=ContactRole.GUEST.value)
+    role: Mapped[str] = mapped_column(Text, nullable=False, default=ContactRole.STRANGER.value)
     last_seen_at: Mapped[BaseTime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 

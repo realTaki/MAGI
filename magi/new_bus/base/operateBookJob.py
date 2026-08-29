@@ -13,7 +13,7 @@ from typing import cast
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -66,7 +66,7 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
                     return
                 result = type(self).result_cls(
                     status=JobStatus.FAILED,
-                    error=str(error) or type(error).__name__,
+                    error=error_message(error),
                 )
             self._write_result(
                 row,

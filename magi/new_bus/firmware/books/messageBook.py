@@ -16,19 +16,17 @@ from ...base.time import BaseTime, utcnow
 
 
 class MessageRole(StrEnum):
-    """Roles accepted by the Firmware chat transcript."""
-    # TODO-- 不需要这么多角色
+    """The two durable speakers in a conversation transcript."""
+
     USER = "user"
     ASSISTANT = "assistant"
-    SYSTEM = "system"
-    TOOL = "tool"
 
 
 @dataclass(kw_only=True)
 class Message(BaseRecord):
     """One row in MessageBook.
 
-    role: ``user`` | ``assistant`` | ``system`` | ``tool``
+    role: durable speaker (``user`` or ``assistant``)
     content: non-empty text
     conversation_id: optional Conversation.id
     timestamp: when the message was produced
