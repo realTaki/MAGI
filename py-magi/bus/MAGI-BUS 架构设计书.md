@@ -928,7 +928,7 @@ launcher.launch(one=ClaimWorker, two=ClaimWorker)
 ```
 
 身份默认用类上的 `worker_name`；同一类插两块时用关键字参数命名。
-`launch` 一次做完：收集 Slot、规划 Dock、实例化 Worker、分配切面，再调用
+`launch` 一次做完：收集 Slot、实例化 Worker、分配切面，再调用
 每个 `worker.attach`（插上即运行）。`shutdown` 调用每个 `worker.detach`。
 
 ---
@@ -962,163 +962,20 @@ worker_bus.messages.submit_result(result)
 
 ---
 
-# 29. Dock
+# 29. Launcher
 
-当前 Base 提供两个通用 Dock：
-
-```text
-OrDock
-AndDock
-```
-
-Dock 的核心作用是：
-
-> **让多个 Worker 在外部组成一个逻辑 Slot owner。**
-
-BUS 内真正拥有原始 Slot 的是 Dock，Worker 成为 Dock 的 member。
-
-因此原始 Slot 仍然维持单 owner 不变量。
-
----
-
-# 30. OrDock
-
-`OrDock` 的语义是：
-
-> **任意一个 live member 都可以使用这个 Slot。**
-
-例如：
-
-```text
-Worker A ─┐
-Worker B ─┼── OrDock ─── Slot(Job, "publish")
-Worker C ─┘
-```
-
-BUS Slot 本身仍然只有一个 owner：
-
-```text
-OrDock
-```
-
-但多个 Worker 都可以通过 Dock 调用该 operation。
-
-适合：
-
-- publish；
-- claim；
-- submit_result；
-- 其他任意一个成员即可完成的 Slot。
-
----
-
-# 31. AndDock
-
-`AndDock` 用于：
-
-> **多个 Worker 都需要对同一次提交给出结果。**
-
-例如：
-
-```text
-Worker A ─┐
-Worker B ─┼── AndDock ─── submit_post_result
-Worker C ─┘
-```
-
-AndDock 为同一个 Job 收集当前 live member 的 vote/result。
-
-当前 reducer 规则保持简单：
-
-```text
-任意一个 FAILED
-        │
-        ▼
-整体 FAILED
-```
-
-否则采用成功结果继续提交。
-
-更复杂的业务级 reducer 可以未来扩展，但不属于当前 BUS 核心协议。
-
----
-
-# 32. Dock 与 BUS / Launcher 的边界
-
-Dock 的通用 mechanism 位于 BUS Base 中，但：
-
-> **BUS 不主动决定什么时候应该使用 Dock。**
-
-决定权属于 Launcher。
-
-边界是：
-
-```text
-BUS:
-    提供 OrDock / AndDock mechanism
-    保证 Slot ownership
-    提供 routing
-
-Launcher:
-    查看 Worker 声明
-    规划 topology
-    决定是否安装 Dock
-    选择 Dock 类型
-```
-
-因此 Dock mechanism 属于 BUS 能力，而 Dock topology / composition policy 属于 Launcher。
-
-BUS 不需要理解 Plugin topology。
-
----
-
-# 33. Launcher
-
-`Launcher` 是控制面板，不是硬件。Worker 才是插在 BUS 上的卡；
-attach / detach 是 Worker 的操作，由 Launcher 代为按下。
+`Launcher` 是控制面板，不是硬件。它读取每个 Worker 声明的 Slot，创建
+`BusForWorker` 后调用 `attach`；重复 Slot 直接形成多 Worker membership，
+无需规划或安装额外拓扑。
 
 ```python
 with Launcher() as launcher:
-    launcher.launch()  # 内部：读 constant、开 BUS、找 Slot、装 Dock、worker.attach
-    launcher.shutdown()               # 内部：worker.detach
+    launcher.run()       # 读 constant、开 BUS、分配 Slot、worker.attach
+    launcher.shutdown()  # worker.detach
 ```
 
-BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。
-Worker 生命周期就是 attach / detach，不属于 BUS。
-
----
-
-# 34. Launcher 当前默认 Dock Policy
-
-当多个 Worker 请求同一个 Slot 时，当前 Launcher 默认：
-
-```text
-submit_post_publish
-submit_post_result
-        │
-        ▼
-      AndDock
-```
-
-其他重复 Slot：
-
-```text
-publish
-claim
-submit_result
-...
-        │
-        ▼
-      OrDock
-```
-
-这是：
-
-> **Launcher policy。**
-
-不是 Firmware 的业务协议，也不是 Job schema 的组成部分。
-
-未来其他 Launcher 可以采用不同组合策略。
+BUS 本身不搜索 Plugin，也不决定哪些 Worker 应该存在。Worker 生命周期就是
+attach / detach，不属于 BUS。
 
 ---
 
@@ -1457,7 +1314,7 @@ External Worker
   PREPARING
       │
       ▼
- post_publish
+claim_post_publish + all submit_post_publish
       │
       ├── FAILED
       │
@@ -1486,7 +1343,6 @@ magi/
 │   │   ├── BaseJob.py
 │   │   ├── operateBookJob.py
 │   │   ├── heartbeat.py
-│   │   ├── dock.py
 │   │   ├── engine.py
 │   │   ├── file.py
 │   │   └── time.py
@@ -1540,15 +1396,15 @@ magi/
 
 11. **Slot 是 `(JobType, JobBoard Operation)` 的运行时接入点。**
 
-12. **所有原始 Slot 当前统一采用单 owner 模型。**
+12. **每个 Slot 可由多个 live Worker attach；Worker 只能调用自己 attach 的 Slot。**
 
-13. **多个 Worker 共享 Slot 时通过 Dock 形成一个逻辑 owner。**
+13. **普通 claim 与 submit_result 均为 first-wins；同一 Job 只会被一个 Worker claim。**
 
-14. **BUS 不根据 Plugin priority、加载顺序等策略自动决定 Slot ownership。**
+14. **BUS 不根据 Plugin priority、加载顺序等策略自动筛选 Slot member。**
 
-15. **Dock mechanism 属于 BUS Base；Dock topology 与选择策略属于 Launcher。**
+15. **Post Gate 的 submit 操作由 JobBoard 收集全部 live submitter 的结果。**
 
-16. **Heartbeat lease 是 Slot liveness/ownership 机制，不代表 BUS 必须多进程运行。**
+16. **Heartbeat lease 是 Slot liveness/membership 机制，不代表 BUS 必须多进程运行。**
 
 17. **当前部署方式不是 Firmware Contract 的组成部分。**
 
@@ -1570,11 +1426,11 @@ Book Operation Job
 Book Operation failure
     persists FAILED Job Result
 
-Slot conflict
-    rejects second direct owner
+Shared Slot membership
+    allows multiple Workers to invoke one operation
 
-Expired Slot owner
-    can be replaced
+Expired Slot member
+    is removed without affecting other members
 
 Post-Publish Hook
     can approve or reject Job
@@ -1582,14 +1438,11 @@ Post-Publish Hook
 Post-Result Hook
     can approve or reject Result
 
-OrDock
-    allows multiple Workers to share one logical Slot
-
-AndDock
-    waits for live member results
+Post Gate submission
+    waits for all live submitter results and merges failures
 
 Launcher
-    installs Docks before Worker attach
+    attaches Workers directly to their declared Slots
 ```
 
 随着 Firmware 增加新 Book / Job，应优先测试协议行为和状态机，而不是只测试具体 SQL 实现。
@@ -1629,26 +1482,26 @@ Worker → JobBoard → Firmware Job → Book
 
 已经构成完整边界。
 
-## 49.3 所有 Slot 使用统一单 Owner 模型
+## 49.3 Slot 使用统一多成员模型
 
-BUS Core 不区分 publish MULTI 与 control SINGLE。
-
-多 Worker 共享统一通过 Dock 处理，使 Slot ownership 规则保持单一。
+所有 Slot 都使用同一种多 Worker membership；普通操作的业务语义由 JobStatus
+转换保证，post gate 的 all-members 提交由 JobBoard 保证。
 
 ## 49.4 Hook 使用显式 Gate，而不是抽象 Pre/Post 列表
 
 当前协议采用：
 
 ```text
-post_publish / submit_post_publish
-post_result  / submit_post_result
+claim_post_publish / submit_post_publish
+claim_post_result  / submit_post_result
 ```
 
 通过显式状态转换形成可观察、可恢复的 Gate。
 
-## 49.5 Heartbeat 服务于 Runtime ownership
+## 49.5 Heartbeat 服务于 Runtime membership
 
-Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owner 失活以后如何自动释放的问题。
+Heartbeat 不是为了提前设计分布式系统，而是移除失活 Worker 的 Slot membership，
+并避免 Gate 永久卡住。
 
 ---
 
@@ -1668,13 +1521,13 @@ Heartbeat 不是为了提前设计分布式系统，而是解决当前 Slot owne
 
 > **Slot 定义 Worker 可以接入 JobBoard 生命周期的位置。**
 
-> **所有原始 Slot 使用统一单 owner 模型，多 Worker 共享由 Dock 实现。**
+> **所有 Slot 使用统一多 Worker membership；JobBoard 定义每种操作的并发语义。**
 
-> **BusForWorker 为 Worker 提供受 Slot ownership 约束的 BUS access slice。**
+> **BusForWorker 为 Worker 提供受 Slot membership 约束的 BUS access slice。**
 
 > **Firmware 定义当前 MAGI 实际拥有的 Book、Job、Result 与数据库版本。**
 
-> **Launcher 决定 Worker 如何装配和共享 Slot，但不改变 Firmware 的业务协议。**
+> **Launcher 只装配 Worker；它不再决定 Slot 的共享拓扑。**
 
 最终希望形成的不是一个越来越聪明的中央 Orchestrator，而是一块行为稳定、协议明确的软件背板：
 
