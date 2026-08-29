@@ -11,8 +11,8 @@ from datetime import datetime
 
 import pytest
 
-from magi.bus.bases.db import EngineFactory
-from magi.bus.firmwares.books.local import (
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.firmwares.books.local import (
     ActionItem,
     ActionItemBook,
     Contact,
@@ -72,7 +72,7 @@ def _seeded_settings_book(factory) -> SettingBook:
 def contact_id(factory):
     """Create a contact row, return its id.  Tests that need a contact
     FK can use this fixture to get a valid contact_id."""
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     c = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture')))
     return c.id
@@ -162,7 +162,7 @@ def test_record_datetime_fields_remain_native_values() -> None:
 
 
 def test_memory_book_list_by_owner(factory, contact_id):
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     book = MemoryBook(factory)
     cbook = ContactBook(factory)
@@ -258,7 +258,7 @@ def test_memory_book_complete_missing_id_raises_lookup(factory):
     so the LookupError is the second-line defence."""
     import pytest
 
-    from magi.bus.bases.db import EngineFactory
+    from magi.old_bus.bases.db import EngineFactory
 
     fresh = EngineFactory("sqlite:///:memory:")
     fresh.create_all()
@@ -397,7 +397,7 @@ def test_conversation_set_summary_writes_and_bumps(factory, contact_id):
 
 def test_conversation_set_summary_rejects_wrong_contact_id(factory, contact_id):
     """Cross-contact guard: wrong contact_id returns None and leaves row unchanged."""
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     other_contact = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
@@ -446,7 +446,7 @@ def test_conversation_book_add_rejects_unregistered_channel(factory):
     startup — so we don't enum-ify the column at the schema level. The
     Book enforces the contract at the write boundary instead.
     """
-    from magi.bus.firmwares.books.local.conversationBook import ChannelNotRegisteredError
+    from magi.old_bus.firmwares.books.local.conversationBook import ChannelNotRegisteredError
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))  # factory fixture pre-registers a2a/tg/webui/task
     with pytest.raises(ChannelNotRegisteredError) as exc_info:
@@ -480,7 +480,7 @@ def test_conversation_book_update_rejects_unregistered_channel(factory):
     fast with the same exception. (The base class' ``update()`` invokes
     ``_validate_add`` after re-reading the row.)
     """
-    from magi.bus.firmwares.books.local.conversationBook import ChannelNotRegisteredError
+    from magi.old_bus.firmwares.books.local.conversationBook import ChannelNotRegisteredError
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     conv = sbook.get(sbook.add(Conversation(delivery_address="tg:1", contact_id=1, channel="tg")))
@@ -680,7 +680,7 @@ def test_action_item_book_complete_no_owner_check(factory, contact_id):
     current behaviour so any future "add auth here" drift
     is a deliberate, visible change.
     """
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     book = ActionItemBook(factory)
     ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other')))  # prove another row exists
@@ -880,7 +880,7 @@ def test_task_source_enum_values():
     ``BaseRecord.from_row`` coerces the raw string back into the
     enum, so callers see enum members on read AND on write.
     """
-    from magi.bus.firmwares.books.local.tasksBook import TaskSource
+    from magi.old_bus.firmwares.books.local.tasksBook import TaskSource
 
     assert TaskSource.USER == "user"
     assert TaskSource.PROACTIVE == "proactive"
@@ -888,8 +888,8 @@ def test_task_source_enum_values():
     assert TaskSource.USER == "user"
     assert TaskSource.PROACTIVE == "proactive"
     # Writing via the enum and reading back yields the enum.
-    from magi.bus.bases.db import EngineFactory as _EF
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.bases.db import EngineFactory as _EF
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     ef = _EF("sqlite:///:memory:")
     ef.create_all()
@@ -946,7 +946,7 @@ def test_task_book_list_proactive_uid_scoped(factory, contact_id):
     system presets (``contact_id IS NULL``) visible to every contact_id;
     user-private presets (``contact_id == X``) only to X.
     """
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     book = TaskBook(factory)
     other_id = ContactBook(factory).get(ContactBook(factory).add(Contact(name='Other'))).id
@@ -994,7 +994,7 @@ def test_task_book_upsert_by_name(factory, contact_id):
     # ``conversation_id`` is a FK to ``chat_conversations.conversation_id``;
     # seed the row first so the task insert doesn't trip
     # SQLite's FK guard.
-    from magi.bus.firmwares.books.local.conversationBook import ConversationBook
+    from magi.old_bus.firmwares.books.local.conversationBook import ConversationBook
 
     conv_seed = ConversationBook(factory, settings_book=_seeded_settings_book(factory)).get(ConversationBook(factory, settings_book=_seeded_settings_book(factory)).add(Conversation(delivery_address='webui:dashboard', contact_id=contact_id, channel='webui')))
     seed_cid = conv_seed.id

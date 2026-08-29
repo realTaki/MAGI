@@ -67,8 +67,8 @@ import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.jobs import (
+from magi.old_bus.bases.job import JobStatus
+from magi.old_bus.firmwares.jobs import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
     MCPKind,
@@ -77,8 +77,8 @@ from magi.runtime_worker import RuntimeWorker
 from magi.tools.registry import register_tools
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.books.local.mcpServerBook import McpServer
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
     from magi.mcp.MCPClient import MCPServerConnection, MCPTimeoutConfig
 
 logger = logging.getLogger("magi.mcp.worker")

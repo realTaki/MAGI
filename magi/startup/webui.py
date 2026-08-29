@@ -224,7 +224,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     """
     import uvicorn
 
-    from magi.bus import open_bus
+    from magi.old_bus import open_bus
     from magi.channels.api.app import create_control_app
     from magi.channels.api.control_context import ControlContext
 
@@ -324,7 +324,7 @@ def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:
     Opens a transient MAGIS facade purely to read the ``control_secrets`` row.
     """
     try:
-        from magi.bus import open_bus
+        from magi.old_bus import open_bus
 
         bus = open_bus(magis_url=magis_url)
     except Exception:

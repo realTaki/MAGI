@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from magi.agent.compaction import maybe_compact
-from magi.bus.bases.db import EngineFactory
-from magi.bus.firmwares.books.local import (
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.firmwares.books.local import (
     Contact,
     Conversation,
     ConversationBook,
@@ -53,7 +53,7 @@ def _seeded_settings_book(factory) -> SettingBook:
 
 @pytest.fixture
 def contact_id(factory):
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
 
     return ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture'))).id
 

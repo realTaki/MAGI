@@ -27,8 +27,8 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.bus import Bus
-from magi.bus.firmwares.books.file.skillsBook import SkillBookError, SkillNotFound, SkillsBook
+from magi.old_bus import Bus
+from magi.old_bus.firmwares.books.file.skillsBook import SkillBookError, SkillNotFound, SkillsBook
 from magi.channels.api.auth_gates import AdminGate
 from magi.channels.api.dependencies import BusDep
 from magi.channels.api.errors import MagiHTTPException

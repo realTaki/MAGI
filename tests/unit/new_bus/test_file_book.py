@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from magi.new_bus import Bus, FileEngine, Slot
-from magi.new_bus.base.BaseFileBook import BaseFileBook
-from magi.new_bus.firmware.books.promptsBook import PromptsBook
-from magi.new_bus.firmware.books.skillsBook import SkillsBook
-from magi.new_bus.firmware.jobs.skillJobs import GetSkillJob
+from magi.bus import Bus, FileEngine, Slot
+from magi.bus.base.BaseFileBook import BaseFileBook
+from magi.bus.firmware.books.promptsBook import PromptsBook
+from magi.bus.firmware.books.skillsBook import SkillsBook
+from magi.bus.firmware.jobs.skillJobs import GetSkillJob
 
 
 class NotesBook(BaseFileBook):

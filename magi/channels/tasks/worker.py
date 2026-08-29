@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING
 
 from croniter import croniter as _croniter
 
-from magi.bus.bases.job import JobStatus
+from magi.old_bus.bases.job import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.jobs.runTaskJob import RunTaskJob
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.jobs.runTaskJob import RunTaskJob
 
 logger = logging.getLogger("magi.channels.task.worker")
 
@@ -142,7 +142,7 @@ class TaskWorker(RuntimeWorker):
             pass
         # The user message is persisted to ``chat_messages`` inside
         # :meth:`chatNotifyBoard.publish`. No direct write here.
-        from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+        from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
         await self.call(
             self.bus.agent_job_board.publish,
@@ -156,7 +156,7 @@ class TaskWorker(RuntimeWorker):
         self._next_fire[task_id] = datetime.now(UTC).replace(tzinfo=None)
 
     async def _handle_run_task_job(self, rj: RunTaskJob) -> None:
-        from magi.bus.firmwares.jobs.runTaskJob import RunTaskResult
+        from magi.old_bus.firmwares.jobs.runTaskJob import RunTaskResult
 
         try:
             task = await self.call(self.bus.tasks_book.get, task_id=rj.task_id)

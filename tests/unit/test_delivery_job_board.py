@@ -10,16 +10,16 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import select
 
-from magi.bus.bases.db import EngineFactory
-from magi.bus.bases.db.base import utcnow_naive
-from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
-from magi.bus.firmwares.jobs.deliveryNotifyJob import (
+from magi.old_bus.bases.db import EngineFactory
+from magi.old_bus.bases.db.base import utcnow_naive
+from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+from magi.old_bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     _DeliveryNotifyJobRow,
     deliveryNotifyJobBoard,
 )
-from magi.bus.firmwares.books.local.contactBook import Contact, ContactBook
-from magi.bus.firmwares.books.local.conversationBook import (
+from magi.old_bus.firmwares.books.local.contactBook import Contact, ContactBook
+from magi.old_bus.firmwares.books.local.conversationBook import (
     Conversation,
     ConversationBook,
     MessageBook,

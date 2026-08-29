@@ -14,17 +14,17 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from magi.bus.bases.db.engine import EngineFactory
-from magi.bus.firmwares.books.local.contactBook import ContactBook
-from magi.bus.firmwares.books.local.settingBook import SettingBook
-from magi.bus.firmwares.books.magis.magisBook import Magis, MagisAdmin, MagisAdminBook, MagisBook
-from magi.bus.firmwares.books.magis.membershipBook import (
+from magi.old_bus.bases.db.engine import EngineFactory
+from magi.old_bus.firmwares.books.local.contactBook import ContactBook
+from magi.old_bus.firmwares.books.local.settingBook import SettingBook
+from magi.old_bus.firmwares.books.magis.magisBook import Magis, MagisAdmin, MagisAdminBook, MagisBook
+from magi.old_bus.firmwares.books.magis.membershipBook import (
     MagisMembership,
     MagisMembershipBook,
     MagisRole,
     MagisRoleBook,
 )
-from magi.bus.firmwares.books.magis.runtimeBook import RuntimeBook
+from magi.old_bus.firmwares.books.magis.runtimeBook import RuntimeBook
 from magi.channels.api import magi, magis
 from magi.channels.api.app import create_app
 

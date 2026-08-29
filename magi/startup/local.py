@@ -271,7 +271,7 @@ def _load_spec_from_db(config: StartupConfig):
     :func:`paths.resolve_magis_database_url` so we never need a file
     cache to bootstrap.
     """
-    from magi.bus import open_bus
+    from magi.old_bus import open_bus
 
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name

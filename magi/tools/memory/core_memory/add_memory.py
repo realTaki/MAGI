@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.bus.firmwares.books.local.memoryBook import (
+from magi.old_bus.firmwares.books.local.memoryBook import (
     Memory,
     MemoryKind,
 )

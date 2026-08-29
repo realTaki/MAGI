@@ -46,7 +46,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from magi.old_bus import Bus
 
 
 # -- execution I/O DTOs ---------------------------------------------------

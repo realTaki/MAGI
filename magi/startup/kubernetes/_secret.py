@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
-from magi.bus import Bus, open_bus
+from magi.old_bus import Bus, open_bus
 from magi.channels.api.proxy_auth import _control_secret_name, resolve_control_secret
 
 

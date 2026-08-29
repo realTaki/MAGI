@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-from magi.new_bus import BaseJobResult, Bus, JobStatus, Slot
+from magi.bus import BaseJobResult, Bus, JobStatus, Slot
 from tests.unit.new_bus.testing import WORKER, PingBus, PingJob, PingJobBoard, attach_board
 
 

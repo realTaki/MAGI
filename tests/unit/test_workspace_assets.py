@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from magi.agent.worker import AgentWorker
-from magi.bus.firmwares.books.file import PromptBook
-from magi.bus.provision import provision_node_storage
+from magi.old_bus.firmwares.books.file import PromptBook
+from magi.old_bus.provision import provision_node_storage
 from magi.proactive.preset_tasks import _load_preset
 from magi.proactive.worker import ProactiveWorker
 

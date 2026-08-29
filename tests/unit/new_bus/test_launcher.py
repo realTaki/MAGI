@@ -5,7 +5,7 @@ import time
 import pytest
 
 from magi.launcher import Launcher
-from magi.new_bus import (
+from magi.bus import (
     AndDock,
     BaseWorker,
     CallLLMJob,
@@ -15,7 +15,7 @@ from magi.new_bus import (
     OrDock,
     Slot,
 )
-from magi.new_bus.firmware.jobs.callLLMJob import CallLLMJobBoard
+from magi.bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from magi.providers.requiredSlots import REQUIRED_SLOTS as PROVIDER_SLOTS
 from magi.providers.worker import ProvidersWorker
 from tests.unit.new_bus.testing import attach_board

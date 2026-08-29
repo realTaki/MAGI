@@ -233,8 +233,8 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
     """
     from magi.startup.paths import resolve_magis_database_url
     from magi.startup.spec import load_runtime_spec
-    from magi.bus.bases.db.base import utcnow_naive
-    from magi.bus.firmwares.books.magis.runtimeBook import (
+    from magi.old_bus.bases.db.base import utcnow_naive
+    from magi.old_bus.firmwares.books.magis.runtimeBook import (
         RuntimeDesiredState,
         RuntimeObservedState,
     )
@@ -243,7 +243,7 @@ def mark_registry_stopped(config: "StartupConfig") -> None:
         magis_url = config.magis_database_url or resolve_magis_database_url(
             config.host_workspace_dir, config.magis_name
         )
-        from magi.bus.bootstrap import open_bus
+        from magi.old_bus.bootstrap import open_bus
 
         bus = open_bus(magis_url=magis_url)
         spec = load_runtime_spec(

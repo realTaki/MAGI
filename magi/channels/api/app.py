@@ -36,7 +36,7 @@ from magi import __version__
 from magi.channels.api import auth, contacts, magi, magis
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from magi.old_bus import Bus
     from magi.channels.api.control_context import ControlContext
     from magi.startup.workers import WorkerRegistry
 

@@ -28,12 +28,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.books.local.mcpServerBook import (
+from magi.old_bus.bases.job import JobStatus
+from magi.old_bus.firmwares.books.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )
-from magi.bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
+from magi.old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 

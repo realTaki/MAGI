@@ -11,8 +11,8 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from magi.bus.firmwares.books.magis import AUTH_MODE_DISABLED
-from magi.bus.firmwares.books.local import Role
+from magi.old_bus.firmwares.books.magis import AUTH_MODE_DISABLED
+from magi.old_bus.firmwares.books.local import Role
 from magi.channels.api.dependencies import get_bus
 from magi.channels.api.errors import MagiHTTPException
 

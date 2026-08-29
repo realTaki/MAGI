@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from magi.bus.bases.db.file import FileShelf
-from magi.bus.firmwares.books.file.skillsBook import (
+from magi.old_bus.bases.db.file import FileShelf
+from magi.old_bus.firmwares.books.file.skillsBook import (
     _BODY_MAX_BYTES,
     SkillBody,
     SkillMeta,

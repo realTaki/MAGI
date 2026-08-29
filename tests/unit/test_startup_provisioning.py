@@ -18,11 +18,11 @@ from sqlalchemy import inspect, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from magi.bus import open_bus
-from magi.bus.bases.db.engine import EngineFactory
-from magi.bus.firmwares.books.local.contactBook import _ContactRow
-from magi.bus.firmwares.books.magis.magisBook import _MagisAdminRow
-from magi.bus.provision import StorageNotProvisioned
+from magi.old_bus import open_bus
+from magi.old_bus.bases.db.engine import EngineFactory
+from magi.old_bus.firmwares.books.local.contactBook import _ContactRow
+from magi.old_bus.firmwares.books.magis.magisBook import _MagisAdminRow
+from magi.old_bus.provision import StorageNotProvisioned
 from magi.startup import runtime
 from magi.startup.config import (
     DEFAULT_MAGI_NAME,
@@ -294,7 +294,7 @@ def test_initial_schema_does_not_create_legacy_a2a_outbox(tmp_path: Path) -> Non
 
     with factory.engine.begin() as connection:
         # Initial-schema bring-up: create_all + alembic stamp.
-        from magi.bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+        from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
 
     # Use ``synchronise_schema`` indirectly by going through ``open_bus``
     # — first, drop the existing DB so the boot is truly from scratch.
@@ -409,8 +409,8 @@ def test_initial_schema_declares_native_enum_on_a2a_tables(tmp_path: Path) -> No
     CHECK being present and bounded, not on a specific dialect
     syntax.
     """
-    from magi.bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
-    from magi.bus.bases.db.engine import EngineFactory
+    from magi.old_bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
+    from magi.old_bus.bases.db.engine import EngineFactory
 
     factory = EngineFactory(f"sqlite:///{tmp_path / 'magis.db'}")
     synchronise_schema(factory, scope=MAGIS_SCOPE)

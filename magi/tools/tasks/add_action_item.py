@@ -32,7 +32,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
+from magi.old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
 from magi.tools.base import Tool, ToolContext, ToolResult
 
 logger = logging.getLogger("magi.tools.tasks.add_action_item")

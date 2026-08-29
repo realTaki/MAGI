@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from magi.bus.firmwares.books.local.contactBook import Contact, Role
-from magi.bus.firmwares.books.local.tasksBook import (
+from magi.old_bus.firmwares.books.local.contactBook import Contact, Role
+from magi.old_bus.firmwares.books.local.tasksBook import (
     Task,
     validate_run_at,
     validate_run_at_future,
@@ -86,10 +86,10 @@ def test_worker_should_fire_run_at_once():
 
 def test_mark_run_at_consumed_sets_enabled_zero():
     """TaskBook.mark_run_at_consumed sets enabled=0 after fire."""
-    from magi.bus.bases.db import EngineFactory
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
-    from magi.bus.firmwares.books.local.conversationBook import ConversationBook  # noqa: F401
-    from magi.bus.firmwares.books.local.tasksBook import TaskBook
+    from magi.old_bus.bases.db import EngineFactory
+    from magi.old_bus.firmwares.books.local.contactBook import ContactBook
+    from magi.old_bus.firmwares.books.local.conversationBook import ConversationBook  # noqa: F401
+    from magi.old_bus.firmwares.books.local.tasksBook import TaskBook
 
     f = EngineFactory("sqlite:///:memory:")
     f.create_all()

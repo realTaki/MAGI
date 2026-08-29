@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from magi.old_bus import Bus
 
 logger = logging.getLogger("magi.startup.workers")
 

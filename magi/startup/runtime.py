@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from magi.bus.bases.db.base import utcnow_naive
-from magi.bus.firmwares.books.magis.runtimeBook import (
+from magi.old_bus.bases.db.base import utcnow_naive
+from magi.old_bus.firmwares.books.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
@@ -56,7 +56,7 @@ from magi.startup.process import (
 from magi.startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
-    from magi.bus.bootstrap import Bus
+    from magi.old_bus.bootstrap import Bus
     from magi.startup.workers import WorkerRegistry
 
 logger = logging.getLogger("magi.startup.runtime")
@@ -216,7 +216,7 @@ def run_magi(config: StartupConfig) -> None:
     and ``magi node restart`` always address the process that owns the
     listening socket.
     """
-    from magi.bus import open_bus
+    from magi.old_bus import open_bus
     from magi.startup.paths import resolve_magis_database_url
 
     magis_url = config.magis_database_url or resolve_magis_database_url(

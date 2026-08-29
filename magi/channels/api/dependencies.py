@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request
 
-from magi.bus import Bus
+from magi.old_bus import Bus
 
 if TYPE_CHECKING:
     from magi.startup.workers import WorkerRegistry

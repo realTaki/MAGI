@@ -27,13 +27,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from magi.bus.bases.job import JobStatus
+from magi.old_bus.bases.job import JobStatus
 from magi.runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.jobs.callLLMJob import CallLLMResult
-    from magi.bus.firmwares.jobs.runToolJob import RunToolJob
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMResult
+    from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
 
 logger = logging.getLogger("magi.agent.worker")
 
@@ -157,7 +157,7 @@ class AgentWorker(RuntimeWorker):
         await asyncio.gather(*(self._run_consumer() for _ in range(self.concurrency)))
 
     async def _run_consumer(self) -> None:
-        from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
+        from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
         while not self._stopping:
             source, job = await self._claim_next_turn()
@@ -231,7 +231,7 @@ class AgentWorker(RuntimeWorker):
                         ),
                     )
                 elif source == "a2a.request":
-                    from magi.bus.firmwares.jobs.a2aJob import A2ARequestResult
+                    from magi.old_bus.firmwares.jobs.a2aJob import A2ARequestResult
 
                     board = self.bus.a2a_request_job_board
                     if board is not None:
@@ -247,7 +247,7 @@ class AgentWorker(RuntimeWorker):
                             ),
                         )
                 elif source == "a2a.notify":
-                    from magi.bus.firmwares.jobs.a2aJob import A2ANotifyResult
+                    from magi.old_bus.firmwares.jobs.a2aJob import A2ANotifyResult
 
                     board = self.bus.a2a_notify_job_board
                     if board is not None:
@@ -502,7 +502,7 @@ class AgentWorker(RuntimeWorker):
 
     async def _build_llm_job(self, ctx: RunContext) -> Any:
         """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""
-        from magi.bus.firmwares.jobs.callLLMJob import CallLLMJob
+        from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMJob
 
         system = await self._system_prompt(ctx)
         messages = [{"role": "system", "content": system}] + list(ctx.messages)
@@ -608,7 +608,7 @@ class AgentWorker(RuntimeWorker):
         arguments: dict,
         context: dict,
     ) -> RunToolJob:
-        from magi.bus.firmwares.jobs.runToolJob import RunToolJob
+        from magi.old_bus.firmwares.jobs.runToolJob import RunToolJob
 
         return RunToolJob(
             tool_call_id=tool_call_id,
@@ -617,7 +617,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
-        from magi.bus.firmwares.jobs.a2aJob import A2ANotifyJob, A2ARequestJob
+        from magi.old_bus.firmwares.jobs.a2aJob import A2ANotifyJob, A2ARequestJob
 
         tool_jobs: list[RunToolJob] = []
         a2a_request_jobs: list[tuple[str, A2ARequestJob]] = []
@@ -788,7 +788,7 @@ class AgentWorker(RuntimeWorker):
                     text = steer.text or ""
                     if text:
                         steering_parts.append(text)
-                    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
+                    from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
                     chat_steer_job_id = steer.job_id
                     await self.call(
@@ -827,7 +827,7 @@ class AgentWorker(RuntimeWorker):
                 break
             await asyncio.sleep(0.1)
 
-        from magi.bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
+        from magi.old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 
         for tool_call_id, tool_job_id in pending_tool_jobs.items():
             tool_results[tool_call_id] = RunToolResult(
@@ -838,7 +838,7 @@ class AgentWorker(RuntimeWorker):
                 tool_call_id=tool_call_id,
             )
 
-        from magi.bus.firmwares.jobs.a2aJob import A2AErrorCode, A2ARequestResult
+        from magi.old_bus.firmwares.jobs.a2aJob import A2AErrorCode, A2ARequestResult
 
         for tool_call_id, a2a_request_job_id in pending_a2a_jobs.items():
             a2a_results[tool_call_id] = A2ARequestResult(
@@ -858,7 +858,7 @@ class AgentWorker(RuntimeWorker):
     # -- output --------------------------------------------------------------
 
     def _append_tool_result_user_message(self, ctx: RunContext, gather: _GatherResult) -> None:
-        from magi.bus.firmwares.jobs.runToolJob import ToolErrorCode
+        from magi.old_bus.firmwares.jobs.runToolJob import ToolErrorCode
 
         blocks: list[dict] = []
         for tool_call_id, r in gather.tool_results.items():
@@ -896,7 +896,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _publish_delivery(self, ctx: RunContext) -> None:
-        from magi.bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+        from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
         # A2A has its own terminal path in ``_run``.  Its text is either the
         # single request response or deliberately discarded for a notify.
@@ -974,7 +974,7 @@ class AgentWorker(RuntimeWorker):
 
 
 async def submit_agent_message(bus: Bus, message: Any) -> int:
-    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+    from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
     job = ChatNotifyJob(
         # ``job_id`` is database-owned and is filled after publish().

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from magi.new_bus import Bus, JobBoardClient, Slot
-from magi.new_bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult
+from magi.bus import Bus, JobBoardClient, Slot
+from magi.bus.base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult
 
 
 def attach_board(

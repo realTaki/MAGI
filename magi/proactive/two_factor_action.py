@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from magi.bus.firmwares.books.local.actionItemBook import (
+from magi.old_bus.firmwares.books.local.actionItemBook import (
     ActionItem,
     ActionItemBook,
     ActionPriority,
     ActionSource,
 )
-from magi.bus.firmwares.books.magis import AUTH_MODE_IM_2FA_ENABLED
+from magi.old_bus.firmwares.books.magis import AUTH_MODE_IM_2FA_ENABLED
 
 TITLE = "启用 IM 两步验证"
 DESCRIPTION = "绑定 Telegram 或其他 IM 验证通道，使用一次性验证码保护 MAGI 管理员登录。"

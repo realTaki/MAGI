@@ -46,11 +46,11 @@ from magi.agent.tokens import (
     estimate_messages_tokens,
     estimate_string_tokens,
 )
-from magi.bus.bases.job import JobStatus
+from magi.old_bus.bases.job import JobStatus
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
-    from magi.bus.firmwares.books.local.conversationBook import Message
+    from magi.old_bus import Bus
+    from magi.old_bus.firmwares.books.local.conversationBook import Message
 
 logger = logging.getLogger("magi.agent.compaction")
 
@@ -266,7 +266,7 @@ async def call_llm_for_summary(
         else:
             return None
 
-    from magi.bus.firmwares.jobs.callLLMJob import CallLLMJob
+    from magi.old_bus.firmwares.jobs.callLLMJob import CallLLMJob
 
     job = CallLLMJob(
         messages=[

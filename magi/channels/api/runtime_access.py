@@ -22,9 +22,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from magi.bus import Bus
-from magi.bus.firmwares.books.local import Role
-from magi.bus.firmwares.books.magis import (
+from magi.old_bus import Bus
+from magi.old_bus.firmwares.books.local import Role
+from magi.old_bus.firmwares.books.magis import (
     AUTH_MODE_IM_2FA_ENABLED,
     AUTH_MODE_LOCAL_NO_2FA,
     AUTH_MODE_RECOVERY_LOCAL_NO_2FA,
