@@ -1,15 +1,12 @@
-"""HTTP applications for the unified WebUI and private MAGI Runtime API.
+"""HTTP applications for MAGI node APIs.
 
-``create_app`` builds the singleton browser-facing control service. Runtime
-containers use ``create_runtime_app`` instead: it has no SPA mount and omits
-control registry/login routes, while retaining local APIs reached through the
-authenticated WebUI proxy.
+``create_runtime_app`` is the per-MAGI backend. ``create_control_app`` is
+MAGIS-level control. Neither serves the operator UI.
 
 Mounting order (matters for routing precedence):
   1. ``/health``         — process-level liveness probe.
-  2. ``/``               — SPA static files (built by Vite at /app/dist).
-     Uses ``html=True`` so unknown paths fall back to index.html and
-     the SPA's client-side router can take over.
+  2. ``/api/*``          — this MAGI node's HTTP API. The operator UI lives
+     in the sibling ``app/`` project and is not served from here.
 
 Subsequent checkpoints layer on:
 - C1.2 — more routers (contacts / evas / skills / audit / login).
@@ -20,17 +17,11 @@ Subsequent checkpoints layer on:
 
 from __future__ import annotations
 
-import logging
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse
 
 from channels.api import auth, contacts, magi, magis
 from startup import __version__
@@ -39,69 +30,6 @@ if TYPE_CHECKING:
     from old_bus import Bus
     from channels.api.control_context import ControlContext
     from startup.workers import WorkerRegistry
-
-logger = logging.getLogger("channels.api")
-
-
-class _SpaFallback(StaticFiles):
-    """StaticFiles with a real SPA shell fallback.
-
-    Starlette's ``StaticFiles(html=True)`` only swaps ``index.html`` in
-    when a request *for a .html path* misses. It does NOT fallback
-    arbitrary client-side routes (``/dashboard``, ``/chat/123``) to
-    the SPA shell. Those would otherwise 404 on a hard navigation
-    (e.g. a link rendered with ``<a href>`` instead of the SPA router),
-    which is exactly what action-item ``target_url``s do today.
-    """
-
-    def __init__(
-        self,
-        *,
-        directory: str | os.PathLike[str],
-        html: bool = False,
-        check_dir: bool = True,
-    ) -> None:
-        # Starlette's parent ``StaticFiles.__init__`` keeps ``directory``
-        # as the raw string and indexes it with ``self.directory / ...``
-        # in the hot path. That breaks for ``str`` inputs the moment the
-        # SPA fallback looks up ``index.html``; coerce to ``Path`` here
-        # so ``get_response`` can do its ``self.directory / "index.html"``
-        # without raising ``TypeError``.
-        from pathlib import Path
-
-        directory_path = Path(directory) if not isinstance(directory, Path) else directory
-        super().__init__(directory=directory_path, html=html, check_dir=check_dir)
-
-    async def get_response(self, path, scope):  # type: ignore[override]
-        try:
-            return await super().get_response(path, scope)
-        except StarletteHTTPException as exc:
-            if exc.status_code != 404:
-                raise
-            # Real file miss → serve the SPA shell so the client-side
-            # router can take over and parse ``?tab=...`` etc.
-            # ``self.directory`` is guaranteed non-None by Starlette's
-            # ``check_dir`` flow (constructor raises if it's None / missing).
-            directory = self.directory
-            assert directory is not None, "StaticFiles directory must be set"
-            index = Path(directory) / "index.html"
-            if index.is_file():
-                return FileResponse(str(index), media_type="text/html")
-            raise
-
-# In-container and monorepo paths for the sibling ``app`` project. In dev (vite
-# dev), no dist exists and Vite handles the UI itself on :42069.
-_SPA_DIST_CANDIDATES: tuple[Path, ...] = (
-    Path("/app/dist"),  # Dockerfile runtime stage
-    Path(__file__).resolve().parents[3] / "app" / "dist",  # repository checkout
-)
-
-
-def _find_spa_dist() -> Path | None:
-    for candidate in _SPA_DIST_CANDIDATES:
-        if candidate.is_dir() and (candidate / "index.html").is_file():
-            return candidate
-    return None
 
 
 class HealthResponse(BaseModel):
@@ -121,15 +49,13 @@ def create_app(
     *,
     bus: Bus,
     workers: WorkerRegistry | None = None,
-    include_spa: bool = True,
     include_control_routes: bool = True,
     include_private_routes: bool = True,
 ) -> FastAPI:
-    """Build either the standalone control WebUI or an internal Runtime API.
+    """Build this MAGI node's HTTP API.
 
     ``include_control_routes=False`` is used by every MAGI runtime: it omits
-    login and MAGIS registry routes and never mounts React assets.
-    The runtime remains an internal HTTP API for the one WebUI service.
+    MAGIS registry routes. The operator UI is not served from this process.
 
     TelegramWorker lifecycle is owned by the injected RuntimeContext; this
     application only serves HTTP with that already-created context.
@@ -148,7 +74,7 @@ def create_app(
     app = FastAPI(
         title="MAGI",
         version=__version__,
-        summary="MAGI node — channel-driven (WebUI / Telegram / …).",
+        summary="MAGI node HTTP API.",
         lifespan=_lifespan,
     )
     app.state.bus = bus
@@ -171,7 +97,7 @@ def create_app(
 
     app.include_router(health_api.router)
 
-    # Feature routers — registered BEFORE the SPA static mount so
+    # Feature routers.
     # /api/* always wins over any same-prefixed asset in the SPA bundle.
     if include_control_routes:
         app.include_router(auth.router, prefix="/api/auth")
@@ -194,15 +120,6 @@ def create_app(
         from channels.api import runtime_proxy
 
         app.include_router(runtime_proxy.router, prefix="/api")
-        spa_dist = _find_spa_dist() if include_spa else None
-        if spa_dist is not None:
-            # See ``_SpaFallback`` docstring — Starlette's
-            # ``StaticFiles(html=True)`` does NOT fallback arbitrary
-            # client-side routes (``/dashboard``, ``/chat/123``) to the
-            # SPA shell; it only swaps ``index.html`` when a .html
-            # request misses. Without this catch-all, every
-            # ``<a href="/internal-link">`` does a hard nav that 404s.
-            app.mount("/", _SpaFallback(directory=str(spa_dist), html=True), name="spa")
         return app
     # Target-scoped login is owned by the MAGI runtime.  The singleton WebUI
     # calls it with a target-bound internal signature before a browser session
@@ -320,33 +237,6 @@ def create_app(
     from channels.api import skills
 
     app.include_router(skills.router, prefix="/api")
-
-    # SPA. In Docker this is /app/dist (baked in by the web-builder
-    # stage). In a local dev checkout with `npm run build` it also gets
-    # picked up; if neither produced a dist the mount is skipped and
-    # vite dev (on the same :42069) serves the UI itself.
-    spa_dist = _find_spa_dist() if include_spa else None
-    if spa_dist is not None:
-        # StaticFiles(html=True) only serves ``index.html`` when a .html
-        # is requested and missing — it does NOT fallback arbitrary
-        # client-side routes (e.g. ``/dashboard``, ``/chat/123``) to
-        # the SPA shell. Anything ``<a href="/internal-link">`` does a
-        # full-page nav that lands here and would 404 without an
-        # explicit catch-all. Wire one up: anything GET that did not
-        # match an API router and is not a real file in ``spa_dist``
-        # is served the SPA shell.
-        app.mount(
-            "/",
-            _SpaFallback(directory=str(spa_dist), html=True),
-            name="spa",
-        )
-        logger.info("SPA mounted", extra={"path": str(spa_dist)})
-    else:
-        logger.info(
-            "SPA dist not found; serving API only "
-            "(run `npm run build` in app/ or use vite dev to serve the UI)"
-        )
-
     return app
 
 
@@ -360,13 +250,12 @@ def create_runtime_app(*, bus: "Bus", workers: "WorkerRegistry") -> FastAPI:
     return create_app(
         bus=bus,
         workers=workers,
-        include_spa=False,
         include_control_routes=False,
     )
 
 
 def create_control_app(*, context: ControlContext) -> FastAPI:
-    """Factory for the singleton browser-facing service; it has no local MAGI state."""
+    """Factory for MAGIS-level control APIs; it has no local MAGI state and no UI."""
     return create_app(
-        bus=context.bus, include_spa=True, include_control_routes=True, include_private_routes=False
+        bus=context.bus, include_control_routes=True, include_private_routes=False
     )

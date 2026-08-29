@@ -160,13 +160,11 @@ def test_self_instruction_uses_the_runtime_bus(bus: SimpleNamespace, monkeypatch
 def test_control_and_runtime_apps_mount_the_correct_magi_surfaces() -> None:
     control = create_app(
         bus=SimpleNamespace(),
-        include_spa=False,
         include_control_routes=True,
         include_private_routes=False,
     )
     runtime = create_app(
         bus=SimpleNamespace(),
-        include_spa=False,
         include_control_routes=False,
         include_private_routes=True,
     )
@@ -197,7 +195,6 @@ def test_control_magi_route_uses_the_injected_bus(bus: SimpleNamespace) -> None:
     )
     app = create_app(
         bus=bus,
-        include_spa=False,
         include_control_routes=True,
         include_private_routes=False,
     )

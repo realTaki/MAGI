@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from startup import local, webui
-from startup.config import DEFAULT_MAGI_NAME, WEBUI_PORT, StartupConfig
+from startup import local
+from startup.config import DEFAULT_MAGI_NAME, StartupConfig
 from startup.paths import resolve_runtime_state_path
 from startup.provision import create_node, init_first_magi
 
@@ -28,12 +28,13 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    """Start a usable local MAGI installation in one idempotent command.
+    """Start a usable local MAGI node in one idempotent command.
 
     A missing first-node runtime specification means this is a first launch,
-    so provisioning is performed before either process is started.  Existing
+    so provisioning is performed before the process is started.  Existing
     state is never recreated: an invalid or retired workspace still fails via
     the normal lifecycle commands rather than being silently replaced.
+    The operator UI is not started here.
     """
     config = _config(args)
     if not resolve_runtime_state_path(config.workspace_dir).exists():
@@ -45,9 +46,8 @@ def cmd_start(args: argparse.Namespace) -> int:
         print(f"MAGI {config.magi_name!r} is already running (pid={node_status.pid})")
     elif local.start_magi(config=config) != 0:
         return 1
-
-    webui.ensure_webui_running(config=config)
-    print(f"MAGI is ready at http://127.0.0.1:{WEBUI_PORT}")
+    else:
+        print(f"MAGI {config.magi_name!r} started")
     return 0
 
 
@@ -80,26 +80,6 @@ def cmd_node_status(args: argparse.Namespace) -> int:
     print(
         f"{status.magi_name}\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}"
     )
-    return 0
-
-
-def cmd_webui_run(args: argparse.Namespace) -> int:
-    config = _config(args)
-    if args.foreground:
-        webui.run_webui_foreground(config=config)
-        return 0
-    url = webui.start_webui(config=config)
-    print(url)
-    return 0
-
-
-def cmd_webui_stop(args: argparse.Namespace) -> int:
-    return webui.stop_webui(config=_config(args), force=args.force)
-
-
-def cmd_webui_status(args: argparse.Namespace) -> int:
-    status = webui.get_webui_status(config=_config(args))
-    print(f"webui\t{status.pid or '-'}\t{'alive' if status.alive else 'dead'}\t{status.pid_file}")
     return 0
 
 
@@ -139,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     root = parser.add_subparsers(dest="command", required=True)
 
-    start = root.add_parser("start", help="initialize (when needed) and start local MAGI + WebUI")
+    start = root.add_parser("start", help="initialize (when needed) and start a local MAGI node")
     _common(start)
     start.set_defaults(handler=cmd_start)
 
@@ -156,12 +136,6 @@ def build_parser() -> argparse.ArgumentParser:
     _lifecycle_parser(node_sub, "stop", cmd_node_stop, force=True)
     _lifecycle_parser(node_sub, "restart", cmd_node_restart)
     _lifecycle_parser(node_sub, "status", cmd_node_status)
-
-    control = root.add_parser("webui", help="manage the singleton control service")
-    control_sub = control.add_subparsers(dest="webui_command", required=True)
-    _lifecycle_parser(control_sub, "run", cmd_webui_run, foreground=True)
-    _lifecycle_parser(control_sub, "stop", cmd_webui_stop, force=True)
-    _lifecycle_parser(control_sub, "status", cmd_webui_status)
     return parser
 
 
