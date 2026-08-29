@@ -49,17 +49,6 @@ from .conversationJobs import (
     UpdateConversationSummaryJobBoard,
     UpdateConversationSummaryResult,
 )
-from .convMembersJobs import (
-    AddConversationMemberJob,
-    AddConversationMemberJobBoard,
-    AddConversationMemberResult,
-    ListConversationMembersJob,
-    ListConversationMembersJobBoard,
-    ListConversationMembersResult,
-    RemoveConversationMemberJob,
-    RemoveConversationMemberJobBoard,
-    RemoveConversationMemberResult,
-)
 from .messageJobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -124,15 +113,6 @@ __all__ = [
     "CreateConversationJob",
     "CreateConversationJobBoard",
     "CreateConversationResult",
-    "AddConversationMemberJob",
-    "AddConversationMemberJobBoard",
-    "AddConversationMemberResult",
-    "ListConversationMembersJob",
-    "ListConversationMembersJobBoard",
-    "ListConversationMembersResult",
-    "RemoveConversationMemberJob",
-    "RemoveConversationMemberJobBoard",
-    "RemoveConversationMemberResult",
     "ListConversationMessagesJob",
     "ListConversationMessagesJobBoard",
     "ListConversationMessagesResult",

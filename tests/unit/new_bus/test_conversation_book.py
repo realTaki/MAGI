@@ -6,7 +6,6 @@ from datetime import datetime
 from sqlalchemy import create_engine, inspect, text
 
 from magi.new_bus import (
-    AddConversationMemberJob,
     AppendMessageJob,
     ArchiveMessagesJob,
     BaseJob,
@@ -15,22 +14,14 @@ from magi.new_bus import (
     Conversation,
     CreateConversationJob,
     JobStatus,
-    ListConversationMembersJob,
     ListConversationMessagesJob,
     MessageRole,
-    RemoveConversationMemberJob,
     UpdateConversationSummaryJob,
 )
-from magi.new_bus.firmware.books.contactBook import Contact, ContactBook
 from magi.new_bus.firmware.books.conversationBook import ConversationBook
 from magi.new_bus.firmware.jobs.conversationJobs import (
     CreateConversationJobBoard,
     UpdateConversationSummaryJobBoard,
-)
-from magi.new_bus.firmware.jobs.convMembersJobs import (
-    AddConversationMemberJobBoard,
-    ListConversationMembersJobBoard,
-    RemoveConversationMemberJobBoard,
 )
 from magi.new_bus.firmware.jobs.messageJobs import (
     AppendMessageJobBoard,
@@ -40,13 +31,10 @@ from magi.new_bus.firmware.jobs.messageJobs import (
 from tests.unit.new_bus.testing import WORKER, attach_board
 
 BOARD_BY_JOB = {
-    AddConversationMemberJob: AddConversationMemberJobBoard,
     CreateConversationJob: CreateConversationJobBoard,
-    ListConversationMembersJob: ListConversationMembersJobBoard,
     AppendMessageJob: AppendMessageJobBoard,
     ArchiveMessagesJob: ArchiveMessagesJobBoard,
     ListConversationMessagesJob: ListConversationMessagesJobBoard,
-    RemoveConversationMemberJob: RemoveConversationMemberJobBoard,
     UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard,
 }
 
@@ -70,10 +58,6 @@ def _result(bus: Bus, job: BaseJob):
     return _board(bus, job).get_result(job.id)
 
 
-def _contact_id(bus: Bus, name: str = "alice") -> int:
-    return ContactBook(bus._factory).add(Contact(name=name))
-
-
 def _conversation(bus: Bus, conversation_id: int | None):
     assert conversation_id is not None
     return ConversationBook(bus._factory).get(conversation_id)
@@ -82,19 +66,15 @@ def _conversation(bus: Bus, conversation_id: int | None):
 def test_conversation_record_keeps_transport_fields() -> None:
     assert {field.name for field in dataclasses.fields(Conversation)} >= {
         "delivery_address",
-        "owner_contact_id",
         "channel",
     }
 
 
 def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
     bus = _bus(tmp_path)
-    contact_id = _contact_id(bus)
     created = _publish(
         bus,
-        CreateConversationJob(
-            delivery_address="tg:123", owner_contact_id=contact_id, channel="tg", title="hello"
-        ),
+        CreateConversationJob(delivery_address="tg:123", channel="tg", title="hello"),
     )
     outcome = _result(bus, created)
     assert outcome is not None
@@ -102,72 +82,11 @@ def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
     conversation = _conversation(bus, outcome.conversation_id)
     assert conversation is not None
     assert conversation.delivery_address == "tg:123"
-    assert conversation.owner_contact_id == contact_id
     assert conversation.channel == "tg"
     assert conversation.title == "hello"
 
 
-def test_conversation_members_are_current_non_owner_contacts(tmp_path) -> None:
-    bus = _bus(tmp_path)
-    owner_contact_id = _contact_id(bus, "owner")
-    member_contact_id = _contact_id(bus, "member")
-    created = _publish(
-        bus,
-        CreateConversationJob(owner_contact_id=owner_contact_id, channel="tg"),
-    )
-    created_result = _result(bus, created)
-    assert created_result is not None
-    assert created_result.conversation_id is not None
-
-    added = _publish(
-        bus,
-        AddConversationMemberJob(
-            conversation_id=created_result.conversation_id,
-            contact_id=member_contact_id,
-        ),
-    )
-    added_result = _result(bus, added)
-    assert added_result is not None
-    assert added_result.status is JobStatus.COMPLETED
-
-    duplicate_result = _result(
-        bus,
-        _publish(
-            bus,
-            AddConversationMemberJob(
-                conversation_id=created_result.conversation_id,
-                contact_id=member_contact_id,
-            ),
-        ),
-    )
-    assert duplicate_result is not None
-    assert duplicate_result.status is JobStatus.COMPLETED
-
-    listed_result = _result(
-        bus,
-        _publish(
-            bus,
-            ListConversationMembersJob(conversation_id=created_result.conversation_id),
-        ),
-    )
-    assert listed_result is not None
-    assert [member.contact_id for member in listed_result.members] == [member_contact_id]
-
-    removed_result = _result(
-        bus,
-        _publish(
-            bus,
-            RemoveConversationMemberJob(
-                conversation_id=created_result.conversation_id,
-                contact_id=member_contact_id,
-            ),
-        ),
-    )
-    assert removed_result is not None
-    assert removed_result.status is JobStatus.COMPLETED
-
-
-def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
+def test_conversation_owner_migration_drops_legacy_owner_and_members(tmp_path) -> None:
     workspace = tmp_path / "legacy-workspace"
     path = workspace / "memories" / "magi.db"
     path.parent.mkdir(parents=True)
@@ -216,10 +135,8 @@ def test_conversation_owner_migration_keeps_legacy_data(tmp_path) -> None:
         with bus._factory.engine.connect() as connection:
             columns = {column["name"] for column in inspect(connection).get_columns("books_conversations")}
             assert "contact_id" not in columns
-            assert connection.execute(
-                text("SELECT owner_contact_id FROM books_conversations")
-            ).scalar_one() == 1
-            assert "books_conv_members" in inspect(connection).get_table_names()
+            assert "owner_contact_id" not in columns
+            assert "books_conv_members" not in inspect(connection).get_table_names()
     finally:
         bus.close()
 
@@ -228,9 +145,7 @@ def test_update_summary_is_a_named_operation(tmp_path) -> None:
     bus = _bus(tmp_path)
     created = _publish(
         bus,
-        CreateConversationJob(
-            delivery_address="webui:1", owner_contact_id=_contact_id(bus), channel="webui"
-        ),
+        CreateConversationJob(delivery_address="webui:1", channel="webui"),
     )
     created_outcome = _result(bus, created)
     assert created_outcome is not None
@@ -252,7 +167,7 @@ def test_update_summary_is_a_named_operation(tmp_path) -> None:
 
 def test_create_conversation_keeps_optional_text_unconstrained(tmp_path) -> None:
     bus = _bus(tmp_path)
-    created = _publish(bus, CreateConversationJob(owner_contact_id=_contact_id(bus), channel="webui"))
+    created = _publish(bus, CreateConversationJob(channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
@@ -269,7 +184,7 @@ def test_book_operation_persists_unexpected_failure(tmp_path, monkeypatch) -> No
         raise RuntimeError("storage unavailable")
 
     monkeypatch.setattr(board, "_execute", fail)
-    created = _publish(bus, CreateConversationJob(owner_contact_id=_contact_id(bus), channel="webui"))
+    created = _publish(bus, CreateConversationJob(channel="webui"))
     outcome = _result(bus, created)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
@@ -293,7 +208,7 @@ def test_book_operation_waits_for_post_publish_approval(tmp_path) -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:checked", owner_contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:checked", channel="webui"
         ),
     )
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
@@ -321,7 +236,7 @@ def test_post_publish_rejection_prevents_book_operation(tmp_path) -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:rejected", owner_contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:rejected", channel="webui"
         ),
     )
     pending_check = checker_board.post_publish()
@@ -349,7 +264,7 @@ def test_post_publish_returns_false_for_an_invalid_decision(tmp_path) -> None:
     created = _publish(
         bus,
         CreateConversationJob(
-            delivery_address="webui:checked", owner_contact_id=_contact_id(bus), channel="webui"
+            delivery_address="webui:checked", channel="webui"
         ),
     )
     pending_check = checker_board.post_publish()
@@ -364,11 +279,7 @@ def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
     try:
         created = _publish(
             first,
-            CreateConversationJob(
-                delivery_address="webui:durable",
-                owner_contact_id=_contact_id(first, "durable"),
-                channel="webui",
-            ),
+            CreateConversationJob(delivery_address="webui:durable", channel="webui"),
         )
         created_result = _result(first, created)
         assert created_result is not None

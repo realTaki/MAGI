@@ -107,6 +107,10 @@ testpaths = ["tests"]
 # ~1.9 GB. These globs are relative to the project root.
 # -----------------------------------------------------------------------------
 [tool.pyright]
+# Resolve third-party imports (sqlalchemy, alembic, …) from the
+# project venv without adding site-packages to the *project* index.
+venvPath = "."
+venv = ".venv"
 exclude = [
     "**/.venv/**",
     "**/node_modules/**",

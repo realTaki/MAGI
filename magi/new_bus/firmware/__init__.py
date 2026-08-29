@@ -12,7 +12,6 @@ from ..base.heartbeat import Heartbeat
 from .books.contactBook import Contact, ContactRole
 from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
-from .books.convMembersBook import ConvMember
 from .books.messageBook import Message, MessageRole
 from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
@@ -20,9 +19,6 @@ from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskSource
 from .books.tokenUsageBook import TokenUsage
 from .jobs import (
-    AddConversationMemberJob,
-    AddConversationMemberJobBoard,
-    AddConversationMemberResult,
     AppendMessageJob,
     AppendMessageJobBoard,
     AppendMessageResult,
@@ -74,9 +70,6 @@ from .jobs import (
     ListContactsJob,
     ListContactsJobBoard,
     ListContactsResult,
-    ListConversationMembersJob,
-    ListConversationMembersJobBoard,
-    ListConversationMembersResult,
     ListConversationMessagesJob,
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
@@ -93,9 +86,6 @@ from .jobs import (
     RegisterPromptJob,
     RegisterPromptJobBoard,
     RegisterPromptResult,
-    RemoveConversationMemberJob,
-    RemoveConversationMemberJobBoard,
-    RemoveConversationMemberResult,
     ResetPromptJob,
     ResetPromptJobBoard,
     ResetPromptResult,
@@ -134,9 +124,6 @@ def create_job_boards(
     skills = SkillsBook(files)
     return {
         CreateConversationJob: CreateConversationJobBoard(factory, heartbeat),
-        AddConversationMemberJob: AddConversationMemberJobBoard(factory, heartbeat),
-        ListConversationMembersJob: ListConversationMembersJobBoard(factory, heartbeat),
-        RemoveConversationMemberJob: RemoveConversationMemberJobBoard(factory, heartbeat),
         AppendMessageJob: AppendMessageJobBoard(factory, heartbeat),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, heartbeat),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, heartbeat),
@@ -171,7 +158,6 @@ def create_job_boards(
 
 __all__ = [
     "Conversation",
-    "ConvMember",
     "Contact",
     "ContactRole",
     "ContactNote",
@@ -191,15 +177,6 @@ __all__ = [
     "CreateConversationJob",
     "CreateConversationJobBoard",
     "CreateConversationResult",
-    "AddConversationMemberJob",
-    "AddConversationMemberJobBoard",
-    "AddConversationMemberResult",
-    "ListConversationMembersJob",
-    "ListConversationMembersJobBoard",
-    "ListConversationMembersResult",
-    "RemoveConversationMemberJob",
-    "RemoveConversationMemberJobBoard",
-    "RemoveConversationMemberResult",
     "ListConversationMessagesJob",
     "ListConversationMessagesJobBoard",
     "ListConversationMessagesResult",
