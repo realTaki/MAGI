@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 
-from magi.old_bus import Bus
+from old_bus import Bus
 
 
 def _control(bus: Bus):

@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from magi.startup import cli
-from magi.startup.local import LocalSlotStatus
-from magi.startup.spec import RuntimeSpec
+from startup import cli
+from startup.local import LocalSlotStatus
+from startup.spec import RuntimeSpec
 
 
 def _stopped_status(root: Path) -> LocalSlotStatus:

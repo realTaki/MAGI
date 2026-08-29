@@ -33,8 +33,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from magi.tools._safe_path import safe_resolve
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools._safe_path import safe_resolve
+from tools.base import Tool, ToolContext, ToolResult
 
 # 8 KB cap. Anything bigger is truncated and the
 # truncation note is included so the model knows

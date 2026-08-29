@@ -2,7 +2,7 @@
 
 Exercises the publish → claim → submit_result round-trip on a
 fresh in-memory SQLite, plus the validation contract the
-:class:`~magi.mcp.worker.McpWorker` relies on (unknown kinds,
+:class:`~mcp.worker.McpWorker` relies on (unknown kinds,
 empty server name, payload requirements by kind, duplicate
 publish semantics).
 """
@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import pytest
 
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
-from magi.old_bus.firmwares.jobs import (
+from old_bus.bases.db import EngineFactory
+from old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+from old_bus.firmwares.jobs import (
     ChangeMCPServerJob,
     ChangeMCPServerResult,
     MCPKind,
     changeMCPServerJobBoard,
 )
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.books.local.mcpServerBook import McpServer
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_publish_assigns_job_id_and_persists(board, factory):
     # The row landed in the table.
     from sqlalchemy import select
 
-    from magi.old_bus.firmwares.jobs.changeMCPServerJob import _ChangeMCPServerRow
+    from old_bus.firmwares.jobs.changeMCPServerJob import _ChangeMCPServerRow
 
     with factory.session() as s:
         row = s.scalar(select(_ChangeMCPServerRow).where(_ChangeMCPServerRow.job_id == job_id))
@@ -182,7 +182,7 @@ def test_submit_result_records_error(board):
 def test_mcp_kind_enum_matches_documented_set():
     """Locks the four :class:`MCPKind` members; adding a fifth
     without a docstring / payload-shape update will fail here."""
-    from magi.old_bus.firmwares.jobs.changeMCPServerJob import MCPKind
+    from old_bus.firmwares.jobs.changeMCPServerJob import MCPKind
 
     assert {k.value for k in MCPKind} == {"added", "updated", "deleted", "toggled"}
     # StrEnum contract: members compare equal to their string value

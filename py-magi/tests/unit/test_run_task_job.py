@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.runTaskJob import (
+from old_bus.bases.db import EngineFactory
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.runTaskJob import (
     RunTaskJob,
     RunTaskResult,
     runTaskJobBoard,
@@ -107,8 +107,8 @@ def test_lease_expiry_reclaims_abandoned_job(board, monkeypatch):
     # Simulate lease expiry by manipulating leased_until
     from datetime import timedelta
 
-    from magi.old_bus.bases.db.base import utcnow_naive
-    from magi.old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
+    from old_bus.bases.db.base import utcnow_naive
+    from old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
 
     with board._session() as s:
         row = s.scalar(select(_RunTaskJobRow).where(_RunTaskJobRow.job_id == jid))
@@ -132,8 +132,8 @@ def test_expired_lease_remains_claimable_without_bus_failure(board):
 
     from datetime import timedelta
 
-    from magi.old_bus.bases.db.base import utcnow_naive
-    from magi.old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
+    from old_bus.bases.db.base import utcnow_naive
+    from old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
 
     for worker_id in ("worker-a", "worker-b", "worker-c", "worker-d"):
         claim = board.claim(worker_id=worker_id)

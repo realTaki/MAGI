@@ -17,24 +17,24 @@ parent env". Same contract the WebUI ``PATCH`` endpoint enforces.
 
 This tool is **not** a direct writer to :class:`McpServerBook`.
 It builds the full :class:`McpServer` DTO, publishes a
-:class:`~magi.bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
+:class:`~bus.firmwares.jobs.changeMCPServerJob.ChangeMCPServerJob`
 with ``kind="updated"`` (or ``kind="toggled"`` if the body only
 changed the ``enabled`` flag), and waits for the
-:class:`~magi.mcp.worker.McpWorker` to apply the write + reconnect.
-The Worker is the single writer — see :mod:`magi.mcp.worker`.
+:class:`~mcp.worker.McpWorker` to apply the write + reconnect.
+The Worker is the single writer — see :mod:`mcp.worker`.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.books.local.mcpServerBook import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.books.local.mcpServerBook import (
     McpServer,
     serialize_mcp_server,
 )
-from magi.old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
+from tools.base import Tool, ToolContext, ToolResult
 
 
 def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:

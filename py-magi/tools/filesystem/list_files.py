@@ -17,8 +17,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from magi.tools._safe_path import safe_resolve
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools._safe_path import safe_resolve
+from tools.base import Tool, ToolContext, ToolResult
 
 _MAX_ENTRIES = 200
 

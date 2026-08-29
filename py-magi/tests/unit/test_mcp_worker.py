@@ -1,4 +1,4 @@
-"""Unit tests for :class:`~magi.mcp.worker.McpWorker`.
+"""Unit tests for :class:`~mcp.worker.McpWorker`.
 
 The worker is the sole writer to :class:`McpServerBook` and
 owns every MCP server connection in one MAGI process. The
@@ -8,7 +8,7 @@ traffic happens in CI. The behaviour under test:
 
 - bootstrap connects every enabled row in parallel and
   re-injects the discovered tools via
-  :func:`magi.tools.registry.register_tools`;
+  :func:`tools.registry.register_tools`;
 - a failed ``connect()`` at bootstrap is logged and skipped
   (other servers still come up);
 - a change job with ``kind="added"`` / ``"updated"`` causes
@@ -34,29 +34,29 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from magi.old_bus.bootstrap import Bus
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.bases.db.file import FileShelf
-from magi.old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
-from magi.old_bus.firmwares.jobs import (
+from old_bus.bootstrap import Bus
+from old_bus.bases.db import EngineFactory
+from old_bus.bases.db.file import FileShelf
+from old_bus.firmwares.schema import LOCAL_SCOPE, synchronise_schema
+from old_bus.firmwares.jobs import (
     ChangeMCPServerJob,
     MCPKind,
     changeMCPServerJobBoard,
 )
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.books.file.promptBook import PromptBook
-from magi.old_bus.firmwares.books.local import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.books.file.promptBook import PromptBook
+from old_bus.firmwares.books.local import (
     McpServerBook,
     SettingBook,
 )
-from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
-from magi.old_bus.firmwares.books.local.toolsBook import ToolDefinitionBook
-from magi.mcp.worker import McpWorker
-from magi.tools import registry as tool_registry
-from magi.tools.mcp.add_mcp_server import AddMcpServerTool
-from magi.tools.mcp.delete_mcp_server import DeleteMcpServerTool
-from magi.tools.mcp.list_mcp_servers import ListMcpServersTool
-from magi.tools.mcp.update_mcp_server import UpdateMcpServerTool
+from old_bus.firmwares.books.local.mcpServerBook import McpServer
+from old_bus.firmwares.books.local.toolsBook import ToolDefinitionBook
+from mcp.worker import McpWorker
+from tools import registry as tool_registry
+from tools.mcp.add_mcp_server import AddMcpServerTool
+from tools.mcp.delete_mcp_server import DeleteMcpServerTool
+from tools.mcp.list_mcp_servers import ListMcpServersTool
+from tools.mcp.update_mcp_server import UpdateMcpServerTool
 
 # -- helpers -------------------------------------------------------------
 
@@ -247,7 +247,7 @@ def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
     slack = _StubConnection("slack", tool_names=["post"])
     _patch_worker_build(monkeypatch, [gmail, slack])
 
-    caplog.set_level("INFO", logger="magi.mcp.worker")
+    caplog.set_level("INFO", logger="mcp.worker")
     worker = McpWorker(bus=bus)
     asyncio.run(worker.start())
     try:
@@ -261,7 +261,7 @@ def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
 
 
 def test_manage_tools_are_builtin_not_injected():
-    """The CRUD tools live in :mod:`magi.tools.mcp` and are
+    """The CRUD tools live in :mod:`tools.mcp` and are
     registered by the standard builtin tools path — the
     worker doesn't import or inject them. Verify they're
     reachable through ``get_tool`` without any injection.
@@ -510,7 +510,7 @@ async def test_handle_change_toggled_enables_and_connects(bus, monkeypatch):
 # the DB CHECK constraint rejects unknown kinds at INSERT time, so
 # the worker's defensive ``else: error = "unknown change kind"``
 # branch can no longer be reached from a published job. The
-# enforcement now lives in :class:`magi.bus.firmwares.jobs.changeMCPServerJob._ChangeMCPServerRow`'s
+# enforcement now lives in :class:`bus.firmwares.jobs.changeMCPServerJob._ChangeMCPServerRow`'s
 # column type, not the worker — see the StrEnum/SAEnum migration
 # docs.
 

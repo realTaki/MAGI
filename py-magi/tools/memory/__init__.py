@@ -1,6 +1,6 @@
 """Long-arc memory tools.
 
-One module per tool — see :mod:`magi.tools.registry` for
+One module per tool — see :mod:`tools.registry` for
 the dispatcher that wires them up.
 
 LLM-driven, not automatic — the operator must say
@@ -8,11 +8,11 @@ LLM-driven, not automatic — the operator must say
 enough) for these to fire. The package is split into
 three subpackages, one per memory surface:
 
-  - :mod:`magi.tools.memory.core_memory` — self / core
+  - :mod:`tools.memory.core_memory` — self / core
     memory (facts, episodes, profile) the MAGI keeps
     about its operator.
-  - :mod:`magi.tools.memory.contacts` — contact directory
+  - :mod:`tools.memory.contacts` — contact directory
     + contact notes + the per-day note file.
-  - :mod:`magi.tools.memory.conversations` — cross-conversation
+  - :mod:`tools.memory.conversations` — cross-conversation
     search (turn history, role recall).
 """

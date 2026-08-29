@@ -46,10 +46,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.tasksBook import preset_to_cron
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.local.tasksBook import preset_to_cron
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.tasks.schedule")
+logger = logging.getLogger("tools.tasks.schedule")
 
 # ``admin`` and ``assigned`` may see this tool in the
 # catalog. ``guest`` is filtered out of the agent menu.

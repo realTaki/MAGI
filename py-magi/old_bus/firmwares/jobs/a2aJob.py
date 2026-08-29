@@ -24,8 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.db.base import enum_column
-from magi.old_bus.bases.job import (
+from old_bus.bases.db.base import enum_column
+from old_bus.bases.job import (
     BaseJob,
     BaseJobBoard,
     BaseJobResult,
@@ -34,12 +34,12 @@ from magi.old_bus.bases.job import (
 )
 
 if TYPE_CHECKING:
-    from magi.old_bus.bases.db.engine import EngineFactory
-    from magi.old_bus.firmwares.books.magis.membershipBook import MagisMembershipBook
+    from old_bus.bases.db.engine import EngineFactory
+    from old_bus.firmwares.books.magis.membershipBook import MagisMembershipBook
 
-from magi.old_bus.firmwares.books.local.conversationBook import AgentMessageRole, Message
+from old_bus.firmwares.books.local.conversationBook import AgentMessageRole, Message
 
-logger = logging.getLogger("magi.bus.firmwares.jobs.a2aJob")
+logger = logging.getLogger("bus.firmwares.jobs.a2aJob")
 
 
 # -- public enum ---------------------------------------------------------
@@ -59,8 +59,8 @@ class A2AErrorCode(StrEnum):
     ENUM type's OID, SQLite stores the value behind a CHECK
     constraint, both endpoints hand back :class:`A2AErrorCode`
     members on read. Mirrors
-    :class:`magi.bus.firmwares.jobs.changeMCPServerJob.MCPKind` /
-    :class:`magi.bus.firmwares.books.local.actionItemBook.ActionSource`.
+    :class:`bus.firmwares.jobs.changeMCPServerJob.MCPKind` /
+    :class:`bus.firmwares.books.local.actionItemBook.ActionSource`.
 
     When the target MAGI rejects a request with its own
     business-layer code, the caller should add a member here
@@ -185,11 +185,11 @@ def _validate_route(
 ) -> None:
     """Reject A2A routes that no membership row can justify.
 
-    Reads through :class:`~magi.bus.firmwares.books.magis.membershipBook.MagisMembershipBook`
+    Reads through :class:`~bus.firmwares.books.magis.membershipBook.MagisMembershipBook`
     rather than selecting ``magis_memberships`` directly, so guild
     boards never depend on another layer's private ORM row (same
     injection shape as
-    :class:`~magi.bus.firmwares.jobs.changeProviderConfigJob.changeProviderConfigJobBoard`
+    :class:`~bus.firmwares.jobs.changeProviderConfigJob.changeProviderConfigJobBoard`
     and its ``settings_book``).
 
     The lookups run in the Book's own session, i.e. *before* the

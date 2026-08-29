@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 # -- public dataclasses --------------------------------------------------
 
@@ -51,7 +51,7 @@ class _SeedPresetTaskJobRow(BaseJobRowMixin):
     preset_key: Mapped[str] = mapped_column(Text, nullable=False)
 
     # ``error`` column inherits ``Text`` from
-    # :class:`~magi.bus.bases.job.BaseJobRowMixin`.
+    # :class:`~bus.bases.job.BaseJobRowMixin`.
 
 
 class seedPresetTaskJobBoard(

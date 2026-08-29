@@ -4,7 +4,7 @@ Provides :func:`open_bus` — a pure function that opens a workspace's local
 SQLite, MAGIS database, and file-storage access into a single
 :class:`Bus` facade.  All paths are passed explicitly; no
 environment variable reads, no auto-discovery.  The composition root
-(:mod:`magi.startup.runtime`) calls this after resolving identity and
+(:mod:`startup.runtime`) calls this after resolving identity and
 database paths, then passes the resulting ``Bus`` to workers via
 constructor injection.
 
@@ -22,49 +22,49 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
-from magi.old_bus.bases.db.engine import EngineFactory, build_local_factory, build_magis_factory
+from old_bus.bases.db.engine import EngineFactory, build_local_factory, build_magis_factory
 
 if TYPE_CHECKING:
-    from magi.old_bus.bases.stream import StreamHub
-    from magi.old_bus.firmwares.books.file.promptBook import PromptBook
-    from magi.old_bus.firmwares.books.file.skillsBook import SkillsBook
-    from magi.old_bus.firmwares.books.local.actionItemBook import ActionItemBook
-    from magi.old_bus.firmwares.books.local.contactBook import ContactBook, ContactNoteBook
-    from magi.old_bus.firmwares.books.local.conversationBook import (
+    from old_bus.bases.stream import StreamHub
+    from old_bus.firmwares.books.file.promptBook import PromptBook
+    from old_bus.firmwares.books.file.skillsBook import SkillsBook
+    from old_bus.firmwares.books.local.actionItemBook import ActionItemBook
+    from old_bus.firmwares.books.local.contactBook import ContactBook, ContactNoteBook
+    from old_bus.firmwares.books.local.conversationBook import (
         ConversationBook,
         MessageBook,
     )
-    from magi.old_bus.firmwares.books.local.hookSignoffBook import HookSignoffBook
-    from magi.old_bus.firmwares.books.local.mcpServerBook import McpServerBook
-    from magi.old_bus.firmwares.books.local.memoryBook import MemoryBook
-    from magi.old_bus.firmwares.books.local.settingBook import SettingBook
-    from magi.old_bus.firmwares.books.local.tasksBook import TaskBook, TaskRunBook
-    from magi.old_bus.firmwares.books.local.tokenUsageBook import TokenUsageBook
-    from magi.old_bus.firmwares.books.local.toolsBook import (
+    from old_bus.firmwares.books.local.hookSignoffBook import HookSignoffBook
+    from old_bus.firmwares.books.local.mcpServerBook import McpServerBook
+    from old_bus.firmwares.books.local.memoryBook import MemoryBook
+    from old_bus.firmwares.books.local.settingBook import SettingBook
+    from old_bus.firmwares.books.local.tasksBook import TaskBook, TaskRunBook
+    from old_bus.firmwares.books.local.tokenUsageBook import TokenUsageBook
+    from old_bus.firmwares.books.local.toolsBook import (
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.old_bus.firmwares.books.magis.controlSettingBook import ControlSettingBook
-    from magi.old_bus.firmwares.books.magis.magisBook import MagisAdminBook, MagisBook
-    from magi.old_bus.firmwares.books.magis.membershipBook import (
+    from old_bus.firmwares.books.magis.controlSettingBook import ControlSettingBook
+    from old_bus.firmwares.books.magis.magisBook import MagisAdminBook, MagisBook
+    from old_bus.firmwares.books.magis.membershipBook import (
         MagisMembershipBook,
         MagisRoleBook,
     )
-    from magi.old_bus.firmwares.books.magis.runtimeBook import (
+    from old_bus.firmwares.books.magis.runtimeBook import (
         ControlSecretBook,
         RuntimeBook,
     )
-    from magi.old_bus.firmwares.jobs.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
-    from magi.old_bus.firmwares.jobs.callLLMJob import callLLMJobBoard
-    from magi.old_bus.firmwares.jobs.changeMCPServerJob import changeMCPServerJobBoard
-    from magi.old_bus.firmwares.jobs.changeProviderConfigJob import changeProviderConfigJobBoard
-    from magi.old_bus.firmwares.jobs.chatNotifyJob import chatNotifyBoard
-    from magi.old_bus.firmwares.jobs.deliveryNotifyJob import deliveryNotifyJobBoard
-    from magi.old_bus.firmwares.jobs.runTaskJob import runTaskJobBoard
-    from magi.old_bus.firmwares.jobs.runToolJob import runToolJobBoard
-    from magi.old_bus.firmwares.jobs.seedPresetTasksJob import seedPresetTaskJobBoard
+    from old_bus.firmwares.jobs.a2aJob import a2aNotifyBoard, a2aRequestJobBoard
+    from old_bus.firmwares.jobs.callLLMJob import callLLMJobBoard
+    from old_bus.firmwares.jobs.changeMCPServerJob import changeMCPServerJobBoard
+    from old_bus.firmwares.jobs.changeProviderConfigJob import changeProviderConfigJobBoard
+    from old_bus.firmwares.jobs.chatNotifyJob import chatNotifyBoard
+    from old_bus.firmwares.jobs.deliveryNotifyJob import deliveryNotifyJobBoard
+    from old_bus.firmwares.jobs.runTaskJob import runTaskJobBoard
+    from old_bus.firmwares.jobs.runToolJob import runToolJobBoard
+    from old_bus.firmwares.jobs.seedPresetTasksJob import seedPresetTaskJobBoard
 
-logger = logging.getLogger("magi.bus.bootstrap")
+logger = logging.getLogger("bus.bootstrap")
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,7 +245,7 @@ def open_bus(
 ) -> Bus | MagisBus:
     """Open a provisioned ``Bus`` for one workspace.
 
-    Called by the composition root (e.g. :mod:`magi.startup.runtime`)
+    Called by the composition root (e.g. :mod:`startup.runtime`)
     after identity + database paths have been resolved.  Does NOT
     read environment variables or call auto-discovery.  When ``workspace_dir``
     is provided, the private SQLite store is always
@@ -256,7 +256,7 @@ def open_bus(
     stores.  That happens before any Book or JobBoard is constructed, so a
     startup or code-reload cannot let another module query a stale table.
     Topology/workspace provisioning remains separate in
-    :mod:`magi.bus.provision`; this function does not create node identity or
+    :mod:`bus.provision`; this function does not create node identity or
     default application settings.
 
     Returns a ready-to-use ``Bus`` for a workspace or a MAGIS-only
@@ -275,7 +275,7 @@ def open_bus(
 
 def _build_magis_facade(magis_url: str) -> MagisBus:
     """Build the MAGIS-only view used by :func:`open_bus` without a workspace."""
-    from magi.old_bus.firmwares.books.magis import (
+    from old_bus.firmwares.books.magis import (
         ControlSecretBook,
         ControlSettingBook,
         MagisAdminBook,
@@ -284,7 +284,7 @@ def _build_magis_facade(magis_url: str) -> MagisBus:
         MagisRoleBook,
         RuntimeBook,
     )
-    from magi.old_bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
+    from old_bus.firmwares.schema import MAGIS_SCOPE, synchronise_schema
 
     factory = build_magis_factory(magis_url)
     synchronise_schema(factory, scope=MAGIS_SCOPE)
@@ -312,10 +312,10 @@ def _open_with_dirs(
     registering ORM tables at module-import time.
     """
     # ---- lazy imports (avoid eager ORM table registration) ----------------
-    from magi.old_bus.bases.db.file import FileShelf
-    from magi.old_bus.firmwares.books.file.promptBook import PromptBook
-    from magi.old_bus.firmwares.books.file.skillsBook import build_default_skills_book
-    from magi.old_bus.firmwares.books.local import (
+    from old_bus.bases.db.file import FileShelf
+    from old_bus.firmwares.books.file.promptBook import PromptBook
+    from old_bus.firmwares.books.file.skillsBook import build_default_skills_book
+    from old_bus.firmwares.books.local import (
         ActionItemBook,
         ContactBook,
         ContactNoteBook,
@@ -331,7 +331,7 @@ def _open_with_dirs(
         ToolCatalogStateBook,
         ToolDefinitionBook,
     )
-    from magi.old_bus.firmwares.books.magis import (
+    from old_bus.firmwares.books.magis import (
         ControlSecretBook,
         ControlSettingBook,
         MagisAdminBook,
@@ -340,7 +340,7 @@ def _open_with_dirs(
         MagisRoleBook,
         RuntimeBook,
     )
-    from magi.old_bus.firmwares.jobs import (
+    from old_bus.firmwares.jobs import (
         a2aNotifyBoard,
         a2aRequestJobBoard,
         callLLMJobBoard,
@@ -358,7 +358,7 @@ def _open_with_dirs(
     if not allow_unprovisioned:
         database_path = state_path / "magi.db"
         if not database_path.is_file():
-            from magi.old_bus.provision import StorageNotProvisioned
+            from old_bus.provision import StorageNotProvisioned
 
             raise StorageNotProvisioned(
                 f"node database is missing at {database_path}; run the explicit provisioning command"
@@ -373,7 +373,7 @@ def _open_with_dirs(
     # Book/JobBoard exists, and therefore before workers or HTTP handlers can
     # query the database. Every explicit Runtime restart passes this barrier
     # again.
-    from magi.old_bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+    from old_bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
 
     if (
         magis_factory is not None
@@ -409,7 +409,7 @@ def _open_with_dirs(
     skills_book = build_default_skills_book(_workspace_dir)
 
     # ---- stream hub (in-process pipe registry) ------------------------------
-    from magi.old_bus.bases.stream import StreamHub
+    from old_bus.bases.stream import StreamHub
 
     stream_hub = StreamHub()
 

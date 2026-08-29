@@ -6,12 +6,12 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
-from magi.runtime_worker import RuntimeWorker
+from runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
-logger = logging.getLogger("magi.startup.workers")
+logger = logging.getLogger("startup.workers")
 
 #: WebUI powers the operator dashboard and cannot be disabled. A2A is not a
 #: channel worker; AgentWorker consumes its MAGIS-shared boards directly.
@@ -29,14 +29,14 @@ class WorkerRegistry:
         magi_id: int | None = None,
         worker_concurrency: Mapping[str, int | None] | None = None,
     ) -> None:
-        from magi.agent.worker import AgentWorker
-        from magi.channels.tasks.worker import TaskWorker
-        from magi.channels.telegram.worker import TelegramWorker
-        from magi.channels.webui.worker import WebUIWorker
-        from magi.mcp.worker import McpWorker
-        from magi.proactive.worker import ProactiveWorker
-        from magi.providers.worker import ProvidersWorker
-        from magi.tools.worker import ToolsWorker
+        from agent.worker import AgentWorker
+        from channels.tasks.worker import TaskWorker
+        from channels.telegram.worker import TelegramWorker
+        from channels.webui.worker import WebUIWorker
+        from mcp.worker import McpWorker
+        from proactive.worker import ProactiveWorker
+        from providers.worker import ProvidersWorker
+        from tools.worker import ToolsWorker
 
         enabled = set(enabled_channels)
         concurrency = dict(worker_concurrency or {})
@@ -45,7 +45,7 @@ class WorkerRegistry:
             return concurrency.get(name)
 
         # The WebUI is started regardless of ``enabled_channels``.  The
-        # runtime fallback in :func:`magi.startup.runtime._build_channels`
+        # runtime fallback in :func:`startup.runtime._build_channels`
         # provides that safe operator surface when no selection is persisted.
         enabled.update(_REQUIRED_CHANNELS)
         self._workers: dict[str, RuntimeWorker] = {

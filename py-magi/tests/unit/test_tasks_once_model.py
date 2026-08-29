@@ -28,8 +28,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.tasks import (
+from channels.api.errors import MagiHTTPException
+from channels.api.tasks import (
     TaskIn,
     TaskOut,
     _schedule,

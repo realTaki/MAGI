@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from magi.old_bus.provision import provision_node_storage
-from magi.startup.config import DEFAULT_MAGI_NAME, RUNTIME_PORT, ConfigurationError, StartupConfig
-from magi.startup.paths import (
+from old_bus.provision import provision_node_storage
+from startup.config import DEFAULT_MAGI_NAME, RUNTIME_PORT, ConfigurationError, StartupConfig
+from startup.paths import (
     resolve_magis_database_path,
     resolve_magis_database_url,
 )
-from magi.startup.spec import RuntimeSpec
+from startup.spec import RuntimeSpec
 
 
 def _ensure_first_magi_identity(factory, *, magis_name: str) -> int:
     """Create one MAGIS root and its sole ADAM membership if absent."""
-    from magi.old_bus.firmwares.books.magis import (
+    from old_bus.firmwares.books.magis import (
         DEFAULT_ROLE_INSTRUCTIONS,
         Magis,
         MagisBook,
@@ -74,7 +74,7 @@ def _ensure_default_admin(*, bus, magi_id: int) -> int:
     membership = bus.memberships_book.get(magi_id) if bus.memberships_book else None
     if membership is None or bus.magis_admins_book is None:
         raise RuntimeError("MAGIS admin registry unavailable")
-    from magi.old_bus.firmwares.books.magis import MagisAdmin
+    from old_bus.firmwares.books.magis import MagisAdmin
 
     grants = bus.magis_admins_book.list_for_magis(magis_id=membership.magis_id)
     existing = next((admin for admin in grants if admin.name == "admin"), None)
@@ -178,7 +178,7 @@ def init_first_magi(config: StartupConfig) -> RuntimeSpec:
     )
     # Identity now lives in the MAGIS runtime_state / magis tables; the
     # ``RuntimeSpec`` returned here is reconstructed on demand by
-    # :func:`magi.startup.spec.load_runtime_spec` from those rows.
+    # :func:`startup.spec.load_runtime_spec` from those rows.
     return spec
 
 
@@ -194,8 +194,8 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
     )
-    from magi.old_bus import open_bus
-    from magi.old_bus.firmwares.books.magis import (
+    from old_bus import open_bus
+    from old_bus.firmwares.books.magis import (
         MagisBook,
         MagisMembership,
         MagisMembershipBook,
@@ -265,7 +265,7 @@ def create_node(config: StartupConfig) -> RuntimeSpec:
     )
     # Identity is durable in the MAGIS runtime_state / magis rows; the
     # returned ``RuntimeSpec`` is reconstructed on demand from those by
-    # :func:`magi.startup.spec.load_runtime_spec`.
+    # :func:`startup.spec.load_runtime_spec`.
     return spec
 
 

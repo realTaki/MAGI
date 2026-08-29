@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.books.local.conversationBook import MessageBook
+    from old_bus.firmwares.books.local.conversationBook import MessageBook
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class deliveryNotifyJobBoard(BaseJobBoard[_DeliveryNotifyJobRow, DeliveryNotifyJ
         job_id = super().publish(job)
         if self._messages_book is not None:
             try:
-                from magi.old_bus.firmwares.books.local.conversationBook import (
+                from old_bus.firmwares.books.local.conversationBook import (
                     AgentMessageRole,
                     Message,
                 )

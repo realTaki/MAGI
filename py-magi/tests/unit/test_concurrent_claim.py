@@ -35,14 +35,14 @@ from pathlib import Path
 
 import pytest
 
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.deliveryNotifyJob import (
+from old_bus.bases.db import EngineFactory
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     DeliveryNotifyResult,
     deliveryNotifyJobBoard,
 )
-from magi.old_bus.firmwares.jobs.runTaskJob import (
+from old_bus.firmwares.jobs.runTaskJob import (
     RunTaskJob,
     runTaskJobBoard,
 )
@@ -107,7 +107,7 @@ def test_run_task_no_double_claim_across_threads(tmp_path: Path, thread_count: i
             # "processing" forever and confuse subsequent
             # attempts. ``_invoke_safe`` semantics: submit
             # success.
-            from magi.old_bus.firmwares.jobs.runTaskJob import RunTaskResult
+            from old_bus.firmwares.jobs.runTaskJob import RunTaskResult
 
             board.submit_result(
                 job_id=job.job_id,
@@ -207,8 +207,8 @@ def test_expired_lease_is_reclaimed_exactly_once(tmp_path: Path) -> None:
 
     from sqlalchemy import select, update
 
-    from magi.old_bus.bases.db.base import utcnow_naive
-    from magi.old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
+    from old_bus.bases.db.base import utcnow_naive
+    from old_bus.firmwares.jobs.runTaskJob import _RunTaskJobRow
 
     with board._session() as s:
         s.execute(

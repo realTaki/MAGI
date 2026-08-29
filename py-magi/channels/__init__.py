@@ -21,7 +21,7 @@ and worker startup.
 
 from __future__ import annotations
 
-from magi.channels.worker_base import ChannelWorker
+from channels.worker_base import ChannelWorker
 
 __all__ = [
     "base",

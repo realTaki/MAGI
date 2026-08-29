@@ -5,10 +5,10 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, Request, Response
 
-from magi.channels.api.dependencies import get_bus
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import PROXY_TIMEOUT, runtime_is_live
+from channels.api.dependencies import get_bus
+from channels.api.errors import MagiHTTPException
+from channels.api.proxy_auth import build_proxy_headers
+from channels.api.runtime_http import PROXY_TIMEOUT, runtime_is_live
 
 router = APIRouter(tags=["runtime-proxy"])
 
@@ -60,7 +60,7 @@ async def proxy_runtime(
         raise MagiHTTPException(
             status_code=400, code="runtime.path_invalid", detail="Invalid runtime path"
         )
-    from magi.channels.api.auth import selected_session
+    from channels.api.auth import selected_session
 
     bus = get_bus(request)
     browser_session = selected_session(bus, request.cookies.get("magi_session"))
@@ -157,7 +157,7 @@ async def proxy_selected_runtime(
     means they cannot accidentally reach WebUI-local state. Auth routes are
     mounted earlier and retain their explicit paths.
     """
-    from magi.channels.api.auth import selected_session
+    from channels.api.auth import selected_session
 
     browser_session = selected_session(get_bus(request), request.cookies.get("magi_session"))
     if browser_session is None:

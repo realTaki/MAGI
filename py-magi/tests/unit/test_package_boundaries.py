@@ -1,8 +1,8 @@
 """Static package-boundary guard.
 
 Locks the design §18 rule: agent/tools must not import from
-``magi.channels.api.*`` (the channels-specific HTTP surface).
-BUS owns persistence behind ``magi.bus.bases.db``. A future change that
+``channels.api.*`` (the channels-specific HTTP surface).
+BUS owns persistence behind ``bus.bases.db``. A future change that
 re-introduces a reverse domain import must fail here before it reaches
 production.
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Modules that are allowed to import from magi.channels.api.
+# Modules that are allowed to import from channels.api.
 # Today only the test suite and the api layer itself.
 EXEMPT_PREFIXES: tuple[str, ...] = (
     "magi/channels/api/",
@@ -39,9 +39,9 @@ BUS_ONLY_PATHS: tuple[str, ...] = (
 )
 
 _FORBIDDEN_BY_PATH: dict[str, tuple[str, ...]] = {
-    "magi/agent/": ("magi.bus.bases.db", "magi.tools", "magi.channels"),
-    "magi/tools/": ("magi.bus.bases.db", "magi.agent", "magi.channels"),
-    "magi/channels/": ("magi.bus.bases.db", "magi.agent", "magi.tools"),
+    "magi/agent/": ("bus.bases.db", "tools", "channels"),
+    "magi/tools/": ("bus.bases.db", "agent", "channels"),
+    "magi/channels/": ("bus.bases.db", "agent", "tools"),
 }
 
 
@@ -54,11 +54,11 @@ def _collect_imports(py_path: Path) -> list[tuple[str, int]]:
         return out
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.module and node.module.startswith("magi.channels.api"):
+            if node.module and node.module.startswith("channels.api"):
                 out.append((node.module, node.lineno))
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("magi.channels.api"):
+                if alias.name.startswith("channels.api"):
                     out.append((alias.name, node.lineno))
     return out
 
@@ -131,9 +131,9 @@ def test_agent_module_does_not_import_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/agent/ imports from magi.channels.api.* — this "
+        "magi/agent/ imports from channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(a neutral BUS contract or magi.agent helper):\n  " + "\n  ".join(offenders)
+        "(a neutral BUS contract or agent helper):\n  " + "\n  ".join(offenders)
     )
 
 
@@ -147,9 +147,9 @@ def test_tools_module_does_not_import_api() -> None:
                 rel = path.relative_to(REPO_ROOT)
                 offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/tools/ imports from magi.channels.api.* — this "
+        "magi/tools/ imports from channels.api.* — this "
         "violates design §18. Move the helper to a neutral module "
-        "(a neutral BUS contract or magi.agent helper):\n  " + "\n  ".join(offenders)
+        "(a neutral BUS contract or agent helper):\n  " + "\n  ".join(offenders)
     )
 
 
@@ -163,6 +163,6 @@ def test_proactive_module_does_not_import_api() -> None:
             rel = path.relative_to(REPO_ROOT)
             offenders.append(f"{rel}:{lineno}  imports  {module!r}")
     assert not offenders, (
-        "magi/proactive/ imports from magi.channels.api.* — this "
+        "magi/proactive/ imports from channels.api.* — this "
         "violates design §18:\n  " + "\n  ".join(offenders)
     )

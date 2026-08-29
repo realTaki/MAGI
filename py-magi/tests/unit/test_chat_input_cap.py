@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from magi.bus.bases.db import EngineFactory
-from magi.bus.bases.job import JobStatus
-from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
-from magi.bus.firmwares.books.local import (
+from bus.bases.db import EngineFactory
+from bus.bases.job import JobStatus
+from bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob, ChatNotifyResult, chatNotifyBoard
+from bus.firmwares.books.local import (
     Contact,
     Conversation,
     ConversationBook,
@@ -50,14 +50,14 @@ def _seeded_settings_book(factory) -> SettingBook:
 
 @pytest.fixture
 def contact_id(factory):
-    from magi.bus.firmwares.books.local.contactBook import ContactBook
+    from bus.firmwares.books.local.contactBook import ContactBook
 
     return ContactBook(factory).get(ContactBook(factory).add(Contact(name='Fixture'))).id
 
 
 @pytest.fixture
 def seed_conversation(factory, contact_id):
-    from magi.bus.firmwares.books.local import ConversationBook
+    from bus.firmwares.books.local import ConversationBook
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     return sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg'))).id
@@ -239,7 +239,7 @@ def test_publish_chat_d22_raises_on_channel_mismatch(factory, contact_id):
         factory, messages_book=mbook, conversations_book=sbook
     )
 
-    from magi.bus.firmwares.books.local.conversationBook import ChannelMismatchError
+    from bus.firmwares.books.local.conversationBook import ChannelMismatchError
 
     with pytest.raises(ChannelMismatchError) as exc:
         board.publish(
@@ -332,7 +332,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
     """Direct :meth:`publish` callers (e.g. :func:`submit_agent_message`
     for internal steering republishes) get the same D.22 guard.
     """
-    from magi.bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+    from bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
     conv = sbook.get(sbook.add(Conversation(delivery_address='tg:1', contact_id=contact_id, channel='tg')))
@@ -346,7 +346,7 @@ def test_publish_direct_enforces_d22(factory, contact_id):
         contact_id=contact_id,
     )
 
-    from magi.bus.firmwares.books.local.conversationBook import ChannelMismatchError
+    from bus.firmwares.books.local.conversationBook import ChannelMismatchError
 
     with pytest.raises(ChannelMismatchError):
         board.publish(job)

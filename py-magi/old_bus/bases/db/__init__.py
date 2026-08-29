@@ -11,13 +11,13 @@ Public surface:
   Format plugins (TextFormat / YamlFormat / JsonFormat)
 """
 
-from magi.old_bus.bases.db.base import Base, utcnow_naive
-from magi.old_bus.bases.db.engine import (
+from old_bus.bases.db.base import Base, utcnow_naive
+from old_bus.bases.db.engine import (
     EngineFactory,
     build_local_factory,
     build_magis_factory,
 )
-from magi.old_bus.bases.db.file import (
+from old_bus.bases.db.file import (
     DEFAULT_FORMATS,
     FileShelf,
     FileShelfError,

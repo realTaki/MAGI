@@ -1,7 +1,7 @@
 """Telegram outbound HTTP helpers — pure stateless functions.
 
 The daemon-thread listener + inbound handler stack that used to live
-here has been replaced by :class:`magi.channels.telegram.worker.TelegramWorker`,
+here has been replaced by :class:`channels.telegram.worker.TelegramWorker`,
 which runs the python-telegram-bot ``Application`` on the composition
 root's event loop. This module now only ships the outbound HTTP shims
 the worker (and tests) call directly.
@@ -14,7 +14,7 @@ Functions
   can confirm the token is live before saving it.
 
 Inbound + lifecycle (formerly `_on_message` / `start_bot` / etc.)
-live in :mod:`magi.channels.telegram.worker` instead.
+live in :mod:`channels.telegram.worker` instead.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import logging
 import urllib.error
 import urllib.request
 
-logger = logging.getLogger("magi.channels.telegram.bot")
+logger = logging.getLogger("channels.telegram.bot")
 
 _TELEGRAM_API_BASE = "https://api.telegram.org/bot{token}/{method}"
 

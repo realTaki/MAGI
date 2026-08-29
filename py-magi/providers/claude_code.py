@@ -1,6 +1,6 @@
 """Anthropic Claude — first-party Anthropic Messages API.
 
-Subclass of :class:`magi.providers.anthropic.AnthropicProvider`
+Subclass of :class:`providers.anthropic.AnthropicProvider`
 that points at Anthropic's own API. The Anthropic SDK
 defaults to ``https://api.anthropic.com``; we set the
 URL explicitly so the subclass is self-describing and
@@ -19,7 +19,7 @@ the provider configuration (the worker applies it on the next
 
 from __future__ import annotations
 
-from magi.providers.anthropic import AnthropicProvider
+from providers.anthropic import AnthropicProvider
 
 
 class ClaudeProvider(AnthropicProvider):

@@ -1,6 +1,6 @@
 """Firmware shipped with BUS: concrete Books and Jobs.
 
-Opening :class:`~magi.bus.bus.Bus` loads this set. Callers do not mount it.
+Opening :class:`~bus.bus.Bus` loads this set. Callers do not mount it.
 """
 
 from typing import Any

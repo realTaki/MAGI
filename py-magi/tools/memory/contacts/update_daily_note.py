@@ -21,7 +21,7 @@ Capture rules (full text lives in
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the upsert + daily-append logic,
 length cap, and ``note_date`` defaulting. Returns the
 DTO so the LLM sees the post-write row. The bus
@@ -36,9 +36,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.update_daily_note")
+logger = logging.getLogger("tools.memory.update_daily_note")
 
 
 class UpdateDailyNoteTool(Tool):

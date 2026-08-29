@@ -26,8 +26,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
-from magi.old_bus.bases.db.base import enum_column
+from old_bus.bases.book import BaseBook, BaseRecord, BaseRecordMixin
+from old_bus.bases.db.base import enum_column
 
 
 class ToolSource(StrEnum):
@@ -50,7 +50,7 @@ class ToolSource(StrEnum):
     ``upsert_many(source="builtin")`` keeps working because
     ``"builtin" in ToolSource`` (and the SAEnum column compare)
     are both True via str equality. Mirrors
-    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
+    :class:`bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     BUILTIN = "builtin"
@@ -229,7 +229,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
         column doesn't persist it. Callers that need the fingerprint
         recompute it from the semantic fields, which round-trip
         exactly through :meth:`_apply_definition` / :meth:`ToolDefinition.from_row`
-        (see :func:`magi.tools.worker._schema_hash`).
+        (see :func:`tools.worker._schema_hash`).
         """
         with self._session() as s:
             row = s.scalar(select(_ToolDefinitionRow).where(_ToolDefinitionRow.name == name))
@@ -243,7 +243,7 @@ class ToolDefinitionBook(BaseBook[_ToolDefinitionRow, ToolDefinition]):
     ) -> list[dict[str, Any]]:
         """Anthropic-shaped schemas for the caller, role-filtered.
 
-        Mirrors :func:`magi.tools.registry.get_tool_schemas` so the
+        Mirrors :func:`tools.registry.get_tool_schemas` so the
         agent loop can swap implementations without changing call sites.
         """
         out: list[dict[str, Any]] = []

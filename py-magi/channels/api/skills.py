@@ -1,7 +1,7 @@
 """``/api/skills`` — skill registry with enable/disable.
 
 The actual machine-readable catalog lives in
-::mod:`magi.agent.skills.loader` and is a module
+::mod:`agent.skills.loader` and is a module
 singleton. This router wraps it for the WebUI / admin
 consoles. Disabled skills are persisted in the
 ``settings`` table under ``skills.disabled`` as a
@@ -27,13 +27,13 @@ from datetime import datetime
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.books.file.skillsBook import SkillBookError, SkillNotFound, SkillsBook
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from old_bus import Bus
+from old_bus.firmwares.books.file.skillsBook import SkillBookError, SkillNotFound, SkillsBook
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
-logger = logging.getLogger("magi.channels.api.skills")
+logger = logging.getLogger("channels.api.skills")
 
 router = APIRouter(tags=["skills"])
 

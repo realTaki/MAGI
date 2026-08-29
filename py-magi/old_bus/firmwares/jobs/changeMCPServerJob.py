@@ -1,7 +1,7 @@
 """changeMCPServerJobBoard — MCP server 变更作业。
 
 当 WebUI / LLM manage tool 修改 / 启用 / 停用 / 删除 MCP server 时，
-调用方 publish 到本 board；:class:`~magi.mcp.worker.McpWorker` 是唯一
+调用方 publish 到本 board；:class:`~mcp.worker.McpWorker` 是唯一
 的 consumer，claim 后**写库 + 重连 / 断开 / 重新注入 tools 到
 registry**，并 submit :class:`ChangeMCPServerResult`。
 
@@ -24,7 +24,7 @@ registry**，并 submit :class:`ChangeMCPServerResult`。
   与 operator 之间的状态永远一致。
 - **payload 携带**：
   - :attr:`MCPKind.ADDED` / :attr:`MCPKind.UPDATED` 必须带完整的
-    :class:`~magi.bus.firmwares.books.local.mcpServerBook.McpServer`
+    :class:`~bus.firmwares.books.local.mcpServerBook.McpServer`
     payload（存为 JSON 列）。
   - :attr:`MCPKind.TOGGLED` 必须带 ``new_enabled: bool``。
   - :attr:`MCPKind.DELETED` 只需 ``server_name``。
@@ -44,13 +44,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import JSON, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.db.base import enum_column
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from old_bus.bases.db.base import enum_column
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
+    from old_bus.firmwares.books.local.mcpServerBook import McpServer
 
-logger = logging.getLogger("magi.bus.firmwares.jobs.changeMCPServerJob")
+logger = logging.getLogger("bus.firmwares.jobs.changeMCPServerJob")
 
 
 # -- public enum ---------------------------------------------------------
@@ -74,8 +74,8 @@ class MCPKind(StrEnum):
     (``MCPKind.ADDED == "added"``), so ORM columns, JSON
     serialisation, ``==`` / ``!=`` against string literals and
     existing rows keep working unchanged. Mirrors
-    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind` /
-    :class:`magi.bus.firmwares.books.local.memoryBook.MemoryKind`.
+    :class:`bus.firmwares.books.local.contactBook.NoteKind` /
+    :class:`bus.firmwares.books.local.memoryBook.MemoryKind`.
     See ``docs/insights/ENUM_MIGRATION_INVENTORY.md`` §2.
     """
 
@@ -184,7 +184,7 @@ def _dump_server(server: McpServer) -> dict[str, Any]:
 
 def _load_server(payload: dict[str, Any]) -> McpServer:
     """Inverse of :func:`_dump_server`."""
-    from magi.old_bus.firmwares.books.local.mcpServerBook import McpServer
+    from old_bus.firmwares.books.local.mcpServerBook import McpServer
 
     return McpServer(
         name=payload["name"],

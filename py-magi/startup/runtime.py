@@ -3,7 +3,7 @@
 The :func:`run_magi` function is the single composition root for one
 MAGI process. It:
 
-1. Opens one :class:`~magi.bus.Bus` facade for the configured workspace and
+1. Opens one :class:`~bus.Bus` facade for the configured workspace and
    MAGIS database.
 2. Reads and validates the provisioned :class:`RuntimeSpec` through that
    same facade.
@@ -13,9 +13,9 @@ MAGI process. It:
 
 It does **not**:
 
-- Spawn subprocesses (use :mod:`magi.startup.local`).
-- Create Kubernetes resources (use :mod:`magi.startup.kubernetes`).
-- Manage the WebUI (use :mod:`magi.startup.webui`).
+- Spawn subprocesses (use :mod:`startup.local`).
+- Create Kubernetes resources (use :mod:`startup.kubernetes`).
+- Manage the WebUI (use :mod:`startup.webui`).
 - Select its host, port, or reload behaviour from environment variables.
 - Allow runtime-side port / host configuration (plan §21).
 
@@ -35,35 +35,35 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from magi.old_bus.bases.db.base import utcnow_naive
-from magi.old_bus.firmwares.books.magis.runtimeBook import (
+from old_bus.bases.db.base import utcnow_naive
+from old_bus.firmwares.books.magis.runtimeBook import (
     RuntimeDesiredState,
     RuntimeObservedState,
 )
-from magi.startup import systemd_notify
-from magi.startup.config import (
+from startup import systemd_notify
+from startup.config import (
     DEFAULT_LOG_LEVEL,
     RUNTIME_HOST,
     StartupConfig,
     StartupContext,
 )
-from magi.startup.paths import resolve_private_database_url, resolve_runtime_pid_path
-from magi.startup.process import (
+from startup.paths import resolve_private_database_url, resolve_runtime_pid_path
+from startup.process import (
     claim_pid_file,
     install_lifecycle_handlers,
     mark_registry_stopped,
 )
-from magi.startup.spec import load_runtime_spec
+from startup.spec import load_runtime_spec
 
 if TYPE_CHECKING:
-    from magi.old_bus.bootstrap import Bus
-    from magi.startup.workers import WorkerRegistry
+    from old_bus.bootstrap import Bus
+    from startup.workers import WorkerRegistry
 
-logger = logging.getLogger("magi.startup.runtime")
+logger = logging.getLogger("startup.runtime")
 
 # Plan §5 / §21 — Runtime host + port are hardcoded *internal* values.
 # The Runtime is never exposed externally (only the singleton WebUI on
-# :const:`WEBUI_PORT` is operator-routable, see :mod:`magi.startup.webui`).
+# :const:`WEBUI_PORT` is operator-routable, see :mod:`startup.webui`).
 # Binding to loopback on a non-WebUI port keeps a single-process MAGI
 # isolated from any network listener on the host.
 
@@ -81,7 +81,7 @@ class RuntimeContext:
 
     @classmethod
     def create(cls, startup: StartupContext, bus: Bus) -> RuntimeContext:
-        from magi.startup.workers import WorkerRegistry
+        from startup.workers import WorkerRegistry
 
         _validate_runtime_identity(startup, bus)
 
@@ -134,7 +134,7 @@ def _startup_context(
     """Resolve one provisioned node before its ASGI app is built.
 
     Identity is derived from the MAGIS shared database — see
-    :func:`magi.startup.spec.load_runtime_spec` for the cross-table
+    :func:`startup.spec.load_runtime_spec` for the cross-table
     lookup that ties ``runtime_state.backend_ref`` back to its parent
     MAGIS row.  The MAGIS URL is reconstructed from
     ``host_workspace_dir`` + ``magis_name``; ``resolve_magis_database_url``
@@ -186,7 +186,7 @@ def _configure_runtime_environment(config: StartupConfig, *, magi_id: str) -> No
 def _create_runtime_app(context: RuntimeContext):
     """Build the Runtime API with workers owned by its lifespan."""
 
-    from magi.channels.api.app import create_runtime_app
+    from channels.api.app import create_runtime_app
 
     app = create_runtime_app(bus=context.bus, workers=context.workers)
 
@@ -202,22 +202,22 @@ def _create_runtime_app(context: RuntimeContext):
 def run_magi(config: StartupConfig) -> None:
     """Run one MAGI Runtime until it is explicitly stopped or restarted.
 
-    Foreground-mode lifecycle (mirrors :func:`magi.startup.local.start_magi`):
+    Foreground-mode lifecycle (mirrors :func:`startup.local.start_magi`):
 
     1. Claim ``<workspace>/run/magi.pid`` with ``os.getpid()`` so
        ``magi node stop`` can find this process.  Refuse to start if
        the file points at a still-alive PID.
     2. Install SIGTERM/SIGINT handlers that unlink the PID file and
        flip ``runtime_state.observed_state`` to ``STOPPED`` via
-       :func:`magi.startup.process.mark_registry_stopped`.  The
+       :func:`startup.process.mark_registry_stopped`.  The
        handler runs once even if uvicorn re-raises the signal.
 
     The PID file records this single runtime process, so ``magi node stop``
     and ``magi node restart`` always address the process that owns the
     listening socket.
     """
-    from magi.old_bus import open_bus
-    from magi.startup.paths import resolve_magis_database_url
+    from old_bus import open_bus
+    from startup.paths import resolve_magis_database_url
 
     magis_url = config.magis_database_url or resolve_magis_database_url(
         config.host_workspace_dir, config.magis_name
@@ -311,7 +311,7 @@ def _build_channels(
     If the setting is missing or unparseable, fall back to the
     required-channel default (``["webui"]``).
     This is the runtime-side counterpart to the provisioning
-    default in :mod:`magi.bus.provision` — workspaces provisioned
+    default in :mod:`bus.provision` — workspaces provisioned
     before that default was added still get the required
     channels' delivery workers.
 

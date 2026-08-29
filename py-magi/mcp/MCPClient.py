@@ -1,13 +1,13 @@
 """MCP tool loader — connection + tool-wrapper primitives.
 
-After the :class:`~magi.mcp.worker.McpWorker` refactor, this module
+After the :class:`~mcp.worker.McpWorker` refactor, this module
 no longer owns the long-lived subprocesses / SSE / streamable-HTTP
 connections. It is a library of small classes the worker composes:
 
 - :class:`MCPServerConnection` — the protocol-level handle for one
   server; :meth:`connect` / :meth:`disconnect` open and tear down the
   underlying transport.
-- :class:`MCPTool` — a :class:`~magi.tools.base.Tool` wrapper that
+- :class:`MCPTool` — a :class:`~tools.base.Tool` wrapper that
   forwards ``run`` calls to ``session.call_tool`` and applies
   ``execute_timeout``.
 - :class:`MCPTimeoutConfig` — the three timeout knobs the worker
@@ -16,19 +16,19 @@ connections. It is a library of small classes the worker composes:
 The module-level state (``_connections`` cache, ``load_mcp_tools_*``,
 ``list_tools_for_server``, ``cleanup_mcp_connections``) that
 previously lived here has been removed; the
-:class:`~magi.mcp.worker.McpWorker` now owns the per-server
+:class:`~mcp.worker.McpWorker` now owns the per-server
 connections and re-injects the resulting tools into the
-:class:`magi.tools.registry` via
-:func:`magi.tools.registry.register_tools`. See
+:class:`tools.registry` via
+:func:`tools.registry.register_tools`. See
 ``docs/MCP_WORKER_DESIGN.md`` for the full migration plan.
 
 Subsystem location
 ------------------
 
-This module still lives in :mod:`magi.mcp`. The agent loop and the
+This module still lives in :mod:`mcp`. The agent loop and the
 worker reach it directly; the tools package stays agnostic of
 MCP. ``MCPServerConnection`` / ``MCPTool`` continue to subclass
-:class:`~magi.tools.base.Tool` (the shape every tool in the
+:class:`~tools.base.Tool` (the shape every tool in the
 registry takes).
 """
 
@@ -42,12 +42,12 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-logger = logging.getLogger("magi.mcp.MCPClient")
+logger = logging.getLogger("mcp.MCPClient")
 
 ConnectionType = Literal["stdio", "sse", "streamable_http"]
 
@@ -205,7 +205,7 @@ def _safe_obj(obj: Any) -> Any:
 class MCPServerConnection:
     """Connection + cached tool list for one MCP server entry.
 
-    The :class:`~magi.mcp.worker.McpWorker` owns one instance per
+    The :class:`~mcp.worker.McpWorker` owns one instance per
     enabled server, calls :meth:`connect` at bootstrap or on a
     change job, and :meth:`disconnect` when the server is removed
     or the worker is torn down.

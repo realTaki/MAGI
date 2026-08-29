@@ -4,7 +4,7 @@
 真正准确的值还得调上游 tokenizer，但那是 expensive call，触发
 检查每轮都跑不合算。
 
-住在 :mod:`magi.agent` 下而不是 :mod:`magi.providers` 下，因为这些
+住在 :mod:`agent` 下而不是 :mod:`providers` 下，因为这些
 helper 是 agent 层（compaction）的关切，不是 LLM 调用层的关切。
 provider 包只关心"怎么把请求送到模型"，不关心 agent 的内存预算。
 """

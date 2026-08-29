@@ -36,7 +36,7 @@ Design note
 -----------
 
 Placed in ``bus.bases`` so that neither producer nor consumer
-needs to import ``magi.providers``.  Both sides talk to
+needs to import ``providers``.  Both sides talk to
 ``bus.stream_hub`` exclusively.
 """
 

@@ -21,10 +21,10 @@ import platform
 
 import pytest
 
-from magi.tools.base import ToolContext, ToolResult
-from magi.tools.shell.kill import BashKillTool
-from magi.tools.shell.output import BashOutputTool
-from magi.tools.shell.run import BashRunTool
+from tools.base import ToolContext, ToolResult
+from tools.shell.kill import BashKillTool
+from tools.shell.output import BashOutputTool
+from tools.shell.run import BashRunTool
 
 # -- fixtures --------------------------------------------------------------
 
@@ -194,7 +194,7 @@ def test_run_background_returns_bash_id(workspace_ctx):
     """
 
     async def _start_and_reap() -> None:
-        from magi.tools.shell._manager import shutdown_background_shells
+        from tools.shell._manager import shutdown_background_shells
 
         tool = BashRunTool()
         result = await tool.run(
@@ -266,7 +266,7 @@ def test_run_background_full_lifecycle(workspace_ctx):
         assert "line-1" not in again.content
 
         # 5. Kill the (still-running) background shell.
-        from magi.tools.shell._manager import _BackgroundShellManager
+        from tools.shell._manager import _BackgroundShellManager
 
         await kill_tool.run(workspace_ctx, bash_id=bid)
         # The id is gone from the registry.
@@ -339,7 +339,7 @@ def test_monitor_drains_output_of_an_already_exited_process(workspace_ctx):
     """
 
     async def _already_exited() -> None:
-        from magi.tools.shell._manager import _BackgroundShellManager
+        from tools.shell._manager import _BackgroundShellManager
 
         process = await asyncio.create_subprocess_shell(
             "echo a; echo b; echo c",
@@ -383,7 +383,7 @@ def clean_registry():
     that inspects eviction counts would otherwise see shells left
     behind by whatever ran before it.
     """
-    from magi.tools.shell._manager import _BackgroundShellManager as M
+    from tools.shell._manager import _BackgroundShellManager as M
 
     M._shells.clear()
     M._monitor_tasks.clear()
@@ -401,7 +401,7 @@ def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
     without it every background command ever run stays resident with
     its full output buffer for the life of the process.
     """
-    from magi.tools.shell import _manager as m
+    from tools.shell import _manager as m
 
     M = clean_registry
 
@@ -451,7 +451,7 @@ def test_terminal_shells_are_reaped_by_count(workspace_ctx, clean_registry):
 def test_terminal_shells_are_reaped_by_age(workspace_ctx, clean_registry):
     """The TTL bound: a shell that ended long ago is dropped even
     when the count bound is nowhere near."""
-    from magi.tools.shell import _manager as m
+    from tools.shell import _manager as m
 
     M = clean_registry
 
@@ -492,7 +492,7 @@ def test_output_buffer_is_bounded_and_reports_drops(workspace_ctx, clean_registr
     which is worse than a smaller window — hence ``dropped=N`` in the
     status line.
     """
-    from magi.tools.shell import _manager as m
+    from tools.shell import _manager as m
 
     M = clean_registry
 
@@ -537,7 +537,7 @@ def test_shutdown_terminates_live_background_shells(workspace_ctx, clean_registr
     Nothing else knows these pids, so a missed teardown leaks the
     process until the container dies.
     """
-    from magi.tools.shell._manager import shutdown_background_shells
+    from tools.shell._manager import shutdown_background_shells
 
     M = clean_registry
 
@@ -611,7 +611,7 @@ def test_kill_terminates_a_running_background_process(workspace_ctx):
     :func:`test_run_background_full_lifecycle`."""
 
     async def _kill_flow() -> None:
-        from magi.tools.shell._manager import _BackgroundShellManager
+        from tools.shell._manager import _BackgroundShellManager
 
         run_tool = BashRunTool()
         kill_tool = BashKillTool()
@@ -675,7 +675,7 @@ def test_bash_tools_appear_in_registry(tmp_path, monkeypatch):
     so builtin tools can construct.
     """
     monkeypatch.setenv("HOST_WORKSPACE_DIR", str(tmp_path / "state"))
-    from magi.tools.registry import get_tool
+    from tools.registry import get_tool
 
     for name in ("bash", "bash_output", "bash_kill"):
         tool = get_tool(name)

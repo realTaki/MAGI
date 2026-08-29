@@ -6,7 +6,7 @@ an id it doesn't own — the row is missing rather than
 shared.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.memory_book``
+(:class:`bus.Bus`) via ``ctx.bus.memory_book``
 — the Book is a pure data delete and returns whether
 the row existed. Authorization ("does the caller own
 this row?") lives here at the tool layer so we don't
@@ -18,9 +18,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.delete_memory")
+logger = logging.getLogger("tools.memory.delete_memory")
 
 
 class DeleteMemoryTool(Tool):

@@ -8,8 +8,8 @@
 2. ``_run()`` — 主循环，claim SeedPresetTaskJob（一次一个 preset）并执行播种。
 
 Policy 逻辑委托给同包下的独立模块：
-- :mod:`magi.proactive.credentials_action` — credentials nudge spec + 幂等插入
-- :mod:`magi.proactive.preset_tasks` — preset 任务播种
+- :mod:`proactive.credentials_action` — credentials nudge spec + 幂等插入
+- :mod:`proactive.preset_tasks` — preset 任务播种
 """
 
 from __future__ import annotations
@@ -18,12 +18,12 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.runtime_worker import RuntimeWorker
+from runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
-logger = logging.getLogger("magi.proactive.worker")
+logger = logging.getLogger("proactive.worker")
 
 
 class ProactiveWorker(RuntimeWorker):
@@ -48,7 +48,7 @@ class ProactiveWorker(RuntimeWorker):
 
     async def on_start(self) -> None:
         # 1. Register ProactiveWorker-owned default presets.
-        from magi.proactive.prompt_defaults import ensure_proactive_prompt_defaults
+        from proactive.prompt_defaults import ensure_proactive_prompt_defaults
 
         await self.call(ensure_proactive_prompt_defaults, self.bus.prompt_book)
 
@@ -60,7 +60,7 @@ class ProactiveWorker(RuntimeWorker):
     # ------------------------------------------------------------------
 
     async def _run(self) -> None:
-        from magi.proactive.preset_tasks import handle_seed_job
+        from proactive.preset_tasks import handle_seed_job
 
         while not self._stopping:
             await self.reserve_capacity()
@@ -89,8 +89,8 @@ class ProactiveWorker(RuntimeWorker):
 
     async def _bootstrap(self) -> None:
         """启动时：如果本 MAGI 是 Adam，对已有 admin 幂等插入 credentials nudge。"""
-        from magi.proactive.credentials_action import ensure_for_admin
-        from magi.proactive.two_factor_action import reconcile_for_admin
+        from proactive.credentials_action import ensure_for_admin
+        from proactive.two_factor_action import reconcile_for_admin
 
         magis_id = self._resolve_magis_id()
         if magis_id is None:

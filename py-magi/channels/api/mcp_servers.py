@@ -13,7 +13,7 @@ Lazy-reload semantics
 
 Edits made via these endpoints do NOT immediately
 reconnect the subprocess. The agent loop calls
-:func:`magi.tools.registry.maybe_reload_mcp_tools`
+:func:`tools.registry.maybe_reload_mcp_tools`
 on every chat turn; that compares the table's
 ``max(updated_at)`` against the in-memory cache stamp
 and re-bootstraps on a mismatch. The operator sees the
@@ -29,7 +29,7 @@ Auth
 ----
 
 Same ``AdminGate`` every other ADAM endpoint uses
-(:mod:`magi.channels.api.auth_gates`). MCP server
+(:mod:`channels.api.auth_gates`). MCP server
 config is admin-only by design: an operator with
 write access to a "fetch" or "github" MCP server can
 arbitrarily extend the LLM's tool menu, and that's
@@ -57,9 +57,9 @@ from typing import Literal
 from fastapi import APIRouter, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.mcp_servers")
 
@@ -251,7 +251,7 @@ def get_mcp_server(
 class McpServerToolOut(BaseModel):
     """One tool exposed by an MCP server.
 
-    Distinct from :class:`magi.channels.api.tools.ToolOut`:
+    Distinct from :class:`channels.api.tools.ToolOut`:
     this shape doesn't carry ``source`` (always ``"mcp"``)
     or ``server`` (the server name is the URL path), and
     it returns the bare tool name without the
@@ -302,7 +302,7 @@ def list_mcp_server_tools(
     """List the live tools exposed by a single MCP server.
 
     Goes through the loader's
-    :func:`magi.mcp.MCPClient.list_tools_for_server`
+    :func:`mcp.MCPClient.list_tools_for_server`
     — which prefers the active subprocess connection
     (fast) and falls back to a one-shot connect → list →
     disconnect (slow) when the operator opens the detail

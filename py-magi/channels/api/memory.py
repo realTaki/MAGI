@@ -49,9 +49,9 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_conversations import _admin_contact_id
-from magi.channels.api.dependencies import BusDep
+from channels.api.auth_gates import AdminGate
+from channels.api.chat_conversations import _admin_contact_id
+from channels.api.dependencies import BusDep
 
 logger = logging.getLogger("magi.api.memory")
 

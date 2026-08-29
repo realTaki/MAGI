@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Any
 
-from magi.bus import (
+from bus import (
     BaseWorker,
     CallLLMJob,
     CallLLMResult,
@@ -28,8 +28,8 @@ from magi.bus import (
     LLMErrorCode,
     RecordTokenUsageJob,
 )
-from magi.providers.base import LLMProvider
-from magi.providers.errors import (
+from providers.base import LLMProvider
+from providers.errors import (
     LLMAuthError,
     LLMContextLengthError,
     LLMError,
@@ -37,9 +37,9 @@ from magi.providers.errors import (
     LLMNotConfiguredError,
     LLMRateLimitError,
 )
-from magi.providers.requiredSlots import REQUIRED_SLOTS
+from providers.requiredSlots import REQUIRED_SLOTS
 
-logger = logging.getLogger("magi.providers.worker")
+logger = logging.getLogger("providers.worker")
 
 PROVIDER_NAME_KEY = "provider.name"
 PROVIDER_API_KEY_KEY = "provider.api_key"
@@ -159,7 +159,7 @@ class ProvidersWorker(BaseWorker):
     def _rebuild_provider(self) -> None:
         """Build the cached SDK client from vNext Settings Firmware."""
         try:
-            from magi.providers.factory import get_provider
+            from providers.factory import get_provider
 
             provider = get_provider(
                 provider_name=self._setting_value(PROVIDER_NAME_KEY),

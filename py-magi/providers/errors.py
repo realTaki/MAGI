@@ -38,7 +38,7 @@ class LLMNotConfiguredError(LLMError):
 
     The provider worker reads credentials through vNext
     ``GetSettingJob`` (keys ``provider.name`` / ``provider.api_key``)
-    and passes them to :func:`magi.providers.factory.get_provider`.
+    and passes them to :func:`providers.factory.get_provider`.
     When either is unset, it raises this. Distinct from :class:`LLMAuthError`
     (key rejected by the vendor) — this one means the operator
     hasn't configured the runtime yet (and the worker's

@@ -12,7 +12,7 @@ semantics:
 
   - **operator** root — ``<workspace>/skills/`` (the deployer's
     customised catalog). Resolved by the caller from
-    :func:`magi.startup.paths.resolve_skills_dir` and passed in.
+    :func:`startup.paths.resolve_skills_dir` and passed in.
 
 The package bundle is used only to seed missing directories into a workspace.
 Runtime reads thereafter use the workspace root.
@@ -78,9 +78,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from magi.old_bus.bases.db.file import FileShelf
+from old_bus.bases.db.file import FileShelf
 
-logger = logging.getLogger("magi.bus.firmwares.books.file.skills_book")
+logger = logging.getLogger("bus.firmwares.books.file.skills_book")
 
 _SKILL_FILENAME = "SKILL.md"
 
@@ -386,7 +386,7 @@ def _process_skill_paths(
 class SkillsBook:
     """Read-side registry for workspace-managed SKILL.md files.
 
-    Built on two :class:`~magi.bus.bases.db.file.FileShelf` instances
+    Built on two :class:`~bus.bases.db.file.FileShelf` instances
     (bundle + operator). The shelves give us safe path resolution
     underneath; the registry itself is hot-reloaded on every public
     read via :meth:`_fresh_registry`.
@@ -736,7 +736,7 @@ def _resolve_bundle_skills_dir() -> Path:
     - Tier 2 derives from this file's ``__file__`` (when the package
       is not importable — e.g. ad-hoc test runs from a checkout).
 
-    Lives here in the bus layer rather than in :mod:`magi.startup.paths`
+    Lives here in the bus layer rather than in :mod:`startup.paths`
     so the bus does not depend on the composition root.
     See ARCHITECTURE_REVIEW_2026-08-10 P2.
     """

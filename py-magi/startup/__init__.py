@@ -15,14 +15,14 @@ The path is *derived*, never passed in.
 
 Sub-modules:
 
-- :mod:`magi.startup.config`    — :class:`StartupConfig` + :class:`StartupContext` + parsing
-- :mod:`magi.startup.paths`     — host / workspace / DB path helpers
-- :mod:`magi.startup.provision` — explicit Genesis and node provisioning
-- :mod:`magi.startup.runtime`   — Runtime composition + serve
-- :mod:`magi.startup.local`     — local process management + OS detection
-- :mod:`magi.startup.webui`     — singleton WebUI lifecycle
-- :mod:`magi.startup.kubernetes` — K8s resource creation + orchestrator service
-- :mod:`magi.startup.cli`       — :command:`magi init|node|webui`
+- :mod:`startup.config`    — :class:`StartupConfig` + :class:`StartupContext` + parsing
+- :mod:`startup.paths`     — host / workspace / DB path helpers
+- :mod:`startup.provision` — explicit Genesis and node provisioning
+- :mod:`startup.runtime`   — Runtime composition + serve
+- :mod:`startup.local`     — local process management + OS detection
+- :mod:`startup.webui`     — singleton WebUI lifecycle
+- :mod:`startup.kubernetes` — K8s resource creation + orchestrator service
+- :mod:`startup.cli`       — :command:`magi init|node|webui`
 """
 
 from __future__ import annotations

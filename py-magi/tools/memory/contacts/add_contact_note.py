@@ -8,7 +8,7 @@ about the same person.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
 ≤8 KB clamp) and exposes ``add(...)`` plus
 ``to_dict`` on the returned DTO. The legacy service at
@@ -21,10 +21,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.old_bus.firmwares.books.local.contactBook import ContactNote
-from magi.tools.base import Tool, ToolContext, ToolResult
+from old_bus.firmwares.books.local.contactBook import ContactNote
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.add_contact_note")
+logger = logging.getLogger("tools.memory.add_contact_note")
 
 
 class AddContactNoteTool(Tool):

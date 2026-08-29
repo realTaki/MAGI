@@ -1,7 +1,7 @@
 """Self / core-memory tools — long-arc facts the MAGI keeps
 about its operator.
 
-One module per tool — see :mod:`magi.tools.registry` for
+One module per tool — see :mod:`tools.registry` for
 the dispatcher that wires them up.
 
 LLM-driven, not automatic — the operator must say
@@ -12,8 +12,8 @@ writable here; they live in the contacts subpackage.
 All tools declare ``ALLOWED_ROLES = {admin, assigned}``;
 the LLM-side menu filter strips them out for other roles.
 
-  - :mod:`magi.tools.memory.core_memory.add_memory`
-  - :mod:`magi.tools.memory.core_memory.update_memory`
-  - :mod:`magi.tools.memory.core_memory.complete_memory`
-  - :mod:`magi.tools.memory.core_memory.delete_memory`
+  - :mod:`tools.memory.core_memory.add_memory`
+  - :mod:`tools.memory.core_memory.update_memory`
+  - :mod:`tools.memory.core_memory.complete_memory`
+  - :mod:`tools.memory.core_memory.delete_memory`
 """

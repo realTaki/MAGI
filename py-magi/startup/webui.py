@@ -11,7 +11,7 @@ Local responsibilities:
 - :func:`ensure_webui_running` — idempotent singleton start.
 - :func:`get_webui_status` — current state.
 
-The WebUI product code stays in ``magi.channels.api.app``. This module
+The WebUI product code stays in ``channels.api.app``. This module
 only wires the process / PID / log bookkeeping around it.
 """
 
@@ -26,13 +26,13 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from magi.startup.config import WEBUI_PORT, StartupConfig
-from magi.startup.paths import (
+from startup.config import WEBUI_PORT, StartupConfig
+from startup.paths import (
     resolve_magis_database_url,
     resolve_webui_log_paths,
     resolve_webui_pid_path,
 )
-from magi.startup.process import (
+from startup.process import (
     claim_pid_file,
     find_listener_on_port,
     install_lifecycle_handlers,
@@ -41,12 +41,12 @@ from magi.startup.process import (
     reap_orphan_listener,
 )
 
-logger = logging.getLogger("magi.startup.webui")
+logger = logging.getLogger("startup.webui")
 
 
-# Re-export so legacy callers importing ``from magi.startup.webui import
+# Re-export so legacy callers importing ``from startup.webui import
 # DEFAULT_WEBUI_PORT`` keep working while the canonical constant lives in
-# :mod:`magi.startup.config`.  Plan §21 — port is hardcoded.
+# :mod:`startup.config`.  Plan §21 — port is hardcoded.
 DEFAULT_WEBUI_PORT: int = WEBUI_PORT
 
 # WebUI bind host — overridable per-deploy via the ``MAGI_WEBUI_HOST``
@@ -218,15 +218,15 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     2. Install SIGTERM/SIGINT handlers that unlink the PID file.  The
        handler runs once even if uvicorn re-raises the signal.
 
-    Unlike :func:`magi.startup.runtime.run_magi`, no extra cleanup is
+    Unlike :func:`startup.runtime.run_magi`, no extra cleanup is
     wired: the WebUI does not own a ``runtime_state`` row, so SIGTERM
     only needs to drop the PID file.
     """
     import uvicorn
 
-    from magi.old_bus import open_bus
-    from magi.channels.api.app import create_control_app
-    from magi.channels.api.control_context import ControlContext
+    from old_bus import open_bus
+    from channels.api.app import create_control_app
+    from channels.api.control_context import ControlContext
 
     # The WebUI is bound to a MAGIS, not a single runtime — derive its
     # MAGIS connection from the canonical CLI/env inputs instead of
@@ -270,7 +270,7 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
 def _reap_orphan_worker(port: int) -> None:
     """Kill any orphan worker still listening on the WebUI port.
 
-    Mirror of :func:`magi.startup.local._reap_orphan_worker` for the
+    Mirror of :func:`startup.local._reap_orphan_worker` for the
     WebUI process recovery: a crash can leave a child listening with no
     PID-file owner, which would otherwise block the next spawn with
     ``Address already in use``.
@@ -324,7 +324,7 @@ def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:
     Opens a transient MAGIS facade purely to read the ``control_secrets`` row.
     """
     try:
-        from magi.old_bus import open_bus
+        from old_bus import open_bus
 
         bus = open_bus(magis_url=magis_url)
     except Exception:
@@ -337,19 +337,19 @@ def _read_control_secret(*, magis_url: str, magis_name: str) -> str | None:
 
 
 # ----------------------------------------------------------------------
-# Kubernetes side — to be implemented in :mod:`magi.startup.kubernetes`
+# Kubernetes side — to be implemented in :mod:`startup.kubernetes`
 # ----------------------------------------------------------------------
 
 
 def ensure_webui_deployment(*, config: StartupConfig) -> None:
     """K8s side of the singleton WebUI.
 
-    Builds the manifest from :mod:`magi.startup.kubernetes` and applies
+    Builds the manifest from :mod:`startup.kubernetes` and applies
     it via the legacy K8s client.  No-op when the K8s module is
     unavailable.
     """
     try:
-        from magi.startup.kubernetes import (
+        from startup.kubernetes import (
             ensure_webui_deployment as _build,
         )
     except ImportError:
@@ -365,7 +365,7 @@ def ensure_webui_deployment(*, config: StartupConfig) -> None:
 def ensure_webui_service(*, config: StartupConfig) -> None:
     """K8s side of the singleton WebUI Service (external)."""
     try:
-        from magi.startup.kubernetes import (
+        from startup.kubernetes import (
             ensure_webui_service as _build,
         )
     except ImportError:
@@ -381,7 +381,7 @@ def ensure_webui_service(*, config: StartupConfig) -> None:
 def delete_webui_resources(*, config: StartupConfig) -> None:
     """K8s side — delete the WebUI Deployment + Service (singleton only)."""
     try:
-        from magi.startup.kubernetes import (
+        from startup.kubernetes import (
             delete_webui_resources as _delete,
         )
     except ImportError:

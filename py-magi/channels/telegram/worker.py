@@ -6,14 +6,14 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from magi.old_bus.firmwares.books.local import Contact, Role
-from magi.channels.worker_base import ChannelWorker
+from old_bus.firmwares.books.local import Contact, Role
+from channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+    from old_bus import Bus
+    from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
-logger = logging.getLogger("magi.channels.telegram.worker")
+logger = logging.getLogger("channels.telegram.worker")
 
 
 class TelegramWorker(ChannelWorker):
@@ -121,9 +121,9 @@ class TelegramWorker(ChannelWorker):
             return
         conversation_id = _resolve_tg_session(self.bus, contact_id=contact_id, tgid=tgid)
         # The user message is persisted to ``chat_messages`` inside
-        # :meth:`chatNotifyBoard.publish` — see ``magi.bus.firmwares.jobs.chatNotifyJob``.
+        # :meth:`chatNotifyBoard.publish` — see ``bus.firmwares.jobs.chatNotifyJob``.
         # Channels must not reach into ``messages_book`` directly anymore.
-        from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+        from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
         try:
             job_id = self.bus.agent_job_board.publish(
@@ -158,7 +158,7 @@ class TelegramWorker(ChannelWorker):
         text = job.text
         if not chat_id or not text:
             raise ValueError("TG delivery missing destination or text")
-        from magi.channels.telegram.bot import send_text_raw
+        from channels.telegram.bot import send_text_raw
 
         await send_text_raw(str(bot_token), chat_id, text)
 
@@ -191,7 +191,7 @@ def _resolve_tg_session(bus: Bus, *, contact_id: int, tgid: str) -> int:
 
 
 # Note: the user message is persisted to ``chat_messages`` inside
-# :meth:`chatNotifyBoard.publish` (see ``magi.bus.firmwares.jobs.chatNotifyJob``).
+# :meth:`chatNotifyBoard.publish` (see ``bus.firmwares.jobs.chatNotifyJob``).
 # Channels must not reach into ``messages_book`` directly anymore —
 # the chokepoint lives in the bus layer where the cap, D.22 guard,
 # and chatNotifyJob enqueue are all atomic.
@@ -227,7 +227,7 @@ async def _send_stranger_reply(update, tgid: str, bus: Bus) -> None:
 
 async def _send_read_receipt(update, bus: Bus) -> None:
     try:
-        from magi.channels.telegram.config import get_read_reaction_emoji
+        from channels.telegram.config import get_read_reaction_emoji
 
         reaction = get_read_reaction_emoji(bus)
         if reaction:
@@ -252,7 +252,7 @@ async def _await_agent_receipt(update, *, job_id: int, bus: Bus) -> None:
     pass through PROCESSING between polls, but as soon as we observe
     any non-pending state we react once and return.
     """
-    from magi.old_bus.bases.job import JobStatus
+    from old_bus.bases.job import JobStatus
 
     # 120 × 0.25s = 30s ceiling for an Agent to claim the turn.
     # Beyond that we give up silently — no reaction is better than a

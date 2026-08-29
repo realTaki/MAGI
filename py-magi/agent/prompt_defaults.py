@@ -19,7 +19,7 @@ def ensure_agent_prompt_defaults(prompt_book) -> None:
     :meth:`PromptBook.register`; this Worker only supplies the
     owner keys and package content.
     """
-    prompts = files("magi.agent.prompts")
+    prompts = files("agent.prompts")
     for active_key, filename in _TEXT_PROMPTS:
         content = prompts.joinpath(filename).read_text(encoding="utf-8")
         prompt_book.register(key=active_key, value=content)

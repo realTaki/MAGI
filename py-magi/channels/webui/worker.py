@@ -18,12 +18,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from magi.channels.worker_base import ChannelWorker
+from channels.worker_base import ChannelWorker
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+    from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
 
-logger = logging.getLogger("magi.channels.webui.worker")
+logger = logging.getLogger("channels.webui.worker")
 
 
 class WebUIWorker(ChannelWorker):

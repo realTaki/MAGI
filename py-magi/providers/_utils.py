@@ -4,7 +4,7 @@ Houses the two pieces of logic that were previously duplicated across
 :meth:`anthropic.AnthropicProvider` and :class:`openai.OpenAIProvider`:
 
 - :func:`is_context_length_error` — heuristic that maps an upstream
-  error message to the typed :class:`~magi.providers.errors.LLMContextLengthError`.
+  error message to the typed :class:`~providers.errors.LLMContextLengthError`.
   Both SDKs use different phrasings (``"context_length_exceeded"``,
   ``"reduce the length"``, etc.) so we keep one canonical marker list.
 - :func:`safe_dump` — best-effort Pydantic → ``dict``. The two SDKs
@@ -35,7 +35,7 @@ def is_context_length_error(message: str | BaseException) -> bool:
     Provider SDKs stuff the upstream human-readable text into the
     exception message; both Anthropic and OpenAI use a handful of
     standard phrasings. A false negative falls back to
-    :class:`~magi.providers.errors.LLMError`, which is the worst-case
+    :class:`~providers.errors.LLMError`, which is the worst-case
     outcome and acceptable — the operator still sees the failure.
     """
     m = str(message).lower()

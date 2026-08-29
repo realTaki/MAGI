@@ -5,7 +5,7 @@ success). Use when the operator says '忘了那条 / 删掉'.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`magi.bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
 — the Book owns the data write and returns ``True`` if a
 row was removed, ``False`` if no row matched (the same
 ``existed`` flag the bus's ``ContactsService.delete_note``
@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.memory.delete_contact_note")
+logger = logging.getLogger("tools.memory.delete_contact_note")
 
 
 class DeleteContactNoteTool(Tool):

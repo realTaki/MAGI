@@ -35,7 +35,7 @@ def upgrade() -> None:
     # Fresh databases receive both the new Book and its command tables here;
     # existing databases retain their conversation rows and only rename the
     # ownership field.
-    from magi.bus.firmware.versions.schema import firmware_metadata
+    from bus.firmware.versions.schema import firmware_metadata
 
     firmware_metadata().create_all(bind=op.get_bind())
     _rename_contact_owner_column("books_conversations")

@@ -25,7 +25,7 @@ def _production_modules() -> list[Path]:
 
 
 def test_vnext_bus_is_a_first_class_package() -> None:
-    """``magi.bus`` is the MAGI-BUS vNext package, not a compatibility shim."""
+    """``bus`` is the MAGI-BUS vNext package, not a compatibility shim."""
     vnext_root = MAGI_ROOT / "bus"
     assert (vnext_root / "__init__.py").is_file()
     assert (vnext_root / "bus.py").is_file()
@@ -39,7 +39,7 @@ def test_domain_modules_do_not_reach_into_bus_storage() -> None:
     for domain in domains:
         for path in (MAGI_ROOT / domain).rglob("*.py"):
             for module, lineno in _imports(path):
-                if module.startswith("magi.bus.bases.db"):
+                if module.startswith("bus.bases.db"):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, "domain modules must use Bus facade, not storage:\n  " + "\n  ".join(
         offenders
@@ -48,7 +48,7 @@ def test_domain_modules_do_not_reach_into_bus_storage() -> None:
 
 def test_retired_bus_package_names_are_not_imported() -> None:
     """``guild`` / ``library`` / top-level ``bus.db`` have no import surface."""
-    retired = ("magi.bus.db", "magi.bus.guild", "magi.bus.library")
+    retired = ("bus.db", "bus.guild", "bus.library")
     offenders: list[str] = []
     for path in _production_modules():
         for module, lineno in _imports(path):
@@ -61,19 +61,19 @@ def test_bases_do_not_import_firmwares() -> None:
     """Bases own contracts and storage engines, never firmware tables.
 
     Table/column definitions, Alembic revisions, and schema
-    synchronisation live in ``magi.bus.firmwares``. Bases must stay
+    synchronisation live in ``bus.firmwares``. Bases must stay
     firmware-free so the integration layer does not encode business data.
     """
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus" / "bases").rglob("*.py"):
         for module, lineno in _imports(path):
-            if module == "magi.bus.firmwares" or module.startswith("magi.bus.firmwares."):
+            if module == "bus.firmwares" or module.startswith("bus.firmwares."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, "bases must not import firmwares:\n  " + "\n  ".join(offenders)
 
 
 def test_bus_does_not_import_domain_implementations() -> None:
-    forbidden = ("magi.agent", "magi.channels", "magi.tools", "magi.providers")
+    forbidden = ("agent", "channels", "tools", "providers")
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
         for module, lineno in _imports(path):
@@ -83,23 +83,23 @@ def test_bus_does_not_import_domain_implementations() -> None:
 
 
 def test_bus_does_not_depend_on_startup() -> None:
-    """The composition root (``magi.startup``) imports the bus, never
+    """The composition root (``startup``) imports the bus, never
     the other way around.  Catches the legacy reverse edge where
-    :mod:`magi.bus.firmwares.books.file.skillsBook` reached into
-    :mod:`magi.startup.paths`.
+    :mod:`bus.firmwares.books.file.skillsBook` reached into
+    :mod:`startup.paths`.
 
-    Note: ``magi.startup`` itself is a composition root and is
+    Note: ``startup`` itself is a composition root and is
     *expected* to import from the bus; the test only walks the
     bus subtree, not the startup subtree.
     """
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
         for module, lineno in _imports(path):
-            if module == "magi.startup" or module.startswith("magi.startup."):
+            if module == "startup" or module.startswith("startup."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
         "Bus must not import from the composition root "
-        "(magi.startup); the bus layer should reach for its own "
+        "(startup); the bus layer should reach for its own "
         "resource resolvers:\n  " + "\n  ".join(offenders)
     )
 
@@ -115,10 +115,10 @@ def test_channels_do_not_import_startup_entry_points() -> None:
     type-annotate the injected instance; it does not spawn or start one.
     """
     forbidden = (
-        "magi.startup.runtime",   # run_magi / RuntimeContext.create
-        "magi.startup.local",     # start_magi / stop_magi / restart_magi
-        "magi.startup.cli",       # main() / build_parser()
-        "magi.startup.webui",     # run_webui_foreground / ControlContext / start_webui
+        "startup.runtime",   # run_magi / RuntimeContext.create
+        "startup.local",     # start_magi / stop_magi / restart_magi
+        "startup.cli",       # main() / build_parser()
+        "startup.webui",     # run_webui_foreground / ControlContext / start_webui
     )
     offenders: list[str] = []
     for path in (MAGI_ROOT / "channels").rglob("*.py"):

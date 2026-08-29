@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
+    from old_bus import Bus
 
-logger = logging.getLogger("magi.channels.telegram.config")
+logger = logging.getLogger("channels.telegram.config")
 
 _READ_META_KEY = "tg.read_reaction_emoji"
 _DONE_META_KEY = "tg.done_reaction_emoji"

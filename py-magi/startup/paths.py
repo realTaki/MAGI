@@ -163,11 +163,11 @@ def resolve_runtime_state_path(workspace_dir: Path) -> Path:
 
     Retained as a path resolver only; the runtime startup path no
     longer reads or writes this file.  Identity is now derived from
-    the MAGIS shared database via :func:`magi.startup.spec.load_runtime_spec`.
+    the MAGIS shared database via :func:`startup.spec.load_runtime_spec`.
 
     The legacy file (when present in an existing workspace) is
     ignored at startup and removed by the one-time cleanup hook in
-    :func:`magi.startup.local.start_magi` once the new path is
+    :func:`startup.local.start_magi` once the new path is
     confirmed working.  Until then, the resolver stays so the
     cleanup can locate the file deterministically.
     """
@@ -314,7 +314,7 @@ def _resolve_workspace_root(
     if host_workspace_dir is None:
         host_workspace_dir = resolve_host_workspace()
     if magi_name is None:
-        from magi.startup.config import DEFAULT_MAGI_NAME
+        from startup.config import DEFAULT_MAGI_NAME
 
         magi_name = os.environ.get("MAGI_NAME", DEFAULT_MAGI_NAME)
     return host_workspace_dir / "MAGI_Citizens" / magi_name

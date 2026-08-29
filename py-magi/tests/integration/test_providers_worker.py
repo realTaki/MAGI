@@ -1,4 +1,4 @@
-"""End-to-end tests for :class:`magi.providers.worker.ProvidersWorker`.
+"""End-to-end tests for :class:`providers.worker.ProvidersWorker`.
 
 These tests exercise the durable bus queue around the LLM
 lifecycle: publish a :class:`CallLLMJob`, watch the worker claim it,
@@ -21,25 +21,25 @@ from typing import Any
 
 import pytest
 
-from magi.old_bus import Bus, open_bus
-from magi.old_bus.firmwares.jobs import (
+from old_bus import Bus, open_bus
+from old_bus.firmwares.jobs import (
     CallLLMJob,
     CallLLMResult,
     ChangeProviderConfigJob,
 )
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.changeProviderConfigJob import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_API_KEY_KEY,
     PROVIDER_MODEL_KEY,
     PROVIDER_NAME_KEY,
 )
-from magi.old_bus.provision import provision_node_storage
-from magi.providers.base import LLMProvider, LLMStreamEvent
-from magi.providers.errors import LLMError, LLMNotConfiguredError
-from magi.providers.worker import ProvidersWorker
+from old_bus.provision import provision_node_storage
+from providers.base import LLMProvider, LLMStreamEvent
+from providers.errors import LLMError, LLMNotConfiguredError
+from providers.worker import ProvidersWorker
 
 pytestmark = pytest.mark.skip(
-    reason="ProvidersWorker now attaches through magi.launcher and magi.bus"
+    reason="ProvidersWorker now attaches through launcher and bus"
 )
 
 _worker: ProvidersWorker | None = None
@@ -174,27 +174,27 @@ def _seed_provider_config(
 def _install_fake(bus: Bus, fake: FakeProvider) -> None:
     """Patch the ``get_provider`` symbol the worker resolves at runtime.
 
-    The worker does ``from magi.providers import get_provider`` (which
-    re-exports from :mod:`magi.providers.factory`), so we patch both
+    The worker does ``from providers import get_provider`` (which
+    re-exports from :mod:`providers.factory`), so we patch both
     names — whichever symbol the worker resolves first wins, but if
     someone calls the factory module directly they should still see
     the fake.  Rebinding the package attribute also handles legacy
     monkey-patch seams.
     """
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     def _fake_get(*, bus: Bus, model: str | None = None) -> LLMProvider:
         return fake
 
     _factory.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    providers.get_provider = _fake_get  # type: ignore[attr-defined]
 
 
 def _install_counter(bus: Bus, fake: FakeProvider) -> dict[str, int]:
     """Same as ``_install_fake`` but tracks how many times the factory was hit."""
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     state: dict[str, int] = {"calls": 0}
 
@@ -203,7 +203,7 @@ def _install_counter(bus: Bus, fake: FakeProvider) -> dict[str, int]:
         return fake
 
     _factory.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    providers.get_provider = _fake_get  # type: ignore[attr-defined]
     return state
 
 
@@ -355,14 +355,14 @@ async def test_worker_caches_provider_across_jobs(bus: Bus):
 @pytest.mark.asyncio
 async def test_worker_starts_without_config_and_fails_jobs(bus: Bus):
     """Missing config does NOT block boot; jobs settle with the credentials code."""
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     def _raise_not_configured(*_a, **_k):
         raise LLMNotConfiguredError("MAGI runtime has no LLM provider / API key configured")
 
     _factory.get_provider = _raise_not_configured
-    magi.providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
+    providers.get_provider = _raise_not_configured  # type: ignore[attr-defined]
     # No settings_book writes — the worker reads and finds nothing.
     await start_provider_worker(bus)  # MUST NOT raise
     try:
@@ -379,8 +379,8 @@ async def test_worker_starts_without_config_and_fails_jobs(bus: Bus):
 @pytest.mark.asyncio
 async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
     """A drained ``ChangeProviderConfigJob`` triggers a rebuild."""
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     state: dict[str, Any] = {"provider": None}
     calls = {"n": 0}
@@ -390,7 +390,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         return state["provider"]  # may be None on the first claim
 
     _factory.get_provider = _switch
-    magi.providers.get_provider = _switch  # type: ignore[attr-defined]
+    providers.get_provider = _switch  # type: ignore[attr-defined]
 
     await start_provider_worker(bus)
     try:
@@ -424,7 +424,7 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
         # The config-change job was drained (status advanced past pending).
         from sqlalchemy import select
 
-        from magi.old_bus.firmwares.jobs.changeProviderConfigJob import _ChangeProviderConfigRow
+        from old_bus.firmwares.jobs.changeProviderConfigJob import _ChangeProviderConfigRow
 
         with bus._local_factory.session() as s:
             leftovers = s.scalar(
@@ -440,8 +440,8 @@ async def test_worker_starts_without_config_then_rebuilds_on_signal(bus: Bus):
 @pytest.mark.asyncio
 async def test_worker_rebuilds_only_when_control_signal_present(bus: Bus):
     """A second job with no signal between still uses the cached provider."""
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     calls = {"n": 0}
 
@@ -450,7 +450,7 @@ async def test_worker_rebuilds_only_when_control_signal_present(bus: Bus):
         return FakeProvider(reply=f"call#{calls['n']}")
 
     _factory.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    providers.get_provider = _fake_get  # type: ignore[attr-defined]
     _seed_provider_config(bus)
 
     await start_provider_worker(bus)
@@ -481,8 +481,8 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
     2. Skip ``get_provider`` entirely (no rebuild).
     3. Subsequent ``CallLLMJob`` calls observe the new model.
     """
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     class ModelReportingProvider(FakeProvider):
         """Fake whose reply + response.model reflect the live ``self.model``."""
@@ -515,7 +515,7 @@ async def test_worker_updates_model_in_place_when_only_model_changes(bus: Bus):
         return ModelReportingProvider()
 
     _factory.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    providers.get_provider = _fake_get  # type: ignore[attr-defined]
     _seed_provider_config(bus, model="fake-model-1")
 
     worker = await start_provider_worker(bus)
@@ -567,8 +567,8 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
     ``provider`` or ``api_key`` field should fall back to the
     full rebuild, even if ``model`` is also set in the same job.
     """
-    import magi.providers
-    import magi.providers.factory as _factory
+    import providers
+    import providers.factory as _factory
 
     calls = {"n": 0}
 
@@ -577,7 +577,7 @@ async def test_worker_rebuilds_when_provider_field_changes(bus: Bus):
         return FakeProvider(reply=f"call#{calls['n']}")
 
     _factory.get_provider = _fake_get
-    magi.providers.get_provider = _fake_get  # type: ignore[attr-defined]
+    providers.get_provider = _fake_get  # type: ignore[attr-defined]
     _seed_provider_config(bus)
 
     await start_provider_worker(bus)

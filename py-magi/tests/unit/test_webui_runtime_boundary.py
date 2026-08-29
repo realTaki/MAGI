@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 from fastapi import Request
 
-from magi.channels.api.app import create_runtime_app
-from magi.startup.workers import WorkerRegistry
+from channels.api.app import create_runtime_app
+from startup.workers import WorkerRegistry
 
 
 def _request(headers: dict[str, str]) -> Request:
@@ -22,7 +22,7 @@ def _request(headers: dict[str, str]) -> Request:
 
 
 def test_runtime_proxy_signature_is_bound_to_admin_identity_target_and_path(monkeypatch) -> None:
-    from magi.channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator, verified_proxy_scope
+    from channels.api.proxy_auth import build_proxy_headers, verified_proxy_operator, verified_proxy_scope
 
     monkeypatch.setenv("MAGI_RUNTIME_ID", "7")
     bus = MagicMock()
@@ -45,7 +45,7 @@ def test_runtime_proxy_signature_is_bound_to_admin_identity_target_and_path(monk
 
 
 def test_selected_session_keeps_shared_admin_and_local_projection_distinct() -> None:
-    from magi.channels.api.auth import _sign_selected_session, resolve_session
+    from channels.api.auth import _sign_selected_session, resolve_session
 
     bus = MagicMock()
     bus.settings_book.get_value.return_value = "test-signing-secret"

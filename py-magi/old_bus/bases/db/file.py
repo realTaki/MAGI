@@ -1,9 +1,9 @@
 """FileShelf — directory-scoped structured file I/O with hot-reload caching.
 
 ``FileShelf`` is the file-system counterpart to
-:class:`~magi.bus.bases.db.engine.EngineFactory`: EngineFactory wraps a
+:class:`~bus.bases.db.engine.EngineFactory`: EngineFactory wraps a
 SQLAlchemy ``Engine``, FileShelf wraps a local directory.  Both serve
-as backends for *Books* (see :mod:`magi.bus.firmwares.books.file`).
+as backends for *Books* (see :mod:`bus.firmwares.books.file`).
 
 Each supported extension (``.md``, ``.yaml``, ``.yml``, ``.json``,
 ``.txt``) maps to a :class:`Format` codec.  Reads are *auto-detected*
@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-logger = logging.getLogger("magi.bus.bases.db.file")
+logger = logging.getLogger("bus.bases.db.file")
 
 # Suffix search order for auto-detection in :meth:`FileShelf.read`.
 # ``.md`` first (most common for prompts), then YAML variants,
@@ -218,7 +218,7 @@ class _Entry:
 class FileShelf:
     """Directory-backed, format-aware read/write service.
 
-    Parallel to :class:`~magi.bus.bases.db.engine.EngineFactory` for
+    Parallel to :class:`~bus.bases.db.engine.EngineFactory` for
     files.  Wraps a single root directory, knows about a fixed set
     of extensions→format bindings, and serves ``read`` / ``write`` /
     ``delete`` / ``list`` / ``exists`` with hot-reload caching.

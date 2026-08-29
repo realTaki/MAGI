@@ -6,7 +6,7 @@ user-facing transport, so it has no receive socket or standalone credentials.
 
 The package owns task persistence, schedule validation, CRUD-facing execution
 and scheduler lifecycle. System-initiated proactive policies, including
-bundled task presets and their seeding, live in :mod:`magi.proactive`.
+bundled task presets and their seeding, live in :mod:`proactive`.
 """
 
 __all__: list[str] = []

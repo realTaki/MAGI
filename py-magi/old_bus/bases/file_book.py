@@ -1,6 +1,6 @@
 """BaseFileBook — abstract base for file-backed Books.
 
-Parallel to :class:`magi.bus.bases.book.BaseBook` for ORM-backed
+Parallel to :class:`bus.bases.book.BaseBook` for ORM-backed
 Books.  Where ``BaseBook`` subclasses wrap a SQLAlchemy session,
 ``BaseFileBook`` subclasses wrap a :class:`FileShelf`.
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from magi.old_bus.bases.db.file import FileShelf
+from old_bus.bases.db.file import FileShelf
 
 
 class BaseFileBook:

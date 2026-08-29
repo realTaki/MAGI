@@ -1,11 +1,11 @@
-"""Boundary rule: ``magi.providers`` does not import ``magi.agent.*``.
+"""Boundary rule: ``providers`` does not import ``agent.*``.
 
 Phase F — the new top-level package owns every LLM call. The
-worker must NEVER reach back into ``magi.agent`` for prompt
+worker must NEVER reach back into ``agent`` for prompt
 assembly, system-prompt assembly, ``ChatMessage`` construction,
 ``maybe_compact`` execution, or any other agent-loop concern.
 The agent side has its own dedicated helpers under
-:meth:`magi.agent._step_helpers` that the agent loop invokes
+:meth:`agent._step_helpers` that the agent loop invokes
 *before* publishing a :class:`LLMJob` onto the queue.
 
 A regression here would re-couple the provider worker to the
@@ -22,7 +22,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROVIDERS_ROOT = REPO_ROOT / "magi" / "providers"
 
-_FORBIDDEN_PREFIXES = ("magi.agent",)
+_FORBIDDEN_PREFIXES = ("agent",)
 
 
 def _iter_python_files(root: Path):
@@ -79,12 +79,12 @@ def test_providers_does_not_import_agent() -> None:
         [f"  {violations[i]}\n  ..." for i in range(0, len(violations), 1)]
         msg = "\n".join(
             [
-                "Forbidden cross-package imports from magi.providers:",
+                "Forbidden cross-package imports from providers:",
                 *violations,
                 "",
-                "  The provider worker must NOT reach into magi.agent;",
+                "  The provider worker must NOT reach into agent;",
                 "  agent-side concerns (system prompt, messages, tools) live",
-                "  in magi.agent._step_helpers and run *before* the job is",
+                "  in agent._step_helpers and run *before* the job is",
                 "  enqueued onto the providers queue.",
             ]
         )

@@ -27,7 +27,7 @@ import logging
 
 from sqlalchemy import inspect
 
-logger = logging.getLogger("magi.bus.schema_drift_fix")
+logger = logging.getLogger("bus.schema_drift_fix")
 
 
 # Tables whose legacy schemas lack ``id`` / ``created_at`` even
@@ -68,7 +68,7 @@ def _table_exists(engine, table: str) -> bool:
 
     SQLAlchemy's :func:`inspect` defaults to the ORM ``MetaData``
     registry, which is empty in our deployment (tables are created
-    by :func:`magi.bus.firmwares.schema.synchronise_schema` without ever
+    by :func:`bus.firmwares.schema.synchronise_schema` without ever
     being registered on ``Base.metadata``).  ``inspector.has_table``
     would always return False; ``get_table_names()`` queries
     ``sqlite_master`` directly instead.
@@ -112,7 +112,7 @@ def apply_schema_drift_fixes(engine) -> int:
     for table, missing in _LEGACY_MISSING_COLUMNS.items():
         if not _table_exists(engine, table):
             # Table missing entirely — leave schema creation
-            # to :func:`magi.bus.firmwares.schema.synchronise_schema`.
+            # to :func:`bus.firmwares.schema.synchronise_schema`.
             continue
         for column, default_sql in missing.items():
             if _column_exists(engine, table, column):

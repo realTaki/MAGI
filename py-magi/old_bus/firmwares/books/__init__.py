@@ -5,7 +5,7 @@ Books are CRUD primitives: they do single-table operations. Cross-table
 orchestration is the caller's responsibility (typically by chaining
 writes inside one ``factory.session()`` block).
 
-The Book/Record bases live in :mod:`magi.bus.bases`, not here.
+The Book/Record bases live in :mod:`bus.bases`, not here.
 
 Subpackages
 ===========

@@ -43,7 +43,7 @@ def enum_column(
 
     ``name`` 默认 ``None``，交由 SQLAlchemy 取 ``enum_cls.__name__`` 作为
     PG 的 ``CREATE TYPE`` 名。需要可读的 snake_case 名（如
-    :class:`magi.bus.bases.job.JobStatus` 的 ``"job_status"``）时显式传。
+    :class:`bus.bases.job.JobStatus` 的 ``"job_status"``）时显式传。
 
     列类型读回时自动还原成枚举成员（``row.status == JobStatus.PENDING``
     为真），Book 层无需再手动 ``_coerce_*``。PG 走原生 ``CREATE TYPE``；

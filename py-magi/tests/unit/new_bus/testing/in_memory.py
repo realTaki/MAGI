@@ -1,6 +1,6 @@
 """In-memory backend fixture for BUS tests."""
 
-from magi.bus.base.engine import SQLiteBackend
+from bus.base.engine import SQLiteBackend
 
 
 class InMemoryBackend(SQLiteBackend):

@@ -30,12 +30,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from magi.old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
+from old_bus.bases.job import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRowMixin, JobStatus
 
 if TYPE_CHECKING:
-    from magi.old_bus.firmwares.books.local.settingBook import SettingBook
+    from old_bus.firmwares.books.local.settingBook import SettingBook
 
-logger = logging.getLogger("magi.bus.firmwares.jobs.changeProviderConfig")
+logger = logging.getLogger("bus.firmwares.jobs.changeProviderConfig")
 
 
 # ── settings keys ─────────────────────────────────────────────────────────

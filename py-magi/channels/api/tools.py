@@ -15,8 +15,8 @@ from typing import Any, Literal
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.dependencies import BusDep
+from channels.api.auth_gates import AdminGate
+from channels.api.dependencies import BusDep
 
 router = APIRouter(tags=["tools"])
 
@@ -35,7 +35,7 @@ class ToolOut(BaseModel):
     these in two separate cards — when an operator can't find
     a tool, knowing which card it should be in cuts the
     debugging surface in half. ``"mcp"`` only appears if
-    :func:`magi.tools.registry.bootstrap_mcp_tools`
+    :func:`tools.registry.bootstrap_mcp_tools`
     has actually loaded something; on a fresh install this
     surface is naturally empty.
 
@@ -45,7 +45,7 @@ class ToolOut(BaseModel):
     structured input".
 
     ``allowed_roles`` is the per-tool
-    :attr:`magi.tools.base.Tool.ALLOWED_ROLES`, sorted
+    :attr:`tools.base.Tool.ALLOWED_ROLES`, sorted
     alphabetically so the dashboard renders a stable order.
     Empty list means the tool has no role restriction
     and the LLM sees it regardless of caller. MCP tools

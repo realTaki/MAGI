@@ -8,10 +8,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from magi.old_bus.bases.db.base import utcnow_naive
-from magi.old_bus.bases.db.engine import EngineFactory
-from magi.old_bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
-from magi.old_bus.firmwares.jobs.a2aJob import (
+from old_bus.bases.db.base import utcnow_naive
+from old_bus.bases.db.engine import EngineFactory
+from old_bus.firmwares.schema import LOCAL_SCOPE, MAGIS_SCOPE, synchronise_schema
+from old_bus.firmwares.jobs.a2aJob import (
     A2ANotifyJob,
     A2ANotifyResult,
     A2ARequestJob,
@@ -19,10 +19,10 @@ from magi.old_bus.firmwares.jobs.a2aJob import (
     a2aNotifyBoard,
     a2aRequestJobBoard,
 )
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.books.local.conversationBook import ConversationBook, MessageBook
-from magi.old_bus.firmwares.books.magis.magisBook import Magis, MagisBook
-from magi.old_bus.firmwares.books.magis.membershipBook import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.books.local.conversationBook import ConversationBook, MessageBook
+from old_bus.firmwares.books.magis.magisBook import Magis, MagisBook
+from old_bus.firmwares.books.magis.membershipBook import (
     MagisMembership,
     MagisMembershipBook,
     MagisRole,
@@ -206,7 +206,7 @@ def test_notify_publish_and_claim_write_their_respective_message_books(transcrip
 @pytest.mark.asyncio
 async def test_target_worker_reloads_local_a2a_transcript_on_later_request(transcript_boards) -> None:
     """A second request sees the first request and its target-side reply."""
-    from magi.agent.worker import AgentWorker
+    from agent.worker import AgentWorker
 
     boards = transcript_boards
     first_id = boards.source_requests.publish(
@@ -407,7 +407,7 @@ def test_collaboration_directory_exposes_only_public_same_magis_members(boards) 
 
 
 def test_system_prompt_directory_includes_roles_and_responsibilities(boards) -> None:
-    from magi.agent.system_prompt import _format_collaboration_directory
+    from agent.system_prompt import _format_collaboration_directory
 
     source, _target, memberships, _requests, _notifies = boards
     block = _format_collaboration_directory(
@@ -421,7 +421,7 @@ def test_system_prompt_directory_includes_roles_and_responsibilities(boards) -> 
 
 @pytest.mark.asyncio
 async def test_message_magi_splits_request_and_notify_without_waiting_for_notify() -> None:
-    from magi.agent.worker import AgentWorker, RunContext
+    from agent.worker import AgentWorker, RunContext
 
     request_board = Mock()
     request_board.publish.return_value = "request-job"
@@ -473,7 +473,7 @@ async def test_message_magi_splits_request_and_notify_without_waiting_for_notify
 
 @pytest.mark.asyncio
 async def test_a2a_terminal_does_not_publish_human_delivery() -> None:
-    from magi.agent.worker import AgentWorker, RunContext
+    from agent.worker import AgentWorker, RunContext
 
     delivery_board = Mock()
     worker = AgentWorker(SimpleNamespace(delivery_notify_job_board=delivery_board))  # type: ignore[arg-type]
@@ -490,7 +490,7 @@ async def test_a2a_terminal_does_not_publish_human_delivery() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_worker_completes_inbound_request_once_without_delivery() -> None:
-    from magi.agent.worker import AgentWorker
+    from agent.worker import AgentWorker
 
     request_board = Mock()
     notify_board = Mock()
@@ -533,7 +533,7 @@ async def test_agent_worker_completes_inbound_request_once_without_delivery() ->
 
 @pytest.mark.asyncio
 async def test_target_agent_worker_consumes_shared_request_from_another_member(boards) -> None:
-    from magi.agent.worker import AgentWorker
+    from agent.worker import AgentWorker
 
     source, target, _memberships, requests, notifies = boards
     request_id = requests.publish(

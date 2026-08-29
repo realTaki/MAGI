@@ -1,8 +1,8 @@
 """Background-shell state + registry.
 
-Shared by :mod:`magi.tools.shell.run`,
-:mod:`magi.tools.shell.output`, and
-:mod:`magi.tools.shell.kill` — the three tools that
+Shared by :mod:`tools.shell.run`,
+:mod:`tools.shell.output`, and
+:mod:`tools.shell.kill` — the three tools that
 together cover the bash subprocess lifecycle.
 
 Why a singleton
@@ -19,7 +19,7 @@ running process.
 Why a private module
 --------------------
 
-This is internal to :mod:`magi.tools.shell`. External
+This is internal to :mod:`tools.shell`. External
 code reaches the bash tools via the public subclasses
 (:class:`BashRunTool`, etc.); the dataclass + manager
 here are implementation details that the LLM never
@@ -36,7 +36,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-logger = logging.getLogger("magi.tools.shell._manager")
+logger = logging.getLogger("tools.shell._manager")
 
 # Cap on a foreground command. Mirrors the reference
 # implementation's ``max: 600`` — a deployer who wants
@@ -78,9 +78,9 @@ class ShellStatus(StrEnum):
     rather than a DB constraint. ``StrEnum`` keeps
     ``status == "completed"`` style comparisons in tests /
     formatting (``f"[status] {shell.status}"`` in
-    :mod:`magi.tools.shell.output`) working unchanged because
+    :mod:`tools.shell.output`) working unchanged because
     every member is still a ``str``. Mirrors
-    :class:`magi.bus.firmwares.books.local.contactBook.NoteKind`.
+    :class:`bus.firmwares.books.local.contactBook.NoteKind`.
     """
 
     RUNNING = "running"
@@ -378,7 +378,7 @@ class _BackgroundShellManager:
     async def shutdown(cls) -> int:
         """Tear down every live background shell. Returns the count.
 
-        Called from :meth:`magi.tools.worker.ToolsWorker.stop` so a
+        Called from :meth:`tools.worker.ToolsWorker.stop` so a
         MAGI shutdown doesn't strand the subprocesses it spawned.
         Without this the ``bash(run_in_background=True)`` children
         outlive the process that owns them — nothing else on the box
@@ -428,9 +428,9 @@ async def shutdown_background_shells() -> int:
     """Terminate every live background shell. Returns the count.
 
     The one name in this module intended for callers outside
-    :mod:`magi.tools.shell` — :class:`~magi.tools.worker.ToolsWorker`
+    :mod:`tools.shell` — :class:`~tools.worker.ToolsWorker`
     calls it on stop. Follows the same convention as
-    :func:`magi.tools._safe_path.safe_resolve`: a private module
+    :func:`tools._safe_path.safe_resolve`: a private module
     exporting a public function, rather than the package ``__init__``
     growing code (every sibling ``magi/tools/*/__init__.py`` is
     docs-only).

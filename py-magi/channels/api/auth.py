@@ -20,13 +20,13 @@ import httpx
 from fastapi import APIRouter, Cookie, Request, Response
 from pydantic import BaseModel, Field
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.books.magis.runtimeBook import RuntimeObservedState
-from magi.channels.api import control_store
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
-from magi.channels.api.proxy_auth import build_proxy_headers
-from magi.channels.api.runtime_http import CONTROL_TIMEOUT, RELAY_TIMEOUT
+from old_bus import Bus
+from old_bus.firmwares.books.magis.runtimeBook import RuntimeObservedState
+from channels.api import control_store
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
+from channels.api.proxy_auth import build_proxy_headers
+from channels.api.runtime_http import CONTROL_TIMEOUT, RELAY_TIMEOUT
 
 logger = logging.getLogger("magi.api.auth")
 router = APIRouter(tags=["auth"])

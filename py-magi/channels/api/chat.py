@@ -9,7 +9,7 @@ consumption rather than the HTTP handler calling a loop.
 LLM credentials
 ===============
 
-Credentials are resolved inside :func:`magi.providers.factory
+Credentials are resolved inside :func:`providers.factory
 .get_provider` — the chat handler doesn't take them as
 parameters. The seeded adam ``Magi`` row owns the
 provider + API key; the chat handler only reads the
@@ -35,13 +35,13 @@ import logging
 from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
-from magi.old_bus import Bus
-from magi.old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
-from magi.old_bus.firmwares.books.local.conversationBook import ChannelMismatchError
-from magi.channels.api.auth_gates import AdminGate
-from magi.channels.api.chat_conversations import ConversationMessageOut
-from magi.channels.api.dependencies import BusDep
-from magi.channels.api.errors import MagiHTTPException
+from old_bus import Bus
+from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
+from old_bus.firmwares.books.local.conversationBook import ChannelMismatchError
+from channels.api.auth_gates import AdminGate
+from channels.api.chat_conversations import ConversationMessageOut
+from channels.api.dependencies import BusDep
+from channels.api.errors import MagiHTTPException
 
 logger = logging.getLogger("magi.api.chat")
 
@@ -63,7 +63,7 @@ def _resolve_caller_credentials(bus: Bus, contact_id: int) -> int:
 
     LLM credentials live on the MAGI's local ``settings_book``
     (provider + key), not on ``contacts`` — the agent worker
-    reads them internally through :func:`magi.providers.factory
+    reads them internally through :func:`providers.factory
     .get_provider`. Token-usage recording is still per-
     Contact (``token_usage.contact_id``).
 
@@ -170,8 +170,8 @@ async def send_chat(
     # separately by the channel dispatcher (D.28) below — WebUI
     # doesn't need it for send / read but we stamp it on the
     # conversation row for cross-channel tooling.
-    from magi.channels.api.auth import resolve_session
-    from magi.channels.api.auth_gates import _proxy_identity
+    from channels.api.auth import resolve_session
+    from channels.api.auth_gates import _proxy_identity
 
     proxy = _proxy_identity(request)
     if proxy is not None:
@@ -248,7 +248,7 @@ async def send_chat(
         # callers never pass it (see :meth:`ConversationBook.add`
         # docstring). The new id comes back on the returned
         # ``Conversation`` below.
-        from magi.old_bus.firmwares.books.local.conversationBook import Conversation
+        from old_bus.firmwares.books.local.conversationBook import Conversation
 
         sess = Conversation(
             contact_id=contact_id,

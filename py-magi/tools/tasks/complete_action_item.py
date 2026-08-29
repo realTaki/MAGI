@@ -19,9 +19,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from magi.tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolContext, ToolResult
 
-logger = logging.getLogger("magi.tools.tasks.complete_action_item")
+logger = logging.getLogger("tools.tasks.complete_action_item")
 
 
 class CompleteActionItemTool(Tool):

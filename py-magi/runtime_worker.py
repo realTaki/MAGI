@@ -4,10 +4,10 @@ Workers own domain behaviour; this module owns the mechanics common to every
 long-lived MAGI worker: lifecycle, tracked child tasks, blocking BUS calls,
 and health reporting.  It deliberately does not impose a job-board protocol.
 
-Lives at the package root (not under :mod:`magi.startup`) so that
+Lives at the package root (not under :mod:`startup`) so that
 domain workers can depend on a neutral foundation primitive without
 pulling the composition root into their import graph.  The previous
-location (:mod:`magi.startup.worker`) created a runtime dependency
+location (:mod:`startup.worker`) created a runtime dependency
 cycle::
 
     bus.library.file.skillsBook ──▶ startup.paths
@@ -15,7 +15,7 @@ cycle::
     domain workers               ──▶ startup.worker.RuntimeWorker
 
 Putting :class:`RuntimeWorker` here breaks the
-``startup -> ... -> startup`` leg while leaving :mod:`magi.startup`
+``startup -> ... -> startup`` leg while leaving :mod:`startup`
 free to do nothing but compose the workers.
 """
 
@@ -31,9 +31,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from magi.bus import Bus
+    from bus import Bus
 
-logger = logging.getLogger("magi.runtime_worker")
+logger = logging.getLogger("runtime_worker")
 T = TypeVar("T")
 
 

@@ -14,7 +14,7 @@ _PROMPT_DEFAULTS: tuple[tuple[str, str], ...] = (
 
 def ensure_proactive_prompt_defaults(prompt_book) -> None:
     """Seed one managed Markdown file for each proactive task preset."""
-    prompts = files("magi.proactive.prompts")
+    prompts = files("proactive.prompts")
     for key, filename in _PROMPT_DEFAULTS:
         prompt_book.register(
             key=key,

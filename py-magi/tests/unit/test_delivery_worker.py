@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from magi.old_bus.bases.db import EngineFactory
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.deliveryNotifyJob import (
+from old_bus.bases.db import EngineFactory
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.deliveryNotifyJob import (
     DeliveryNotifyJob,
     DeliveryNotifyResult,
     deliveryNotifyJobBoard,
@@ -50,11 +50,11 @@ async def test_telegram_worker_delivers_and_submits_success(monkeypatch):
         sent.append((token, chat_id, text))
 
     monkeypatch.setattr(
-        "magi.channels.telegram.bot.send_text_raw",
+        "channels.telegram.bot.send_text_raw",
         fake_send,
     )
 
-    from magi.channels.telegram.worker import TelegramWorker
+    from channels.telegram.worker import TelegramWorker
 
     worker = TelegramWorker(mock_bus)
     worker._stopping = False
@@ -98,7 +98,7 @@ async def test_telegram_worker_fails_without_token():
         text="hi",
     )
 
-    from magi.channels.telegram.worker import TelegramWorker
+    from channels.telegram.worker import TelegramWorker
 
     worker = TelegramWorker(mock_bus)
 
@@ -112,7 +112,7 @@ async def test_telegram_can_start_after_token_is_added():
     mock_bus = MagicMock()
     mock_bus.settings_book.get_value = MagicMock(return_value=None)
 
-    from magi.channels.telegram.worker import TelegramWorker
+    from channels.telegram.worker import TelegramWorker
 
     worker = TelegramWorker(mock_bus)
     assert await worker.start() is False

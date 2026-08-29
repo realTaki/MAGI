@@ -5,8 +5,8 @@ either inserts the matching Task row, no-ops on idempotent re-seed, or
 fails the job with a precise ``error`` describing the broken preset.
 
 The caller dispatches **one job per preset** (see
-:meth:`magi.channels.api.contacts._publish_contact_creation` /
-:meth:`magi.channels.api.contacts._publish_contact_update`), so each
+:meth:`channels.api.contacts._publish_contact_creation` /
+:meth:`channels.api.contacts._publish_contact_update`), so each
 job's success / failure maps 1:1 to one preset's outcome — no bulk
 ``inserted=3, skipped=2`` counter that needs post-mortem log-diving to
 disambiguate.
@@ -20,20 +20,20 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from magi.old_bus.bases.job import JobStatus
-from magi.old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskResult
-from magi.old_bus.firmwares.books.local import Role
-from magi.old_bus.firmwares.books.local.tasksBook import (
+from old_bus.bases.job import JobStatus
+from old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskResult
+from old_bus.firmwares.books.local import Role
+from old_bus.firmwares.books.local.tasksBook import (
     TaskSource,
     preset_to_cron,
     validate_run_at,
 )
 
 if TYPE_CHECKING:
-    from magi.old_bus import Bus
-    from magi.old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
+    from old_bus import Bus
+    from old_bus.firmwares.jobs.seedPresetTasksJob import SeedPresetTaskJob
 
-logger = logging.getLogger("magi.proactive.preset_tasks")
+logger = logging.getLogger("proactive.preset_tasks")
 
 
 async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob, *, worker_id: str) -> None:
@@ -107,7 +107,7 @@ async def handle_seed_job(bus: Bus, job: SeedPresetTaskJob, *, worker_id: str) -
                 kwargs["cron"] = cron_val
             else:
                 kwargs["run_at"] = run_at_val
-            from magi.old_bus.firmwares.books.local.tasksBook import Task
+            from old_bus.firmwares.books.local.tasksBook import Task
 
             bus.tasks_book.add(Task(**kwargs))
         except ValueError as exc:
