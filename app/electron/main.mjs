@@ -16,6 +16,7 @@ const DEV_URL = process.env.MAGI_APP_DEV_URL ?? "http://127.0.0.1:42069";
 const BACKEND_URL = process.env.MAGI_BACKEND_URL ?? "http://127.0.0.1:42070";
 
 let shellClose = null;
+let pageUrl = null;
 
 async function waitForUrl(url, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
@@ -53,9 +54,11 @@ function createWindow(url) {
 }
 
 async function resolvePageUrl() {
+  if (pageUrl) return pageUrl;
   const useDev = !app.isPackaged && process.env.MAGI_ELECTRON_PROD !== "1";
   if (useDev && (await waitForUrl(DEV_URL))) {
-    return DEV_URL;
+    pageUrl = DEV_URL;
+    return pageUrl;
   }
   if (!existsSync(join(DIST, "index.html"))) {
     throw new Error(
@@ -66,7 +69,8 @@ async function resolvePageUrl() {
   }
   const server = await startShellServer({ distDir: DIST, backendUrl: BACKEND_URL });
   shellClose = server.close;
-  return server.url;
+  pageUrl = server.url;
+  return pageUrl;
 }
 
 app.whenReady().then(async () => {
