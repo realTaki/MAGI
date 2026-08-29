@@ -9,7 +9,7 @@ from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.file import FileEngine
-from .base.slot import SlotTag
+from .base.slot import SlotTag, SlotType
 from .BaseWorker import BaseWorker
 from .bus import Bus
 from .bus_for_worker import BusForWorker, JobBoardClient
@@ -108,6 +108,7 @@ __all__ = [
     "BaseJobBoard",
     "JobStatus",
     "SlotTag",
+    "SlotType",
     "BusForWorker",
     "JobBoardClient",
     "Conversation",

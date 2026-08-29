@@ -10,7 +10,8 @@ from typing import Any, TypeVar, cast
 from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.engine import EngineFactory
 from .base.file import FileEngine
-from .base.heartbeat import Heartbeat, Slot
+from .base.heartbeat import Heartbeat
+from .base.slot import SlotRegistry, SlotTag
 from .bus_for_worker import BusForWorker
 
 JobT = TypeVar("JobT", bound=BaseJob)
@@ -37,11 +38,12 @@ class Bus:
 
         prepare_schema(self._factory)
         self._heartbeat = Heartbeat()
+        self._slots = SlotRegistry(self._heartbeat)
         from .firmware import create_job_boards
 
         self._job_boards = create_job_boards(
             self._factory,
-            self._heartbeat,
+            self._slots,
             files=self._files,
         )
         self._lock = threading.RLock()
@@ -49,7 +51,7 @@ class Bus:
     def for_worker(
         self,
         worker_id: str,
-        slots: Iterable[Slot],
+        slots: Iterable[SlotTag],
     ) -> BusForWorker | None:
         """Allocate Slots and return the shared BUS slice for one Worker."""
         if not self._allocate_worker_slots(worker_id, slots):
@@ -61,26 +63,28 @@ class Bus:
             worker_id=worker_id,
         )
 
-    def _allocate_worker_slots(self, worker_id: str, slots: Iterable[Slot]) -> bool:
+    def _allocate_worker_slots(self, worker_id: str, slots: Iterable[SlotTag]) -> bool:
         """Attach one Worker to each of its declared Slots."""
         requested = tuple(slots)
         with self._lock:
             if any(
-                (board := self._job_board(slot.job_type)) is None or not board.has_slot(slot.name)
-                for slot in requested
+                (board := self._job_board(tag.job_type)) is None or not board.has_slot(tag.name)
+                for tag in requested
             ):
                 return False
-            if not self._heartbeat.attach(worker_id, requested):
+            if not self._heartbeat.attach(worker_id):
                 return False
+            for tag in requested:
+                self._slots.get(tag).attach(worker_id)
         return True
 
     def _invoke(self, worker_id: str, job_type: type[JobT], slot_name: str, *args, **kwargs) -> Any:
         board = self._job_board(job_type)
         if board is None:
             return None
-        slot = Slot(job_type, slot_name)
+        slot = self._slots.get(SlotTag(job_type, slot_name))
         try:
-            if not self._heartbeat.holds(worker_id, slot):
+            if not slot.holds(worker_id):
                 return None
             return getattr(board, slot_name)(*args, worker_id=worker_id, **kwargs)
         except Exception:

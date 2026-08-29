@@ -7,7 +7,7 @@ from .engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .file import FileEngine
 from .heartbeat import Heartbeat
 from .operateBookJob import OperateBookJobBoard
-from .slot import Slot, SlotRegistry, SlotTag
+from .slot import Slot, SlotTag, SlotType, slots
 
 __all__ = [
     "BaseBook",
@@ -22,7 +22,8 @@ __all__ = [
     "Heartbeat",
     "Slot",
     "SlotTag",
-    "SlotRegistry",
+    "SlotType",
+    "slots",
     "JobStatus",
     "PostgresBackend",
     "SQLiteBackend",
