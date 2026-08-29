@@ -28,13 +28,10 @@ def test_start_provisions_then_starts_local_services(monkeypatch, tmp_path: Path
     monkeypatch.setattr(cli, "init_first_magi", lambda _config: calls.append("init") or spec)
     monkeypatch.setattr(cli.local, "status_magi", lambda **_kwargs: _stopped_status(tmp_path))
     monkeypatch.setattr(cli.local, "start_magi", lambda **_kwargs: calls.append("node") or 0)
-    monkeypatch.setattr(
-        cli.webui, "ensure_webui_running", lambda **_kwargs: calls.append("webui") or None
-    )
 
     assert cli.main(["start", "--host-workspace-dir", str(tmp_path)]) == 0
-    assert calls == ["init", "node", "webui"]
-    assert "http://127.0.0.1:42069" in capsys.readouterr().out
+    assert calls == ["init", "node"]
+    assert "started" in capsys.readouterr().out
 
 
 def test_start_does_not_reprovision_or_restart_a_live_node(monkeypatch, tmp_path: Path) -> None:
@@ -47,9 +44,6 @@ def test_start_does_not_reprovision_or_restart_a_live_node(monkeypatch, tmp_path
     monkeypatch.setattr(cli, "init_first_magi", lambda _config: calls.append("init"))
     monkeypatch.setattr(cli.local, "status_magi", lambda **_kwargs: alive)
     monkeypatch.setattr(cli.local, "start_magi", lambda **_kwargs: calls.append("node") or 0)
-    monkeypatch.setattr(
-        cli.webui, "ensure_webui_running", lambda **_kwargs: calls.append("webui") or None
-    )
 
     assert cli.main(["start", "--host-workspace-dir", str(tmp_path)]) == 0
-    assert calls == ["webui"]
+    assert calls == []
