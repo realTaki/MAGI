@@ -39,17 +39,24 @@ class SlotType(StrEnum):
     SUBMIT_POST = "submit_post"
 
 
-def slot(slot_type: SlotType):
+def slot(
+    slot_type: SlotType,
+    *,
+    next_slot: str | None = None,
+    pass_if_no_worker: Callable[..., Any] | None = None,
+):
     """Declare an operation's Slot type and dispatch through global ``slots``."""
 
     def decorate(fn):
         @wraps(fn)
         def wrapped(self, *args, worker_id: str, **kwargs):
             tag = SlotTag(type(self).job_cls, fn.__name__)
-            return slots.execute(self, tag, slot_type, worker_id, fn, args, kwargs)
+            return slots.execute(self, tag, slot_type, next_slot, worker_id, fn, args, kwargs)
 
         wrapped._slot = True
         wrapped._slot_type = slot_type
+        wrapped._slot_next = next_slot
+        wrapped._slot_pass_if_no_worker = pass_if_no_worker
         return wrapped
 
     return decorate
@@ -76,7 +83,13 @@ class _PostJob:
 class Slot:
     """Base runtime object for one declared operation."""
 
-    def __init__(self, tag: SlotTag, heartbeat: Heartbeat) -> None:
+    def __init__(
+        self,
+        tag: SlotTag,
+        heartbeat: Heartbeat,
+        pass_if_no_worker: Callable[..., Any] | None = None,
+    ) -> None:
+        del pass_if_no_worker
         self.tag = tag
         self._heartbeat = heartbeat
         self._members: set[str] = set()
@@ -109,8 +122,10 @@ class Slot:
         fn: Callable[..., Any],
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
+        next_slot: str | None,
         worker_id: str,
     ) -> Any:
+        del next_slot
         if not self.touch(worker_id):
             return None
         return fn(board, *args, **kwargs)
@@ -124,32 +139,43 @@ class Slot:
 class PublishSlot(Slot):
     """Persist a new job, then offer it to an active post-publish gate."""
 
-    def execute(self, board, fn, args, kwargs, worker_id: str) -> Any:
+    def execute(
+        self, board, fn, args, kwargs, next_slot, worker_id: str
+    ) -> Any:
         if not self.touch(worker_id):
             return None
-        post_tag = SlotTag(self.tag.job_type, "claim_post_publish")
-        post_active = slots.held(board, post_tag)
-        job_id = fn(board, *args, _slot_post_active=post_active, **kwargs)
-        if post_active and job_id is not None:
-            slots.post(board, post_tag).offer(int(job_id))
+        post_tag = SlotTag(self.tag.job_type, next_slot) if next_slot else None
+        job_id = fn(board, *args, **kwargs)
+        if job_id is not None and post_tag is not None:
+            slots.post(board, post_tag).offer(board, int(job_id))
         return job_id
 
 
 class SubmitResultSlot(Slot):
     """First durable result wins; an active post-result gate gets the row."""
 
-    def execute(self, board, fn, args, kwargs, worker_id: str) -> Any:
+    def execute(
+        self, board, fn, args, kwargs, next_slot, worker_id: str
+    ) -> Any:
         if not self.touch(worker_id):
             return None
-        post_active = slots.held(board, SlotTag(self.tag.job_type, "claim_post_result"))
+        post_active = bool(
+            next_slot and slots.held(board, SlotTag(self.tag.job_type, next_slot))
+        )
         return fn(board, *args, _slot_post_active=post_active, **kwargs)
 
 
-class PostClaimSlot(Slot):
+class ClaimPostSlot(Slot):
     """Ordered per-worker post stream plus the all-member vote cache."""
 
-    def __init__(self, tag: SlotTag, heartbeat: Heartbeat) -> None:
+    def __init__(
+        self,
+        tag: SlotTag,
+        heartbeat: Heartbeat,
+        pass_if_no_worker: Callable[..., Any] | None = None,
+    ) -> None:
         super().__init__(tag, heartbeat)
+        self._pass_if_no_worker = pass_if_no_worker
         self._cursor: dict[str, int] = {}
         self._jobs: dict[int, _PostJob] = {}
         self._high_watermark = 0
@@ -160,7 +186,10 @@ class PostClaimSlot(Slot):
             self._cursor.setdefault(worker_id, self._high_watermark)
         return True
 
-    def execute(self, board, fn, args, kwargs, worker_id: str) -> Any:
+    def execute(
+        self, board, fn, args, kwargs, next_slot, worker_id: str
+    ) -> Any:
+        del next_slot
         with self._lock:
             if not self.touch(worker_id):
                 return None
@@ -174,11 +203,17 @@ class PostClaimSlot(Slot):
             self._cursor[worker_id] = job_id
             return job
 
-    def offer(self, job_id: int) -> None:
+    def offer(self, board: BaseJobBoard[Any, Any, Any], job_id: int) -> None:
         with self._lock:
             self._discard_expired()
             self._high_watermark = max(self._high_watermark, job_id)
-            self._jobs.setdefault(job_id, _PostJob(expected=self.members(), votes={}))
+            if not self._members:
+                pass_if_no_worker = self._pass_if_no_worker
+            else:
+                pass_if_no_worker = None
+                self._jobs.setdefault(job_id, _PostJob(expected=self.members(), votes={}))
+        if pass_if_no_worker is not None:
+            pass_if_no_worker(board, job_id)
 
     def submit(self, worker_id: str, job_id: int, result: Any) -> PostSubmission:
         with self._lock:
@@ -234,7 +269,10 @@ class PostClaimSlot(Slot):
 class PostSubmitSlot(Slot):
     """Vote through the paired post-claim Slot; only the final vote settles."""
 
-    def execute(self, board, fn, args, kwargs, worker_id: str) -> Any:
+    def execute(
+        self, board, fn, args, kwargs, next_slot, worker_id: str
+    ) -> Any:
+        del next_slot
         if not self.touch(worker_id) or len(args) < 2:
             return False
         if not fn(board, *args, _slot_settlement=None, **kwargs):
@@ -251,7 +289,6 @@ class PostSubmitSlot(Slot):
         if submission.settlement is not None:
             fn(board, *args, _slot_settlement=submission.settlement, **kwargs)
         return True
-
 
 class Slots:
     """Global lookup table used both by ``@slot`` and BUS worker attachment."""
@@ -275,15 +312,15 @@ class Slots:
     def held(self, board: BaseJobBoard[Any, Any, Any], tag: SlotTag) -> bool:
         return self.get(board, tag).held()
 
-    def post(self, board: BaseJobBoard[Any, Any, Any], tag: SlotTag) -> PostClaimSlot:
+    def post(self, board: BaseJobBoard[Any, Any, Any], tag: SlotTag) -> ClaimPostSlot:
         runtime = self.get(board, tag)
-        if not isinstance(runtime, PostClaimSlot):
+        if not isinstance(runtime, ClaimPostSlot):
             raise ValueError(f"{tag.name} is not a claim-post Slot")
         return runtime
 
-    def execute(self, board, tag, slot_type, worker_id, fn, args, kwargs) -> Any:
+    def execute(self, board, tag, slot_type, next_slot, worker_id, fn, args, kwargs) -> Any:
         runtime = self.get(board, tag, slot_type)
-        return runtime.execute(board, fn, args, kwargs, worker_id)
+        return runtime.execute(board, fn, args, kwargs, next_slot, worker_id)
 
     def settle_expired(
         self, board: BaseJobBoard[Any, Any, Any], tag: SlotTag
@@ -310,10 +347,12 @@ class Slots:
             runtime_cls = {
                 SlotType.PUBLISH: PublishSlot,
                 SlotType.SUBMIT_RESULT: SubmitResultSlot,
-                SlotType.CLAIM_POST: PostClaimSlot,
+                SlotType.CLAIM_POST: ClaimPostSlot,
                 SlotType.SUBMIT_POST: PostSubmitSlot,
             }.get(declared_type, Slot)
-            runtime = runtime_cls(tag, heartbeat)
+            operation = getattr(type(board), tag.name)
+            pass_if_no_worker = getattr(operation, "_slot_pass_if_no_worker", None)
+            runtime = runtime_cls(tag, heartbeat, pass_if_no_worker)
             self._runtimes[board][tag] = runtime
             return runtime
 
