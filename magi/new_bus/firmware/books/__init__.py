@@ -2,6 +2,7 @@
 from .contactBook import Contact, ContactBook, ContactRole
 from .contactNoteBook import ContactNote, ContactNoteBook, NoteKind
 from .conversationBook import Conversation, ConversationBook
+from .memoryBook import Memory, MemoryBook, MemoryKind
 from .messageBook import Message, MessageBook
 from .promptsBook import KNOWN_PROMPTS, PromptsBook
 from .settingsBook import Setting, SettingsBook
@@ -18,6 +19,9 @@ __all__ = [
     "NoteKind",
     "Conversation",
     "ConversationBook",
+    "Memory",
+    "MemoryBook",
+    "MemoryKind",
     "Message",
     "MessageBook",
     "Setting",
