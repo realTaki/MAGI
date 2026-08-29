@@ -9,6 +9,8 @@ workspace
 .ruff_cache
 **/__pycache__
 **/*.py[cod]
-magi/WebUI/node_modules
-magi/WebUI/dist
+WebUI/node_modules
+WebUI/dist
+ts-magi/node_modules
+ts-magi/dist
 *.log

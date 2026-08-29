@@ -8,7 +8,7 @@
 #      ~/.local/bin if it is not already on PATH.
 #   2. The Python virtualenv (`.venv`) with every runtime + dev extra
 #      (`adam`, `eva`, `dev`) resolved from the committed `uv.lock`.
-#   3. The React WebUI production bundle (`magi/WebUI/dist`) so the
+#   3. The React WebUI production bundle (`WebUI/dist`) so the
 #      FastAPI control service serves the SPA at http://127.0.0.1:42069
 #      exactly as production does (no separate Vite dev server needed).
 #
@@ -40,12 +40,12 @@ log "uv: $(command -v uv) ($(uv --version))"
 # 2. Python dependencies — all extras (adam + eva + dev) from uv.lock.
 #    `uv sync` is idempotent and only touches the venv when the lock changes.
 log "syncing Python dependencies (all extras)"
-uv sync --all-extras
+( cd py-magi && uv sync --all-extras )
 
 # 3. WebUI production bundle. `npm ci` is a clean, lockfile-driven install;
-#    `npm run build` type-checks and emits magi/WebUI/dist consumed by the
+#    `npm run build` type-checks and emits WebUI/dist consumed by the
 #    FastAPI SPA mount.
 log "building WebUI (npm ci && npm run build)"
-( cd magi/WebUI && npm ci && npm run build )
+( cd WebUI && npm ci && npm run build )
 
 log "install complete"

@@ -1,0 +1,23 @@
+{
+  "name": "@magi/bus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-migrations.mjs",
+    "generate:migration": "drizzle-kit generate --config=drizzle.config.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "drizzle-kit": "^0.31.10"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

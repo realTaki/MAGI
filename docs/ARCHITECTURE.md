@@ -46,7 +46,7 @@ successor of the previous **new BUS** work; `magi.new_bus` is the next
 not a retired compatibility package. It currently has its own `Bus`,
 `BusForWorker`, Dock/Slot lifecycle, storage backends, and Firmware contract; its
 design baseline lives in
-[`magi/new_bus/MAGI-BUS 架构设计书.md`](../magi/new_bus/MAGI-BUS%20架构设计书.md).
+[`magi/new_bus/MAGI-BUS 架构设计书.md`](../py-magi/magi/new_bus/MAGI-BUS%20架构设计书.md).
 The production runtime described below is still composed through
 `magi.bus.bootstrap.open_bus(...)` until that migration is explicitly wired
 through the startup composition root.

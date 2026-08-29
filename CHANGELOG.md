@@ -36,7 +36,7 @@
   MAGI HTTP API (browsers, the A2A peer ingress, and future non-web
   clients) — not only the WebUI frontend. The `magi webui` CLI subcommand,
   the `magi-webui` Kubernetes Service, `MAGI_WEBUI_PORT`/`MAGI_WEBUI_HOST`
-  env vars, and the `magi/WebUI/` React frontend are unchanged: those
+  env vars, and the `WebUI/` React frontend are unchanged: those
   refer to the frontend service, not the renamed Python package.
 - **Eve → Eva rename (full sweep)**: every remaining `Eve`/`EVE`/`eve`
   identifier, file, directory, and runtime token is now `Eva`/`EVA`/`eva`.
