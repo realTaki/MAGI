@@ -9,18 +9,17 @@ import tailwindcss from "@tailwindcss/vite";
 // ``VITE_BACKEND_URL`` is unset and we fall back to
 // ``http://127.0.0.1:${MAGI_PORT}``.
 //
-// MAGI_PORT is the port the *node* binds; the vite dev server itself
-// listens on 42069 so the dev URL matches the prod URL.
+// MAGI_PORT is the MAGI node API (py-magi). Vite itself listens on
+// 42069 so the browser / Electron shell share one UI origin.
 const BACKEND_URL =
   process.env.VITE_BACKEND_URL ??
-  `http://127.0.0.1:${process.env.MAGI_PORT ?? "42069"}`;
+  `http://127.0.0.1:${process.env.MAGI_PORT ?? "42070"}`;
 const WS_URL = BACKEND_URL.replace(/^http/, "ws");
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    // 42069 = the WebUI's port in production (FastAPI bind). Vite dev
-    // reuses the same port so the dev URL matches the prod URL.
+    // Operator UI origin. py-magi no longer serves this page.
     port: 42069,
     // Local development may proxy through arbitrary host names. Vite's default
     // allowlist would reject those names before the /api proxy reaches FastAPI.
