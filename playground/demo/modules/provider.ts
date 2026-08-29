@@ -4,7 +4,7 @@ import {
   GetSettingJob,
   slot,
   type Slot,
-} from "../src/index.js";
+} from "../../src/index.js";
 
 export class DemoProvider extends BaseWorker {
   readonly workerName = "provider";
@@ -22,5 +22,19 @@ export class DemoProvider extends BaseWorker {
     const settings = this.bus.board(GetSettingJob);
     const jobId = await settings.publish({ key: "provider.model" });
     this.model = (await settings.getResult(jobId))?.output?.value ?? null;
+  }
+
+  /** Placeholder inference: real provider SDK code belongs only here. */
+  async serveNext(): Promise<number | null> {
+    const jobs = this.bus.board(CallLLMJob);
+    const job = await jobs.claim();
+    if (!job) return null;
+    await jobs.submitResult(job.id, {
+      output: {
+        text: `demo response to: ${job.input.messages.at(-1)?.content ?? ""}`,
+        model: this.model ?? "unknown",
+      },
+    });
+    return job.id;
   }
 }

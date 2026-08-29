@@ -1,15 +1,17 @@
-# ts_bus
+# playground
 
 This is a small, structurally comparable TypeScript slice of MAGI-BUS. It
 contains only the pieces needed to attach a provider plugin:
 
 ```text
-Launcher
-  -> Bus.forWorker(slots)
-    -> BusForWorker
-      -> DemoProvider.attach(...)
-        -> GetSettingJobBoard -> private SettingsBook
-        -> CallLLMJobBoard
+Launcher (the composition root)
+  -> Caller       [llm.call.publish]
+  -> DemoProvider [settings.get.*, llm.call.claim, llm.call.submitResult]
+  -> ResultReader [llm.call.getResult]
+
+Caller -> CallLLMJobBoard -> SQLite <- CallLLMJobBoard <- DemoProvider
+                                |
+                           ResultReader
 ```
 
 ## Layout
@@ -17,7 +19,7 @@ Launcher
 ```text
 src/
   base/
-    sqlite.ts           Node 22 native SQLite connection and transactions
+    sqlite.ts           better-sqlite3 connection, transactions, and migrations
     job.ts              Job DTO, Slot, JobBoard contract
     baseWorker.ts       attach/detach lifecycle
   firmware/
@@ -30,16 +32,18 @@ src/
   busForWorker.ts       identity-bound plugin surface
   index.ts              public BUS API
 demo/
-  provider.ts           plugin; imports only the public BUS API
-  launcher.ts           opens BUS and attaches the plugin
+  modules/caller.ts     request-only module
+  modules/provider.ts   execution-only module
+  modules/resultReader.ts  completed-result-only module
+  launcher.ts           the only composition root; opens BUS and attaches modules
   main.ts               runnable entry point
 ```
 
-The demo provider contains no LLM SDK or inference logic. On attach it boosts
-one default setting and reads it through `GetSettingJob`. It declares ownership
-of `CallLLMJob.claim` and `CallLLMJob.submitResult`, showing exactly where real
-provider logic would connect later. `SettingsBook` and storage are never
-exposed to the plugin.
+Each module imports only `src/index.ts`, never another module. `Caller` cannot
+claim or read a call, `DemoProvider` cannot publish one, and `ResultReader`
+cannot create or execute one. The launcher is deliberately the only file that
+imports all three. `SettingsBook` and storage are never exposed outside
+Firmware/JobBoards.
 
 ## SQLite tables
 

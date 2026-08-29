@@ -5,48 +5,41 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import test from "node:test";
 
-import { launchDemo } from "../demo/launcher.js";
+import { launchPlayground } from "../demo/launcher.js";
 import { Bus, CallLLMJob, slot } from "../src/index.js";
 
-test("launcher attaches the provider and SettingsBook stays behind Jobs", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "magi-ts-bus-"));
+test("launcher attaches isolated modules and SettingsBook stays behind Jobs", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-playground-"));
   try {
-    const runtime = await launchDemo(workspace);
+    const runtime = await launchPlayground(workspace);
+    assert.equal(runtime.caller.isAttached, true);
     assert.equal(runtime.provider.isAttached, true);
+    assert.equal(runtime.reader.isAttached, true);
     assert.equal(runtime.provider.model, "demo-model");
-    assert.equal(runtime.bus.forWorker("provider-2", runtime.provider.requiredSlots), null);
+    assert.equal(runtime.bus.forWorker("caller-2", runtime.caller.requiredSlots), null);
     await runtime.shutdown();
+    assert.equal(runtime.caller.isAttached, false);
     assert.equal(runtime.provider.isAttached, false);
+    assert.equal(runtime.reader.isAttached, false);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
-test("CallLLMJobBoard persists publish, claim, result, and reopen", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "magi-ts-bus-"));
+test("Caller, Provider, and ResultReader coordinate only through BUS", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-playground-"));
   try {
-    const bus = await Bus.open(workspace);
-    const caller = bus.forWorker("caller", [
-      slot(CallLLMJob, "publish"),
-      slot(CallLLMJob, "getResult"),
-    ]);
-    const provider = bus.forWorker("provider", [
-      slot(CallLLMJob, "claim"),
-      slot(CallLLMJob, "submitResult"),
-    ]);
-    assert.ok(caller && provider);
-
-    const jobId = await caller.board(CallLLMJob).publish({
-      messages: [{ role: "user", content: "hello" }],
+    const runtime = await launchPlayground(workspace);
+    const jobId = await runtime.caller.ask("hello");
+    assert.equal(await runtime.reader.read(jobId), null);
+    assert.equal(await runtime.provider.serveNext(), jobId);
+    assert.deepEqual(await runtime.reader.read(jobId), {
+      id: jobId,
+      status: "completed",
+      output: { text: "demo response to: hello", model: "demo-model" },
+      error: undefined,
     });
-    const job = await provider.board(CallLLMJob).claim();
-    assert.equal(job?.id, jobId);
-    assert.equal(
-      await provider.board(CallLLMJob).submitResult(jobId, {
-        output: { text: "", model: "demo-model" },
-      }),
-      true,
-    );
+    await runtime.shutdown();
 
     const reopened = await Bus.open(workspace);
     const reader = reopened.forWorker("reader", [slot(CallLLMJob, "getResult")]);
@@ -54,13 +47,10 @@ test("CallLLMJobBoard persists publish, claim, result, and reopen", async () => 
     assert.deepEqual(await reader.board(CallLLMJob).getResult(jobId), {
       id: jobId,
       status: "completed",
-      output: { text: "", model: "demo-model" },
+      output: { text: "demo response to: hello", model: "demo-model" },
       error: undefined,
     });
-    caller.detach();
-    provider.detach();
     reader.detach();
-    bus.close();
     reopened.close();
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -68,7 +58,7 @@ test("CallLLMJobBoard persists publish, claim, result, and reopen", async () => 
 });
 
 test("Firmware creates explicit SQLite tables", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "magi-ts-bus-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-playground-"));
   try {
     const bus = await Bus.open(workspace);
     bus.close();
@@ -83,8 +73,7 @@ test("Firmware creates explicit SQLite tables", async () => {
       .all() as string[];
     const migrations = database
       .prepare("SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at")
-      .all()
-      as Array<{ hash: string; created_at: number }>;
+      .all() as Array<{ hash: string; created_at: number }>;
     database.close();
 
     assert.deepEqual(tables, [
