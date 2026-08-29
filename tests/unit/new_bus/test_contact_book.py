@@ -4,7 +4,7 @@ import dataclasses
 
 import pytest
 
-from magi.new_bus import Contact, ContactRole
+from magi.bus import Contact, ContactRole
 
 
 @pytest.mark.parametrize(

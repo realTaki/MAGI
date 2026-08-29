@@ -25,8 +25,8 @@ def _production_modules() -> list[Path]:
 
 
 def test_vnext_bus_is_a_first_class_package() -> None:
-    """``magi.new_bus`` is the next BUS iteration, not a compatibility shim."""
-    vnext_root = MAGI_ROOT / "new_bus"
+    """``magi.bus`` is the MAGI-BUS vNext package, not a compatibility shim."""
+    vnext_root = MAGI_ROOT / "bus"
     assert (vnext_root / "__init__.py").is_file()
     assert (vnext_root / "bus.py").is_file()
     assert (vnext_root / "firmware" / "__init__.py").is_file()

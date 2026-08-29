@@ -3,7 +3,7 @@
 抽象接口 (:class:`LLMProvider` / :class:`LLMStreamEvent` /
 :class:`StreamEventKind`) 在 :mod:`magi.providers.base`。本模块只
 负责"配置 → SDK client"这一步，**唯一**知道具体厂商构造方式的地方。
-provider worker 通过 ``magi.new_bus.BusForWorker`` 发布 ``GetSettingJob``
+provider worker 通过 ``magi.bus.BusForWorker`` 发布 ``GetSettingJob``
 读取配置，再把原始值传入这里；factory 不依赖任何 BUS 实现或 Book。
 
 已知厂商（v0）:

@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Any
 
-from magi.new_bus import (
+from magi.bus import (
     BaseWorker,
     CallLLMJob,
     CallLLMResult,
