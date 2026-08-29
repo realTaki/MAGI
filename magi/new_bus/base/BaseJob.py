@@ -17,7 +17,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .errors import InvalidJobError
 from .heartbeat import Heartbeat, Slot
 from .time import utcnow
 
@@ -33,7 +32,7 @@ def slot(fn):
     def wrapped(self, *args, worker_id: str, **kwargs):
         slot_key = Slot(type(self).job_cls, fn.__name__)
         if not self._heartbeat.holds(worker_id, slot_key):
-            raise InvalidJobError(f"slot {fn.__name__!r} is not held by {worker_id}")
+            return None
         self._heartbeat.heartbeat(worker_id)
         return fn(self, *args, **kwargs)
 
@@ -66,6 +65,11 @@ class BaseJobResult(BaseRecord):
 
     status: JobStatus = JobStatus.COMPLETED
     error: str | None = None
+
+
+def error_message(error: Exception) -> str:
+    """Return the durable, user-forwardable text for an execution failure."""
+    return str(error).strip() or type(error).__name__
 
 
 class BaseJobRow(BaseRecordMixin):

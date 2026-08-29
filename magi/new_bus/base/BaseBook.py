@@ -12,7 +12,6 @@ from sqlalchemy import DateTime, Integer, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .engine import EngineFactory
-from .errors import InvalidJobError
 from .time import BaseTime, load_dt, utcnow
 
 
@@ -122,7 +121,7 @@ class BaseBook[RecordT: BaseRecord]:
     def __init__(self, factory: EngineFactory) -> None:
         cls = type(self)
         if getattr(cls, "row_cls", None) is None:
-            raise InvalidJobError(f"{cls.__name__} must set row_cls")
+            raise ValueError(f"{cls.__name__} must set row_cls")
         self._factory = factory
 
     def _session(self):

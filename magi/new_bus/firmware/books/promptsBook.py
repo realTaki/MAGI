@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import Final
 
 from ...base.BaseFileBook import BaseFileBook
-from ...base.errors import InvalidJobError
 
 KNOWN_PROMPTS: Final[dict[str, str]] = {
     "agent/soul": "Active workspace persona used for every agent turn.",
@@ -87,7 +86,7 @@ class PromptsBook(BaseFileBook):
     @classmethod
     def _require_active_key(cls, key: str) -> None:
         if not isinstance(key, str) or not key.strip():
-            raise InvalidJobError("prompt key must be a non-empty relative path")
+            raise ValueError("prompt key must be a non-empty relative path")
         if cls._is_default_key(key):
             raise ValueError(f"default prompt key {key!r} is managed by PromptsBook")
 

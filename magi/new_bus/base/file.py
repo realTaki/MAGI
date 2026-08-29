@@ -7,22 +7,20 @@ import tempfile
 from pathlib import Path
 from typing import ClassVar
 
-from .errors import InvalidJobError
-
 BOOK_DIRS: tuple[str, ...] = ("prompts", "skills")
 
 
 def resolve_under(root: Path, name: str) -> Path:
     """Return ``root / name`` if *name* stays inside *root*."""
     if not isinstance(name, str) or not name.strip() or name.strip() != name:
-        raise InvalidJobError(f"file name must be a non-empty relative path, got {name!r}")
+        raise ValueError(f"file name must be a non-empty relative path, got {name!r}")
     relative = Path(name)
     if relative.is_absolute() or any(part == ".." for part in relative.parts):
-        raise InvalidJobError(f"file name must stay under the workspace: {name!r}")
+        raise ValueError(f"file name must stay under the workspace: {name!r}")
     base = root.resolve()
     resolved = (base / relative).resolve()
     if not resolved.is_relative_to(base):
-        raise InvalidJobError(f"file name must stay under the workspace: {name!r}")
+        raise ValueError(f"file name must stay under the workspace: {name!r}")
     return resolved
 
 
