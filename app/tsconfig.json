@@ -17,5 +17,5 @@
     "verbatimModuleSyntax": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["ui", "vite.config.ts"]
 }

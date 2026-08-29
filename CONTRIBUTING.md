@@ -56,7 +56,8 @@ docs: Update README with new architecture
 |-----------|---------|
 | `py-magi/agent/` | Agent loop, memory, tools |
 | `py-magi/channels/` | Telegram + HTTP channel adapters |
-| `app/` | Operator UI (browser / future desktop) |
+| `app/ui/` | Operator UI (browser and Electron renderer) |
+| `app/shell/` | Electron desktop process |
 | `py-magi/tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
 

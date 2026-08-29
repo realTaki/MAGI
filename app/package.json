@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "electron/main.mjs",
+  "main": "shell/main.mjs",
   "description": "MAGI operator UI — Vite SPA in the browser, Electron on the desktop.",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,7 @@
     "productName": "MAGI",
     "files": [
       "dist/**",
-      "electron/**",
+      "shell/**",
       "package.json"
     ],
     "directories": {
