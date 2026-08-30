@@ -18,7 +18,7 @@ import json
 from typing import Any
 
 from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 _MAX_ENTRIES = 200
 
@@ -63,7 +63,6 @@ class ListFilesTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         path_arg = kwargs.get("path", ".")
@@ -75,7 +74,7 @@ class ListFilesTool(Tool):
         # but reject "path that doesn't exist" and "path
         # that exists but is a file".
         try:
-            target = safe_resolve(ctx.workspace, path_arg, must_be_file=False)
+            target = safe_resolve(self.workspace, path_arg, must_be_file=False)
         except ValueError as e:
             return ToolResult.err(f"list_files: {e}")
 

@@ -22,7 +22,7 @@ we don't ``is_error=True`` because the lookup itself didn't fail
 attempts, empty input) → ``is_error=True``: the LLM shouldn't be
 able to ask for things outside the registry.
 
-The book itself is reached via ``ctx.bus.skills_book`` — this
+The book itself is reached via ``self.bus.skills_book`` — this
 tool owns no state, just like the other builtin tools
 (``ReadFileTool``, ``BashRunTool``, etc.).
 """
@@ -33,7 +33,7 @@ import re
 from typing import Any
 
 from old_bus.firmwares.books.file.skillsBook import SkillBookError
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 # Same name regex the book enforces at scan time. Anyone calling
 # the tool with a name we wouldn't have accepted at load time gets
@@ -82,10 +82,8 @@ class LoadSkillTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult(content="name is required", is_error=True)
@@ -94,7 +92,7 @@ class LoadSkillTool(Tool):
                 content=f"invalid skill name {name!r}",
                 is_error=True,
             )
-        book = ctx.bus.skills_book
+        book = self.bus.skills_book
         if book is None:
             return ToolResult(
                 content="skills are not available (skills_book not loaded)",

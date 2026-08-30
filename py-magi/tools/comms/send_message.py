@@ -38,9 +38,9 @@ same way regardless.
 
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via
-``ctx.bus.conversations_book`` (cross-contact-safe conversation
+``self.bus.conversations_book`` (cross-contact-safe conversation
 lookup via :meth:`ConversationBook.get_for_owner`) and
-``ctx.bus.delivery_notify_job_board`` (publish a
+``self.bus.delivery_notify_job_board`` (publish a
 :class:`bus.firmwares.jobs.deliveryNotifyJob.DeliveryNotifyJob` to
 the durable ``delivery_notify_jobs`` queue — the channel-owned
 ChannelWorker performs the actual protocol I/O after the
@@ -56,7 +56,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.comms.send_message")
 
@@ -101,10 +101,8 @@ class SendMessageTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
         text = kwargs.get("text")
         if not isinstance(text, str) or not text:
             return ToolResult(
@@ -117,10 +115,9 @@ class SendMessageTool(Tool):
                 is_error=True,
             )
 
-        # Empty conversation_id means the tool is being called
-        # outside a conversation context (rare — agent-loop test
-        # harnesses, edge cases). Surface as a clear error.
-        if not ctx.conversation_id:
+        conversation_id = int(kwargs.get("conversation_id") or 0)
+        contact_id = int(kwargs.get("contact_id") or 0)
+        if not conversation_id:
             return ToolResult(
                 content=(
                     "send_message: no conversation context; "
@@ -136,21 +133,17 @@ class SendMessageTool(Tool):
         logger.info(
             "send_message: enqueueing %d chars for conversation=%s channel=%s",
             len(text),
-            ctx.conversation_id,
-            ctx.channel,
+            conversation_id,
+            str(kwargs.get("channel") or ""),
         )
         try:
-            bus = ctx.bus
-            # ``get_for_owner`` is the cross-contact-safe lookup:
-            # returns ``None`` when the conversation doesn't belong to
-            # ``ctx.contact_id`` even if a future caller ever forgets the
-            # gate layer, defence-in-depth over the bare ``get``.
+            bus = self.bus
             conversation = bus.conversations_book.get_for_owner(
-                contact_id=int(ctx.contact_id),
-                conversation_id=ctx.conversation_id,
+                contact_id=contact_id,
+                conversation_id=conversation_id,
             )
             if conversation is None:
-                raise KeyError(f"unknown conversation {ctx.conversation_id!r}")
+                raise KeyError(f"unknown conversation {conversation_id!r}")
             bus.delivery_notify_job_board.publish(
                 DeliveryNotifyJob(
                     channel=conversation.channel,
@@ -160,7 +153,7 @@ class SendMessageTool(Tool):
                     contact_id=conversation.contact_id,
                 )
             )
-            logger.info("send_message: queued for conversation=%s", ctx.conversation_id)
+            logger.info("send_message: queued for conversation=%s", conversation_id)
         except KeyError as e:
             # Unknown channel / missing conversation — surface
             # the dispatcher's diagnostic verbatim.
@@ -184,5 +177,5 @@ class SendMessageTool(Tool):
             )
 
         return ToolResult(
-            content=(f"send_message: queued {len(text)} chars to conversation {ctx.conversation_id}")
+            content=f"send_message: queued {len(text)} chars to conversation {conversation_id}"
         )

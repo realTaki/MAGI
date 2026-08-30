@@ -28,7 +28,7 @@ from old_bus.firmwares.books.local.mcpServerBook import (
     serialize_mcp_server,
 )
 from old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 
 def _build_server(
@@ -145,8 +145,9 @@ class AddMcpServerTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult.err("missing required field: name")
@@ -168,7 +169,7 @@ class AddMcpServerTool(Tool):
         # Existence check via a read — the Worker is the writer,
         # but a stale read here would mask the "already exists"
         # case (the Job Board doesn't reject duplicates either).
-        if ctx.bus.mcp_servers_book.get_by_name(name=name) is not None:
+        if self.bus.mcp_servers_book.get_by_name(name=name) is not None:
             return ToolResult.err(f"server '{name}' already exists")
 
         server = _build_server(
@@ -185,14 +186,14 @@ class AddMcpServerTool(Tool):
             sse_read_timeout=kwargs.get("sse_read_timeout"),
         )
 
-        job_id = ctx.bus.change_mcp_server_job_board.publish(
+        job_id = self.bus.change_mcp_server_job_board.publish(
             ChangeMCPServerJob(kind=MCPKind.ADDED, server_name=name, server=server)
         )
 
         # Wait for the Worker to upsert + connect so the LLM
         # gets immediate feedback. ``None`` means the worker
         # hasn't answered yet (DB blip / poll lag).
-        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
+        result = await self.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:
@@ -205,7 +206,7 @@ class AddMcpServerTool(Tool):
 
         # Read the row back so the LLM sees the real autoincrement
         # id / timestamps / any default fills.
-        row = ctx.bus.mcp_servers_book.get_by_name(name=name)
+        row = self.bus.mcp_servers_book.get_by_name(name=name)
         if row is None:
             return ToolResult.err(
                 "worker reported success but the row is missing; this should not happen"

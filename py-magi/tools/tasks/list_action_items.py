@@ -6,7 +6,7 @@ never sees operator B's rows, even if the LLM asks for an
 id it doesn't own — the row is missing rather than shared.
 
 Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`ctx.bus.magis_admins_book`) and ``assigned`` (per
+:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
 ``Contact.role``) operators may list their own action
 items. ``guest`` callers don't see the tool in their menu.
 """
@@ -17,7 +17,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.actionItemBook import ActionSource
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.tasks.list_action_item")
 COMPLETED_VISIBLE_DAYS = 7
@@ -68,14 +68,12 @@ class ListActionItemsTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
-        ct_id = int(ctx.contact_id)
+        ct_id = int(kwargs.get("contact_id") or 0)
         include_completed = bool(kwargs.get("include_completed"))
 
-        rows = ctx.bus.action_items_book.list_actions(
+        rows = self.bus.action_items_book.list_actions(
             owner_contact_id=ct_id,
             include_completed=include_completed,
             source=ActionSource.USER,

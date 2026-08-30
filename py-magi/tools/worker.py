@@ -53,7 +53,7 @@ from old_bus.bases.job import JobStatus
 from old_bus.firmwares.books.local import ToolDefinition
 from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 from runtime_worker import RuntimeWorker
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 from tools.registry import get_tool
 
 if TYPE_CHECKING:
@@ -158,13 +158,14 @@ class ToolsWorker(RuntimeWorker):
     async def on_start(self) -> None:
         # Subscribe to runtime tool injection so we can republish
         # the catalog when MCP / skills register their tools.
-        from tools.registry import on_tools_changed
+        from tools.registry import configure, on_tools_changed
 
+        configure(
+            workspace=str(getattr(self.bus, "workspace", "") or ""),
+            bus=self.bus,
+        )
         on_tools_changed(self._on_injected_tools_changed)
 
-        # 1. Publish the full tool catalog (builtin + any
-        #    already-injected tools). Called synchronously
-        #    (mirrors ProvidersWorker._publish_provider_options).
         await self._publish_full_catalog()
 
     async def on_stopped(self) -> None:
@@ -319,10 +320,6 @@ class ToolsWorker(RuntimeWorker):
     # ----- per-job execution --------------------------------------------
 
     async def _execute(self, job: RunToolJob) -> None:
-        ctx_data = dict(job.payload.get("context") or {})
-
-        # 1. Look up the tool by name. The agent catalog is
-        #    the role filter; this worker just dispatches.
         tool = get_tool(job.tool_name)
         if tool is None:
             await self._submit_failure(
@@ -332,23 +329,8 @@ class ToolsWorker(RuntimeWorker):
             )
             return
 
-        ctx = ToolContext(
-            workspace=str(ctx_data.get("workspace") or ""),
-            contact_id=int(ctx_data.get("contact_id") or 0),
-            channel=str(ctx_data.get("channel") or ""),
-            conversation_id=int(ctx_data.get("conversation_id") or 0),
-            bus=self.bus,
-        )
-
-        # 2. Execute. The worker MUST NOT raise to surface
-        #    "expected failure" — Tool.run() returns ToolResult
-        #    with is_error=True in that case. Real bugs raise;
-        #    we catch and translate.
         try:
-            result = await tool.run(
-                ctx,
-                **dict(job.payload.get("arguments") or {}),
-            )
+            result = await tool.run(**_job_arguments(job))
         except Exception as exc:
             logger.exception("tool job %s crashed", job.job_id)
             await self._submit_failure(
@@ -400,6 +382,26 @@ class ToolsWorker(RuntimeWorker):
 
 
 # -- helpers --------------------------------------------------------------
+
+
+def _job_arguments(job: RunToolJob) -> dict:
+    """Job fields the tool's ``run`` sees: arguments plus per-call identity.
+
+    Workspace and bus are constructor-injected, not passed here.
+    """
+    arguments = dict(getattr(job, "arguments", None) or {})
+    payload = getattr(job, "payload", None)
+    if isinstance(payload, dict):
+        if not arguments:
+            arguments = dict(payload.get("arguments") or {})
+        context = dict(payload.get("context") or {})
+        for key in ("contact_id", "channel", "conversation_id"):
+            if key in context and key not in arguments:
+                arguments[key] = context[key]
+    conversation_id = getattr(job, "conversation_id", None)
+    if conversation_id is not None:
+        arguments.setdefault("conversation_id", conversation_id)
+    return arguments
 
 
 def _to_result(job: RunToolJob, result: ToolResult) -> RunToolResult:

@@ -8,7 +8,7 @@ about the same person.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
 ≤8 KB clamp) and exposes ``add(...)`` plus
 ``to_dict`` on the returned DTO. The legacy service at
@@ -22,7 +22,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.contactBook import ContactNote
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_contact_note")
 
@@ -57,15 +57,16 @@ class AddContactNoteTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         contact_id = kwargs.get("contact_id")
         note = kwargs.get("note")
         if not isinstance(contact_id, int):
             return ToolResult.err(f"contact_id must be int, got {type(contact_id).__name__}")
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err("note is required (non-empty string)")
-        if ctx.bus is None:
+        if self.bus is None:
             return ToolResult.err("bus not available")
 
         # Pre-check the parent contact resolves — the FK
@@ -74,16 +75,16 @@ class AddContactNoteTool(Tool):
         # reads as "tool.crashed"). We translate to a clean
         # ``is_error=True`` here so the LLM sees a
         # caller-fixable "contact_id N not found" message.
-        contact = ctx.bus.contacts_book.get(contact_id)
+        contact = self.bus.contacts_book.get(contact_id)
         if contact is None:
             return ToolResult.err(f"contact {contact_id!r} not found")
 
         try:
-            note_id = ctx.bus.contact_notes_book.add(ContactNote(
+            note_id = self.bus.contact_notes_book.add(ContactNote(
                 contact_id=contact_id,
                 note=note,
             ))
-            row = ctx.bus.contact_notes_book.get(note_id)
+            row = self.bus.contact_notes_book.get(note_id)
             if row is None:
                 raise RuntimeError(f"contact note {note_id} disappeared after insert")
         except ValueError as e:

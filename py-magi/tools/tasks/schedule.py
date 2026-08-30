@@ -29,7 +29,7 @@ fires, it runs as me".
 
 Admin gate: callers whose effective role-tag set
 (``Contact.role`` ∪ ``{admin}`` if
-``ctx.bus.magis_admins_book.is_admin_for(contact_id=...)`` is
+``self.bus.magis_admins_book.is_admin_for(contact_id=...)`` is
 truthy) doesn't intersect ``{"admin", "assigned"}``
 get ``is_error=True`` at the gate step. ``guest``
 callers have no MAGI-node operator context and aren't expected
@@ -47,7 +47,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.tasksBook import preset_to_cron
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.tasks.schedule")
 
@@ -181,7 +181,7 @@ class ScheduleTaskTool(Tool):
             # facing schema: the tool no longer accepts a
             # caller-supplied destination. The server
             # derives it from channel + the caller's
-            # ToolContext (conversation_id for webui; the
+            # Job (conversation_id for webui; the
             # operator's bound chat id for tg). The column
             # stays on Task for backward compat with rows
             # created before this unification.
@@ -192,7 +192,6 @@ class ScheduleTaskTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:  # type: ignore[override]
         # Shape translation — kwargs → typed args.
@@ -203,7 +202,6 @@ class ScheduleTaskTool(Tool):
         # get the same validation). Each violation surfaces
         # as ``ValueError``; we translate to LLM-facing
         # ``ToolResult.err`` after the Book call below.
-        assert ctx.bus is not None, "require_bus should have caught this"
         name = (kwargs.get("name") or "").strip()
         prompt = (kwargs.get("prompt") or "").strip()
         frequency = (kwargs.get("frequency") or "").strip()
@@ -214,12 +212,12 @@ class ScheduleTaskTool(Tool):
 
         # ``delivery_to`` is server-derived per the unified
         # rule: only ``channel`` + ``ctx`` drive the value.
-        #   channel='webui' + LLM-in-chat → ctx.conversation_id
+        #   channel='webui' + LLM-in-chat → int(kwargs.get("conversation_id") or 0)
         #     (append to the chat the LLM just wrote from)
         #   channel='webui' + cold call   → None (runner
         #     falls back; legacy / WebUI-default path stays
         #     as "fresh conversation per fire")
-        #   channel='tg'    + LLM-in-TG  → ctx.delivery_address (the
+        #   channel='tg'    + LLM-in-TG  → str(kwargs.get("delivery_address") or "") (the
         #     TG chat the LLM is responding to)
         #   channel='tg'    + cold call  → None (runner
         #     falls back to operator.tgid at fire time)
@@ -240,8 +238,8 @@ class ScheduleTaskTool(Tool):
         if target_channel == "webui":
             delivery_to = None
         elif target_channel == "tg":
-            delivery_to = ctx.bus.conversations_book.resolve_delivery_address(
-                conversation_id=ctx.conversation_id
+            delivery_to = self.bus.conversations_book.resolve_delivery_address(
+                conversation_id=int(kwargs.get("conversation_id") or 0)
             )
         else:
             delivery_to = None
@@ -275,7 +273,7 @@ class ScheduleTaskTool(Tool):
                 day_of_month=kwargs.get("day_of_month"),
             )
 
-        registered = ctx.bus.settings_book.channel_options()
+        registered = self.bus.settings_book.channel_options()
         if target_channel not in registered or target_channel in {"a2a", "task"}:
             return ToolResult(
                 content=f"channel is not a registered task delivery target: {target_channel!r}",
@@ -286,8 +284,8 @@ class ScheduleTaskTool(Tool):
         # breadcrumb. Resolve it outside the task write transaction because
         # ContactBook uses its own short SQLite transaction.
         # Empty string when the operator has no TG binding.
-        operator_id = int(ctx.contact_id)
-        contact = ctx.bus.contacts_book.get(operator_id)
+        operator_id = int(kwargs.get("contact_id") or 0)
+        contact = self.bus.contacts_book.get(operator_id)
         task_conversation_delivery_address = (
             str(contact.tgid)
             if contact is not None and contact.tgid is not None
@@ -297,19 +295,19 @@ class ScheduleTaskTool(Tool):
         # ── Idempotent upsert by name ──────────────────────────────────
         # Resolve system tz via the bus so the SQLAlchemy session
         # boundary stays in one place.
-        resolved_tz = ctx.bus.settings_book.system_timezone()
+        resolved_tz = self.bus.settings_book.system_timezone()
         # Allocate the task's home conversation up-front so cron fires
         # accumulate into one conversation per task. The
         # ``upsert_by_name`` body preserves the existing
         # ``conversation_id`` for update-paths (continuity across
         # prompt edits).
-        new_conversation_id_str = ctx.bus.conversations_book.create_task_conversation(
+        new_conversation_id_str = self.bus.conversations_book.create_task_conversation(
             contact_id=operator_id,
             title=f"[定时] {name}",
             delivery_address=task_conversation_delivery_address,
         )
         try:
-            task_id, is_update = ctx.bus.tasks_book.upsert_by_name(
+            task_id, is_update = self.bus.tasks_book.upsert_by_name(
                 name=name,
                 prompt=prompt,
                 cron=cron,

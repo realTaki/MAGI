@@ -8,7 +8,7 @@ result and the ``search_contacts`` output.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``.
+(:class:`bus.Bus`) via ``self.bus.contact_notes_book``.
 The flow is ``get`` → ``with_changes`` → base ``update``;
 a missing row is rendered as ``ToolResult.err`` so the
 LLM sees a caller-fixable message rather than a worker
@@ -22,7 +22,7 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.update_contact_note")
 
@@ -56,8 +56,9 @@ class UpdateContactNoteTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         note_id = kwargs.get("note_id")
         note = kwargs.get("note")
         if not isinstance(note_id, int):
@@ -65,7 +66,7 @@ class UpdateContactNoteTool(Tool):
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err("note is required (non-empty string)")
 
-        book = ctx.bus.contact_notes_book
+        book = self.bus.contact_notes_book
         existing = book.get(note_id)
         if existing is None:
             # Base ``update`` would have returned ``False``

@@ -21,7 +21,7 @@ Capture rules (full text lives in
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns the upsert + daily-append logic,
 length cap, and ``note_date`` defaulting. Returns the
 DTO so the LLM sees the post-write row. The bus
@@ -36,7 +36,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.update_daily_note")
 
@@ -79,8 +79,9 @@ class UpdateDailyNoteTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None  # guaranteed by @Tool.require_bus
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
             return ToolResult.err("body_delta is required (non-empty string)")
@@ -89,7 +90,7 @@ class UpdateDailyNoteTool(Tool):
         # override on input_schema). Future cross-contact
         # notes should go through a separate
         # ``update_daily_note_for`` shape.
-        contact_id = ctx.contact_id
+        contact_id = int(kwargs.get("contact_id") or 0)
         if contact_id is None or contact_id == 0:
             return ToolResult.err("no contact_id on the calling context")
 
@@ -102,7 +103,7 @@ class UpdateDailyNoteTool(Tool):
                 return ToolResult.err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
         try:
-            row = ctx.bus.contact_notes_book.upsert_daily_note(
+            row = self.bus.contact_notes_book.upsert_daily_note(
                 contact_id=int(contact_id),
                 body_delta=body_delta,
                 note_date=note_date,

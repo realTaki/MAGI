@@ -46,6 +46,22 @@ _injected: dict[str, list[Tool]] = {}
 _listeners: list[Callable[[], None]] = []
 
 
+_workspace = ""
+_bus = None
+
+
+def configure(*, workspace: str = "", bus=None) -> None:
+    """Bind constructor deps used when builtin tools are instantiated.
+
+    Filesystem / shell tools read ``workspace``. Tools that publish Jobs
+    read ``bus``. Call this from the tools Worker after attach.
+    """
+    global _tools_cache, _workspace, _bus
+    _workspace = workspace
+    _bus = bus
+    _tools_cache = None
+
+
 def _build_tools() -> list[Tool]:
     """Construct one instance of every builtin tool.
 
@@ -91,51 +107,37 @@ def _build_tools() -> list[Tool]:
     from tools.tasks.list_action_items import ListActionItemsTool
     from tools.tasks.schedule import ScheduleTaskTool
 
+    kw = {"workspace": _workspace, "bus": _bus}
     return [
-        ReadFileTool(),
-        WriteFileTool(),
-        EditFileTool(),
-        ListFilesTool(),
-        SearchConversationsTool(),
-        SendMessageTool(),
-        MessageMagiTool(),
-        ScheduleTaskTool(),
-        # Shell execution — three tools the LLM uses
-        # together: ``bash`` runs (foreground or
-        # background), ``bash_output`` polls a
-        # background process, ``bash_kill`` terminates.
-        BashRunTool(),
-        BashOutputTool(),
-        BashKillTool(),
-        # Skills — fetch the full markdown body of a
-        # registered skill (the system prompt only shows
-        # the one-line description; this loads the body).
-        LoadSkillTool(),
-        # Memory management — LLM-driven, not auto.
-        AddMemoryTool(),
-        UpdateMemoryTool(),
-        CompleteMemoryTool(),
-        DeleteMemoryTool(),
-        # Contact directory — what the MAGI knows about people.
-        AddContactTool(),
-        AddContactNoteTool(),
-        UpdateContactNoteTool(),
-        DeleteContactNoteTool(),
-        SearchContactsTool(),
-        UpdateDailyNoteTool(),
-        # Action items — per-contact, scoped to the caller.
-        AddActionItemTool(),
-        CompleteActionItemTool(),
-        ListActionItemsTool(),
-        # MCP server administration — builtins so an admin can
-        # always configure MCP from the LLM menu, regardless of
-        # whether any MCP rows exist yet. The discovered tools
-        # (under source ``"mcp"``) are injected separately by the
-        # MCP worker.
-        AddMcpServerTool(),
-        ListMcpServersTool(),
-        UpdateMcpServerTool(),
-        DeleteMcpServerTool(),
+        ReadFileTool(**kw),
+        WriteFileTool(**kw),
+        EditFileTool(**kw),
+        ListFilesTool(**kw),
+        SearchConversationsTool(**kw),
+        SendMessageTool(**kw),
+        MessageMagiTool(**kw),
+        ScheduleTaskTool(**kw),
+        BashRunTool(**kw),
+        BashOutputTool(**kw),
+        BashKillTool(**kw),
+        LoadSkillTool(**kw),
+        AddMemoryTool(**kw),
+        UpdateMemoryTool(**kw),
+        CompleteMemoryTool(**kw),
+        DeleteMemoryTool(**kw),
+        AddContactTool(**kw),
+        AddContactNoteTool(**kw),
+        UpdateContactNoteTool(**kw),
+        DeleteContactNoteTool(**kw),
+        SearchContactsTool(**kw),
+        UpdateDailyNoteTool(**kw),
+        AddActionItemTool(**kw),
+        CompleteActionItemTool(**kw),
+        ListActionItemsTool(**kw),
+        AddMcpServerTool(**kw),
+        ListMcpServersTool(**kw),
+        UpdateMcpServerTool(**kw),
+        DeleteMcpServerTool(**kw),
     ]
 
 
@@ -221,6 +223,7 @@ def _fire_listeners() -> None:
 
 __all__ = [
     "get_tool",
+    "configure",
     "register_tools",
     "on_tools_changed",
     "list_injected",

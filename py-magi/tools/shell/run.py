@@ -1,7 +1,7 @@
 """Foreground / background command execution — :class:`BashRunTool`.
 
 The subprocess's **initial cwd is the workspace root**
-(``ToolContext.workspace``).  We don't enforce stay-
+(the injected workspace root).  We don't enforce stay-
 inside-workspace on subsequent ``cd`` calls — the LLM
 is trusted to stay inside the tree, matching the
 reference bash tool's posture.
@@ -22,7 +22,7 @@ import time
 import uuid
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 from tools.shell._manager import (
     _BASH_ID_LEN,
     _FOREGROUND_TIMEOUT_DEFAULT,
@@ -154,7 +154,6 @@ class BashRunTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         command = (kwargs.get("command") or "").strip()
@@ -174,7 +173,7 @@ class BashRunTool(Tool):
             timeout = _FOREGROUND_TIMEOUT_MAX
 
         run_in_background = bool(kwargs.get("run_in_background"))
-        cwd = str(ctx.workspace) if ctx.workspace else None
+        cwd = str(self.workspace) if self.workspace else None
 
         try:
             if run_in_background:

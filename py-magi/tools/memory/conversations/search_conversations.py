@@ -83,7 +83,7 @@ from old_bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 _MAX_HITS = 20
 _DEFAULT_CONTEXT_N = 5
@@ -158,10 +158,8 @@ class SearchConversationsTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         q = kwargs.get("q")
         if not isinstance(q, str) or not q.strip():
             return ToolResult(
@@ -196,10 +194,10 @@ class SearchConversationsTool(Tool):
         # IM conversations handled by that operator all
         # match. Channel and per-channel delivery address
         # are not part of the search predicate.
-        contact_id = ctx.contact_id
+        contact_id = int(kwargs.get("contact_id") or 0)
 
         try:
-            hits, total = ctx.bus.messages_book.search(
+            hits, total = self.bus.messages_book.search(
                 contact_id=contact_id,
                 q=q,
                 limit=limit,
@@ -237,7 +235,7 @@ class SearchConversationsTool(Tool):
             block = _format_hit_block(
                 hit,
                 context_n,
-                ctx.bus,
+                self.bus,
                 contact_id,
             )
             block_bytes = len(block.encode("utf-8"))

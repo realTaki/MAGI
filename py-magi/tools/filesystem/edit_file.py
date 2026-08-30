@@ -34,7 +34,7 @@ import tempfile
 from typing import Any
 
 from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 # Cap on the size of the matched ``old_str`` string the
 # LLM can send. A multi-megabyte "old" string is almost
@@ -110,7 +110,6 @@ class EditFileTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         path_arg = kwargs.get("path")
@@ -141,7 +140,7 @@ class EditFileTool(Tool):
         # — for new files use write_file). safe_resolve
         # also enforces workspace containment.
         try:
-            target = safe_resolve(ctx.workspace, path_arg)
+            target = safe_resolve(self.workspace, path_arg)
         except ValueError as e:
             return ToolResult.err(f"edit_file: {e}")
 

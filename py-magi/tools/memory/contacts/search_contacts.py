@@ -7,9 +7,9 @@ notes. Use when the operator says '查一下 Lily / 谁在财务部'.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contacts_book``
+(:class:`bus.Bus`) via ``self.bus.contacts_book``
 for the contact-side join (name + note match,
-``last_seen_at`` ordering) and ``ctx.bus.contact_notes_book``
+``last_seen_at`` ordering) and ``self.bus.contact_notes_book``
 for the per-contact note sample. The legacy service at
 bus Book API is no longer
 imported here.
@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.search_contacts")
 
@@ -68,15 +68,16 @@ class SearchContactsTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
             return ToolResult.err("query is required (non-empty string)")
         limit = int(kwargs.get("limit") or 20)
         notes_per_contact = int(kwargs.get("notes_per_contact") or 5)
 
-        contacts = ctx.bus.contacts_book.search(
+        contacts = self.bus.contacts_book.search(
             query=query,
             limit=limit,
         )
@@ -90,7 +91,7 @@ class SearchContactsTool(Tool):
                 # corpus sorted newest-first, so a prefix
                 # is the same "sample" the legacy
                 # ``ContactView`` returned.
-                notes = ctx.bus.contact_notes_book.list_for_contact(
+                notes = self.bus.contact_notes_book.list_for_contact(
                     contact_id=contact.id,
                 )[:notes_per_contact]
                 entry["notes"] = [n.to_dict() for n in notes]

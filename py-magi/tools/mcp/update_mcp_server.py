@@ -34,7 +34,7 @@ from old_bus.firmwares.books.local.mcpServerBook import (
     serialize_mcp_server,
 )
 from old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 
 def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
@@ -142,8 +142,9 @@ class UpdateMcpServerTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult.err("missing required field: name")
@@ -161,7 +162,7 @@ class UpdateMcpServerTool(Tool):
         if conn_type in ("sse", "streamable_http") and "url" in kwargs and not kwargs.get("url"):
             return ToolResult.err(f"{conn_type} servers require 'url'")
 
-        current = ctx.bus.mcp_servers_book.get_by_name(name=name)
+        current = self.bus.mcp_servers_book.get_by_name(name=name)
         if current is None:
             return ToolResult.err(
                 f"server '{name}' does not exist. Create it with add_mcp_server first."
@@ -190,7 +191,7 @@ class UpdateMcpServerTool(Tool):
             if k in kwargs
         }
         if changed == {"enabled"}:
-            job_id = ctx.bus.change_mcp_server_job_board.publish(
+            job_id = self.bus.change_mcp_server_job_board.publish(
                 ChangeMCPServerJob(
                     kind=MCPKind.TOGGLED,
                     server_name=name,
@@ -198,7 +199,7 @@ class UpdateMcpServerTool(Tool):
                 )
             )
         else:
-            job_id = ctx.bus.change_mcp_server_job_board.publish(
+            job_id = self.bus.change_mcp_server_job_board.publish(
                 ChangeMCPServerJob(
                     kind=MCPKind.UPDATED,
                     server_name=name,
@@ -206,7 +207,7 @@ class UpdateMcpServerTool(Tool):
                 )
             )
 
-        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
+        result = await self.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:
@@ -217,7 +218,7 @@ class UpdateMcpServerTool(Tool):
         if result.status != JobStatus.COMPLETED:
             return ToolResult.err(result.error or "MCP worker failed to apply the update")
 
-        row = ctx.bus.mcp_servers_book.get_by_name(name=name)
+        row = self.bus.mcp_servers_book.get_by_name(name=name)
         if row is None:
             return ToolResult.err(
                 "worker reported success but the row is missing; this should not happen"
