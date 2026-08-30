@@ -21,7 +21,7 @@ import platform
 
 import pytest
 
-from tools.base import ToolContext, ToolResult
+from tools.BaseTool import ToolContext, ToolResult
 from tools.shell.kill import BashKillTool
 from tools.shell.output import BashOutputTool
 from tools.shell.run import BashRunTool

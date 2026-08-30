@@ -56,7 +56,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.comms.send_message")
 
@@ -64,7 +64,7 @@ logger = logging.getLogger("tools.comms.send_message")
 _MAX_TEXT_LEN = 4000  # matches common IM client caps (TG 4096, Slack 40k, ...)
 
 
-class SendMessageTool(Tool):
+class SendMessageTool(BaseTool):
     """Send a side-channel message to the current user."""
 
     name = "send_message"
@@ -98,7 +98,7 @@ class SendMessageTool(Tool):
         "required": ["text"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

@@ -24,12 +24,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.complete_memory")
 
 
-class CompleteMemoryTool(Tool):
+class CompleteMemoryTool(BaseTool):
     """Mark a ``quick_note`` row as done."""
 
     name = "complete_memory"
@@ -60,7 +60,7 @@ class CompleteMemoryTool(Tool):
         "required": ["memory_id"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

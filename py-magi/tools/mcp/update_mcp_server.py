@@ -34,7 +34,7 @@ from old_bus.firmwares.books.local.mcpServerBook import (
     serialize_mcp_server,
 )
 from old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 
 def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
@@ -59,7 +59,7 @@ def _merge(current: McpServer, kwargs: dict[str, Any]) -> McpServer:
     )
 
 
-class UpdateMcpServerTool(Tool):
+class UpdateMcpServerTool(BaseTool):
     """Update an existing MCP server's fields."""
 
     name = "update_mcp_server"
@@ -141,7 +141,7 @@ class UpdateMcpServerTool(Tool):
         "required": ["name"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

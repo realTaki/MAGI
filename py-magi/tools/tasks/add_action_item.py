@@ -33,12 +33,12 @@ from datetime import datetime
 from typing import Any
 
 from old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.tasks.add_action_item")
 
 
-class AddActionItemTool(Tool):
+class AddActionItemTool(BaseTool):
     """Record a new action item for the calling operator."""
 
     name = "add_action_item"
@@ -129,7 +129,7 @@ class AddActionItemTool(Tool):
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

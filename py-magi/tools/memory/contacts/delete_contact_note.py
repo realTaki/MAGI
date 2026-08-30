@@ -17,12 +17,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.delete_contact_note")
 
 
-class DeleteContactNoteTool(Tool):
+class DeleteContactNoteTool(BaseTool):
     """Remove a contact note by id. Idempotent."""
 
     name = "delete_contact_note"
@@ -43,7 +43,7 @@ class DeleteContactNoteTool(Tool):
         "required": ["note_id"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

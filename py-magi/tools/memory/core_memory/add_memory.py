@@ -32,12 +32,12 @@ from old_bus.firmwares.books.local.memoryBook import (
     Memory,
     MemoryKind,
 )
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_memory")
 
 
-class AddMemoryTool(Tool):
+class AddMemoryTool(BaseTool):
     """Persist a new fact into MAGI's mid-term memory."""
 
     name = "add_memory"
@@ -100,7 +100,7 @@ class AddMemoryTool(Tool):
         "required": ["kind", "subject", "body"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

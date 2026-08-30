@@ -1,7 +1,7 @@
 """Foreground / background command execution — :class:`BashRunTool`.
 
 The subprocess's **initial cwd is the workspace root**
-(the injected workspace root).  We don't enforce stay-
+(``bus.workspace``).  We don't enforce stay-
 inside-workspace on subsequent ``cd`` calls — the LLM
 is trusted to stay inside the tree, matching the
 reference bash tool's posture.
@@ -22,7 +22,7 @@ import time
 import uuid
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 from tools.shell._manager import (
     _BASH_ID_LEN,
     _FOREGROUND_TIMEOUT_DEFAULT,
@@ -33,7 +33,7 @@ from tools.shell._manager import (
 logger = logging.getLogger("tools.shell.run")
 
 
-class BashRunTool(Tool):
+class BashRunTool(BaseTool):
     """Execute a shell command in foreground or background.
 
     Background mode is for long-running processes (dev
@@ -87,9 +87,8 @@ class BashRunTool(Tool):
             "poll with bash_output, kill with bash_kill).\n\n"
             "For terminal operations like git, npm, docker, curl, etc. "
             "DO NOT use for file operations — use the read_file / "
-            "write_file / list_files tools. Those validate paths "
-            "against the workspace and avoid the cost of forking a "
-            "process.\n\n"
+            "write_file / list_files tools. Those resolve paths "
+            "from ``bus.workspace`` without forking a process.\n\n"
             "Parameters:\n"
             "  - command (required): the command to execute. "
             "Quote file paths with spaces using double quotes.\n"
@@ -145,13 +144,15 @@ class BashRunTool(Tool):
         "required": ["command"],
     }
 
-    def __init__(self) -> None:
+    def __init__(self, *, bus: Any = None) -> None:
+        super().__init__(bus=bus)
         self.is_windows = platform.system() == "Windows"
         self.shell_name = "PowerShell" if self.is_windows else "bash"
         self._description_cache: str | None = None
 
     # -- run -----------------------------------------------------------
 
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
@@ -173,7 +174,7 @@ class BashRunTool(Tool):
             timeout = _FOREGROUND_TIMEOUT_MAX
 
         run_in_background = bool(kwargs.get("run_in_background"))
-        cwd = str(self.workspace) if self.workspace else None
+        cwd = str(self.bus.workspace)
 
         try:
             if run_in_background:

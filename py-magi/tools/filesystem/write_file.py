@@ -2,8 +2,7 @@
 inside the workspace root.
 
 Path semantics: same as ``read_file`` — relative to the
-workspace root, absolute paths and ``..`` escapes are
-rejected before the write happens.
+workspace root.
 
 Atomicity: write is via ``tempfile.mkstemp`` in the same
 directory, ``fsync``, then ``os.replace`` — matching the
@@ -21,15 +20,15 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 from typing import Any
 
-from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 _MAX_CONTENT_BYTES = 256 * 1024
 
 
-class WriteFileTool(Tool):
+class WriteFileTool(BaseTool):
     """Atomically write a file in the workspace."""
 
     name = "write_file"
@@ -72,6 +71,7 @@ class WriteFileTool(Tool):
         "required": ["path", "content"],
     }
 
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
@@ -93,23 +93,8 @@ class WriteFileTool(Tool):
                 f"bytes; v0 limit is {_MAX_CONTENT_BYTES}."
             )
 
-        # Resolve the path WITHOUT ``must_be_file=True`` —
-        # write_file creates the file. We still need the
-        # workspace-containment check, which safe_resolve
-        # always performs.
-        try:
-            target = safe_resolve(self.workspace, path_arg, must_be_file=False)
-        except ValueError as e:
-            return ToolResult.err(f"write_file: {e}")
+        target = Path(self.bus.workspace) / path_arg
 
-        # Auto-create parent dirs. ``mkdir(parents=True, exist_ok=True)``
-        # is idempotent — if the parent already exists it's a
-        # no-op. We don't pre-check parent containment;
-        # ``safe_resolve`` only checks the leaf, which is
-        # fine because the leaf's resolved path is
-        # guaranteed under workspace regardless of how the
-        # path got there (a malicious ``a/b/c`` can't
-        # produce a leaf outside ``a`` once we resolve).
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except OSError as e:

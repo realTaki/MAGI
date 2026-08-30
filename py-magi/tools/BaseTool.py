@@ -4,9 +4,8 @@ Catalog rows live on BUS (``Tool`` the record). This module is the
 in-process class the tools Worker dispatches to.
 
 ``run(**arguments)`` receives only the Job's arguments (plus a few
-per-call fields such as ``conversation_id``). Runtime handles are
-constructor-injected: filesystem / shell take ``workspace``; tools that
-publish Jobs take ``bus``. Neither is passed on every call.
+per-call fields such as ``conversation_id``). Tools that need the
+Runtime (Jobs, workspace path) take ``bus`` at construction.
 """
 
 from __future__ import annotations
@@ -50,18 +49,15 @@ def _tool_json_default(value: object) -> object:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-class Tool(ABC):
+class BaseTool(ABC):
     """One callable the LLM can request.
 
     Set ``name`` / ``description`` / ``input_schema`` / ``ALLOWED_ROLES``.
     ``ALLOWED_ROLES`` is catalog metadata; it is not checked at run.
 
-    Construct with the handles this instance actually uses::
-
-        ReadFileTool(workspace=bus.workspace)
-        AddMemoryTool(bus=bus)
-
-    ``run`` only sees Job arguments.
+    Tools that touch the Runtime take ``bus`` at construction. Workspace
+    is ``bus.workspace`` — it is not a separate argument. ``run`` only
+    sees Job arguments.
     """
 
     name: str = ""
@@ -69,8 +65,7 @@ class Tool(ABC):
     input_schema: dict[str, Any] = {}
     ALLOWED_ROLES: frozenset[str] = frozenset()
 
-    def __init__(self, *, workspace: str = "", bus: Any = None) -> None:
-        self.workspace = workspace
+    def __init__(self, *, bus: Any = None) -> None:
         self.bus = bus
 
     @staticmethod
@@ -78,7 +73,7 @@ class Tool(ABC):
         """Fail closed when this instance was constructed without a bus."""
 
         @functools.wraps(method)
-        async def wrapper(self: Tool, **kwargs: Any) -> ToolResult:
+        async def wrapper(self: BaseTool, **kwargs: Any) -> ToolResult:
             if self.bus is None:
                 return ToolResult.err("tool was constructed without a bus")
             return await method(self, **kwargs)
@@ -97,4 +92,4 @@ class Tool(ABC):
         }
 
 
-__all__ = ["Tool", "ToolResult"]
+__all__ = ["BaseTool", "ToolResult"]

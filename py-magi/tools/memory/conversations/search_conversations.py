@@ -83,7 +83,7 @@ from old_bus.firmwares.books.local.conversationBook import (
     SearchHit,
     SearchUnavailable,
 )
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 _MAX_HITS = 20
 _DEFAULT_CONTEXT_N = 5
@@ -91,7 +91,7 @@ _MAX_CONTEXT_N = 20
 _MAX_OUTPUT_BYTES = 8 * 1024
 
 
-class SearchConversationsTool(Tool):
+class SearchConversationsTool(BaseTool):
     """Search the operator's chat history; return hits with
     surrounding context."""
 
@@ -155,7 +155,7 @@ class SearchConversationsTool(Tool):
         "required": ["q"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

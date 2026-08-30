@@ -36,12 +36,12 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.update_daily_note")
 
 
-class UpdateDailyNoteTool(Tool):
+class UpdateDailyNoteTool(BaseTool):
     """Append a delta to today's daily note for the caller."""
 
     name = "update_daily_note"
@@ -78,7 +78,7 @@ class UpdateDailyNoteTool(Tool):
         "required": ["body_delta"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

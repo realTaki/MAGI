@@ -19,7 +19,7 @@ import pytest
 from old_bus.bases.db.engine import EngineFactory
 from old_bus.firmwares.books.local.contactBook import Contact, ContactBook
 from old_bus.firmwares.books.local.memoryBook import Memory, MemoryBook
-from tools.base import ToolContext, ToolResult
+from tools.BaseTool import ToolContext, ToolResult
 from tools.memory.core_memory.add_memory import AddMemoryTool
 from tools.memory.core_memory.complete_memory import CompleteMemoryTool
 from tools.memory.core_memory.delete_memory import DeleteMemoryTool
@@ -160,7 +160,7 @@ async def test_add_memory_book_value_error_becomes_tool_error(
 
 @pytest.mark.asyncio
 async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
-    """``@Tool.require_bus`` returns ``is_error=True`` when
+    """``@BaseTool.require_bus`` returns ``is_error=True`` when
     ``ctx.bus`` is missing."""
     ctx_no_bus = ToolContext(
         workspace=str(tmp_path),

@@ -22,12 +22,12 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.update_contact_note")
 
 
-class UpdateContactNoteTool(Tool):
+class UpdateContactNoteTool(BaseTool):
     """Edit an existing note by id."""
 
     name = "update_contact_note"
@@ -55,7 +55,7 @@ class UpdateContactNoteTool(Tool):
         "required": ["note_id", "note"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

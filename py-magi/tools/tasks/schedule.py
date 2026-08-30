@@ -47,7 +47,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.tasksBook import preset_to_cron
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.tasks.schedule")
 
@@ -55,7 +55,7 @@ logger = logging.getLogger("tools.tasks.schedule")
 # catalog. ``guest`` is filtered out of the agent menu.
 
 
-class ScheduleTaskTool(Tool):
+class ScheduleTaskTool(BaseTool):
     name = "schedule_task"
 
     # ``admin`` is catalog metadata, not a Contact.role value.
@@ -189,7 +189,7 @@ class ScheduleTaskTool(Tool):
         "required": ["name", "prompt", "frequency"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

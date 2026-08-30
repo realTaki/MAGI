@@ -53,7 +53,7 @@ from old_bus.bases.job import JobStatus
 from old_bus.firmwares.books.local import ToolDefinition
 from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
 from runtime_worker import RuntimeWorker
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 from tools.registry import get_tool
 
 if TYPE_CHECKING:
@@ -93,7 +93,7 @@ def _schema_hash(definition: ToolDefinition) -> str:
 
 
 def _build_definitions_from_tools(
-    tools: list[Tool],
+    tools: list[BaseTool],
     source: str,
 ) -> list[ToolDefinition]:
     """Build :class:`ToolDefinition` rows from concrete tool instances.
@@ -160,10 +160,7 @@ class ToolsWorker(RuntimeWorker):
         # the catalog when MCP / skills register their tools.
         from tools.registry import configure, on_tools_changed
 
-        configure(
-            workspace=str(getattr(self.bus, "workspace", "") or ""),
-            bus=self.bus,
-        )
+        configure(bus=self.bus)
         on_tools_changed(self._on_injected_tools_changed)
 
         await self._publish_full_catalog()
@@ -387,7 +384,7 @@ class ToolsWorker(RuntimeWorker):
 def _job_arguments(job: RunToolJob) -> dict:
     """Job fields the tool's ``run`` sees: arguments plus per-call identity.
 
-    Workspace and bus are constructor-injected, not passed here.
+    Bus is constructor-injected. Workspace is ``bus.workspace``.
     """
     arguments = dict(getattr(job, "arguments", None) or {})
     payload = getattr(job, "payload", None)

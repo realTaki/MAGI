@@ -17,13 +17,13 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.actionItemBook import ActionSource
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.tasks.list_action_item")
 COMPLETED_VISIBLE_DAYS = 7
 
 
-class ListActionItemsTool(Tool):
+class ListActionItemsTool(BaseTool):
     """Return user-authored action items for the calling operator.
 
     Scope: only ``source = 'user'`` rows are returned
@@ -65,7 +65,7 @@ class ListActionItemsTool(Tool):
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

@@ -28,7 +28,7 @@ from old_bus.firmwares.books.local.mcpServerBook import (
     serialize_mcp_server,
 )
 from old_bus.firmwares.jobs import ChangeMCPServerJob, MCPKind
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 
 def _build_server(
@@ -65,7 +65,7 @@ def _build_server(
     )
 
 
-class AddMcpServerTool(Tool):
+class AddMcpServerTool(BaseTool):
     """Create a new MCP server. Requires name + connection_type."""
 
     name = "add_mcp_server"
@@ -144,7 +144,7 @@ class AddMcpServerTool(Tool):
         "required": ["name", "connection_type"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

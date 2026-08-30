@@ -33,7 +33,7 @@ import re
 from typing import Any
 
 from old_bus.firmwares.books.file.skillsBook import SkillBookError
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 # Same name regex the book enforces at scan time. Anyone calling
 # the tool with a name we wouldn't have accepted at load time gets
@@ -41,7 +41,7 @@ from tools.base import Tool, ToolResult
 _NAME_RE = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 
 
-class LoadSkillTool(Tool):
+class LoadSkillTool(BaseTool):
     """The ``load_skill`` tool — name ``load_skill``, schema ``{name: str}``.
 
     Visible only to ``admin`` and ``assigned`` operators — same gate
@@ -79,7 +79,7 @@ class LoadSkillTool(Tool):
         "required": ["name"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
