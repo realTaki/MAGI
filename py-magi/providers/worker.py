@@ -3,7 +3,7 @@
 Attach seeds ``providers.options`` and builds the first client from
 Settings. The loop then only does two things:
 
-- claim ``ChangeProviderJob`` — persist already happened at publish;
+- claim ``ChangeProviderNotify`` — persist already happened at publish;
   rebuild the client unless this is a model-only tweak on a live client
 - claim ``CallLLMJob`` — ``client.complete`` and submit the result
 """
@@ -18,8 +18,8 @@ from bus import (
     BaseWorker,
     CallLLMJob,
     CallLLMResult,
-    ChangeProviderJob,
-    ChangeProviderResult,
+    ChangeProviderNotify,
+    ChangeProviderNotifyResult,
     JobStatus,
     ListSettingsJob,
     go,
@@ -43,8 +43,10 @@ class ProvidersWorker(BaseWorker):
 
     async def on_attached(self) -> None:
         assert self.bus is not None
+        worker_name = self.worker_name
+        assert worker_name is not None, "providers worker: worker_name is required"
         self.bus.boost_default_settings(
-            worker_name=self.worker_name,
+            worker_name=worker_name,
             settings={"options": json.dumps(options(), ensure_ascii=False)},
         )
         self._rebuild()
@@ -56,7 +58,7 @@ class ProvidersWorker(BaseWorker):
     async def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                change = await self.call(self._board(ChangeProviderJob).claim)
+                change = await self.call(self._board(ChangeProviderNotify).claim)
                 if change is not None:
                     await self._on_change(change)
                     continue
@@ -70,7 +72,9 @@ class ProvidersWorker(BaseWorker):
 
     def _board(self, job_type):
         assert self.bus is not None
-        return self.bus.board(job_type)
+        board = self.bus.board(job_type)
+        assert board is not None, f"providers worker: no JobBoard mounted for {job_type.__name__}"
+        return board
 
     def _rebuild(self) -> None:
         try:
@@ -91,7 +95,7 @@ class ProvidersWorker(BaseWorker):
             return {}
         return result.settings or {}
 
-    async def _on_change(self, job: ChangeProviderJob) -> None:
+    async def _on_change(self, job: ChangeProviderNotify) -> None:
         model_only = bool(job.model) and not job.provider and not job.api_key
         if model_only and self._client is not None:
             self._client.model = job.model
@@ -99,14 +103,14 @@ class ProvidersWorker(BaseWorker):
         else:
             self._rebuild()
         if self._client is None:
-            result = ChangeProviderResult(
+            result = ChangeProviderNotifyResult(
                 id=job.id,
                 status=JobStatus.FAILED,
                 error=self._error or "unknown provider configuration error",
             )
         else:
-            result = ChangeProviderResult(id=job.id)
-        if not await self.call(self._board(ChangeProviderJob).submit_result, result):
+            result = ChangeProviderNotifyResult(id=job.id)
+        if not await self.call(self._board(ChangeProviderNotify).submit_result, result):
             logger.warning("providers worker: failed to submit config result for %s", job.id)
 
     async def _on_llm(self, job: CallLLMJob) -> None:
