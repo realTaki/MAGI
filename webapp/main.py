@@ -11,13 +11,19 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from asp.app import create_app as create_asp_app
 from localdb import LocalDatabase, default_database_path
 
 ROOT = Path(__file__).resolve().parent
 UI_DIST = ROOT / "ui" / "dist"
 
 
-def create_app(*, ui_dist: Path = UI_DIST, database_path: Path | None = None) -> FastAPI:
+def create_app(
+    *,
+    ui_dist: Path = UI_DIST,
+    database_path: Path | None = None,
+    asp_seed: dict[str, str] | None = None,
+) -> FastAPI:
     """Create the one local application served on localhost:42069."""
 
     @asynccontextmanager
@@ -30,7 +36,9 @@ def create_app(*, ui_dist: Path = UI_DIST, database_path: Path | None = None) ->
         finally:
             database.close()
 
-    app = FastAPI(title="MAGI Webapp", version="0.1.0", lifespan=lifespan)
+    app = create_asp_app(asp_seed or {})
+    app.title = "MAGI Webapp"
+    app.router.lifespan_context = lifespan
 
     @app.get("/health")
     async def health() -> JSONResponse:
