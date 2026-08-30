@@ -3,26 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
-
-
-class LLMErrorCode(StrEnum):
-    """Stable error categories exposed to LLM callers."""
-
-    CREDENTIALS_REQUIRED = "llm.credentials_required"
-    AUTH_FAILED = "llm.auth_failed"
-    RATE_LIMITED = "llm.rate_limited"
-    NETWORK_ERROR = "llm.network_error"
-    CONTEXT_TOO_LONG = "llm.context_too_long"
-    PROVIDER_CRASHED = "llm.provider_crashed"
-    RUN_CANCELLED = "llm.run_cancelled"
-    UNKNOWN = "llm.unknown"
 
 
 @dataclass
@@ -42,7 +28,7 @@ class CallLLMJob(BaseJob):
 
 @dataclass
 class CallLLMResult(BaseJobResult):
-    """The terminal LLM response, or a stable failure category."""
+    """The terminal LLM response."""
 
     text: str = ""
     thinking: str | None = None
@@ -50,7 +36,6 @@ class CallLLMResult(BaseJobResult):
     raw_blocks: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
     model: str = ""
-    error_code: LLMErrorCode | None = None
 
 
 class CallLLMJobRow(BaseJobRow):
@@ -66,7 +51,6 @@ class CallLLMJobRow(BaseJobRow):
     raw_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CallLLMJobBoard(BaseJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):
