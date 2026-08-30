@@ -19,7 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook, BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .go import go
+from .go import go, wait
 from .time import utcnow
 
 
@@ -81,37 +81,6 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    async def _post_publish(self, job: JobT) -> None:
-        gathered = await asyncio.gather(
-            *(asyncio.to_thread(hook, job) for hook in self._post_publish_hooks),
-            return_exceptions=True,
-        )
-        errors: list[str] = []
-        failed = False
-        for item in gathered:
-            if isinstance(item, BaseException):
-                failed = True
-                errors.append(
-                    error_message(item) if isinstance(item, Exception) else type(item).__name__
-                )
-                continue
-            if item.status is JobStatus.FAILED:
-                failed = True
-            if item.error:
-                errors.append(item.error)
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job.id)
-            if row is None or row.status != JobStatus.PREPARING.value:
-                return
-            row.status = JobStatus.FAILED.value if failed else JobStatus.PENDING.value
-            if failed:
-                row.error = "\n".join(errors) or None
-            session.commit()
-
-    def _post_result(self, result: ResultT) -> None:
-        for hook in self._post_result_hooks:
-            hook(result)
-
     def publish(self, job: JobT) -> int:
         return self._publish(job)
 
@@ -133,66 +102,68 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         go(self._post_publish(replace(prepared, id=job_id)))
         return job_id
 
+    async def _post_publish(self, job: JobT) -> None:
+        gathered = await wait(self._post_publish_hooks, job)
+        errors = [item.error for item in gathered if item.error]
+        failed = any(item.status is JobStatus.FAILED for item in gathered)
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job.id)
+            if row is None or row.status != JobStatus.PREPARING.value:
+                return
+            row.status = JobStatus.FAILED.value if failed else JobStatus.PENDING.value
+            if failed:
+                row.error = "\n".join(errors) or None
+            session.commit()
+
     def claim(self) -> JobT | None:
         return self._claim()
 
     def _claim(self) -> JobT | None:
-        return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
+        row_cls = type(self).row_cls
+        with self._session() as session:
+            row = session.scalar(
+                select(row_cls)
+                .where(row_cls.status == JobStatus.PENDING.value)
+                .order_by(row_cls.created_at, row_cls.id)
+                .limit(1)
+            )
+            if row is None:
+                return None
+            changed = session.execute(
+                update(row_cls)
+                .where(row_cls.id == row.id, row_cls.status == JobStatus.PENDING.value)
+                .values(status=JobStatus.CLAIMED.value)
+            )
+            if getattr(changed, "rowcount", 0) != 1:
+                return None
+            session.commit()
+            row.status = JobStatus.CLAIMED.value
+            return cast(type[JobT], self.job_cls).from_row(row)
 
     def submit_result(self, result: BaseJobResult) -> bool:
         return self._submit_result(result)
 
     def _submit_result(self, result: BaseJobResult) -> bool:
         """Persist the first result only; later submissions are rejected."""
-        terminal = result.status
-        if terminal not in {JobStatus.COMPLETED, JobStatus.FAILED}:
-            terminal = JobStatus.FAILED if result.error else JobStatus.COMPLETED
         with self._session() as session:
             row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
                 return False
-            self._write_result(row, result, status=terminal)
+            self._write_result(row, result)
             session.commit()
-            return True
+        go(self._post_result(cast(ResultT, result)))
+        return True
 
-    def _pull(self, src: JobStatus, dst: JobStatus) -> JobT | None:
-        with self._session() as session:
-            waiting = list(
-                session.scalars(
-                    select(type(self).row_cls)
-                    .where(type(self).row_cls.status == src.value)
-                    .order_by(type(self).row_cls.created_at, type(self).row_cls.id)
-                )
-            )
-        for row in waiting:
-            with self._session() as session:
-                changed = session.execute(
-                    update(type(self).row_cls)
-                    .where(
-                        type(self).row_cls.id == row.id,
-                        type(self).row_cls.status == src.value,
-                    )
-                    .values(status=dst.value)
-                )
-                if getattr(changed, "rowcount", 0) != 1:
-                    continue
-                session.commit()
-                pulled = session.get(type(self).row_cls, row.id)
-            if pulled is None:
-                continue
-            return cast(type[JobT], self.job_cls).from_row(pulled)
-        return None
+    async def _post_result(self, result: ResultT) -> None:
+        for hook in self._post_result_hooks:
+            go(asyncio.to_thread(hook, result))
 
-    def _write_result(
-        self, row: RowT, result: BaseJobResult, *, status: JobStatus | None = None
-    ) -> None:
+    def _write_result(self, row: RowT, result: BaseJobResult) -> None:
         prepared = replace(result, created_at=row.created_at, updated_at=utcnow())
         values = prepared.to_dict()
         values.pop("id", None)
         for key, value in values.items():
             setattr(row, key, value)
-        if status is not None:
-            row.status = status.value
 
     def get_result(self, job_id: int) -> ResultT | None:
         with self._session() as session:
@@ -207,16 +178,6 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         if row is None:
             return None
         return JobStatus(row.status)
-
-    def list(self, *, status: JobStatus | None = None) -> list[JobT]:
-        with self._session() as session:
-            stmt = select(type(self).row_cls).order_by(
-                type(self).row_cls.created_at, type(self).row_cls.id
-            )
-            if status is not None:
-                stmt = stmt.where(type(self).row_cls.status == status.value)
-            rows = list(session.scalars(stmt))
-        return [cast(type[JobT], self.job_cls).from_row(row) for row in rows]
 
     def purge(self) -> int:
         """Delete Jobs older than seven days."""

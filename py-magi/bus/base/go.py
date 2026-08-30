@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from typing import Any
 
 _loop: asyncio.AbstractEventLoop | None = None
@@ -32,3 +32,14 @@ def go(coro: Coroutine[Any, Any, object]) -> None:
             loop = _loop
             assert loop is not None
     asyncio.run_coroutine_threadsafe(coro, loop)
+
+
+async def wait(fns: Iterable[Callable[..., Any]], /, *args: Any, **kwargs: Any) -> list[Any]:
+    """Run *fns* concurrently with the same arguments and wait for every result."""
+
+    async def _invoke(fn: Callable[..., Any]) -> Any:
+        if asyncio.iscoroutinefunction(fn):
+            return await fn(*args, **kwargs)
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+    return list(await asyncio.gather(*(_invoke(fn) for fn in fns)))
