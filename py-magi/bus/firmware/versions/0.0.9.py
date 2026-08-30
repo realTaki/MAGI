@@ -38,7 +38,10 @@ _KEYS = (
 
 def upgrade() -> None:
     inspector = inspect(op.get_bind())
+    tables = set(inspector.get_table_names())
     for table, name, referred, columns, referred_columns, ondelete in _KEYS:
+        if table not in tables or referred not in tables:
+            continue
         existing = inspector.get_foreign_keys(table)
         if any(
             item.get("referred_table") == referred and item.get("constrained_columns") == columns

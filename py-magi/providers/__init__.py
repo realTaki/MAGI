@@ -1,61 +1,15 @@
-"""LLM provider layer — abstracts the upstream chat API.
+"""LLM calls: :mod:`providers.worker`. Hosts: :mod:`providers.client`."""
 
-The runtime speaks one interface (:class:`LLMProvider`) regardless of
-which vendor actually serves the request. vNext ships four concrete
-implementations:
+from __future__ import annotations
 
-- :class:`providers.claude_code.ClaudeProvider` — Anthropic's
-  first-party API.
-- :class:`providers.minimax.MinimaxProvider` — Minimax's two
-  regions (China + Global).
-- :class:`providers.openai.OpenAIProvider` — OpenAI's official
-  chat-completions endpoint.
+from typing import Any
 
-The Claude + Minimax pair subclass
-:class:`providers.anthropic.AnthropicProvider`, which
-centralises the SDK call, error mapping, and response walking.
-OpenAI is on a different wire format and subclasses
-:class:`LLMProvider` directly. The factory in
-:mod:`providers.factory` is the single source of truth for
-which provider id maps to which class.
+__all__ = ["ProvidersWorker"]
 
-Public surface
-==============
 
-This package is a **pure implementation** — it is consumed only by
-:class:`~providers.worker.ProvidersWorker` and the internal
-submodules themselves. External modules interact with providers
-exclusively through the bus job boards.
+def __getattr__(name: str) -> Any:
+    if name == "ProvidersWorker":
+        from providers.worker import ProvidersWorker
 
-Everything else lives in the appropriate submodule:
-
-- :class:`LLMProvider` / :class:`LLMStreamEvent` →
-  :mod:`providers.base`
-- :class:`AnthropicProvider` →
-  :mod:`providers.anthropic`
-- error classes (``LLMError`` / ``LLMAuthError`` / ...) →
-  :mod:`providers.errors`
-
-Intentionally NOT exported here (intentional decoupling — "each
-package does its own thing"):
-
-- **error classes** — providers' internal taxonomy for mapping
-  SDK exceptions to ``CallLLMResult.error_code`` strings. External
-  code reads ``error_code`` directly and never catches the
-  exception classes.
-- ``LLMProvider`` / ``LLMStreamEvent`` — concrete providers and
-  the worker import them from the submodule directly; no value in
-  re-exporting.
-- ``ChatMessage`` / ``ChatResult`` — deleted; wire format is plain
-  ``list[dict]``.
-- ``known_providers`` / ``is_known_provider`` /
-  ``provider_options_for_ui`` — all deleted. The supported
-  ``{provider, model}`` catalog now lives at the ``providers.options``
-  default setting, which the worker registers through
-  ``Bus.boost_default_settings`` so an operator can pick a
-  combination and only supply the API key.
-- ``enqueue_llm_job`` — callers publish vNext ``CallLLMJob`` through
-  a mounted JobBoard.
-- token estimators — moved to :mod:`agent.tokens` since they
-  serve the agent layer's compaction concern, not LLM calling.
-"""
+        return ProvidersWorker
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

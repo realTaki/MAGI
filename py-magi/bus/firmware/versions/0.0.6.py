@@ -27,7 +27,10 @@ _TOKEN_COLUMNS = (
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
+    tables = set(inspector.get_table_names())
     for table_name in ("books_token_usage", "jobs_record_token_usage"):
+        if table_name not in tables:
+            continue
         existing = {column["name"] for column in inspector.get_columns(table_name)}
         for name in _TOKEN_COLUMNS:
             if name not in existing:
