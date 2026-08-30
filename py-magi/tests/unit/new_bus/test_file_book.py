@@ -72,7 +72,6 @@ def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
 
 def test_file_store_returns_false_when_target_is_a_directory(tmp_path) -> None:
     store = FileEngine(tmp_path / "workspace").book("notes")
-    assert store.directory is not None
     (store.directory / "not-a-file").mkdir()
     assert store.write_text("not-a-file", "content") is False
 

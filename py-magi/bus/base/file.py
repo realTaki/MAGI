@@ -45,32 +45,25 @@ class FileEngine:
         except OSError:
             return False
 
-    def directory(self, name: str) -> Path | None:
-        """Return a Book folder, or None when it cannot be opened."""
-        path = _resolve_under(self.root, name)
-        if path is None or not self._ensure_directory(path):
-            return None
-        return path
-
     def book(self, name: str) -> FileStore:
-        """Open one FileBook-scoped store under the workspace."""
-        return FileStore(self.directory(name))
+        """Open one developer-defined FileBook directory under the workspace."""
+        directory = self.root / name
+        self._ensure_directory(directory)
+        return FileStore(directory)
 
 
 class FileStore:
     """Safe filesystem primitives scoped to exactly one FileBook directory."""
 
-    def __init__(self, directory: Path | None) -> None:
+    def __init__(self, directory: Path) -> None:
         self._directory = directory
 
     @property
-    def directory(self) -> Path | None:
+    def directory(self) -> Path:
         return self._directory
 
     def path(self, name: str) -> Path | None:
         """Resolve one relative path, or None if it is invalid or unavailable."""
-        if self._directory is None:
-            return None
         return _resolve_under(self._directory, name)
 
     def read_text(self, name: str) -> str | None:
@@ -144,8 +137,6 @@ class FileStore:
         return True
 
     def file_names(self) -> list[str]:
-        if self._directory is None:
-            return []
         try:
             return sorted(
                 path.relative_to(self._directory).as_posix()
@@ -156,8 +147,6 @@ class FileStore:
             return []
 
     def directory_names(self) -> list[str]:
-        if self._directory is None:
-            return []
         try:
             return sorted(path.name for path in self._directory.iterdir() if path.is_dir())
         except OSError:

@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
     "lint:i18n": "node scripts/i18n-lint.cjs",
-    "test": "echo 'test placeholder — wired up later'"
+    "test": "node --test tests/app-store.test.mjs"
   },
   "build": {
     "appId": "ai.magi.app",
@@ -21,6 +21,7 @@
     "files": [
       "dist/**",
       "shell/**",
+      "core/**",
       "package.json"
     ],
     "directories": {
@@ -30,7 +31,8 @@
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.13.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
