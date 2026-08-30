@@ -28,7 +28,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const LOCALES_DIR = path.resolve(__dirname, "..", "ui", "src", "i18n", "locales");
+const LOCALES_DIR = path.resolve(__dirname, "..", "src", "i18n", "locales");
 const REQUIRED_LOCALES = ["zh.ts", "en.ts", "ja.ts"];
 
 function listLocaleFiles() {
