@@ -15,7 +15,7 @@ from bus.firmware.jobs.settingsJobs import (
     ListSettingsJobBoard,
     SetSettingJobBoard,
 )
-from tests.unit.new_bus.testing import attach_board
+from tests.unit.new_bus.testing import attach_board, wait_result
 
 BOARD_BY_JOB = {
     DeleteSettingJob: DeleteSettingJobBoard,
@@ -33,7 +33,7 @@ def _publish(bus: Bus, job: BaseJob) -> BaseJob:
 
 def _result(bus: Bus, job: BaseJob):
     board = attach_board(bus, BOARD_BY_JOB[type(job)])
-    return board.get_result(job.id)
+    return wait_result(board, job.id)
 
 
 def test_settings_accept_keys_without_a_predeclared_vocabulary(tmp_path) -> None:

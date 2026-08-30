@@ -12,10 +12,11 @@ from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
     BaseJobBoard[JobT, ResultT, RowT]
 ):
-    """Execute file-Book Jobs inside BUS when their result is requested.
+    """Execute file-Book Jobs inside BUS after publish.
 
     File Books cannot share the Job row's SQL transaction, but the Book remains
     entirely BUS-private: only this Board invokes its public methods.
+    ``get_result`` is a read.
     """
 
     def _claim(self) -> JobT | None:
@@ -25,9 +26,10 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
         del result
         return False
 
-    def get_result(self, job_id: int) -> ResultT | None:
+    def _publish(self, job: JobT) -> int:
+        job_id = super()._publish(job)
         self._execute_pending(job_id)
-        return super().get_result(job_id)
+        return job_id
 
     def _execute(self, job: JobT) -> ResultT:
         raise NotImplementedError

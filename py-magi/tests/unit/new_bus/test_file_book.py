@@ -7,6 +7,7 @@ from bus.base.BaseFileBook import BaseFileBook
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
 from bus.firmware.jobs.skillJobs import GetSkillJob
+from tests.unit.new_bus.testing import wait_result
 
 
 class NotesBook(BaseFileBook):
@@ -101,7 +102,7 @@ def test_file_book_job_persists_external_failure(tmp_path, monkeypatch) -> None:
 
         monkeypatch.setattr(board, "_execute", fail)
         job_id = board.publish(GetSkillJob(name="web_lookup"))
-        result = board.get_result(job_id)
+        result = wait_result(board, job_id)
         assert result is not None
         assert result.status.value == "failed"
         assert result.error == "workspace is unavailable"

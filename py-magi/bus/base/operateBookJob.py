@@ -1,8 +1,9 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
-These jobs do not have a worker ``claim`` phase. Once a job is PENDING,
-requesting its result executes the Book operation. The Job row lives in
-the logs store; the Book mutation uses the memories store.
+These jobs have no worker ``claim`` phase. ``publish`` runs the
+post-publish gate, then the BUS executes the Book operation.
+``get_result`` is a read. The Job row lives in the logs store; the
+Book mutation uses the memories store.
 """
 
 from __future__ import annotations
@@ -29,9 +30,10 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         del result
         return False
 
-    def get_result(self, job_id: int) -> ResultT | None:
+    def _publish(self, job: JobT) -> int:
+        job_id = super()._publish(job)
         self._execute_pending(job_id)
-        return super().get_result(job_id)
+        return job_id
 
     def _execute(self, session: Session, job: JobT) -> ResultT:
         """Operate on the Book in the memories store."""

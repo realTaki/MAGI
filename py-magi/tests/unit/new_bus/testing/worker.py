@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from bus import Bus
@@ -15,3 +16,14 @@ def attach_board(
     board = bus.board(board_cls.job_cls)
     assert board is not None
     return board
+
+
+def wait_result(board, job_id: int, *, timeout: float = 2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = board.get_result(job_id)
+        if result is not None:
+            return result
+        time.sleep(0.01)
+    return board.get_result(job_id)
+
