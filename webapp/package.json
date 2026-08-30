@@ -7,12 +7,14 @@
   "main": "server.mjs",
   "files": [
     "dist/**",
+    "app-api/**",
     "localdb/**",
     "magi-asp/src/**",
     "server.mjs",
     "main.mjs"
   ],
   "exports": {
+    "./app-api": "./app-api/server.mjs",
     "./localdb/app-store": "./localdb/app-store.mjs",
     "./localdb/asp-store": "./localdb/asp-store.mjs",
     "./server": "./server.mjs"

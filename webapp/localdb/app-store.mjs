@@ -84,6 +84,10 @@ export async function openAppStore({ database, dataDir } = {}) {
       return row ? JSON.parse(row.value_json) : undefined;
     },
 
+    listSettings() {
+      return Object.fromEntries(queryRows(db, "SELECT key, value_json FROM app_settings ORDER BY key").map(({ key, value_json: valueJson }) => [key, JSON.parse(valueJson)]));
+    },
+
     setSetting(key, value) {
       transaction(() => db.run(`
         INSERT INTO app_settings (key, value_json, updated_at)

@@ -1,13 +1,13 @@
-/** The one local Webapp process: UI, API proxy, ASP and one SQLite database. */
+/** The one local Webapp process: UI, App API, ASP and one SQLite database. */
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { createServer, request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { createServer } from "node:http";
 import { join, normalize, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openAppStore } from "./localdb/app-store.mjs";
 import { openAspStore } from "./localdb/asp-store.mjs";
 import { openLocalDatabase } from "./localdb/database.mjs";
+import { createAppApi } from "./app-api/server.mjs";
 import { createAspOperator } from "./magi-asp/src/server.mjs";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
@@ -22,37 +22,22 @@ function fileUnder(distDir, pathname) {
   return existsSync(index) ? index : null;
 }
 
-function proxy(request, response, backendUrl) {
-  const backend = new URL(backendUrl);
-  const target = new URL(request.url ?? "/", backend);
-  const send = target.protocol === "https:" ? httpsRequest : httpRequest;
-  const upstream = send(target, { method: request.method, headers: { ...request.headers, host: backend.host } }, (source) => {
-    response.writeHead(source.statusCode ?? 502, source.headers);
-    source.pipe(response);
-  });
-  upstream.on("error", () => {
-    if (!response.headersSent) response.writeHead(502, { "content-type": "text/plain" });
-    response.end("MAGI backend is unavailable");
-  });
-  request.pipe(upstream);
-}
-
 export async function startWebapp({
   host = "127.0.0.1",
   port = 42069,
   dataDir,
   distDir = join(ROOT, "dist"),
-  backendUrl = process.env.MAGI_BACKEND_URL ?? "http://127.0.0.1:42070",
 } = {}) {
   const database = await openLocalDatabase({ dataDir });
   const appStore = await openAppStore({ database });
   const aspStore = await openAspStore({ database });
+  const appApi = createAppApi({ store: appStore });
   const asp = createAspOperator({ store: aspStore });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? host}`);
     if (url.pathname === "/health") return response.end(JSON.stringify({ status: "ok" }));
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return void appApi.handle(request, response, url);
     if (url.pathname === "/asp" || url.pathname.startsWith("/asp/")) return void asp.handle(request, response, url);
-    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return proxy(request, response, backendUrl);
     const file = fileUnder(distDir, url.pathname);
     if (!file) { response.writeHead(404); response.end("not found"); return; }
     response.writeHead(200, { "content-type": MIME[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream" });
