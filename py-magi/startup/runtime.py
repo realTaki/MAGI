@@ -188,7 +188,7 @@ def _create_runtime_app(context: RuntimeContext):
 
     from channels.api.app import create_runtime_app
 
-    app = create_runtime_app(bus=context.bus, workers=context.workers)
+    app = create_runtime_app(bus=context.bus)
 
     @asynccontextmanager
     async def _runtime_lifespan(_app):
