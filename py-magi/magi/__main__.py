@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import os
-
-import uvicorn
+import argparse
+from collections.abc import Sequence
 
 from magi.service import Magi
 
 
-def main() -> int:
-    service = Magi(workspace=os.environ.get("MAGI_WORKSPACE", "workspace"))
-    uvicorn.run(
-        service.app,
-        host=os.environ.get("MAGI_HOST", "127.0.0.1"),
-        port=int(os.environ.get("MAGI_PORT", "42070")),
-    )
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run one local MAGI service.")
+    parser.add_argument("name", help="MAGI name; workspace is ~/.magi/<name>/workspace")
+    args = parser.parse_args(argv)
+    service = Magi(args.name)
+    service.serve()
     return 0
 
 

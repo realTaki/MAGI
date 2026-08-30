@@ -28,15 +28,12 @@ from .jobs import (
     CallLLMJob,
     CallLLMJobBoard,
     CallLLMResult,
-    ChatNotify,
-    ChatNotifyBoard,
-    ChatNotifyResult,
-    DeliveryNotify,
-    DeliveryNotifyBoard,
-    DeliveryNotifyResult,
     ChangeProviderNotify,
     ChangeProviderNotifyBoard,
     ChangeProviderNotifyResult,
+    ChatNotify,
+    ChatNotifyBoard,
+    ChatNotifyResult,
     CreateContactJob,
     CreateContactJobBoard,
     CreateContactNoteJob,
@@ -64,6 +61,9 @@ from .jobs import (
     DeleteToolJob,
     DeleteToolJobBoard,
     DeleteToolResult,
+    DeliveryNotify,
+    DeliveryNotifyBoard,
+    DeliveryNotifyResult,
     GetContactJob,
     GetContactJobBoard,
     GetContactNoteJob,
@@ -143,6 +143,7 @@ from .jobs import (
     UpdateMemoryJobBoard,
     UpdateMemoryResult,
 )
+from .versions import __version__
 
 
 def create_job_boards(
@@ -217,6 +218,7 @@ def create_job_boards(
 
 
 __all__ = [
+    "__version__",
     "Conversation",
     "Contact",
     "ContactRole",
