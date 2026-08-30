@@ -21,24 +21,24 @@ class Bus:
     def __init__(self, workspace: str | Path) -> None:
         """Open one private BUS store rooted at *workspace*.
 
-        The current Firmware has no MAGIS storage yet, so its SQL state always
-        lives in ``<workspace>/memories/magi.db``.  File Books share the same
-        workspace root.  Backend construction remains BUS-private until a
-        MAGIS-aware storage contract is introduced.
+        Books live in ``<workspace>/memories/magi.db``. Job history lives in
+        ``<workspace>/logs/magi.db``. File Books share the workspace root.
         """
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
-        database_path = self.workspace / "memories" / "magi.db"
-        database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._factory = EngineFactory(f"sqlite:///{database_path}")
-        self._files = FileEngine(self.workspace)
         from .firmware.versions.schema import prepare_schema
 
-        prepare_schema(self._factory)
+        self._memories = self._open_sqlite("memories")
+        self._logs = self._open_sqlite("logs")
+        self._factory = self._memories
+        prepare_schema(self._memories)
+        prepare_schema(self._logs)
+        self._files = FileEngine(self.workspace)
         from .firmware import create_job_boards
 
         self._job_boards = create_job_boards(
-            self._factory,
+            self._logs,
+            memories=self._memories,
             files=self._files,
         )
 
@@ -64,7 +64,7 @@ class Bus:
             return False
 
         try:
-            with self._factory.session() as session:
+            with self._memories.session() as session:
                 for key, value in prepared.items():
                     existing = session.scalar(select(SettingRow.id).where(SettingRow.key == key))
                     if existing is None:
@@ -75,13 +75,19 @@ class Bus:
         return True
 
     def close(self) -> None:
-        self._factory.close()
+        self._logs.close()
+        self._memories.close()
 
     def __enter__(self) -> Bus:
         return self
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+    def _open_sqlite(self, folder: str) -> EngineFactory:
+        database_path = self.workspace / folder / "magi.db"
+        database_path.parent.mkdir(parents=True, exist_ok=True)
+        return EngineFactory(f"sqlite:///{database_path}")
 
     @staticmethod
     def _setting_segment(value: str) -> str | None:

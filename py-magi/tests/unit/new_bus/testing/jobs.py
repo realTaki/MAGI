@@ -34,4 +34,5 @@ class PingBus(Bus):
 
     def __init__(self, workspace: str | Path) -> None:
         super().__init__(workspace)
-        self._job_boards[PingJob] = PingJobBoard(self._factory)
+        PingJobRow.__table__.create(self._logs.engine, checkfirst=True)
+        self._job_boards[PingJob] = PingJobBoard(self._logs)
