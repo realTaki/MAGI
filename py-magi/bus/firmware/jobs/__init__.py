@@ -1,5 +1,10 @@
 from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult
 from .chatNotifyJob import ChatNotifyJob, ChatNotifyJobBoard, ChatNotifyResult
+from .deliveryNotifyJob import (
+    DeliveryNotifyJob,
+    DeliveryNotifyJobBoard,
+    DeliveryNotifyResult,
+)
 from .changeProviderJob import (
     ChangeProviderJob,
     ChangeProviderJobBoard,
@@ -202,6 +207,9 @@ __all__ = [
     "ChatNotifyJob",
     "ChatNotifyJobBoard",
     "ChatNotifyResult",
+    "DeliveryNotifyJob",
+    "DeliveryNotifyJobBoard",
+    "DeliveryNotifyResult",
     "RunTaskNotifyJob",
     "RunTaskNotifyJobBoard",
     "RunTaskNotifyResult",

@@ -25,6 +25,7 @@ def firmware_metadata() -> MetaData:
     from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
     from ..jobs.changeProviderJob import ChangeProviderJobRow  # noqa: F401
     from ..jobs.chatNotifyJob import ChatNotifyJobRow  # noqa: F401
+    from ..jobs.deliveryNotifyJob import DeliveryNotifyJobRow  # noqa: F401
     from ..jobs.runTaskNotifyJob import RunTaskNotifyJobRow  # noqa: F401
     from ..jobs.contactJobs import (  # noqa: F401
         CreateContactJobRow,
