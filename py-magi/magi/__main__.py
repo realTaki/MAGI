@@ -1,4 +1,4 @@
-"""Run the MAGI FastAPI service."""
+"""Run one MAGI as an ASP client."""
 
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ from magi.service import Magi
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one local MAGI service.")
-    parser.add_argument("name", help="MAGI name; workspace is ~/.magi/<name>/workspace")
+    parser = argparse.ArgumentParser(description="Run one MAGI attached to webapp/asp.")
+    parser.add_argument("handle", help="stable ASP identity, e.g. @alice.magi")
+    parser.add_argument("base", help="operator origin, e.g. http://127.0.0.1:42069")
+    parser.add_argument("token", help="Bearer token seeded on the operator")
     args = parser.parse_args(argv)
-    service = Magi(args.name)
-    service.serve()
+    Magi(args.handle, args.base, args.token).serve()
     return 0
 
 

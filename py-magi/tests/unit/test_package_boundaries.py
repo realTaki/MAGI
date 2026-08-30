@@ -1,7 +1,7 @@
 """Static package-boundary guard.
 
 Locks the design §18 rule: agent/tools must not import from
-``magi.api.*`` (the MAGI runtime HTTP surface).
+``magi.api.*`` (retired runtime HTTP surface).
 BUS owns persistence behind ``bus.bases.db``. A future change that
 re-introduces a reverse domain import must fail here before it reaches
 production.
@@ -13,20 +13,6 @@ import ast
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# Modules that are allowed to import from magi.api.
-# Today only the test suite and the api layer itself.
-EXEMPT_PREFIXES: tuple[str, ...] = (
-    "magi/api/",
-    "tests/",
-)
-
-# Modules we are enforcing the rule on.
-SCAN_PREFIXES: tuple[str, ...] = (
-    "agent/",
-    "tools/",
-    "proactive/",
-)
 
 # These are the remaining production Actor/Tool entry paths that must retain
 # their BUS-only boundary. Delivery is now represented by the durable
