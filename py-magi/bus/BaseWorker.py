@@ -84,7 +84,7 @@ class BaseWorker:
         try:
             try:
                 await self.on_attached()
-            except Exception:  # noqa: BLE001 -- attach must report failure to Launcher
+            except Exception:  # noqa: BLE001 -- attach must report failure to Magi
                 self._attached_ok = False
                 return
             self._attached_ok = True
