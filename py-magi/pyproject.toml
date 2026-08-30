@@ -18,6 +18,10 @@ dependencies = [
     # Schema migrations run during every node boot, including EVA. Keep
     # Alembic on the core runtime path rather than behind the ADAM extra.
     "alembic>=1.13.0",
+    # BUS (BaseJob, JobBoard, every firmware Book) imports SQLAlchemy
+    # unconditionally. Same core-path reason as Alembic: a node without
+    # the ADAM extra still has to open the workspace database.
+    "sqlalchemy[asyncio]>=2.0.36",
     # HTTP client (used by EVA's agent_client and llm/ollama)
     "httpx>=0.27.0",
     # SKILL.md frontmatter parser (skills/ loader) — keep
@@ -33,7 +37,6 @@ dependencies = [
 [project.optional-dependencies]
 # Phase 1 baseline extras (used by ADAM & EVA at runtime)
 adam = [
-    "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "psycopg[binary]>=3.2.0",
     "pgvector>=0.3.6",
@@ -122,8 +125,9 @@ pythonpath = ["."]
 # ~1.9 GB. These globs are relative to the project root.
 # -----------------------------------------------------------------------------
 [tool.pyright]
-# Resolve third-party imports (sqlalchemy, alembic, …) from the
-# project venv without adding site-packages to the *project* index.
+# Used when this directory is the Pyright project root (``cd py-magi``).
+# Cursor / Pylance open the MAGI workspace root, so the repo-level
+# ``pyrightconfig.json`` is what actually points them at ``.venv``.
 venvPath = "."
 venv = ".venv"
 exclude = [
