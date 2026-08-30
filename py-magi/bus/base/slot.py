@@ -167,17 +167,20 @@ class PublishSlot(Slot):
 
 
 class SubmitResultSlot(Slot):
-    """First durable result wins; an active post-result gate gets the row."""
+    """Persist the first result, then offer it to the post-result gate."""
 
     def execute(
         self, board, fn, args, kwargs, next_slot, worker_id: str
     ) -> Any:
-        if not self.touch(worker_id):
-            return None
-        post_active = bool(
-            next_slot and slots.held(board, SlotTag(self.tag.job_type, next_slot))
-        )
-        return fn(board, *args, _slot_post_active=post_active, **kwargs)
+        if not self.touch(worker_id) or not args:
+            return False
+        if not fn(board, *args, **kwargs):
+            return False
+        if next_slot is not None:
+            slots.claim_post(board, SlotTag(self.tag.job_type, next_slot)).offer(
+                board, int(args[0].id)
+            )
+        return True
 
 
 class ClaimPostSlot(Slot):
