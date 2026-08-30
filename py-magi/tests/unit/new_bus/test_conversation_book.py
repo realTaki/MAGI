@@ -183,22 +183,6 @@ def test_create_conversation_keeps_optional_text_unconstrained(tmp_path) -> None
     assert conversation.delivery_address == ""
 
 
-def test_book_operation_persists_unexpected_failure(tmp_path, monkeypatch) -> None:
-    bus = _bus(tmp_path)
-    board = bus.board(CreateConversationJob)
-    assert board is not None
-
-    def fail(*_args):
-        raise RuntimeError("storage unavailable")
-
-    monkeypatch.setattr(board, "_execute", fail)
-    created = _publish(bus, CreateConversationJob(channel="webui"))
-    outcome = _result(bus, created)
-    assert outcome is not None
-    assert outcome.status is JobStatus.FAILED
-    assert outcome.error == "storage unavailable"
-
-
 def test_firmware_commands_are_not_claimable_work(tmp_path) -> None:
     bus = _bus(tmp_path)
     assert _board(bus, CreateConversationJob()).claim() is None

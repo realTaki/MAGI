@@ -51,11 +51,6 @@ type PostPublishHook[JobT: BaseJob, ResultT: BaseJobResult] = Callable[[JobT], R
 type PostResultHook[ResultT: BaseJobResult] = Callable[[ResultT], None]
 
 
-def error_message(error: Exception) -> str:
-    """Return the durable, user-forwardable text for an execution failure."""
-    return str(error).strip() or type(error).__name__
-
-
 class BaseJobRow(BaseRecordMixin):
     """Queue columns. Subclasses declare the business columns."""
 
@@ -102,15 +97,17 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             session.commit()
             return int(row.id)
 
-    async def _post_publish(self, job: JobT) -> None:
+    async def _post_publish(self, job: JobT) -> JobStatus:
         gathered = await wait(self._post_publish_hooks, job)
         failed = any(item.status is JobStatus.FAILED for item in gathered)
+        status = JobStatus.FAILED if failed else JobStatus.PENDING
         with self._session() as session:
-            row = session.get(type(self).row_cls, job.id)
-            row.status = JobStatus.FAILED.value if failed else JobStatus.PENDING.value
+            row = session.get_one(type(self).row_cls, job.id)
+            row.status = status.value
             if failed:
                 row.error = "\n".join(item.error for item in gathered if item.error)
             session.commit()
+        return status
 
     def claim(self) -> JobT | None:
         return self._claim()

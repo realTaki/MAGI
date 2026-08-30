@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import cast
 
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from .go import go
 
 
@@ -22,29 +21,22 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
     def _claim(self) -> JobT | None:
         return None
 
-    def _submit_result(self, result: ResultT) -> bool:
+    def _submit_result(self, result: BaseJobResult) -> bool:
+        """File-Book operations execute inline during publish, so the
+        worker-facing submit path is a no-op."""
         del result
         return False
 
     def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
-        go(self._post_publish(replace(job, id=job_id))).result()
-        row_cls = type(self).row_cls
-        with self._session() as session:
-            row = session.get(row_cls, job_id)
-            if row is None or row.status != JobStatus.PENDING.value:
-                return job_id
-            job = cast(type[JobT], self.job_cls).from_row(row)
+        published = replace(job, id=job_id)
+        if go(self._post_publish(published)).result() is not JobStatus.PENDING:
+            return job_id
 
-        try:
-            result = self._execute(job)
-        except Exception as error:  # noqa: BLE001 -- make file failures durable results
-            result = type(self).result_cls(status=JobStatus.FAILED, error=error_message(error))
+        result = self._execute(published)
 
         with self._session() as session:
-            row = session.get(row_cls, job_id)
-            if row is None:
-                return job_id
+            row = session.get_one(type(self).row_cls, job_id)
             self._write_result(row, result)
             session.commit()
         return job_id
