@@ -22,6 +22,7 @@ from bus import (
     ChangeProviderResult,
     JobStatus,
     ListSettingsJob,
+    go,
 )
 from providers.client import Client, connect, options
 
@@ -35,8 +36,8 @@ MODEL_KEY = "provider.model"
 class ProvidersWorker(BaseWorker):
     worker_name = "providers"
 
-    def __init__(self, *, poll_seconds: float = 0.25, concurrency: int | None = None) -> None:
-        super().__init__(poll_seconds=poll_seconds, concurrency=concurrency)
+    def __init__(self, *, poll_seconds: float = 0.25) -> None:
+        super().__init__(poll_seconds=poll_seconds)
         self._client: Client | None = None
         self._error: str | None = None
 
@@ -54,24 +55,16 @@ class ProvidersWorker(BaseWorker):
 
     async def _run(self) -> None:
         while not self._stop.is_set():
-            reserved = False
             try:
                 change = await self.call(self._board(ChangeProviderJob).claim)
                 if change is not None:
                     await self._on_change(change)
                     continue
-                await self.reserve_capacity()
-                reserved = True
                 job = await self.call(self._board(CallLLMJob).claim)
                 if job is not None:
-                    self.spawn_reserved(self._on_llm(job), name=f"provider-job-{job.id}")
-                    reserved = False
+                    go(self._on_llm(job))
                     continue
-                self.release_capacity()
-                reserved = False
             except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
-                if reserved:
-                    self.release_capacity()
                 logger.exception("providers worker: BUS operation failed")
             await asyncio.sleep(self.poll_seconds)
 

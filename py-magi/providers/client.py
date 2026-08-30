@@ -1,6 +1,9 @@
-"""LiteLLM client and the small host catalog it reads.
+"""LiteLLM client and MAGI's operator menu.
 
-Adding an Anthropic- or OpenAI-compatible host is one :class:`Host` row.
+HOSTS is a curated slice of LiteLLM's catalog: common first-party
+providers and their current flagship chat models. First-party API
+roots stay inside LiteLLM. MiniMax is split into CN / Global because
+LiteLLM treats them as one provider with two URLs.
 """
 
 from __future__ import annotations
@@ -25,21 +28,48 @@ _CONTEXT_MARKERS = (
 
 @dataclass(frozen=True)
 class Host:
+    """One MAGI picker entry.
+
+    ``prefix`` is LiteLLM's route. ``api_base`` is only for regional
+    hosts. ``models`` are current LiteLLM catalog ids, without the prefix.
+    """
+
     id: str
     prefix: str
-    api_base: str
     models: tuple[str, ...]
     default_model: str
+    api_base: str | None = None
 
 
 HOSTS: tuple[Host, ...] = (
-    Host("claude", "anthropic", "https://api.anthropic.com", ("claude-fable-5", "claude-opus-5"), "claude-opus-5"),
-    Host("minimax-cn", "anthropic", "https://api.minimaxi.com/anthropic", ("MiniMax-M3",), "MiniMax-M3"),
-    Host("minimax-global", "anthropic", "https://api.minimax.io/anthropic", ("MiniMax-M3",), "MiniMax-M3"),
-    Host("openai", "openai", "https://api.openai.com/v1", ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"), "gpt-5.6-terra"),
+    Host("claude", "anthropic", ("claude-opus-5", "claude-fable-5", "claude-sonnet-5"), "claude-opus-5"),
+    Host("openai", "openai", ("gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"), "gpt-5.6"),
+    Host("gemini", "gemini", ("gemini-3.7-flash", "gemini-3.5-flash", "gemini-pro-latest"), "gemini-3.7-flash"),
+    Host("xai", "xai", ("grok-4.6", "grok-4.20"), "grok-4.6"),
+    Host("deepseek", "deepseek", ("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro"),
+    Host("mistral", "mistral", ("mistral-large-latest", "mistral-medium-latest"), "mistral-large-latest"),
+    Host(
+        "minimax-cn",
+        "minimax",
+        ("MiniMax-M3", "MiniMax-M2.5"),
+        "MiniMax-M3",
+        "https://api.minimaxi.com/anthropic",
+    ),
+    Host(
+        "minimax-global",
+        "minimax",
+        ("MiniMax-M3", "MiniMax-M2.5"),
+        "MiniMax-M3",
+        "https://api.minimax.io/anthropic",
+    ),
 )
 
-_ALIASES = {"minimax": "minimax-cn"}
+_ALIASES = {
+    "minimax": "minimax-cn",
+    "anthropic": "claude",
+    "google": "gemini",
+    "grok": "xai",
+}
 _BY_ID = {host.id: host for host in HOSTS}
 
 
@@ -82,10 +112,11 @@ class Client:
             "messages": _messages(messages),
             "max_tokens": max_tokens,
             "api_key": self.api_key,
-            "api_base": self.host.api_base,
             "timeout": 30.0,
             "drop_params": True,
         }
+        if self.host.api_base:
+            params["api_base"] = self.host.api_base
         converted = _tools(tools)
         if converted:
             params["tools"] = converted
