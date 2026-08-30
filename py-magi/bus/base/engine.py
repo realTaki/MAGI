@@ -12,8 +12,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from .time import dump_json
-
 
 class EngineFactory:
     """One engine and sessionmaker. Books and JobBoards each hold one."""
@@ -59,10 +57,9 @@ class EngineFactory:
 
     def _build_engine(self) -> Engine:
         if self._dialect != "sqlite":
-            return create_engine(self._url, json_serializer=dump_json)
+            return create_engine(self._url)
         options: dict = {
             "connect_args": {"check_same_thread": False},
-            "json_serializer": dump_json,
         }
         if self._memory:
             options["poolclass"] = StaticPool
