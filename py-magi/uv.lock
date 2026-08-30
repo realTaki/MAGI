@@ -1258,6 +1258,7 @@ adam = [
     { name = "psycopg", extra = ["binary"] },
 ]
 dev = [
+    { name = "croniter" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1275,6 +1276,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "apscheduler", marker = "extra == 'eva'", specifier = ">=3.10.4" },
     { name = "asyncpg", marker = "extra == 'adam'", specifier = ">=0.30.0" },
+    { name = "croniter", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "croniter", marker = "extra == 'eva'", specifier = ">=2.0.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },

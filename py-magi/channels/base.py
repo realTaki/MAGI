@@ -2,7 +2,7 @@
 
 Concrete channels (Telegram, Scheduled) live in their own
 subpackages under :mod:`channels`. Inbound chat from the operator UI
-arrives through the ASP client in :mod:`magi.asp`.
+arrives through the ASP client in :mod:`magi.asp_client`.
 """
 
 from __future__ import annotations
