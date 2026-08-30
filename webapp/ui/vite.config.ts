@@ -5,10 +5,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const UI_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  root: "ui",
+  root: ".",
   publicDir: "public",
   plugins: [react(), tailwindcss()],
   server: {
@@ -19,7 +19,7 @@ export default defineConfig({
     allowedHosts: true,
   },
   build: {
-    outDir: path.resolve(APP_ROOT, "ui", "dist"),
+    outDir: path.resolve(UI_ROOT, "dist"),
     emptyOutDir: true,
     sourcemap: true,
   },
