@@ -75,31 +75,32 @@ def test_claim_post_publish_is_shared_and_all_submitters_must_vote(bus: Bus, pin
     assert first_claim.id == second_claim.id == job.id
     assert ping_board.check_job_status(job.id) is JobStatus.PREPARING
 
-    assert first.submit_post_publish(first_claim, BaseJobResult())
+    assert first.submit_post_publish(BaseJobResult(id=job.id, status=JobStatus.PENDING))
     assert ping_board.check_job_status(job.id) is JobStatus.PREPARING
-    assert second.submit_post_publish(second_claim, BaseJobResult())
+    assert second.submit_post_publish(BaseJobResult(id=job.id, status=JobStatus.PENDING))
     assert ping_board.check_job_status(job.id) is JobStatus.PENDING
 
 
 def test_claim_post_publish_keeps_one_cursor_per_worker(bus: Bus, ping_board) -> None:
     first = _board(bus, "first", ("claim_post_publish", "submit_post_publish"))
     second = _board(bus, "second", ("claim_post_publish", "submit_post_publish"))
-    first_job = PingJob(id=ping_board.publish(PingJob(n=1)))
-    second_job = PingJob(id=ping_board.publish(PingJob(n=2)))
+    first_job_id = ping_board.publish(PingJob(n=1))
+    second_job_id = ping_board.publish(PingJob(n=2))
 
     first_claim = first.claim_post_publish()
-    assert first_claim is not None and first_claim.id == first_job.id
-    first_second_claim = first.claim_post_publish()
-    assert first_second_claim is not None and first_second_claim.id == second_job.id
+    assert first_claim is not None and first_claim.id == first_job_id
+    assert first.claim_post_publish() is None
 
     second_claim = second.claim_post_publish()
-    assert second_claim is not None and second_claim.id == first_job.id
-    assert first.submit_post_publish(first_claim, BaseJobResult())
-    assert second.submit_post_publish(second_claim, BaseJobResult())
-    assert ping_board.check_job_status(first_job.id) is JobStatus.PENDING
+    assert second_claim is not None and second_claim.id == first_job_id
+    assert first.submit_post_publish(BaseJobResult(id=first_job_id, status=JobStatus.PENDING))
+    assert second.submit_post_publish(BaseJobResult(id=first_job_id, status=JobStatus.PENDING))
+    assert ping_board.check_job_status(first_job_id) is JobStatus.PENDING
 
-    second_claim = second.claim_post_publish()
-    assert second_claim is not None and second_claim.id == second_job.id
+    first_next = first.claim_post_publish()
+    second_next = second.claim_post_publish()
+    assert first_next is not None and first_next.id == second_job_id
+    assert second_next is not None and second_next.id == second_job_id
 
 
 def test_post_publish_failure_merges_errors_from_all_workers(bus: Bus, ping_board) -> None:
@@ -110,10 +111,10 @@ def test_post_publish_failure_merges_errors_from_all_workers(bus: Bus, ping_boar
     second_claim = second.claim_post_publish()
     assert first_claim is not None and second_claim is not None
     assert first.submit_post_publish(
-        first_claim, BaseJobResult(status=JobStatus.FAILED, error="first block")
+        BaseJobResult(id=job.id, status=JobStatus.FAILED, error="first block")
     )
     assert second.submit_post_publish(
-        second_claim, BaseJobResult(status=JobStatus.FAILED, error="second block")
+        BaseJobResult(id=job.id, status=JobStatus.FAILED, error="second block")
     )
     outcome = ping_board.get_result(job.id)
     assert outcome is not None and outcome.status is JobStatus.FAILED
@@ -143,47 +144,42 @@ def test_duplicate_submit_result_does_not_replace_the_first_result(bus: Bus, pin
     assert ping_board.submit_result(BaseJobResult(id=job.id, error="first"))
     assert not other.submit_result(BaseJobResult(id=job.id, status=JobStatus.FAILED, error="late"))
     outcome = ping_board.get_result(job.id)
-    assert outcome is not None and outcome.status is JobStatus.COMPLETED
+    assert outcome is not None and outcome.status is JobStatus.FAILED
     assert outcome.error == "first"
 
 
-def test_claim_post_result_is_shared_and_all_submitters_must_vote(bus: Bus, ping_board) -> None:
-    first = _board(bus, "first", ("claim_post_result", "submit_post_result"))
-    second = _board(bus, "second", ("claim_post_result", "submit_post_result"))
+def test_claim_post_result_is_first_claimant_wins(bus: Bus, ping_board) -> None:
+    first = _board(bus, "first", ("claim_post_result",))
+    second = _board(bus, "second", ("claim_post_result",))
     job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
     assert ping_board.submit_result(BaseJobResult(id=job.id))
 
     first_claim = first.claim_post_result()
-    second_claim = second.claim_post_result()
-    assert first_claim is not None and second_claim is not None
-    assert first_claim.id == second_claim.id == job.id
-    assert first.submit_post_result(job.id, BaseJobResult())
-    assert ping_board.get_result(job.id) is None
-    assert second.submit_post_result(job.id, BaseJobResult())
+    assert first_claim is not None and first_claim.id == job.id
     outcome = ping_board.get_result(job.id)
     assert outcome is not None and outcome.status is JobStatus.COMPLETED
+    assert second.claim_post_result() is None
 
 
-def test_post_result_failure_merges_errors_from_all_workers(bus: Bus, ping_board) -> None:
-    first = _board(bus, "first", ("claim_post_result", "submit_post_result"))
-    second = _board(bus, "second", ("claim_post_result", "submit_post_result"))
+def test_claim_post_result_keeps_submit_result_error(bus: Bus, ping_board) -> None:
+    hook = _board(bus, "hook", ("claim_post_result",))
     job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None
-    assert ping_board.submit_result(BaseJobResult(id=job.id))
-    assert first.claim_post_result() is not None
-    assert second.claim_post_result() is not None
-    assert first.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="first reject"))
-    assert second.submit_post_result(job.id, BaseJobResult(status=JobStatus.FAILED, error="second reject"))
+    assert ping_board.submit_result(
+        BaseJobResult(id=job.id, status=JobStatus.FAILED, error="nope")
+    )
+    settled = hook.claim_post_result()
+    assert settled is not None and settled.id == job.id
     outcome = ping_board.get_result(job.id)
     assert outcome is not None and outcome.status is JobStatus.FAILED
-    assert outcome.error == "first reject\nsecond reject"
+    assert outcome.error == "nope"
 
 
 def test_expired_post_result_workers_release_settling(bus: Bus, ping_board) -> None:
-    _board(bus, "hook", ("claim_post_result", "submit_post_result"))
+    _board(bus, "hook", ("claim_post_result",))
     job = PingJob(id=ping_board.publish(PingJob()))
     claimed = ping_board.claim()
     assert claimed is not None

@@ -227,7 +227,9 @@ def test_book_operation_waits_for_post_publish_approval(tmp_path) -> None:
     pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
-    assert checker_board.submit_post_publish(pending_check, BaseJobResult(status=JobStatus.PENDING))
+    assert checker_board.submit_post_publish(
+        BaseJobResult(id=pending_check.id, status=JobStatus.PENDING)
+    )
     result = _result(bus, created)
     assert result is not None
     assert result.status is JobStatus.COMPLETED
@@ -252,8 +254,9 @@ def test_post_publish_rejection_prevents_book_operation(tmp_path) -> None:
     pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
     assert checker_board.submit_post_publish(
-        pending_check,
-        BaseJobResult(status=JobStatus.FAILED, error="channel policy rejected"),
+        BaseJobResult(
+            id=pending_check.id, status=JobStatus.FAILED, error="channel policy rejected"
+        ),
     )
     result = _result(bus, created)
     assert result is not None
@@ -279,7 +282,7 @@ def test_post_publish_returns_false_for_an_invalid_decision(tmp_path) -> None:
     )
     pending_check = checker_board.claim_post_publish()
     assert pending_check is not None
-    assert not checker_board.submit_post_publish(pending_check, BaseJobResult())
+    assert not checker_board.submit_post_publish(BaseJobResult(id=pending_check.id))
     assert _board(bus, created).check_job_status(created.id) is JobStatus.PREPARING
 
 
