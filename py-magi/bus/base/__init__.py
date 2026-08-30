@@ -5,7 +5,7 @@ from .BaseFileBook import BaseFileBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .file import FileEngine
-from .go import go
+from .go import go, wait
 from .operateBookJob import OperateBookJobBoard
 
 __all__ = [
@@ -22,4 +22,5 @@ __all__ = [
     "PostgresBackend",
     "SQLiteBackend",
     "go",
+    "wait",
 ]
