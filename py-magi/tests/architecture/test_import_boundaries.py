@@ -82,51 +82,37 @@ def test_bus_does_not_import_domain_implementations() -> None:
     assert not offenders, "Bus must not import domain implementations:\n  " + "\n  ".join(offenders)
 
 
-def test_bus_does_not_depend_on_startup() -> None:
-    """The composition root (``startup``) imports the bus, never
+def test_bus_does_not_depend_on_magi_service() -> None:
+    """The composition root (``magi``) imports the bus, never
     the other way around.  Catches the legacy reverse edge where
     :mod:`bus.firmwares.books.file.skillsBook` reached into
-    :mod:`startup.paths`.
+    the service layer.
 
-    Note: ``startup`` itself is a composition root and is
+    Note: ``magi`` itself is a composition root and is
     *expected* to import from the bus; the test only walks the
-    bus subtree, not the startup subtree.
+    bus subtree, not the service subtree.
     """
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
         for module, lineno in _imports(path):
-            if module == "startup" or module.startswith("startup."):
+            if module == "magi" or module.startswith("magi."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
         "Bus must not import from the composition root "
-        "(startup); the bus layer should reach for its own "
+        "(magi); the bus layer should reach for its own "
         "resource resolvers:\n  " + "\n  ".join(offenders)
     )
 
 
-def test_channels_do_not_import_startup_entry_points() -> None:
-    """``channels`` is downstream of ``startup``, never the other way around.
-
-    The runtime entry point (``run_magi``), the local supervisor
-    (``start_magi``), the CLI parser, and the WebUI supervisor each
-    own a process lifecycle.  Channels code must depend on those only
-    by injection — never by importing the constructor.  ``WorkerRegistry``
-    is explicitly allowed because the channel layer's wiring needs to
-    type-annotate the injected instance; it does not spawn or start one.
-    """
-    forbidden = (
-        "startup.runtime",   # run_magi / RuntimeContext.create
-        "startup.local",     # start_magi / stop_magi / restart_magi
-        "startup.cli",       # main() / build_parser()
-        "startup.webui",     # run_webui_foreground / ControlContext / start_webui
-    )
+def test_api_does_not_import_service_constructors() -> None:
+    """The API accepts injected BUS state; it does not own service startup."""
+    forbidden = ("magi.service", "magi.__main__")
     offenders: list[str] = []
-    for path in (MAGI_ROOT / "channels").rglob("*.py"):
+    for path in (MAGI_ROOT / "magi" / "api").rglob("*.py"):
         for module, lineno in _imports(path):
             if any(module == root or module.startswith(root + ".") for root in forbidden):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
-        "channels must not reach back into startup entry points "
-        "(composition-root constructors); inject the constructed "
-        "instances instead:\n  " + "\n  ".join(offenders)
+        "magi.api must not reach back into service constructors; "
+        "inject the constructed BUS instead:\n  " + "\n  ".join(offenders)
     )

@@ -1,3 +1,3 @@
-"""Channel implementations and the public HTTP API of one MAGI runtime."""
+"""Channel implementations owned by MAGI workers."""
 
-__all__ = ["api", "base", "tasks", "telegram"]
+__all__ = ["base", "tasks", "telegram"]

@@ -1,9 +1,4 @@
-"""Conversation writes for one MAGI runtime.
-
-The local MAGI App owns its own configuration and cache. This router only
-creates a runtime conversation and publishes durable ``ChatNotify`` work for
-the Agent worker; it has no WebUI session, contact, or control-plane logic.
-"""
+"""Conversation writes for one MAGI runtime."""
 
 from __future__ import annotations
 
@@ -11,8 +6,8 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from bus import ChatNotify, CreateConversationJob, JobStatus
-from channels.api.dependencies import BusDep
-from channels.api.errors import MagiHTTPException
+from magi.api.dependencies import BusDep
+from magi.api.errors import MagiHTTPException
 
 router = APIRouter(tags=["chat"])
 
@@ -45,14 +40,9 @@ def _board_or_unavailable(bus, job_type):
 
 @router.post("/conversations", response_model=CreateConversationResponse, status_code=201)
 def create_conversation(bus: BusDep) -> CreateConversationResponse:
-    """Create an App-originated conversation through the BUS."""
     board = _board_or_unavailable(bus, CreateConversationJob)
     job_id = board.publish(
-        CreateConversationJob(
-            publisher="api",
-            channel="app",
-            delivery_address="app",
-        )
+        CreateConversationJob(publisher="api", channel="app", delivery_address="app")
     )
     result = board.get_result(job_id)
     if result is None or result.status is not JobStatus.COMPLETED or result.conversation_id is None:
@@ -74,7 +64,6 @@ def send_message(
     payload: SendMessageRequest,
     bus: BusDep,
 ) -> SendMessageResponse:
-    """Publish one inbound turn for the Agent worker to claim."""
     text = payload.text.strip()
     if not text:
         raise MagiHTTPException(
@@ -83,11 +72,5 @@ def send_message(
             detail="text must not be empty",
         )
     board = _board_or_unavailable(bus, ChatNotify)
-    job_id = board.publish(
-        ChatNotify(
-            publisher="api",
-            conversation_id=conversation_id,
-            text=text,
-        )
-    )
+    job_id = board.publish(ChatNotify(publisher="api", conversation_id=conversation_id, text=text))
     return SendMessageResponse(job_id=job_id)
