@@ -429,11 +429,7 @@ async def shutdown_background_shells() -> int:
 
     The one name in this module intended for callers outside
     :mod:`tools.shell` — :class:`~tools.worker.ToolsWorker`
-    calls it on stop. Follows the same convention as
-    :func:`tools._safe_path.safe_resolve`: a private module
-    exporting a public function, rather than the package ``__init__``
-    growing code (every sibling ``magi/tools/*/__init__.py`` is
-    docs-only).
+    calls it on stop. The package ``__init__`` stays docs-only.
 
     Idempotent — a second call is a no-op returning ``0``.
     """

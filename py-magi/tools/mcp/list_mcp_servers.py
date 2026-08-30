@@ -18,10 +18,10 @@ from __future__ import annotations
 from typing import Any
 
 from old_bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 
-class ListMcpServersTool(Tool):
+class ListMcpServersTool(BaseTool):
     """List all configured MCP servers (metadata only)."""
 
     name = "list_mcp_servers"
@@ -33,7 +33,7 @@ class ListMcpServersTool(Tool):
     )
     input_schema = {"type": "object", "properties": {}}
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(self, **_kwargs: Any) -> ToolResult:
         rows = self.bus.mcp_servers_book.list_all()
 

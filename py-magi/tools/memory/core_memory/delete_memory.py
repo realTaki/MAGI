@@ -18,12 +18,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.delete_memory")
 
 
-class DeleteMemoryTool(Tool):
+class DeleteMemoryTool(BaseTool):
     """Remove a memory row owned by the calling operator."""
 
     name = "delete_memory"
@@ -54,7 +54,7 @@ class DeleteMemoryTool(Tool):
         "required": ["memory_id"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

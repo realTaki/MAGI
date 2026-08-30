@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 
-class MessageMagiTool(Tool):
+class MessageMagiTool(BaseTool):
     """Ask another MAGI a question or send it a one-way message.
 
     The AgentWorker persists this effect to a shared MAGIS request or notify

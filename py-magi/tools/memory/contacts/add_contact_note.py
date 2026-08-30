@@ -22,12 +22,12 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.contactBook import ContactNote
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_contact_note")
 
 
-class AddContactNoteTool(Tool):
+class AddContactNoteTool(BaseTool):
     """Append one new note row to a contact."""
 
     name = "add_contact_note"
@@ -56,7 +56,7 @@ class AddContactNoteTool(Tool):
         "required": ["contact_id", "note"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

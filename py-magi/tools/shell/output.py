@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 from tools.shell._manager import _BackgroundShellManager
 
 
-class BashOutputTool(Tool):
+class BashOutputTool(BaseTool):
     """Retrieve new output from a background shell."""
 
     name = "bash_output"

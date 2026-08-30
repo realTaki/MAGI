@@ -6,7 +6,7 @@ the LLM sees as its menu) lives in the bus
 :mod:`bus.firmwares.books.local.toolsBook` and is fed by
 the worker via :meth:`ToolsWorker._publish_full_catalog`.
 This module owns only the dispatch half: a cache of
-:class:`~tools.base.Tool` instances.
+:class:`~tools.BaseTool.BaseTool` instances.
 
 Builtin tools are hard-coded here. External subsystems (MCP,
 skills) inject additional tools at runtime through the public
@@ -27,42 +27,36 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from tools.base import Tool
+    from tools.BaseTool import BaseTool
 
 logger = logging.getLogger("tools.registry")
 
-#: Single-shot cache of builtin :class:`Tool` instances — the
+#: Single-shot cache of builtin :class:`BaseTool` instances — the
 #: dispatch backend. Populated lazily on the first
 #: :func:`get_tool` call.
-_tools_cache: list[Tool] | None = None
+_tools_cache: list[BaseTool] | None = None
 
 #: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``).
 #: Each call to :func:`register_tools` replaces the entire slot for
 #: that source.
-_injected: dict[str, list[Tool]] = {}
+_injected: dict[str, list[BaseTool]] = {}
 
 #: Change listeners — fired after :func:`register_tools`.
 #: The worker uses this to republish the tool catalog.
 _listeners: list[Callable[[], None]] = []
 
 
-_workspace = ""
 _bus = None
 
 
-def configure(*, workspace: str = "", bus=None) -> None:
-    """Bind constructor deps used when builtin tools are instantiated.
-
-    Filesystem / shell tools read ``workspace``. Tools that publish Jobs
-    read ``bus``. Call this from the tools Worker after attach.
-    """
-    global _tools_cache, _workspace, _bus
-    _workspace = workspace
+def configure(*, bus=None) -> None:
+    """Bind the Runtime BUS used when builtin tools are instantiated."""
+    global _tools_cache, _bus
     _bus = bus
     _tools_cache = None
 
 
-def _build_tools() -> list[Tool]:
+def _build_tools() -> list[BaseTool]:
     """Construct one instance of every builtin tool.
 
     Importing inside the function (not at module top)
@@ -107,7 +101,7 @@ def _build_tools() -> list[Tool]:
     from tools.tasks.list_action_items import ListActionItemsTool
     from tools.tasks.schedule import ScheduleTaskTool
 
-    kw = {"workspace": _workspace, "bus": _bus}
+    kw = {"bus": _bus}
     return [
         ReadFileTool(**kw),
         WriteFileTool(**kw),
@@ -144,7 +138,7 @@ def _build_tools() -> list[Tool]:
 # -- public API -----------------------------------------------------------
 
 
-def get_tool(name: str) -> Tool | None:
+def get_tool(name: str) -> BaseTool | None:
     """Look up a single tool by name for dispatch.
 
     Searches builtin tools first, then injected sources.
@@ -166,7 +160,7 @@ def get_tool(name: str) -> Tool | None:
     return None
 
 
-def register_tools(source: str, tools: list[Tool]) -> None:
+def register_tools(source: str, tools: list[BaseTool]) -> None:
     """Register (or replace) tools from an external source.
 
     *source* is a stable identifier like ``"mcp"`` or
@@ -198,7 +192,7 @@ def on_tools_changed(callback: Callable[[], None]) -> None:
     _listeners.append(callback)
 
 
-def list_injected() -> dict[str, list[Tool]]:
+def list_injected() -> dict[str, list[BaseTool]]:
     """Return a shallow copy of the current injected-tool map.
 
     The worker calls this to build :class:`ToolDefinition`

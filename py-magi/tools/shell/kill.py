@@ -13,11 +13,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 from tools.shell._manager import _BackgroundShellManager
 
 
-class BashKillTool(Tool):
+class BashKillTool(BaseTool):
     """Terminate a background bash shell."""
 
     name = "bash_kill"

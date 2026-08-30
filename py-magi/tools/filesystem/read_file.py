@@ -2,9 +2,7 @@
 workspace root.
 
 Path semantics: ``path`` is interpreted **relative to the
-workspace root**. Absolute paths and ``..``-escape attempts
-are rejected by ``_safe_path.safe_resolve`` before the
-read happens. v0 also rejects paths that don't exist or
+workspace root**. v0 also rejects paths that don't exist or
 that are directories; the LLM should call ``list_files``
 first when browsing.
 
@@ -31,10 +29,10 @@ taller.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 # 8 KB cap. Anything bigger is truncated and the
 # truncation note is included so the model knows
@@ -56,7 +54,7 @@ _LINE_NUMBER_WIDTH = 6
 _MAX_LIMIT = 10_000
 
 
-class ReadFileTool(Tool):
+class ReadFileTool(BaseTool):
     """Read a UTF-8 file in the workspace."""
 
     name = "read_file"
@@ -95,9 +93,8 @@ class ReadFileTool(Tool):
             "path": {
                 "type": "string",
                 "description": (
-                    "Path relative to the workspace root. "
-                    "Absolute paths and paths containing ``..`` "
-                    "are rejected."
+                    "Path relative to the workspace root "
+                    "(``bus.workspace``)."
                 ),
             },
             "offset": {
@@ -126,6 +123,7 @@ class ReadFileTool(Tool):
         "required": ["path"],
     }
 
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
@@ -149,13 +147,7 @@ class ReadFileTool(Tool):
         if limit_arg is not None and not isinstance(limit_arg, int):
             return ToolResult.err("read_file: ``limit`` must be an integer")
 
-        # Resolve the path. ``safe_resolve`` enforces
-        # workspace containment + ``must_be_file`` so a
-        # directory or missing path fails cleanly.
-        try:
-            target = safe_resolve(self.workspace, path_arg)
-        except ValueError as e:
-            return ToolResult.err(f"read_file: {e}")
+        target = Path(self.bus.workspace) / path_arg
 
         try:
             raw = target.read_bytes()

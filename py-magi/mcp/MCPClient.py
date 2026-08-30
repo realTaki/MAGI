@@ -7,7 +7,7 @@ connections. It is a library of small classes the worker composes:
 - :class:`MCPServerConnection` — the protocol-level handle for one
   server; :meth:`connect` / :meth:`disconnect` open and tear down the
   underlying transport.
-- :class:`MCPTool` — a :class:`~tools.base.Tool` wrapper that
+- :class:`MCPTool` — a :class:`~tools.BaseTool.BaseTool` wrapper that
   forwards ``run`` calls to ``session.call_tool`` and applies
   ``execute_timeout``.
 - :class:`MCPTimeoutConfig` — the three timeout knobs the worker
@@ -28,7 +28,7 @@ Subsystem location
 This module still lives in :mod:`mcp`. The agent loop and the
 worker reach it directly; the tools package stays agnostic of
 MCP. ``MCPServerConnection`` / ``MCPTool`` continue to subclass
-:class:`~tools.base.Tool` (the shape every tool in the
+:class:`~tools.BaseTool.BaseTool` (the shape every tool in the
 registry takes).
 """
 
@@ -42,7 +42,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 if TYPE_CHECKING:
     from mcp import ClientSession
@@ -74,12 +74,12 @@ class MCPTimeoutConfig:
 
 
 # ────────────────────────────────────────────────────────────────── #
-# Tool wrapper — adapts an MCP tool to our :class:`Tool` protocol.
+# Tool wrapper — adapts an MCP tool to our :class:`BaseTool` protocol.
 # ────────────────────────────────────────────────────────────────── #
 
 
-class MCPTool(Tool):
-    """One tool surface from an MCP server, wrapped in the :class:`Tool` protocol.
+class MCPTool(BaseTool):
+    """One tool surface from an MCP server, wrapped in the :class:`BaseTool` protocol.
 
     Holds a reference to the server's long-lived ``ClientSession``;
     every ``run`` round-trips through ``session.call_tool``. The

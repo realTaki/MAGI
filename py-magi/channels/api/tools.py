@@ -45,7 +45,7 @@ class ToolOut(BaseModel):
     structured input".
 
     ``allowed_roles`` is the per-tool
-    :attr:`tools.base.Tool.ALLOWED_ROLES`, sorted
+    :attr:`tools.BaseTool.BaseTool.ALLOWED_ROLES`, sorted
     alphabetically so the dashboard renders a stable order.
     Empty list means the tool has no role restriction
     and the LLM sees it regardless of caller. MCP tools

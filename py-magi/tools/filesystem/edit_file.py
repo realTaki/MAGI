@@ -16,9 +16,7 @@ Why this exists as a separate tool from ``write_file``:
   reference tool's behaviour.
 
 The tool **always** uses the same workspace-root
-containment as ``read_file`` / ``write_file`` via
-``safe_resolve`` — absolute paths and ``..``
-escapes are rejected before the read.
+paths as ``read_file`` / ``write_file``.
 
 Atomicity: reads the current file, performs the
 substitution in memory, then writes back via the
@@ -31,10 +29,10 @@ from __future__ import annotations
 
 import os
 import tempfile
+from pathlib import Path
 from typing import Any
 
-from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 # Cap on the size of the matched ``old_str`` string the
 # LLM can send. A multi-megabyte "old" string is almost
@@ -44,7 +42,7 @@ from tools.base import Tool, ToolResult
 _MAX_OLD_STR_BYTES = 64 * 1024
 
 
-class EditFileTool(Tool):
+class EditFileTool(BaseTool):
     """Replace an exact substring in a workspace file."""
 
     name = "edit_file"
@@ -72,8 +70,7 @@ class EditFileTool(Tool):
         "fails with a clear error message if the string is "
         "not found or appears more than once.\n\n"
         "The path is interpreted relative to the workspace "
-        "root; absolute paths and ``..`` escapes are "
-        "rejected."
+        "root (``bus.workspace``)."
     )
 
     input_schema = {
@@ -82,9 +79,8 @@ class EditFileTool(Tool):
             "path": {
                 "type": "string",
                 "description": (
-                    "Path relative to the workspace root. "
-                    "Absolute paths and ``..``-escapes are "
-                    "rejected."
+                    "Path relative to the workspace root "
+                    "(``bus.workspace``)."
                 ),
             },
             "old_str": {
@@ -108,6 +104,7 @@ class EditFileTool(Tool):
         "required": ["path", "old_str", "new_str"],
     }
 
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
@@ -136,13 +133,7 @@ class EditFileTool(Tool):
                 f"smaller chunk (5-10 lines usually)."
             )
 
-        # Path must exist (edit_file is for existing files
-        # — for new files use write_file). safe_resolve
-        # also enforces workspace containment.
-        try:
-            target = safe_resolve(self.workspace, path_arg)
-        except ValueError as e:
-            return ToolResult.err(f"edit_file: {e}")
+        target = Path(self.bus.workspace) / path_arg
 
         # Read the current file. UTF-8 only — matches
         # read_file / write_file's contract.

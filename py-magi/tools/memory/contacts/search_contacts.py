@@ -20,12 +20,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.search_contacts")
 
 
-class SearchContactsTool(Tool):
+class SearchContactsTool(BaseTool):
     """Search contacts by name or by note content."""
 
     name = "search_contacts"
@@ -67,7 +67,7 @@ class SearchContactsTool(Tool):
         "required": ["query"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

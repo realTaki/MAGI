@@ -17,10 +17,10 @@ from typing import Any
 
 from old_bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
 from old_bus.bases.job import JobStatus
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 
-class DeleteMcpServerTool(Tool):
+class DeleteMcpServerTool(BaseTool):
     """Remove an MCP server by name. Idempotent — silently succeeds
     if the server doesn't exist."""
 
@@ -44,7 +44,7 @@ class DeleteMcpServerTool(Tool):
         "required": ["name"],
     }
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any) -> ToolResult:

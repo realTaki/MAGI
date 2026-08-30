@@ -19,12 +19,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.tasks.complete_action_item")
 
 
-class CompleteActionItemTool(Tool):
+class CompleteActionItemTool(BaseTool):
     """Close an existing open action item by id."""
 
     name = "complete_action_item"
@@ -68,7 +68,7 @@ class CompleteActionItemTool(Tool):
 
     ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
-    @Tool.require_bus
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,

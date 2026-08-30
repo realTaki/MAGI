@@ -15,15 +15,15 @@ fine, and a future schema upgrade is a one-line change.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
-from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolResult
+from tools.BaseTool import BaseTool, ToolResult
 
 _MAX_ENTRIES = 200
 
 
-class ListFilesTool(Tool):
+class ListFilesTool(BaseTool):
     """List immediate children of a directory."""
 
     name = "list_files"
@@ -61,6 +61,7 @@ class ListFilesTool(Tool):
         },
     }
 
+    @BaseTool.require_bus
     async def run(
         self,
         **kwargs: Any,
@@ -69,14 +70,7 @@ class ListFilesTool(Tool):
         if not isinstance(path_arg, str):
             return ToolResult.err("list_files: ``path`` must be a string")
 
-        # ``must_be_file=False`` + manual existence check,
-        # because we want to accept "directory that exists"
-        # but reject "path that doesn't exist" and "path
-        # that exists but is a file".
-        try:
-            target = safe_resolve(self.workspace, path_arg, must_be_file=False)
-        except ValueError as e:
-            return ToolResult.err(f"list_files: {e}")
+        target = Path(self.bus.workspace) / path_arg
 
         if not target.exists():
             return ToolResult.err(
