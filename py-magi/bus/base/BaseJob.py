@@ -17,7 +17,7 @@ from typing import ClassVar, cast
 from sqlalchemy import Text, delete, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .BaseBook import BaseBook, BaseRecord, BaseRecordMixin
+from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .go import go, wait
 from .time import utcnow
@@ -29,6 +29,7 @@ class JobStatus(StrEnum):
     CLAIMED = "claimed"
     COMPLETED = "completed"
     FAILED = "failed"
+    MISSING = "missing"
 
 
 @dataclass
@@ -72,9 +73,8 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     result_cls: type[ResultT]
     row_cls: type[RowT]
 
-    def __init__(self, factory: EngineFactory, *, book: BaseBook | None = None) -> None:
+    def __init__(self, factory: EngineFactory) -> None:
         self._factory = factory
-        self._book = book
         self._post_publish_hooks: list[PostPublishHook[JobT, ResultT]] = []
         self._post_result_hooks: list[PostResultHook[ResultT]] = []
 
@@ -82,7 +82,9 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return self._factory.session()
 
     def publish(self, job: JobT) -> int:
-        return self._publish(job)
+        job_id = self._publish(job)
+        go(self._post_publish(replace(job, id=job_id)))
+        return job_id
 
     def _publish(self, job: JobT) -> int:
         now = utcnow()
@@ -93,32 +95,21 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
-        hooks = self._post_publish_hooks
-        values["status"] = (
-            JobStatus.PREPARING.value if hooks else JobStatus.PENDING.value
-        )
+        values["status"] = JobStatus.PREPARING.value
         with self._session() as session:
             row = type(self).row_cls(**values)
             session.add(row)
             session.commit()
-            job_id = int(row.id)
-        go(self._post_publish(replace(prepared, id=job_id)))
-        return job_id
+            return int(row.id)
 
     async def _post_publish(self, job: JobT) -> None:
-        hooks = self._post_publish_hooks
-        if not hooks:
-            return
-        gathered = await wait(hooks, job)
-        errors = [item.error for item in gathered if item.error]
+        gathered = await wait(self._post_publish_hooks, job)
         failed = any(item.status is JobStatus.FAILED for item in gathered)
         with self._session() as session:
             row = session.get(type(self).row_cls, job.id)
-            if row is None or row.status != JobStatus.PREPARING.value:
-                return
             row.status = JobStatus.FAILED.value if failed else JobStatus.PENDING.value
             if failed:
-                row.error = "\n".join(errors) or None
+                row.error = "\n".join(item.error for item in gathered if item.error)
             session.commit()
 
     def claim(self) -> JobT | None:
@@ -171,11 +162,11 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return None
         return type(self).result_cls.from_row(row)
 
-    def check_job_status(self, job_id: int) -> JobStatus | None:
+    def check_job_status(self, job_id: int) -> JobStatus:
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None:
-            return None
+            return JobStatus.MISSING
         return JobStatus(row.status)
 
     def purge(self) -> int:

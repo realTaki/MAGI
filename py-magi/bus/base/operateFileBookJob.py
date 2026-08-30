@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
-from sqlalchemy import update
-
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
+from .go import go
 
 
 class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -26,29 +26,15 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
         del result
         return False
 
-    def _publish(self, job: JobT) -> int:
-        job_id = super()._publish(job)
-        self._execute_pending(job_id)
-        return job_id
-
-    def _execute(self, job: JobT) -> ResultT:
-        raise NotImplementedError
-
-    def _execute_pending(self, job_id: int) -> None:
+    def publish(self, job: JobT) -> int:
+        job_id = self._publish(job)
+        go(self._post_publish(replace(job, id=job_id))).result()
         row_cls = type(self).row_cls
         with self._session() as session:
-            claimed = session.execute(
-                update(row_cls)
-                .where(row_cls.id == job_id, row_cls.status == JobStatus.PENDING.value)
-                .values(status=JobStatus.CLAIMED.value)
-            )
-            if getattr(claimed, "rowcount", 0) != 1:
-                return
             row = session.get(row_cls, job_id)
-            if row is None:
-                return
+            if row is None or row.status != JobStatus.PENDING.value:
+                return job_id
             job = cast(type[JobT], self.job_cls).from_row(row)
-            session.commit()
 
         try:
             result = self._execute(job)
@@ -57,7 +43,11 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
 
         with self._session() as session:
             row = session.get(row_cls, job_id)
-            if row is None or row.status != JobStatus.CLAIMED.value:
-                return
+            if row is None:
+                return job_id
             self._write_result(row, result)
             session.commit()
+        return job_id
+
+    def _execute(self, job: JobT) -> ResultT:
+        raise NotImplementedError

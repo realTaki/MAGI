@@ -196,7 +196,7 @@ def create_job_boards(
         DeliveryNotify: DeliveryNotifyBoard(factory),
         RunTaskNotify: RunTaskNotifyBoard(factory),
         RunToolJob: RunToolJobBoard(factory),
-        ChangeProviderNotify: ChangeProviderNotifyBoard(factory, book=settings),
+        ChangeProviderNotify: ChangeProviderNotifyBoard(factory, settings=settings),
         CreateContactJob: CreateContactJobBoard(factory, book=contacts),
         DeleteContactJob: DeleteContactJobBoard(factory, book=contacts),
         GetContactJob: GetContactJobBoard(factory, book=contacts),
