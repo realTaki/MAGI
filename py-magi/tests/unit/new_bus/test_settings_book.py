@@ -15,7 +15,7 @@ from bus.firmware.jobs.settingsJobs import (
     ListSettingsJobBoard,
     SetSettingJobBoard,
 )
-from tests.unit.new_bus.testing import WORKER, attach_board
+from tests.unit.new_bus.testing import attach_board
 
 BOARD_BY_JOB = {
     DeleteSettingJob: DeleteSettingJobBoard,
@@ -26,13 +26,13 @@ BOARD_BY_JOB = {
 
 
 def _publish(bus: Bus, job: BaseJob) -> BaseJob:
-    board = attach_board(bus, BOARD_BY_JOB[type(job)], worker_id=WORKER, slots=("publish",))
+    board = attach_board(bus, BOARD_BY_JOB[type(job)])
     job.id = board.publish(job)
     return job
 
 
 def _result(bus: Bus, job: BaseJob):
-    board = attach_board(bus, BOARD_BY_JOB[type(job)], worker_id=WORKER, slots=("publish",))
+    board = attach_board(bus, BOARD_BY_JOB[type(job)])
     return board.get_result(job.id)
 
 

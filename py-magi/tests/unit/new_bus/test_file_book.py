@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bus import Bus, FileEngine, SlotTag
+from bus import Bus, FileEngine
 from bus.base.BaseFileBook import BaseFileBook
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
@@ -92,18 +92,15 @@ def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
 
 def test_file_book_job_persists_external_failure(tmp_path, monkeypatch) -> None:
     with Bus(tmp_path / "workspace") as bus:
-        worker = bus.for_worker("tester", (SlotTag(GetSkillJob, "publish"),))
-        assert worker is not None
-        client = worker.board(GetSkillJob)
-        board = bus._job_board(GetSkillJob)
+        board = bus.board(GetSkillJob)
         assert board is not None
 
         def fail(*_args, **_kwargs):
             raise OSError("workspace is unavailable")
 
         monkeypatch.setattr(board, "_execute", fail)
-        job_id = client.publish(GetSkillJob(name="web_lookup"))
-        result = client.get_result(job_id)
+        job_id = board.publish(GetSkillJob(name="web_lookup"))
+        result = board.get_result(job_id)
         assert result is not None
         assert result.status.value == "failed"
         assert result.error == "workspace is unavailable"

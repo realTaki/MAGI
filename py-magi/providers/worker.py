@@ -1,9 +1,9 @@
 """vNext provider worker — the sole owner of vendor SDK calls.
 
-The launcher attaches the worker to a ``BusForWorker`` slice. It never sees a
+The launcher attaches the worker to the runtime ``Bus``. It never sees a
 Book, ORM session, engine, or the old Runtime BUS. Configuration and accounting
 cross the boundary through vNext Firmware Jobs; its static capability defaults
-use the dedicated ``BusForWorker.boost_default_settings`` API.
+use ``Bus.boost_default_settings``.
 
 Provider SDKs are async, so vNext ``BaseWorker`` supplies its event loop,
 task lifetime, and bounded in-process concurrency are shared worker mechanics,
@@ -37,7 +37,6 @@ from providers.errors import (
     LLMNotConfiguredError,
     LLMRateLimitError,
 )
-from providers.requiredSlots import REQUIRED_SLOTS
 
 logger = logging.getLogger("providers.worker")
 
@@ -79,7 +78,6 @@ class ProvidersWorker(BaseWorker):
     """
 
     worker_name = "providers"
-    required_slots = REQUIRED_SLOTS
 
     def __init__(
         self,

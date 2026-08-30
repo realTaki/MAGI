@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
-from bus import BaseJobResult, Bus, JobStatus, SlotTag
-from tests.unit.new_bus.testing import WORKER, PingBus, PingJob, PingJobBoard, attach_board
+from bus import BaseJobResult, Bus, JobStatus
+from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
 
 
 def test_publish_claim_complete(ping_board) -> None:
@@ -91,12 +91,7 @@ def test_list_filters_status(ping_board) -> None:
 
 def test_claim_is_exclusive(tmp_path) -> None:
     with PingBus(tmp_path) as bus:
-        ping_board = attach_board(
-            bus,
-            PingJobBoard,
-            worker_id=WORKER,
-            slots=("publish", "claim", "submit_result"),
-        )
+        ping_board = attach_board(bus, PingJobBoard)
         for index in range(20):
             ping_board.publish(PingJob(n=index))
 
@@ -123,17 +118,4 @@ def test_claim_is_exclusive(tmp_path) -> None:
 
 def test_unmounted_job_is_invalid(tmp_path) -> None:
     with Bus(tmp_path) as bus:
-        assert bus.for_worker(WORKER, (SlotTag(PingJob, "publish"),)) is None
-
-
-def test_worker_client_hides_backend_failure(tmp_path, monkeypatch) -> None:
-    with PingBus(tmp_path) as bus:
-        client = attach_board(bus, PingJobBoard, worker_id=WORKER, slots=("publish",))
-        board = bus._job_board(PingJob)
-        assert board is not None
-
-        def fail(*_args, **_kwargs):
-            raise OSError("database unavailable")
-
-        monkeypatch.setattr(board, "publish", fail)
-        assert client.publish(PingJob()) == 0
+        assert bus.board(PingJob) is None

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bus import Bus
-from tests.unit.new_bus.testing import WORKER, PingBus, PingJobBoard, attach_board
+from tests.unit.new_bus.testing import PingBus, PingJobBoard, attach_board
 
 
 @pytest.fixture
@@ -22,9 +22,4 @@ def bus(workspace: Path) -> Iterator[PingBus]:
 
 @pytest.fixture
 def ping_board(bus: Bus):
-    return attach_board(
-        bus,
-        PingJobBoard,
-        worker_id=WORKER,
-        slots=("publish", "claim", "submit_result"),
-    )
+    return attach_board(bus, PingJobBoard)

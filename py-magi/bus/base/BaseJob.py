@@ -16,7 +16,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .slot import SlotType, slot, slots
 from .time import utcnow
 
 
@@ -75,7 +74,6 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    @slot(next_slot="claim_post_publish")
     def publish(self, job: JobT) -> int:
         return self._publish(job)
 
@@ -88,7 +86,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
-        values["status"] = JobStatus.PREPARING.value
+        values["status"] = JobStatus.PENDING.value
         with self._session() as session:
             row = type(self).row_cls(**values)
             session.add(row)
@@ -96,107 +94,27 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             job_id = int(row.id)
         return job_id
 
-    def pass_claim_post_publish(self, job_id: int | None = None) -> None:
-        """Skip an unstaffed post-publish stage and make the Job claimable."""
-        self._pass_preparing(job_id)
-
-    @slot(
-        SlotType.CLAIM_POST,
-        next_slot="submit_post_publish",
-        pass_if_no_worker=pass_claim_post_publish,
-    )
-    def claim_post_publish(self) -> JobT | None:
-        with self._session() as session:
-            row = session.scalar(
-                select(type(self).row_cls)
-                .where(type(self).row_cls.status == JobStatus.PREPARING.value)
-                .order_by(type(self).row_cls.id.asc())
-            )
-        if row is None:
-            return None
-        return cast(type[JobT], self.job_cls).from_row(row)
-
-    def pass_submit_post_publish(self, job_id: int | None = None) -> None:
-        """Skip an unstaffed post-publish submit stage."""
-        self._pass_preparing(job_id)
-
-    @slot(SlotType.SUBMIT_POST, pass_if_no_worker=pass_submit_post_publish)
-    def submit_post_publish(self, result: BaseJobResult) -> bool:
-        return self._submit_post_publish(result)
-
-    def _submit_post_publish(self, result: BaseJobResult) -> bool:
-        """Persist a post-publish Hook's final decision."""
-        if result.status not in {JobStatus.PENDING, JobStatus.FAILED}:
-            return False
-        with self._session() as session:
-            row = session.get(type(self).row_cls, result.id)
-            if row is None or row.status != JobStatus.PREPARING.value:
-                return False
-            self._write_result(row, result, status=result.status)
-            session.commit()
-            return True
-
-    @slot()
     def claim(self) -> JobT | None:
         return self._claim()
 
     def _claim(self) -> JobT | None:
         return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
 
-    @slot(next_slot="claim_post_result")
     def submit_result(self, result: BaseJobResult) -> bool:
         return self._submit_result(result)
 
     def _submit_result(self, result: BaseJobResult) -> bool:
         """Persist the first result only; later submissions are rejected."""
+        terminal = result.status
+        if terminal not in {JobStatus.COMPLETED, JobStatus.FAILED}:
+            terminal = JobStatus.FAILED if result.error else JobStatus.COMPLETED
         with self._session() as session:
             row = session.get(type(self).row_cls, result.id)
             if row is None or row.status != JobStatus.CLAIMED.value:
                 return False
-            self._write_result(row, result, status=JobStatus.SETTLING)
+            self._write_result(row, result, status=terminal)
             session.commit()
             return True
-
-    def pass_claim_post_result(self, job_id: int | None = None) -> None:
-        """Finish a result immediately when no post-result worker is attached."""
-        with self._session() as session:
-            stmt = select(type(self).row_cls).where(
-                type(self).row_cls.status == JobStatus.SETTLING.value
-            )
-            if job_id is not None:
-                stmt = stmt.where(type(self).row_cls.id == job_id)
-            for row in session.scalars(stmt):
-                row.status = JobStatus.FAILED.value if row.error else JobStatus.COMPLETED.value
-            session.commit()
-
-    @slot(pass_if_no_worker=pass_claim_post_result)
-    def claim_post_result(self) -> JobT | None:
-        with self._session() as session:
-            waiting = list(
-                session.scalars(
-                    select(type(self).row_cls)
-                    .where(type(self).row_cls.status == JobStatus.SETTLING.value)
-                    .order_by(type(self).row_cls.id.desc())
-                )
-            )
-        for row in waiting:
-            with self._session() as session:
-                terminal = JobStatus.FAILED if row.error else JobStatus.COMPLETED
-                claimed = session.execute(
-                    update(type(self).row_cls)
-                    .where(
-                        type(self).row_cls.id == row.id,
-                        type(self).row_cls.status == JobStatus.SETTLING.value,
-                    )
-                    .values(status=terminal.value)
-                )
-                if getattr(claimed, "rowcount", 0) != 1:
-                    continue
-                session.commit()
-                settled = session.get(type(self).row_cls, row.id)
-            if settled is not None:
-                return cast(type[JobT], self.job_cls).from_row(settled)
-        return None
 
     def _pull(self, src: JobStatus, dst: JobStatus) -> JobT | None:
         with self._session() as session:
@@ -237,20 +155,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         if status is not None:
             row.status = status.value
 
-    def _pass_preparing(self, job_id: int | None = None) -> None:
-        with self._session() as session:
-            stmt = (
-                update(type(self).row_cls)
-                .where(type(self).row_cls.status == JobStatus.PREPARING.value)
-                .values(status=JobStatus.PENDING.value)
-            )
-            if job_id is not None:
-                stmt = stmt.where(type(self).row_cls.id == job_id)
-            session.execute(stmt)
-            session.commit()
-
     def get_result(self, job_id: int) -> ResultT | None:
-        slots.release_vacant(self)
         with self._session() as session:
             row = session.get(type(self).row_cls, job_id)
         if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
