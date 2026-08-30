@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import socket
 import time
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 import magi.__main__ as magi_main
 import magi.service as magi_service
@@ -45,34 +43,50 @@ def _wait_claim(board, *, timeout: float = 2.0):
     return None
 
 
+def _magi(handle: str, *, worker_types=None) -> Magi:
+    kwargs = {}
+    if worker_types is not None:
+        kwargs["worker_types"] = worker_types
+    return Magi(handle, "http://127.0.0.1:9", "token", **kwargs)
+
+
 @pytest.fixture
-def magi_name(tmp_path, monkeypatch) -> str:
-    monkeypatch.setattr(magi_service, "workspace_path", lambda name: tmp_path / name / "workspace")
-    return "unit"
+def magi_handle(tmp_path, monkeypatch) -> str:
+    monkeypatch.setattr(
+        magi_service, "workspace_path", lambda handle: tmp_path / handle.lstrip("@") / "workspace"
+    )
+    return "@unit.magi"
 
 
-def test_workspace_path_is_derived_from_magi_name() -> None:
-    assert workspace_path("alice") == Path.home() / ".magi" / "alice" / "workspace"
+def test_workspace_path_is_derived_from_handle() -> None:
+    assert workspace_path("@alice.magi") == Path.home() / ".magi" / "alice.magi" / "workspace"
 
 
 def test_main_starts_the_named_magi(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
     class StubMagi:
-        def __init__(self, name: str) -> None:
-            seen["name"] = name
+        def __init__(self, handle: str, base: str, token: str) -> None:
+            seen["handle"] = handle
+            seen["base"] = base
+            seen["token"] = token
 
         def serve(self) -> None:
             seen["served"] = True
 
     monkeypatch.setattr(magi_main, "Magi", StubMagi)
 
-    assert magi_main.main(["alice"]) == 0
-    assert seen == {"name": "alice", "served": True}
+    assert magi_main.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
+    assert seen == {
+        "handle": "@alice.magi",
+        "base": "http://127.0.0.1:42069",
+        "token": "alice-token",
+        "served": True,
+    }
 
 
-def test_magi_attaches_default_provider_worker(magi_name) -> None:
-    with Magi(magi_name) as magi:
+def test_magi_attaches_default_provider_worker(magi_handle) -> None:
+    with _magi(magi_handle) as magi:
         assert magi.run()
         worker = magi.workers["providers"]
         assert isinstance(worker, ProvidersWorker)
@@ -90,9 +104,9 @@ def test_magi_attaches_default_provider_worker(magi_name) -> None:
         assert magi.workers == {}
 
 
-def test_magi_workers_share_one_bus(magi_name) -> None:
-    with Magi(
-        magi_name,
+def test_magi_workers_share_one_bus(magi_handle) -> None:
+    with _magi(
+        magi_handle,
         worker_types=(SharedLLMWorker, SecondSharedLLMWorker),
     ) as magi:
         assert magi.run()
@@ -114,51 +128,26 @@ def test_magi_workers_share_one_bus(magi_name) -> None:
         assert board.submit_result(CallLLMResult(id=claimed.id))
 
 
-def test_magi_rolls_back_when_a_worker_refuses(magi_name) -> None:
+def test_magi_rolls_back_when_a_worker_refuses(magi_handle) -> None:
     class RefusingWorker(SecondSharedLLMWorker):
         def attach(self, _bus) -> bool:
             return False
 
-    with Magi(
-        magi_name,
+    with _magi(
+        magi_handle,
         worker_types=(SharedLLMWorker, RefusingWorker),
     ) as magi:
         assert not magi.run()
         assert magi.workers == {}
 
 
-def test_magi_rejects_duplicate_worker_id(magi_name) -> None:
+def test_magi_rejects_duplicate_worker_id(magi_handle) -> None:
     class One(SharedLLMWorker):
         worker_name = "same"
 
     class Two(SharedLLMWorker):
         worker_name = "same"
 
-    with Magi(magi_name, worker_types=(One, Two)) as magi:
+    with _magi(magi_handle, worker_types=(One, Two)) as magi:
         with pytest.raises(ValueError, match="duplicate worker_id"):
             magi.run()
-
-
-def test_asgi_lifespan_attaches_workers_before_serving_api(magi_name) -> None:
-    service = Magi(magi_name, worker_types=(SharedLLMWorker,))
-    with TestClient(service.app) as client:
-        assert service.workers["shared-one"].is_alive()
-        assert client.get("/health").json() == {"status": "ok"}
-    assert service.workers == {}
-
-
-def test_magi_reserves_the_next_local_port(monkeypatch) -> None:
-    occupied = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    occupied.bind(("127.0.0.1", 0))
-    occupied.listen()
-    start = int(occupied.getsockname()[1])
-    monkeypatch.setattr(magi_service, "FIRST_PORT", start)
-    try:
-        listener = magi_service._reserve_local_port()
-    finally:
-        occupied.close()
-    try:
-        assert listener.getsockname()[0] == "127.0.0.1"
-        assert listener.getsockname()[1] > start
-    finally:
-        listener.close()
