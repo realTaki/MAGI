@@ -1,10 +1,9 @@
 """Channel interface — implemented by every channel adapter.
 
 Concrete channels (Telegram, Scheduled) live in their own
-subpackages under :mod:`channels`; the shared FastAPI surface
-(operator browser, runtime API) lives in
-``channels/api/``. They share this contract so the runtime can treat
-the channel adapters interchangeably.
+subpackages under :mod:`channels`. The public FastAPI surface lives
+under :mod:`magi.api`; channels share this contract so the runtime can
+treat the channel adapters interchangeably.
 """
 
 from __future__ import annotations
