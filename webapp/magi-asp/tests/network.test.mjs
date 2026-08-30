@@ -29,6 +29,7 @@ test("the local operator persists trusted sessions and delivers WebSocket events
     assert.equal(network.databasePath, join(dataDir, "app.sqlite"));
     assert.equal(existsSync(join(dataDir, "asp.sqlite")), false);
     assert.equal(await (await fetch(network.url)).text(), "<h1>MAGI</h1>");
+    network.appStore.setSetting("operator", "local");
     assert.deepEqual((await request(network, "/asp/health")).body, { status: "ok", protocol: "asp/0.1" });
     const alice = (await request(network, "/asp/agents", { method: "POST", body: { handle: "@magi.alice" } })).body;
     const bob = (await request(network, "/asp/agents", { method: "POST", body: { handle: "@magi.bob", policy: "allowlist" } })).body;
@@ -73,6 +74,7 @@ test("the local operator persists trusted sessions and delivers WebSocket events
 
     await network.close();
     network = await startWebapp({ dataDir, distDir, port: 0 });
+    assert.equal(network.appStore.getSetting("operator"), "local");
     const replayed = await request(network, `/asp/sessions/${sessionId}/events`, { token: bob.token });
     assert.equal(replayed.body.events.at(-1).payload.content[0].text, "ping");
   } finally {

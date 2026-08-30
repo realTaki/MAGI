@@ -19,7 +19,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "start": "node main.mjs",
+    "start": "npm run build && node main.mjs",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
