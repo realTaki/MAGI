@@ -22,10 +22,10 @@
   "scripts": {
     "dev": "vite",
     "start": "npm run build && node main.mjs",
-    "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
+    "build": "tsc --noEmit && vite build && node ui/scripts/postbuild.cjs",
     "preview": "vite preview",
-    "lint": "node scripts/i18n-lint.cjs",
-    "lint:i18n": "node scripts/i18n-lint.cjs",
+    "lint": "node ui/scripts/i18n-lint.cjs",
+    "lint:i18n": "node ui/scripts/i18n-lint.cjs",
     "test": "node --test tests/*.test.mjs magi-asp/tests/*.test.mjs"
   },
   "dependencies": {

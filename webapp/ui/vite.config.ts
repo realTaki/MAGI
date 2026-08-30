@@ -19,7 +19,7 @@ export default defineConfig({
     allowedHosts: true,
   },
   build: {
-    outDir: path.resolve(APP_ROOT, "dist"),
+    outDir: path.resolve(APP_ROOT, "ui", "dist"),
     emptyOutDir: true,
     sourcemap: true,
   },
