@@ -5,10 +5,10 @@ from __future__ import annotations
 from importlib.resources import files
 
 _TEXT_PROMPTS: tuple[tuple[str, str], ...] = (
-    ("agent/soul", "soul.md"),
-    ("agent/chat_titles", "chat_titles.md"),
-    ("agent/compaction", "compaction.md"),
-    ("agent/skills_block", "skills_block.md"),
+    ("agent/", "soul.md"),
+    ("agent/", "chat_titles.md"),
+    ("agent/", "compaction.md"),
+    ("agent/", "skills_block.md"),
 )
 
 
