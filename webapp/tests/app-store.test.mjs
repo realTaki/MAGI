@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { openAppStore } from "../core/app-store.mjs";
+import { openAppStore } from "../localdb/app-store.mjs";
 
 test("the App store persists settings and per-MAGI conversation metadata", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "magi-app-store-"));

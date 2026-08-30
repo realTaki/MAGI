@@ -1,0 +1,16 @@
+{
+  "name": "@magi/asp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ASP routes mounted by the MAGI Webapp.",
+  "exports": {
+    ".": "./src/server.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

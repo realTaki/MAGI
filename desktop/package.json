@@ -6,10 +6,9 @@
   "main": "shell/main.mjs",
   "description": "MAGI Electron desktop shell.",
   "scripts": {
-    "dev": "concurrently -k \"npm run dev --prefix ../webapp\" \"electron .\"",
-    "build:webapp": "npm run build --prefix ../webapp",
-    "build": "npm run build:webapp",
-    "build:desktop": "npm run build:webapp && electron-builder",
+    "dev": "electron .",
+    "build": "electron-builder",
+    "build:desktop": "electron-builder",
     "test": "npm run test --prefix ../webapp"
   },
   "build": {
@@ -19,22 +18,13 @@
       "shell/**",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "../webapp/dist",
-        "to": "webapp"
-      }
-    ],
     "directories": {
       "output": "release"
     }
   },
-  "dependencies": {
-    "@magi/webapp": "file:../webapp"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "concurrently": "^9.2.1",
     "electron": "^33.4.11",
     "electron-builder": "^26.15.3",
     "typescript": "^5.7.0"
