@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from bus import Bus, ChatNotify, JobStatus
-from channels.api.app import create_runtime_app
+from magi.api.app import create_runtime_app
 
 
 def test_runtime_exposes_only_health_and_conversation_writes(tmp_path) -> None:

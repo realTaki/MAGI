@@ -63,10 +63,8 @@ dev = [
 ]
 
 [project.scripts]
-# Single entry point. Whether the process plays ADAM or EVA is decided at
-# runtime by MAGI_NODE_ROLE (see `startup.cli`). One image, one binary,
-# one supply chain.
-magi = "startup.cli:main"
+# One MAGI service owns its BUS, attached workers, and FastAPI surface.
+magi = "magi.__main__:main"
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]
@@ -78,13 +76,12 @@ include = [
     "agent*",
     "bus*",
     "channels*",
-    "launcher*",
+    "magi*",
     "mcp*",
     "old_bus*",
     "proactive*",
     "providers*",
     "skills*",
-    "startup*",
     "tools*",
 ]
 exclude = ["tests*", "tests.*"]

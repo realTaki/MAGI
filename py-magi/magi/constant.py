@@ -1,4 +1,4 @@
-"""Temporary launcher settings. Replace with real config later."""
+"""Runtime defaults for the local MAGI service."""
 
 from providers.worker import ProvidersWorker
 from tools.worker import ToolsWorker
