@@ -26,7 +26,6 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
         return False
 
     def get_result(self, job_id: int) -> ResultT | None:
-        self.release_idle_slots()
         self._execute_pending(job_id)
         return super().get_result(job_id)
 

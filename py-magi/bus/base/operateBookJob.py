@@ -1,8 +1,8 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
-These jobs do not have a worker ``claim`` phase.  They still use the ordinary
-``post_publish`` gate: a held checker moves the job through PREPARING and
-HOOKING.  Once it is PENDING, claiming its result executes the Book operation;
+These jobs do not have a worker ``claim`` phase. They can use the ordinary
+``claim_post_publish`` gate. Once it is PENDING, requesting its result executes
+the Book operation;
 the Book mutation and terminal result are then committed in one transaction.
 """
 
@@ -14,17 +14,13 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
+from .slot import SlotTag, slots
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
     BaseJobBoard[JobT, ResultT, RowT]
 ):
     """A transactionally executed Book-operation board with no worker claim."""
-
-    def _submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
-        if result.status not in {JobStatus.PENDING, JobStatus.FAILED}:
-            return False
-        return super()._submit_post_publish(job, result)
 
     def _claim(self) -> JobT | None:
         """Book operations execute in the BUS and therefore cannot be claimed."""
@@ -36,7 +32,6 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         return False
 
     def get_result(self, job_id: int) -> ResultT | None:
-        self.release_idle_slots()
         self._execute_pending(job_id)
         return super().get_result(job_id)
 
@@ -68,9 +63,13 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
                     status=JobStatus.FAILED,
                     error=error_message(error),
                 )
+            tag = SlotTag(type(self).job_cls, "claim_post_result")
+            settling = slots.held(self, tag)
             self._write_result(
                 row,
                 result,
-                status=JobStatus.SETTLING if self._slot_held("post_result") else None,
+                status=JobStatus.SETTLING if settling else None,
             )
             session.commit()
+            if settling:
+                slots.get(self, tag).offer(self, int(row.id))
