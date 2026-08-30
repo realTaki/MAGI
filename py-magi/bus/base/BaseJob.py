@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
-from .slot import PostSettlement, SlotTag, SlotType, slot, slots
+from .slot import SlotTag, SlotType, slot, slots
 from .time import utcnow
 
 
@@ -75,9 +75,136 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    @classmethod
-    def has_slot(cls, name: str) -> bool:
-        return bool(getattr(getattr(cls, name, None), "_slot", False))
+    @slot(
+        SlotType.PUBLISH,
+        next_slot="claim_post_publish",
+    )
+    def publish(self, job: JobT) -> int:
+        return self._publish(job)
+
+    def _publish(self, job: JobT) -> int:
+        now = utcnow()
+        prepared = replace(
+            job,
+            created_at=now,
+            updated_at=now,
+        )
+        values = prepared.to_dict()
+        values.pop("id", None)
+        values["status"] = JobStatus.PREPARING.value
+        with self._session() as session:
+            row = type(self).row_cls(**values)
+            session.add(row)
+            session.commit()
+            job_id = int(row.id)
+        return job_id
+
+    def pass_claim_post_publish(self, job_id: int) -> None:
+        """Skip an unstaffed post-publish stage and make the Job claimable."""
+        with self._session() as session:
+            session.execute(
+                update(type(self).row_cls)
+                .where(
+                    type(self).row_cls.id == job_id,
+                    type(self).row_cls.status == JobStatus.PREPARING.value,
+                )
+                .values(status=JobStatus.PENDING.value)
+            )
+            session.commit()
+
+    @slot(
+        SlotType.CLAIM_POST,
+        next_slot="submit_post_publish",
+        pass_if_no_worker=pass_claim_post_publish,
+    )
+    def claim_post_publish(self) -> JobT | None:
+        with self._session() as session:
+            row = session.scalar(
+                select(type(self).row_cls)
+                .where(type(self).row_cls.status == JobStatus.PREPARING.value)
+                .order_by(type(self).row_cls.id.desc())
+            )
+        if row is None:
+            return None
+        return cast(type[JobT], self.job_cls).from_row(row)
+
+    def pass_submit_post_publish(self, job_id: int) -> None:
+        """Skip an unstaffed post-publish submit stage."""
+        with self._session() as session:
+            session.execute(
+                update(type(self).row_cls)
+                .where(
+                    type(self).row_cls.id == job_id,
+                    type(self).row_cls.status == JobStatus.PREPARING.value,
+                )
+                .values(status=JobStatus.PENDING.value)
+            )
+            session.commit()
+
+    @slot(SlotType.SUBMIT_POST, pass_if_no_worker=pass_submit_post_publish)
+    def submit_post_publish(self, result: BaseJobResult) -> bool:
+        return self._submit_post_publish(result)
+
+    def _submit_post_publish(self, result: BaseJobResult) -> bool:
+        """Persist a post-publish Hook's final decision."""
+        if result.status not in {JobStatus.PENDING, JobStatus.FAILED}:
+            return False
+        with self._session() as session:
+            row = session.get(type(self).row_cls, result.id)
+            if row is None or row.status != JobStatus.PREPARING.value:
+                return False
+            self._write_result(row, result, status=result.status)
+            session.commit()
+            return True
+
+    @slot(SlotType.CLAIM)
+    def claim(self) -> JobT | None:
+        return self._claim()
+
+    def _claim(self) -> JobT | None:
+        return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
+
+    @slot(SlotType.SUBMIT_RESULT, next_slot="claim_post_result")
+    def submit_result(self, result: BaseJobResult, *, _slot_post_active: bool) -> bool:
+        return self._submit_result(result, post_result_active=_slot_post_active)
+
+    def _submit_result(self, result: BaseJobResult, *, post_result_active: bool) -> bool:
+        with self._session() as session:
+            row = session.get(type(self).row_cls, result.id)
+            if row is None or row.status != JobStatus.CLAIMED.value:
+                return False
+            self._write_result(
+                row,
+                result,
+                status=JobStatus.SETTLING if post_result_active else None,
+            )
+            session.commit()
+            return True
+
+    @slot(SlotType.CLAIM_POST, next_slot="submit_post_result")
+    def claim_post_result(self) -> JobT | None:
+        with self._session() as session:
+            row = session.scalar(
+                select(type(self).row_cls)
+                .where(type(self).row_cls.status == JobStatus.SETTLING.value)
+                .order_by(type(self).row_cls.id.desc())
+            )
+        if row is None:
+            return None
+        return cast(type[JobT], self.job_cls).from_row(row)
+
+    def pass_submit_post_result(self, job_id: int) -> None:
+        """Skip an unstaffed post-result submit stage."""
+        self._apply_post_settlement("post_result", job_id, BaseJobResult())
+
+    @slot(SlotType.SUBMIT_POST, pass_if_no_worker=pass_submit_post_result)
+    def submit_post_result(
+        self,
+        job_id: int,
+        result: BaseJobResult,
+    ) -> bool:
+        del job_id, result
+        return True
 
     def release_idle_slots(self) -> None:
         self._settle_expired_post_slots()
@@ -85,8 +212,6 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         skip_result = slots.held(self, SlotTag(type(self).job_cls, "claim_post_result"))
         row_cls = type(self).row_cls
         with self._session() as session:
-            # Rows written by the previous one-claimer post-gate protocol
-            # remain usable after the operation names changed.
             session.execute(
                 update(row_cls)
                 .where(row_cls.status == JobStatus.HOOKING.value)
@@ -146,122 +271,9 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             return cast(type[JobT], self.job_cls).from_row(pulled)
         return None
 
-    def pass_claim_post_publish(self, job_id: int) -> None:
-        """Skip an unstaffed post-publish stage and make the Job claimable."""
-        with self._session() as session:
-            session.execute(
-                update(type(self).row_cls)
-                .where(
-                    type(self).row_cls.id == job_id,
-                    type(self).row_cls.status == JobStatus.PREPARING.value,
-                )
-                .values(status=JobStatus.PENDING.value)
-            )
-            session.commit()
-
-    @slot(
-        SlotType.PUBLISH,
-        next_slot="claim_post_publish",
-    )
-    def publish(self, job: JobT) -> int:
-        return self._publish(job)
-
-    def _publish(self, job: JobT) -> int:
-        now = utcnow()
-        prepared = replace(
-            job,
-            created_at=now,
-            updated_at=now,
-        )
-        values = prepared.to_dict()
-        values.pop("id", None)
-        values["status"] = JobStatus.PREPARING.value
-        with self._session() as session:
-            row = type(self).row_cls(**values)
-            session.add(row)
-            session.commit()
-            job_id = int(row.id)
-        return job_id
-
-    @slot(SlotType.CLAIM_POST, pass_if_no_worker=pass_claim_post_publish)
-    def claim_post_publish(self, *, _slot_cursor: int) -> JobT | None:
-        return self._next_gate_job(JobStatus.PREPARING, _slot_cursor)
-
-    def _next_gate_job(self, status: JobStatus, cursor: int) -> JobT | None:
-        with self._session() as session:
-            row = session.scalar(
-                select(type(self).row_cls)
-                .where(type(self).row_cls.status == status.value, type(self).row_cls.id > cursor)
-                .order_by(type(self).row_cls.created_at, type(self).row_cls.id)
-            )
-        if row is None:
-            return None
-        return cast(type[JobT], self.job_cls).from_row(row)
-
-    @slot(SlotType.SUBMIT_POST)
-    def submit_post_publish(
-        self,
-        job: JobT,
-        result: BaseJobResult,
-        *,
-        _slot_settlement: PostSettlement | None,
-    ) -> bool:
-        if _slot_settlement is None:
-            return self._accept_post_publish(job, result)
-        self._apply_post_settlement("post_publish", _slot_settlement.job_id, _slot_settlement.result)
-        return True
-
-    def _accept_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
-        del job, result
-        return True
-
-    @slot(SlotType.CLAIM)
-    def claim(self) -> JobT | None:
-        return self._claim()
-
-    def _claim(self) -> JobT | None:
-        self.release_idle_slots()
-        return self._pull(JobStatus.PENDING, JobStatus.CLAIMED)
-
-    @slot(SlotType.SUBMIT_RESULT, next_slot="claim_post_result")
-    def submit_result(self, result: BaseJobResult, *, _slot_post_active: bool) -> bool:
-        return self._submit_result(result, post_result_active=_slot_post_active)
-
-    def _submit_result(self, result: BaseJobResult, *, post_result_active: bool) -> bool:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, result.id)
-            if row is None or row.status != JobStatus.CLAIMED.value:
-                return False
-            self._write_result(
-                row,
-                result,
-                status=JobStatus.SETTLING if post_result_active else None,
-            )
-            session.commit()
-            return True
-
-    @slot(SlotType.CLAIM_POST)
-    def claim_post_result(self, *, _slot_cursor: int) -> JobT | None:
-        return self._next_gate_job(JobStatus.SETTLING, _slot_cursor)
-
-    @slot(SlotType.SUBMIT_POST)
-    def submit_post_result(
-        self,
-        job_id: int,
-        result: BaseJobResult,
-        *,
-        _slot_settlement: PostSettlement | None,
-    ) -> bool:
-        del job_id, result
-        if _slot_settlement is None:
-            return True
-        self._apply_post_settlement("post_result", _slot_settlement.job_id, _slot_settlement.result)
-        return True
-
     def _settle_expired_post_slots(self) -> None:
         for stage in ("post_publish", "post_result"):
-            for settlement in slots.settle_expired(self, SlotTag(type(self).job_cls, f"claim_{stage}")):
-                self._apply_post_settlement(stage, settlement.job_id, settlement.result)
+            slots.settle_expired(self, SlotTag(type(self).job_cls, f"submit_{stage}"))
 
     def _apply_post_settlement(self, stage: str, job_id: int, result: BaseJobResult) -> None:
         with self._session() as session:

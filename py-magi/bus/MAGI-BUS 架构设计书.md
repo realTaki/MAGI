@@ -797,12 +797,19 @@ SlotTag(PingJob, "submit_post_result")
 post-gate 缓存。JobBoard 只声明 operation 的类型，例如：
 
 ```python
-@slot(SlotType.CLAIM_POST)
+@slot(
+    SlotType.CLAIM_POST,
+    pass_if_no_worker=pass_claim_post_publish,
+)
 def claim_post_publish(...): ...
 ```
 
 装饰器通过全局 `slots` 找到这个函数对应的运行时实例并执行；JobBoard 不持有
-Slot runtime，也不维护 cursor 或投票缓存。
+Slot runtime，也不维护 cursor 或投票缓存。`next_slot` 是同一 JobBoard 的下一
+operation 名；没有下一阶段时省略它。若下一阶段没有 worker，runtime 调用可选的
+`pass_if_no_worker(board, job_id)`。这个 callback 属于下一阶段 Slot 自己；例如
+`claim_post_publish` 没有 worker 时，`pass_claim_post_publish` 将 Job 从
+`PREPARING` 推进到 `PENDING`。
 
 因此：
 
