@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateFileBookJob import OperateFileBookJobBoard
 from ..books.promptsBook import PromptsBook
 
@@ -70,8 +70,9 @@ class SetPromptJobBoard(OperateFileBookJobBoard[SetPromptJob, SetPromptResult, S
         self._prompts = prompts
 
     def _execute(self, job: SetPromptJob) -> SetPromptResult:
-        self._prompts.set(key=job.key, value=job.value)
-        return SetPromptResult()
+        if self._prompts.set(key=job.key, value=job.value):
+            return SetPromptResult()
+        return SetPromptResult(status=JobStatus.FAILED, error="prompt write failed")
 
 
 @dataclass
@@ -134,6 +135,6 @@ class ResetPromptJobBoard(OperateFileBookJobBoard[ResetPromptJob, ResetPromptRes
         self._prompts = prompts
 
     def _execute(self, job: ResetPromptJob) -> ResetPromptResult:
-        self._prompts.reset(key=job.key)
-        return ResetPromptResult()
-
+        if self._prompts.reset(key=job.key):
+            return ResetPromptResult()
+        return ResetPromptResult(status=JobStatus.FAILED, error="prompt reset failed")

@@ -21,5 +21,5 @@ class BaseFileBook:
         self._files: FileStore = engine.book(type(self).name)
 
     @property
-    def directory(self) -> Path:
+    def directory(self) -> Path | None:
         return self._files.directory
