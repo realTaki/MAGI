@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
 from collections.abc import Callable, Coroutine, Iterable
 from concurrent.futures import Future
@@ -12,7 +13,7 @@ _loop: asyncio.AbstractEventLoop | None = None
 _lock = threading.Lock()
 
 
-def go(coro: Coroutine[Any, Any, object]) -> Future:
+def go[T](coro: Coroutine[Any, Any, T]) -> Future[T]:
     """Run *coro* on the BUS loop. Like Go's ``go``.
 
     Returns a concurrent Future. Callers that do not need the result can
@@ -43,7 +44,7 @@ async def wait(fns: Iterable[Callable[..., Any]], /, *args: Any, **kwargs: Any) 
     """Run *fns* concurrently with the same arguments and wait for every result."""
 
     async def _invoke(fn: Callable[..., Any]) -> Any:
-        if asyncio.iscoroutinefunction(fn):
+        if inspect.iscoroutinefunction(fn):
             return await fn(*args, **kwargs)
         return await asyncio.to_thread(fn, *args, **kwargs)
 

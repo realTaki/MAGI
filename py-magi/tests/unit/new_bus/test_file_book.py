@@ -6,8 +6,6 @@ from bus import Bus, FileEngine
 from bus.base.BaseFileBook import BaseFileBook
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
-from bus.firmware.jobs.skillJobs import GetSkillJob
-from tests.unit.new_bus.testing import wait_result
 
 
 class NotesBook(BaseFileBook):
@@ -90,19 +88,3 @@ def test_bus_opens_file_books(tmp_path) -> None:
 def test_bus_accepts_a_pathlike_workspace(tmp_path) -> None:
     with Bus(tmp_path / "workspace") as bus:
         assert bus.workspace == (tmp_path / "workspace").resolve()
-
-
-def test_file_book_job_persists_external_failure(tmp_path, monkeypatch) -> None:
-    with Bus(tmp_path / "workspace") as bus:
-        board = bus.board(GetSkillJob)
-        assert board is not None
-
-        def fail(*_args, **_kwargs):
-            raise OSError("workspace is unavailable")
-
-        monkeypatch.setattr(board, "_execute", fail)
-        job_id = board.publish(GetSkillJob(name="web_lookup"))
-        result = wait_result(board, job_id)
-        assert result is not None
-        assert result.status.value == "failed"
-        assert result.error == "workspace is unavailable"

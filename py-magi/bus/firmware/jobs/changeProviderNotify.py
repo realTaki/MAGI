@@ -8,8 +8,9 @@ from sqlalchemy import Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from ...base.engine import EngineFactory
 from ...base.time import utcnow
-from ..books.settingsBook import SettingRow
+from ..books.settingsBook import SettingRow, SettingsBook
 
 PROVIDER_NAME_KEY = "provider.name"
 PROVIDER_API_KEY_KEY = "provider.api_key"
@@ -50,6 +51,10 @@ class ChangeProviderNotifyBoard(
     result_cls = ChangeProviderNotifyResult
     row_cls = ChangeProviderNotifyRow
 
+    def __init__(self, factory: EngineFactory, *, settings: SettingsBook) -> None:
+        super().__init__(factory)
+        self._settings = settings
+
     def _publish(self, job: ChangeProviderNotify) -> int:
         """Atomically persist configuration and enqueue its rebuild signal."""
         now = utcnow()
@@ -57,9 +62,7 @@ class ChangeProviderNotifyBoard(
         values = prepared.to_dict()
         values.pop("id", None)
         values["status"] = JobStatus.PENDING.value
-        if self._book is None:
-            raise RuntimeError(f"{type(self).__name__} requires a Book")
-        with self._book._session() as books:
+        with self._settings._session() as books:
             for key, value in (
                 (PROVIDER_NAME_KEY, job.provider),
                 (PROVIDER_API_KEY_KEY, job.api_key),
