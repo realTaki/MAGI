@@ -44,7 +44,16 @@ router = APIRouter(tags=["runtime-provider"])
 # provider+model catalog (JSON array of {"provider": ..., "model": ...}).
 # Fallback used when the worker hasn't seeded settings yet.
 _PROVIDERS_OPTIONS_KEY = "providers.options"
-_FALLBACK_KNOWN_PROVIDERS = {"claude", "minimax-global", "minimax-cn", "openai"}
+_FALLBACK_KNOWN_PROVIDERS = {
+    "claude",
+    "openai",
+    "gemini",
+    "xai",
+    "deepseek",
+    "mistral",
+    "minimax-cn",
+    "minimax-global",
+}
 
 
 # -- request / response schemas -----------------------------------------
@@ -78,8 +87,7 @@ class ProviderPatch(BaseModel):
 def _known_providers(bus) -> set[str]:
     """Return the set of known provider ids from settings_book.
 
-    Falls back to a hardcoded list matching
-    :data:`providers.factory._KNOWN_PROVIDERS` when the
+    Falls back to MAGI's curated LiteLLM host ids when the
     worker hasn't seeded ``providers.options`` yet.
     """
     raw = bus.settings_book.get_value(key=_PROVIDERS_OPTIONS_KEY)

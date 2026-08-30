@@ -5,14 +5,19 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable, Coroutine, Iterable
+from concurrent.futures import Future
 from typing import Any
 
 _loop: asyncio.AbstractEventLoop | None = None
 _lock = threading.Lock()
 
 
-def go(coro: Coroutine[Any, Any, object]) -> None:
-    """Run *coro* in the background. Like Go's ``go``."""
+def go(coro: Coroutine[Any, Any, object]) -> Future:
+    """Run *coro* on the BUS loop. Like Go's ``go``.
+
+    Returns a concurrent Future. Callers that do not need the result can
+    ignore it. Cancelling the Future cancels the coroutine.
+    """
     global _loop
     with _lock:
         loop = _loop
@@ -31,7 +36,7 @@ def go(coro: Coroutine[Any, Any, object]) -> None:
             ready.wait()
             loop = _loop
             assert loop is not None
-    asyncio.run_coroutine_threadsafe(coro, loop)
+    return asyncio.run_coroutine_threadsafe(coro, loop)
 
 
 async def wait(fns: Iterable[Callable[..., Any]], /, *args: Any, **kwargs: Any) -> list[Any]:

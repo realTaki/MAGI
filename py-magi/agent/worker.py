@@ -372,13 +372,9 @@ class AgentWorker(RuntimeWorker):
                     await self._publish_delivery(ctx)
                     return
                 if result.status != JobStatus.COMPLETED:
-                    # Forward the upstream ``error_code: error`` verbatim.
-                    # The provider worker already maps provider exceptions
-                    # to a stable :class:`LLMErrorCode` and ships a human-
-                    # readable ``error`` string; rephrasing either one is
-                    # the agent's job to lose fidelity, and "is this too
-                    # detailed to surface to the user" is the upstream's
-                    # call, not ours.
+                    # Forward the upstream ``error`` verbatim. The provider
+                    # worker already ships a human-readable failure string;
+                    # rephrasing it here would lose fidelity.
                     ctx.final_reply = _format_llm_error(result)
                     ctx.failed = True
                     await self._publish_delivery(ctx)
@@ -1010,25 +1006,11 @@ def _coerce_float(raw: Any, default: float) -> float:
 
 
 def _format_llm_error(result: Any) -> str:
-    """Compose ``error_code: error`` from a failed :class:`CallLLMResult`.
+    """Return the upstream failure text from a failed :class:`CallLLMResult`.
 
-    The provider worker maps provider exceptions to a stable
-    :class:`LLMErrorCode` and ships a human-readable ``error`` string;
-    the agent forwards both verbatim. The question of "is this too
-    detailed for the end user" belongs upstream — if a future
-    ``LLMAuthError`` starts quoting API-key material in ``error``,
-    fix it in :mod:`providers.errors`, not by paraphrasing here.
-
-    Returns just the ``error_code`` when ``error`` is empty, and a
-    constant placeholder when both are missing.
+    The provider worker already ships a human-readable ``error`` string;
+    the agent forwards it verbatim. A constant placeholder is used only
+    when that field is empty.
     """
-    code = getattr(result, "error_code", None)
     error = getattr(result, "error", None) or ""
-    code_str = str(code) if code is not None else ""
-    if error and code_str:
-        return f"{code_str}: {error}"
-    if error:
-        return error
-    if code_str:
-        return code_str
-    return "回复生成失败"
+    return error or "回复生成失败"
