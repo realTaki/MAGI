@@ -16,7 +16,7 @@ from .books.messageBook import Message
 from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
 from .books.skillsBook import SkillsBook
-from .books.taskBook import Task, TaskSource
+from .books.taskBook import Task, TaskBook, TaskSource
 from .books.toolsBook import Tool
 from .jobs import (
     AppendMessageJob,
@@ -82,6 +82,9 @@ from .jobs import (
     GetSkillJob,
     GetSkillJobBoard,
     GetSkillResult,
+    GetTaskJob,
+    GetTaskJobBoard,
+    GetTaskResult,
     GetToolJob,
     GetToolJobBoard,
     GetToolResult,
@@ -103,6 +106,9 @@ from .jobs import (
     ListSkillsJob,
     ListSkillsJobBoard,
     ListSkillsResult,
+    ListTasksJob,
+    ListTasksJobBoard,
+    ListTasksResult,
     ListToolsJob,
     ListToolsJobBoard,
     ListToolsResult,
@@ -167,6 +173,7 @@ def create_job_boards(
     memories_book = MemoryBook(memories)
     messages = MessageBook(memories)
     settings = SettingsBook(memories)
+    tasks = TaskBook(memories)
     tools = ToolsBook(memories)
     prompts = PromptsBook(files)
     skills = SkillsBook(files)
@@ -196,6 +203,8 @@ def create_job_boards(
         ChatNotify: ChatNotifyBoard(factory),
         DeliveryNotify: DeliveryNotifyBoard(factory),
         RunTaskNotify: RunTaskNotifyBoard(factory),
+        GetTaskJob: GetTaskJobBoard(factory, book=tasks),
+        ListTasksJob: ListTasksJobBoard(factory, book=tasks),
         RunToolJob: RunToolJobBoard(factory),
         ChangeProviderNotify: ChangeProviderNotifyBoard(factory, settings=settings),
         CreateContactJob: CreateContactJobBoard(factory, book=contacts),
@@ -288,6 +297,12 @@ __all__ = [
     "RunTaskNotify",
     "RunTaskNotifyBoard",
     "RunTaskNotifyResult",
+    "GetTaskJob",
+    "GetTaskJobBoard",
+    "GetTaskResult",
+    "ListTasksJob",
+    "ListTasksJobBoard",
+    "ListTasksResult",
     "RunToolJob",
     "RunToolJobBoard",
     "RunToolResult",

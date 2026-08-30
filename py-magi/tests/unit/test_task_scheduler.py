@@ -1,72 +1,66 @@
-"""TaskWorker smoke tests — rebased from old TaskScheduler tests.
-
-Tests TaskWorker.__init__, start/stop lifecycle, and cron fire logic.
-"""
+"""TaskWorker coverage against the current JobBoard-only BUS surface."""
 
 from __future__ import annotations
 
-import asyncio
-from datetime import UTC
-from unittest.mock import MagicMock
+import time
+from datetime import UTC, datetime
 
+from bus import Bus, ChatNotify, JobStatus, RunTaskNotify, Task
+from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
 
-def test_init_populates_required_attributes():
-    """TaskWorker.__init__ should set expected internal state."""
-    mock_bus = MagicMock()
-    mock_bus.tasks_book.list_all_enabled_for_workers = MagicMock(return_value=[])
-    mock_bus.task_runs_book.reap_stale = MagicMock(return_value=0)
-    mock_bus.run_task_job_board = MagicMock()
-    mock_bus.agent_job_board = MagicMock()
-    mock_bus.messages_book = MagicMock()
+def test_init_keeps_only_scheduler_state() -> None:
+    worker = TaskWorker()
 
-    w = TaskWorker(mock_bus)
-    assert w.worker_name == "task"
-    assert w.worker_kind == "scheduler"
-    assert w._stopping is False
-    assert w._task is None
-    assert isinstance(w._next_fire, dict)
-    assert w._rehydrated is False
+    assert worker.worker_name == "task"
+    assert worker.worker_kind == "scheduler"
+    assert isinstance(worker._next_fire, dict)
 
 
-def test_startup_registers_task_channel():
-    mock_bus = MagicMock()
-    w = TaskWorker(mock_bus)
-
-    asyncio.run(w.on_start())
-
-    mock_bus.settings_book.register_channel.assert_called_once_with(name="task")
-
-
-def test_should_fire_cron_coalesce_equivalent():
-    """_should_fire_cron fires at most once per missed cron window."""
-    from dataclasses import dataclass
-    from datetime import datetime
-
-    @dataclass
-    class FakeTask:
-        task_id: str = "t1"
-        cron: str = "0 * * * *"  # every hour at :00
-        run_at: datetime | None = None
-        enabled: int = 1
-
-    mock_bus = MagicMock()
-    mock_bus.tasks_book.list_all_enabled_for_workers = MagicMock(return_value=[])
-    mock_bus.task_runs_book.reap_stale = MagicMock(return_value=0)
-    mock_bus.run_task_job_board = MagicMock()
-    mock_bus.agent_job_board = MagicMock()
-    mock_bus.messages_book = MagicMock()
-
-    w = TaskWorker(mock_bus)
-    task = FakeTask()
+def test_should_fire_cron_coalesces_each_window() -> None:
+    worker = TaskWorker()
+    task = Task(id=1, name="hourly", prompt="do work", cron="0 * * * *")
     now = datetime.now(UTC)
 
-    # First time: should fire (no last_fire recorded)
-    assert w._should_fire(task, now) is True
+    assert worker._should_fire(task, now) is True
 
-    # Record a fire
-    w._next_fire[task.task_id] = now.replace(tzinfo=None)
+    worker._next_fire[task.id] = now.replace(tzinfo=None)
 
-    # Immediately after: should NOT fire again (coalesce)
-    assert w._should_fire(task, now) is False
+    assert worker._should_fire(task, now) is False
+
+
+def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
+    with Bus(tmp_path) as bus:
+        # Setup is Firmware-internal; TaskWorker itself sees only JobBoards.
+        task_book = TaskBook(bus._memories)
+        task_id = task_book.add(
+            Task(name="daily", prompt="summarise progress", cron="0 9 * * *")
+        )
+        worker = TaskWorker(poll_seconds=0.01)
+        assert worker.attach(bus)
+        try:
+            trigger_board = bus.board(RunTaskNotify)
+            chat_board = bus.board(ChatNotify)
+            assert trigger_board is not None
+            assert chat_board is not None
+            trigger_id = trigger_board.publish(RunTaskNotify(task_id=task_id))
+
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                if trigger_board.check_job_status(trigger_id) is JobStatus.COMPLETED:
+                    break
+                time.sleep(0.01)
+            assert trigger_board.check_job_status(trigger_id) is JobStatus.COMPLETED
+
+            trigger_result = trigger_board.get_result(trigger_id)
+            assert trigger_result is not None
+            assert trigger_result.status is JobStatus.COMPLETED
+
+            chat = chat_board.claim()
+            assert chat is not None
+            assert chat.conversation_id is None
+            assert "name: daily" in chat.text
+            assert "summarise progress" in chat.text
+        finally:
+            worker.detach()
