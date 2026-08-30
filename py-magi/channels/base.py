@@ -1,9 +1,8 @@
 """Channel interface — implemented by every channel adapter.
 
 Concrete channels (Telegram, Scheduled) live in their own
-subpackages under :mod:`channels`. The public FastAPI surface lives
-under :mod:`magi.api`; channels share this contract so the runtime can
-treat the channel adapters interchangeably.
+subpackages under :mod:`channels`. Inbound chat from the operator UI
+arrives through the ASP client in :mod:`magi.asp`.
 """
 
 from __future__ import annotations
