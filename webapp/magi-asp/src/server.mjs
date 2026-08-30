@@ -1,4 +1,4 @@
-/** ASP routes mounted by the one Webapp HTTP server. */
+/** ASP v0.1 routes mounted at the Webapp origin. */
 import { WebSocketServer } from "ws";
 
 import { AspError } from "../../localdb/asp-store.mjs";
@@ -46,19 +46,9 @@ export function createAspOperator({ store }) {
 
   async function handle(request, response, url) {
     try {
-      const pathname = url.pathname.replace(/^\/asp(?=\/|$)/, "") || "/";
+      const pathname = url.pathname;
       const parts = route(pathname);
-      if (request.method === "GET" && pathname === "/health") return respond(response, 200, { status: "ok", protocol: "asp/0.1" });
-      if (request.method === "POST" && parts.length === 1 && parts[0] === "agents") return respond(response, 201, store.registerAgent(await body(request)));
       const actor = store.authenticate(bearer(request));
-      if (request.method === "PUT" && parts[0] === "agents" && parts[1] === actor && parts[2] === "policy") {
-        store.setPolicy(actor, (await body(request)).policy);
-        return respond(response, 200, { ok: true });
-      }
-      if (request.method === "PUT" && parts[0] === "agents" && parts[1] === actor && parts[2] === "allowlist" && parts[3]) {
-        store.allow(actor, `@${parts[3].replace(/^@/, "")}`);
-        return respond(response, 200, { ok: true });
-      }
       if (request.method === "POST" && parts.length === 1 && parts[0] === "sessions") {
         const operation = store.createSession(actor, await body(request));
         publish(operation.delivery);
@@ -75,6 +65,7 @@ export function createAspOperator({ store }) {
           messages: async () => store.sendMessage(sessionId, actor, await body(request)),
           leave: () => store.leave(sessionId, actor),
           end: () => store.end(sessionId, actor),
+          reopen: async () => store.reopen(sessionId, actor, await body(request)),
         };
         if (request.method === "POST" && operations[action]) {
           const operation = await operations[action]();
@@ -91,7 +82,7 @@ export function createAspOperator({ store }) {
   }
 
   function upgrade(request, socket, head, url) {
-    if (url.pathname !== "/asp/connect") return false;
+    if (url.pathname !== "/connect") return false;
     let actor;
     try { actor = store.authenticate(bearer(request)); } catch { socket.destroy(); return true; }
     webSocket.handleUpgrade(request, socket, head, (connection) => {

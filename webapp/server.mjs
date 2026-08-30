@@ -31,13 +31,13 @@ export async function startWebapp({
   const database = await openLocalDatabase({ dataDir });
   const appStore = await openAppStore({ database });
   const aspStore = await openAspStore({ database });
-  const appApi = createAppApi({ store: appStore });
+  const appApi = createAppApi({ store: appStore, aspStore });
   const asp = createAspOperator({ store: aspStore });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? host}`);
     if (url.pathname === "/health") return response.end(JSON.stringify({ status: "ok" }));
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) return void appApi.handle(request, response, url);
-    if (url.pathname === "/asp" || url.pathname.startsWith("/asp/")) return void asp.handle(request, response, url);
+    if (url.pathname === "/sessions" || url.pathname.startsWith("/sessions/")) return void asp.handle(request, response, url);
     const file = fileUnder(distDir, url.pathname);
     if (!file) { response.writeHead(404); response.end("not found"); return; }
     response.writeHead(200, { "content-type": MIME[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream" });

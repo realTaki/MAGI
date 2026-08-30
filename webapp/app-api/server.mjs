@@ -23,7 +23,7 @@ function route(pathname) {
 }
 
 /** Create routes for browser configuration and locally cached UI state. */
-export function createAppApi({ store }) {
+export function createAppApi({ store, aspStore }) {
   return {
     async handle(request, response, url) {
       try {
@@ -43,6 +43,21 @@ export function createAppApi({ store }) {
               return respond(response, 200, { key: parts[1], value: input.value });
             }
           }
+        }
+        if (aspStore && request.method === "POST" && parts.length === 2 && parts[0] === "agents" && parts[1] === "asp") {
+          const input = await body(request);
+          if (!input) return respond(response, 400, { error: { code: "request.invalid", detail: "body must be JSON" } });
+          return respond(response, 201, aspStore.registerAgent(input));
+        }
+        if (aspStore && request.method === "PUT" && parts.length === 4 && parts[0] === "agents" && parts[2] === "asp" && parts[3] === "policy") {
+          const input = await body(request);
+          if (!input) return respond(response, 400, { error: { code: "request.invalid", detail: "body must be JSON" } });
+          aspStore.setPolicy(parts[1], input.policy);
+          return respond(response, 200, { ok: true });
+        }
+        if (aspStore && request.method === "PUT" && parts.length === 5 && parts[0] === "agents" && parts[2] === "asp" && parts[3] === "allowlist") {
+          aspStore.allow(parts[1], parts[4]);
+          return respond(response, 200, { ok: true });
         }
         if (request.method === "GET" && parts.length === 3 && parts[0] === "magis" && parts[2] === "conversations") return respond(response, 200, { conversations: store.listConversations(parts[1]) });
         if (request.method === "PUT" && parts.length === 2 && parts[0] === "conversations") {

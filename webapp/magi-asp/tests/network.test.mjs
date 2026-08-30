@@ -30,23 +30,20 @@ test("the local operator persists trusted sessions and delivers WebSocket events
     assert.equal(existsSync(join(dataDir, "asp.sqlite")), false);
     assert.equal(await (await fetch(network.url)).text(), "<h1>MAGI</h1>");
     network.appStore.setSetting("operator", "local");
-    assert.deepEqual((await request(network, "/asp/health")).body, { status: "ok", protocol: "asp/0.1" });
-    const alice = (await request(network, "/asp/agents", { method: "POST", body: { handle: "@magi.alice" } })).body;
-    const bob = (await request(network, "/asp/agents", { method: "POST", body: { handle: "@magi.bob", policy: "allowlist" } })).body;
-
-    await request(network, `/asp/agents/${encodeURIComponent(bob.handle)}/allowlist/${encodeURIComponent(alice.handle)}`, {
-      method: "PUT", token: bob.token,
-    });
-    const created = await request(network, "/asp/sessions", {
+    assert.deepEqual((await request(network, "/health")).body, { status: "ok" });
+    const alice = (await request(network, "/api/agents/asp", { method: "POST", body: { handle: "@magi.alice" } })).body;
+    const bob = (await request(network, "/api/agents/asp", { method: "POST", body: { handle: "@magi.bob", policy: "allowlist" } })).body;
+    await request(network, `/api/agents/${encodeURIComponent(bob.handle)}/asp/allowlist/${encodeURIComponent(alice.handle)}`, { method: "PUT" });
+    const created = await request(network, "/sessions", {
       method: "POST",
       token: alice.token,
       body: { invite: [bob.handle], topic: "hello" },
     });
     assert.equal(created.status, 201);
     const sessionId = created.body.session_id;
-    assert.equal((await request(network, `/asp/sessions/${sessionId}/join`, { method: "POST", token: bob.token })).status, 200);
+    assert.equal((await request(network, `/sessions/${sessionId}/join`, { method: "POST", token: bob.token })).status, 200);
 
-    const socket = new WebSocket(`${network.url.replace("http", "ws")}/asp/connect`, { headers: { authorization: `Bearer ${bob.token}` } });
+    const socket = new WebSocket(`${network.url.replace("http", "ws")}/connect`, { headers: { authorization: `Bearer ${bob.token}` } });
     const delivered = new Promise((resolve, reject) => {
       socket.once("error", reject);
       socket.on("message", (raw) => {
@@ -59,7 +56,7 @@ test("the local operator persists trusted sessions and delivers WebSocket events
       socket.once("error", reject);
     });
 
-    const sent = await request(network, `/asp/sessions/${sessionId}/messages`, {
+    const sent = await request(network, `/sessions/${sessionId}/messages`, {
       method: "POST",
       token: alice.token,
       body: { content: [{ type: "text", text: "ping" }] },
@@ -68,14 +65,14 @@ test("the local operator persists trusted sessions and delivers WebSocket events
     assert.equal((await delivered).payload.sender, alice.handle);
     socket.close();
 
-    const events = await request(network, `/asp/sessions/${sessionId}/events`, { token: bob.token });
+    const events = await request(network, `/sessions/${sessionId}/events`, { token: bob.token });
     assert.deepEqual(events.body.events.map((event) => event.type), ["session.invited", "session.joined", "session.message"]);
     assert.equal(events.body.events.at(-1).sequence, sent.body.sequence);
 
     await network.close();
     network = await startWebapp({ dataDir, distDir, port: 0 });
     assert.equal(network.appStore.getSetting("operator"), "local");
-    const replayed = await request(network, `/asp/sessions/${sessionId}/events`, { token: bob.token });
+    const replayed = await request(network, `/sessions/${sessionId}/events`, { token: bob.token });
     assert.equal(replayed.body.events.at(-1).payload.content[0].text, "ping");
   } finally {
     await network.close();
