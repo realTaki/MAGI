@@ -7,6 +7,7 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import timedelta
@@ -18,10 +19,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook, BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
+from .go import go
 from .time import utcnow
 
 
 class JobStatus(StrEnum):
+    PREPARING = "preparing"
     PENDING = "pending"
     CLAIMED = "claimed"
     COMPLETED = "completed"
@@ -57,7 +60,7 @@ class BaseJobRow(BaseRecordMixin):
 
     __abstract__ = True
 
-    status: Mapped[str] = mapped_column(Text, nullable=False, default=JobStatus.PENDING.value)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default=JobStatus.PREPARING.value)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     publisher: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -78,9 +81,32 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    def _post_publish(self, job: JobT) -> None:
-        for hook in self._post_publish_hooks:
-            hook(job)
+    async def _post_publish(self, job: JobT) -> None:
+        gathered = await asyncio.gather(
+            *(asyncio.to_thread(hook, job) for hook in self._post_publish_hooks),
+            return_exceptions=True,
+        )
+        errors: list[str] = []
+        failed = False
+        for item in gathered:
+            if isinstance(item, BaseException):
+                failed = True
+                errors.append(
+                    error_message(item) if isinstance(item, Exception) else type(item).__name__
+                )
+                continue
+            if item.status is JobStatus.FAILED:
+                failed = True
+            if item.error:
+                errors.append(item.error)
+        with self._session() as session:
+            row = session.get(type(self).row_cls, job.id)
+            if row is None or row.status != JobStatus.PREPARING.value:
+                return
+            row.status = JobStatus.FAILED.value if failed else JobStatus.PENDING.value
+            if failed:
+                row.error = "\n".join(errors) or None
+            session.commit()
 
     def _post_result(self, result: ResultT) -> None:
         for hook in self._post_result_hooks:
@@ -98,12 +124,13 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
-        values["status"] = JobStatus.PENDING.value
+        values["status"] = JobStatus.PREPARING.value
         with self._session() as session:
             row = type(self).row_cls(**values)
             session.add(row)
             session.commit()
             job_id = int(row.id)
+        go(self._post_publish(replace(prepared, id=job_id)))
         return job_id
 
     def claim(self) -> JobT | None:

@@ -7,6 +7,7 @@ and talk to Jobs through mounted JobBoards; they never access BaseBooks directly
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
+from .base.go import go
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.file import FileEngine
 from .BaseWorker import BaseWorker
@@ -105,6 +106,7 @@ __all__ = [
     "BaseJobResult",
     "BaseJobBoard",
     "JobStatus",
+    "go",
     "Conversation",
     "Contact",
     "ContactNote",
