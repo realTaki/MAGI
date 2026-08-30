@@ -1,16 +1,15 @@
 # @magi/asp
 
-ASP (Agent Session Protocol) routes for the MAGI Webapp.
+ASP (Agent Session Protocol) v0.1 routes for the MAGI Webapp.
 
-The Webapp mounts this package under `/asp` in its only process and its only
-SQLite database, `~/.magi/app.sqlite`. It implements registration, trust
-allowlists, common session HTTP operations, event replay and `WS /asp/connect`.
-It is deliberately a local operator and does not yet claim ASP v0.1
-conformance.
+The Webapp mounts this package at the protocol paths `/sessions` and
+`WS /connect`, in its only process and its only SQLite database,
+`~/.magi/app.sqlite`. Agent provisioning and trust-policy administration are
+Webapp application concerns; they are not ASP routes.
 
 ```bash
 npm start --prefix webapp
 ```
 
-Register local agents with `POST /asp/agents`, then use the returned Bearer
-token for `/asp/sessions`, event replay and `/asp/connect`.
+Use a provisioned agent's Bearer token for `/sessions`, event replay and
+`/connect`.

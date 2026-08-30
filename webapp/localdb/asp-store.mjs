@@ -2,7 +2,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { openLocalDatabase } from "./database.mjs";
 
-const HANDLE = /^@[a-z0-9][a-z0-9_-]{0,62}\.[a-z0-9][a-z0-9_-]{0,62}$/i;
+const HANDLE = /^@[a-z0-9][a-z0-9_-]{0,62}\.[a-z0-9][a-z0-9_-]{0,62}$/;
+const ALLOWLIST_ENTRY = /^@[a-z0-9][a-z0-9_-]{0,62}\.([a-z0-9][a-z0-9_-]{0,62}|\*)$/;
 
 export class AspError extends Error {
   constructor(status, code, detail) {
@@ -26,7 +27,7 @@ function now() {
 }
 
 function identifier(kind) {
-  return `${kind}_${randomUUID().replaceAll("-", "")}`;
+  return `${kind}_${randomUUID().replaceAll("-", "").toUpperCase()}`;
 }
 
 function tokenHash(token) {
@@ -34,16 +35,15 @@ function tokenHash(token) {
 }
 
 function content(value) {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new AspError(400, "invalid.content", "content must be a non-empty array of parts");
-  }
+  if (typeof value === "string" && value.length > 0) return value;
+  if (!Array.isArray(value) || value.length === 0) throw new AspError(400, "invalid.content", "content must be a non-empty string or array of parts");
   for (const part of value) {
-    if (!part || typeof part !== "object" || typeof part.type !== "string") {
-      throw new AspError(400, "invalid.content", "each content part needs a type");
-    }
-    if (part.type === "text" && typeof part.text !== "string") {
-      throw new AspError(400, "invalid.content", "text parts need text");
-    }
+    if (!part || typeof part !== "object" || typeof part.type !== "string") throw new AspError(400, "invalid.content", "each content part needs a type");
+    if (part.type === "text" && typeof part.text === "string" && part.text.length > 0) continue;
+    if (part.type === "data" && part.data && typeof part.data === "object" && !Array.isArray(part.data)) continue;
+    if (part.type === "file" && typeof part.url === "string") continue;
+    if (part.type === "image" && (typeof part.url === "string" || (typeof part.data_uri === "string" && part.data_uri.startsWith("data:")))) continue;
+    throw new AspError(400, "invalid.content", "content part is invalid");
   }
   return value;
 }
@@ -100,6 +100,14 @@ export async function openAspStore({ database, dataDir } = {}) {
     );
     CREATE INDEX IF NOT EXISTS events_by_session ON events(session_id, sequence);
     CREATE INDEX IF NOT EXISTS recipients_by_handle ON event_recipients(handle, event_id);
+    CREATE TABLE IF NOT EXISTS idempotency (
+      session_id TEXT NOT NULL REFERENCES sessions(id),
+      handle TEXT NOT NULL REFERENCES agents(handle),
+      key TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      PRIMARY KEY (session_id, handle, key)
+    );
   `);
 
   function mutate(action) {
@@ -119,7 +127,8 @@ export async function openAspStore({ database, dataDir } = {}) {
     for (const [owner, peer] of [[from, to], [to, from]]) {
       const agent = one(db, "SELECT policy FROM agents WHERE handle = ?", [owner]);
       if (!agent) return false;
-      if (agent.policy === "allowlist" && !one(db, "SELECT 1 FROM allowlist WHERE owner_handle = ? AND peer_handle = ?", [owner, peer])) {
+      const ownerGlob = `@${peer.slice(1).split(".")[0]}.*`;
+      if (agent.policy === "allowlist" && !one(db, "SELECT 1 FROM allowlist WHERE owner_handle = ? AND peer_handle IN (?, ?)", [owner, peer, ownerGlob])) {
         return false;
       }
     }
@@ -191,41 +200,58 @@ export async function openAspStore({ database, dataDir } = {}) {
     },
 
     allow(handle, peer) {
-      if (!HANDLE.test(peer) || !one(db, "SELECT 1 FROM agents WHERE handle = ?", [peer])) {
+      if (!ALLOWLIST_ENTRY.test(peer) || (peer.endsWith("*") ? false : !one(db, "SELECT 1 FROM agents WHERE handle = ?", [peer]))) {
         throw new AspError(404, "agent.not_found", "agent is unavailable");
       }
       return mutate(() => db.run("INSERT OR IGNORE INTO allowlist (owner_handle, peer_handle) VALUES (?, ?)", [handle, peer]));
     },
 
-    createSession(actor, { invite = [], topic, initial_message: initialMessage } = {}) {
+    createSession(actor, { invite = [], topic, initial_message: initialMessage, end_after_send: endAfterSend = false } = {}) {
       if (!Array.isArray(invite) || invite.some((handle) => !HANDLE.test(handle))) {
         throw new AspError(400, "invalid.invite", "invite must contain agent handles");
       }
       if (topic != null && typeof topic !== "string") throw new AspError(400, "invalid.topic", "topic must be text");
+      if (endAfterSend && initialMessage == null) throw new AspError(400, "invalid.request", "end_after_send requires initial_message");
       const initialContent = initialMessage == null ? null : content(initialMessage.content);
       return mutate(() => {
+        for (const target of new Set(invite.filter((handle) => handle !== actor))) {
+          if (!canContact(actor, target)) throw new AspError(404, "agent.not_found", "agent is unavailable");
+        }
         const sessionId = identifier("sess");
         db.run("INSERT INTO sessions (id, state, topic, created_at) VALUES (?, 'active', ?, ?)", [sessionId, topic ?? null, now()]);
         db.run("INSERT INTO participants (session_id, handle, status, joined_at) VALUES (?, ?, 'joined', ?)", [sessionId, actor, now()]);
         const delivery = [];
         for (const target of new Set(invite.filter((handle) => handle !== actor))) {
-          if (!canContact(actor, target)) continue;
           db.run("INSERT INTO participants (session_id, handle, status) VALUES (?, ?, 'invited')", [sessionId, target]);
-          delivery.push(append(sessionId, "session.invited", { session_id: sessionId, invited_by: actor, topic: topic ?? undefined, initial_message: initialContent ? { content: initialContent } : undefined }, [target]));
+          delivery.push(append(sessionId, "session.invited", { invitee: target, by: actor, ...(topic == null ? {} : { topic }) }, [target, ...joinedHandles(sessionId)]));
         }
+        let sequence;
         if (initialContent) {
-          const message = { id: identifier("msg"), session_id: sessionId, sender: actor, created_at: now(), content: initialContent };
-          delivery.push(append(sessionId, "session.message", message, joinedHandles(sessionId)));
+          const message = { id: identifier("msg"), session_id: sessionId, sender: actor, created_at: now(), content: initialContent, ...(initialMessage.metadata == null ? {} : { metadata: initialMessage.metadata }) };
+          const appended = append(sessionId, "session.message", message, joinedHandles(sessionId));
+          sequence = appended.event.sequence;
+          message.sequence = sequence;
+          if (endAfterSend) {
+            for (const invited of delivery) invited.event.payload.initial_message = message;
+          }
+          delivery.push(appended);
         }
-        return { result: { session_id: sessionId }, delivery };
+        if (endAfterSend) {
+          const endedAt = now();
+          db.run("UPDATE sessions SET state = 'ended', ended_at = ? WHERE id = ?", [endedAt, sessionId]);
+          delivery.push(append(sessionId, "session.ended", { ended_by: actor }, activeHandles(sessionId)));
+        }
+        return { result: { session_id: sessionId, ...(sequence == null ? {} : { sequence }) }, delivery };
       });
     },
 
     join(sessionId, actor) {
       return mutate(() => {
-        requireParticipant(sessionId, actor, ["invited"]);
+        const { session, membership } = requireParticipant(sessionId, actor, ["invited", "joined"]);
+        if (session.state !== "active") throw new AspError(409, "session.ended", "session is ended");
+        if (membership.status === "joined") return { result: { ok: true }, delivery: [] };
         db.run("UPDATE participants SET status = 'joined', joined_at = ? WHERE session_id = ? AND handle = ?", [now(), sessionId, actor]);
-        return { result: { ok: true }, delivery: [append(sessionId, "session.joined", { handle: actor }, joinedHandles(sessionId))] };
+        return { result: { ok: true }, delivery: [append(sessionId, "session.joined", { agent: actor }, joinedHandles(sessionId))] };
       });
     },
 
@@ -240,7 +266,7 @@ export async function openAspStore({ database, dataDir } = {}) {
           if (!HANDLE.test(target) || !canContact(actor, target) || one(db, "SELECT 1 FROM participants WHERE session_id = ? AND handle = ?", [sessionId, target])) continue;
           db.run("INSERT INTO participants (session_id, handle, status) VALUES (?, ?, 'invited')", [sessionId, target]);
           invited.push(target);
-          delivery.push(append(sessionId, "session.invited", { session_id: sessionId, invited_by: actor }, [target]));
+          delivery.push(append(sessionId, "session.invited", { invitee: target, by: actor, ...(session.topic == null ? {} : { topic: session.topic }) }, [target, ...joinedHandles(sessionId)]));
         }
         return { result: { invited }, delivery };
       });
@@ -251,8 +277,14 @@ export async function openAspStore({ database, dataDir } = {}) {
       return mutate(() => {
         const { session } = requireParticipant(sessionId, actor, ["joined"]);
         if (session.state !== "active") throw new AspError(409, "session.ended", "session is ended");
-        const message = { id: identifier("msg"), session_id: sessionId, sender: actor, created_at: now(), content: body, metadata: value.metadata ?? undefined };
+        if (value.idempotency_key != null && (typeof value.idempotency_key !== "string" || value.idempotency_key.length === 0 || value.idempotency_key.length > 255)) throw new AspError(400, "invalid.idempotency_key", "idempotency_key is invalid");
+        if (value.idempotency_key) {
+          const previous = one(db, "SELECT message_id, sequence FROM idempotency WHERE session_id = ? AND handle = ? AND key = ?", [sessionId, actor, value.idempotency_key]);
+          if (previous) return { result: { message_id: previous.message_id, sequence: previous.sequence }, delivery: [] };
+        }
+        const message = { id: identifier("msg"), session_id: sessionId, sender: actor, created_at: now(), content: body, ...(value.idempotency_key == null ? {} : { idempotency_key: value.idempotency_key }), ...(value.metadata == null ? {} : { metadata: value.metadata }) };
         const appended = append(sessionId, "session.message", message, joinedHandles(sessionId));
+        if (value.idempotency_key) db.run("INSERT INTO idempotency (session_id, handle, key, message_id, sequence) VALUES (?, ?, ?, ?, ?)", [sessionId, actor, value.idempotency_key, message.id, appended.event.sequence]);
         return { result: { message_id: message.id, sequence: appended.event.sequence }, delivery: [appended] };
       });
     },
@@ -261,7 +293,7 @@ export async function openAspStore({ database, dataDir } = {}) {
       return mutate(() => {
         requireParticipant(sessionId, actor, ["joined"]);
         db.run("UPDATE participants SET status = 'left', left_at = ? WHERE session_id = ? AND handle = ?", [now(), sessionId, actor]);
-        return { result: { ok: true }, delivery: [append(sessionId, "session.left", { handle: actor }, [actor, ...joinedHandles(sessionId)])] };
+        return { result: { ok: true }, delivery: [append(sessionId, "session.left", { agent: actor, reason: "left" }, [actor, ...joinedHandles(sessionId)])] };
       });
     },
 
@@ -271,7 +303,34 @@ export async function openAspStore({ database, dataDir } = {}) {
         if (session.state !== "active") throw new AspError(409, "session.ended", "session is ended");
         const endedAt = now();
         db.run("UPDATE sessions SET state = 'ended', ended_at = ? WHERE id = ?", [endedAt, sessionId]);
-        return { result: { ok: true }, delivery: [append(sessionId, "session.ended", { ended_at: endedAt }, activeHandles(sessionId))] };
+        return { result: { ok: true }, delivery: [append(sessionId, "session.ended", { ended_by: actor }, activeHandles(sessionId))] };
+      });
+    },
+
+    reopen(sessionId, actor, { invite, initial_message: initialMessage } = {}) {
+      if (invite != null && (!Array.isArray(invite) || invite.some((handle) => !HANDLE.test(handle)))) throw new AspError(400, "invalid.invite", "invite must contain agent handles");
+      const initialContent = initialMessage == null ? null : content(initialMessage.content);
+      return mutate(() => {
+        const session = one(db, "SELECT * FROM sessions WHERE id = ?", [sessionId]);
+        const membership = one(db, "SELECT * FROM participants WHERE session_id = ? AND handle = ?", [sessionId, actor]);
+        if (!session || !membership) throw new AspError(404, "session.not_found", "session is unavailable");
+        if (session.state !== "ended") throw new AspError(409, "session.active", "session is active");
+        if (membership.joined_at == null) throw new AspError(404, "session.not_found", "session is unavailable");
+        db.run("UPDATE sessions SET state = 'active', ended_at = NULL WHERE id = ?", [sessionId]);
+        db.run("UPDATE participants SET status = 'joined', left_at = NULL WHERE session_id = ? AND handle = ?", [sessionId, actor]);
+        const delivery = [append(sessionId, "session.reopened", { reopened_by: actor }, activeHandles(sessionId))];
+        for (const target of new Set(invite ?? [])) {
+          if (!canContact(actor, target)) continue;
+          const prior = one(db, "SELECT 1 FROM participants WHERE session_id = ? AND handle = ?", [sessionId, target]);
+          if (prior) db.run("UPDATE participants SET status = 'invited', left_at = NULL WHERE session_id = ? AND handle = ?", [sessionId, target]);
+          else db.run("INSERT INTO participants (session_id, handle, status) VALUES (?, ?, 'invited')", [sessionId, target]);
+          delivery.push(append(sessionId, "session.invited", { invitee: target, by: actor }, [target, ...joinedHandles(sessionId)]));
+        }
+        if (initialContent) {
+          const message = { id: identifier("msg"), session_id: sessionId, sender: actor, created_at: now(), content: initialContent, ...(initialMessage.metadata == null ? {} : { metadata: initialMessage.metadata }) };
+          delivery.push(append(sessionId, "session.message", message, joinedHandles(sessionId)));
+        }
+        return { result: { ok: true }, delivery };
       });
     },
 
