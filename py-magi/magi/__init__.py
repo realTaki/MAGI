@@ -1,7 +1,7 @@
-"""One MAGI runtime: BUS, attached workers, and its FastAPI surface."""
+"""One named MAGI runtime: BUS, workers, and a localhost FastAPI surface."""
 
-__version__ = "0.1.0"
+from bus import __version__ as __version__
 
-from .service import Magi, create_app
+from .service import Magi
 
-__all__ = ["Magi", "create_app", "__version__"]
+__all__ = ["Magi", "__version__"]

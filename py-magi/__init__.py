@@ -47,4 +47,4 @@ try:
 except ImportError:
     pass
 
-__version__ = "0.1.0"
+from bus import __version__ as __version__

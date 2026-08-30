@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
-from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI
 
 from bus import BaseWorker, Bus
 from magi.api.app import create_runtime_app
-from magi.constant import WORKERS, WORKSPACE_PATH
+from magi.constant import FIRST_PORT, LOCAL_HOST, WORKERS, workspace_path
 
 
 class Magi:
@@ -18,14 +19,17 @@ class Magi:
 
     def __init__(
         self,
+        name: str,
         *,
-        workspace: str | Path = WORKSPACE_PATH,
         worker_types: Sequence[type[BaseWorker]] = WORKERS,
     ) -> None:
-        self.bus = Bus(workspace)
+        self.name = name
+        self.workspace = workspace_path(name)
+        self.bus = Bus(self.workspace)
         self._worker_types = tuple(worker_types)
         self._workers: dict[str, BaseWorker] = {}
         self._closed = False
+        self.port: int | None = None
         self.app = create_runtime_app(bus=self.bus)
         self.app.state.magi = self
         self.app.router.lifespan_context = self._lifespan
@@ -62,6 +66,16 @@ class Magi:
         self._workers = attached
         return True
 
+    def serve(self) -> None:
+        """Run this MAGI's local API after Uvicorn starts its lifespan."""
+        listener = _reserve_local_port()
+        self.port = int(listener.getsockname()[1])
+        server = uvicorn.Server(uvicorn.Config(self.app, host=LOCAL_HOST, port=self.port))
+        try:
+            server.run(sockets=[listener])
+        finally:
+            listener.close()
+
     def shutdown(self) -> None:
         """Detach workers while retaining the BUS for controlled reuse."""
         self._detach_workers(self._workers)
@@ -97,6 +111,15 @@ class Magi:
             worker.detach()
 
 
-def create_app() -> FastAPI:
-    """Uvicorn factory for one default MAGI service."""
-    return Magi().app
+def _reserve_local_port() -> socket.socket:
+    """Bind the first available localhost TCP port at or above FIRST_PORT."""
+    for port in range(FIRST_PORT, 65536):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            listener.bind((LOCAL_HOST, port))
+            listener.listen(socket.SOMAXCONN)
+        except OSError:
+            listener.close()
+            continue
+        return listener
+    raise RuntimeError(f"no localhost port is available at or above {FIRST_PORT}")

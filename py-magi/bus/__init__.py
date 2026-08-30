@@ -7,9 +7,9 @@ and talk to Jobs through mounted JobBoards; they never access BaseBooks directly
 
 from .base.BaseBook import BaseRecord
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
-from .base.go import go, wait
 from .base.engine import EngineFactory, PostgresBackend, SQLiteBackend
 from .base.file import FileEngine
+from .base.go import go, wait
 from .BaseWorker import BaseWorker
 from .bus import Bus
 from .firmware import (
@@ -19,12 +19,10 @@ from .firmware import (
     ArchiveMessagesResult,
     CallLLMJob,
     CallLLMResult,
-    ChatNotify,
-    ChatNotifyResult,
-    DeliveryNotify,
-    DeliveryNotifyResult,
     ChangeProviderNotify,
     ChangeProviderNotifyResult,
+    ChatNotify,
+    ChatNotifyResult,
     Contact,
     ContactNote,
     ContactRole,
@@ -47,6 +45,8 @@ from .firmware import (
     DeleteSettingResult,
     DeleteToolJob,
     DeleteToolResult,
+    DeliveryNotify,
+    DeliveryNotifyResult,
     GetContactJob,
     GetContactNoteJob,
     GetContactNoteResult,
@@ -89,9 +89,9 @@ from .firmware import (
     SetPromptResult,
     SetSettingJob,
     SetSettingResult,
+    Setting,
     SetToolJob,
     SetToolResult,
-    Setting,
     Task,
     TaskSource,
     Tool,
@@ -105,9 +105,11 @@ from .firmware import (
     UpdateConversationSummaryResult,
     UpdateMemoryJob,
     UpdateMemoryResult,
+    __version__,
 )
 
 __all__ = [
+    "__version__",
     "BaseRecord",
     "BaseWorker",
     "Bus",
