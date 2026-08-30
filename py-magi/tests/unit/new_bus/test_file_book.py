@@ -3,13 +3,8 @@ from __future__ import annotations
 import pytest
 
 from bus import Bus, FileEngine
-from bus.base.BaseFileBook import BaseFileBook
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
-
-
-class NotesBook(BaseFileBook):
-    name = "notes"
 
 
 def test_file_engine_creates_book_directories(tmp_path) -> None:
@@ -18,36 +13,30 @@ def test_file_engine_creates_book_directories(tmp_path) -> None:
     assert (files.root / "skills").is_dir()
 
 
-def test_file_book_requires_a_file_engine() -> None:
-    with pytest.raises(ValueError, match="FileEngine"):
-        NotesBook(object())  # type: ignore[arg-type]
-
-
-def test_file_book_uses_its_named_directory(tmp_path) -> None:
-    book = NotesBook(FileEngine(tmp_path / "workspace"))
-    path = book.write("a.md", "hello")
+def test_file_store_reads_writes_and_deletes_within_one_book(tmp_path) -> None:
+    store = FileEngine(tmp_path / "workspace").book("notes")
+    path = store.write_text("a.md", "hello")
     assert path.is_file()
     assert path.parent == tmp_path / "workspace" / "notes"
-    assert book.read("a.md") == "hello"
-    assert "a.md" in book
-    assert list(book) == ["a.md"]
-    assert book.delete("a.md") is True
-    assert "a.md" not in book
+    assert store.read_text("a.md") == "hello"
+    assert store.file_names() == ["a.md"]
+    assert store.delete_file("a.md") is True
+    assert store.exists_file("a.md") is False
 
 
-def test_file_book_rejects_path_escape(tmp_path) -> None:
-    book = NotesBook(FileEngine(tmp_path / "workspace"))
+def test_file_store_rejects_path_escape(tmp_path) -> None:
+    store = FileEngine(tmp_path / "workspace").book("notes")
     with pytest.raises(ValueError, match="workspace"):
-        book.write("../escape.md", "no")
+        store.write_text("../escape.md", "no")
     with pytest.raises(ValueError, match="workspace"):
-        book.read("/etc/passwd")
+        store.read_text("/etc/passwd")
 
 
-def test_file_book_writes_nested_names(tmp_path) -> None:
-    book = NotesBook(FileEngine(tmp_path / "workspace"))
-    book.write("agent/soul.md", "nested")
-    assert book.read("agent/soul.md") == "nested"
-    assert list(book) == ["agent/soul.md"]
+def test_file_store_writes_nested_names(tmp_path) -> None:
+    store = FileEngine(tmp_path / "workspace").book("notes")
+    store.write_text("agent/soul.md", "nested")
+    assert store.read_text("agent/soul.md") == "nested"
+    assert store.file_names() == ["agent/soul.md"]
 
 
 def test_prompts_book_round_trip(tmp_path) -> None:
@@ -64,14 +53,15 @@ def test_prompts_book_round_trip(tmp_path) -> None:
 
 
 def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
-    book = SkillsBook(FileEngine(tmp_path / "workspace"))
+    files = FileEngine(tmp_path / "workspace")
+    book = SkillsBook(files)
     assert "web_lookup" in book.list()
     assert book.exists("web_lookup")
     body = book.read("web_lookup")
     assert "Web 检索" in body
     assert book.read("does-not-exist") is None
-    (book.directory / "web_lookup" / "SKILL.md").write_text("operator copy", encoding="utf-8")
-    again = SkillsBook(FileEngine(tmp_path / "workspace"))
+    files.book("skills").write_text("web_lookup/SKILL.md", "operator copy")
+    again = SkillsBook(files)
     assert again.read("web_lookup") == "operator copy"
 
 

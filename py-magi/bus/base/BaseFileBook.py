@@ -16,13 +16,9 @@ from .file import FileEngine, atomic_write, resolve_under
 class BaseFileBook:
     """Directory-backed Book. ``engine`` must be a :class:`FileEngine`."""
 
-    name: ClassVar[str] = ""
+    name: ClassVar[str] = "default"  # subclasses must override
 
     def __init__(self, engine: FileEngine) -> None:
-        if not type(self).name:
-            raise ValueError(f"{type(self).__name__} must set class variable name")
-        if not isinstance(engine, FileEngine):
-            raise ValueError("BaseFileBook requires FileEngine")
         self._root = engine.directory(type(self).name)
 
     @property
