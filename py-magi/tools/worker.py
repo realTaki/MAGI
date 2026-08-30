@@ -106,7 +106,6 @@ class ToolsWorker(BaseWorker):
             id=job.id,
             status=JobStatus.FAILED,
             error=error,
-            tool_call_id=job.tool_call_id,
         )
         if not await self.call(self._board(RunToolJob).submit_result, result):
             logger.warning("tools worker: failed to submit result for %s", job.id)
