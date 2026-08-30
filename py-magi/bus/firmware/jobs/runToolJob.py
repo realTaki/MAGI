@@ -17,7 +17,8 @@ class RunToolJob(BaseJob):
 
     The Worker looks up ``tool_name`` and runs it with ``arguments``.
     Workspace path stays on the Runtime BUS; callers do not send it.
-    ``tool_call_id`` round-trips so the agent can match the LLM tool_use.
+    ``tool_call_id`` stays on this Job so the agent can match the LLM
+    tool_use; it is not copied onto the Result.
     """
 
     tool_name: str = ""
@@ -31,7 +32,6 @@ class RunToolResult(BaseJobResult):
     """The tool's text payload. Failures use ``status`` and ``error``."""
 
     content: str = ""
-    tool_call_id: str = ""
 
 
 class RunToolJobRow(BaseJobRow):
