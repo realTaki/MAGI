@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startShellServer } from "./server.mjs";
+import { openAppStore } from "../core/app-store.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIST = join(ROOT, "dist");
@@ -17,6 +18,7 @@ const BACKEND_URL = process.env.MAGI_BACKEND_URL ?? "http://127.0.0.1:42070";
 
 let shellClose = null;
 let pageUrl = null;
+let appStore = null;
 
 async function waitForUrl(url, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
@@ -74,6 +76,9 @@ async function resolvePageUrl() {
 }
 
 app.whenReady().then(async () => {
+  // Establish the App-owned store before loading the renderer.  No remote
+  // MAGI is contacted here; connection and sync remain explicit actions.
+  appStore = await openAppStore();
   createWindow(await resolvePageUrl());
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -88,4 +93,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   void shellClose?.();
+  appStore?.close();
 });
