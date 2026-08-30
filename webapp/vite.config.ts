@@ -14,7 +14,8 @@ const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 // ``VITE_BACKEND_URL`` is unset and we fall back to
 // ``http://127.0.0.1:${MAGI_PORT}``.
 //
-// MAGI_PORT is the MAGI node API (py-magi). Vite itself listens on
+// MAGI starts its local API at the first free port from 42070. Set
+// VITE_BACKEND_URL when it had to choose a later port. Vite itself listens on
 // 42069 so the browser / Electron shell share one UI origin.
 const BACKEND_URL =
   process.env.VITE_BACKEND_URL ??

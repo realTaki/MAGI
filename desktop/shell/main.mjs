@@ -12,7 +12,9 @@ import { startShellServer } from "./server.mjs";
 import { openAppStore } from "../core/app-store.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DIST = join(ROOT, "dist");
+const DIST = app.isPackaged
+  ? join(process.resourcesPath, "webapp")
+  : join(ROOT, "..", "webapp", "dist");
 const DEV_URL = process.env.MAGI_APP_DEV_URL ?? "http://127.0.0.1:42069";
 const BACKEND_URL = process.env.MAGI_BACKEND_URL ?? "http://127.0.0.1:42070";
 

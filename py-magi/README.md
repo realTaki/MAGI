@@ -5,4 +5,5 @@ Python implementation of the MAGI service. Packages live at this project root
 its BUS, and its attached workers.
 
 The repository-level overview is in [`../README.md`](../README.md); the operator
-UI is the sibling [`../app/`](../app/) project.
+The browser UI is the sibling [`../webapp/`](../webapp/) project; the Electron
+shell that consumes it is [`../desktop/`](../desktop/).

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import magi.__main__ as magi_main
 import magi.service as magi_service
 from bus import BaseWorker, CallLLMJob, CallLLMResult, JobStatus
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
@@ -52,6 +53,22 @@ def magi_name(tmp_path, monkeypatch) -> str:
 
 def test_workspace_path_is_derived_from_magi_name() -> None:
     assert workspace_path("alice") == Path.home() / ".magi" / "alice" / "workspace"
+
+
+def test_main_starts_the_named_magi(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    class StubMagi:
+        def __init__(self, name: str) -> None:
+            seen["name"] = name
+
+        def serve(self) -> None:
+            seen["served"] = True
+
+    monkeypatch.setattr(magi_main, "Magi", StubMagi)
+
+    assert magi_main.main(["alice"]) == 0
+    assert seen == {"name": "alice", "served": True}
 
 
 def test_magi_attaches_default_provider_worker(magi_name) -> None:

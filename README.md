@@ -64,10 +64,11 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ```text
 py-magi/   Python backend and launcher (import package: magi)
 ts-magi/   TypeScript BUS playground and its launcher
-app/       Operator UI (browser now; desktop shell later)
+webapp/    Browser operator UI
+desktop/   Electron shell, consuming the webapp package
 ```
 
-The three projects are siblings. Python production code lives at the
+The projects are siblings. Python production code lives at the
 `py-magi/` project root (`from bus import Bus`, `from startup.cli import main`).
 
 ## Toward governed collective intelligence
