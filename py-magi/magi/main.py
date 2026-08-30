@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import time
@@ -17,8 +18,8 @@ from bus import (
     DeliveryNotifyResult,
     JobStatus,
 )
-from magi.asp import AspClient
-from magi.constant import WORKERS, workspace_path
+from .asp_client import AspClient
+from .constant import WORKERS, workspace_path
 
 logger = logging.getLogger("magi")
 
@@ -39,7 +40,7 @@ class Magi:
         self.handle = handle
         self.workspace = workspace_path(handle)
         self.bus = Bus(self.workspace)
-        self.asp = AspClient(handle=handle, base=base, token=token)
+        self.asp_client = AspClient(handle=handle, base=base, token=token)
         self._worker_types = tuple(worker_types)
         self._workers: dict[str, BaseWorker] = {}
         self._closed = False
@@ -111,7 +112,7 @@ class Magi:
     async def _serve_asp(self) -> None:
         ready = asyncio.Event()
         await asyncio.gather(
-            self.asp.listen(self._on_event, ready=ready),
+            self.asp_client.listen(self._on_event, ready=ready),
             self._pump_delivery(ready),
         )
 
@@ -123,7 +124,7 @@ class Magi:
             return
         try:
             if kind == "session.invited" and payload.get("invitee") == self.handle:
-                await self.asp.join(session_id)
+                await self.asp_client.join(session_id)
                 initial = payload.get("initial_message")
                 if isinstance(initial, dict):
                     await asyncio.to_thread(self._ingest, session_id, initial)
@@ -193,7 +194,7 @@ class Magi:
                 )
                 continue
             try:
-                await self.asp.send(session_id, job.text)
+                await self.asp_client.send(session_id, job.text)
             except Exception as error:
                 await asyncio.to_thread(
                     board.submit_result,
@@ -232,3 +233,13 @@ def _job_result(board, job_id: int):
             return result
         time.sleep(0.01)
     return None
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run one MAGI attached to webapp/asp.")
+    parser.add_argument("handle", help="stable ASP identity, e.g. @alice.magi")
+    parser.add_argument("base", help="operator origin, e.g. http://127.0.0.1:42069")
+    parser.add_argument("token", help="Bearer token seeded on the operator")
+    args = parser.parse_args(argv)
+    Magi(args.handle, args.base, args.token).serve()
+    return 0

@@ -2,7 +2,7 @@
 
 from bus import __version__ as __version__
 
-from .asp import AspClient
-from .service import Magi
+from .asp_client import AspClient
+from .main import Magi
 
 __all__ = ["AspClient", "Magi", "__version__"]

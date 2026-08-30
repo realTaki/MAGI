@@ -1,22 +1,6 @@
-"""Run one MAGI as an ASP client."""
+"""``python -m magi`` → :func:`magi.main.main`."""
 
-from __future__ import annotations
-
-import argparse
-from collections.abc import Sequence
-
-from magi.service import Magi
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one MAGI attached to webapp/asp.")
-    parser.add_argument("handle", help="stable ASP identity, e.g. @alice.magi")
-    parser.add_argument("base", help="operator origin, e.g. http://127.0.0.1:42069")
-    parser.add_argument("token", help="Bearer token seeded on the operator")
-    args = parser.parse_args(argv)
-    Magi(args.handle, args.base, args.token).serve()
-    return 0
-
+from magi.main import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
