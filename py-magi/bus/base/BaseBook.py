@@ -119,9 +119,6 @@ class BaseBook[RecordT: BaseRecord]:
     row_cls: type[BaseRecordMixin]
 
     def __init__(self, factory: EngineFactory) -> None:
-        cls = type(self)
-        if getattr(cls, "row_cls", None) is None:
-            raise ValueError(f"{cls.__name__} must set row_cls")
         self._factory = factory
 
     def _session(self):
