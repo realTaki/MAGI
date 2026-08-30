@@ -64,7 +64,7 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ```text
 py-magi/   Python backend and launcher (import package: magi)
 ts-magi/   TypeScript BUS playground and its launcher
-webapp/    Browser operator UI
+webapp/    Browser operator UI and its SQLite-backed local application data
 desktop/   Electron shell, consuming the webapp package
 ```
 

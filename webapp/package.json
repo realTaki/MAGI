@@ -1,23 +1,29 @@
 {
   "name": "@magi/webapp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "MAGI browser operator UI.",
   "files": [
-    "dist/**"
+    "dist/**",
+    "core/**"
   ],
+  "exports": {
+    "./core/app-store": "./core/app-store.mjs"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
-    "lint:i18n": "node scripts/i18n-lint.cjs"
+    "lint:i18n": "node scripts/i18n-lint.cjs",
+    "test": "node --test tests/app-store.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.13.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

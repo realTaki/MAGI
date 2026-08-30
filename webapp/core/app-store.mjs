@@ -1,7 +1,7 @@
 /**
- * Local, App-owned persistence.
+ * Local, Webapp-owned persistence.
  *
- * This database belongs to the MAGI App installation, rather than to an
+ * This database belongs to the MAGI Webapp installation, rather than to an
  * individual remote MAGI.  Remote data can be cached here, but its canonical
  * copy continues to live in the selected MAGI runtime.
  */
@@ -103,7 +103,7 @@ export async function openAppStore({ dataDir = defaultAppDataDir() } = {}) {
   const db = existsSync(databasePath) ? new SQL.Database(readFileSync(databasePath)) : new SQL.Database();
   applyMigrations(db);
 
-  // sql.js keeps SQLite's page store in memory.  App Core is deliberately its
+  // sql.js keeps SQLite's page store in memory. Webapp Core is deliberately its
   // single owner at this stage, so each mutation atomically replaces the on-
   // disk database and no second process may open it for writes.
   function persist() {
