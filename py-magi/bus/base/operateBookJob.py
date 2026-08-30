@@ -1,9 +1,8 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
-These jobs do not have a worker ``claim`` phase. They can use the ordinary
-``claim_post_publish`` gate. Once it is PENDING, requesting its result executes
-the Book operation;
-the Book mutation and terminal result are then committed in one transaction.
+These jobs do not have a worker ``claim`` phase. Once a job is PENDING,
+requesting its result executes the Book operation; the Book mutation and
+terminal result are then committed in one transaction.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus, error_message
-from .slot import SlotTag, slots
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -63,13 +61,5 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
                     status=JobStatus.FAILED,
                     error=error_message(error),
                 )
-            tag = SlotTag(type(self).job_cls, "claim_post_result")
-            settling = slots.held(self, tag)
-            self._write_result(
-                row,
-                result,
-                status=JobStatus.SETTLING if settling else None,
-            )
+            self._write_result(row, result)
             session.commit()
-            if settling:
-                slots.get(self, tag).offer(self, int(row.id))

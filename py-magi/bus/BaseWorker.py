@@ -6,12 +6,10 @@ import asyncio
 import threading
 from collections.abc import Coroutine
 from contextlib import suppress
-from typing import Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
-from .base.slot import SlotTag
-from .bus_for_worker import BusForWorker
-
-_HEARTBEAT_INTERVAL = 0.25
+if TYPE_CHECKING:
+    from .bus import Bus
 
 T = TypeVar("T")
 
@@ -19,15 +17,12 @@ T = TypeVar("T")
 class BaseWorker:
     """A BUS-facing component. Attach starts it; detach stops it.
 
-    Subclasses import their own ``requiredSlots.REQUIRED_SLOTS`` onto
-    ``required_slots``. Every worker gets the same event-loop, child-task, and
-    bounded-concurrency mechanics; a worker that consumes Jobs overrides
-    :meth:`_run` and uses ``reserve_capacity`` / ``spawn_reserved``.
+    Every worker gets the same event-loop, child-task, and bounded-concurrency
+    mechanics; a worker that consumes Jobs overrides :meth:`_run` and uses
+    ``reserve_capacity`` / ``spawn_reserved``.
     """
 
     worker_name: ClassVar[str | None] = None
-    required_slots: ClassVar[tuple[SlotTag, ...] | None] = None
-    heartbeat_interval: float = _HEARTBEAT_INTERVAL
 
     def __init__(
         self,
@@ -40,9 +35,8 @@ class BaseWorker:
         self.poll_seconds = poll_seconds
         self.concurrency = concurrency or 2
         self.worker_id: str | None = None
-        self.bus: BusForWorker | None = None
+        self.bus: Bus | None = None
         self._stop = threading.Event()
-        self._heartbeat_thread: threading.Thread | None = None
         self._slots: asyncio.Semaphore | None = None
         self._children: set[asyncio.Task[Any]] = set()
         self._event_loop: asyncio.AbstractEventLoop | None = None
@@ -50,35 +44,13 @@ class BaseWorker:
         self._ready = threading.Event()
         self._attached_ok = False
 
-    @classmethod
-    def load_required_slots(cls) -> tuple[SlotTag, ...]:
-        """Return this class's imported ``required_slots``."""
-        return tuple(cls.required_slots or ())
-
-    @classmethod
-    def declared_slots(cls) -> tuple[SlotTag, ...]:
-        return cls.load_required_slots()
-
-    def attach(self, bus_for_worker: BusForWorker) -> bool:
-        """Bind this worker to a BUS slice and keep its Slot lease alive.
-
-        Launcher has already allocated the declared Slots. Heartbeat is
-        internal to the attachment; there is no separate start step.
-        """
+    def attach(self, bus: Bus) -> bool:
+        """Bind this worker to the runtime BUS and start its loop."""
         if self.bus is not None:
-            return self.bus is bus_for_worker
-        self.bus = bus_for_worker
-        self.worker_id = bus_for_worker.worker_id
+            return self.bus is bus
+        self.bus = bus
+        self.worker_id = type(self).worker_name
         self._stop.clear()
-        if not bus_for_worker.heartbeat():
-            self._clear_attachment()
-            return False
-        self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat_loop,
-            name=f"magi-{self.worker_id}-heartbeat",
-            daemon=True,
-        )
-        self._heartbeat_thread.start()
         self._ready.clear()
         self._attached_ok = False
         self._loop_thread = threading.Thread(
@@ -93,7 +65,7 @@ class BaseWorker:
         return False
 
     def detach(self) -> None:
-        """Drop the BUS slice and stop the Slot lease heartbeat.
+        """Drop the BUS and stop this worker's loop.
 
         All worker threads and child tasks belong to this base class.
         """
@@ -107,17 +79,14 @@ class BaseWorker:
         self._loop_thread = None
         if loop_thread is not None and loop_thread is not threading.current_thread():
             loop_thread.join(timeout=self.poll_seconds + 1.0)
-        thread = self._heartbeat_thread
-        self._heartbeat_thread = None
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout=self.heartbeat_interval + 1.0)
         self._clear_attachment()
 
     def is_alive(self) -> bool:
-        return self.bus is not None and self.bus.is_alive()
+        thread = self._loop_thread
+        return self.bus is not None and thread is not None and thread.is_alive()
 
     async def on_attached(self) -> None:
-        """Optional async initialization after the BUS slice is attached."""
+        """Optional async initialization after the BUS is attached."""
 
     async def on_detached(self) -> None:
         """Optional async cleanup after all owned work has stopped."""
@@ -157,12 +126,6 @@ class BaseWorker:
         """Keep an attached worker alive when it has no Job loop of its own."""
         while not self._stop.is_set():
             await asyncio.sleep(self.poll_seconds)
-
-    def _heartbeat_loop(self) -> None:
-        while not self._stop.wait(self.heartbeat_interval):
-            bus = self.bus
-            if bus is None or not bus.heartbeat():
-                return
 
     def _thread_main(self) -> None:
         try:

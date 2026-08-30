@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bus import BaseWorker, Bus, SlotTag
+from bus import BaseWorker, Bus
 from launcher.constant import WORKERS, WORKSPACE_PATH
 
 
@@ -10,8 +10,7 @@ class Launcher:
     """The runtime entry point.
 
     ``run()`` follows the runtime's one startup sequence: open BUS and the
-    workspace file tree, read all worker Slots, create each ``BusForWorker``,
-    then attach the worker.  ``shutdown()`` performs the
+    workspace file tree, then attach each worker.  ``shutdown()`` performs the
     inverse attachment cleanup.
     """
 
@@ -29,21 +28,20 @@ class Launcher:
         if self._workers:
             raise ValueError("already running")
 
-        prepared: list[tuple[str, BaseWorker, tuple[SlotTag, ...]]] = []
+        prepared: list[tuple[str, BaseWorker]] = []
         for worker_type in WORKERS:
             worker_id = worker_type.worker_name
             if not worker_id:
                 raise ValueError(f"{worker_type.__qualname__} needs worker_name")
-            prepared.append((worker_id, worker_type(), worker_type.declared_slots()))
+            prepared.append((worker_id, worker_type()))
         if not prepared:
             raise ValueError("no workers")
-        if len({worker_id for worker_id, _, _ in prepared}) != len(prepared):
+        if len({worker_id for worker_id, _ in prepared}) != len(prepared):
             raise ValueError("duplicate worker_id")
 
         attached: dict[str, BaseWorker] = {}
-        for worker_id, worker, slots in prepared:
-            bus_for_worker = self.bus.for_worker(worker_id, slots)
-            if bus_for_worker is None or not worker.attach(bus_for_worker):
+        for worker_id, worker in prepared:
+            if not worker.attach(self.bus):
                 worker.detach()
                 self._detach_workers(attached)
                 return False

@@ -22,7 +22,7 @@ from bus.firmware.jobs.messageJobs import (
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,
 )
-from tests.unit.new_bus.testing import WORKER, attach_board
+from tests.unit.new_bus.testing import attach_board
 
 BOARD_BY_JOB = {
     CreateConversationJob: CreateConversationJobBoard,
@@ -38,7 +38,7 @@ def bus(tmp_path) -> Bus:
 
 
 def _board(bus: Bus, job: BaseJob):
-    return attach_board(bus, BOARD_BY_JOB[type(job)], worker_id=WORKER, slots=("publish",))
+    return attach_board(bus, BOARD_BY_JOB[type(job)])
 
 
 def _publish[JobT: BaseJob](bus: Bus, job: JobT) -> JobT:
