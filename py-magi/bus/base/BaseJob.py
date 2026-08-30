@@ -7,26 +7,23 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from enum import StrEnum
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
-from sqlalchemy import Text, select, update
+from sqlalchemy import Text, delete, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .BaseBook import BaseRecord, BaseRecordMixin
+from .BaseBook import BaseBook, BaseRecord, BaseRecordMixin
 from .engine import EngineFactory
 from .time import utcnow
 
 
 class JobStatus(StrEnum):
-    PREPARING = "preparing"
-    HOOKING = "hooking"
     PENDING = "pending"
     CLAIMED = "claimed"
-    EXECUTING = "executing"
-    SETTLING = "settling"
-    FINALIZING = "finalizing"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -68,11 +65,22 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     result_cls: type[ResultT]
     row_cls: type[RowT]
 
-    def __init__(self, factory: EngineFactory) -> None:
+    def __init__(self, factory: EngineFactory, *, book: BaseBook | None = None) -> None:
         self._factory = factory
+        self._book = book
+        self._post_publish_slot: list[Callable[..., Any]] = []
+        self._post_result_slot: list[Callable[..., Any]] = []
 
     def _session(self):
         return self._factory.session()
+
+    def _post_publish(self) -> None:
+        for callback in self._post_publish_slot:
+            callback()
+
+    def _post_result(self) -> None:
+        for callback in self._post_result_slot:
+            callback()
 
     def publish(self, job: JobT) -> int:
         return self._publish(job)
@@ -178,3 +186,13 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
                 stmt = stmt.where(type(self).row_cls.status == status.value)
             rows = list(session.scalars(stmt))
         return [cast(type[JobT], self.job_cls).from_row(row) for row in rows]
+
+    def purge(self) -> int:
+        """Delete Jobs older than seven days."""
+        cutoff = utcnow() - timedelta(days=7)
+        with self._session() as session:
+            result = session.execute(
+                delete(type(self).row_cls).where(type(self).row_cls.created_at < cutoff)
+            )
+            session.commit()
+        return int(getattr(result, "rowcount", 0) or 0)

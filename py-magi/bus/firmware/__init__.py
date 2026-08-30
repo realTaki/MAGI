@@ -131,47 +131,65 @@ from .jobs import (
 def create_job_boards(
     factory: EngineFactory,
     *,
+    memories: EngineFactory,
     files: FileEngine,
 ) -> dict[type[BaseJob], BaseJobBoard[Any, Any, Any]]:
     """Create the fixed Board set shipped by Firmware."""
+    from .books.contactBook import ContactBook
+    from .books.contactNoteBook import ContactNoteBook
+    from .books.conversationBook import ConversationBook
+    from .books.memoryBook import MemoryBook
+    from .books.messageBook import MessageBook
+    from .books.settingsBook import SettingsBook
+    from .books.tokenUsageBook import TokenUsageBook
+
+    contacts = ContactBook(memories)
+    contact_notes = ContactNoteBook(memories)
+    conversations = ConversationBook(memories)
+    memories_book = MemoryBook(memories)
+    messages = MessageBook(memories)
+    settings = SettingsBook(memories)
+    token_usage = TokenUsageBook(memories)
     prompts = PromptsBook(files)
     skills = SkillsBook(files)
     return {
-        CreateConversationJob: CreateConversationJobBoard(factory),
-        AppendMessageJob: AppendMessageJobBoard(factory),
-        ListConversationMessagesJob: ListConversationMessagesJobBoard(factory),
-        ArchiveMessagesJob: ArchiveMessagesJobBoard(factory),
-        UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(factory),
+        CreateConversationJob: CreateConversationJobBoard(factory, book=conversations),
+        AppendMessageJob: AppendMessageJobBoard(factory, book=messages),
+        ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, book=messages),
+        ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, book=messages),
+        UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(
+            factory, book=conversations
+        ),
         GetPromptJob: GetPromptJobBoard(factory, prompts=prompts),
         SetPromptJob: SetPromptJobBoard(factory, prompts=prompts),
         RegisterPromptJob: RegisterPromptJobBoard(factory, prompts=prompts),
         ResetPromptJob: ResetPromptJobBoard(factory, prompts=prompts),
-        GetSettingJob: GetSettingJobBoard(factory),
-        SetSettingJob: SetSettingJobBoard(factory),
-        DeleteSettingJob: DeleteSettingJobBoard(factory),
-        ListSettingsJob: ListSettingsJobBoard(factory),
+        GetSettingJob: GetSettingJobBoard(factory, book=settings),
+        SetSettingJob: SetSettingJobBoard(factory, book=settings),
+        DeleteSettingJob: DeleteSettingJobBoard(factory, book=settings),
+        ListSettingsJob: ListSettingsJobBoard(factory, book=settings),
         GetSkillJob: GetSkillJobBoard(factory, skills=skills),
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
         RunToolJob: RunToolJobBoard(factory),
-        ChangeProviderJob: ChangeProviderJobBoard(factory),
-        CreateContactJob: CreateContactJobBoard(factory),
-        DeleteContactJob: DeleteContactJobBoard(factory),
-        GetContactJob: GetContactJobBoard(factory),
-        ListContactsJob: ListContactsJobBoard(factory),
-        TouchContactJob: TouchContactJobBoard(factory),
-        UpdateContactJob: UpdateContactJobBoard(factory),
-        CreateContactNoteJob: CreateContactNoteJobBoard(factory),
-        DeleteContactNoteJob: DeleteContactNoteJobBoard(factory),
-        GetContactNoteJob: GetContactNoteJobBoard(factory),
-        ListContactNotesJob: ListContactNotesJobBoard(factory),
-        UpdateContactNoteJob: UpdateContactNoteJobBoard(factory),
-        CreateMemoryJob: CreateMemoryJobBoard(factory),
-        DeleteMemoryJob: DeleteMemoryJobBoard(factory),
-        GetMemoryJob: GetMemoryJobBoard(factory),
-        ListMemoriesJob: ListMemoriesJobBoard(factory),
-        UpdateMemoryJob: UpdateMemoryJobBoard(factory),
-        RecordTokenUsageJob: RecordTokenUsageJobBoard(factory),
+        ChangeProviderJob: ChangeProviderJobBoard(factory, book=settings),
+        CreateContactJob: CreateContactJobBoard(factory, book=contacts),
+        DeleteContactJob: DeleteContactJobBoard(factory, book=contacts),
+        GetContactJob: GetContactJobBoard(factory, book=contacts),
+        ListContactsJob: ListContactsJobBoard(factory, book=contacts),
+        TouchContactJob: TouchContactJobBoard(factory, book=contacts),
+        UpdateContactJob: UpdateContactJobBoard(factory, book=contacts),
+        CreateContactNoteJob: CreateContactNoteJobBoard(factory, book=contact_notes),
+        DeleteContactNoteJob: DeleteContactNoteJobBoard(factory, book=contact_notes),
+        GetContactNoteJob: GetContactNoteJobBoard(factory, book=contact_notes),
+        ListContactNotesJob: ListContactNotesJobBoard(factory, book=contact_notes),
+        UpdateContactNoteJob: UpdateContactNoteJobBoard(factory, book=contact_notes),
+        CreateMemoryJob: CreateMemoryJobBoard(factory, book=memories_book),
+        DeleteMemoryJob: DeleteMemoryJobBoard(factory, book=memories_book),
+        GetMemoryJob: GetMemoryJobBoard(factory, book=memories_book),
+        ListMemoriesJob: ListMemoriesJobBoard(factory, book=memories_book),
+        UpdateMemoryJob: UpdateMemoryJobBoard(factory, book=memories_book),
+        RecordTokenUsageJob: RecordTokenUsageJobBoard(factory, book=token_usage),
     }
 
 

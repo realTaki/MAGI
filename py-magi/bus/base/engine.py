@@ -16,7 +16,7 @@ from .time import dump_json
 
 
 class EngineFactory:
-    """One engine and sessionmaker. Books and JobBoards share this."""
+    """One engine and sessionmaker. Books and JobBoards each hold one."""
 
     def __init__(self, database_url: str, *, memory: bool = False) -> None:
         self._url = database_url

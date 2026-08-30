@@ -57,7 +57,9 @@ class ChangeProviderJobBoard(
         values = prepared.to_dict()
         values.pop("id", None)
         values["status"] = JobStatus.PENDING.value
-        with self._session() as session:
+        if self._book is None:
+            raise RuntimeError(f"{type(self).__name__} requires a Book")
+        with self._book._session() as books:
             for key, value in (
                 (PROVIDER_NAME_KEY, job.provider),
                 (PROVIDER_API_KEY_KEY, job.api_key),
@@ -65,11 +67,13 @@ class ChangeProviderJobBoard(
             ):
                 if value == "":
                     continue
-                setting = session.scalar(select(SettingRow).where(SettingRow.key == key))
+                setting = books.scalar(select(SettingRow).where(SettingRow.key == key))
                 if setting is None:
-                    session.add(SettingRow(key=key, value=value))
+                    books.add(SettingRow(key=key, value=value))
                 else:
                     setting.value = value
+            books.commit()
+        with self._session() as session:
             row = ChangeProviderJobRow(**values)
             session.add(row)
             session.commit()

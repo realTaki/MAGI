@@ -38,7 +38,7 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
             claimed = session.execute(
                 update(row_cls)
                 .where(row_cls.id == job_id, row_cls.status == JobStatus.PENDING.value)
-                .values(status=JobStatus.EXECUTING.value)
+                .values(status=JobStatus.CLAIMED.value)
             )
             if getattr(claimed, "rowcount", 0) != 1:
                 return
@@ -55,7 +55,7 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
 
         with self._session() as session:
             row = session.get(row_cls, job_id)
-            if row is None or row.status != JobStatus.EXECUTING.value:
+            if row is None or row.status != JobStatus.CLAIMED.value:
                 return
             self._write_result(row, result)
             session.commit()

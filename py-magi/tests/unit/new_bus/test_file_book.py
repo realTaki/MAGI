@@ -82,6 +82,7 @@ def test_bus_opens_file_books(tmp_path) -> None:
         assert (workspace / "prompts").is_dir()
         assert (workspace / "skills").is_dir()
         assert (workspace / "memories" / "magi.db").is_file()
+        assert (workspace / "logs" / "magi.db").is_file()
         assert bus._job_boards
 
 
