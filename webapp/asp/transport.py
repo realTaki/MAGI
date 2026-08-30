@@ -117,3 +117,16 @@ class Transport:
         current = self._cursors.get((handle, session_id), -1)
         if sequence > current:
             self._cursors[(handle, session_id)] = sequence
+
+    async def close(self) -> None:
+        """Cancel grace tasks and close every connection during service shutdown."""
+        for timer in self._disconnect_timers.values():
+            timer.cancel()
+        self._disconnect_timers.clear()
+        sockets = [socket for peers in self._connections.values() for socket in peers]
+        self._connections.clear()
+        for socket in sockets:
+            try:
+                await socket.close()
+            except Exception:
+                pass

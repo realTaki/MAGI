@@ -22,7 +22,7 @@ build-backend = "setuptools.build_meta"
 include = ["api*", "asp*", "localdb*"]
 
 [tool.setuptools]
-py-modules = ["main"]
+py-modules = ["main", "service"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
