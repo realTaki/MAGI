@@ -48,7 +48,7 @@ class PromptsBook(BaseFileBook):
         """Refresh a default and initialise its active record if missing."""
         self._require_active_key(key)
         self._set_exact(key=self._default_key(active_key=key), value=value)
-        if self.exists(self._file_name(key)):
+        if self._files.exists_file(self._file_name(key)):
             return False
         self.set(key=key, value=value)
         return True
@@ -84,8 +84,8 @@ class PromptsBook(BaseFileBook):
             raise ValueError(f"default prompt key {key!r} is managed by PromptsBook")
 
     def _set_exact(self, *, key: str, value: str) -> bool:
-        self.write(self._file_name(key), value)
+        self._files.write_text(self._file_name(key), value)
         return True
 
     def _read_exact(self, key: str) -> str:
-        return self.read(self._file_name(key))
+        return self._files.read_text(self._file_name(key))

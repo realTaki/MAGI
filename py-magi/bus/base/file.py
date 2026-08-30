@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import ClassVar
@@ -61,3 +62,67 @@ class FileEngine:
         path = resolve_under(self.root, name)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def book(self, name: str) -> FileStore:
+        """Open one FileBook-scoped store under the workspace."""
+        return FileStore(self.directory(name))
+
+
+class FileStore:
+    """Safe filesystem primitives scoped to exactly one FileBook directory."""
+
+    def __init__(self, directory: Path) -> None:
+        self._directory = directory
+
+    @property
+    def directory(self) -> Path:
+        return self._directory
+
+    def path(self, name: str) -> Path:
+        """Resolve one relative path without allowing it to leave this Book."""
+        return resolve_under(self._directory, name)
+
+    def read_text(self, name: str) -> str:
+        return self.path(name).read_text(encoding="utf-8")
+
+    def write_text(self, name: str, content: str) -> Path:
+        if not isinstance(content, str):
+            raise ValueError("file content must be text")
+        return atomic_write(self.path(name), content)
+
+    def exists_file(self, name: str) -> bool:
+        try:
+            return self.path(name).is_file()
+        except ValueError:
+            return False
+
+    def exists_directory(self, name: str) -> bool:
+        try:
+            return self.path(name).is_dir()
+        except ValueError:
+            return False
+
+    def delete_file(self, name: str) -> bool:
+        path = self.path(name)
+        if not path.is_file():
+            return False
+        path.unlink()
+        return True
+
+    def file_names(self) -> list[str]:
+        if not self._directory.is_dir():
+            return []
+        return sorted(
+            path.relative_to(self._directory).as_posix()
+            for path in self._directory.rglob("*")
+            if path.is_file() and not path.name.startswith(".")
+        )
+
+    def directory_names(self) -> list[str]:
+        if not self._directory.is_dir():
+            return []
+        return sorted(path.name for path in self._directory.iterdir() if path.is_dir())
+
+    def copy_tree(self, source: Path, name: str) -> Path:
+        """Copy a directory tree into this Book at a safe relative path."""
+        return shutil.copytree(source, self.path(name))
