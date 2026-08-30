@@ -11,8 +11,8 @@ paths land on the same ``contact_notes`` row shape.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contacts_book``
-and ``ctx.bus.contact_notes_book`` — the Books own
+(:class:`bus.Bus`) via ``self.bus.contacts_book``
+and ``self.bus.contact_notes_book`` — the Books own
 write invariants (length caps,
 empty-content rejection) and expose ``add(...)`` plus
 ``to_dict`` on the returned DTO. The legacy service at
@@ -26,7 +26,7 @@ import logging
 from typing import Any
 
 from old_bus.firmwares.books.local.contactBook import Contact, ContactNote, Role
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_contact")
 
@@ -87,8 +87,9 @@ class AddContactTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
             return ToolResult.err("name is required (non-empty string)")
@@ -100,13 +101,13 @@ class AddContactTool(Tool):
                 f"role must be one of {sorted(r.value for r in Role)!r}, got {role_str!r}"
             )
         try:
-            record_id = ctx.bus.contacts_book.add(Contact(
+            record_id = self.bus.contacts_book.add(Contact(
                 name=name,
                 display_name=kwargs.get("display_name"),
                 role=role,
                 tgid=kwargs.get("tgid"),
             ))
-            contact = ctx.bus.contacts_book.get(record_id)
+            contact = self.bus.contacts_book.get(record_id)
             if contact is None:
                 raise RuntimeError(f"contact row {record_id} disappeared after insert")
         except ValueError as e:
@@ -129,11 +130,11 @@ class AddContactTool(Tool):
             # "initial_note": ...}`` payload so the LLM
             # doesn't have to thread two tool results.
             try:
-                note_id = ctx.bus.contact_notes_book.add(ContactNote(
+                note_id = self.bus.contact_notes_book.add(ContactNote(
                     contact_id=contact.id,
                     note=str(initial_note),
                 ))
-                note = ctx.bus.contact_notes_book.get(note_id)
+                note = self.bus.contact_notes_book.get(note_id)
                 if note is None:
                     raise RuntimeError(f"contact note {note_id} disappeared after insert")
             except ValueError as e:

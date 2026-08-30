@@ -34,7 +34,7 @@ from __future__ import annotations
 from typing import Any
 
 from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 # 8 KB cap. Anything bigger is truncated and the
 # truncation note is included so the model knows
@@ -128,7 +128,6 @@ class ReadFileTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         path_arg = kwargs.get("path")
@@ -154,7 +153,7 @@ class ReadFileTool(Tool):
         # workspace containment + ``must_be_file`` so a
         # directory or missing path fails cleanly.
         try:
-            target = safe_resolve(ctx.workspace, path_arg)
+            target = safe_resolve(self.workspace, path_arg)
         except ValueError as e:
             return ToolResult.err(f"read_file: {e}")
 

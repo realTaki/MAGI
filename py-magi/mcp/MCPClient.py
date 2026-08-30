@@ -42,7 +42,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     from mcp import ClientSession
@@ -125,14 +125,8 @@ class MCPTool(Tool):
         self._session = session
         self._execute_timeout = execute_timeout
 
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        """Forward the call to the MCP server.
-
-        ``ctx`` is the project-local :class:`ToolContext`. The
-        MCP wrapper ignores it (the upstream server has its own
-        state); we accept it to satisfy the protocol.
-        """
-        del ctx  # intentionally unused — MCP server keeps its own state
+    async def run(self, **kwargs: Any) -> ToolResult:
+        """Forward the call to the MCP server."""
         try:
             async with asyncio.timeout(self._execute_timeout):
                 result = await self._session.call_tool(self._server_tool_name, arguments=kwargs)

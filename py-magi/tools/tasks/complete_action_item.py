@@ -9,7 +9,7 @@ rows, even if the LLM asks for an id it doesn't own — the
 row is missing rather than shared.
 
 Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`ctx.bus.magis_admins_book`) and ``assigned`` (per
+:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
 ``Contact.role``) operators may operate on their own action
 items. ``guest`` callers don't see the tool in their menu.
 """
@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.tasks.complete_action_item")
 
@@ -71,10 +71,8 @@ class CompleteActionItemTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         raw_id = kwargs.get("item_id")
         if raw_id is None:
             return ToolResult.err("item_id is required")
@@ -87,7 +85,7 @@ class CompleteActionItemTool(Tool):
         # :meth:`ActionItemBook.complete` — we don't
         # re-check here.
 
-        ct_id = int(ctx.contact_id)
+        ct_id = int(kwargs.get("contact_id") or 0)
         # Auth lives at the tool layer, not in the Book:
         # ``ActionItemBook.complete`` is a pure data write.
         # Strict per-contact privacy is enforced here by a
@@ -96,13 +94,13 @@ class CompleteActionItemTool(Tool):
         # ``get`` and ``complete`` is fine for the
         # single-writer chat tool; a future tx-scoped guard
         # would tighten it for multi-writer surfaces.
-        existing = ctx.bus.action_items_book.get(item_id)
+        existing = self.bus.action_items_book.get(item_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"action item {item_id} not found or not owned by the calling operator"
             )
         try:
-            row = ctx.bus.action_items_book.complete(
+            row = self.bus.action_items_book.complete(
                 action_item_id=item_id,
                 note=note,
             )

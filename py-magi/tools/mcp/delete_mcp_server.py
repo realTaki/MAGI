@@ -17,7 +17,7 @@ from typing import Any
 
 from old_bus.firmwares.jobs import MCPKind, ChangeMCPServerJob
 from old_bus.bases.job import JobStatus
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 
 class DeleteMcpServerTool(Tool):
@@ -45,8 +45,9 @@ class DeleteMcpServerTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         name = (kwargs.get("name") or "").strip()
         if not name:
             return ToolResult.err("missing required field: name")
@@ -54,7 +55,7 @@ class DeleteMcpServerTool(Tool):
         # Existence check — the Job Board itself doesn't reject
         # duplicate deletes, but we want the "not_found" envelope
         # to skip the worker round-trip when nothing would change.
-        if ctx.bus.mcp_servers_book.get_by_name(name=name) is None:
+        if self.bus.mcp_servers_book.get_by_name(name=name) is None:
             return ToolResult.ok(
                 {
                     "status": "not_found",
@@ -62,11 +63,11 @@ class DeleteMcpServerTool(Tool):
                 }
             )
 
-        job_id = ctx.bus.change_mcp_server_job_board.publish(
+        job_id = self.bus.change_mcp_server_job_board.publish(
             ChangeMCPServerJob(kind=MCPKind.DELETED, server_name=name)
         )
 
-        result = await ctx.bus.change_mcp_server_job_board.wait_for_result(
+        result = await self.bus.change_mcp_server_job_board.wait_for_result(
             job_id=job_id,
         )
         if result is None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 
 class MessageMagiTool(Tool):
@@ -43,8 +43,8 @@ class MessageMagiTool(Tool):
         "required": ["magi_id", "text", "mode"],
     }
 
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        _ = ctx, kwargs
+    async def run(self, **kwargs: Any) -> ToolResult:
+        _ = kwargs
         return ToolResult(
             content="message_magi is scheduled by the actor and must not run in ToolWorker",
             is_error=True,

@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from old_bus.firmwares.books.local.mcpServerBook import serialize_mcp_server
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 
 class ListMcpServersTool(Tool):
@@ -34,9 +34,8 @@ class ListMcpServersTool(Tool):
     input_schema = {"type": "object", "properties": {}}
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **_kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
-        rows = ctx.bus.mcp_servers_book.list_all()
+    async def run(self, **_kwargs: Any) -> ToolResult:
+        rows = self.bus.mcp_servers_book.list_all()
 
         if not rows:
             return ToolResult.ok(

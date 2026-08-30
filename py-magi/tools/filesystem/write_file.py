@@ -24,7 +24,7 @@ import tempfile
 from typing import Any
 
 from tools._safe_path import safe_resolve
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 _MAX_CONTENT_BYTES = 256 * 1024
 
@@ -74,7 +74,6 @@ class WriteFileTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
         path_arg = kwargs.get("path")
@@ -99,7 +98,7 @@ class WriteFileTool(Tool):
         # workspace-containment check, which safe_resolve
         # always performs.
         try:
-            target = safe_resolve(ctx.workspace, path_arg, must_be_file=False)
+            target = safe_resolve(self.workspace, path_arg, must_be_file=False)
         except ValueError as e:
             return ToolResult.err(f"write_file: {e}")
 

@@ -19,7 +19,7 @@ block is the read path for v0) would carry the same
 gate when added.
 
 Bus plumbing: this tool talks to bus (:class:`bus.Bus`) via
-``ctx.bus.memory_book``.  It validates its command vocabulary at ingress;
+``self.bus.memory_book``.  It validates its command vocabulary at ingress;
 the Book persists free text without imposing a second input policy.
 """
 
@@ -32,7 +32,7 @@ from old_bus.firmwares.books.local.memoryBook import (
     Memory,
     MemoryKind,
 )
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_memory")
 
@@ -103,10 +103,8 @@ class AddMemoryTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         # Tool parameters are an ingress boundary. The Book deliberately
         # persists unconstrained free text.
         missing = [
@@ -120,17 +118,17 @@ class AddMemoryTool(Tool):
             kind = MemoryKind(kwargs["kind"])
         except ValueError:
             return ToolResult.err("add_memory kind must be 'fact' or 'quick_note'")
-        if ctx.bus is None:
+        if self.bus is None:
             return ToolResult.err("bus not available")
         try:
-            record_id = ctx.bus.memory_book.add(Memory(
-                contact_id=int(ctx.contact_id),
+            record_id = self.bus.memory_book.add(Memory(
+                contact_id=int(kwargs.get("contact_id") or 0),
                 kind=kind,
                 subject=kwargs["subject"],
                 body=kwargs["body"],
                 priority=kwargs.get("priority", 3),
             ))
-            view = ctx.bus.memory_book.get(record_id)
+            view = self.bus.memory_book.get(record_id)
             if view is None:
                 raise RuntimeError(f"memory row {record_id} disappeared after insert")
         except ValueError as e:
@@ -138,7 +136,7 @@ class AddMemoryTool(Tool):
         logger.info(
             "add_memory: row %s created for contact=%s kind=%r subject=%r",
             view.id,
-            ctx.contact_id,
+            int(kwargs.get("contact_id") or 0),
             view.kind,
             view.subject,
         )

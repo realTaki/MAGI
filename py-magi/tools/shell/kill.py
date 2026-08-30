@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 from tools.shell._manager import _BackgroundShellManager
 
 
@@ -55,10 +55,8 @@ class BashKillTool(Tool):
 
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        _ = ctx
         bash_id = (kwargs.get("bash_id") or "").strip()
         if not bash_id:
             return ToolResult(content="bash_id is required", is_error=True)

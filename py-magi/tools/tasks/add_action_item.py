@@ -2,18 +2,18 @@
 the calling operator.
 
 Umbrella term: "todo", "task", "记一下", "待办" — all map
-here. Creates one row per call (``contact_id=ctx.contact_id``). Re-calling
+here. Creates one row per call (``contact_id=int(kwargs.get("contact_id") or 0)``). Re-calling
 with the same title creates a *new* row — the operator
 may want two parallel action items with similar titles;
 we don't guess duplicates from a free-text title.
 
 Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`ctx.bus.magis_admins_book`) and ``assigned`` (per
+:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
 ``Contact.role``) operators may operate on their own action
 items. ``guest`` callers don't see the tool in their menu.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.action_items_book``
+(:class:`bus.Bus`) via ``self.bus.action_items_book``
 — the Book is pure CRUD and exposes ``add(...)`` plus
 ``to_dict`` on the returned DTO. ``source`` is decided by
 the caller (default ``'user'``): chat-driven operator
@@ -33,7 +33,7 @@ from datetime import datetime
 from typing import Any
 
 from old_bus.firmwares.books.local.actionItemBook import ActionItem, ActionPriority, ActionSource
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.tasks.add_action_item")
 
@@ -132,10 +132,8 @@ class AddActionItemTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         # Shape translation — turn kwargs into the typed
         # arguments :meth:`ActionItemBook.add` wants. The
         # Book owns the write invariants (non-empty title,
@@ -169,8 +167,8 @@ class AddActionItemTool(Tool):
                     )
 
         try:
-            item_id = ctx.bus.action_items_book.add(ActionItem(
-                contact_id=int(ctx.contact_id),
+            item_id = self.bus.action_items_book.add(ActionItem(
+                contact_id=int(kwargs.get("contact_id") or 0),
                 title=title,
                 description=description,
                 target_url=target_url,
@@ -178,7 +176,7 @@ class AddActionItemTool(Tool):
                 due_date=due_date,
                 source=source,
             ))
-            item = ctx.bus.action_items_book.get(item_id)
+            item = self.bus.action_items_book.get(item_id)
             if item is None:
                 raise RuntimeError(f"action item {item_id} disappeared after insert")
         except ValueError as e:
@@ -195,7 +193,7 @@ class AddActionItemTool(Tool):
         logger.info(
             "add_action_item: item %s created for contact=%s title=%r source=%r",
             item.id,
-            ctx.contact_id,
+            int(kwargs.get("contact_id") or 0),
             title,
             source,
         )

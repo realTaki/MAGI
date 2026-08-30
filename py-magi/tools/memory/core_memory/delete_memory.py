@@ -6,7 +6,7 @@ an id it doesn't own — the row is missing rather than
 shared.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.memory_book``
+(:class:`bus.Bus`) via ``self.bus.memory_book``
 — the Book is a pure data delete and returns whether
 the row existed. Authorization ("does the caller own
 this row?") lives here at the tool layer so we don't
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.delete_memory")
 
@@ -57,14 +57,12 @@ class DeleteMemoryTool(Tool):
     @Tool.require_bus
     async def run(
         self,
-        ctx: ToolContext,
         **kwargs: Any,
     ) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
         memory_id = kwargs.get("memory_id")
         if not isinstance(memory_id, int):
             return ToolResult.err(f"memory_id must be int, got {type(memory_id).__name__}")
-        ct_id = int(ctx.contact_id)
+        ct_id = int(kwargs.get("contact_id") or 0)
         # Strict per-contact privacy — auth lives at the
         # tool layer, not in the Book. ``MemoryBook.delete``
         # is a pure data delete; we ``get`` + check
@@ -73,12 +71,12 @@ class DeleteMemoryTool(Tool):
         # ``not found / not owned`` without revealing
         # existence. Same TOCTOU comment as the action-item
         # / complete-memory tools.
-        existing = ctx.bus.memory_book.get(memory_id)
+        existing = self.bus.memory_book.get(memory_id)
         if existing is None or existing.contact_id != ct_id:
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
-        existed = ctx.bus.memory_book.delete(memory_id)
+        existed = self.bus.memory_book.delete(memory_id)
         logger.info(
             "delete_memory: row %s deleted by %s (existed=%s)",
             memory_id,

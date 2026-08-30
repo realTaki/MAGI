@@ -5,7 +5,7 @@ success). Use when the operator says '忘了那条 / 删掉'.
 Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
 
 Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``ctx.bus.contact_notes_book``
+(:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns the data write and returns ``True`` if a
 row was removed, ``False`` if no row matched (the same
 ``existed`` flag the bus's ``ContactsService.delete_note``
@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from tools.base import Tool, ToolContext, ToolResult
+from tools.base import Tool, ToolResult
 
 logger = logging.getLogger("tools.memory.delete_contact_note")
 
@@ -44,13 +44,14 @@ class DeleteContactNoteTool(Tool):
     }
 
     @Tool.require_bus
-    async def run(self, ctx: ToolContext, **kwargs: Any) -> ToolResult:
-        assert ctx.bus is not None, "require_bus should have caught this"
+    async def run(
+        self,
+        **kwargs: Any) -> ToolResult:
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
             return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
 
-        existed = ctx.bus.contact_notes_book.delete(note_id)
+        existed = self.bus.contact_notes_book.delete(note_id)
         logger.info(
             "delete_contact_note: note=%s existed=%s",
             note_id,
