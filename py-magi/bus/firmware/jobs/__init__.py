@@ -92,6 +92,11 @@ from .promptJobs import (
     SetPromptJobBoard,
     SetPromptResult,
 )
+from .runTaskNotifyJob import (
+    RunTaskNotifyJob,
+    RunTaskNotifyJobBoard,
+    RunTaskNotifyResult,
+)
 from .runToolJob import RunToolJob, RunToolJobBoard, RunToolResult
 from .settingsJobs import (
     DeleteSettingJob,
@@ -197,6 +202,9 @@ __all__ = [
     "ChatNotifyJob",
     "ChatNotifyJobBoard",
     "ChatNotifyResult",
+    "RunTaskNotifyJob",
+    "RunTaskNotifyJobBoard",
+    "RunTaskNotifyResult",
     "RunToolJob",
     "RunToolJobBoard",
     "RunToolResult",
