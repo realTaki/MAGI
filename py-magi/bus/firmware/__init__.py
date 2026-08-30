@@ -17,7 +17,7 @@ from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
 from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskSource
-from .books.toolsBook import Tool, ToolSource
+from .books.toolsBook import Tool
 from .jobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -55,6 +55,9 @@ from .jobs import (
     DeleteSettingJob,
     DeleteSettingJobBoard,
     DeleteSettingResult,
+    DeleteToolJob,
+    DeleteToolJobBoard,
+    DeleteToolResult,
     GetContactJob,
     GetContactJobBoard,
     GetContactNoteJob,
@@ -73,6 +76,9 @@ from .jobs import (
     GetSkillJob,
     GetSkillJobBoard,
     GetSkillResult,
+    GetToolJob,
+    GetToolJobBoard,
+    GetToolResult,
     ListContactNotesJob,
     ListContactNotesJobBoard,
     ListContactNotesResult,
@@ -91,6 +97,9 @@ from .jobs import (
     ListSkillsJob,
     ListSkillsJobBoard,
     ListSkillsResult,
+    ListToolsJob,
+    ListToolsJobBoard,
+    ListToolsResult,
     RegisterPromptJob,
     RegisterPromptJobBoard,
     RegisterPromptResult,
@@ -106,6 +115,9 @@ from .jobs import (
     SetSettingJob,
     SetSettingJobBoard,
     SetSettingResult,
+    SetToolJob,
+    SetToolJobBoard,
+    SetToolResult,
     TouchContactJob,
     TouchContactJobBoard,
     TouchContactResult,
@@ -137,6 +149,7 @@ def create_job_boards(
     from .books.memoryBook import MemoryBook
     from .books.messageBook import MessageBook
     from .books.settingsBook import SettingsBook
+    from .books.toolsBook import ToolsBook
 
     contacts = ContactBook(memories)
     contact_notes = ContactNoteBook(memories)
@@ -144,6 +157,7 @@ def create_job_boards(
     memories_book = MemoryBook(memories)
     messages = MessageBook(memories)
     settings = SettingsBook(memories)
+    tools = ToolsBook(memories)
     prompts = PromptsBook(files)
     skills = SkillsBook(files)
     return {
@@ -162,6 +176,10 @@ def create_job_boards(
         SetSettingJob: SetSettingJobBoard(factory, book=settings),
         DeleteSettingJob: DeleteSettingJobBoard(factory, book=settings),
         ListSettingsJob: ListSettingsJobBoard(factory, book=settings),
+        GetToolJob: GetToolJobBoard(factory, book=tools),
+        SetToolJob: SetToolJobBoard(factory, book=tools),
+        DeleteToolJob: DeleteToolJobBoard(factory, book=tools),
+        ListToolsJob: ListToolsJobBoard(factory, book=tools),
         GetSkillJob: GetSkillJobBoard(factory, skills=skills),
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
@@ -199,7 +217,6 @@ __all__ = [
     "Task",
     "TaskSource",
     "Tool",
-    "ToolSource",
     "AppendMessageJob",
     "AppendMessageJobBoard",
     "AppendMessageResult",
@@ -251,6 +268,18 @@ __all__ = [
     "RunToolJob",
     "RunToolJobBoard",
     "RunToolResult",
+    "DeleteToolJob",
+    "DeleteToolJobBoard",
+    "DeleteToolResult",
+    "GetToolJob",
+    "GetToolJobBoard",
+    "GetToolResult",
+    "ListToolsJob",
+    "ListToolsJobBoard",
+    "ListToolsResult",
+    "SetToolJob",
+    "SetToolJobBoard",
+    "SetToolResult",
     "ChangeProviderJob",
     "ChangeProviderJobBoard",
     "ChangeProviderResult",
