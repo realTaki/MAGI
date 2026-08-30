@@ -9,7 +9,6 @@ from bus import (
     CallLLMJob,
     CallLLMResult,
     JobStatus,
-    LLMErrorCode,
 )
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from launcher import Launcher
@@ -52,10 +51,7 @@ def test_launcher_launches_provider_worker() -> None:
         result = _wait_result(publisher, job.id)
         assert result is not None
         assert result.status is JobStatus.FAILED
-        assert result.error_code in {
-            LLMErrorCode.CREDENTIALS_REQUIRED,
-            LLMErrorCode.UNKNOWN,
-        }
+        assert result.error
 
         launcher.shutdown()
         assert not worker.is_alive()

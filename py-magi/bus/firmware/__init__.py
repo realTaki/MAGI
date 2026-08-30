@@ -17,7 +17,6 @@ from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
 from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskSource
-from .books.tokenUsageBook import TokenUsage
 from .jobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -91,10 +90,6 @@ from .jobs import (
     ListSkillsJob,
     ListSkillsJobBoard,
     ListSkillsResult,
-    LLMErrorCode,
-    RecordTokenUsageJob,
-    RecordTokenUsageJobBoard,
-    RecordTokenUsageResult,
     RegisterPromptJob,
     RegisterPromptJobBoard,
     RegisterPromptResult,
@@ -141,7 +136,6 @@ def create_job_boards(
     from .books.memoryBook import MemoryBook
     from .books.messageBook import MessageBook
     from .books.settingsBook import SettingsBook
-    from .books.tokenUsageBook import TokenUsageBook
 
     contacts = ContactBook(memories)
     contact_notes = ContactNoteBook(memories)
@@ -149,7 +143,6 @@ def create_job_boards(
     memories_book = MemoryBook(memories)
     messages = MessageBook(memories)
     settings = SettingsBook(memories)
-    token_usage = TokenUsageBook(memories)
     prompts = PromptsBook(files)
     skills = SkillsBook(files)
     return {
@@ -189,7 +182,6 @@ def create_job_boards(
         GetMemoryJob: GetMemoryJobBoard(factory, book=memories_book),
         ListMemoriesJob: ListMemoriesJobBoard(factory, book=memories_book),
         UpdateMemoryJob: UpdateMemoryJobBoard(factory, book=memories_book),
-        RecordTokenUsageJob: RecordTokenUsageJobBoard(factory, book=token_usage),
     }
 
 
@@ -205,7 +197,6 @@ __all__ = [
     "Setting",
     "Task",
     "TaskSource",
-    "TokenUsage",
     "AppendMessageJob",
     "AppendMessageJobBoard",
     "AppendMessageResult",
@@ -308,8 +299,4 @@ __all__ = [
     "UpdateMemoryJob",
     "UpdateMemoryJobBoard",
     "UpdateMemoryResult",
-    "LLMErrorCode",
-    "RecordTokenUsageJob",
-    "RecordTokenUsageJobBoard",
-    "RecordTokenUsageResult",
 ]

@@ -50,8 +50,7 @@ eva = [
     "python-telegram-bot[ext]>=21.7",
     "apscheduler>=3.10.4",
     "croniter>=2.0.0",  # v3 scheduledTaskBook + TaskWorker (replaces apscheduler cron parsing)
-    "anthropic>=0.39.0",
-    "openai>=1.54.0",
+    "litellm>=1.75.0",
 ]
 dev = [
     "pytest>=8.3.0",
