@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from enum import StrEnum
-from typing import Any, ClassVar, cast
+from typing import ClassVar, cast
 
 from sqlalchemy import Text, delete, select, update
 from sqlalchemy.orm import Mapped, mapped_column
@@ -43,6 +43,10 @@ class BaseJobResult(BaseRecord):
     error: str | None = None
 
 
+type PostPublishHook[JobT: BaseJob, ResultT: BaseJobResult] = Callable[[JobT], ResultT]
+type PostResultHook[ResultT: BaseJobResult] = Callable[[ResultT], None]
+
+
 def error_message(error: Exception) -> str:
     """Return the durable, user-forwardable text for an execution failure."""
     return str(error).strip() or type(error).__name__
@@ -68,19 +72,19 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def __init__(self, factory: EngineFactory, *, book: BaseBook | None = None) -> None:
         self._factory = factory
         self._book = book
-        self._post_publish_slot: list[Callable[..., Any]] = []
-        self._post_result_slot: list[Callable[..., Any]] = []
+        self._post_publish_hooks: list[PostPublishHook[JobT, ResultT]] = []
+        self._post_result_hooks: list[PostResultHook[ResultT]] = []
 
     def _session(self):
         return self._factory.session()
 
-    def _post_publish(self) -> None:
-        for callback in self._post_publish_slot:
-            callback()
+    def _post_publish(self, job: JobT) -> None:
+        for hook in self._post_publish_hooks:
+            hook(job)
 
-    def _post_result(self) -> None:
-        for callback in self._post_result_slot:
-            callback()
+    def _post_result(self, result: ResultT) -> None:
+        for hook in self._post_result_hooks:
+            hook(result)
 
     def publish(self, job: JobT) -> int:
         return self._publish(job)
