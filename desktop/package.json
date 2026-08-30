@@ -10,14 +10,13 @@
     "build:webapp": "npm run build --prefix ../webapp",
     "build": "npm run build:webapp",
     "build:desktop": "npm run build:webapp && electron-builder",
-    "test": "node --test tests/app-store.test.mjs"
+    "test": "npm run test --prefix ../webapp"
   },
   "build": {
     "appId": "ai.magi.app",
     "productName": "MAGI",
     "files": [
       "shell/**",
-      "core/**",
       "package.json"
     ],
     "extraResources": [
@@ -31,8 +30,7 @@
     }
   },
   "dependencies": {
-    "@magi/webapp": "file:../webapp",
-    "sql.js": "^1.13.0"
+    "@magi/webapp": "file:../webapp"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

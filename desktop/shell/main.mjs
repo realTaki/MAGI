@@ -8,8 +8,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { openAppStore } from "@magi/webapp/core/app-store";
+
 import { startShellServer } from "./server.mjs";
-import { openAppStore } from "../core/app-store.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIST = app.isPackaged
