@@ -11,8 +11,8 @@ Local responsibilities:
 - :func:`ensure_webui_running` — idempotent singleton start.
 - :func:`get_webui_status` — current state.
 
-The WebUI product code stays in ``channels.api.app``. This module
-only wires the process / PID / log bookkeeping around it.
+The WebUI product is now the sibling ``app/`` project. This legacy lifecycle
+module remains only until that App service owns web deployment startup.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from startup.config import WEBUI_PORT, StartupConfig
 from startup.paths import (
@@ -32,14 +31,7 @@ from startup.paths import (
     resolve_webui_log_paths,
     resolve_webui_pid_path,
 )
-from startup.process import (
-    claim_pid_file,
-    find_listener_on_port,
-    install_lifecycle_handlers,
-    is_alive,
-    read_pid,
-    reap_orphan_listener,
-)
+from startup.process import find_listener_on_port, is_alive, read_pid, reap_orphan_listener
 
 logger = logging.getLogger("startup.webui")
 
@@ -204,7 +196,7 @@ def get_webui_status(*, config: StartupConfig) -> WebUIStatus:
 
 
 def run_webui_foreground(*, config: StartupConfig) -> None:
-    """Run the control service without creating node storage or workers.
+    """Reject the removed legacy WebUI command.
 
     ``MAGI_WEBUI_PORT`` is set by the detached launcher when an internal
     caller needs a non-default port. Production keeps the canonical
@@ -222,44 +214,10 @@ def run_webui_foreground(*, config: StartupConfig) -> None:
     wired: the WebUI does not own a ``runtime_state`` row, so SIGTERM
     only needs to drop the PID file.
     """
-    import uvicorn
-
-    from old_bus import open_bus
-    from channels.api.app import create_control_app
-    from channels.api.control_context import ControlContext
-
-    # The WebUI is bound to a MAGIS, not a single runtime — derive its
-    # MAGIS connection from the canonical CLI/env inputs instead of
-    # reading a per-workspace cache that no longer exists.
-    magis_url = config.magis_database_url or resolve_magis_database_url(
-        config.host_workspace_dir, config.magis_name
+    del config
+    raise RuntimeError(
+        "The legacy py-magi WebUI has been removed; run the sibling MAGI App service instead."
     )
-    # Control routes use the shared MAGIS Books.  Preserve that mode for an
-    # explicitly foreground-launched WebUI too, not only for its detached
-    # child process.
-    os.environ["MAGIS_DATABASE_URL"] = magis_url
-    # The proxy HMAC secret is read exclusively from the
-    # ``control_secrets`` row on the MAGIS database — no env var is
-    # consulted. ``open_bus`` below opens that row for both
-    # ``_signing_key`` (session cookie signing) and
-    # ``proxy_auth.resolve_control_secret`` (forwarded-request HMAC).
-    # ``magis_name`` is a startup-contract identity (not a secret); it
-    # keys the ``control_secrets`` lookup.
-    os.environ.setdefault("MAGIS_NAME", config.magis_name)
-    # This opens only the provisioned control/MAGIS store.  It never opens a
-    # node-private ``MAGI_Citizens/<name>/memories/magi.db`` and starts no
-    # node worker; target-specific operations are proxied to runtimes.
-    bus = open_bus(magis_url=magis_url)
-    app = create_control_app(context=ControlContext(bus=bus))
-    port = int(os.environ.get("MAGI_WEBUI_PORT", WEBUI_PORT))
-    host = os.environ.get("MAGI_WEBUI_HOST", DEFAULT_WEBUI_HOST)
-    pid_path = resolve_webui_pid_path(config.host_workspace_dir)
-    claim_pid_file(pid_path)
-    cleanup = install_lifecycle_handlers(pid_path)
-    try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
-    finally:
-        cleanup.run_once()
 
 
 # ----------------------------------------------------------------------
