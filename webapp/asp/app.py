@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import AfterValidator, BaseModel, Field
 
 from .service import (
@@ -81,12 +81,25 @@ class ReopenBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# App factory
+# Router factory
 # ---------------------------------------------------------------------------
 
 
-def create_app(seed: dict[str, str]) -> FastAPI:
-    app = FastAPI(title="ASP local operator", version="0.1.0")
+@dataclass
+class AspOperator:
+    """The ASP subsystem owned and started by the Webapp service."""
+
+    router: APIRouter
+    store: Store
+    transport: Transport
+
+    async def close(self) -> None:
+        await self.transport.close()
+
+
+def create_operator(seed: dict[str, str]) -> AspOperator:
+    """Create ASP routes without creating a second FastAPI application."""
+    router = APIRouter()
 
     store = Store()
     store.seed_agents(seed)
@@ -110,7 +123,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
     # 201 Created per RFC 9110 §15.3.2: a new session resource is identified
     # by `session_id`. Lifecycle verbs (join, invite, leave, end, reopen)
     # mutate state without creating a top-level resource and stay 200.
-    @app.post("/sessions", status_code=201)
+    @router.post("/sessions", status_code=201)
     async def post_sessions(body: CreateSessionBody, request: Request):
         creator = auth_handle(request)
         if body.end_after_send and body.initial_message is None:
@@ -135,7 +148,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             out["sequence"] = result.sequence
         return out
 
-    @app.post("/sessions/{session_id}/join")
+    @router.post("/sessions/{session_id}/join")
     async def post_join(session_id: str, request: Request):
         handle = auth_handle(request)
         try:
@@ -148,7 +161,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         return {"ok": True}
 
-    @app.post("/sessions/{session_id}/invite")
+    @router.post("/sessions/{session_id}/invite")
     async def post_invite(session_id: str, body: InviteBody, request: Request):
         caller = auth_handle(request)
         try:
@@ -161,7 +174,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
 
     # 201 Created per RFC 9110 §15.3.2: a new message resource is identified
     # by `message_id`.
-    @app.post("/sessions/{session_id}/messages", status_code=201)
+    @router.post("/sessions/{session_id}/messages", status_code=201)
     async def post_message(session_id: str, body: SendMessageBody, request: Request):
         sender = auth_handle(request)
         try:
@@ -180,7 +193,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         return {"message_id": result.message_id, "sequence": result.sequence}
 
-    @app.post("/sessions/{session_id}/leave")
+    @router.post("/sessions/{session_id}/leave")
     async def post_leave(session_id: str, request: Request):
         handle = auth_handle(request)
         try:
@@ -193,7 +206,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         return {"ok": True}
 
-    @app.post("/sessions/{session_id}/end")
+    @router.post("/sessions/{session_id}/end")
     async def post_end(session_id: str, request: Request):
         handle = auth_handle(request)
         try:
@@ -206,7 +219,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         return {"ok": True}
 
-    @app.post("/sessions/{session_id}/reopen")
+    @router.post("/sessions/{session_id}/reopen")
     async def post_reopen(session_id: str, body: ReopenBody, request: Request):
         handle = auth_handle(request)
         try:
@@ -226,7 +239,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
             raise HTTPException(status_code=404, detail="not found")
         return {"ok": True}
 
-    @app.get("/sessions/{session_id}")
+    @router.get("/sessions/{session_id}")
     async def get_session(session_id: str, request: Request):
         caller = auth_handle(request)
         try:
@@ -234,7 +247,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
         except NotFound:
             raise HTTPException(status_code=404, detail="not found")
 
-    @app.get("/sessions/{session_id}/events")
+    @router.get("/sessions/{session_id}/events")
     async def get_session_events(
         session_id: str,
         request: Request,
@@ -250,7 +263,7 @@ def create_app(seed: dict[str, str]) -> FastAPI:
 
     # ---- WebSocket -----------------------------------------------------
 
-    @app.websocket("/connect")
+    @router.websocket("/connect")
     async def ws_connect(ws: WebSocket):
         # Headers come in via the upgrade request.
         auth_header = ws.headers.get("authorization", "")
@@ -273,4 +286,4 @@ def create_app(seed: dict[str, str]) -> FastAPI:
         # blocked behind session.disconnected fan-out.
         asyncio.create_task(transport.disconnect(agent.handle, ws))
 
-    return app
+    return AspOperator(router=router, store=store, transport=transport)
