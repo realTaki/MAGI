@@ -35,7 +35,7 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
         # Setup is Firmware-internal; TaskWorker itself sees only JobBoards.
         task_book = TaskBook(bus._memories)
         task_id = task_book.add(
-            Task(name="daily", prompt="summarise progress", cron="0 9 * * *")
+            Task(name="daily", prompt="summarise progress")
         )
         worker = TaskWorker(poll_seconds=0.01)
         assert worker.attach(bus)
