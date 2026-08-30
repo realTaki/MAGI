@@ -38,7 +38,7 @@ class SharedLLMWorker(BaseWorker):
 
 class GateWorker(BaseWorker):
     worker_name = "gate-one"
-    required_slots = (SlotTag(CallLLMJob, "submit_post_result"),)
+    required_slots = (SlotTag(CallLLMJob, "claim_post_result"),)
 
 
 class SecondSharedLLMWorker(SharedLLMWorker):

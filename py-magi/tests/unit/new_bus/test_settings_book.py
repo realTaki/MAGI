@@ -63,7 +63,8 @@ def test_set_replaces_a_value_without_creating_a_second_key(tmp_path) -> None:
 
 def test_get_and_delete_setting(tmp_path) -> None:
     bus = Bus(tmp_path)
-    _publish(bus, SetSettingJob(key="feature.enabled", value="true"))
+    written = _publish(bus, SetSettingJob(key="feature.enabled", value="true"))
+    assert _result(bus, written) is not None
 
     fetched = _result(bus, _publish(bus, GetSettingJob(key="feature.enabled")))
     assert fetched is not None and fetched.value == "true"
@@ -90,6 +91,7 @@ def test_settings_survive_sqlite_reopen(tmp_path) -> None:
     first = Bus(workspace)
     try:
         created = _publish(first, SetSettingJob(key="ui.theme", value="dark"))
+        assert _result(first, created) is not None
     finally:
         first.close()
 

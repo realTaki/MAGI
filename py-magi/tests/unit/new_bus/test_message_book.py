@@ -81,7 +81,7 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
     assert message.contact_id == speaker_id
     assert message.content == "hello"
 
-    _publish(
+    second = _publish(
         bus,
         AppendMessageJob(
             conversation_id=conversation_id,
@@ -89,6 +89,7 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
             content="hi",
         ),
     )
+    assert _result(bus, second) is not None
     listed = _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id))
     transcript = _result(bus, listed)
     assert transcript is not None
@@ -105,10 +106,11 @@ def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -
     first_outcome = _result(bus, first)
     assert first_outcome is not None
     assert first_outcome.message_id is not None
-    _publish(
+    second = _publish(
         bus,
         AppendMessageJob(conversation_id=conversation_id, contact_id=speaker_id, content="new"),
     )
+    assert _result(bus, second) is not None
 
     archived = _publish(
         bus,
