@@ -14,7 +14,7 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import ClassVar, cast
 
-from sqlalchemy import Text, delete, select, update
+from sqlalchemy import Text, delete, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -129,15 +129,8 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             )
             if row is None:
                 return None
-            changed = session.execute(
-                update(row_cls)
-                .where(row_cls.id == row.id, row_cls.status == JobStatus.PENDING.value)
-                .values(status=JobStatus.CLAIMED.value)
-            )
-            if getattr(changed, "rowcount", 0) != 1:
-                return None
-            session.commit()
             row.status = JobStatus.CLAIMED.value
+            session.commit()
             return cast(type[JobT], self.job_cls).from_row(row)
 
     def submit_result(self, result: BaseJobResult) -> bool:
