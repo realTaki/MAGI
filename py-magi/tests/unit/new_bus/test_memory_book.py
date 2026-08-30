@@ -18,7 +18,7 @@ from bus.firmware.jobs.memoryJobs import (
     ListMemoriesJobBoard,
     UpdateMemoryJobBoard,
 )
-from tests.unit.new_bus.testing import attach_board
+from tests.unit.new_bus.testing import attach_board, wait_result
 
 BOARD_BY_JOB = {
     CreateMemoryJob: CreateMemoryJobBoard,
@@ -37,7 +37,7 @@ def _publish(bus: Bus, job: BaseJob) -> BaseJob:
 
 def _result(bus: Bus, job: BaseJob):
     board = attach_board(bus, BOARD_BY_JOB[type(job)])
-    return board.get_result(job.id)
+    return wait_result(board, job.id)
 
 
 def test_memory_kind_covers_the_three_horizons() -> None:

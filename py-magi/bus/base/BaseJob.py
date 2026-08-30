@@ -93,7 +93,10 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
-        values["status"] = JobStatus.PREPARING.value
+        hooks = self._post_publish_hooks
+        values["status"] = (
+            JobStatus.PREPARING.value if hooks else JobStatus.PENDING.value
+        )
         with self._session() as session:
             row = type(self).row_cls(**values)
             session.add(row)
@@ -103,7 +106,10 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return job_id
 
     async def _post_publish(self, job: JobT) -> None:
-        gathered = await wait(self._post_publish_hooks, job)
+        hooks = self._post_publish_hooks
+        if not hooks:
+            return
+        gathered = await wait(hooks, job)
         errors = [item.error for item in gathered if item.error]
         failed = any(item.status is JobStatus.FAILED for item in gathered)
         with self._session() as session:
