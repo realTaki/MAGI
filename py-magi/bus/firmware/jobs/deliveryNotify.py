@@ -11,12 +11,12 @@ from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 
 
 @dataclass
-class DeliveryNotifyJob(BaseJob):
+class DeliveryNotify(BaseJob):
     """One outbound reply to deliver.
 
     ``text`` is the body; ``conversation_id`` is the session it belongs
     to. Channel and delivery address live on the Conversation row, not
-    on this Job.
+    on this notify.
     """
 
     conversation_id: int | None = None
@@ -28,16 +28,16 @@ class DeliveryNotifyResult(BaseJobResult):
     """Channel acknowledgement. Failures use ``status`` and ``error``."""
 
 
-class DeliveryNotifyJobRow(BaseJobRow):
+class DeliveryNotifyRow(BaseJobRow):
     __tablename__ = "jobs_delivery_notify"
 
     conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
-class DeliveryNotifyJobBoard(
-    BaseJobBoard[DeliveryNotifyJob, DeliveryNotifyResult, DeliveryNotifyJobRow]
+class DeliveryNotifyBoard(
+    BaseJobBoard[DeliveryNotify, DeliveryNotifyResult, DeliveryNotifyRow]
 ):
-    job_cls = DeliveryNotifyJob
+    job_cls = DeliveryNotify
     result_cls = DeliveryNotifyResult
-    row_cls = DeliveryNotifyJobRow
+    row_cls = DeliveryNotifyRow

@@ -1,4 +1,4 @@
-"""Provider configuration change work for the provider Worker."""
+"""Provider configuration change notify for the provider Worker."""
 
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ PROVIDER_MODEL_KEY = "provider.model"
 
 
 @dataclass
-class ChangeProviderJob(BaseJob):
+class ChangeProviderNotify(BaseJob):
     """Replace the Runtime's provider configuration.
 
     A non-empty field replaces its setting; an empty field is skipped.
     Publishing persists the supplied settings atomically before the provider
-    Worker claims this job and rebuilds its in-memory client.
+    Worker claims this notify and rebuilds its in-memory client.
     """
 
     provider: str = ""
@@ -31,26 +31,26 @@ class ChangeProviderJob(BaseJob):
 
 
 @dataclass
-class ChangeProviderResult(BaseJobResult):
-    pass
+class ChangeProviderNotifyResult(BaseJobResult):
+    """Rebuild acknowledgement. Failures use ``status`` and ``error``."""
 
 
-class ChangeProviderJobRow(BaseJobRow):
-    __tablename__ = "jobs_change_provider"
+class ChangeProviderNotifyRow(BaseJobRow):
+    __tablename__ = "jobs_change_provider_notify"
 
     provider: Mapped[str] = mapped_column(Text, nullable=False, default="")
     api_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
     model: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
-class ChangeProviderJobBoard(
-    BaseJobBoard[ChangeProviderJob, ChangeProviderResult, ChangeProviderJobRow]
+class ChangeProviderNotifyBoard(
+    BaseJobBoard[ChangeProviderNotify, ChangeProviderNotifyResult, ChangeProviderNotifyRow]
 ):
-    job_cls = ChangeProviderJob
-    result_cls = ChangeProviderResult
-    row_cls = ChangeProviderJobRow
+    job_cls = ChangeProviderNotify
+    result_cls = ChangeProviderNotifyResult
+    row_cls = ChangeProviderNotifyRow
 
-    def _publish(self, job: ChangeProviderJob) -> int:
+    def _publish(self, job: ChangeProviderNotify) -> int:
         """Atomically persist configuration and enqueue its rebuild signal."""
         now = utcnow()
         prepared = replace(job, created_at=now, updated_at=now)
@@ -74,7 +74,7 @@ class ChangeProviderJobBoard(
                     setting.value = value
             books.commit()
         with self._session() as session:
-            row = ChangeProviderJobRow(**values)
+            row = ChangeProviderNotifyRow(**values)
             session.add(row)
             session.commit()
             return int(row.id)
