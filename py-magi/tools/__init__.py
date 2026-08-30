@@ -1,10 +1,7 @@
 """MAGI capability layer — tools, Skills and MCP integration.
 
-See :mod:`tools.registry` for the public
-entry point. Tools are imported lazily to keep cold-start
-fast and to support per-test patching.
-
-Lifecycle is owned by :class:`startup.workers.WorkerRegistry`.
+See :mod:`tools.registry` for the dispatch map. Lifecycle of
+:class:`ToolsWorker` is owned by the launcher.
 """
 
 from tools.worker import ToolsWorker
