@@ -1,15 +1,10 @@
 from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult
-from .chatNotify import ChatNotify, ChatNotifyBoard, ChatNotifyResult
-from .deliveryNotify import (
-    DeliveryNotify,
-    DeliveryNotifyBoard,
-    DeliveryNotifyResult,
-)
 from .changeProviderNotify import (
     ChangeProviderNotify,
     ChangeProviderNotifyBoard,
     ChangeProviderNotifyResult,
 )
+from .chatNotify import ChatNotify, ChatNotifyBoard, ChatNotifyResult
 from .contactJobs import (
     CreateContactJob,
     CreateContactJobBoard,
@@ -54,6 +49,11 @@ from .conversationJobs import (
     UpdateConversationSummaryJob,
     UpdateConversationSummaryJobBoard,
     UpdateConversationSummaryResult,
+)
+from .deliveryNotify import (
+    DeliveryNotify,
+    DeliveryNotifyBoard,
+    DeliveryNotifyResult,
 )
 from .memoryJobs import (
     CreateMemoryJob,
@@ -124,6 +124,14 @@ from .skillJobs import (
     ListSkillsJob,
     ListSkillsJobBoard,
     ListSkillsResult,
+)
+from .taskJobs import (
+    GetTaskJob,
+    GetTaskJobBoard,
+    GetTaskResult,
+    ListTasksJob,
+    ListTasksJobBoard,
+    ListTasksResult,
 )
 from .toolsBookJobs import (
     DeleteToolJob,
@@ -213,6 +221,12 @@ __all__ = [
     "RunTaskNotify",
     "RunTaskNotifyBoard",
     "RunTaskNotifyResult",
+    "GetTaskJob",
+    "GetTaskJobBoard",
+    "GetTaskResult",
+    "ListTasksJob",
+    "ListTasksJobBoard",
+    "ListTasksResult",
     "RunToolJob",
     "RunToolJobBoard",
     "RunToolResult",

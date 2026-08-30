@@ -25,8 +25,6 @@ def firmware_metadata() -> MetaData:
     from ..jobs.callLLMJob import CallLLMJobRow  # noqa: F401
     from ..jobs.changeProviderNotify import ChangeProviderNotifyRow  # noqa: F401
     from ..jobs.chatNotify import ChatNotifyRow  # noqa: F401
-    from ..jobs.deliveryNotify import DeliveryNotifyRow  # noqa: F401
-    from ..jobs.runTaskNotify import RunTaskNotifyRow  # noqa: F401
     from ..jobs.contactJobs import (  # noqa: F401
         CreateContactJobRow,
         DeleteContactJobRow,
@@ -46,6 +44,7 @@ def firmware_metadata() -> MetaData:
         CreateConversationJobRow,
         UpdateConversationSummaryJobRow,
     )
+    from ..jobs.deliveryNotify import DeliveryNotifyRow  # noqa: F401
     from ..jobs.memoryJobs import (  # noqa: F401
         CreateMemoryJobRow,
         DeleteMemoryJobRow,
@@ -64,6 +63,7 @@ def firmware_metadata() -> MetaData:
         ResetPromptJobRow,
         SetPromptJobRow,
     )
+    from ..jobs.runTaskNotify import RunTaskNotifyRow  # noqa: F401
     from ..jobs.runToolJob import RunToolJobRow  # noqa: F401
     from ..jobs.settingsJobs import (  # noqa: F401
         DeleteSettingJobRow,
@@ -72,6 +72,7 @@ def firmware_metadata() -> MetaData:
         SetSettingJobRow,
     )
     from ..jobs.skillJobs import GetSkillJobRow, ListSkillsJobRow  # noqa: F401
+    from ..jobs.taskJobs import GetTaskJobRow, ListTasksJobRow  # noqa: F401
     from ..jobs.toolsBookJobs import (  # noqa: F401
         DeleteToolJobRow,
         GetToolJobRow,
