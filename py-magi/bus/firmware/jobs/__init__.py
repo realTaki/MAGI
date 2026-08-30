@@ -1,14 +1,14 @@
 from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult
-from .chatNotifyJob import ChatNotifyJob, ChatNotifyJobBoard, ChatNotifyResult
-from .deliveryNotifyJob import (
-    DeliveryNotifyJob,
-    DeliveryNotifyJobBoard,
+from .chatNotify import ChatNotify, ChatNotifyBoard, ChatNotifyResult
+from .deliveryNotify import (
+    DeliveryNotify,
+    DeliveryNotifyBoard,
     DeliveryNotifyResult,
 )
-from .changeProviderJob import (
-    ChangeProviderJob,
-    ChangeProviderJobBoard,
-    ChangeProviderResult,
+from .changeProviderNotify import (
+    ChangeProviderNotify,
+    ChangeProviderNotifyBoard,
+    ChangeProviderNotifyResult,
 )
 from .contactJobs import (
     CreateContactJob,
@@ -97,9 +97,9 @@ from .promptJobs import (
     SetPromptJobBoard,
     SetPromptResult,
 )
-from .runTaskNotifyJob import (
-    RunTaskNotifyJob,
-    RunTaskNotifyJobBoard,
+from .runTaskNotify import (
+    RunTaskNotify,
+    RunTaskNotifyBoard,
     RunTaskNotifyResult,
 )
 from .runToolJob import RunToolJob, RunToolJobBoard, RunToolResult
@@ -204,14 +204,14 @@ __all__ = [
     "CallLLMJob",
     "CallLLMJobBoard",
     "CallLLMResult",
-    "ChatNotifyJob",
-    "ChatNotifyJobBoard",
+    "ChatNotify",
+    "ChatNotifyBoard",
     "ChatNotifyResult",
-    "DeliveryNotifyJob",
-    "DeliveryNotifyJobBoard",
+    "DeliveryNotify",
+    "DeliveryNotifyBoard",
     "DeliveryNotifyResult",
-    "RunTaskNotifyJob",
-    "RunTaskNotifyJobBoard",
+    "RunTaskNotify",
+    "RunTaskNotifyBoard",
     "RunTaskNotifyResult",
     "RunToolJob",
     "RunToolJobBoard",
@@ -228,9 +228,9 @@ __all__ = [
     "SetToolJob",
     "SetToolJobBoard",
     "SetToolResult",
-    "ChangeProviderJob",
-    "ChangeProviderJobBoard",
-    "ChangeProviderResult",
+    "ChangeProviderNotify",
+    "ChangeProviderNotifyBoard",
+    "ChangeProviderNotifyResult",
     "CreateContactJob",
     "CreateContactJobBoard",
     "CreateContactResult",
