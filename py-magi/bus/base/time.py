@@ -1,13 +1,14 @@
-"""BUS clock. Time on Book and Job is BaseTime."""
+"""BUS clock and JSON encoding for typed BUS results."""
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any, get_args
 
 
 class BaseTime(datetime):
-    """Naive UTC time."""
+    """Naive UTC time. Nested JSON results encode as ISO-8601."""
 
     def __new__(cls, *args, **kwargs):
         kwargs.pop("tzinfo", None)
@@ -38,6 +39,17 @@ class BaseTime(datetime):
 def utcnow() -> BaseTime:
     now = datetime.now(UTC).replace(tzinfo=None)
     return BaseTime(now.year, now.month, now.day, now.hour, now.minute, now.second, now.microsecond)
+
+
+def dump_json(value: Any) -> str:
+    """Encode JSON job-result payloads, including nested ``BaseTime`` values."""
+
+    def default(item: Any) -> str:
+        if isinstance(item, datetime):
+            return item.isoformat()
+        raise TypeError(f"Object of type {type(item).__name__} is not JSON serializable")
+
+    return json.dumps(value, default=default)
 
 
 def load_dt(annotation: Any, value: Any) -> Any:
