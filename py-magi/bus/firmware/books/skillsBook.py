@@ -42,10 +42,7 @@ class SkillsBook(BaseFileBook):
         return self._files.exists_file(f"{name}/{_SKILL_FILE}")
 
     def read(self, name: str) -> str | None:
-        try:
-            return self._files.read_text(f"{name}/{_SKILL_FILE}")
-        except (FileNotFoundError, ValueError):
-            return None
+        return self._files.read_text(f"{name}/{_SKILL_FILE}")
 
     def _skill_dirs(self) -> list[str]:
         return [

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-import pytest
-
 from bus import Bus, FileEngine
+from bus.base.BaseJob import JobStatus
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
+from bus.firmware.jobs.promptJobs import (
+    ResetPromptJob,
+    ResetPromptJobBoard,
+    SetPromptJob,
+    SetPromptJobBoard,
+)
 
 
 def test_file_engine_creates_book_directories(tmp_path) -> None:
@@ -15,9 +20,8 @@ def test_file_engine_creates_book_directories(tmp_path) -> None:
 
 def test_file_store_reads_writes_and_deletes_within_one_book(tmp_path) -> None:
     store = FileEngine(tmp_path / "workspace").book("notes")
-    path = store.write_text("a.md", "hello")
-    assert path.is_file()
-    assert path.parent == tmp_path / "workspace" / "notes"
+    assert store.write_text("a.md", "hello") is True
+    assert store.directory == tmp_path / "workspace" / "notes"
     assert store.read_text("a.md") == "hello"
     assert store.file_names() == ["a.md"]
     assert store.delete_file("a.md") is True
@@ -26,15 +30,14 @@ def test_file_store_reads_writes_and_deletes_within_one_book(tmp_path) -> None:
 
 def test_file_store_rejects_path_escape(tmp_path) -> None:
     store = FileEngine(tmp_path / "workspace").book("notes")
-    with pytest.raises(ValueError, match="workspace"):
-        store.write_text("../escape.md", "no")
-    with pytest.raises(ValueError, match="workspace"):
-        store.read_text("/etc/passwd")
+    assert store.write_text("../escape.md", "no") is False
+    assert store.read_text("/etc/passwd") is None
+    assert store.delete_file("") is False
 
 
 def test_file_store_writes_nested_names(tmp_path) -> None:
     store = FileEngine(tmp_path / "workspace").book("notes")
-    store.write_text("agent/soul.md", "nested")
+    assert store.write_text("agent/soul.md", "nested") is True
     assert store.read_text("agent/soul.md") == "nested"
     assert store.file_names() == ["agent/soul.md"]
 
@@ -50,6 +53,8 @@ def test_prompts_book_round_trip(tmp_path) -> None:
     assert book.get(key="agent/soul") == "custom soul"
     book.reset(key="agent/soul")
     assert book.get(key="agent/soul") == "newer default"
+    assert book.set(key="../outside", value="bad") is False
+    assert book.get(key="agent/defaults/soul") is None
 
 
 def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
@@ -60,9 +65,37 @@ def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
     body = book.read("web_lookup")
     assert "Web 检索" in body
     assert book.read("does-not-exist") is None
-    files.book("skills").write_text("web_lookup/SKILL.md", "operator copy")
+    assert files.book("skills").write_text("web_lookup/SKILL.md", "operator copy") is True
     again = SkillsBook(files)
     assert again.read("web_lookup") == "operator copy"
+
+
+def test_file_store_returns_false_when_target_is_a_directory(tmp_path) -> None:
+    store = FileEngine(tmp_path / "workspace").book("notes")
+    assert store.directory is not None
+    (store.directory / "not-a-file").mkdir()
+    assert store.write_text("not-a-file", "content") is False
+
+
+class _FailingPromptsBook:
+    def set(self, *, key: str, value: str) -> bool:
+        del key, value
+        return False
+
+    def reset(self, *, key: str) -> bool:
+        del key
+        return False
+
+
+def test_prompt_jobs_record_file_failures() -> None:
+    prompts = _FailingPromptsBook()
+    set_board = object.__new__(SetPromptJobBoard)
+    set_board._prompts = prompts
+    reset_board = object.__new__(ResetPromptJobBoard)
+    reset_board._prompts = prompts
+
+    assert set_board._execute(SetPromptJob()).status is JobStatus.FAILED
+    assert reset_board._execute(ResetPromptJob()).status is JobStatus.FAILED
 
 
 def test_bus_opens_file_books(tmp_path) -> None:
