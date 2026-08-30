@@ -56,11 +56,7 @@ class ChangeProviderJobBoard(
         prepared = replace(job, created_at=now, updated_at=now)
         values = prepared.to_dict()
         values.pop("id", None)
-        values["status"] = (
-            JobStatus.PREPARING.value
-            if self._slot_held("post_publish")
-            else JobStatus.PENDING.value
-        )
+        values["status"] = JobStatus.PREPARING.value
         with self._session() as session:
             for key, value in (
                 (PROVIDER_NAME_KEY, job.provider),

@@ -31,9 +31,9 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
             JobT | None, self._bus._invoke(self._worker_id, self._job_type, "claim_post_publish")
         )
 
-    def submit_post_publish(self, job: JobT, result: BaseJobResult) -> bool:
+    def submit_post_publish(self, result: BaseJobResult) -> bool:
         return bool(
-            self._bus._invoke(self._worker_id, self._job_type, "submit_post_publish", job, result)
+            self._bus._invoke(self._worker_id, self._job_type, "submit_post_publish", result)
         )
 
     def claim(self) -> JobT | None:
@@ -45,11 +45,6 @@ class JobBoardClient[JobT: BaseJob, ResultT: BaseJobResult]:
     def claim_post_result(self) -> JobT | None:
         return cast(
             JobT | None, self._bus._invoke(self._worker_id, self._job_type, "claim_post_result")
-        )
-
-    def submit_post_result(self, job_id: int, result: ResultT) -> bool:
-        return bool(
-            self._bus._invoke(self._worker_id, self._job_type, "submit_post_result", job_id, result)
         )
 
     def get_result(self, job_id: int) -> ResultT | None:
