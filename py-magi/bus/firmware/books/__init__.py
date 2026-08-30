@@ -8,6 +8,7 @@ from .promptsBook import KNOWN_PROMPTS, PromptsBook
 from .settingsBook import Setting, SettingsBook
 from .skillsBook import SkillsBook
 from .taskBook import Task, TaskBook, TaskSource
+from .toolsBook import Tool, ToolsBook, ToolSource
 
 __all__ = [
     "Contact",
@@ -31,4 +32,7 @@ __all__ = [
     "Task",
     "TaskBook",
     "TaskSource",
+    "Tool",
+    "ToolsBook",
+    "ToolSource",
 ]

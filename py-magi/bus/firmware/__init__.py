@@ -17,6 +17,7 @@ from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
 from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskSource
+from .books.toolsBook import Tool, ToolSource
 from .jobs import (
     AppendMessageJob,
     AppendMessageJobBoard,
@@ -197,6 +198,8 @@ __all__ = [
     "Setting",
     "Task",
     "TaskSource",
+    "Tool",
+    "ToolSource",
     "AppendMessageJob",
     "AppendMessageJobBoard",
     "AppendMessageResult",
