@@ -66,8 +66,8 @@ dev = [
 ]
 
 [project.scripts]
-# One MAGI: BUS, workers, ASP client onto webapp/asp.
-magi = "magi.__main__:main"
+# One BUS runtime: workers, including the ASP channel, attach to it.
+magi = "bus.__main__:main"
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]
@@ -79,7 +79,6 @@ include = [
     "agent*",
     "bus*",
     "channels*",
-    "magi*",
     "mcp*",
     "old_bus*",
     "proactive*",
