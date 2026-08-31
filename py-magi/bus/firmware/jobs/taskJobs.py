@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import JSON, Boolean, Integer, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
 from ..books.taskBook import Task, TaskRow
 
@@ -43,7 +43,12 @@ class GetTaskJobBoard(OperateBookJobBoard[GetTaskJob, GetTaskResult, GetTaskJobR
 
     def _execute(self, session: Session, job: GetTaskJob) -> GetTaskResult:
         row = session.get(TaskRow, job.task_id)
-        return GetTaskResult(task=None if row is None else Task.from_row(row))
+        if row is None:
+            return GetTaskResult(
+                status=JobStatus.FAILED,
+                error=f"task {job.task_id} does not exist",
+            )
+        return GetTaskResult(task=Task.from_row(row))
 
 
 @dataclass

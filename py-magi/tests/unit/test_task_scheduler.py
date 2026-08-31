@@ -6,16 +6,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from bus import (
-    Bus,
-    ChatNotify,
-    GetTaskJob,
-    JobStatus,
-    RunTaskNotify,
-    RunTaskNotifyResult,
-    Task,
-    go,
-)
+from bus import Bus, ChatNotify, GetTaskJob, JobStatus, RunTaskNotify, Task, go
 from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
@@ -40,24 +31,14 @@ def test_should_fire_cron_coalesces_each_window() -> None:
     assert worker._should_fire(task, now) is False
 
 
-def test_run_task_notify_result_updates_the_task_timestamp(tmp_path) -> None:
+def test_run_task_notify_publish_updates_the_task_timestamp(tmp_path) -> None:
     with Bus(tmp_path) as bus:
         task_book = TaskBook(bus._memories)
         task_id = task_book.add(Task(name="daily", prompt="summarise progress"))
         before_fire = task_book.get(task_id)
         assert before_fire is not None
 
-        board = bus.board(RunTaskNotify)
-        board.publish(RunTaskNotify(task_id=task_id))
-        claimed = None
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline:
-            claimed = board.claim()
-            if claimed is not None:
-                break
-            time.sleep(0.01)
-        assert claimed is not None
-        assert board.submit_result(RunTaskNotifyResult(id=claimed.id))
+        bus.board(RunTaskNotify).publish(RunTaskNotify(task_id=task_id))
 
         after_fire = task_book.get(task_id)
         assert after_fire is not None
@@ -101,7 +82,13 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
             assert fired_task.task is not None
             assert fired_task.task.updated_at > before_fire.updated_at
 
-            chat = chat_board.claim()
+            chat = None
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                chat = chat_board.claim()
+                if chat is not None:
+                    break
+                time.sleep(0.01)
             assert chat is not None
             assert chat.conversation_id is None
             assert "name: daily" in chat.text
