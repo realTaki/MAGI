@@ -92,7 +92,7 @@ class BaseWorker:
 
     def submit(self, job_type: type[BaseJob], result: BaseJobResult) -> None:
         """Accept a Job result without waiting."""
-        go(self.board(job_type).submit_result, result)
+        go(self.board(job_type).submit_result(result))
 
     async def call(self, fn, /, *args, **kwargs):
         """Run a synchronous BUS operation away from the listen loop."""

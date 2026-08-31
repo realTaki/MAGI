@@ -188,3 +188,13 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             )
             session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
+
+
+class NotifyJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
+    BaseJobBoard[JobT, ResultT, RowT]
+):
+    """Claimable notify work. ``publish`` is async so callers ``go(board.publish(job))``."""
+
+    async def publish(self, job: JobT) -> int:
+        return super().publish(job)
+

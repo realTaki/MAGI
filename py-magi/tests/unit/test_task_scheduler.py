@@ -38,7 +38,7 @@ def test_run_task_notify_publish_updates_the_task_timestamp(tmp_path) -> None:
         before_fire = task_book.get(task_id)
         assert before_fire is not None
 
-        bus.board(RunTaskNotify).publish(RunTaskNotify(task_id=task_id))
+        go(bus.board(RunTaskNotify).publish(RunTaskNotify(task_id=task_id))).result()
 
         after_fire = task_book.get(task_id)
         assert after_fire is not None
@@ -61,7 +61,7 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
             chat_board = bus.board(ChatNotify)
             assert trigger_board is not None
             assert chat_board is not None
-            trigger_id = trigger_board.publish(RunTaskNotify(task_id=task_id))
+            trigger_id = go(trigger_board.publish(RunTaskNotify(task_id=task_id))).result()
 
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:
@@ -104,7 +104,7 @@ def test_worker_marks_unknown_task_trigger_failed(tmp_path) -> None:
         try:
             trigger_board = bus.board(RunTaskNotify)
             assert trigger_board is not None
-            trigger_id = trigger_board.publish(RunTaskNotify(task_id=999))
+            trigger_id = go(trigger_board.publish(RunTaskNotify(task_id=999))).result()
 
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:

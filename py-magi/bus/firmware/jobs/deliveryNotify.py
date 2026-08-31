@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, NotifyJobBoard
 
 
 @dataclass
@@ -36,7 +36,7 @@ class DeliveryNotifyRow(BaseJobRow):
 
 
 class DeliveryNotifyBoard(
-    BaseJobBoard[DeliveryNotify, DeliveryNotifyResult, DeliveryNotifyRow]
+    NotifyJobBoard[DeliveryNotify, DeliveryNotifyResult, DeliveryNotifyRow]
 ):
     job_cls = DeliveryNotify
     result_cls = DeliveryNotifyResult
