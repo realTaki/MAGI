@@ -24,7 +24,7 @@ class SecondSharedLLMWorker(SharedLLMWorker):
 
 
 def _wait_result(board, job_id: int, *, timeout: float = 2.0):
-    return go(board.get_result(job_id, timeout=timeout)).result()
+    return board.get_result(job_id, timeout=timeout)
 
 
 def _wait_claim(board, *, timeout: float = 2.0):

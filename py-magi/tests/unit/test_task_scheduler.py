@@ -6,7 +6,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from bus import Bus, ChatNotify, GetTaskJob, JobStatus, RunTaskNotify, Task, go
+from bus import Bus, ChatNotify, GetTaskJob, JobStatus, RunTaskNotify, Task
 from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
@@ -38,7 +38,7 @@ def test_run_task_notify_publish_updates_the_task_timestamp(tmp_path) -> None:
         before_fire = task_book.get(task_id)
         assert before_fire is not None
 
-        go(bus.board(RunTaskNotify).publish(RunTaskNotify(task_id=task_id))).result()
+        bus.board(RunTaskNotify).publish(RunTaskNotify(task_id=task_id))
 
         after_fire = task_book.get(task_id)
         assert after_fire is not None
@@ -61,7 +61,7 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
             chat_board = bus.board(ChatNotify)
             assert trigger_board is not None
             assert chat_board is not None
-            trigger_id = go(trigger_board.publish(RunTaskNotify(task_id=task_id))).result()
+            trigger_id = trigger_board.publish(RunTaskNotify(task_id=task_id))
 
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:
@@ -70,14 +70,14 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
                 time.sleep(0.01)
             assert trigger_board.check_job_status(trigger_id) is JobStatus.COMPLETED
 
-            trigger_result = go(trigger_board.get_result(trigger_id)).result()
+            trigger_result = trigger_board.get_result(trigger_id)
             assert trigger_result is not None
             assert trigger_result.status is JobStatus.COMPLETED
 
             task_board = bus.board(GetTaskJob)
             assert task_board is not None
-            task_job_id = go(task_board.publish(GetTaskJob(task_id=task_id))).result()
-            fired_task = go(task_board.get_result(task_job_id)).result()
+            task_job_id = task_board.publish(GetTaskJob(task_id=task_id))
+            fired_task = task_board.get_result(task_job_id)
             assert fired_task is not None
             assert fired_task.task is not None
             assert fired_task.task.updated_at > before_fire.updated_at
@@ -104,7 +104,7 @@ def test_worker_marks_unknown_task_trigger_failed(tmp_path) -> None:
         try:
             trigger_board = bus.board(RunTaskNotify)
             assert trigger_board is not None
-            trigger_id = go(trigger_board.publish(RunTaskNotify(task_id=999))).result()
+            trigger_id = trigger_board.publish(RunTaskNotify(task_id=999))
 
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:
@@ -113,7 +113,7 @@ def test_worker_marks_unknown_task_trigger_failed(tmp_path) -> None:
                 time.sleep(0.01)
             assert trigger_board.check_job_status(trigger_id) is JobStatus.FAILED
 
-            result = go(trigger_board.get_result(trigger_id)).result()
+            result = trigger_board.get_result(trigger_id)
             assert result is not None
             assert result.status is JobStatus.FAILED
             assert result.error == "task 999 does not exist"
