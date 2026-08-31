@@ -1,4 +1,14 @@
-from .callLLMJob import CallLLMJob, CallLLMJobBoard, CallLLMResult
+from .callLLMJob import (
+    CallLLMJob,
+    CallLLMJobBoard,
+    CallLLMResult,
+    LLMFinishReason,
+    LLMMessage,
+    LLMMessageRole,
+    LLMTool,
+    LLMToolCall,
+    LLMUsage,
+)
 from .changeProviderNotify import (
     ChangeProviderNotify,
     ChangeProviderNotifyBoard,
@@ -212,6 +222,12 @@ __all__ = [
     "CallLLMJob",
     "CallLLMJobBoard",
     "CallLLMResult",
+    "LLMFinishReason",
+    "LLMMessage",
+    "LLMMessageRole",
+    "LLMTool",
+    "LLMToolCall",
+    "LLMUsage",
     "ChatNotify",
     "ChatNotifyBoard",
     "ChatNotifyResult",
