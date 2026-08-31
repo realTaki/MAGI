@@ -1,35 +1,47 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime
 
 import pytest
 
-from bus import BaseJobResult, Bus, JobStatus
+from bus import BaseJobResult, Bus, JobStatus, go
 from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
+
+
+def _claim(board):
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        job = board.claim()
+        if job is not None:
+            return job
+        time.sleep(0.01)
+    return None
 
 
 def test_publish_claim_complete(ping_board) -> None:
     published = PingJob(n=1, publisher="worker-a")
     published.id = ping_board.publish(published)
     assert published.id
-    assert ping_board.get_result(published.id) is None
-    assert ping_board.check_job_status(published.id) is JobStatus.PENDING
+    assert ping_board.check_job_status(published.id) in {
+        JobStatus.PREPARING,
+        JobStatus.PENDING,
+    }
 
-    claimed = ping_board.claim()
+    claimed = _claim(ping_board)
     assert claimed is not None
     assert claimed.id == published.id
-    assert ping_board.get_result(claimed.id) is None
     assert ping_board.check_job_status(claimed.id) is JobStatus.CLAIMED
     assert claimed.n == 1
     assert isinstance(claimed.created_at, datetime)
 
     ping_board.submit_result(BaseJobResult(id=claimed.id))
-    outcome = ping_board.get_result(claimed.id)
+    outcome = go(ping_board.get_result(claimed.id)).result()
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
     assert outcome.id == claimed.id
-    again = ping_board.get_result(claimed.id)
+    again = go(ping_board.get_result(claimed.id)).result()
     assert again is not None
     assert again.status is JobStatus.COMPLETED
     assert not hasattr(claimed, "result")
@@ -39,10 +51,10 @@ def test_publish_claim_complete(ping_board) -> None:
 
 def test_job_and_result_share_one_flat_record(ping_board) -> None:
     ping_board.publish(PingJob())
-    claimed = ping_board.claim()
+    claimed = _claim(ping_board)
     assert claimed is not None
     ping_board.submit_result(BaseJobResult(id=claimed.id))
-    outcome = ping_board.get_result(claimed.id)
+    outcome = go(ping_board.get_result(claimed.id)).result()
     assert outcome is not None
     assert outcome.id == claimed.id
     assert outcome.status is JobStatus.COMPLETED
@@ -52,10 +64,10 @@ def test_job_and_result_share_one_flat_record(ping_board) -> None:
 
 def test_claim_then_fail(ping_board) -> None:
     ping_board.publish(PingJob())
-    claimed = ping_board.claim()
+    claimed = _claim(ping_board)
     assert claimed is not None
     ping_board.submit_result(BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="nope"))
-    outcome = ping_board.get_result(claimed.id)
+    outcome = go(ping_board.get_result(claimed.id)).result()
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"
@@ -73,7 +85,7 @@ def test_illegal_complete_from_pending(ping_board) -> None:
 
 def test_complete_twice_is_illegal(ping_board) -> None:
     ping_board.publish(PingJob())
-    claimed = ping_board.claim()
+    claimed = _claim(ping_board)
     assert claimed is not None
     ping_board.submit_result(BaseJobResult(id=claimed.id))
     assert not ping_board.submit_result(BaseJobResult(id=claimed.id))

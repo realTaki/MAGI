@@ -15,7 +15,7 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
 
     File Books cannot share the Job row's SQL transaction, but the Book remains
     entirely BUS-private: only this Board invokes its public methods.
-    ``get_result`` is a read.
+    ``get_result`` awaits the written result.
     """
 
     def _claim(self) -> JobT | None:

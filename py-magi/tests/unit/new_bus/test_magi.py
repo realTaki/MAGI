@@ -7,7 +7,7 @@ import pytest
 
 import magi.__main__ as magi_cli
 import magi.magi as magi_runtime
-from bus import BaseWorker, CallLLMJob, CallLLMResult, JobStatus
+from bus import BaseWorker, CallLLMJob, CallLLMResult, JobStatus, go
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from magi import Magi
 from magi.constant import workspace_path
@@ -24,13 +24,7 @@ class SecondSharedLLMWorker(SharedLLMWorker):
 
 
 def _wait_result(board, job_id: int, *, timeout: float = 2.0):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        result = board.get_result(job_id)
-        if result is not None:
-            return result
-        time.sleep(0.05)
-    return None
+    return go(board.get_result(job_id, timeout=timeout)).result()
 
 
 def _wait_claim(board, *, timeout: float = 2.0):

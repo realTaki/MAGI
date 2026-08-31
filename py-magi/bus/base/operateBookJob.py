@@ -1,9 +1,9 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
 These jobs have no worker ``claim`` phase. ``publish`` waits for the
-post-publish gate, then executes the Book operation. ``get_result`` is
-a read. The Job row lives in the logs store; the Book mutation uses
-the memories store.
+post-publish gate, then executes the Book operation. ``get_result``
+awaits that written result. The Job row lives in the logs store; the
+Book mutation uses the memories store.
 """
 
 from __future__ import annotations

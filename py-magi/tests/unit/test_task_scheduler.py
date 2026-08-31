@@ -6,7 +6,7 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from bus import Bus, ChatNotify, FireTaskJob, GetTaskJob, JobStatus, RunTaskNotify, Task
+from bus import Bus, ChatNotify, FireTaskJob, GetTaskJob, JobStatus, RunTaskNotify, Task, go
 from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
@@ -40,7 +40,7 @@ def test_fire_task_job_updates_the_task_timestamp(tmp_path) -> None:
 
         board = bus.board(FireTaskJob)
         assert board is not None
-        result = board.get_result(board.publish(FireTaskJob(task_id=task_id)))
+        result = go(board.get_result(board.publish(FireTaskJob(task_id=task_id)))).result()
 
         assert result is not None
         assert result.status is JobStatus.COMPLETED
@@ -74,14 +74,14 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
                 time.sleep(0.01)
             assert trigger_board.check_job_status(trigger_id) is JobStatus.COMPLETED
 
-            trigger_result = trigger_board.get_result(trigger_id)
+            trigger_result = go(trigger_board.get_result(trigger_id)).result()
             assert trigger_result is not None
             assert trigger_result.status is JobStatus.COMPLETED
 
             task_board = bus.board(GetTaskJob)
             assert task_board is not None
             task_job_id = task_board.publish(GetTaskJob(task_id=task_id))
-            fired_task = task_board.get_result(task_job_id)
+            fired_task = go(task_board.get_result(task_job_id)).result()
             assert fired_task is not None
             assert fired_task.task is not None
             assert fired_task.task.updated_at > before_fire.updated_at
@@ -91,5 +91,29 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
             assert chat.conversation_id is None
             assert "name: daily" in chat.text
             assert "summarise progress" in chat.text
+        finally:
+            worker.detach()
+
+
+def test_worker_marks_unknown_task_trigger_failed(tmp_path) -> None:
+    with Bus(tmp_path) as bus:
+        worker = TaskWorker(poll_seconds=0.01)
+        assert worker.attach(bus)
+        try:
+            trigger_board = bus.board(RunTaskNotify)
+            assert trigger_board is not None
+            trigger_id = trigger_board.publish(RunTaskNotify(task_id=999))
+
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                if trigger_board.check_job_status(trigger_id) is JobStatus.FAILED:
+                    break
+                time.sleep(0.01)
+            assert trigger_board.check_job_status(trigger_id) is JobStatus.FAILED
+
+            result = go(trigger_board.get_result(trigger_id)).result()
+            assert result is not None
+            assert result.status is JobStatus.FAILED
+            assert result.error == "task 999 does not exist"
         finally:
             worker.detach()

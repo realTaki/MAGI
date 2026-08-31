@@ -8,6 +8,7 @@ A BaseJobBoard is the claimable container for one work BaseJob type.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import timedelta
@@ -152,12 +153,24 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         for key, value in values.items():
             setattr(row, key, value)
 
-    def get_result(self, job_id: int) -> ResultT | None:
-        with self._session() as session:
-            row = session.get(type(self).row_cls, job_id)
-        if row is None or row.status not in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
-            return None
-        return type(self).result_cls.from_row(row)
+    async def get_result(self, job_id: int, *, timeout: float = 5.0) -> ResultT | None:
+        """Wait until this Job is ``COMPLETED`` or ``FAILED``.
+
+        Returns ``None`` if *timeout* seconds pass first. Peek with
+        :meth:`check_job_status`; this is the wait.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._session() as session:
+                row = session.get(type(self).row_cls, job_id)
+            if row is not None and row.status in {
+                JobStatus.COMPLETED.value,
+                JobStatus.FAILED.value,
+            }:
+                return type(self).result_cls.from_row(row)
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.1)
 
     def check_job_status(self, job_id: int) -> JobStatus:
         with self._session() as session:

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 from bus import (
     BaseWorker,
@@ -23,8 +22,6 @@ from bus import (
 from tools.registry import builtin_catalog
 
 logger = logging.getLogger("tools.worker")
-
-_RESULT_TIMEOUT = 5.0
 
 
 class ToolsWorker(BaseWorker):
@@ -69,7 +66,7 @@ class ToolsWorker(BaseWorker):
                         enabled=True,
                     )
                 )
-                result = _job_result(board, job_id)
+                result = go(board.get_result(job_id)).result()
             except Exception:  # noqa: BLE001 -- one seed failure must not block the rest
                 logger.exception("tools worker: failed to seed %r", spec["name"])
                 continue
@@ -87,7 +84,7 @@ class ToolsWorker(BaseWorker):
     def _listed_names(self) -> set[str]:
         board = self._board(ListToolsJob)
         job_id = board.publish(ListToolsJob(include_disabled=True))
-        result = _job_result(board, job_id)
+        result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
             return set()
         return {tool.name for tool in result.tools}
@@ -110,15 +107,4 @@ class ToolsWorker(BaseWorker):
         )
         if not await self.call(self._board(RunToolJob).submit_result, result):
             logger.warning("tools worker: failed to submit result for %s", job.id)
-
-
-def _job_result(board, job_id: int):
-    """Wait until an OperateBook Job leaves PREPARING and has a result."""
-    deadline = time.monotonic() + _RESULT_TIMEOUT
-    while time.monotonic() < deadline:
-        result = board.get_result(job_id)
-        if result is not None:
-            return result
-        time.sleep(0.01)
-    return None
 

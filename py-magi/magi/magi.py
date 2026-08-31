@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -16,14 +15,13 @@ from bus import (
     DeliveryNotify,
     DeliveryNotifyResult,
     JobStatus,
+    go,
 )
 from channels.asp import AspClient
 
 from .constant import WORKERS, workspace_path
 
 logger = logging.getLogger("magi")
-
-_RESULT_TIMEOUT = 5.0
 
 
 class Magi:
@@ -158,7 +156,7 @@ class Magi:
                 delivery_address=session_id,
             )
         )
-        result = _job_result(board, job_id)
+        result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
             return None
         conversation_id = result.conversation_id
@@ -217,13 +215,3 @@ def _content_text(content: object) -> str:
                 parts.append(item["text"])
         return "".join(parts).strip()
     return ""
-
-
-def _job_result(board, job_id: int):
-    deadline = time.monotonic() + _RESULT_TIMEOUT
-    while time.monotonic() < deadline:
-        result = board.get_result(job_id)
-        if result is not None:
-            return result
-        time.sleep(0.01)
-    return None
