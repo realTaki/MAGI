@@ -9,6 +9,7 @@ from sqlalchemy import Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
+from ...base.time import utcnow
 
 
 class MemoryKind(StrEnum):
@@ -23,9 +24,9 @@ class MemoryKind(StrEnum):
 class Memory(BaseRecord):
     """One remembered item."""
 
-    topic: str
+    topic: str = utcnow().strftime("%Y-%m-%d %H:%M:%S")
     detail: str = ""
-    kind: MemoryKind = MemoryKind.LONG_TERM
+    kind: MemoryKind = MemoryKind.TEMPORARY
     archived: bool = False
 
 
