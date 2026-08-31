@@ -128,7 +128,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             session.commit()
             return cast(type[JobT], self.job_cls).from_row(row)
 
-    def submit_result(self, result: BaseJobResult) -> bool:
+    async def submit_result(self, result: BaseJobResult) -> bool:
         return self._submit_result(result)
 
     def _submit_result(self, result: BaseJobResult) -> bool:

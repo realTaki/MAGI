@@ -3,23 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from concurrent.futures import Future
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult
 from .base.go import go
 
 if TYPE_CHECKING:
     from .bus import Bus
 
+logger = logging.getLogger("bus.worker")
+
 
 class BaseWorker:
     """A BUS-facing listen loop. Attach starts it; detach stops it.
 
-    The loop itself is scheduled with :func:`~bus.base.go.go`. A worker
-    that consumes Jobs overrides :meth:`_run`: handle short work inline,
-    and ``go()`` anything that should not block the next claim.
+    The loop itself is scheduled with :func:`~bus.base.go.go`. Override
+    :meth:`_poll` to claim work: return True to skip the idle sleep.
+    ``go()`` anything that should not block the next claim.
     """
 
     worker_name: ClassVar[str | None] = None
@@ -71,13 +75,40 @@ class BaseWorker:
     async def on_detached(self) -> None:
         """Optional async cleanup after the listen loop has stopped."""
 
+    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
+        """Return the mounted JobBoard for *job_type*."""
+        assert self.bus is not None
+        return self.bus.board(job_type)
+
+    async def claim[JobT: BaseJob](self, job_type: type[JobT]) -> JobT | None:
+        """Claim one pending Job of *job_type*, off the listen loop."""
+        return await self.call(self.board(job_type).claim)
+
+    async def ask(self, job: BaseJob) -> BaseJobResult | None:
+        """Publish *job* and wait for its written result."""
+        board = self.board(type(job))
+        job_id = await self.call(board.publish, job)
+        return await board.get_result(job_id)
+
+    def submit(self, job_type: type[BaseJob], result: BaseJobResult) -> None:
+        """Accept a Job result without waiting."""
+        go(self.board(job_type).submit_result, result)
+
     async def call(self, fn, /, *args, **kwargs):
         """Run a synchronous BUS operation away from the listen loop."""
         return await asyncio.to_thread(fn, *args, **kwargs)
 
+    async def _poll(self) -> bool:
+        """Claim and dispatch one unit of work. True skips the idle sleep."""
+        return False
+
     async def _run(self) -> None:
-        """Listen loop. Override to claim and handle Jobs."""
         while not self._stop.is_set():
+            try:
+                if await self._poll():
+                    continue
+            except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
+                logger.exception("%s worker: BUS operation failed", self.worker_name or "worker")
             await asyncio.sleep(self.poll_seconds)
 
     async def _serve_loop(self) -> None:

@@ -121,7 +121,7 @@ def test_magi_workers_share_one_bus(magi_handle) -> None:
         assert other is not None
         claimed = _wait_claim(other)
         assert claimed is not None
-        assert board.submit_result(CallLLMResult(id=claimed.id))
+        assert go(board.submit_result(CallLLMResult(id=claimed.id))).result()
 
 
 def test_magi_rolls_back_when_a_worker_refuses(magi_handle) -> None:

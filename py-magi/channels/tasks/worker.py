@@ -32,30 +32,20 @@ class TaskWorker(BaseWorker):
     def __init__(self, *, poll_seconds: float = 60.0) -> None:
         super().__init__(poll_seconds=poll_seconds)
 
-    async def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                trigger = await self.call(self._board(RunTaskNotify).claim)
-                if trigger is not None:
-                    go(self._on_trigger(trigger))
-                    continue
-                for task in await self._due_tasks():
-                    go(
-                        self._board(RunTaskNotify).publish,
-                        RunTaskNotify(task_id=task.id, manual=False),
-                    )
-            except Exception:  # noqa: BLE001 -- a BUS blip must not kill the scheduler
-                logger.exception("task worker: BUS operation failed")
-            await asyncio.sleep(self.poll_seconds)
-
-    def _board(self, job_type):
-        assert self.bus is not None
-        return self.bus.board(job_type)
+    async def _poll(self) -> bool:
+        trigger = await self.claim(RunTaskNotify)
+        if trigger is not None:
+            go(self._on_trigger(trigger))
+            return True
+        for task in await self._due_tasks():
+            go(
+                self.board(RunTaskNotify).publish,
+                RunTaskNotify(task_id=task.id, manual=False),
+            )
+        return False
 
     async def _due_tasks(self) -> list[Task]:
-        board = self._board(ListTasksJob)
-        job_id = await self.call(board.publish, ListTasksJob(enabled=True))
-        listed = await board.get_result(job_id)
+        listed = await self.ask(ListTasksJob(enabled=True))
         if listed is None or listed.status is not JobStatus.COMPLETED:
             logger.warning(
                 "task worker: %s",
@@ -80,9 +70,7 @@ class TaskWorker(BaseWorker):
 
     async def _on_trigger(self, trigger: RunTaskNotify) -> None:
         try:
-            board = self._board(GetTaskJob)
-            job_id = await self.call(board.publish, GetTaskJob(task_id=trigger.task_id))
-            got = await board.get_result(job_id)
+            got = await self.ask(GetTaskJob(task_id=trigger.task_id))
             if got is None or got.status is not JobStatus.COMPLETED:
                 error = (got.error if got is not None else None) or "get task failed"
             else:
@@ -103,7 +91,7 @@ class TaskWorker(BaseWorker):
             f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
         )
         go(
-            self._board(ChatNotify).publish,
+            self.board(ChatNotify).publish,
             ChatNotify(
                 publisher="task", conversation_id=task.conversation_id, text=text
             ),
@@ -115,4 +103,4 @@ class TaskWorker(BaseWorker):
             if error is None
             else RunTaskNotifyResult(id=trigger.id, status=JobStatus.FAILED, error=error)
         )
-        go(self._board(RunTaskNotify).submit_result, result)
+        self.submit(RunTaskNotify, result)
