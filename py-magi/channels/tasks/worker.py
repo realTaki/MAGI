@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
+from typing import cast
 
 from croniter import croniter as _croniter
 
@@ -19,6 +19,7 @@ from bus import (
     Task,
     go,
 )
+
 
 class TaskWorker(BaseWorker):
     """Turn cron schedules and explicit triggers into ``ChatNotify`` Jobs."""
@@ -36,11 +37,11 @@ class TaskWorker(BaseWorker):
             go(self._on_trigger(trigger))
             return True
         for task in await self._due_tasks():
-            self.publish_notify(RunTaskNotify(task_id=task.id, manual=False))
+            self.publish_notify(RunTaskNotify(task_id=task.id, manual=False, publisher=cast(str, self.worker_name)))
         return False
 
     async def _due_tasks(self) -> list[Task]:
-        listed = await self.ask(ListTasksJob(enabled=True))
+        listed = await self.ask(ListTasksJob(enabled=True, publisher=cast(str, self.worker_name)))
         if listed is None:
             return []
         now = datetime.now(UTC)
@@ -64,15 +65,12 @@ class TaskWorker(BaseWorker):
     async def _on_trigger(self, trigger: RunTaskNotify) -> None:
         got = None
         try:
-            got = await self.ask(GetTaskJob(task_id=trigger.task_id))
+            got = await self.ask(GetTaskJob(task_id=trigger.task_id, publisher=cast(str, self.worker_name)))
             if got is None or got.task is None:
                 self._submit(trigger, "task not found")
                 return
             self._fire(got.task, manual=trigger.manual)
             self._submit(trigger, None)
-        except asyncio.CancelledError:
-            self._submit(trigger, "task worker cancelled")
-            raise
         except Exception as exc:  # noqa: BLE001 -- one task cannot kill the worker
             if got is not None and got.task is not None:
                 self._report(got.task, str(exc))
@@ -81,7 +79,7 @@ class TaskWorker(BaseWorker):
     def _report(self, task: Task, error: str) -> None:
         self.publish_notify(
             ChatNotify(
-                publisher="task",
+                publisher=cast(str, self.worker_name),
                 conversation_id=task.conversation_id,
                 text=f"[task error]\nname: {task.name}\n{error}",
             )
@@ -95,7 +93,7 @@ class TaskWorker(BaseWorker):
         )
         self.publish_notify(
             ChatNotify(
-                publisher="task", conversation_id=task.conversation_id, text=text
+                publisher=cast(str, self.worker_name), conversation_id=task.conversation_id, text=text
             )
         )
 

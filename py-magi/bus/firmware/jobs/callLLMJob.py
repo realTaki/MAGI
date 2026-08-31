@@ -1,8 +1,9 @@
-"""Claimable LLM inference work for the provider Worker."""
+"""Claimable, backend-neutral LLM inference work for the provider Worker."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
@@ -11,45 +12,127 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 
 
+class LLMMessageRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class LLMFinishReason(StrEnum):
+    END_TURN = "end_turn"
+    TOOL_USE = "tool_use"
+    MAX_OUTPUT = "max_output"
+    REFUSED = "refused"
+
+
+@dataclass(frozen=True)
+class LLMTool:
+    """One model-callable tool, expressed in MAGI's public schema."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LLMToolCall:
+    """A decoded tool invocation produced by an assistant message."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LLMMessage:
+    """One backend-neutral item in an LLM conversation.
+
+    ``system`` and ``user`` carry text. ``assistant`` carries text and/or
+    tool calls. ``tool`` carries one tool result matched by ``tool_call_id``.
+    """
+
+    role: LLMMessageRole
+    text: str = ""
+    tool_calls: list[LLMToolCall] = field(default_factory=list)
+    tool_call_id: str | None = None
+    is_error: bool = False
+
+    def __post_init__(self) -> None:
+        role = LLMMessageRole(self.role)
+        object.__setattr__(self, "role", role)
+        if not isinstance(self.text, str):
+            raise TypeError("LLM message text must be a string")
+        if not all(isinstance(call, LLMToolCall) for call in self.tool_calls):
+            raise TypeError("LLM message tool_calls must contain LLMToolCall values")
+        if role is LLMMessageRole.TOOL:
+            if not self.tool_call_id:
+                raise ValueError("tool messages require tool_call_id")
+            if self.tool_calls:
+                raise ValueError("tool messages cannot contain tool_calls")
+            return
+        if self.tool_call_id is not None or self.is_error:
+            raise ValueError("only tool messages may set tool_call_id or is_error")
+        if role is not LLMMessageRole.ASSISTANT and self.tool_calls:
+            raise ValueError("only assistant messages may contain tool_calls")
+
+
+@dataclass(frozen=True)
+class LLMUsage:
+    """Provider-independent token accounting, when it is reported."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+
+
 @dataclass
 class CallLLMJob(BaseJob):
-    """One vendor-neutral LLM inference request.
+    """One backend-neutral text-and-tools completion request.
 
-    The provider selection and credentials stay in SettingsBook; the caller
-    supplies only the prompt payload and invocation limits.  Streaming is
-    deliberately absent until vNext has a durable stream contract.
+    Provider selection, credentials, endpoint and SDK-specific options remain
+    private Settings/adapter concerns. Streaming remains absent until BUS has a
+    durable stream contract.
     """
-    messages: list[dict[str, Any]] 
-    contact_id: int 
-    tools: list[dict[str, Any]] 
-    max_tokens: int = 1024
-    
+
+    messages: list[LLMMessage] = field(default_factory=list)
+    tools: list[LLMTool] = field(default_factory=list)
+    max_output_tokens: int = 1024
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(message, LLMMessage) for message in self.messages):
+            raise TypeError("CallLLMJob.messages must contain LLMMessage values")
+        if not all(isinstance(tool, LLMTool) for tool in self.tools):
+            raise TypeError("CallLLMJob.tools must contain LLMTool values")
+        if self.max_output_tokens < 1:
+            raise ValueError("max_output_tokens must be positive")
 
 
 @dataclass
 class CallLLMResult(BaseJobResult):
-    """The terminal LLM response."""
+    """The terminal response, ready for the Agent to append to its history."""
 
-    text: str = ""
-    thinking: str | None = None
-    tool_uses: list[dict[str, Any]] = field(default_factory=list)
-    raw_blocks: list[dict[str, Any]] = field(default_factory=list)
-    finish_reason: str | None = None
+    message: LLMMessage | None = None
+    finish_reason: LLMFinishReason | None = None
+    usage: LLMUsage | None = None
     model: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.message is not None and not isinstance(self.message, LLMMessage):
+            raise TypeError("CallLLMResult.message must be an LLMMessage")
+        if self.usage is not None and not isinstance(self.usage, LLMUsage):
+            raise TypeError("CallLLMResult.usage must be an LLMUsage")
 
 
 class CallLLMJobRow(BaseJobRow):
     __tablename__ = "jobs_call_llm"
 
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
-    tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    thinking: Mapped[str | None] = mapped_column(Text, nullable=True)
-    tool_uses: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-    raw_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
+    message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

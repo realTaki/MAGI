@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import JSON, Integer, Text
+from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
@@ -21,9 +21,8 @@ class RunToolJob(BaseJob):
     tool_use; it is not copied onto the Result.
     """
 
-    tool_name: str  
-    tool_call_id: str  
-    conversation_id: int 
+    tool_name: str
+    tool_call_id: str
     arguments: dict[str, Any] | None = None
     
 
@@ -41,7 +40,6 @@ class RunToolJobRow(BaseJobRow):
     tool_name: Mapped[str] = mapped_column(Text, nullable=False)
     arguments: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     tool_call_id: Mapped[str] = mapped_column(Text, nullable=False)
-    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
