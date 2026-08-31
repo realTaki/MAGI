@@ -14,7 +14,7 @@ from ..books.skillsBook import SkillsBook
 
 @dataclass
 class GetSkillJob(BaseJob):
-    name: str = ""
+    name: str 
 
 
 @dataclass
@@ -49,7 +49,7 @@ class ListSkillsJob(BaseJob):
 
 @dataclass
 class ListSkillsResult(BaseJobResult):
-    names: list[str] = field(default_factory=list)
+    names: list[str] | None = None
 
 
 class ListSkillsJobRow(BaseJobRow):

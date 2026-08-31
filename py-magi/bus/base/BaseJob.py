@@ -45,7 +45,7 @@ class BaseJobResult(BaseRecord):
 class BaseJob[ResultT: BaseJobResult](BaseRecord):
     """Generic work BaseJob. Firmware later subclasses this."""
 
-    publisher: str | None = None
+    publisher: str 
 
 
 type PostPublishHook[JobT: BaseJob, ResultT: BaseJobResult] = Callable[[JobT], ResultT]

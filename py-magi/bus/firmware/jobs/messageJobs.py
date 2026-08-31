@@ -18,10 +18,10 @@ from ..books.messageBook import Message, MessageRow
 
 @dataclass
 class AppendMessageJob(BaseJob):
-    conversation_id: int = 0
-    contact_id: int = 0
-    content: str = ""
-    timestamp: BaseTime = field(default_factory=utcnow)
+    conversation_id: int  
+    contact_id: int  
+    content: str  
+    
 
 
 @dataclass
@@ -69,13 +69,13 @@ class AppendMessageJobBoard(
 
 @dataclass
 class ListConversationMessagesJob(BaseJob):
-    conversation_id: int = 0
+    conversation_id: int  
     include_archived: bool = False
 
 
 @dataclass
 class ListConversationMessagesResult(BaseJobResult):
-    messages: list[Message] = field(default_factory=list)
+    messages: list[Message]  | None = None
 
 
 class ListConversationMessagesJobRow(BaseJobRow):
@@ -106,8 +106,8 @@ class ListConversationMessagesJobBoard(
 
 @dataclass
 class ArchiveMessagesJob(BaseJob):
-    conversation_id: int = 0
-    before_message_id: int | None = None
+    conversation_id: int  
+    before_message_id: int  
 
 
 @dataclass

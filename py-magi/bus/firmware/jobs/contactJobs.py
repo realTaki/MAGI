@@ -21,7 +21,7 @@ def _valid_name(name: str) -> bool:
 
 @dataclass
 class CreateContactJob(BaseJob):
-    name: str = ""
+    name: str = "New Contact"
     nickname: str | None = None
     role: ContactRole = ContactRole.STRANGER
 
@@ -63,7 +63,7 @@ class CreateContactJobBoard(
 
 @dataclass
 class GetContactJob(BaseJob):
-    contact_id: int = 0
+    contact_id: int 
 
 
 @dataclass
@@ -88,43 +88,13 @@ class GetContactJobBoard(OperateBookJobBoard[GetContactJob, GetContactResult, Ge
 
 
 @dataclass
-class ListContactsJob(BaseJob):
-    role: ContactRole | None = None
-
-
-@dataclass
-class ListContactsResult(BaseJobResult):
-    contacts: list[Contact] = field(default_factory=list)
-
-
-class ListContactsJobRow(BaseJobRow):
-    __tablename__ = "jobs_list_contacts"
-
-    role: Mapped[str | None] = mapped_column(Text, nullable=True)
-    contacts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-
-
-class ListContactsJobBoard(
-    OperateBookJobBoard[ListContactsJob, ListContactsResult, ListContactsJobRow]
-):
-    job_cls = ListContactsJob
-    result_cls = ListContactsResult
-    row_cls = ListContactsJobRow
-    def _execute(self, session: Session, job: ListContactsJob) -> ListContactsResult:
-        stmt = select(ContactRow).order_by(ContactRow.id)
-        if job.role is not None:
-            stmt = stmt.where(ContactRow.role == job.role.value)
-        return ListContactsResult(contacts=[Contact.from_row(row) for row in session.scalars(stmt)])
-
-
-@dataclass
 class UpdateContactJob(BaseJob):
     """Replace one Contact's mutable profile fields."""
 
-    contact_id: int = 0
-    name: str = ""
+    contact_id: int 
+    name: str | None = None
     nickname: str | None = None
-    role: ContactRole = ContactRole.STRANGER
+    role: ContactRole | None = None
 
 
 @dataclass
@@ -136,9 +106,9 @@ class UpdateContactJobRow(BaseJobRow):
     __tablename__ = "jobs_update_contact"
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
     nickname: Mapped[str | None] = mapped_column(Text, nullable=True)
-    role: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class UpdateContactJobBoard(
@@ -154,17 +124,17 @@ class UpdateContactJobBoard(
             return UpdateContactResult(
                 status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
             )
-        if not _valid_name(job.name):
+        if job.name is not None and not _valid_name(job.name):
             return UpdateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
-        row.name = job.name.strip()
+        row.name = job.name.strip() if job.name is not None else None
         row.nickname = job.nickname
-        row.role = job.role.value
+        row.role = job.role.value if job.role is not None else None
         return UpdateContactResult()
 
 
 @dataclass
 class TouchContactJob(BaseJob):
-    contact_id: int = 0
+    contact_id: int 
 
 
 @dataclass
@@ -197,7 +167,7 @@ class TouchContactJobBoard(
 
 @dataclass
 class DeleteContactJob(BaseJob):
-    contact_id: int = 0
+    contact_id: int 
 
 
 @dataclass

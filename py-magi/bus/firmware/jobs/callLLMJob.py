@@ -19,11 +19,11 @@ class CallLLMJob(BaseJob):
     supplies only the prompt payload and invocation limits.  Streaming is
     deliberately absent until vNext has a durable stream contract.
     """
-
-    messages: list[dict[str, Any]] = field(default_factory=list)
-    contact_id: int | None = None
+    messages: list[dict[str, Any]] 
+    contact_id: int 
+    tools: list[dict[str, Any]] 
     max_tokens: int = 1024
-    tools: list[dict[str, Any]] | None = None
+    
 
 
 @dataclass

@@ -19,8 +19,8 @@ class DeliveryNotify(BaseJob):
     on this notify.
     """
 
-    conversation_id: int | None = None
-    text: str = ""
+    conversation_id: int  
+    text: str  
 
 
 @dataclass

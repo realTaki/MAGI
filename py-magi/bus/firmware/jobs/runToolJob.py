@@ -21,17 +21,18 @@ class RunToolJob(BaseJob):
     tool_use; it is not copied onto the Result.
     """
 
-    tool_name: str = ""
-    arguments: dict[str, Any] = field(default_factory=dict)
-    tool_call_id: str = ""
-    conversation_id: int | None = None
+    tool_name: str  
+    tool_call_id: str  
+    conversation_id: int 
+    arguments: dict[str, Any] | None = None
+    
 
 
 @dataclass
 class RunToolResult(BaseJobResult):
     """The tool's text payload. Failures use ``status`` and ``error``."""
 
-    content: str = ""
+    content: str | None = None
 
 
 class RunToolJobRow(BaseJobRow):
