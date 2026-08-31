@@ -151,13 +151,15 @@ class Magi:
         if known is not None:
             return known
         board = self.bus.board(CreateConversationJob)
-        job_id = board.publish(
-            CreateConversationJob(
-                publisher=self.handle,
-                channel="asp",
-                delivery_address=session_id,
+        job_id = go(
+            board.publish(
+                CreateConversationJob(
+                    publisher=self.handle,
+                    channel="asp",
+                    delivery_address=session_id,
+                )
             )
-        )
+        ).result()
         result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
             return None

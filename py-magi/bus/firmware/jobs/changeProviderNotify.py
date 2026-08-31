@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from sqlalchemy import Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus, NotifyJobBoard
+from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from ...base.engine import EngineFactory
 from ...base.time import utcnow
 from ..books.settingsBook import SettingRow, SettingsBook
@@ -45,7 +45,7 @@ class ChangeProviderNotifyRow(BaseJobRow):
 
 
 class ChangeProviderNotifyBoard(
-    NotifyJobBoard[ChangeProviderNotify, ChangeProviderNotifyResult, ChangeProviderNotifyRow]
+    BaseJobBoard[ChangeProviderNotify, ChangeProviderNotifyResult, ChangeProviderNotifyRow]
 ):
     job_cls = ChangeProviderNotify
     result_cls = ChangeProviderNotifyResult

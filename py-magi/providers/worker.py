@@ -49,7 +49,7 @@ class ProvidersWorker(BaseWorker):
             worker_name=worker_name,
             settings={"options": json.dumps(options(), ensure_ascii=False)},
         )
-        await self.call(self._rebuild)
+        await self._rebuild()
 
     async def on_detached(self) -> None:
         self._client = None
@@ -66,10 +66,15 @@ class ProvidersWorker(BaseWorker):
             return True
         return False
 
-    def _rebuild(self) -> None:
+    async def _rebuild(self) -> None:
         try:
-            settings = self._settings()
-            self._client = connect(settings.get(NAME_KEY), settings.get(API_KEY), settings.get(MODEL_KEY))
+            listed = await self.ask(ListSettingsJob())
+            self._client = await self.call(
+                connect,
+                listed.settings.get(NAME_KEY),
+                listed.settings.get(API_KEY),
+                listed.settings.get(MODEL_KEY),
+            )
             self._error = None
             logger.info("providers worker: client ready (%s / %s)", self._client.name, self._client.model)
         except Exception as exc:  # noqa: BLE001 -- missing extras or config must not kill the loop
@@ -77,21 +82,13 @@ class ProvidersWorker(BaseWorker):
             self._error = str(exc) or type(exc).__name__
             logger.warning("providers worker: cannot build client (%s)", exc)
 
-    def _settings(self) -> dict[str, str]:
-        board = self.board(ListSettingsJob)
-        job_id = board.publish(ListSettingsJob())
-        result = go(board.get_result(job_id)).result()
-        if result is None or result.status is not JobStatus.COMPLETED:
-            return {}
-        return result.settings or {}
-
     async def _on_change(self, job: ChangeProviderNotify) -> None:
         model_only = bool(job.model) and not job.provider and not job.api_key
         if model_only and self._client is not None:
             self._client.model = job.model
             logger.info("providers worker: model -> %r", job.model)
         else:
-            await self.call(self._rebuild)
+            await self._rebuild()
         if self._client is None:
             result = ChangeProviderNotifyResult(
                 id=job.id,
