@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from collections.abc import Mapping
 from concurrent.futures import Future
 from contextlib import suppress
@@ -18,6 +17,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("bus.worker")
 
+_JOIN_TIMEOUT = 2.0
+
 
 class BaseWorker:
     """A BUS-facing listen loop. Attach starts it; detach stops it.
@@ -26,65 +27,53 @@ class BaseWorker:
     :meth:`_poll` to claim work: return True to skip the idle sleep.
     ``go()`` anything that should not block the next claim.
 
-    Declare :attr:`default_settings` on the subclass. ``__init__`` boosts
-    those defaults onto the BUS. Startup parameters are boosted by
-    :meth:`Bus.attach` before this worker starts.
+    Declare :attr:`default_settings` on the subclass. :meth:`Bus.attach`
+    writes startup parameters first; :meth:`attach` then fills any
+    missing defaults.
     """
 
-    worker_name: ClassVar[str | None] = None
+    worker_name: ClassVar[str]
     default_settings: ClassVar[Mapping[str, str]] = {}
 
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.poll_seconds = poll_seconds
-        self.worker_id: str | None = None
-        self._bus = bus
-        self._stop = threading.Event()
-        self._ready = threading.Event()
-        self._attached_ok = False
+        self.bus = bus
         self._running: Future[Any] | None = None
-        self._boost_defaults()
 
     def attach(self) -> bool:
-        """Start this worker's listen loop on its BUS."""
-        if self._running is not None and not self._running.done():
+        """Fill missing defaults, run ``on_attached``, then start the listen loop."""
+        if self.is_alive():
             return True
-        self.worker_id = type(self).worker_name
-        self._stop.clear()
-        self._ready.clear()
-        self._attached_ok = False
-        self._running = go(self._serve_loop())
-        if self._ready.wait(timeout=5.0) and self._attached_ok:
-            return True
-        self.detach()
-        return False
+        defaults = dict(type(self).default_settings)
+        if defaults:
+            self.bus.boost_default_settings(worker_name=type(self).worker_name, settings=defaults)
+        starting = go(self.on_attached())
+        try:
+            starting.result(timeout=5.0)
+        except Exception:
+            self._cancel(starting)
+            with suppress(Exception):
+                go(self.on_detached()).result(timeout=_JOIN_TIMEOUT)
+            return False
+        self._running = go(self._run())
+        return True
 
     def detach(self) -> None:
         """Stop the listen loop. Work already passed to ``go()`` keeps running."""
-        self._stop.set()
         future = self._running
         self._running = None
-        if future is not None and not future.done():
-            future.cancel()
-            with suppress(Exception):
-                future.result(timeout=self.poll_seconds + 1.0)
-        self.worker_id = None
+        self._cancel(future)
+
+    def _cancel(self, future: Future[Any] | None) -> None:
+        if future is None or future.done():
+            return
+        future.cancel()
+        with suppress(Exception):
+            future.result(timeout=_JOIN_TIMEOUT)
 
     def is_alive(self) -> bool:
         future = self._running
         return future is not None and not future.done()
-
-    @property
-    def bus(self) -> Bus:
-        """The BUS this worker was constructed with."""
-        return self._bus
-
-    def _boost_defaults(self) -> None:
-        defaults = dict(type(self).default_settings)
-        worker_name = type(self).worker_name
-        if not defaults or not worker_name:
-            return
-        if not self.bus.boost_default_settings(worker_name=worker_name, settings=defaults):
-            raise RuntimeError(f"{worker_name} worker: settings boost failed")
 
     async def on_attached(self) -> None:
         """Optional async initialization after the BUS is attached."""
@@ -92,39 +81,41 @@ class BaseWorker:
     async def on_detached(self) -> None:
         """Optional async cleanup after the listen loop has stopped."""
 
-    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
-        """Return the mounted JobBoard for *job_type*."""
+    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any] | None:
+        """Return the mounted JobBoard for *job_type*, or None if it is not mounted."""
         return self.bus.board(job_type)
 
     async def claim[JobT: BaseJob](self, job_type: type[JobT]) -> JobT | None:
         """Claim one pending Job of *job_type*, off the listen loop."""
-        return await self.call(self.board(job_type).claim)
+        board = self.board(job_type)
+        return None if board is None else await self.call(board.claim)
 
     def publish_notify(self, job: BaseJob) -> None:
         """Enqueue a Notify without waiting for its id."""
-        go(asyncio.to_thread(self.board(type(job)).publish, job))
-
-    def publish(self, job: BaseJob) -> int:
-        """Enqueue *job* and return its id."""
-        return self.board(type(job)).publish(job)
-
-    async def ask(self, job: BaseJob) -> BaseJobResult:
-        """Publish *job* and return its completed result.
-
-        Times out or a ``FAILED`` status raise ``RuntimeError``.
-        """
         board = self.board(type(job))
-        result = await self.call(board.get_result, await self.call(self.publish, job))
+        if board is not None:
+            go(asyncio.to_thread(board.publish, job))
+
+    def publish(self, job: BaseJob) -> int | None:
+        """Enqueue *job* and return its id, or None if no board is mounted."""
+        board = self.board(type(job))
+        return None if board is None else board.publish(job)
+
+    async def ask(self, job: BaseJob) -> BaseJobResult | None:
+        """Publish *job* and return its completed result, or None if it did not complete."""
+        board = self.board(type(job))
+        if board is None:
+            return None
+        result = await self.call(board.get_result, await self.call(board.publish, job))
         if result is not None and result.status is JobStatus.COMPLETED:
             return result
-        raise RuntimeError(
-            (result.error if result is not None else None)
-            or f"{type(job).__name__} result is unavailable"
-        )
+        return None
 
     def submit(self, job_type: type[BaseJob], result: BaseJobResult) -> None:
         """Accept a Job result without waiting."""
-        go(self.board(job_type).submit_result(result))
+        board = self.board(job_type)
+        if board is not None:
+            go(board.submit_result(result))
 
     async def call(self, fn, /, *args, **kwargs):
         """Run a synchronous BUS operation away from the listen loop."""
@@ -135,25 +126,14 @@ class BaseWorker:
         return False
 
     async def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                if await self._poll():
-                    continue
-            except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
-                logger.exception("%s worker: BUS operation failed", self.worker_name or "worker")
-            await asyncio.sleep(self.poll_seconds)
-
-    async def _serve_loop(self) -> None:
         try:
-            try:
-                await self.on_attached()
-            except Exception:  # noqa: BLE001 -- attach must report failure to the runtime
-                self._attached_ok = False
-                return
-            self._attached_ok = True
-            self._ready.set()
-            await self._run()
+            while True:
+                try:
+                    if await self._poll():
+                        continue
+                except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
+                    logger.exception("%s worker: BUS operation failed", type(self).worker_name)
+                await asyncio.sleep(self.poll_seconds)
         finally:
-            self._ready.set()
             with suppress(Exception):
                 await self.on_detached()

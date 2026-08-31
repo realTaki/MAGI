@@ -6,7 +6,6 @@ import pytest
 
 import bus.magi as bus_runtime
 from bus import BaseWorker, Bus, ListSettingsJob
-from bus.magi import Magi
 
 
 class FirstWorker(BaseWorker):
@@ -56,12 +55,19 @@ def test_bus_rejects_duplicate_worker_name(tmp_path) -> None:
             bus.attach(DuplicateWorker)
 
 
-def test_magi_attaches_workers_through_its_bus(tmp_path, monkeypatch) -> None:
+def test_main_attaches_workers_and_serves(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     monkeypatch.setattr(bus_runtime, "WORKERS", (FirstWorker, SecondWorker))
-    with Magi("@alice.magi", "http://127.0.0.1:42069", "alice-token") as magi:
-        assert magi.run()
-        assert {"first", "second"} == set(magi.bus.workers)
+    seen: dict[str, object] = {}
+
+    def fake_serve(self: Bus) -> None:
+        seen["handle"] = self.handle
+        seen["workers"] = set(self.workers)
+
+    monkeypatch.setattr(Bus, "serve", fake_serve)
+    assert bus_runtime.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
+    assert seen["handle"] == "@alice.magi"
+    assert seen["workers"] == {"first", "second"}
 
 
 def test_worker_boosts_defaults_and_attach_settings_overwrite_them(tmp_path) -> None:
@@ -82,20 +88,3 @@ def test_worker_boosts_defaults_and_attach_settings_overwrite_them(tmp_path) -> 
         listed = _listed(bus)
         assert listed["catalog.theme"] == "light"
         assert listed["catalog.locale"] == "en"
-
-
-def test_main_starts_magi(monkeypatch) -> None:
-    seen: dict[str, object] = {}
-
-    class StubMagi:
-        def __init__(self, handle: str, base: str, token: str) -> None:
-            seen["args"] = (handle, base, token)
-
-        def serve(self) -> None:
-            seen["served"] = True
-
-    monkeypatch.setattr(bus_runtime, "Magi", StubMagi)
-
-    assert bus_runtime.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
-    assert seen["args"] == ("@alice.magi", "http://127.0.0.1:42069", "alice-token")
-    assert seen["served"] is True

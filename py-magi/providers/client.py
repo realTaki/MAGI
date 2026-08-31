@@ -77,37 +77,34 @@ def options() -> list[dict[str, str]]:
     return [{"provider": host.id, "model": model} for host in HOSTS for model in host.models]
 
 
-def connect(
-    provider_name: str | None,
-    api_key: str | None,
-    model: str | None = None,
-    *,
-    client: Client | None = None,
-) -> Client:
-    if not provider_name:
-        raise RuntimeError("no LLM provider configured; set provider.name in settings")
-    if not api_key:
-        raise RuntimeError("no API key configured; set provider.api_key in settings")
-    name = provider_name.strip().lower()
-    host = _BY_ID.get(_ALIASES.get(name, name))
-    if host is None:
-        known = ", ".join(item.id for item in HOSTS)
-        raise RuntimeError(f"Unknown LLM provider: {provider_name!r}. Known: {known}")
-    if client is None:
-        return Client(host=host, api_key=api_key, model=model or host.default_model)
-    client.host = host
-    client.api_key = api_key
-    client.model = model or client.model
-    return client
-
-
 class Client:
-    """One cached LiteLLM route."""
+    """Mutable provider settings, resolved only when completing a call."""
 
-    def __init__(self, *, host: Host, api_key: str, model: str) -> None:
-        self.host = host
+    def __init__(
+        self,
+        *,
+        provider_name: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.provider_name = provider_name
         self.api_key = api_key
         self.model = model
+
+    def configure(
+        self,
+        *,
+        provider_name: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Apply provided setting changes without validating them."""
+        if provider_name is not None:
+            self.provider_name = provider_name
+        if api_key is not None:
+            self.api_key = api_key
+        if model is not None:
+            self.model = model
 
     async def complete(
         self,
@@ -116,28 +113,42 @@ class Client:
         max_tokens: int,
         tools: list[dict] | None,
     ) -> dict[str, Any]:
+        host = self._host()
+        if not self.api_key:
+            raise RuntimeError("no API key configured; set provider.api_key in settings")
+        model = self.model or host.default_model
         litellm = _litellm()
         params: dict[str, Any] = {
-            "model": f"{self.host.prefix}/{self.model}",
+            "model": f"{host.prefix}/{model}",
             "messages": _messages(messages),
             "max_tokens": max_tokens,
             "api_key": self.api_key,
             "timeout": 30.0,
             "drop_params": True,
         }
-        if self.host.api_base:
-            params["api_base"] = self.host.api_base
+        if host.api_base:
+            params["api_base"] = host.api_base
         converted = _tools(tools)
         if converted:
             params["tools"] = converted
         try:
             response = await litellm.acompletion(**params)
         except Exception as exc:  # noqa: BLE001 -- every SDK failure becomes a readable error
-            raise RuntimeError(_error_text(exc, self.host.id)) from exc
+            raise RuntimeError(_error_text(exc, host.id)) from exc
         choices = getattr(response, "choices", None) or ()
         if not choices:
-            raise RuntimeError(f"{self.host.id} provider: response carried no choices")
-        return _result(choices[0].message, response, self.model)
+            raise RuntimeError(f"{host.id} provider: response carried no choices")
+        return _result(choices[0].message, response, model)
+
+    def _host(self) -> Host:
+        if not self.provider_name:
+            raise RuntimeError("no LLM provider configured; set provider.name in settings")
+        name = self.provider_name.strip().lower()
+        host = _BY_ID.get(_ALIASES.get(name, name))
+        if host is None:
+            known = ", ".join(item.id for item in HOSTS)
+            raise RuntimeError(f"Unknown LLM provider: {self.provider_name!r}. Known: {known}")
+        return host
 
 
 def _litellm():

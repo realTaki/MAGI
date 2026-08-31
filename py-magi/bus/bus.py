@@ -78,11 +78,8 @@ class Bus:
             raise ValueError(f"{type(instance).__qualname__} needs worker_name")
         if worker_name in self._workers:
             raise ValueError(f"duplicate worker_name: {worker_name}")
-        if settings is not None and not self.boost_settings(
-            worker_name=worker_name, settings=settings
-        ):
-            instance.detach()
-            return False
+        if settings is not None:
+            self.boost_settings(worker_name=worker_name, settings=settings)
         if not instance.attach():
             instance.detach()
             return False
@@ -109,12 +106,10 @@ class Bus:
             self._memories.close()
             self._stopped = True
 
-    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
-        """Return the mounted JobBoard for *job_type*."""
-        try:
-            return cast(BaseJobBoard[JobT, Any, Any], self._job_boards[job_type])
-        except KeyError:
-            raise KeyError(f"no JobBoard mounted for {job_type.__name__}") from None
+    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any] | None:
+        """Return the mounted JobBoard for *job_type*, or None if it is not mounted."""
+        mounted = self._job_boards.get(job_type)
+        return None if mounted is None else cast(BaseJobBoard[JobT, Any, Any], mounted)
 
     def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> bool:
         """Insert a Worker's missing Settings defaults without overwriting values."""
