@@ -12,7 +12,7 @@ from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from magi import Magi
 from magi.constant import workspace_path
 from providers.worker import ProvidersWorker
-from tests.unit.new_bus.testing import attach_board
+from tests.unit.new_bus.testing import attach_board, wait_publish
 
 
 class SharedLLMWorker(BaseWorker):
@@ -89,7 +89,7 @@ def test_magi_attaches_default_provider_worker(magi_handle) -> None:
         assert worker.is_alive()
         publisher = attach_board(magi.bus, CallLLMJobBoard)
         job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
-        job.id = publisher.publish(job)
+        job.id = wait_publish(publisher, job)
         result = _wait_result(publisher, job.id)
         assert result is not None
         assert result.status is JobStatus.FAILED
@@ -116,7 +116,7 @@ def test_magi_workers_share_one_bus(magi_handle) -> None:
         job = CallLLMJob(messages=[{"role": "user", "content": "hi"}])
         board = one.board(CallLLMJob)
         assert board is not None
-        job.id = board.publish(job)
+        job.id = wait_publish(board, job)
         other = two.board(CallLLMJob)
         assert other is not None
         claimed = _wait_claim(other)

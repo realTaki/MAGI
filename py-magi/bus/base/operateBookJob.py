@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 from .BaseBook import BaseBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from .engine import EngineFactory
-from .go import go
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -36,10 +35,10 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         del result
         return False
 
-    def publish(self, job: JobT) -> int:
+    async def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
         published = replace(job, id=job_id)
-        if go(self._post_publish(published)).result() is not JobStatus.PENDING:
+        if await self._post_publish(published) is not JobStatus.PENDING:
             return job_id
 
         with self._book._session() as books:

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
-from .go import go
 
 
 class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -27,10 +26,10 @@ class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJ
         del result
         return False
 
-    def publish(self, job: JobT) -> int:
+    async def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
         published = replace(job, id=job_id)
-        if go(self._post_publish(published)).result() is not JobStatus.PENDING:
+        if await self._post_publish(published) is not JobStatus.PENDING:
             return job_id
 
         result = self._execute(published)

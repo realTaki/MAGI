@@ -7,7 +7,7 @@ from datetime import datetime
 import pytest
 
 from bus import BaseJobResult, Bus, JobStatus, go
-from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
+from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board, wait_publish
 
 
 def _submit(board, result):
@@ -26,7 +26,7 @@ def _claim(board):
 
 def test_publish_claim_complete(ping_board) -> None:
     published = PingJob(n=1, publisher="worker-a")
-    published.id = ping_board.publish(published)
+    published.id = wait_publish(ping_board, published)
     assert published.id
     assert ping_board.check_job_status(published.id) in {
         JobStatus.PREPARING,
@@ -54,7 +54,7 @@ def test_publish_claim_complete(ping_board) -> None:
 
 
 def test_job_and_result_share_one_flat_record(ping_board) -> None:
-    ping_board.publish(PingJob())
+    wait_publish(ping_board, PingJob())
     claimed = _claim(ping_board)
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id))
@@ -67,7 +67,7 @@ def test_job_and_result_share_one_flat_record(ping_board) -> None:
 
 
 def test_claim_then_fail(ping_board) -> None:
-    ping_board.publish(PingJob())
+    wait_publish(ping_board, PingJob())
     claimed = _claim(ping_board)
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="nope"))
@@ -83,12 +83,12 @@ def test_claim_empty_board(ping_board) -> None:
 
 def test_illegal_complete_from_pending(ping_board) -> None:
     job = PingJob()
-    job.id = ping_board.publish(job)
+    job.id = wait_publish(ping_board, job)
     assert not _submit(ping_board, BaseJobResult(id=job.id))
 
 
 def test_complete_twice_is_illegal(ping_board) -> None:
-    ping_board.publish(PingJob())
+    wait_publish(ping_board, PingJob())
     claimed = _claim(ping_board)
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id))
@@ -96,8 +96,8 @@ def test_complete_twice_is_illegal(ping_board) -> None:
 
 
 def test_list_filters_status(ping_board) -> None:
-    first_id = ping_board.publish(PingJob(n=1))
-    ping_board.publish(PingJob(n=2))
+    first_id = wait_publish(ping_board, PingJob(n=1))
+    wait_publish(ping_board, PingJob(n=2))
     claimed = ping_board.claim()
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id))
@@ -111,7 +111,7 @@ def test_claim_is_exclusive(tmp_path) -> None:
     with PingBus(tmp_path) as bus:
         ping_board = attach_board(bus, PingJobBoard)
         for index in range(20):
-            ping_board.publish(PingJob(n=index))
+            wait_publish(ping_board, PingJob(n=index))
 
         claimed_ids: list[int] = []
         lock = threading.Lock()
