@@ -18,7 +18,7 @@ class ChatNotify(BaseJob):
     the user message; ``conversation_id`` is the session it belongs to.
     Contact and channel live on the Conversation row, not on this notify.
     """
-
+    contact_id: int
     conversation_id: int 
     text: str
 
@@ -31,6 +31,7 @@ class ChatNotifyResult(BaseJobResult):
 class ChatNotifyRow(BaseJobRow):
     __tablename__ = "jobs_chat_notify"
 
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
