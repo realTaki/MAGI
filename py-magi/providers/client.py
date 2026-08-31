@@ -77,7 +77,13 @@ def options() -> list[dict[str, str]]:
     return [{"provider": host.id, "model": model} for host in HOSTS for model in host.models]
 
 
-def connect(provider_name: str | None, api_key: str | None, model: str | None = None) -> Client:
+def connect(
+    provider_name: str | None,
+    api_key: str | None,
+    model: str | None = None,
+    *,
+    client: Client | None = None,
+) -> Client:
     if not provider_name:
         raise RuntimeError("no LLM provider configured; set provider.name in settings")
     if not api_key:
@@ -87,15 +93,19 @@ def connect(provider_name: str | None, api_key: str | None, model: str | None = 
     if host is None:
         known = ", ".join(item.id for item in HOSTS)
         raise RuntimeError(f"Unknown LLM provider: {provider_name!r}. Known: {known}")
-    return Client(host=host, api_key=api_key, model=model or host.default_model)
+    if client is None:
+        return Client(host=host, api_key=api_key, model=model or host.default_model)
+    client.host = host
+    client.api_key = api_key
+    client.model = model or client.model
+    return client
 
 
 class Client:
-    """One cached LiteLLM route. Change the model in place; rebuild for a new host or key."""
+    """One cached LiteLLM route."""
 
     def __init__(self, *, host: Host, api_key: str, model: str) -> None:
         self.host = host
-        self.name = host.id
         self.api_key = api_key
         self.model = model
 
@@ -123,10 +133,10 @@ class Client:
         try:
             response = await litellm.acompletion(**params)
         except Exception as exc:  # noqa: BLE001 -- every SDK failure becomes a readable error
-            raise RuntimeError(_error_text(exc, self.name)) from exc
+            raise RuntimeError(_error_text(exc, self.host.id)) from exc
         choices = getattr(response, "choices", None) or ()
         if not choices:
-            raise RuntimeError(f"{self.name} provider: response carried no choices")
+            raise RuntimeError(f"{self.host.id} provider: response carried no choices")
         return _result(choices[0].message, response, self.model)
 
 
