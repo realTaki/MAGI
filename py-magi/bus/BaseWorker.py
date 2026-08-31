@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import Mapping
 from concurrent.futures import Future
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.go import go
@@ -24,11 +25,16 @@ class BaseWorker:
     The loop itself is scheduled with :func:`~bus.base.go.go`. Override
     :meth:`_poll` to claim work: return True to skip the idle sleep.
     ``go()`` anything that should not block the next claim.
+
+    Declare :attr:`default_settings` on the subclass. ``__init__`` boosts
+    those defaults onto the BUS. Startup parameters are boosted by
+    :meth:`Bus.attach` before this worker starts.
     """
 
     worker_name: ClassVar[str | None] = None
+    default_settings: ClassVar[Mapping[str, str]] = {}
 
-    def __init__(self, bus: Bus | None = None, *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.poll_seconds = poll_seconds
         self.worker_id: str | None = None
         self._bus = bus
@@ -36,15 +42,12 @@ class BaseWorker:
         self._ready = threading.Event()
         self._attached_ok = False
         self._running: Future[Any] | None = None
+        self._boost_defaults()
 
-    def attach(self, bus: Bus | None = None) -> bool:
-        """Bind this worker to the runtime BUS and start its loop."""
-        if bus is not None:
-            if self._bus is not None:
-                return self._bus is bus
-            self._bus = bus
-        if self._bus is None:
-            raise ValueError("worker needs a BUS")
+    def attach(self) -> bool:
+        """Start this worker's listen loop on its BUS."""
+        if self._running is not None and not self._running.done():
+            return True
         self.worker_id = type(self).worker_name
         self._stop.clear()
         self._ready.clear()
@@ -57,8 +60,6 @@ class BaseWorker:
 
     def detach(self) -> None:
         """Stop the listen loop. Work already passed to ``go()`` keeps running."""
-        if self._bus is None:
-            return
         self._stop.set()
         future = self._running
         self._running = None
@@ -66,16 +67,24 @@ class BaseWorker:
             future.cancel()
             with suppress(Exception):
                 future.result(timeout=self.poll_seconds + 1.0)
-        self._clear_attachment()
+        self.worker_id = None
 
     def is_alive(self) -> bool:
         future = self._running
-        return self._bus is not None and future is not None and not future.done()
+        return future is not None and not future.done()
 
     @property
     def bus(self) -> Bus:
-        """The BUS bound by :meth:`attach`, available to worker implementations."""
-        return cast("Bus", self._bus)
+        """The BUS this worker was constructed with."""
+        return self._bus
+
+    def _boost_defaults(self) -> None:
+        defaults = dict(type(self).default_settings)
+        worker_name = type(self).worker_name
+        if not defaults or not worker_name:
+            return
+        if not self.bus.boost_default_settings(worker_name=worker_name, settings=defaults):
+            raise RuntimeError(f"{worker_name} worker: settings boost failed")
 
     async def on_attached(self) -> None:
         """Optional async initialization after the BUS is attached."""
@@ -148,8 +157,3 @@ class BaseWorker:
             self._ready.set()
             with suppress(Exception):
                 await self.on_detached()
-
-    def _clear_attachment(self) -> None:
-        self._bus = None
-        self.worker_id = None
-        self._running = None
