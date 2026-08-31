@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from bus import CallLLMJob, CallLLMResult, JobStatus
+
 logger = logging.getLogger("providers.client")
 
 _LITELLM_READY = False
@@ -77,7 +79,7 @@ def options() -> list[dict[str, str]]:
     return [{"provider": host.id, "model": model} for host in HOSTS for model in host.models]
 
 
-class Client:
+class LiteLLMClient:
     """Mutable provider settings, resolved only when completing a call."""
 
     def __init__(
@@ -106,54 +108,58 @@ class Client:
         if model is not None:
             self.model = model
 
-    async def complete(
-        self,
-        messages: list[dict],
-        *,
-        max_tokens: int,
-        tools: list[dict] | None,
-    ) -> dict[str, Any]:
-        host = self._host()
+    async def complete(self, job: CallLLMJob) -> CallLLMResult:
+        def fail(error: str) -> CallLLMResult:
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error)
+
+        host, host_error = self._host()
+        if host is None:
+            return fail(host_error or "no LLM provider configured; set provider.name in settings")
         if not self.api_key:
-            raise RuntimeError("no API key configured; set provider.api_key in settings")
+            return fail("no API key configured; set provider.api_key in settings")
         model = self.model or host.default_model
-        litellm = _litellm()
+        try:
+            litellm = _litellm()
+        except Exception as exc:  # noqa: BLE001 -- missing SDK is a CallLLMResult error
+            return fail(str(exc))
+        converted, tool_error = _tools(job.tools)
+        if tool_error:
+            return fail(tool_error)
         params: dict[str, Any] = {
             "model": f"{host.prefix}/{model}",
-            "messages": _messages(messages),
-            "max_tokens": max_tokens,
+            "messages": _messages(job.messages),
+            "max_tokens": int(job.max_tokens or 1024),
             "api_key": self.api_key,
             "timeout": 30.0,
             "drop_params": True,
         }
         if host.api_base:
             params["api_base"] = host.api_base
-        converted = _tools(tools)
         if converted:
             params["tools"] = converted
         try:
             response = await litellm.acompletion(**params)
         except Exception as exc:  # noqa: BLE001 -- every SDK failure becomes a readable error
-            raise RuntimeError(_error_text(exc, host.id)) from exc
+            return fail(_error_text(exc, host.id))
         choices = getattr(response, "choices", None) or ()
         if not choices:
-            raise RuntimeError(f"{host.id} provider: response carried no choices")
-        return _result(choices[0].message, response, model)
+            return fail(f"{host.id} provider: response carried no choices")
+        return _result(job.id, choices[0].message, response, model)
 
-    def _host(self) -> Host:
+    def _host(self) -> tuple[Host | None, str | None]:
         if not self.provider_name:
-            raise RuntimeError("no LLM provider configured; set provider.name in settings")
+            return None, "no LLM provider configured; set provider.name in settings"
         name = self.provider_name.strip().lower()
         host = _BY_ID.get(_ALIASES.get(name, name))
         if host is None:
             known = ", ".join(item.id for item in HOSTS)
-            raise RuntimeError(f"Unknown LLM provider: {self.provider_name!r}. Known: {known}")
-        return host
+            return None, f"Unknown LLM provider: {self.provider_name!r}. Known: {known}"
+        return host, None
 
 
-def _litellm():
+def _litellm() -> Any:
     global _LITELLM_READY
-    import litellm
+    import litellm  # type: ignore[import-not-found]
 
     if not _LITELLM_READY:
         litellm.telemetry = False
@@ -164,19 +170,19 @@ def _litellm():
     return litellm
 
 
-def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+def _tools(tools: list[dict[str, Any]] | None) -> tuple[list[dict[str, Any]] | None, str | None]:
     if not tools:
-        return None
+        return None, None
     out: list[dict[str, Any]] = []
     for tool in tools:
         if not isinstance(tool, dict):
-            raise RuntimeError(f"provider received non-dict tool: {tool!r}")
+            return None, f"provider received non-dict tool: {tool!r}"
         if tool.get("type") == "function" and isinstance(tool.get("function"), dict):
             out.append(tool)
             continue
         name = tool.get("name")
         if not name:
-            raise RuntimeError("provider received a tool without a name")
+            return None, "provider received a tool without a name"
         out.append(
             {
                 "type": "function",
@@ -187,7 +193,7 @@ def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
                 },
             }
         )
-    return out
+    return out, None
 
 
 def _messages(messages: list[dict]) -> list[dict[str, Any]]:
@@ -269,7 +275,7 @@ def _assistant(message: dict[str, Any]) -> dict[str, Any]:
     return assistant
 
 
-def _result(message: Any, raw: Any, fallback_model: str) -> dict[str, Any]:
+def _result(job_id: int | None, message: Any, raw: Any, fallback_model: str) -> CallLLMResult:
     text = _text(message)
     thinking = _thinking(message)
     tool_uses: list[dict[str, Any]] = []
@@ -296,15 +302,15 @@ def _result(message: Any, raw: Any, fallback_model: str) -> dict[str, Any]:
     choices = getattr(raw, "choices", None)
     if choices:
         finish = getattr(choices[0], "finish_reason", None)
-    return {
-        "text": text or "(empty reply)",
-        "thinking": thinking,
-        "tool_uses": tool_uses,
-        "raw_blocks": raw_blocks,
-        "model": model,
-        "usage": _usage(getattr(raw, "usage", None)),
-        "stop_reason": _stop(finish),
-    }
+    return CallLLMResult(
+        id=job_id,
+        text=text or "(empty reply)",
+        thinking=thinking,
+        tool_uses=tool_uses,
+        raw_blocks=raw_blocks,
+        finish_reason=_stop(finish),
+        model=model,
+    )
 
 
 def _text(message: Any) -> str:
@@ -423,9 +429,11 @@ def _dump(obj: Any) -> dict[str, Any] | None:
         fn = getattr(obj, attr, None)
         if callable(fn):
             try:
-                return fn()
+                dumped = fn()
             except Exception:
-                pass
+                continue
+            if isinstance(dumped, dict):
+                return dumped
     if hasattr(obj, "__dict__"):
         try:
             return dict(obj.__dict__)

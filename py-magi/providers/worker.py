@@ -17,14 +17,12 @@ from bus import (
     BaseWorker,
     Bus,
     CallLLMJob,
-    CallLLMResult,
     ChangeProviderNotify,
     ChangeProviderNotifyResult,
-    JobStatus,
     ListSettingsJob,
     go,
 )
-from providers.client import Client, options
+from providers.client import LiteLLMClient, options
 
 NAME_KEY = "provider.name"
 API_KEY = "provider.api_key"
@@ -37,7 +35,7 @@ class ProvidersWorker(BaseWorker):
 
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
-        self._client = Client()
+        self._client = LiteLLMClient()
 
     async def on_attached(self) -> None:
         listed = await self.ask(ListSettingsJob())
@@ -68,24 +66,4 @@ class ProvidersWorker(BaseWorker):
         self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
 
     async def _on_llm(self, job: CallLLMJob) -> None:
-        self.submit(CallLLMJob, await self._call_result(job))
-
-    async def _call_result(self, job: CallLLMJob) -> CallLLMResult:
-        """Return one terminal result; no provider exception leaves this boundary."""
-        try:
-            response = await self._client.complete(
-                job.messages,
-                max_tokens=int(job.max_tokens or 1024),
-                tools=job.tools or None,
-            )
-            return CallLLMResult(
-                id=job.id,
-                text=response.get("text") or "(empty reply)",
-                thinking=response.get("thinking"),
-                tool_uses=list(response.get("tool_uses") or []),
-                raw_blocks=list(response.get("raw_blocks") or []),
-                finish_reason=response.get("stop_reason"),
-                model=response.get("model") or self._client.model,
-            )
-        except BaseException as exc:  # noqa: BLE001 -- the Job result is the error boundary
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
+        self.submit(CallLLMJob, await self._client.complete(job))
