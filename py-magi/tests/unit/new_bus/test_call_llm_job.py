@@ -10,7 +10,7 @@ from bus import (
     CallLLMResult,
     LLMMessage,
     LLMMessageRole,
-    LLMTool,
+    Tool,
 )
 
 
@@ -23,7 +23,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
             CallLLMJob(
                 publisher="test",
                 messages=[LLMMessage(role=LLMMessageRole.USER, text="hello")],
-                tools=[LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})],
+                tools=[Tool(name="echo", description="Echo input", input_schema={"type": "object"})],
             )
         )
         await asyncio.sleep(0.05)
@@ -32,7 +32,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         assert claimed is not None
         assert claimed.id == job_id
         assert claimed.messages == [LLMMessage(role=LLMMessageRole.USER, text="hello")]
-        assert claimed.tools == [LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})]
+        assert claimed.tools == [Tool(name="echo", description="Echo input", input_schema={"type": "object"})]
 
         assert await board.submit_result(
             CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, text="ok"))
