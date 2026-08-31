@@ -38,7 +38,7 @@ class TaskWorker(BaseWorker):
             go(self._on_trigger(trigger))
             return True
         for task in await self._due_tasks():
-            self.publish(RunTaskNotify(task_id=task.id, manual=False))
+            self.publish_notify(RunTaskNotify(task_id=task.id, manual=False))
         return False
 
     async def _due_tasks(self) -> list[Task]:
@@ -81,7 +81,7 @@ class TaskWorker(BaseWorker):
             "[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
             f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
         )
-        self.publish(
+        self.publish_notify(
             ChatNotify(
                 publisher="task", conversation_id=task.conversation_id, text=text
             )

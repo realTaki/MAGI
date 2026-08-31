@@ -77,7 +77,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    async def publish(self, job: JobT) -> int:
+    def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
         go(self._post_publish(replace(job, id=job_id)))
         return job_id
@@ -153,7 +153,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         for key, value in values.items():
             setattr(row, key, value)
 
-    async def get_result(self, job_id: int, *, timeout: float = 5.0) -> ResultT | None:
+    def get_result(self, job_id: int, *, timeout: float = 5.0) -> ResultT | None:
         """Wait until this Job is ``COMPLETED`` or ``FAILED``.
 
         Returns ``None`` if *timeout* seconds pass first. Peek with
@@ -170,7 +170,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
                 return type(self).result_cls.from_row(row)
             if time.monotonic() >= deadline:
                 return None
-            await asyncio.sleep(0.1)
+            time.sleep(0.1)
 
     def check_job_status(self, job_id: int) -> JobStatus:
         with self._session() as session:

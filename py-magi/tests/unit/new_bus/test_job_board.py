@@ -41,11 +41,11 @@ def test_publish_claim_complete(ping_board) -> None:
     assert isinstance(claimed.created_at, datetime)
 
     _submit(ping_board, BaseJobResult(id=claimed.id))
-    outcome = go(ping_board.get_result(claimed.id)).result()
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.status is JobStatus.COMPLETED
     assert outcome.id == claimed.id
-    again = go(ping_board.get_result(claimed.id)).result()
+    again = ping_board.get_result(claimed.id)
     assert again is not None
     assert again.status is JobStatus.COMPLETED
     assert not hasattr(claimed, "result")
@@ -58,7 +58,7 @@ def test_job_and_result_share_one_flat_record(ping_board) -> None:
     claimed = _claim(ping_board)
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id))
-    outcome = go(ping_board.get_result(claimed.id)).result()
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.id == claimed.id
     assert outcome.status is JobStatus.COMPLETED
@@ -71,7 +71,7 @@ def test_claim_then_fail(ping_board) -> None:
     claimed = _claim(ping_board)
     assert claimed is not None
     _submit(ping_board, BaseJobResult(id=claimed.id, status=JobStatus.FAILED, error="nope"))
-    outcome = go(ping_board.get_result(claimed.id)).result()
+    outcome = ping_board.get_result(claimed.id)
     assert outcome is not None
     assert outcome.status is JobStatus.FAILED
     assert outcome.error == "nope"

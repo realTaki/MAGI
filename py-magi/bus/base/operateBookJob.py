@@ -1,9 +1,8 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
-These jobs have no worker ``claim`` phase. ``publish`` waits for the
-post-publish gate, then executes the Book operation. ``get_result``
-awaits that written result. The Job row lives in the logs store; the
-Book mutation uses the memories store.
+These jobs have no worker ``claim`` phase. ``publish`` returns the Job
+id immediately; ``get_result`` waits for the Book operation. The Job
+row lives in the logs store; the Book mutation uses the memories store.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from sqlalchemy.orm import Session
 from .BaseBook import BaseBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from .engine import EngineFactory
+from .go import go
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
@@ -35,21 +35,21 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
         del result
         return False
 
-    async def publish(self, job: JobT) -> int:
+    def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
-        published = replace(job, id=job_id)
-        if await self._post_publish(published) is not JobStatus.PENDING:
-            return job_id
+        go(self._operate(replace(job, id=job_id)))
+        return job_id
 
+    async def _operate(self, job: JobT) -> None:
+        if await self._post_publish(job) is not JobStatus.PENDING:
+            return
         with self._book._session() as books:
-            result = self._execute(books, published)
+            result = self._execute(books, job)
             books.commit()
-
         with self._session() as session:
-            row = session.get_one(type(self).row_cls, job_id)
+            row = session.get_one(type(self).row_cls, job.id)
             self._write_result(row, result)
             session.commit()
-        return job_id
 
     def _execute(self, session: Session, job: JobT) -> ResultT:
         """Operate on the Book in the memories store."""

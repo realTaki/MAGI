@@ -84,9 +84,13 @@ class BaseWorker:
         """Claim one pending Job of *job_type*, off the listen loop."""
         return await self.call(self.board(job_type).claim)
 
-    def publish(self, job: BaseJob) -> None:
-        """Enqueue *job* without waiting for a result."""
-        go(self.board(type(job)).publish(job))
+    def publish_notify(self, job: BaseJob) -> None:
+        """Enqueue a Notify without waiting for its id."""
+        go(asyncio.to_thread(self.board(type(job)).publish, job))
+
+    def publish(self, job: BaseJob) -> int:
+        """Enqueue *job* and return its id."""
+        return self.board(type(job)).publish(job)
 
     async def ask(self, job: BaseJob) -> BaseJobResult:
         """Publish *job* and return its completed result.
@@ -94,8 +98,7 @@ class BaseWorker:
         Times out or a ``FAILED`` status raise ``RuntimeError``.
         """
         board = self.board(type(job))
-        job_id = await board.publish(job)
-        result = await board.get_result(job_id)
+        result = await self.call(board.get_result, await self.call(self.publish, job))
         if result is not None and result.status is JobStatus.COMPLETED:
             return result
         raise RuntimeError(
