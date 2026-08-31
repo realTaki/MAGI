@@ -6,7 +6,16 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from bus import Bus, ChatNotify, FireTaskJob, GetTaskJob, JobStatus, RunTaskNotify, Task, go
+from bus import (
+    Bus,
+    ChatNotify,
+    GetTaskJob,
+    JobStatus,
+    RunTaskNotify,
+    RunTaskNotifyResult,
+    Task,
+    go,
+)
 from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
@@ -31,19 +40,25 @@ def test_should_fire_cron_coalesces_each_window() -> None:
     assert worker._should_fire(task, now) is False
 
 
-def test_fire_task_job_updates_the_task_timestamp(tmp_path) -> None:
+def test_run_task_notify_result_updates_the_task_timestamp(tmp_path) -> None:
     with Bus(tmp_path) as bus:
         task_book = TaskBook(bus._memories)
         task_id = task_book.add(Task(name="daily", prompt="summarise progress"))
         before_fire = task_book.get(task_id)
         assert before_fire is not None
 
-        board = bus.board(FireTaskJob)
-        assert board is not None
-        result = go(board.get_result(board.publish(FireTaskJob(task_id=task_id)))).result()
+        board = bus.board(RunTaskNotify)
+        board.publish(RunTaskNotify(task_id=task_id))
+        claimed = None
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            claimed = board.claim()
+            if claimed is not None:
+                break
+            time.sleep(0.01)
+        assert claimed is not None
+        assert board.submit_result(RunTaskNotifyResult(id=claimed.id))
 
-        assert result is not None
-        assert result.status is JobStatus.COMPLETED
         after_fire = task_book.get(task_id)
         assert after_fire is not None
         assert after_fire.updated_at > before_fire.updated_at
