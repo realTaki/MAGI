@@ -140,8 +140,10 @@ class Magi:
             logger.warning("ASP session %s has no local conversation", session_id)
             return
         board = self.bus.board(ChatNotify)
-        board.publish(
-            ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text)
+        go(
+            board.publish(
+                ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text)
+            )
         )
 
     def _conversation_id(self, session_id: str) -> int | None:

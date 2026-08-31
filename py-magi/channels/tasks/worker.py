@@ -39,8 +39,9 @@ class TaskWorker(BaseWorker):
             return True
         for task in await self._due_tasks():
             go(
-                self.board(RunTaskNotify).publish,
-                RunTaskNotify(task_id=task.id, manual=False),
+                self.board(RunTaskNotify).publish(
+                    RunTaskNotify(task_id=task.id, manual=False)
+                )
             )
         return False
 
@@ -91,10 +92,11 @@ class TaskWorker(BaseWorker):
             f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
         )
         go(
-            self.board(ChatNotify).publish,
-            ChatNotify(
-                publisher="task", conversation_id=task.conversation_id, text=text
-            ),
+            self.board(ChatNotify).publish(
+                ChatNotify(
+                    publisher="task", conversation_id=task.conversation_id, text=text
+                )
+            )
         )
 
     def _submit(self, trigger: RunTaskNotify, error: str | None) -> None:
