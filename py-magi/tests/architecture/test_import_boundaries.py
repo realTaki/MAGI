@@ -76,6 +76,8 @@ def test_bus_does_not_import_domain_implementations() -> None:
     forbidden = ("agent", "channels", "tools", "providers")
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
+        if path.name in {"__main__.py", "constant.py"}:
+            continue
         for module, lineno in _imports(path):
             if any(module == root or module.startswith(root + ".") for root in forbidden):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
@@ -83,35 +85,27 @@ def test_bus_does_not_import_domain_implementations() -> None:
 
 
 def test_bus_does_not_depend_on_magi_service() -> None:
-    """The composition root (``magi``) imports the bus, never
-    the other way around.  Catches the legacy reverse edge where
-    :mod:`bus.firmwares.books.file.skillsBook` reached into
-    the service layer.
-
-    Note: ``magi`` itself is a composition root and is
-    *expected* to import from the bus; the test only walks the
-    bus subtree, not the service subtree.
-    """
+    """BUS core does not import its process-level composition modules."""
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
+        if path.name == "__main__.py":
+            continue
         for module, lineno in _imports(path):
             if module == "magi" or module.startswith("magi."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
-        "Bus must not import from the composition root "
-        "(magi); the bus layer should reach for its own "
-        "resource resolvers:\n  " + "\n  ".join(offenders)
+        "BUS core must not import from a composition module:\n  " + "\n  ".join(offenders)
     )
 
 
 def test_asp_channel_does_not_import_magi() -> None:
-    """The ASP channel is a protocol adapter, not a Magi implementation detail."""
+    """The ASP channel is a protocol adapter, not a runtime implementation detail."""
     offenders: list[str] = []
     for path in (MAGI_ROOT / "channels" / "asp").rglob("*.py"):
         for module, lineno in _imports(path):
             if module == "magi" or module.startswith("magi."):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
-        "channels.asp must not reach back into Magi; "
+    "channels.asp must not reach back into the retired magi runtime; "
         "the composition root supplies the channel worker:\n  " + "\n  ".join(offenders)
     )

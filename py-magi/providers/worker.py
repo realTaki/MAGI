@@ -15,8 +15,6 @@ deliver the result to the conversation.
 
 from __future__ import annotations
 
-import json
-
 from bus import (
     BaseWorker,
     CallLLMJob,
@@ -27,7 +25,7 @@ from bus import (
     ListSettingsJob,
     go,
 )
-from providers.client import Client, options
+from providers.client import Client
 
 NAME_KEY = "provider.name"
 API_KEY = "provider.api_key"
@@ -37,15 +35,9 @@ MODEL_KEY = "provider.model"
 class ProvidersWorker(BaseWorker):
     worker_name = "providers"
 
-    def __init__(self, *, poll_seconds: float = 0.25) -> None:
-        super().__init__(poll_seconds=poll_seconds)
+    def __init__(self, bus, *, poll_seconds: float = 0.25) -> None:
+        super().__init__(bus, poll_seconds=poll_seconds)
         self._client: Client | None = None
-
-    async def on_attached(self) -> None:
-        self.bus.boost_default_settings(
-            worker_name="providers",
-            settings={"options": json.dumps(options(), ensure_ascii=False)},
-        )
 
     async def on_detached(self) -> None:
         self._client = None

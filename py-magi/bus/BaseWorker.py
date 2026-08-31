@@ -7,7 +7,7 @@ import logging
 import threading
 from concurrent.futures import Future
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.go import go
@@ -28,20 +28,23 @@ class BaseWorker:
 
     worker_name: ClassVar[str | None] = None
 
-    def __init__(self, *, poll_seconds: float = 0.25) -> None:
+    def __init__(self, bus: Bus | None = None, *, poll_seconds: float = 0.25) -> None:
         self.poll_seconds = poll_seconds
         self.worker_id: str | None = None
-        self.bus: Bus | None = None
+        self._bus = bus
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._attached_ok = False
         self._running: Future[Any] | None = None
 
-    def attach(self, bus: Bus) -> bool:
+    def attach(self, bus: Bus | None = None) -> bool:
         """Bind this worker to the runtime BUS and start its loop."""
-        if self.bus is not None:
-            return self.bus is bus
-        self.bus = bus
+        if bus is not None:
+            if self._bus is not None:
+                return self._bus is bus
+            self._bus = bus
+        if self._bus is None:
+            raise ValueError("worker needs a BUS")
         self.worker_id = type(self).worker_name
         self._stop.clear()
         self._ready.clear()
@@ -54,7 +57,7 @@ class BaseWorker:
 
     def detach(self) -> None:
         """Stop the listen loop. Work already passed to ``go()`` keeps running."""
-        if self.bus is None:
+        if self._bus is None:
             return
         self._stop.set()
         future = self._running
@@ -67,7 +70,12 @@ class BaseWorker:
 
     def is_alive(self) -> bool:
         future = self._running
-        return self.bus is not None and future is not None and not future.done()
+        return self._bus is not None and future is not None and not future.done()
+
+    @property
+    def bus(self) -> Bus:
+        """The BUS bound by :meth:`attach`, available to worker implementations."""
+        return cast("Bus", self._bus)
 
     async def on_attached(self) -> None:
         """Optional async initialization after the BUS is attached."""
@@ -77,7 +85,6 @@ class BaseWorker:
 
     def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
         """Return the mounted JobBoard for *job_type*."""
-        assert self.bus is not None
         return self.bus.board(job_type)
 
     async def claim[JobT: BaseJob](self, job_type: type[JobT]) -> JobT | None:
@@ -131,7 +138,7 @@ class BaseWorker:
         try:
             try:
                 await self.on_attached()
-            except Exception:  # noqa: BLE001 -- attach must report failure to Magi
+            except Exception:  # noqa: BLE001 -- attach must report failure to the runtime
                 self._attached_ok = False
                 return
             self._attached_ok = True
@@ -143,6 +150,6 @@ class BaseWorker:
                 await self.on_detached()
 
     def _clear_attachment(self) -> None:
-        self.bus = None
+        self._bus = None
         self.worker_id = None
         self._running = None

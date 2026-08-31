@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.engine import EngineFactory
 from .base.file import FileEngine
+from .BaseWorker import BaseWorker
 
 JobT = TypeVar("JobT", bound=BaseJob)
 
@@ -18,13 +20,21 @@ JobT = TypeVar("JobT", bound=BaseJob)
 class Bus:
     """One runtime's source of truth for jobs."""
 
-    def __init__(self, workspace: str | Path) -> None:
+    def __init__(self, handle: str, *, workspace: str | Path | None = None) -> None:
         """Open one private BUS store rooted at *workspace*.
 
         Books live in ``<workspace>/memories/magi.db``. Job history lives in
         ``<workspace>/logs/magi.db``. File Books share the workspace root.
         """
-        self.workspace = Path(workspace).resolve()
+        self.handle = handle
+        self.workspace = (
+            Path(workspace).resolve()
+            if workspace is not None
+            else Path.home()
+            / ".magi"
+            / (handle[1:] if handle.startswith("@") else handle)
+            / "workspace"
+        )
         self.workspace.mkdir(parents=True, exist_ok=True)
         from .firmware.versions.schema import prepare_schema
 
@@ -41,6 +51,52 @@ class Bus:
             memories=self._memories,
             files=self._files,
         )
+        self._workers: dict[str, BaseWorker] = {}
+        self._closed = False
+
+    @property
+    def workers(self) -> dict[str, BaseWorker]:
+        return dict(self._workers)
+
+    def attach(
+        self,
+        worker: BaseWorker | Callable[[Bus], BaseWorker],
+        *,
+        settings: Mapping[str, str] | None = None,
+    ) -> bool:
+        """Store defaults, then create and attach one worker to this BUS."""
+        if self._closed:
+            raise ValueError("Bus is closed")
+        instance = worker if isinstance(worker, BaseWorker) else worker(self)
+        worker_name = instance.worker_name
+        if not worker_name:
+            raise ValueError(f"{type(instance).__qualname__} needs worker_name")
+        if worker_name in self._workers:
+            raise ValueError(f"duplicate worker_name: {worker_name}")
+        if settings is not None and not self.boost_default_settings(
+            worker_name=worker_name, settings=settings
+        ):
+            return False
+        if not instance.attach():
+            instance.detach()
+            return False
+        self._workers[worker_name] = instance
+        return True
+
+    def shutdown(self) -> None:
+        """Detach workers in reverse attach order."""
+        for worker in reversed(tuple(self._workers.values())):
+            worker.detach()
+        self._workers = {}
+
+    def serve(self) -> None:
+        """Keep this BUS and its attached workers alive until interrupted."""
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.close()
 
     def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
         """Return the mounted JobBoard for *job_type*."""
@@ -78,8 +134,14 @@ class Bus:
         return True
 
     def close(self) -> None:
-        self._logs.close()
-        self._memories.close()
+        if self._closed:
+            return
+        self.shutdown()
+        try:
+            self._logs.close()
+        finally:
+            self._memories.close()
+            self._closed = True
 
     def __enter__(self) -> Bus:
         return self
