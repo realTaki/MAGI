@@ -27,8 +27,7 @@ class Message(BaseRecord):
 
     contact_id: int
     content: str
-    conversation_id: int | None = None
-    timestamp: BaseTime = field(default_factory=utcnow)
+    conversation_id: int
     archived: bool = False
 
 

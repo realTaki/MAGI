@@ -32,9 +32,9 @@ class Conversation(BaseRecord):
 
     delivery_address: str
     channel: str
-    topic: str = ""
-    instruction: str = ""
-    info: str = ""
+    topic: str = "New Conversation"
+    instruction: str | None = None
+    info: str | None = None
     summary: str = ""
     last_compaction_at: BaseTime | None = None
 
