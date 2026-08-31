@@ -30,21 +30,12 @@ class ToolsWorker(BaseWorker):
     async def on_attached(self) -> None:
         await self.call(self._boost_builtins)
 
-    async def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                job = await self.call(self._board(RunToolJob).claim)
-                if job is not None:
-                    go(self._on_run(job))
-                    continue
-            except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
-                logger.exception("tools worker: BUS operation failed")
-            await asyncio.sleep(self.poll_seconds)
-
-    def _board(self, job_type):
-        assert self.bus is not None
-        board = self.bus.board(job_type)
-        return board
+    async def _poll(self) -> bool:
+        job = await self.claim(RunToolJob)
+        if job is None:
+            return False
+        go(self._on_run(job))
+        return True
 
     def _boost_builtins(self) -> None:
         try:
@@ -52,7 +43,7 @@ class ToolsWorker(BaseWorker):
         except Exception:  # noqa: BLE001 -- missing catalog must not block attach
             logger.exception("tools worker: list tools failed")
             existing = set()
-        board = self._board(SetToolJob)
+        board = self.board(SetToolJob)
         seeded = 0
         for spec in builtin_catalog():
             if spec["name"] in existing:
@@ -82,7 +73,7 @@ class ToolsWorker(BaseWorker):
             logger.info("tools worker: seeded %d builtin tool(s)", seeded)
 
     def _listed_names(self) -> set[str]:
-        board = self._board(ListToolsJob)
+        board = self.board(ListToolsJob)
         job_id = board.publish(ListToolsJob(include_disabled=True))
         result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
@@ -91,20 +82,16 @@ class ToolsWorker(BaseWorker):
 
     async def _on_run(self, job: RunToolJob) -> None:
         try:
-            await self._fail(job, "tool execution is not attached")
+            self._fail(job, "tool execution is not attached")
         except asyncio.CancelledError:
-            await self._fail(job, "tools worker cancelled")
+            self._fail(job, "tools worker cancelled")
             raise
         except Exception:  # noqa: BLE001 -- no job can kill the worker
             logger.exception("tools worker: unhandled exception on job %s", job.id)
-            await self._fail(job, "tool execution is not attached")
+            self._fail(job, "tool execution is not attached")
 
-    async def _fail(self, job: RunToolJob, error: str) -> None:
-        result = RunToolResult(
-            id=job.id,
-            status=JobStatus.FAILED,
-            error=error,
+    def _fail(self, job: RunToolJob, error: str) -> None:
+        self.submit(
+            RunToolJob,
+            RunToolResult(id=job.id, status=JobStatus.FAILED, error=error),
         )
-        if not await self.call(self._board(RunToolJob).submit_result, result):
-            logger.warning("tools worker: failed to submit result for %s", job.id)
-

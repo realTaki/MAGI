@@ -176,8 +176,7 @@ class Magi:
                 continue
             session_id = self._sessions.get(job.conversation_id) if job.conversation_id else None
             if not session_id or not job.text:
-                await asyncio.to_thread(
-                    board.submit_result,
+                await board.submit_result(
                     DeliveryNotifyResult(
                         id=job.id,
                         status=JobStatus.FAILED,
@@ -188,8 +187,7 @@ class Magi:
             try:
                 await self.asp_client.send(session_id, job.text)
             except Exception as error:
-                await asyncio.to_thread(
-                    board.submit_result,
+                await board.submit_result(
                     DeliveryNotifyResult(
                         id=job.id,
                         status=JobStatus.FAILED,
@@ -197,7 +195,7 @@ class Magi:
                     ),
                 )
                 continue
-            await asyncio.to_thread(board.submit_result, DeliveryNotifyResult(id=job.id))
+            await board.submit_result(DeliveryNotifyResult(id=job.id))
 
     @staticmethod
     def _detach_workers(workers: dict[str, BaseWorker]) -> None:

@@ -55,25 +55,16 @@ class ProvidersWorker(BaseWorker):
         self._client = None
         self._error = None
 
-    async def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                change = await self.call(self._board(ChangeProviderNotify).claim)
-                if change is not None:
-                    await self._on_change(change)
-                    continue
-                job = await self.call(self._board(CallLLMJob).claim)
-                if job is not None:
-                    go(self._on_llm(job))
-                    continue
-            except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
-                logger.exception("providers worker: BUS operation failed")
-            await asyncio.sleep(self.poll_seconds)
-
-    def _board(self, job_type):
-        assert self.bus is not None
-        board = self.bus.board(job_type)
-        return board
+    async def _poll(self) -> bool:
+        change = await self.claim(ChangeProviderNotify)
+        if change is not None:
+            await self._on_change(change)
+            return True
+        job = await self.claim(CallLLMJob)
+        if job is not None:
+            go(self._on_llm(job))
+            return True
+        return False
 
     def _rebuild(self) -> None:
         try:
@@ -87,7 +78,7 @@ class ProvidersWorker(BaseWorker):
             logger.warning("providers worker: cannot build client (%s)", exc)
 
     def _settings(self) -> dict[str, str]:
-        board = self._board(ListSettingsJob)
+        board = self.board(ListSettingsJob)
         job_id = board.publish(ListSettingsJob())
         result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
@@ -109,39 +100,36 @@ class ProvidersWorker(BaseWorker):
             )
         else:
             result = ChangeProviderNotifyResult(id=job.id)
-        if not await self.call(self._board(ChangeProviderNotify).submit_result, result):
-            logger.warning("providers worker: failed to submit config result for %s", job.id)
+        self.submit(ChangeProviderNotify, result)
 
     async def _on_llm(self, job: CallLLMJob) -> None:
         try:
             if self._client is None:
-                await self._fail(job, self._error or "MAGI runtime has no LLM provider configured")
+                self._fail(job, self._error or "MAGI runtime has no LLM provider configured")
                 return
             response = await self._client.complete(
                 job.messages,
                 max_tokens=int(job.max_tokens or 1024),
                 tools=job.tools or None,
             )
-            result = CallLLMResult(
-                id=job.id,
-                text=response.get("text") or "(empty reply)",
-                thinking=response.get("thinking"),
-                tool_uses=list(response.get("tool_uses") or []),
-                raw_blocks=list(response.get("raw_blocks") or []),
-                finish_reason=response.get("stop_reason"),
-                model=response.get("model") or self._client.model,
+            self.submit(
+                CallLLMJob,
+                CallLLMResult(
+                    id=job.id,
+                    text=response.get("text") or "(empty reply)",
+                    thinking=response.get("thinking"),
+                    tool_uses=list(response.get("tool_uses") or []),
+                    raw_blocks=list(response.get("raw_blocks") or []),
+                    finish_reason=response.get("stop_reason"),
+                    model=response.get("model") or self._client.model,
+                ),
             )
-            if not await self.call(self._board(CallLLMJob).submit_result, result):
-                logger.warning("providers worker: failed to submit LLM result for %s", job.id)
-                return
         except asyncio.CancelledError:
-            await self._fail(job, "providers worker cancelled")
+            self._fail(job, "providers worker cancelled")
             raise
         except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
             logger.exception("providers worker: unhandled exception on job %s", job.id)
-            await self._fail(job, str(exc))
+            self._fail(job, str(exc))
 
-    async def _fail(self, job: CallLLMJob, error: str) -> None:
-        result = CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error)
-        if not await self.call(self._board(CallLLMJob).submit_result, result):
-            logger.warning("providers worker: failed to submit failure for %s", job.id)
+    def _fail(self, job: CallLLMJob, error: str) -> None:
+        self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error))
