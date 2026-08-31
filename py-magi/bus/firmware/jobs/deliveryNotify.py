@@ -31,7 +31,7 @@ class DeliveryNotifyResult(BaseJobResult):
 class DeliveryNotifyRow(BaseJobRow):
     __tablename__ = "jobs_delivery_notify"
 
-    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 

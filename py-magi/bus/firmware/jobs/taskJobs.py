@@ -66,7 +66,7 @@ class ListTasksJob(BaseJob[ListTasksResult]):
 class ListTasksJobRow(BaseJobRow):
     __tablename__ = "jobs_list_tasks"
 
-    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     tasks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 

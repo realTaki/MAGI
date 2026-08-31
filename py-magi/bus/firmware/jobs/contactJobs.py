@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Integer, Text, delete, select
@@ -88,6 +88,37 @@ class GetContactJobBoard(OperateBookJobBoard[GetContactJob, GetContactResult, Ge
 
 
 @dataclass
+class ListContactsJob(BaseJob):
+    role: ContactRole | None = None
+
+
+@dataclass
+class ListContactsResult(BaseJobResult):
+    contacts: list[Contact] | None = None
+
+
+class ListContactsJobRow(BaseJobRow):
+    __tablename__ = "jobs_list_contacts"
+
+    role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contacts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+
+
+class ListContactsJobBoard(
+    OperateBookJobBoard[ListContactsJob, ListContactsResult, ListContactsJobRow]
+):
+    job_cls = ListContactsJob
+    result_cls = ListContactsResult
+    row_cls = ListContactsJobRow
+
+    def _execute(self, session: Session, job: ListContactsJob) -> ListContactsResult:
+        stmt = select(ContactRow).order_by(ContactRow.id)
+        if job.role is not None:
+            stmt = stmt.where(ContactRow.role == job.role.value)
+        return ListContactsResult(contacts=[Contact.from_row(row) for row in session.scalars(stmt)])
+
+
+@dataclass
 class UpdateContactJob(BaseJob):
     """Replace one Contact's mutable profile fields."""
 
@@ -124,11 +155,14 @@ class UpdateContactJobBoard(
             return UpdateContactResult(
                 status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
             )
-        if job.name is not None and not _valid_name(job.name):
-            return UpdateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
-        row.name = job.name.strip() if job.name is not None else None
-        row.nickname = job.nickname
-        row.role = job.role.value if job.role is not None else None
+        if job.name is not None:
+            if not _valid_name(job.name):
+                return UpdateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
+            row.name = job.name.strip()
+        if job.nickname is not None:
+            row.nickname = job.nickname
+        if job.role is not None:
+            row.role = job.role.value
         return UpdateContactResult()
 
 

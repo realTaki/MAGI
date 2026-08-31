@@ -42,15 +42,15 @@ class CallLLMJobRow(BaseJobRow):
     __tablename__ = "jobs_call_llm"
 
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    contact_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
-    tools: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     thinking: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_uses: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     raw_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CallLLMJobBoard(BaseJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):

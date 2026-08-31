@@ -48,7 +48,7 @@ class PromptsBook(BaseFileBook):
         if default_key is None or not self._set_exact(key=default_key, value=value):
             return False
         if self._files.exists_file(self._file_name(key)):
-            return False
+            return True
         return self.set(key=key, value=value)
 
     def reset(self, *, key: str) -> bool:

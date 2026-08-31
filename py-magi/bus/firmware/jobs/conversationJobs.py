@@ -33,8 +33,8 @@ class CreateConversationJobRow(BaseJobRow):
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)
     topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    info: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    info: Mapped[str | None] = mapped_column(Text, nullable=True)
     conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 

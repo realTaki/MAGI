@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
@@ -38,11 +38,11 @@ class RunToolResult(BaseJobResult):
 class RunToolJobRow(BaseJobRow):
     __tablename__ = "jobs_run_tool"
 
-    tool_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    arguments: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    tool_call_id: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tool_name: Mapped[str] = mapped_column(Text, nullable=False)
+    arguments: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    tool_call_id: Mapped[str] = mapped_column(Text, nullable=False)
+    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RunToolJobBoard(BaseJobBoard[RunToolJob, RunToolResult, RunToolJobRow]):

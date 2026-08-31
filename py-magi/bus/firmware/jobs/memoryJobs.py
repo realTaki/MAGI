@@ -95,7 +95,7 @@ class ListMemoriesResult(BaseJobResult):
 class ListMemoriesJobRow(BaseJobRow):
     __tablename__ = "jobs_list_memories"
 
-    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
     include_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     memories: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
@@ -134,10 +134,10 @@ class UpdateMemoryJobRow(BaseJobRow):
     __tablename__ = "jobs_update_memory"
 
     memory_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    topic: Mapped[str] = mapped_column(Text, nullable=False)
-    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
-    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    topic: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archived: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class UpdateMemoryJobBoard(
@@ -153,12 +153,16 @@ class UpdateMemoryJobBoard(
             return UpdateMemoryResult(
                 status=JobStatus.FAILED, error=f"memory {job.memory_id} does not exist"
             )
-        if not _valid_topic(job.topic):
-            return UpdateMemoryResult(status=JobStatus.FAILED, error="memory topic must be non-empty")
-        row.topic = job.topic
-        row.detail = job.detail
-        row.kind = job.kind.value
-        row.archived = job.archived
+        if job.topic is not None:
+            if not _valid_topic(job.topic):
+                return UpdateMemoryResult(status=JobStatus.FAILED, error="memory topic must be non-empty")
+            row.topic = job.topic
+        if job.detail is not None:
+            row.detail = job.detail
+        if job.kind is not None:
+            row.kind = job.kind.value
+        if job.archived is not None:
+            row.archived = job.archived
         return UpdateMemoryResult()
 
 

@@ -45,8 +45,8 @@ class ConversationRow(BaseRecordMixin):
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)
     topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    info: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    info: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     last_compaction_at: Mapped[BaseTime | None] = mapped_column(DateTime, nullable=True)
 

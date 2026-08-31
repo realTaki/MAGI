@@ -53,9 +53,9 @@ class TaskRow(BaseRecordMixin):
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False, default=TaskSource.USER.value)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    cron: Mapped[str | None] = mapped_column(Text, nullable=True)
-    conversation_id: Mapped[int | None] = mapped_column(
-        ForeignKey("books_conversations.id", ondelete="SET NULL"), nullable=True
+    cron: Mapped[str] = mapped_column(Text, nullable=False)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("books_conversations.id", ondelete="RESTRICT"), nullable=False
     )
 
 
