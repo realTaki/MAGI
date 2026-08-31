@@ -15,11 +15,11 @@ from ..books.conversationBook import ConversationRow
 
 @dataclass
 class CreateConversationJob(BaseJob):
-    delivery_address: str = ""
-    channel: str = ""
-    topic: str = ""
-    instruction: str = ""
-    info: str = ""
+    delivery_address: str 
+    channel: str  
+    topic: str  
+    instruction: str | None = None
+    info: str | None = None
 
 
 @dataclass
@@ -60,8 +60,8 @@ class CreateConversationJobBoard(
 
 @dataclass
 class UpdateConversationSummaryJob(BaseJob):
-    conversation_id: int = 0
-    summary: str = ""
+    conversation_id: int 
+    summary: str 
 
 
 @dataclass

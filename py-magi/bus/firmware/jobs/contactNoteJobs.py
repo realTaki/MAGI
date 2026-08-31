@@ -16,8 +16,8 @@ from ..books.contactNoteBook import ContactNote, ContactNoteRow, NoteKind
 
 @dataclass
 class CreateContactNoteJob(BaseJob):
-    contact_id: int = 0
-    note: str = ""
+    contact_id: int 
+    note: str 
     kind: NoteKind = NoteKind.PERMANENT
 
 
@@ -61,7 +61,7 @@ class CreateContactNoteJobBoard(
 
 @dataclass
 class GetContactNoteJob(BaseJob):
-    contact_note_id: int = 0
+    contact_note_id: int 
 
 
 @dataclass
@@ -89,13 +89,13 @@ class GetContactNoteJobBoard(
 
 @dataclass
 class ListContactNotesJob(BaseJob):
-    contact_id: int = 0
-    kind: NoteKind | None = None
+    contact_id: int 
+    kind: NoteKind = NoteKind.PERMANENT
 
 
 @dataclass
 class ListContactNotesResult(BaseJobResult):
-    contact_notes: list[ContactNote] = field(default_factory=list)
+    contact_notes: list[ContactNote] | None = None
 
 
 class ListContactNotesJobRow(BaseJobRow):
@@ -124,9 +124,9 @@ class ListContactNotesJobBoard(
 class UpdateContactNoteJob(BaseJob):
     """Replace one ContactNote's text and classification."""
 
-    contact_note_id: int = 0
-    note: str = ""
-    kind: NoteKind = NoteKind.PERMANENT
+    contact_note_id: int
+    note: str | None = None
+    kind: NoteKind | None = None
 
 
 @dataclass
@@ -164,7 +164,7 @@ class UpdateContactNoteJobBoard(
 
 @dataclass
 class DeleteContactNoteJob(BaseJob):
-    contact_note_id: int = 0
+    contact_note_id: int 
 
 
 @dataclass

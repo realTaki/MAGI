@@ -26,7 +26,7 @@ class GetTaskResult(BaseJobResult):
 class GetTaskJob(BaseJob[GetTaskResult]):
     """Read one task definition for a claimed task trigger."""
 
-    task_id: int = 0
+    task_id: int 
 
 
 class GetTaskJobRow(BaseJobRow):
@@ -60,7 +60,7 @@ class ListTasksResult(BaseJobResult):
 class ListTasksJob(BaseJob[ListTasksResult]):
     """Read Task definitions, optionally narrowed by their enabled state."""
 
-    enabled: bool | None = None
+    enabled: bool = True 
 
 
 class ListTasksJobRow(BaseJobRow):

@@ -19,8 +19,8 @@ class ChatNotify(BaseJob):
     Contact and channel live on the Conversation row, not on this notify.
     """
 
-    conversation_id: int | None = None
-    text: str = ""
+    conversation_id: int 
+    text: str
 
 
 @dataclass

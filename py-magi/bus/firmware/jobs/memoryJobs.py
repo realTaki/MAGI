@@ -19,8 +19,8 @@ def _valid_topic(topic: str) -> bool:
 
 @dataclass
 class CreateMemoryJob(BaseJob):
-    topic: str = ""
-    detail: str = ""
+    detail: str
+    topic: str = "New Memory"
     kind: MemoryKind = MemoryKind.LONG_TERM
 
 
@@ -56,7 +56,7 @@ class CreateMemoryJobBoard(
 
 @dataclass
 class GetMemoryJob(BaseJob):
-    memory_id: int = 0
+    memory_id: int 
 
 
 @dataclass
@@ -83,13 +83,13 @@ class GetMemoryJobBoard(OperateBookJobBoard[GetMemoryJob, GetMemoryResult, GetMe
 
 @dataclass
 class ListMemoriesJob(BaseJob):
-    kind: MemoryKind | None = None
+    kind: MemoryKind = MemoryKind.LONG_TERM
     include_archived: bool = False
 
 
 @dataclass
 class ListMemoriesResult(BaseJobResult):
-    memories: list[Memory] = field(default_factory=list)
+    memories: list[Memory] | None = None
 
 
 class ListMemoriesJobRow(BaseJobRow):
@@ -118,11 +118,11 @@ class ListMemoriesJobBoard(
 
 @dataclass
 class UpdateMemoryJob(BaseJob):
-    memory_id: int = 0
-    topic: str = ""
-    detail: str = ""
-    kind: MemoryKind = MemoryKind.LONG_TERM
-    archived: bool = False
+    memory_id: int  
+    topic: str | None = None
+    detail: str | None = None
+    kind: MemoryKind | None = None
+    archived: bool | None = None
 
 
 @dataclass
@@ -164,7 +164,7 @@ class UpdateMemoryJobBoard(
 
 @dataclass
 class DeleteMemoryJob(BaseJob):
-    memory_id: int = 0
+    memory_id: int  
 
 
 @dataclass

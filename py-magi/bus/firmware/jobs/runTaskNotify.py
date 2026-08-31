@@ -21,7 +21,7 @@ class RunTaskNotify(BaseJob):
     an operator/tool trigger versus a cron fire.
     """
 
-    task_id: int = 0
+    task_id: int 
     manual: bool = True
 
 

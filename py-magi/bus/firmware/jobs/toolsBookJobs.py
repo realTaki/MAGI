@@ -19,7 +19,7 @@ def _valid_name(name: str) -> bool:
 
 @dataclass
 class GetToolJob(BaseJob):
-    name: str = ""
+    name: str 
 
 
 @dataclass
@@ -48,10 +48,10 @@ class GetToolJobBoard(OperateBookJobBoard[GetToolJob, GetToolResult, GetToolJobR
 
 @dataclass
 class SetToolJob(BaseJob):
-    name: str = ""
-    description: str = ""
-    input_schema: dict[str, Any] = field(default_factory=dict)
-    enabled: bool = True
+    name: str 
+    description: str | None = None
+    input_schema: dict[str, Any] | None = None
+    enabled: bool = True | None = None
 
 
 @dataclass
@@ -97,7 +97,7 @@ class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobR
 
 @dataclass
 class DeleteToolJob(BaseJob):
-    name: str = ""
+    name: str
 
 
 @dataclass
@@ -128,7 +128,7 @@ class DeleteToolJobBoard(OperateBookJobBoard[DeleteToolJob, DeleteToolResult, De
 
 @dataclass
 class ListToolsResult(BaseJobResult):
-    tools: list[Tool] = field(default_factory=list)
+    tools: list[Tool] | None = None
 
 
 @dataclass

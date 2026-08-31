@@ -18,7 +18,7 @@ def _valid_key(key: str) -> bool:
 
 @dataclass
 class GetSettingJob(BaseJob):
-    key: str = ""
+    key: str  
 
 
 @dataclass
@@ -47,8 +47,8 @@ class GetSettingJobBoard(OperateBookJobBoard[GetSettingJob, GetSettingResult, Ge
 
 @dataclass
 class SetSettingJob(BaseJob):
-    key: str = ""
-    value: str = ""
+    key: str 
+    value: str
 
 
 @dataclass
@@ -83,7 +83,7 @@ class SetSettingJobBoard(OperateBookJobBoard[SetSettingJob, SetSettingResult, Se
 
 @dataclass
 class DeleteSettingJob(BaseJob):
-    key: str = ""
+    key: str  
 
 
 @dataclass
@@ -116,8 +116,7 @@ class DeleteSettingJobBoard(
 
 @dataclass
 class ListSettingsResult(BaseJobResult):
-    settings: dict[str, str] = field(default_factory=dict)
-
+    settings: dict[str, str] | None = None
 
 @dataclass
 class ListSettingsJob(BaseJob[ListSettingsResult]):

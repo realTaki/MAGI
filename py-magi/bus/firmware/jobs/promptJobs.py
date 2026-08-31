@@ -14,7 +14,7 @@ from ..books.promptsBook import PromptsBook
 
 @dataclass
 class GetPromptJob(BaseJob):
-    key: str = ""
+    key: str  
 
 
 @dataclass
@@ -44,8 +44,8 @@ class GetPromptJobBoard(OperateFileBookJobBoard[GetPromptJob, GetPromptResult, G
 
 @dataclass
 class SetPromptJob(BaseJob):
-    key: str = ""
-    value: str = ""
+    key: str  
+    value: str  
 
 
 @dataclass
@@ -77,14 +77,13 @@ class SetPromptJobBoard(OperateFileBookJobBoard[SetPromptJob, SetPromptResult, S
 
 @dataclass
 class RegisterPromptJob(BaseJob):
-    key: str = ""
-    value: str = ""
+    key: str  
+    value: str  
 
 
 @dataclass
 class RegisterPromptResult(BaseJobResult):
-    created: bool = False
-
+    pass
 
 class RegisterPromptJobRow(BaseJobRow):
     __tablename__ = "jobs_register_prompt"
@@ -111,7 +110,7 @@ class RegisterPromptJobBoard(
 
 @dataclass
 class ResetPromptJob(BaseJob):
-    key: str = ""
+    key: str  
 
 
 @dataclass

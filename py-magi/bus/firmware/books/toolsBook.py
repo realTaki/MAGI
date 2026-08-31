@@ -20,9 +20,9 @@ class Tool(BaseRecord):
     only the durable row shape.
     """
 
-    name: str
-    description: str = ""
-    input_schema: dict[str, Any] = field(default_factory=dict)
+    name: str 
+    description: str 
+    input_schema: dict[str, Any] 
     enabled: bool = True
 
 
