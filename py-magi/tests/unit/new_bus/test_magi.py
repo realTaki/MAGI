@@ -10,7 +10,7 @@ import magi.magi as magi_runtime
 from bus import BaseWorker, CallLLMJob, CallLLMResult, JobStatus, go
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from magi import Magi
-from magi.constant import workspace_path
+from magi.constant import WORKERS, workspace_path
 from providers.worker import ProvidersWorker
 from tests.unit.new_bus.testing import attach_board, wait_publish
 
@@ -41,7 +41,7 @@ def _magi(handle: str, *, worker_types=None) -> Magi:
     kwargs = {}
     if worker_types is not None:
         kwargs["worker_types"] = worker_types
-    return Magi(handle, "http://127.0.0.1:9", "token", **kwargs)
+    return Magi(handle, **kwargs)
 
 
 @pytest.fixture
@@ -62,10 +62,9 @@ def test_main_starts_the_named_magi(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
     class StubMagi:
-        def __init__(self, handle: str, base: str, token: str) -> None:
+        def __init__(self, handle: str, *, worker_types) -> None:
             seen["handle"] = handle
-            seen["base"] = base
-            seen["token"] = token
+            seen["worker_types"] = worker_types
 
         def serve(self) -> None:
             seen["served"] = True
@@ -73,12 +72,14 @@ def test_main_starts_the_named_magi(monkeypatch) -> None:
     monkeypatch.setattr(magi_cli, "Magi", StubMagi)
 
     assert magi_cli.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
-    assert seen == {
-        "handle": "@alice.magi",
-        "base": "http://127.0.0.1:42069",
-        "token": "alice-token",
-        "served": True,
-    }
+    assert seen["handle"] == "@alice.magi"
+    assert len(seen["worker_types"]) == len(WORKERS) + 1
+    assert seen["served"] is True
+
+
+def test_magi_does_not_own_an_asp_client(magi_handle) -> None:
+    with _magi(magi_handle) as magi:
+        assert not hasattr(magi, "asp_client")
 
 
 def test_magi_attaches_default_provider_worker(magi_handle) -> None:

@@ -21,16 +21,17 @@ PROVIDER_MODEL_KEY = "provider.model"
 class ChangeProviderNotify(BaseJob):
     """Replace the Runtime's provider configuration.
 
-    A non-empty field replaces its setting; an empty field is skipped.
+    A field set to a string replaces its setting; ``None`` leaves it unchanged.
     Publishing persists the supplied settings atomically before the provider
-    Worker claims this notify and invalidates its cached route. Provider,
-    credential, and model validation occurs only while handling a CallLLMJob,
-    whose terminal result carries any error back to the conversation.
+    Worker claims this notify and updates its cached client in place when one
+    exists. Provider, credential, and model validation occurs only while
+    handling a CallLLMJob, whose terminal result carries any error back to the
+    conversation.
     """
 
-    provider: str = ""
-    api_key: str = ""
-    model: str = ""
+    provider: str | None = None
+    api_key: str | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -41,9 +42,9 @@ class ChangeProviderNotifyResult(BaseJobResult):
 class ChangeProviderNotifyRow(BaseJobRow):
     __tablename__ = "jobs_change_provider_notify"
 
-    provider: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    api_key: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ChangeProviderNotifyBoard(
@@ -58,7 +59,7 @@ class ChangeProviderNotifyBoard(
         self._settings = settings
 
     def _publish(self, job: ChangeProviderNotify) -> int:
-        """Atomically persist configuration and enqueue its rebuild signal."""
+        """Atomically persist configuration and enqueue its update signal."""
         now = utcnow()
         prepared = replace(job, created_at=now, updated_at=now)
         values = prepared.to_dict()
@@ -70,7 +71,7 @@ class ChangeProviderNotifyBoard(
                 (PROVIDER_API_KEY_KEY, job.api_key),
                 (PROVIDER_MODEL_KEY, job.model),
             ):
-                if value == "":
+                if value is None:
                     continue
                 setting = books.scalar(select(SettingRow).where(SettingRow.key == key))
                 if setting is None:
