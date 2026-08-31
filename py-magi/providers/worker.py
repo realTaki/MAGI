@@ -3,10 +3,10 @@
 Delivery is the sole error boundary for this module. Attaching the worker and
 consuming :class:`ChangeProviderNotify` never validate a provider, API key, or
 model, and never report them as configuration failures. A notify has already
-persisted its values; the worker only invalidates its cached route.
+persisted its values; the worker applies them to its existing client in place.
 
-Only a claimed :class:`CallLLMJob` reads that configuration, creates or
-updates a client, and calls the SDK. Every resulting failure -- malformed
+Only a claimed :class:`CallLLMJob` creates a client when needed and calls the
+SDK. Every resulting failure -- malformed
 configuration, missing optional dependency, cancellation, or provider error
 -- becomes that Job's terminal ``CallLLMResult(error=...)``. It must not
 escape the worker or become a separate control-plane error, so Agent can
@@ -27,7 +27,7 @@ from bus import (
     ListSettingsJob,
     go,
 )
-from providers.client import Client, connect, options
+from providers.client import Client, options
 
 NAME_KEY = "provider.name"
 API_KEY = "provider.api_key"
@@ -40,7 +40,6 @@ class ProvidersWorker(BaseWorker):
     def __init__(self, *, poll_seconds: float = 0.25) -> None:
         super().__init__(poll_seconds=poll_seconds)
         self._client: Client | None = None
-        self._route: tuple[str | None, str | None, str | None] | None = None
 
     async def on_attached(self) -> None:
         self.bus.boost_default_settings(
@@ -50,7 +49,6 @@ class ProvidersWorker(BaseWorker):
 
     async def on_detached(self) -> None:
         self._client = None
-        self._route = None
 
     async def _poll(self) -> bool:
         change = await self.claim(ChangeProviderNotify)
@@ -64,9 +62,13 @@ class ProvidersWorker(BaseWorker):
         return False
 
     async def _on_change(self, job: ChangeProviderNotify) -> None:
-        """Acknowledge persisted configuration without preflight validation."""
-        self._client = None
-        self._route = None
+        """Apply a persisted change in place, without preflight validation."""
+        if self._client is not None:
+            self._client.configure(
+                provider_name=job.provider,
+                api_key=job.api_key,
+                model=job.model,
+            )
         self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
 
     async def _on_llm(self, job: CallLLMJob) -> None:
@@ -94,14 +96,13 @@ class ProvidersWorker(BaseWorker):
             return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
 
     async def _client_for_call(self) -> Client:
-        """Resolve the persisted route only while serving a ``CallLLMJob``."""
+        """Create a client from persisted settings only for a ``CallLLMJob``."""
+        if self._client is not None:
+            return self._client
         listed = await self.ask(ListSettingsJob())
-        route = (
-            listed.settings.get(NAME_KEY),
-            listed.settings.get(API_KEY),
-            listed.settings.get(MODEL_KEY),
+        self._client = Client(
+            provider_name=listed.settings.get(NAME_KEY),
+            api_key=listed.settings.get(API_KEY),
+            model=listed.settings.get(MODEL_KEY),
         )
-        if self._client is None or self._route != route:
-            self._client = await self.call(connect, *route, client=self._client)
-            self._route = route
         return self._client

@@ -1,49 +1,36 @@
-"""One MAGI: BUS, workers, and channel adapters."""
+"""One MAGI runtime: its shared BUS and attached workers."""
 
 from __future__ import annotations
 
-import asyncio
-import logging
-from collections.abc import Sequence
-from typing import Any
+import threading
+from collections.abc import Callable, Sequence
 
-from bus import (
-    BaseWorker,
-    Bus,
-    ChatNotify,
-    CreateConversationJob,
-    DeliveryNotify,
-    DeliveryNotifyResult,
-    JobStatus,
-    go,
-)
-from channels.asp import AspClient
+from bus import BaseWorker, Bus
 
 from .constant import WORKERS, workspace_path
 
-logger = logging.getLogger("magi")
+WorkerFactory = Callable[[], BaseWorker]
 
 
 class Magi:
-    """Own one BUS, its workers, and one ASP connection."""
+    """Own one BUS and the workers attached to it.
+
+    Channel implementations belong to ``channels.*``. The composition root
+    supplies them as ordinary worker factories alongside domain workers.
+    """
 
     def __init__(
         self,
         handle: str,
-        base: str,
-        token: str,
         *,
-        worker_types: Sequence[type[BaseWorker]] = WORKERS,
+        worker_types: Sequence[WorkerFactory] = WORKERS,
     ) -> None:
         self.handle = handle
         self.workspace = workspace_path(handle)
         self.bus = Bus(self.workspace)
-        self.asp_client = AspClient(handle=handle, base=base, token=token)
         self._worker_types = tuple(worker_types)
         self._workers: dict[str, BaseWorker] = {}
         self._closed = False
-        self._conversations: dict[str, int] = {}
-        self._sessions: dict[int, str] = {}
 
     @property
     def workers(self) -> dict[str, BaseWorker]:
@@ -58,10 +45,11 @@ class Magi:
 
         prepared: list[tuple[str, BaseWorker]] = []
         for worker_type in self._worker_types:
-            worker_id = worker_type.worker_name
+            worker = worker_type()
+            worker_id = worker.worker_name
             if not worker_id:
-                raise ValueError(f"{worker_type.__qualname__} needs worker_name")
-            prepared.append((worker_id, worker_type()))
+                raise ValueError(f"{type(worker).__qualname__} needs worker_name")
+            prepared.append((worker_id, worker))
         if not prepared:
             raise ValueError("no workers")
         if len({worker_id for worker_id, _ in prepared}) != len(prepared):
@@ -78,12 +66,12 @@ class Magi:
         return True
 
     def serve(self) -> None:
-        """Attach workers, then stay on ASP /connect until interrupted."""
+        """Attach workers and keep the process alive until interrupted."""
         if not self.run():
             self.close()
             raise RuntimeError("MAGI could not attach its configured workers")
         try:
-            asyncio.run(self._serve_asp())
+            threading.Event().wait()
         except KeyboardInterrupt:
             pass
         finally:
@@ -107,112 +95,7 @@ class Magi:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    async def _serve_asp(self) -> None:
-        ready = asyncio.Event()
-        await asyncio.gather(
-            self.asp_client.listen(self._on_event, ready=ready),
-            self._pump_delivery(ready),
-        )
-
-    async def _on_event(self, event: dict[str, Any]) -> None:
-        kind = event.get("type")
-        session_id = event.get("session_id")
-        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
-        if not isinstance(session_id, str):
-            return
-        try:
-            if kind == "session.invited" and payload.get("invitee") == self.handle:
-                await self.asp_client.join(session_id)
-                initial = payload.get("initial_message")
-                if isinstance(initial, dict):
-                    await asyncio.to_thread(self._ingest, session_id, initial)
-            elif kind == "session.message" and payload.get("sender") != self.handle:
-                await asyncio.to_thread(self._ingest, session_id, payload)
-        except Exception:
-            logger.exception("ASP event %s on %s failed", kind, session_id)
-
-    def _ingest(self, session_id: str, payload: dict[str, Any]) -> None:
-        text = _content_text(payload.get("content"))
-        if not text:
-            return
-        conversation_id = self._conversation_id(session_id)
-        if conversation_id is None:
-            logger.warning("ASP session %s has no local conversation", session_id)
-            return
-        board = self.bus.board(ChatNotify)
-        go(
-            asyncio.to_thread(
-                board.publish,
-                ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text),
-            )
-        )
-
-    def _conversation_id(self, session_id: str) -> int | None:
-        known = self._conversations.get(session_id)
-        if known is not None:
-            return known
-        board = self.bus.board(CreateConversationJob)
-        job_id = board.publish(
-            CreateConversationJob(
-                publisher=self.handle,
-                channel="asp",
-                delivery_address=session_id,
-            )
-        )
-        result = board.get_result(job_id)
-        if result is None or result.status is not JobStatus.COMPLETED:
-            return None
-        conversation_id = result.conversation_id
-        if conversation_id is None:
-            return None
-        self._conversations[session_id] = conversation_id
-        self._sessions[conversation_id] = session_id
-        return conversation_id
-
-    async def _pump_delivery(self, ready: asyncio.Event) -> None:
-        await ready.wait()
-        board = self.bus.board(DeliveryNotify)
-        while True:
-            job = await asyncio.to_thread(board.claim)
-            if job is None:
-                await asyncio.sleep(0.25)
-                continue
-            session_id = self._sessions.get(job.conversation_id) if job.conversation_id else None
-            if not session_id or not job.text:
-                await board.submit_result(
-                    DeliveryNotifyResult(
-                        id=job.id,
-                        status=JobStatus.FAILED,
-                        error="no ASP session for this conversation",
-                    ),
-                )
-                continue
-            try:
-                await self.asp_client.send(session_id, job.text)
-            except Exception as error:
-                await board.submit_result(
-                    DeliveryNotifyResult(
-                        id=job.id,
-                        status=JobStatus.FAILED,
-                        error=str(error).strip() or type(error).__name__,
-                    ),
-                )
-                continue
-            await board.submit_result(DeliveryNotifyResult(id=job.id))
-
     @staticmethod
     def _detach_workers(workers: dict[str, BaseWorker]) -> None:
         for worker in reversed(tuple(workers.values())):
             worker.detach()
-
-
-def _content_text(content: object) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
-        return "".join(parts).strip()
-    return ""
