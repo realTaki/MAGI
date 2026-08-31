@@ -62,9 +62,9 @@ class SetToolJobRow(BaseJobRow):
     __tablename__ = "jobs_set_tool"
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    input_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobRow]):
@@ -78,26 +78,18 @@ class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobR
         name = job.name.strip()
         row = session.scalar(select(ToolRow).where(ToolRow.name == name))
         if row is None:
-            if job.description is None or job.input_schema is None:
-                return SetToolResult(
-                    status=JobStatus.FAILED,
-                    error="description and input_schema are required to create a tool",
-                )
             session.add(
                 ToolRow(
                     name=name,
                     description=job.description,
                     input_schema=dict(job.input_schema),
-                    enabled=True if job.enabled is None else job.enabled,
+                    enabled=job.enabled,
                 )
             )
         else:
-            if job.description is not None:
-                row.description = job.description
-            if job.input_schema is not None:
-                row.input_schema = dict(job.input_schema)
-            if job.enabled is not None:
-                row.enabled = job.enabled
+            row.description = job.description
+            row.input_schema = dict(job.input_schema)
+            row.enabled = job.enabled
         session.flush()
         return SetToolResult()
 

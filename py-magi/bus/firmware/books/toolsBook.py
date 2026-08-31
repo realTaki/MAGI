@@ -31,7 +31,7 @@ class ToolRow(BaseRecordMixin):
     __table_args__ = (UniqueConstraint("name", name="uq_books_tools_name"),)
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    description: Mapped[str] = mapped_column(Text, nullable=False)
     input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
