@@ -52,7 +52,7 @@ class Bus:
             files=self._files,
         )
         self._workers: dict[str, BaseWorker] = {}
-        self._closed = False
+        self._stopped = False
 
     @property
     def workers(self) -> dict[str, BaseWorker]:
@@ -64,18 +64,24 @@ class Bus:
         *,
         settings: Mapping[str, str] | None = None,
     ) -> bool:
-        """Store defaults, then create and attach one worker to this BUS."""
-        if self._closed:
-            raise ValueError("Bus is closed")
+        """Create and attach one worker to this BUS.
+
+        *settings* are startup parameters (for example CLI values from
+        ``magi.py``). They are boosted onto the BUS before the worker
+        starts, replacing that worker's defaults for those keys.
+        """
+        if self._stopped:
+            raise ValueError("Bus is stopped")
         instance = worker if isinstance(worker, BaseWorker) else worker(self)
         worker_name = instance.worker_name
         if not worker_name:
             raise ValueError(f"{type(instance).__qualname__} needs worker_name")
         if worker_name in self._workers:
             raise ValueError(f"duplicate worker_name: {worker_name}")
-        if settings is not None and not self.boost_default_settings(
+        if settings is not None and not self.boost_settings(
             worker_name=worker_name, settings=settings
         ):
+            instance.detach()
             return False
         if not instance.attach():
             instance.detach()
@@ -83,20 +89,25 @@ class Bus:
         self._workers[worker_name] = instance
         return True
 
-    def shutdown(self) -> None:
-        """Detach workers in reverse attach order."""
-        for worker in reversed(tuple(self._workers.values())):
-            worker.detach()
-        self._workers = {}
-
-    def serve(self) -> None:
-        """Keep this BUS and its attached workers alive until interrupted."""
+    def start(self) -> None:
+        """Keep this BUS running until interrupted."""
         try:
             threading.Event().wait()
         except KeyboardInterrupt:
             pass
+
+    def stop(self) -> None:
+        """Detach workers and close the BUS stores."""
+        if self._stopped:
+            return
+        for worker in reversed(tuple(self._workers.values())):
+            worker.detach()
+        self._workers = {}
+        try:
+            self._logs.close()
         finally:
-            self.close()
+            self._memories.close()
+            self._stopped = True
 
     def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
         """Return the mounted JobBoard for *job_type*."""
@@ -106,7 +117,20 @@ class Bus:
             raise KeyError(f"no JobBoard mounted for {job_type.__name__}") from None
 
     def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> bool:
-        """Register a Worker's missing Settings defaults without overwriting values."""
+        """Insert a Worker's missing Settings defaults without overwriting values."""
+        return self._write_settings(worker_name, settings, overwrite=False)
+
+    def boost_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> bool:
+        """Persist startup parameters for a Worker, replacing existing values."""
+        return self._write_settings(worker_name, settings, overwrite=True)
+
+    def _write_settings(
+        self,
+        worker_name: str,
+        settings: Mapping[str, str],
+        *,
+        overwrite: bool,
+    ) -> bool:
         from .firmware.books.settingsBook import SettingRow
 
         namespace = self._setting_segment(worker_name)
@@ -125,29 +149,21 @@ class Bus:
         try:
             with self._memories.session() as session:
                 for key, value in prepared.items():
-                    existing = session.scalar(select(SettingRow.id).where(SettingRow.key == key))
+                    existing = session.scalar(select(SettingRow).where(SettingRow.key == key))
                     if existing is None:
                         session.add(SettingRow(key=key, value=value))
+                    elif overwrite:
+                        existing.value = value
                 session.commit()
         except Exception:
             return False
         return True
 
-    def close(self) -> None:
-        if self._closed:
-            return
-        self.shutdown()
-        try:
-            self._logs.close()
-        finally:
-            self._memories.close()
-            self._closed = True
-
     def __enter__(self) -> Bus:
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self.close()
+        self.stop()
 
     def _open_sqlite(self, folder: str) -> EngineFactory:
         database_path = self.workspace / folder / "magi.db"

@@ -67,7 +67,7 @@ dev = [
 
 [project.scripts]
 # One BUS runtime: workers, including the ASP channel, attach to it.
-magi = "bus.__main__:main"
+magi = "bus.magi:main"
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]
