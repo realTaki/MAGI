@@ -126,9 +126,6 @@ from .skillJobs import (
     ListSkillsResult,
 )
 from .taskJobs import (
-    FireTaskJob,
-    FireTaskJobBoard,
-    FireTaskResult,
     GetTaskJob,
     GetTaskJobBoard,
     GetTaskResult,
@@ -227,9 +224,6 @@ __all__ = [
     "GetTaskJob",
     "GetTaskJobBoard",
     "GetTaskResult",
-    "FireTaskJob",
-    "FireTaskJobBoard",
-    "FireTaskResult",
     "ListTasksJob",
     "ListTasksJobBoard",
     "ListTasksResult",

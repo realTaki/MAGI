@@ -12,9 +12,8 @@ from typing import Any
 from sqlalchemy import JSON, Boolean, Integer, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
-from ...base.time import utcnow
 from ..books.taskBook import Task, TaskRow
 
 
@@ -45,40 +44,6 @@ class GetTaskJobBoard(OperateBookJobBoard[GetTaskJob, GetTaskResult, GetTaskJobR
     def _execute(self, session: Session, job: GetTaskJob) -> GetTaskResult:
         row = session.get(TaskRow, job.task_id)
         return GetTaskResult(task=None if row is None else Task.from_row(row))
-
-
-@dataclass
-class FireTaskJob(BaseJob):
-    """Record that one Task has been handed off to the agent queue."""
-
-    task_id: int = 0
-
-
-@dataclass
-class FireTaskResult(BaseJobResult):
-    pass
-
-
-class FireTaskJobRow(BaseJobRow):
-    __tablename__ = "jobs_fire_task"
-
-    task_id: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
-class FireTaskJobBoard(OperateBookJobBoard[FireTaskJob, FireTaskResult, FireTaskJobRow]):
-    job_cls = FireTaskJob
-    result_cls = FireTaskResult
-    row_cls = FireTaskJobRow
-
-    def _execute(self, session: Session, job: FireTaskJob) -> FireTaskResult:
-        task = session.get(TaskRow, job.task_id)
-        if task is None:
-            return FireTaskResult(
-                status=JobStatus.FAILED,
-                error=f"task {job.task_id} does not exist",
-            )
-        task.updated_at = utcnow()
-        return FireTaskResult()
 
 
 @dataclass
