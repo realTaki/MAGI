@@ -11,7 +11,6 @@ from croniter import croniter as _croniter
 from bus import (
     BaseWorker,
     ChatNotify,
-    FireTaskJob,
     GetTaskJob,
     JobStatus,
     ListTasksJob,
@@ -41,7 +40,10 @@ class TaskWorker(BaseWorker):
                     go(self._on_trigger(trigger))
                     continue
                 for task in await self._due_tasks():
-                    go(self._fire(task))
+                    go(
+                        self._board(RunTaskNotify).publish,
+                        RunTaskNotify(task_id=task.id, manual=False),
+                    )
             except Exception:  # noqa: BLE001 -- a BUS blip must not kill the scheduler
                 logger.exception("task worker: BUS operation failed")
             await asyncio.sleep(self.poll_seconds)
@@ -83,50 +85,34 @@ class TaskWorker(BaseWorker):
             got = await board.get_result(job_id)
             if got is None or got.status is not JobStatus.COMPLETED:
                 error = (got.error if got is not None else None) or "get task failed"
-            elif got.task is None:
-                error = f"task {trigger.task_id} does not exist"
-            elif not got.task.enabled:
-                error = f"task {trigger.task_id} is disabled"
             else:
-                error = await self._fire(got.task, manual=trigger.manual)
-            await self._submit(trigger, error)
+                self._fire(got.task, manual=trigger.manual)
+                error = None
+            self._submit(trigger, error)
         except asyncio.CancelledError:
-            await self._submit(trigger, "task worker cancelled")
+            self._submit(trigger, "task worker cancelled")
             raise
         except Exception as exc:  # noqa: BLE001 -- one task cannot kill the worker
             logger.exception("task worker: unhandled trigger %s", trigger.id)
-            await self._submit(trigger, str(exc))
+            self._submit(trigger, str(exc))
 
-    async def _fire(self, task: Task, *, manual: bool = False) -> str | None:
+    def _fire(self, task: Task, *, manual: bool = False) -> None:
         schedule = "manual" if manual else task.cron or "unscheduled"
         text = (
             "[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
             f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
         )
-        try:
-            await self.call(
-                self._board(ChatNotify).publish,
-                ChatNotify(
-                    publisher="task", conversation_id=task.conversation_id, text=text
-                ),
-            )
-            board = self._board(FireTaskJob)
-            job_id = await self.call(board.publish, FireTaskJob(task_id=task.id))
-            stamped = await board.get_result(job_id)
-            if stamped is None or stamped.status is not JobStatus.COMPLETED:
-                error = (stamped.error if stamped is not None else None) or "record task fire failed"
-                logger.warning("task worker: %s", error)
-                return error
-            return None
-        except Exception as exc:  # noqa: BLE001 -- cron go() has no caller to report to
-            logger.exception("task worker: could not fire task %s", task.id)
-            return str(exc)
+        go(
+            self._board(ChatNotify).publish,
+            ChatNotify(
+                publisher="task", conversation_id=task.conversation_id, text=text
+            ),
+        )
 
-    async def _submit(self, trigger: RunTaskNotify, error: str | None) -> None:
+    def _submit(self, trigger: RunTaskNotify, error: str | None) -> None:
         result = (
             RunTaskNotifyResult(id=trigger.id)
             if error is None
             else RunTaskNotifyResult(id=trigger.id, status=JobStatus.FAILED, error=error)
         )
-        if not await self.call(self._board(RunTaskNotify).submit_result, result):
-            logger.warning("task worker: failed to submit trigger result for %s", trigger.id)
+        go(self._board(RunTaskNotify).submit_result, result)

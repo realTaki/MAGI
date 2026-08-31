@@ -8,6 +8,8 @@ from sqlalchemy import Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.engine import EngineFactory
+from ..books.taskBook import TaskBook
 
 
 @dataclass
@@ -41,3 +43,18 @@ class RunTaskNotifyBoard(
     job_cls = RunTaskNotify
     result_cls = RunTaskNotifyResult
     row_cls = RunTaskNotifyRow
+
+    def __init__(self, factory: EngineFactory, *, book: TaskBook) -> None:
+        super().__init__(factory)
+        self._tasks = book
+
+    def _publish(self, job: RunTaskNotify) -> int:
+        job_id = super()._publish(job)
+        self._touch_task(job.task_id)
+        return job_id
+
+    def _touch_task(self, task_id: int) -> None:
+        task = self._tasks.get(task_id)
+        if task is None:
+            return
+        self._tasks.update(task)
