@@ -9,7 +9,7 @@ from concurrent.futures import Future
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult
+from .base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, JobStatus
 from .base.go import go
 
 if TYPE_CHECKING:
@@ -84,11 +84,24 @@ class BaseWorker:
         """Claim one pending Job of *job_type*, off the listen loop."""
         return await self.call(self.board(job_type).claim)
 
-    async def ask(self, job: BaseJob) -> BaseJobResult | None:
-        """Publish *job* and wait for its written result."""
+    def publish(self, job: BaseJob) -> None:
+        """Enqueue *job* without waiting for a result."""
+        go(self.board(type(job)).publish(job))
+
+    async def ask(self, job: BaseJob) -> BaseJobResult:
+        """Publish *job* and return its completed result.
+
+        Times out or a ``FAILED`` status raise ``RuntimeError``.
+        """
         board = self.board(type(job))
-        job_id = await self.call(board.publish, job)
-        return await board.get_result(job_id)
+        job_id = await board.publish(job)
+        result = await board.get_result(job_id)
+        if result is not None and result.status is JobStatus.COMPLETED:
+            return result
+        raise RuntimeError(
+            (result.error if result is not None else None)
+            or f"{type(job).__name__} result is unavailable"
+        )
 
     def submit(self, job_type: type[BaseJob], result: BaseJobResult) -> None:
         """Accept a Job result without waiting."""

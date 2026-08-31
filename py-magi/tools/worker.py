@@ -28,7 +28,7 @@ class ToolsWorker(BaseWorker):
     worker_name = "tools"
 
     async def on_attached(self) -> None:
-        await self.call(self._boost_builtins)
+        await self._boost_builtins()
 
     async def _poll(self) -> bool:
         job = await self.claim(RunToolJob)
@@ -37,19 +37,19 @@ class ToolsWorker(BaseWorker):
         go(self._on_run(job))
         return True
 
-    def _boost_builtins(self) -> None:
+    async def _boost_builtins(self) -> None:
         try:
-            existing = self._listed_names()
+            listed = await self.ask(ListToolsJob(include_disabled=True))
+            existing = {tool.name for tool in listed.tools}
         except Exception:  # noqa: BLE001 -- missing catalog must not block attach
             logger.exception("tools worker: list tools failed")
             existing = set()
-        board = self.board(SetToolJob)
         seeded = 0
         for spec in builtin_catalog():
             if spec["name"] in existing:
                 continue
             try:
-                job_id = board.publish(
+                await self.ask(
                     SetToolJob(
                         name=spec["name"],
                         description=spec["description"],
@@ -57,28 +57,12 @@ class ToolsWorker(BaseWorker):
                         enabled=True,
                     )
                 )
-                result = go(board.get_result(job_id)).result()
-            except Exception:  # noqa: BLE001 -- one seed failure must not block the rest
-                logger.exception("tools worker: failed to seed %r", spec["name"])
-                continue
-            if result is None or result.status is JobStatus.FAILED:
-                logger.warning(
-                    "tools worker: failed to seed %r (%s)",
-                    spec["name"],
-                    None if result is None else result.error,
-                )
+            except Exception as exc:  # noqa: BLE001 -- one seed failure must not block the rest
+                logger.warning("tools worker: failed to seed %r (%s)", spec["name"], exc)
                 continue
             seeded += 1
         if seeded:
             logger.info("tools worker: seeded %d builtin tool(s)", seeded)
-
-    def _listed_names(self) -> set[str]:
-        board = self.board(ListToolsJob)
-        job_id = board.publish(ListToolsJob(include_disabled=True))
-        result = go(board.get_result(job_id)).result()
-        if result is None or result.status is not JobStatus.COMPLETED:
-            return set()
-        return {tool.name for tool in result.tools}
 
     async def _on_run(self, job: RunToolJob) -> None:
         try:

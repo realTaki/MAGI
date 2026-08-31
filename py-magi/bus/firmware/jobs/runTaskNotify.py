@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, NotifyJobBoard
+from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
 from ..books.taskBook import TaskBook
 
@@ -38,7 +38,7 @@ class RunTaskNotifyRow(BaseJobRow):
 
 
 class RunTaskNotifyBoard(
-    NotifyJobBoard[RunTaskNotify, RunTaskNotifyResult, RunTaskNotifyRow]
+    BaseJobBoard[RunTaskNotify, RunTaskNotifyResult, RunTaskNotifyRow]
 ):
     job_cls = RunTaskNotify
     result_cls = RunTaskNotifyResult

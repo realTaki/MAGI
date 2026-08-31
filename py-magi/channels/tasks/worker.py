@@ -38,20 +38,14 @@ class TaskWorker(BaseWorker):
             go(self._on_trigger(trigger))
             return True
         for task in await self._due_tasks():
-            go(
-                self.board(RunTaskNotify).publish(
-                    RunTaskNotify(task_id=task.id, manual=False)
-                )
-            )
+            self.publish(RunTaskNotify(task_id=task.id, manual=False))
         return False
 
     async def _due_tasks(self) -> list[Task]:
-        listed = await self.ask(ListTasksJob(enabled=True))
-        if listed is None or listed.status is not JobStatus.COMPLETED:
-            logger.warning(
-                "task worker: %s",
-                listed.error if listed is not None else "list tasks result is unavailable",
-            )
+        try:
+            listed = await self.ask(ListTasksJob(enabled=True))
+        except Exception as exc:  # noqa: BLE001 -- a list failure skips this tick
+            logger.warning("task worker: %s", exc)
             return []
         now = datetime.now(UTC)
         return [task for task in listed.tasks if self._should_fire(task, now)]
@@ -72,12 +66,8 @@ class TaskWorker(BaseWorker):
     async def _on_trigger(self, trigger: RunTaskNotify) -> None:
         try:
             got = await self.ask(GetTaskJob(task_id=trigger.task_id))
-            if got is None or got.status is not JobStatus.COMPLETED:
-                error = (got.error if got is not None else None) or "get task failed"
-            else:
-                self._fire(got.task, manual=trigger.manual)
-                error = None
-            self._submit(trigger, error)
+            self._fire(got.task, manual=trigger.manual)
+            self._submit(trigger, None)
         except asyncio.CancelledError:
             self._submit(trigger, "task worker cancelled")
             raise
@@ -91,11 +81,9 @@ class TaskWorker(BaseWorker):
             "[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
             f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
         )
-        go(
-            self.board(ChatNotify).publish(
-                ChatNotify(
-                    publisher="task", conversation_id=task.conversation_id, text=text
-                )
+        self.publish(
+            ChatNotify(
+                publisher="task", conversation_id=task.conversation_id, text=text
             )
         )
 
