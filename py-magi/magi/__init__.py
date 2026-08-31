@@ -1,8 +1,7 @@
-"""One MAGI runtime: BUS, workers, and an ASP client onto webapp/asp."""
+"""One MAGI runtime: BUS, workers, and channel adapters."""
 
 from bus import __version__ as __version__
 
-from .asp_client import AspClient
-from .main import Magi
+from .magi import Magi
 
-__all__ = ["AspClient", "Magi", "__version__"]
+__all__ = ["Magi", "__version__"]

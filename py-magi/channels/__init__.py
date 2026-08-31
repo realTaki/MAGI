@@ -1,3 +1,3 @@
 """Channel implementations owned by MAGI workers."""
 
-__all__ = ["base", "tasks", "telegram"]
+__all__ = ["asp", "base", "tasks", "telegram"]

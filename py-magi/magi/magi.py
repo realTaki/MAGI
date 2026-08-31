@@ -1,8 +1,7 @@
-"""One MAGI: BUS, workers, and an ASP client onto webapp/asp."""
+"""One MAGI: BUS, workers, and channel adapters."""
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import time
@@ -18,7 +17,8 @@ from bus import (
     DeliveryNotifyResult,
     JobStatus,
 )
-from .asp_client import AspClient
+from channels.asp import AspClient
+
 from .constant import WORKERS, workspace_path
 
 logger = logging.getLogger("magi")
@@ -142,8 +142,6 @@ class Magi:
             logger.warning("ASP session %s has no local conversation", session_id)
             return
         board = self.bus.board(ChatNotify)
-        if board is None:
-            return
         board.publish(
             ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text)
         )
@@ -153,8 +151,6 @@ class Magi:
         if known is not None:
             return known
         board = self.bus.board(CreateConversationJob)
-        if board is None:
-            return None
         job_id = board.publish(
             CreateConversationJob(
                 publisher=self.handle,
@@ -175,8 +171,6 @@ class Magi:
     async def _pump_delivery(self, ready: asyncio.Event) -> None:
         await ready.wait()
         board = self.bus.board(DeliveryNotify)
-        if board is None:
-            return
         while True:
             job = await asyncio.to_thread(board.claim)
             if job is None:
@@ -233,13 +227,3 @@ def _job_result(board, job_id: int):
             return result
         time.sleep(0.01)
     return None
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one MAGI attached to webapp/asp.")
-    parser.add_argument("handle", help="stable ASP identity, e.g. @alice.magi")
-    parser.add_argument("base", help="operator origin, e.g. http://127.0.0.1:42069")
-    parser.add_argument("token", help="Bearer token seeded on the operator")
-    args = parser.parse_args(argv)
-    Magi(args.handle, args.base, args.token).serve()
-    return 0

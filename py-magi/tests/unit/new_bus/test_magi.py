@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-import magi.__main__ as magi_main
-import magi.service as magi_service
+import magi.__main__ as magi_cli
+import magi.magi as magi_runtime
 from bus import BaseWorker, CallLLMJob, CallLLMResult, JobStatus
 from bus.firmware.jobs.callLLMJob import CallLLMJobBoard
 from magi import Magi
@@ -53,7 +53,9 @@ def _magi(handle: str, *, worker_types=None) -> Magi:
 @pytest.fixture
 def magi_handle(tmp_path, monkeypatch) -> str:
     monkeypatch.setattr(
-        magi_service, "workspace_path", lambda handle: tmp_path / handle.lstrip("@") / "workspace"
+        magi_runtime,
+        "workspace_path",
+        lambda handle: tmp_path / handle.lstrip("@") / "workspace",
     )
     return "@unit.magi"
 
@@ -74,9 +76,9 @@ def test_main_starts_the_named_magi(monkeypatch) -> None:
         def serve(self) -> None:
             seen["served"] = True
 
-    monkeypatch.setattr(magi_main, "Magi", StubMagi)
+    monkeypatch.setattr(magi_cli, "Magi", StubMagi)
 
-    assert magi_main.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
+    assert magi_cli.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
     assert seen == {
         "handle": "@alice.magi",
         "base": "http://127.0.0.1:42069",

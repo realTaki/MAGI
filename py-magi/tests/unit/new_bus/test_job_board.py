@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 from datetime import datetime
 
+import pytest
+
 from bus import BaseJobResult, Bus, JobStatus
 from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board
 
@@ -118,4 +120,5 @@ def test_claim_is_exclusive(tmp_path) -> None:
 
 def test_unmounted_job_is_invalid(tmp_path) -> None:
     with Bus(tmp_path) as bus:
-        assert bus.board(PingJob) is None
+        with pytest.raises(KeyError, match="PingJob"):
+            bus.board(PingJob)
