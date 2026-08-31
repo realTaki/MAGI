@@ -5,6 +5,8 @@ from .callLLMJob import (
     LLMFinishReason,
     LLMMessage,
     LLMMessageRole,
+    LLMTool,
+    LLMToolCall,
     LLMUsage,
 )
 from .changeProviderNotify import (
@@ -223,6 +225,8 @@ __all__ = [
     "LLMFinishReason",
     "LLMMessage",
     "LLMMessageRole",
+    "LLMTool",
+    "LLMToolCall",
     "LLMUsage",
     "ChatNotify",
     "ChatNotifyBoard",

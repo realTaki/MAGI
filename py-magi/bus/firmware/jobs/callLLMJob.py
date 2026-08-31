@@ -10,8 +10,6 @@ from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
-from ..books.toolsBook import Tool
-from .runToolJob import RunToolJob
 
 
 class LLMMessageRole(StrEnum):
@@ -29,6 +27,24 @@ class LLMFinishReason(StrEnum):
 
 
 @dataclass(frozen=True)
+class LLMTool:
+    """A backend-neutral tool definition without catalog lifecycle fields."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LLMToolCall:
+    """One model tool request, without the later RunToolJob identity."""
+
+    tool_call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class LLMMessage:
     """One backend-neutral item in an LLM conversation.
 
@@ -38,7 +54,7 @@ class LLMMessage:
 
     role: LLMMessageRole
     text: str
-    tool_calls: list[RunToolJob] | None = None
+    tool_calls: list[LLMToolCall] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
 
@@ -47,8 +63,8 @@ class LLMMessage:
         object.__setattr__(self, "role", role)
         if not isinstance(self.text, str):
             raise TypeError("LLM message text must be a string")
-        if not all(isinstance(call, RunToolJob) for call in self.tool_calls or ()):
-            raise TypeError("LLM message tool_calls must contain RunToolJob values")
+        if not all(isinstance(call, LLMToolCall) for call in self.tool_calls or ()):
+            raise TypeError("LLM message tool_calls must contain LLMToolCall values")
         if role is LLMMessageRole.TOOL:
             if not self.tool_call_id:
                 raise ValueError("tool messages require tool_call_id")
@@ -80,16 +96,8 @@ class CallLLMJob(BaseJob):
     """
 
     messages: list[LLMMessage]
-    tools: list[Tool]
+    tools: list[LLMTool]
     max_output_tokens: int = 1024
-
-    def __post_init__(self) -> None:
-        if not all(isinstance(message, LLMMessage) for message in self.messages):
-            raise TypeError("CallLLMJob.messages must contain LLMMessage values")
-        if not all(isinstance(tool, Tool) for tool in self.tools):
-            raise TypeError("CallLLMJob.tools must contain Tool values")
-        if self.max_output_tokens < 1:
-            raise ValueError("max_output_tokens must be positive")
 
 
 @dataclass
@@ -100,12 +108,6 @@ class CallLLMResult(BaseJobResult):
     finish_reason: LLMFinishReason | None = None
     usage: LLMUsage | None = None
     model: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.message is not None and not isinstance(self.message, LLMMessage):
-            raise TypeError("CallLLMResult.message must be an LLMMessage")
-        if self.usage is not None and not isinstance(self.usage, LLMUsage):
-            raise TypeError("CallLLMResult.usage must be an LLMUsage")
 
 
 class CallLLMJobRow(BaseJobRow):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 
 import pytest
 
@@ -8,8 +9,13 @@ from bus import (
     Bus,
     CallLLMJob,
     CallLLMResult,
+    ListToolsJob,
     LLMMessage,
     LLMMessageRole,
+    LLMTool,
+    LLMToolCall,
+    RunToolJob,
+    SetToolJob,
     Tool,
 )
 
@@ -23,7 +29,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
             CallLLMJob(
                 publisher="test",
                 messages=[LLMMessage(role=LLMMessageRole.USER, text="hello")],
-                tools=[Tool(name="echo", description="Echo input", input_schema={"type": "object"})],
+                tools=[LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})],
             )
         )
         await asyncio.sleep(0.05)
@@ -32,7 +38,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         assert claimed is not None
         assert claimed.id == job_id
         assert claimed.messages == [LLMMessage(role=LLMMessageRole.USER, text="hello")]
-        assert claimed.tools == [Tool(name="echo", description="Echo input", input_schema={"type": "object"})]
+        assert claimed.tools == [LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})]
 
         assert await board.submit_result(
             CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, text="ok"))
@@ -41,3 +47,41 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
 
     assert result is not None
     assert result.message == LLMMessage(role=LLMMessageRole.ASSISTANT, text="ok")
+
+
+@pytest.mark.asyncio
+async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> None:
+    definition = LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})
+    catalog_tool = Tool(definition=definition)
+    assert Tool.parse(asdict(catalog_tool)).definition == definition
+
+    call = LLMToolCall(tool_call_id="call-1", name="echo", arguments={"text": "hello"})
+    with Bus("@llm-tool-wrapper", workspace=tmp_path) as bus:
+        set_tools = bus.board(SetToolJob)
+        list_tools = bus.board(ListToolsJob)
+        board = bus.board(RunToolJob)
+        assert set_tools is not None
+        assert list_tools is not None
+        assert board is not None
+        set_id = set_tools.publish(
+            SetToolJob(
+                publisher="test",
+                name=definition.name,
+                description=definition.description,
+                input_schema=definition.input_schema,
+            )
+        )
+        job_id = board.publish(RunToolJob(publisher="test", call=call))
+        await asyncio.sleep(0.05)
+        assert set_tools.get_result(set_id) is not None
+        listed_id = list_tools.publish(ListToolsJob(publisher="test"))
+        await asyncio.sleep(0.05)
+        listed = list_tools.get_result(listed_id)
+        claimed = board.claim()
+
+    assert listed is not None
+    assert listed.tools is not None
+    assert [tool.definition for tool in listed.tools] == [definition]
+    assert claimed is not None
+    assert claimed.id == job_id
+    assert claimed.call == call
