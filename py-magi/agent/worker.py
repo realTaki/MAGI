@@ -24,16 +24,16 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from old_bus.bases.job import JobStatus
 from runtime_worker import RuntimeWorker
 
 if TYPE_CHECKING:
-    from old_bus import Bus
     from old_bus.firmwares.jobs.callLLMJob import CallLLMResult
     from old_bus.firmwares.jobs.runToolJob import RunToolJob
+
+    from old_bus import Bus
 
 logger = logging.getLogger("agent.worker")
 
@@ -46,11 +46,6 @@ _DEFAULT_MAX_ITERATIONS = 10
 _DEFAULT_MAX_TOKENS = 1024
 _DEFAULT_TOOL_WAIT_SECONDS = 300.0
 _DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
-
-# A2A is a MAGIS-shared durable collaboration plane.  It is deliberately
-# not a human channel or an HTTP transport.
-_A2A_ENABLED = True
-
 
 # ---------------------------------------------------------------------------
 # RunContext
@@ -68,13 +63,6 @@ class RunContext:
     final_reply: str = ""
     failed: bool = False  # 失败标志（succeeded = not failed）
     cancelled: bool = False
-    a2a_kind: str | None = None
-    a2a_source_magi_id: int | None = None
-    a2a_job_id: int | None = None
-    # The current claimed A2A text is normally already the final user row in
-    # the local transcript.  Keep it separately as a resilience fallback if
-    # that best-effort transcript write was unavailable.
-    a2a_inbound_text: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -84,20 +72,12 @@ class RunContext:
 
 @dataclass
 class _SplitJobs:
-    # ``tool_jobs`` carries :class:`RunToolJob` (which keeps its own
-    # ``tool_call_id``); A2A jobs no longer carry ``tool_call_id`` on the
-    # wire, so we pair each one with the LLM tool_call_id it came from
-    # here — downstream ``_publish_effects`` / ``_gather_all`` both want
-    # ``tool_call_id`` as the dict key.
     tool_jobs: list = field(default_factory=list)
-    a2a_request_jobs: list[tuple[str, Any]] = field(default_factory=list)
-    a2a_notify_jobs: list[tuple[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class _GatherResult:
     tool_results: dict[str, Any] = field(default_factory=dict)
-    a2a_results: dict[str, Any] = field(default_factory=dict)
     steering_text: str | None = None
 
 
@@ -116,7 +96,6 @@ class AgentWorker(RuntimeWorker):
         bus: Bus,
         *,
         poll_seconds: float = 0.25,
-        magi_id: int | None = None,
         concurrency: int | None = None,
     ) -> None:
         super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
@@ -124,18 +103,7 @@ class AgentWorker(RuntimeWorker):
         # (``f"{self.worker_name}-{uuid.uuid4().hex}"``), 此处不用再赋一次
         # —— 覆盖会丢掉原 UUID 又生成一个新 UUID, 白消耗一次熵。
         self._in_flight: dict[int, asyncio.Event] = {}  # conversation_id → cancel_event
-        # ``magi_id`` is the runtime's own ``magis_memberships.id`` —
-        # propagated in from :class:`WorkerRegistry`, which reads it
-        # from the provisioned RuntimeSpec at boot
-        # (:mod:`startup.runtime`). Used by
-        # :meth:`_system_prompt` to render the per-MAGI instruction
-        # block (team + role layers from MAGIS Books); ``None``
-        # short-circuits that lookup and renders only the personal
-        # instruction.
-        self._magi_id = magi_id
-        self._claim_cursor = 0
         self._claim_lock = asyncio.Lock()
-        self._active_a2a_peers: set[int] = set()
         self._managed_contexts: set[int] = set()
 
     async def on_start(self) -> None:
@@ -160,51 +128,18 @@ class AgentWorker(RuntimeWorker):
         from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
 
         while not self._stopping:
-            source, job = await self._claim_next_turn()
-            if job is None or source is None:
+            job = await self._claim_next_turn()
+            if job is None:
                 await asyncio.sleep(self.poll_seconds)
                 continue
 
             conversation_id = getattr(job, "conversation_id", None) or 0
-
-            is_a2a = source != "chat"
-            a2a_inbound_text = ""
-            if is_a2a:
-                # A2A rows are MAGIS-shared, while transcripts live in the
-                # receiving MAGI's local database.  Resolve the same local
-                # per-peer header used by the board's claim write; the old
-                # synthetic ``a2a:<source>`` string is not a valid local
-                # conversation primary key.
-                peer_magi_id = getattr(job, "source_magi_id", 0)
-                a2a_inbound_text = getattr(job, "text", "")
-                try:
-                    conversation = await self.call(
-                        self.bus.conversations_book.get_or_create_for_a2a_peer,
-                        peer_magi_id=peer_magi_id,
-                    )
-                    conversation_id = conversation.id
-                except Exception:
-                    # The claim remains consumable if a local transcript
-                    # store is temporarily unavailable.  ``_load_history``
-                    # will use ``a2a_inbound_text`` below, preserving the
-                    # pre-transcript one-turn behaviour until recovery.
-                    logger.warning(
-                        "A2A transcript header unavailable for peer=%s; "
-                        "processing current turn without history",
-                        peer_magi_id,
-                        exc_info=True,
-                    )
-                    conversation_id = 0
             ctx = RunContext(
-                contact_id=(None if is_a2a else job.contact_id),
+                contact_id=job.contact_id,
                 conversation_id=(conversation_id or 0),
-                channel=(source if is_a2a else job.channel),
+                channel=job.channel,
                 messages=[],
                 max_iterations=await self._read_max_iterations(),
-                a2a_kind=(source if is_a2a else None),
-                a2a_source_magi_id=(getattr(job, "source_magi_id", None) if is_a2a else None),
-                a2a_job_id=(job.job_id if is_a2a else None),
-                a2a_inbound_text=a2a_inbound_text,
             )
             try:
                 self._managed_contexts.add(id(ctx))
@@ -212,126 +147,44 @@ class AgentWorker(RuntimeWorker):
             except asyncio.CancelledError:
                 ctx.failed = True
                 raise
-            except Exception as exc:
+            except Exception:
                 logger.exception("agent run failed conv=%s", conversation_id)
                 ctx.failed = True
                 ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
                 await self._publish_delivery(ctx)
             finally:
                 succeeded = not ctx.failed
-                if source == "chat":
-                    chat_job_id = job.job_id
-                    await self.call(
-                        self.bus.agent_job_board.submit_result,
+                chat_job_id = job.job_id
+                await self.call(
+                    self.bus.agent_job_board.submit_result,
+                    job_id=chat_job_id,
+                    worker_id=self.worker_id,
+                    result=ChatNotifyResult(
                         job_id=chat_job_id,
-                        worker_id=self.worker_id,
-                        result=ChatNotifyResult(
-                            job_id=chat_job_id,
-                            status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                        ),
-                    )
-                elif source == "a2a.request":
-                    from old_bus.firmwares.jobs.a2aJob import A2ARequestResult
-
-                    board = self.bus.a2a_request_job_board
-                    if board is not None:
-                        a2a_request_job_id = job.job_id
-                        await self.call(
-                            board.submit_result,
-                            job_id=a2a_request_job_id,
-                            worker_id=self.worker_id,
-                            result=A2ARequestResult(
-                                job_id=a2a_request_job_id,
-                                status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                                content=ctx.final_reply,
-                            ),
-                        )
-                elif source == "a2a.notify":
-                    from old_bus.firmwares.jobs.a2aJob import A2ANotifyResult
-
-                    board = self.bus.a2a_notify_job_board
-                    if board is not None:
-                        a2a_notify_job_id = job.job_id
-                        await self.call(
-                            board.submit_result,
-                            job_id=a2a_notify_job_id,
-                            worker_id=self.worker_id,
-                            result=A2ANotifyResult(
-                                job_id=a2a_notify_job_id,
-                                status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                            ),
-                        )
+                        status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
+                    ),
+                )
                 current_event = self._in_flight.get(ctx.conversation_id)
                 if current_event is ctx.cancel_event:
                     self._in_flight.pop(ctx.conversation_id, None)
-                if ctx.a2a_source_magi_id is not None:
-                    self._active_a2a_peers.discard(ctx.a2a_source_magi_id)
                 self._managed_contexts.discard(id(ctx))
 
-    async def _claim_next_turn(self) -> tuple[str | None, Any | None]:
+    async def _claim_next_turn(self) -> Any | None:
+        """Claim the next unreserved conversation turn."""
         async with self._claim_lock:
-            return await self._claim_next_turn_locked()
-
-    async def _claim_next_turn_locked(self) -> tuple[str | None, Any | None]:
-        """Fairly claim local chat and MAGIS-shared A2A work."""
-        agent_board = self.bus.agent_job_board
-
-        def claim_chat():
-            return agent_board.claim_for_new_conversation(
+            job = await self.call(
+                self.bus.agent_job_board.claim_for_new_conversation,
                 worker_id=self.worker_id,
                 active_conversation_ids=set(self._in_flight),
             )
-
-        choices: list[tuple[str, Any]] = [("chat", claim_chat)]
-        # Bind to locals so Pylance keeps the ``is not None``
-        # narrowing across the lambda boundary; ``self.bus.*`` and
-        # ``self._magi_id`` would otherwise be re-typed as
-        # ``T | None`` inside the closure and trigger
-        # ``reportOptionalMemberAccess`` / ``reportArgumentType``.
-        magi_id = self._magi_id
-        request_board = self.bus.a2a_request_job_board
-        notify_board = self.bus.a2a_notify_job_board
-        if magi_id is not None and request_board is not None:
-            choices.append(
-                (
-                    "a2a.request",
-                    lambda: request_board.claim_for_target(
-                        magi_id=magi_id,
-                        worker_id=self.worker_id,
-                        active_source_magi_ids=set(self._active_a2a_peers),
-                    ),
-                )
-            )
-        if magi_id is not None and notify_board is not None:
-            choices.append(
-                (
-                    "a2a.notify",
-                    lambda: notify_board.claim_for_target(
-                        magi_id=magi_id,
-                        worker_id=self.worker_id,
-                        active_source_magi_ids=set(self._active_a2a_peers),
-                    ),
-                )
-            )
-        offset = self._claim_cursor % len(choices)
-        self._claim_cursor += 1
-        for index in range(len(choices)):
-            source, claim = choices[(offset + index) % len(choices)]
-            job = await self.call(claim)
             if job is not None:
-                if source == "chat":
-                    conversation_id = getattr(job, "conversation_id", None) or 0
-                    if conversation_id:
-                        # Reserve the key before dropping ``_claim_lock``.
-                        # ``_process`` replaces this placeholder with the
-                        # context's real cancellation event.
-                        self._in_flight[conversation_id] = asyncio.Event()
-                else:
-                    peer_magi_id = getattr(job, "source_magi_id", None)
-                    if isinstance(peer_magi_id, int):
-                        self._active_a2a_peers.add(peer_magi_id)
-                return source, job
-        return None, None
+                conversation_id = getattr(job, "conversation_id", None) or 0
+                if conversation_id:
+                    # Reserve the key before dropping ``_claim_lock``.
+                    # ``_process`` replaces this placeholder with the
+                    # context's real cancellation event.
+                    self._in_flight[conversation_id] = asyncio.Event()
+            return job
 
     # -- agent loop ----------------------------------------------------------
 
@@ -394,13 +247,8 @@ class AgentWorker(RuntimeWorker):
                     return
 
                 split = await self._split_tools(ctx, tool_uses)
-                tool_jobs_by_call, a2a_requests_by_call, a2a_notify_results = await self._publish_effects(split)
-                gather = await self._gather_all(
-                    ctx,
-                    tool_jobs_by_call,
-                    a2a_requests_by_call,
-                    a2a_notify_results,
-                )
+                tool_jobs_by_call = await self._publish_effects(split)
+                gather = await self._gather_all(ctx, tool_jobs_by_call)
                 if gather is None:
                     ctx.failed = True
                     return
@@ -419,38 +267,6 @@ class AgentWorker(RuntimeWorker):
     # -- context assembly ----------------------------------------------------
 
     async def _load_history(self, ctx: RunContext) -> None:
-        if ctx.a2a_kind is not None:
-            # A2A transcripts are system-owned (no Contact row), so the
-            # contact-scoped chat helper cannot read them.  Claim has already
-            # persisted the current inbound text as a user row in this exact
-            # local conversation; reload the complete peer thread so later
-            # turns remember both directions.
-            if not ctx.conversation_id:
-                ctx.messages = [{"role": "user", "content": ctx.a2a_inbound_text}]
-                return
-            try:
-                dtos = await self.call(
-                    self.bus.messages_book.list_for_conversation,
-                    conversation_id=ctx.conversation_id,
-                )
-                ctx.messages = [
-                    {
-                        "role": "user" if message.role in ("user", "system") else "assistant",
-                        "content": message.text,
-                    }
-                    for message in dtos
-                ]
-            except Exception:
-                logger.warning("load A2A transcript failed, using current turn", exc_info=True)
-                ctx.messages = []
-
-            # A Board transcript write is deliberately best-effort.  If it
-            # failed after a successful claim, retain the original one-turn
-            # behavior instead of sending an empty A2A prompt to the LLM.
-            if not ctx.messages or ctx.messages[-1]["content"] != ctx.a2a_inbound_text:
-                ctx.messages.append({"role": "user", "content": ctx.a2a_inbound_text})
-            return
-
         if ctx.messages:
             return
         if not ctx.conversation_id or ctx.contact_id is None:
@@ -521,23 +337,8 @@ class AgentWorker(RuntimeWorker):
                     contact_id=ctx.contact_id or 0,
                     soul=read_soul(bus=self.bus),
                     bus=self.bus,
-                    magi_id=self._magi_id,
                 )
             )
-            if ctx.a2a_kind == "a2a.notify":
-                return (
-                    system
-                    + "\n\n## Current A2A notification\n"
-                    "This is a one-way peer notification. Do not automatically reply to it. "
-                    "If collaboration is truly needed, explicitly call message_magi to create a new message."
-                )
-            if ctx.a2a_kind == "a2a.request":
-                return (
-                    system
-                    + "\n\n## Current A2A request\n"
-                    "Provide one direct final answer to this request. The runtime will return that answer "
-                    "to the requester exactly once; do not create an automatic follow-up reply."
-                )
             return system
         except Exception:
             logger.exception("system_prompt build failed; falling back to bare soul")
@@ -613,11 +414,7 @@ class AgentWorker(RuntimeWorker):
         )
 
     async def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
-        from old_bus.firmwares.jobs.a2aJob import A2ANotifyJob, A2ARequestJob
-
         tool_jobs: list[RunToolJob] = []
-        a2a_request_jobs: list[tuple[str, A2ARequestJob]] = []
-        a2a_notify_jobs: list[tuple[str, A2ANotifyJob]] = []
 
         for tu in tool_uses:
             name = tu.get("name", "")
@@ -629,129 +426,25 @@ class AgentWorker(RuntimeWorker):
                 "channel": ctx.channel,
                 "conversation_id": ctx.conversation_id or 0,
             }
-            if name == "message_magi":
-                if (
-                    not _A2A_ENABLED
-                    or self._magi_id is None
-                    or self.bus.a2a_request_job_board is None
-                    or self.bus.a2a_notify_job_board is None
-                ):
-                    tool_jobs.append(
-                        self._make_tool_job(
-                            tool_call_id,
-                            "message_magi",
-                            {"_validation_error": "a2a_disabled"},
-                            context,
-                        )
-                    )
-                    continue
-                try:
-                    target_magi_id = int(args["magi_id"])
-                    text = str(args["text"])
-                    mode = str(args["mode"]).strip().lower()
-                    if target_magi_id <= 0 or not text.strip() or mode not in {"notify", "request"}:
-                        raise ValueError("magi_id, text, and mode=notify|request required")
-                    deadline_seconds = int(args.get("deadline_seconds") or 120)
-                    if not 1 <= deadline_seconds <= 3600:
-                        raise ValueError("deadline_seconds must be between 1 and 3600")
-                except (KeyError, TypeError, ValueError) as exc:
-                    tool_jobs.append(
-                        self._make_tool_job(
-                            tool_call_id,
-                            "message_magi",
-                            {"_validation_error": str(exc)},
-                            context,
-                        )
-                    )
-                    continue
-                if mode == "request":
-                    a2a_request_jobs.append(
-                        (
-                            tool_call_id,
-                            A2ARequestJob(
-                                source_magi_id=self._magi_id,
-                                target_magi_id=target_magi_id,
-                                text=text,
-                                deadline_at=(
-                                    datetime.now(UTC).replace(tzinfo=None)
-                                    + timedelta(seconds=deadline_seconds)
-                                ),
-                            ),
-                        )
-                    )
-                else:
-                    a2a_notify_jobs.append(
-                        (
-                            tool_call_id,
-                            A2ANotifyJob(
-                                source_magi_id=self._magi_id,
-                                target_magi_id=target_magi_id,
-                                text=text,
-                            ),
-                        )
-                    )
-            else:
-                tool_jobs.append(
-                    self._make_tool_job(
-                        tool_call_id,
-                        name or "",
-                        args,
-                        context,
-                    )
+            tool_jobs.append(
+                self._make_tool_job(
+                    tool_call_id,
+                    name or "",
+                    args,
+                    context,
                 )
-        return _SplitJobs(
-            tool_jobs=tool_jobs,
-            a2a_request_jobs=a2a_request_jobs,
-            a2a_notify_jobs=a2a_notify_jobs,
-        )
+            )
+        return _SplitJobs(tool_jobs=tool_jobs)
 
     # -- publish effects -----------------------------------------------------
 
-    async def _publish_effects(
-        self, split: _SplitJobs
-    ) -> tuple[dict[str, int], dict[str, int], dict[str, Any]]:
-        """Publish effects and return tool / request mappings plus immediate notify results.
-
-        Each returned dict is keyed by ``tool_call_id`` (the LLM
-        ``tool_use.id`` shared by the originating tool call); the int
-        values are the corresponding board's ``job_id`` (``tool_job_id``
-        for the tool board, ``a2a_request_job_id`` for the request board).
-        ``a2a_notify_results`` keys the same way but holds the synchronously
-        recorded {success, content} dict because the notify board does not
-        return a per-call job_id.
-        """
+    async def _publish_effects(self, split: _SplitJobs) -> dict[str, int]:
+        """Publish tool effects keyed by the originating LLM tool-call id."""
         tool_jobs_by_call: dict[str, int] = {}
-        a2a_requests_by_call: dict[str, int] = {}
-        a2a_notify_results: dict[str, Any] = {}
         for tj in split.tool_jobs:
             tool_job_id = await self.call(self.bus.tool_job_board.publish, tj)
             tool_jobs_by_call[tj.tool_call_id] = tool_job_id
-        if self.bus.a2a_request_job_board is not None:
-            for tool_call_id, request in split.a2a_request_jobs:
-                try:
-                    a2a_request_job_id = await self.call(
-                        self.bus.a2a_request_job_board.publish, request
-                    )
-                    a2a_requests_by_call[tool_call_id] = a2a_request_job_id
-                except (LookupError, ValueError) as exc:
-                    a2a_notify_results[tool_call_id] = {
-                        "success": False,
-                        "content": f"A2A request was rejected: {exc}",
-                    }
-        if self.bus.a2a_notify_job_board is not None:
-            for tool_call_id, notify in split.a2a_notify_jobs:
-                try:
-                    await self.call(self.bus.a2a_notify_job_board.publish, notify)
-                    a2a_notify_results[tool_call_id] = {
-                        "success": True,
-                        "content": "A2A notification persisted for the target MAGI.",
-                    }
-                except (LookupError, ValueError) as exc:
-                    a2a_notify_results[tool_call_id] = {
-                        "success": False,
-                        "content": f"A2A notification was rejected: {exc}",
-                    }
-        return tool_jobs_by_call, a2a_requests_by_call, a2a_notify_results
+        return tool_jobs_by_call
 
     # -- gather results + steering -------------------------------------------
 
@@ -759,17 +452,13 @@ class AgentWorker(RuntimeWorker):
         self,
         ctx: RunContext,
         tool_jobs_by_call: dict[str, int],  # tool_call_id → tool_job_id
-        a2a_requests_by_call: dict[str, int],  # tool_call_id → a2a_request_job_id
-        a2a_notify_results: dict[str, Any],
     ) -> _GatherResult | None:
         deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
         pending_tool_jobs: dict[str, int] = dict(tool_jobs_by_call)  # tool_call_id → tool_job_id (copy to mutate)
-        pending_a2a_jobs: dict[str, int] = dict(a2a_requests_by_call)
         tool_results: dict[str, Any] = {}
-        a2a_results: dict[str, Any] = dict(a2a_notify_results)
         steering_parts: list[str] = []
 
-        while pending_tool_jobs or pending_a2a_jobs:
+        while pending_tool_jobs:
             if ctx.cancel_event.is_set():
                 break
 
@@ -804,22 +493,10 @@ class AgentWorker(RuntimeWorker):
                     tool_results[tool_call_id] = r
                     del pending_tool_jobs[tool_call_id]
 
-            # a2a results
-            for tool_call_id, a2a_request_job_id in list(pending_a2a_jobs.items()):
-                board = self.bus.a2a_request_job_board
-                r = await self.call(board.get_result, job_id=a2a_request_job_id) if board is not None else None
-                if r is not None:
-                    a2a_results[tool_call_id] = r
-                    del pending_a2a_jobs[tool_call_id]
-
-            if not pending_tool_jobs and not pending_a2a_jobs:
+            if not pending_tool_jobs:
                 break
             if asyncio.get_running_loop().time() >= deadline:
-                logger.warning(
-                    "gather timeout, pending_tools=%d pending_a2a=%d",
-                    len(pending_tool_jobs),
-                    len(pending_a2a_jobs),
-                )
+                logger.warning("gather timeout, pending_tools=%d", len(pending_tool_jobs))
                 break
             await asyncio.sleep(0.1)
 
@@ -834,20 +511,9 @@ class AgentWorker(RuntimeWorker):
                 tool_call_id=tool_call_id,
             )
 
-        from old_bus.firmwares.jobs.a2aJob import A2AErrorCode, A2ARequestResult
-
-        for tool_call_id, a2a_request_job_id in pending_a2a_jobs.items():
-            a2a_results[tool_call_id] = A2ARequestResult(
-                job_id=a2a_request_job_id,
-                status=JobStatus.FAILED,
-                error_code=A2AErrorCode.TIMEOUT,
-                error="A2A request timed out",
-            )
-
         steering_text = "\n\n".join(steering_parts) if steering_parts else None
         return _GatherResult(
             tool_results=tool_results,
-            a2a_results=a2a_results,
             steering_text=steering_text,
         )
 
@@ -866,21 +532,6 @@ class AgentWorker(RuntimeWorker):
                     "is_error": getattr(r, "error_code", ToolErrorCode.NONE) != ToolErrorCode.NONE,
                 }
             )
-        for tool_call_id, r in gather.a2a_results.items():
-            if isinstance(r, dict):
-                content = str(r.get("content") or "")
-                success = bool(r.get("success", False))
-            else:
-                content = getattr(r, "content", "") or ""
-                success = bool(getattr(r, "success", False))
-            blocks.append(
-                {
-                    "tool_use_id": tool_call_id,
-                    "type": "tool_result",
-                    "content": content,
-                    "is_error": not success,
-                }
-            )
         if gather.steering_text:
             blocks.append({"type": "text", "text": gather.steering_text})
         ctx.messages.append(
@@ -893,11 +544,6 @@ class AgentWorker(RuntimeWorker):
 
     async def _publish_delivery(self, ctx: RunContext) -> None:
         from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
-
-        # A2A has its own terminal path in ``_run``.  Its text is either the
-        # single request response or deliberately discarded for a notify.
-        if ctx.a2a_kind is not None:
-            return
 
         # Resolve the reply address from the conversation row (D.28): the
         # delivery worker needs ``destination`` for address-based channels

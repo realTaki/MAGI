@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 
 from bus import (
     BaseWorker,
@@ -25,8 +24,6 @@ from bus import (
     go,
 )
 from providers.client import Client, connect, options
-
-logger = logging.getLogger("providers.worker")
 
 NAME_KEY = "provider.name"
 API_KEY = "provider.api_key"
@@ -76,17 +73,14 @@ class ProvidersWorker(BaseWorker):
                 listed.settings.get(MODEL_KEY),
             )
             self._error = None
-            logger.info("providers worker: client ready (%s / %s)", self._client.name, self._client.model)
         except Exception as exc:  # noqa: BLE001 -- missing extras or config must not kill the loop
             self._client = None
             self._error = str(exc) or type(exc).__name__
-            logger.warning("providers worker: cannot build client (%s)", exc)
 
     async def _on_change(self, job: ChangeProviderNotify) -> None:
         model_only = bool(job.model) and not job.provider and not job.api_key
         if model_only and self._client is not None:
             self._client.model = job.model
-            logger.info("providers worker: model -> %r", job.model)
         else:
             await self._rebuild()
         if self._client is None:
@@ -125,7 +119,6 @@ class ProvidersWorker(BaseWorker):
             self._fail(job, "providers worker cancelled")
             raise
         except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
-            logger.exception("providers worker: unhandled exception on job %s", job.id)
             self._fail(job, str(exc))
 
     def _fail(self, job: CallLLMJob, error: str) -> None:
