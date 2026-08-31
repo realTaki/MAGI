@@ -1,16 +1,20 @@
-"""Provider worker: rebuild the LiteLLM client, or call the model.
+"""Provider worker: deliver every provider outcome through ``CallLLMJob``.
 
-Attach seeds ``providers.options`` and builds the first client from
-Settings. The loop then only does two things:
+Delivery is the sole error boundary for this module. Attaching the worker and
+consuming :class:`ChangeProviderNotify` never validate a provider, API key, or
+model, and never report them as configuration failures. A notify has already
+persisted its values; the worker only invalidates its cached route.
 
-- claim ``ChangeProviderNotify`` — persist already happened at publish;
-  rebuild the client unless this is a model-only tweak on a live client
-- claim ``CallLLMJob`` — ``client.complete`` and submit the result
+Only a claimed :class:`CallLLMJob` reads that configuration, creates or
+updates a client, and calls the SDK. Every resulting failure -- malformed
+configuration, missing optional dependency, cancellation, or provider error
+-- becomes that Job's terminal ``CallLLMResult(error=...)``. It must not
+escape the worker or become a separate control-plane error, so Agent can
+deliver the result to the conversation.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 from bus import (
@@ -36,21 +40,17 @@ class ProvidersWorker(BaseWorker):
     def __init__(self, *, poll_seconds: float = 0.25) -> None:
         super().__init__(poll_seconds=poll_seconds)
         self._client: Client | None = None
-        self._error: str | None = None
+        self._route: tuple[str | None, str | None, str | None] | None = None
 
     async def on_attached(self) -> None:
-        assert self.bus is not None
-        worker_name = self.worker_name
-        assert worker_name is not None, "providers worker: worker_name is required"
         self.bus.boost_default_settings(
-            worker_name=worker_name,
+            worker_name="providers",
             settings={"options": json.dumps(options(), ensure_ascii=False)},
         )
-        await self._rebuild()
 
     async def on_detached(self) -> None:
         self._client = None
-        self._error = None
+        self._route = None
 
     async def _poll(self) -> bool:
         change = await self.claim(ChangeProviderNotify)
@@ -63,63 +63,45 @@ class ProvidersWorker(BaseWorker):
             return True
         return False
 
-    async def _rebuild(self) -> None:
-        try:
-            listed = await self.ask(ListSettingsJob())
-            self._client = await self.call(
-                connect,
-                listed.settings.get(NAME_KEY),
-                listed.settings.get(API_KEY),
-                listed.settings.get(MODEL_KEY),
-            )
-            self._error = None
-        except Exception as exc:  # noqa: BLE001 -- missing extras or config must not kill the loop
-            self._client = None
-            self._error = str(exc) or type(exc).__name__
-
     async def _on_change(self, job: ChangeProviderNotify) -> None:
-        model_only = bool(job.model) and not job.provider and not job.api_key
-        if model_only and self._client is not None:
-            self._client.model = job.model
-        else:
-            await self._rebuild()
-        if self._client is None:
-            result = ChangeProviderNotifyResult(
-                id=job.id,
-                status=JobStatus.FAILED,
-                error=self._error or "unknown provider configuration error",
-            )
-        else:
-            result = ChangeProviderNotifyResult(id=job.id)
-        self.submit(ChangeProviderNotify, result)
+        """Acknowledge persisted configuration without preflight validation."""
+        self._client = None
+        self._route = None
+        self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
 
     async def _on_llm(self, job: CallLLMJob) -> None:
+        self.submit(CallLLMJob, await self._call_result(job))
+
+    async def _call_result(self, job: CallLLMJob) -> CallLLMResult:
+        """Return one terminal result; no provider exception leaves this boundary."""
         try:
-            if self._client is None:
-                self._fail(job, self._error or "MAGI runtime has no LLM provider configured")
-                return
-            response = await self._client.complete(
+            client = await self._client_for_call()
+            response = await client.complete(
                 job.messages,
                 max_tokens=int(job.max_tokens or 1024),
                 tools=job.tools or None,
             )
-            self.submit(
-                CallLLMJob,
-                CallLLMResult(
-                    id=job.id,
-                    text=response.get("text") or "(empty reply)",
-                    thinking=response.get("thinking"),
-                    tool_uses=list(response.get("tool_uses") or []),
-                    raw_blocks=list(response.get("raw_blocks") or []),
-                    finish_reason=response.get("stop_reason"),
-                    model=response.get("model") or self._client.model,
-                ),
+            return CallLLMResult(
+                id=job.id,
+                text=response.get("text") or "(empty reply)",
+                thinking=response.get("thinking"),
+                tool_uses=list(response.get("tool_uses") or []),
+                raw_blocks=list(response.get("raw_blocks") or []),
+                finish_reason=response.get("stop_reason"),
+                model=response.get("model") or client.model,
             )
-        except asyncio.CancelledError:
-            self._fail(job, "providers worker cancelled")
-            raise
-        except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
-            self._fail(job, str(exc))
+        except BaseException as exc:  # noqa: BLE001 -- the Job result is the error boundary
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
 
-    def _fail(self, job: CallLLMJob, error: str) -> None:
-        self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error))
+    async def _client_for_call(self) -> Client:
+        """Resolve the persisted route only while serving a ``CallLLMJob``."""
+        listed = await self.ask(ListSettingsJob())
+        route = (
+            listed.settings.get(NAME_KEY),
+            listed.settings.get(API_KEY),
+            listed.settings.get(MODEL_KEY),
+        )
+        if self._client is None or self._route != route:
+            self._client = await self.call(connect, *route, client=self._client)
+            self._route = route
+        return self._client

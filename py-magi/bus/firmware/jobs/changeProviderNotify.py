@@ -23,7 +23,9 @@ class ChangeProviderNotify(BaseJob):
 
     A non-empty field replaces its setting; an empty field is skipped.
     Publishing persists the supplied settings atomically before the provider
-    Worker claims this notify and rebuilds its in-memory client.
+    Worker claims this notify and invalidates its cached route. Provider,
+    credential, and model validation occurs only while handling a CallLLMJob,
+    whose terminal result carries any error back to the conversation.
     """
 
     provider: str = ""
@@ -33,7 +35,7 @@ class ChangeProviderNotify(BaseJob):
 
 @dataclass
 class ChangeProviderNotifyResult(BaseJobResult):
-    """Rebuild acknowledgement. Failures use ``status`` and ``error``."""
+    """Acknowledgement that the persisted configuration was observed."""
 
 
 class ChangeProviderNotifyRow(BaseJobRow):
