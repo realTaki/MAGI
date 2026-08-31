@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 
 from bus import (
     BaseWorker,
@@ -90,7 +89,7 @@ class ProvidersWorker(BaseWorker):
     def _settings(self) -> dict[str, str]:
         board = self._board(ListSettingsJob)
         job_id = board.publish(ListSettingsJob())
-        result = _job_result(board, job_id)
+        result = go(board.get_result(job_id)).result()
         if result is None or result.status is not JobStatus.COMPLETED:
             return {}
         return result.settings or {}
@@ -146,17 +145,3 @@ class ProvidersWorker(BaseWorker):
         result = CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error)
         if not await self.call(self._board(CallLLMJob).submit_result, result):
             logger.warning("providers worker: failed to submit failure for %s", job.id)
-
-
-_RESULT_TIMEOUT = 5.0
-
-
-def _job_result(board, job_id: int):
-    """Wait until an OperateBook Job leaves PREPARING and has a result."""
-    deadline = time.monotonic() + _RESULT_TIMEOUT
-    while time.monotonic() < deadline:
-        result = board.get_result(job_id)
-        if result is not None:
-            return result
-        time.sleep(0.01)
-    return None
