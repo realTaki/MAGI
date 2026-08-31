@@ -101,7 +101,7 @@ class BaseWorker:
         board = self.board(type(job))
         return None if board is None else board.publish(job)
 
-    async def ask(self, job: BaseJob) -> BaseJobResult | None:
+    async def ask[ResultT: BaseJobResult](self, job: BaseJob[ResultT]) -> ResultT | None:
         """Publish *job* and return its completed result, or None if it did not complete."""
         board = self.board(type(job))
         if board is None:

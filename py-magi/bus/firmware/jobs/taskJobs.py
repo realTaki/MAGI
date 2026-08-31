@@ -18,15 +18,15 @@ from ..books.taskBook import Task, TaskRow
 
 
 @dataclass
-class GetTaskJob(BaseJob):
-    """Read one task definition for a claimed task trigger."""
-
-    task_id: int = 0
+class GetTaskResult(BaseJobResult):
+    task: Task | None = None
 
 
 @dataclass
-class GetTaskResult(BaseJobResult):
-    task: Task | None = None
+class GetTaskJob(BaseJob[GetTaskResult]):
+    """Read one task definition for a claimed task trigger."""
+
+    task_id: int = 0
 
 
 class GetTaskJobRow(BaseJobRow):
@@ -52,15 +52,15 @@ class GetTaskJobBoard(OperateBookJobBoard[GetTaskJob, GetTaskResult, GetTaskJobR
 
 
 @dataclass
-class ListTasksJob(BaseJob):
-    """Read Task definitions, optionally narrowed by their enabled state."""
-
-    enabled: bool | None = None
+class ListTasksResult(BaseJobResult):
+    tasks: list[Task] = field(default_factory=list)
 
 
 @dataclass
-class ListTasksResult(BaseJobResult):
-    tasks: list[Task] = field(default_factory=list)
+class ListTasksJob(BaseJob[ListTasksResult]):
+    """Read Task definitions, optionally narrowed by their enabled state."""
+
+    enabled: bool | None = None
 
 
 class ListTasksJobRow(BaseJobRow):

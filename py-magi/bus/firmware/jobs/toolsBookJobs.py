@@ -127,13 +127,13 @@ class DeleteToolJobBoard(OperateBookJobBoard[DeleteToolJob, DeleteToolResult, De
 
 
 @dataclass
-class ListToolsJob(BaseJob):
-    include_disabled: bool = False
+class ListToolsResult(BaseJobResult):
+    tools: list[Tool] = field(default_factory=list)
 
 
 @dataclass
-class ListToolsResult(BaseJobResult):
-    tools: list[Tool] = field(default_factory=list)
+class ListToolsJob(BaseJob[ListToolsResult]):
+    include_disabled: bool = False
 
 
 class ListToolsJobRow(BaseJobRow):

@@ -1,4 +1,4 @@
-"""BaseJob, BaseJobResult, then BaseJobBoard.
+"""BaseJobResult, BaseJob, then BaseJobBoard.
 
 A BaseJob is something that needs to happen, is happening, or has happened.
 A BaseJobResult is the outcome fields on the same record.
@@ -34,18 +34,18 @@ class JobStatus(StrEnum):
 
 
 @dataclass
-class BaseJob(BaseRecord):
-    """Generic work BaseJob. Firmware later subclasses this."""
-
-    publisher: str | None = None
-
-
-@dataclass
 class BaseJobResult(BaseRecord):
     """Outcome of a Job. Firmware subclasses add business fields."""
 
     status: JobStatus = JobStatus.COMPLETED
     error: str | None = None
+
+
+@dataclass
+class BaseJob[ResultT: BaseJobResult](BaseRecord):
+    """Generic work BaseJob. Firmware later subclasses this."""
+
+    publisher: str | None = None
 
 
 type PostPublishHook[JobT: BaseJob, ResultT: BaseJobResult] = Callable[[JobT], ResultT]
