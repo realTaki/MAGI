@@ -14,7 +14,6 @@ def attach_board(
     board_cls: type[BaseJobBoard[Any, Any, Any]],
 ) -> BaseJobBoard[BaseJob, BaseJobResult, Any]:
     board = bus.board(board_cls.job_cls)
-    assert board is not None
     return board
 
 

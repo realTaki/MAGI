@@ -54,7 +54,6 @@ class TaskWorker(BaseWorker):
     def _board(self, job_type):
         assert self.bus is not None
         board = self.bus.board(job_type)
-        assert board is not None, f"task worker: no JobBoard mounted for {job_type.__name__}"
         return board
 
     async def _scheduled_tasks(self) -> list[Task]:

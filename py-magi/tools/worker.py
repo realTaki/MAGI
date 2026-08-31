@@ -47,7 +47,6 @@ class ToolsWorker(BaseWorker):
     def _board(self, job_type):
         assert self.bus is not None
         board = self.bus.board(job_type)
-        assert board is not None, f"tools worker: no JobBoard mounted for {job_type.__name__}"
         return board
 
     def _boost_builtins(self) -> None:

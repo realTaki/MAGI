@@ -42,9 +42,12 @@ class Bus:
             files=self._files,
         )
 
-    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any] | None:
-        """Return the mounted JobBoard for *job_type*, if Firmware shipped it."""
-        return cast(BaseJobBoard[JobT, Any, Any] | None, self._job_boards.get(job_type))
+    def board[JobT: BaseJob](self, job_type: type[JobT]) -> BaseJobBoard[JobT, Any, Any]:
+        """Return the mounted JobBoard for *job_type*."""
+        try:
+            return cast(BaseJobBoard[JobT, Any, Any], self._job_boards[job_type])
+        except KeyError:
+            raise KeyError(f"no JobBoard mounted for {job_type.__name__}") from None
 
     def boost_default_settings(self, *, worker_name: str, settings: Mapping[str, str]) -> bool:
         """Register a Worker's missing Settings defaults without overwriting values."""

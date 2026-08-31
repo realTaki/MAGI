@@ -104,15 +104,14 @@ def test_bus_does_not_depend_on_magi_service() -> None:
     )
 
 
-def test_asp_client_does_not_import_service_constructors() -> None:
-    """The ASP client is a protocol adapter; Magi owns startup."""
-    forbidden = ("magi.service", "magi.__main__")
+def test_asp_channel_does_not_import_magi() -> None:
+    """The ASP channel is a protocol adapter; Magi owns startup."""
     offenders: list[str] = []
-    path = MAGI_ROOT / "magi" / "asp.py"
-    for module, lineno in _imports(path):
-        if any(module == root or module.startswith(root + ".") for root in forbidden):
-            offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    for path in (MAGI_ROOT / "channels" / "asp").rglob("*.py"):
+        for module, lineno in _imports(path):
+            if module == "magi" or module.startswith("magi."):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
     assert not offenders, (
-        "magi.asp must not reach back into Magi; "
+        "channels.asp must not reach back into Magi; "
         "Magi constructs the client:\n  " + "\n  ".join(offenders)
     )
