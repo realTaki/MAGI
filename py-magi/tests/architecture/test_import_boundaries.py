@@ -76,7 +76,7 @@ def test_bus_does_not_import_domain_implementations() -> None:
     forbidden = ("agent", "channels", "tools", "providers")
     offenders: list[str] = []
     for path in (MAGI_ROOT / "bus").rglob("*.py"):
-        if path.name in {"__main__.py", "constant.py"}:
+        if path.name in {"__main__.py", "magi.py"}:
             continue
         for module, lineno in _imports(path):
             if any(module == root or module.startswith(root + ".") for root in forbidden):

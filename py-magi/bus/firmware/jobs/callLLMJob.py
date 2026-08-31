@@ -35,7 +35,7 @@ class CallLLMResult(BaseJobResult):
     tool_uses: list[dict[str, Any]] = field(default_factory=list)
     raw_blocks: list[dict[str, Any]] = field(default_factory=list)
     finish_reason: str | None = None
-    model: str = ""
+    model: str | None = None
 
 
 class CallLLMJobRow(BaseJobRow):
