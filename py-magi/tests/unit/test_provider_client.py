@@ -12,9 +12,9 @@ from bus import (
     LLMFinishReason,
     LLMMessage,
     LLMMessageRole,
+    LLMTool,
+    LLMToolCall,
     LLMUsage,
-    RunToolJob,
-    Tool,
 )
 from providers.client import LiteLLMClient
 
@@ -45,24 +45,26 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
                 role=LLMMessageRole.ASSISTANT,
                 text="",
                 tool_calls=[
-                    RunToolJob(
-                        publisher="test",
-                        name="weather",
+                    LLMToolCall(
                         tool_call_id="call-1",
+                        name="weather",
                         arguments={"city": "Beijing"},
                     )
                 ],
             ),
         ],
-        tools=[Tool(name="weather", description="Get weather", input_schema={"type": "object"})],
+        tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
         max_output_tokens=128,
     )
 
     restored = CallLLMJob.parse(job.to_dict())
 
     assert restored == job
-    assert isinstance(restored.messages[1].tool_calls[0], RunToolJob)
-    assert isinstance(restored.tools[0], Tool)
+    assert isinstance(restored.messages[1].tool_calls[0], LLMToolCall)
+    assert isinstance(restored.tools[0], LLMTool)
+    assert job.to_dict()["tools"] == [
+        {"name": "weather", "description": "Get weather", "input_schema": {"type": "object"}}
+    ]
 
 
 @dataclass
@@ -128,7 +130,7 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
             LLMMessage(role=LLMMessageRole.USER, text="What is the weather?"),
             LLMMessage(role=LLMMessageRole.TOOL, tool_call_id="earlier", text="sunny"),
         ],
-        tools=[Tool(name="weather", description="Get weather", input_schema={"type": "object"})],
+        tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
         max_output_tokens=128,
     )
 
@@ -160,10 +162,9 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
         role=LLMMessageRole.ASSISTANT,
         text="Calling weather",
         tool_calls=[
-            RunToolJob(
-                publisher="test",
-                name="weather",
+            LLMToolCall(
                 tool_call_id="call-1",
+                name="weather",
                 arguments={"city": "Beijing"},
             )
         ],
@@ -176,7 +177,12 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
 @pytest.mark.asyncio
 async def test_invalid_provider_configuration_fails_the_call_job() -> None:
     result = await LiteLLMClient(provider_name="not-a-provider", api_key="key").complete(
-        CallLLMJob(id=2, publisher="test", messages=[LLMMessage(role=LLMMessageRole.USER, text="hi")])
+        CallLLMJob(
+            id=2,
+            publisher="test",
+            messages=[LLMMessage(role=LLMMessageRole.USER, text="hi")],
+            tools=[],
+        )
     )
 
     assert result.id == 2
