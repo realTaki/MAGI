@@ -102,7 +102,7 @@ class ListContactNotesJobRow(BaseJobRow):
     __tablename__ = "jobs_list_contact_notes"
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
     contact_notes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
@@ -138,8 +138,8 @@ class UpdateContactNoteJobRow(BaseJobRow):
     __tablename__ = "jobs_update_contact_note"
 
     contact_note_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    note: Mapped[str] = mapped_column(Text, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class UpdateContactNoteJobBoard(
@@ -155,10 +155,14 @@ class UpdateContactNoteJobBoard(
             return UpdateContactNoteResult(
                 status=JobStatus.FAILED, error=f"contact note {job.contact_note_id} does not exist"
             )
-        if not job.note.strip():
-            return UpdateContactNoteResult(status=JobStatus.FAILED, error="contact note must be non-empty")
-        row.note = job.note
-        row.kind = job.kind.value
+        if job.note is not None:
+            if not job.note.strip():
+                return UpdateContactNoteResult(
+                    status=JobStatus.FAILED, error="contact note must be non-empty"
+                )
+            row.note = job.note
+        if job.kind is not None:
+            row.kind = job.kind.value
         return UpdateContactNoteResult()
 
 

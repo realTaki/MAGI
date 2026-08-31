@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Boolean, Text
+from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
@@ -85,12 +85,12 @@ class RegisterPromptJob(BaseJob):
 class RegisterPromptResult(BaseJobResult):
     pass
 
+
 class RegisterPromptJobRow(BaseJobRow):
     __tablename__ = "jobs_register_prompt"
 
     key: Mapped[str] = mapped_column(Text, nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class RegisterPromptJobBoard(
@@ -105,7 +105,9 @@ class RegisterPromptJobBoard(
         self._prompts = prompts
 
     def _execute(self, job: RegisterPromptJob) -> RegisterPromptResult:
-        return RegisterPromptResult(created=self._prompts.register(key=job.key, value=job.value))
+        if self._prompts.register(key=job.key, value=job.value):
+            return RegisterPromptResult()
+        return RegisterPromptResult(status=JobStatus.FAILED, error="prompt register failed")
 
 
 @dataclass

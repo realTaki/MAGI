@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, Text, and_, select, update
@@ -35,7 +35,7 @@ class AppendMessageJobRow(BaseJobRow):
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp: Mapped[BaseTime] = mapped_column(DateTime, nullable=False)
+    timestamp: Mapped[BaseTime] = mapped_column(DateTime, nullable=False, default=utcnow)
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
@@ -59,7 +59,7 @@ class AppendMessageJobBoard(
             conversation_id=job.conversation_id,
             contact_id=job.contact_id,
             content=job.content,
-            timestamp=job.timestamp,
+            timestamp=utcnow(),
             archived=False,
         )
         session.add(row)
@@ -119,7 +119,7 @@ class ArchiveMessagesJobRow(BaseJobRow):
     __tablename__ = "jobs_archive_messages"
 
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    before_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    before_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
     archived_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
@@ -135,7 +135,6 @@ class ArchiveMessagesJobBoard(
             MessageRow.conversation_id == job.conversation_id,
             MessageRow.archived.is_(False),
         ]
-        if job.before_message_id is not None:
-            conditions.append(MessageRow.id < job.before_message_id)
+        conditions.append(MessageRow.id < job.before_message_id)
         changed = session.execute(update(MessageRow).where(and_(*conditions)).values(archived=True))
         return ArchiveMessagesResult(archived_count=int(getattr(changed, "rowcount", 0) or 0))

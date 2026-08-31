@@ -38,8 +38,8 @@ class MessageRow(BaseRecordMixin):
         ForeignKey("books_contacts.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    conversation_id: Mapped[int | None] = mapped_column(
-        ForeignKey("books_conversations.id"), nullable=True
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("books_conversations.id"), nullable=False
     )
     timestamp: Mapped[BaseTime] = mapped_column(DateTime, default=utcnow, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

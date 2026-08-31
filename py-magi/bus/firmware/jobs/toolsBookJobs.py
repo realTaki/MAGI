@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Text, select
@@ -48,11 +48,10 @@ class GetToolJobBoard(OperateBookJobBoard[GetToolJob, GetToolResult, GetToolJobR
 
 @dataclass
 class SetToolJob(BaseJob):
-    name: str 
-    description: str | None = None
-    input_schema: dict[str, Any] | None = None
-    enabled: bool = True | None = None
-
+    name: str
+    description: str 
+    input_schema: dict[str, Any] 
+    enabled: bool = True
 
 @dataclass
 class SetToolResult(BaseJobResult):
@@ -63,9 +62,9 @@ class SetToolJobRow(BaseJobRow):
     __tablename__ = "jobs_set_tool"
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_schema: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobRow]):
@@ -79,18 +78,26 @@ class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobR
         name = job.name.strip()
         row = session.scalar(select(ToolRow).where(ToolRow.name == name))
         if row is None:
+            if job.description is None or job.input_schema is None:
+                return SetToolResult(
+                    status=JobStatus.FAILED,
+                    error="description and input_schema are required to create a tool",
+                )
             session.add(
                 ToolRow(
                     name=name,
                     description=job.description,
                     input_schema=dict(job.input_schema),
-                    enabled=job.enabled,
+                    enabled=True if job.enabled is None else job.enabled,
                 )
             )
         else:
-            row.description = job.description
-            row.input_schema = dict(job.input_schema)
-            row.enabled = job.enabled
+            if job.description is not None:
+                row.description = job.description
+            if job.input_schema is not None:
+                row.input_schema = dict(job.input_schema)
+            if job.enabled is not None:
+                row.enabled = job.enabled
         session.flush()
         return SetToolResult()
 
