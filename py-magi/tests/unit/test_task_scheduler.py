@@ -76,7 +76,7 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
 
             task_board = bus.board(GetTaskJob)
             assert task_board is not None
-            task_job_id = task_board.publish(GetTaskJob(task_id=task_id))
+            task_job_id = go(task_board.publish(GetTaskJob(task_id=task_id))).result()
             fired_task = go(task_board.get_result(task_job_id)).result()
             assert fired_task is not None
             assert fired_task.task is not None

@@ -16,5 +16,9 @@ def attach_board(
     return board
 
 
+def wait_publish(board, job) -> int:
+    return go(board.publish(job)).result()
+
+
 def wait_result(board, job_id: int, *, timeout: float = 2.0):
     return go(board.get_result(job_id, timeout=timeout)).result()

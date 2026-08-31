@@ -77,7 +77,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
     def _session(self):
         return self._factory.session()
 
-    def publish(self, job: JobT) -> int:
+    async def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
         go(self._post_publish(replace(job, id=job_id)))
         return job_id
@@ -188,13 +188,4 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             )
             session.commit()
         return int(getattr(result, "rowcount", 0) or 0)
-
-
-class NotifyJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
-    BaseJobBoard[JobT, ResultT, RowT]
-):
-    """Claimable notify work. ``publish`` is async so callers ``go(board.publish(job))``."""
-
-    async def publish(self, job: JobT) -> int:
-        return super().publish(job)
 

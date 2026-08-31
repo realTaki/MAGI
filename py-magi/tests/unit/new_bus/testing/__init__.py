@@ -2,7 +2,7 @@
 
 from .in_memory import InMemoryBackend
 from .jobs import WORKER, PingBus, PingJob, PingJobBoard
-from .worker import attach_board, wait_result
+from .worker import attach_board, wait_publish, wait_result
 
 __all__ = [
     "InMemoryBackend",
@@ -11,5 +11,6 @@ __all__ = [
     "PingJobBoard",
     "WORKER",
     "attach_board",
+    "wait_publish",
     "wait_result",
 ]
