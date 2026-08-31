@@ -7,39 +7,18 @@ import inspect
 import threading
 from collections.abc import Callable, Coroutine, Iterable
 from concurrent.futures import Future
-from typing import Any, cast
+from typing import Any
 
 _loop: asyncio.AbstractEventLoop | None = None
 _lock = threading.Lock()
 
 
-def go[T](
-    fn: Callable[..., T] | Coroutine[Any, Any, T],
-    /,
-    *args: Any,
-    **kwargs: Any,
-) -> Future[T]:
-    """Run *fn* in the background. Like Go's ``go``.
-
-    Pass a coroutine, or a function plus its arguments. Coroutine
-    functions are awaited on the BUS loop; plain functions run in a
-    worker thread so they do not block it.
+def go[T](coro: Coroutine[Any, Any, T]) -> Future[T]:
+    """Run *coro* on the BUS loop. Like Go's ``go``.
 
     Returns a concurrent Future. Callers that do not need the result can
     ignore it. Cancelling the Future cancels the coroutine.
     """
-    if inspect.iscoroutine(fn):
-        if args or kwargs:
-            raise TypeError("go(coro) takes no arguments")
-        coro = cast(Coroutine[Any, Any, T], fn)
-    elif inspect.iscoroutinefunction(fn):
-        coro = fn(*args, **kwargs)
-    else:
-        async def _call() -> T:
-            return await asyncio.to_thread(cast(Callable[..., T], fn), *args, **kwargs)
-
-        coro = _call()
-
     global _loop
     with _lock:
         loop = _loop
