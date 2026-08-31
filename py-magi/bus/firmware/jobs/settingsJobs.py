@@ -115,13 +115,13 @@ class DeleteSettingJobBoard(
 
 
 @dataclass
-class ListSettingsJob(BaseJob):
-    pass
+class ListSettingsResult(BaseJobResult):
+    settings: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
-class ListSettingsResult(BaseJobResult):
-    settings: dict[str, str] = field(default_factory=dict)
+class ListSettingsJob(BaseJob[ListSettingsResult]):
+    pass
 
 
 class ListSettingsJobRow(BaseJobRow):
