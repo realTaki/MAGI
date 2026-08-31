@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
@@ -10,6 +10,8 @@ from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ..books.toolsBook import Tool
+from .runToolJob import RunToolJob
 
 
 class LLMMessageRole(StrEnum):
@@ -27,24 +29,6 @@ class LLMFinishReason(StrEnum):
 
 
 @dataclass(frozen=True)
-class LLMTool:
-    """One model-callable tool, expressed in MAGI's public schema."""
-
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class LLMToolCall:
-    """A decoded tool invocation produced by an assistant message."""
-
-    id: str
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass(frozen=True)
 class LLMMessage:
     """One backend-neutral item in an LLM conversation.
 
@@ -53,8 +37,8 @@ class LLMMessage:
     """
 
     role: LLMMessageRole
-    text: str = ""
-    tool_calls: list[LLMToolCall] = field(default_factory=list)
+    text: str
+    tool_calls: list[RunToolJob] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
 
@@ -63,8 +47,8 @@ class LLMMessage:
         object.__setattr__(self, "role", role)
         if not isinstance(self.text, str):
             raise TypeError("LLM message text must be a string")
-        if not all(isinstance(call, LLMToolCall) for call in self.tool_calls):
-            raise TypeError("LLM message tool_calls must contain LLMToolCall values")
+        if not all(isinstance(call, RunToolJob) for call in self.tool_calls or ()):
+            raise TypeError("LLM message tool_calls must contain RunToolJob values")
         if role is LLMMessageRole.TOOL:
             if not self.tool_call_id:
                 raise ValueError("tool messages require tool_call_id")
@@ -95,15 +79,15 @@ class CallLLMJob(BaseJob):
     durable stream contract.
     """
 
-    messages: list[LLMMessage] = field(default_factory=list)
-    tools: list[LLMTool] = field(default_factory=list)
+    messages: list[LLMMessage]
+    tools: list[Tool]
     max_output_tokens: int = 1024
 
     def __post_init__(self) -> None:
         if not all(isinstance(message, LLMMessage) for message in self.messages):
             raise TypeError("CallLLMJob.messages must contain LLMMessage values")
-        if not all(isinstance(tool, LLMTool) for tool in self.tools):
-            raise TypeError("CallLLMJob.tools must contain LLMTool values")
+        if not all(isinstance(tool, Tool) for tool in self.tools):
+            raise TypeError("CallLLMJob.tools must contain Tool values")
         if self.max_output_tokens < 1:
             raise ValueError("max_output_tokens must be positive")
 
