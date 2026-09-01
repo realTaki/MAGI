@@ -1,18 +1,8 @@
-"""Tool registry — the in-process map of *executable* Tool
-instances the tools worker dispatches to.
+"""Executable tool lookup and runtime injection.
 
-This is **not** the agent-visible catalog. The catalog lives on
-BUS ``ToolsBook`` and is seeded by the worker through
-``SetToolsJob``. This module owns the dispatch half: a cache of
-:class:`~tools.BaseTool.BaseTool` instances.
-
-Builtin tools are hard-coded here. External subsystems (MCP,
-skills) inject additional tools at runtime through the public
-injection API.
-
-Imports are lazy: each builtin tool is imported on first call
-to :func:`builtin_catalog` / :func:`_build_tools`, not at
-module load time.
+The agent-visible catalog belongs to BUS ``ToolsBook``; this module only
+keeps the in-process instances dispatched by the tools worker. Builtins are
+loaded lazily, while MCP and similar subsystems replace their own source slot.
 """
 
 from __future__ import annotations
@@ -27,26 +17,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("tools.registry")
 
-#: Single-shot cache of builtin :class:`BaseTool` instances — the
-#: dispatch backend. Populated lazily on the first
-#: :func:`get_tool` call.
+BuiltinTool = tuple[str, str]
+
+#: Builtin dispatch backend, populated on the first :func:`get_tool` call.
 _tools_cache: list[BaseTool] | None = None
 
-#: Runtime-injected tools, keyed by source name (e.g. ``"mcp"``).
-#: Each call to :func:`register_tools` replaces the entire slot for
-#: that source.
+#: Runtime-injected tools, keyed by source name. Registration replaces a slot.
 _injected: dict[str, list[BaseTool]] = {}
 
-#: Change listeners — fired after :func:`register_tools`.
-#: The worker uses this to republish the tool catalog.
+#: Listeners fired after a source slot is replaced.
 _listeners: list[Callable[[], None]] = []
-
 
 _bus = None
 
-#: ``(module, class)`` for every builtin tool. Catalog seeding reads
-#: class fields; ``run`` is not called from here.
-_BUILTIN_TOOLS: tuple[tuple[str, str], ...] = (
+#: ``(module, class)`` for each builtin. Catalog seeding reads class fields.
+_BUILTIN_TOOLS: tuple[BuiltinTool, ...] = (
     ("tools.filesystem.read_file", "ReadFileTool"),
     ("tools.filesystem.write_file", "WriteFileTool"),
     ("tools.filesystem.edit_file", "EditFileTool"),
@@ -80,7 +65,7 @@ _BUILTIN_TOOLS: tuple[tuple[str, str], ...] = (
 
 
 def configure(*, bus=None) -> None:
-    """Bind the Runtime BUS used when builtin tools are instantiated."""
+    """Bind the BUS passed to newly constructed builtin tools."""
     global _tools_cache, _bus
     _bus = bus
     _tools_cache = None
@@ -89,16 +74,17 @@ def configure(*, bus=None) -> None:
 def builtin_catalog() -> list[dict[str, Any]]:
     """Agent-visible fields of every builtin tool. Does not run them."""
     entries: list[dict[str, Any]] = []
-    for module_name, class_name in _BUILTIN_TOOLS:
-        spec = _catalog_spec(module_name, class_name)
+    for builtin in _BUILTIN_TOOLS:
+        spec = _catalog_spec(builtin)
         if spec is not None:
             entries.append(spec)
     return entries
 
 
-def _catalog_spec(module_name: str, class_name: str) -> dict[str, Any] | None:
+def _catalog_spec(builtin: BuiltinTool) -> dict[str, Any] | None:
+    module_name, class_name = builtin
     try:
-        cls = getattr(importlib.import_module(module_name), class_name)
+        cls = _load_builtin(builtin)
     except Exception as exc:  # noqa: BLE001 -- one missing tool must not block seeding
         logger.warning("tools catalog: skip %s.%s (%s)", module_name, class_name, exc)
         return None
@@ -119,22 +105,13 @@ def _catalog_spec(module_name: str, class_name: str) -> dict[str, Any] | None:
 
 
 def _build_tools() -> list[BaseTool]:
-    """Construct one instance of every builtin tool.
+    """Construct builtin dispatch instances on demand.
 
-    Importing inside the function (not at module top)
-    keeps import-time cheap and lets a test replace one
-    tool without dragging in the rest.
-
-    MCP server management tools ARE builtin — administrative
-    surface. The MCP worker only injects discovered tools
-    under source ``"mcp"``.
+    Unlike catalog seeding, dispatch fails loudly if a declared builtin cannot
+    be imported. MCP management is builtin; only discovered MCP tools are
+    injected under the ``"mcp"`` source.
     """
-    kw = {"bus": _bus}
-    tools: list[BaseTool] = []
-    for module_name, class_name in _BUILTIN_TOOLS:
-        cls = getattr(importlib.import_module(module_name), class_name)
-        tools.append(cls(**kw))
-    return tools
+    return [_load_builtin(builtin)(bus=_bus) for builtin in _BUILTIN_TOOLS]
 
 
 # -- public API -----------------------------------------------------------
@@ -204,6 +181,12 @@ def list_injected() -> dict[str, list[BaseTool]]:
 
 
 # -- internal -------------------------------------------------------------
+
+
+def _load_builtin(builtin: BuiltinTool) -> type[BaseTool]:
+    """Import one declared builtin without instantiating it."""
+    module_name, class_name = builtin
+    return getattr(importlib.import_module(module_name), class_name)
 
 
 def _fire_listeners() -> None:
