@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from ...base.BaseFileBook import BaseFileBook
 from ...base.file import FileEngine
@@ -22,43 +23,6 @@ class Skill:
     description: str
 
 
-def _bundle_skills_dir() -> Path:
-    try:
-        import bus
-
-        candidate = Path(bus.__file__).resolve().parent.parent / "skills"
-        if candidate.is_dir():
-            return candidate
-    except Exception:
-        pass
-    return Path(__file__).resolve().parents[3] / "skills"
-
-
-def _parse_frontmatter(raw: str) -> tuple[dict[str, str], str]:
-    """Split a SKILL.md into ``key: value`` frontmatter and the markdown body."""
-    if not raw.startswith("---"):
-        return {}, raw
-    lines = raw.splitlines()
-    close_idx = -1
-    for index in range(1, len(lines)):
-        if lines[index].strip() == "---":
-            close_idx = index
-            break
-    if close_idx == -1:
-        return {}, raw
-    fields: dict[str, str] = {}
-    for line in lines[1:close_idx]:
-        if ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip().strip("\"'")
-        if key:
-            fields[key] = value
-    body = "\n".join(lines[close_idx + 1 :]).lstrip("\n")
-    return fields, body
-
-
 class SkillsBook(BaseFileBook):
     """Skill folders under ``<workspace>/skills``.
 
@@ -70,6 +34,7 @@ class SkillsBook(BaseFileBook):
     """
 
     name = "skills"
+    _bundle_skills_dir: ClassVar[Path] = Path(__file__).resolve().parents[3] / "skills"
 
     def __init__(self, engine: FileEngine) -> None:
         super().__init__(engine)
@@ -96,7 +61,7 @@ class SkillsBook(BaseFileBook):
         raw = self._files.read_text(f"{name}/{_SKILL_FILE}")
         if raw is None:
             return None
-        fields, body = _parse_frontmatter(raw)
+        fields, body = self._parse_frontmatter(raw)
         description = (fields.get("description") or "").strip()
         if not description:
             return None
@@ -112,7 +77,7 @@ class SkillsBook(BaseFileBook):
         ]
 
     def _seed_defaults(self) -> None:
-        source_root = _bundle_skills_dir()
+        source_root = self._bundle_skills_dir
         if not source_root.is_dir():
             return
         for source in source_root.iterdir():
@@ -121,3 +86,28 @@ class SkillsBook(BaseFileBook):
             if self._files.exists_directory(source.name):
                 continue
             self._files.copy_tree(source, source.name)
+
+    @staticmethod
+    def _parse_frontmatter(raw: str) -> tuple[dict[str, str], str]:
+        """Split a SKILL.md into ``key: value`` frontmatter and the markdown body."""
+        if not raw.startswith("---"):
+            return {}, raw
+        lines = raw.splitlines()
+        close_idx = -1
+        for index in range(1, len(lines)):
+            if lines[index].strip() == "---":
+                close_idx = index
+                break
+        if close_idx == -1:
+            return {}, raw
+        fields: dict[str, str] = {}
+        for line in lines[1:close_idx]:
+            if ":" not in line:
+                continue
+            key, _, value = line.partition(":")
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key:
+                fields[key] = value
+        body = "\n".join(lines[close_idx + 1 :]).lstrip("\n")
+        return fields, body

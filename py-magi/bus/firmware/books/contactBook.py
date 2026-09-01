@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Final
 
 from sqlalchemy import DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,6 +21,11 @@ class ContactRole(StrEnum):
     STRANGER = "stranger"
     MAGI = "magi"
     THIRD_PARTY_AGENT = "third_party_agent"
+
+
+# Reserved Contact.id values. Ordinary contacts start after MAGI_CONTACT_ID.
+SYSTEM_CONTACT_ID: Final[int] = 0
+MAGI_CONTACT_ID: Final[int] = 1
 
 
 @dataclass(kw_only=True)
@@ -48,10 +54,10 @@ class ContactBook(BaseBook[Contact]):
     def __init__(self, factory) -> None:
         super().__init__(factory)
         with self._session() as session:
-            if session.get(ContactRow, 0) is None:
+            if session.get(ContactRow, SYSTEM_CONTACT_ID) is None:
                 session.add(
                     ContactRow(
-                        id=0,
+                        id=SYSTEM_CONTACT_ID,
                         name="system",
                         role=ContactRole.SYSTEM.value,
                         last_seen_at=utcnow(),

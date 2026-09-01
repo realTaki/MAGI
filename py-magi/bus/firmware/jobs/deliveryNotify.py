@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
 from ...base.go import go
+from ..books.contactBook import MAGI_CONTACT_ID
 from ..books.messageBook import Message, MessageBook
 
 
@@ -19,8 +20,8 @@ class DeliveryNotify(BaseJob):
 
     ``text`` is the body; ``conversation_id`` is the session it belongs
     to. Channel and delivery address live on the Conversation row, not
-    on this notify. Publish writes MAGI's own message (contact id 1)
-    into MessageBook before the Job is claimable.
+    on this notify. Publish writes MAGI's own message
+    (``MAGI_CONTACT_ID``) into MessageBook before the Job is claimable.
     """
 
     conversation_id: int
@@ -55,7 +56,7 @@ class DeliveryNotifyBoard(
         published = replace(job, id=job_id)
         self._messages.add(
             Message(
-                contact_id=1,
+                contact_id=MAGI_CONTACT_ID,
                 content=published.text,
                 conversation_id=published.conversation_id,
             )

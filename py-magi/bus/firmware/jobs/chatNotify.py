@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
 from ...base.go import go
+from ..books.contactBook import SYSTEM_CONTACT_ID
 from ..books.messageBook import Message, MessageBook
 
 
@@ -19,13 +20,13 @@ class ChatNotify(BaseJob):
 
     Channels and tasks publish this envelope. ``text`` is the inbound body;
     ``conversation_id`` is the session it belongs to.
-    ``contact_id`` is the speaker; ``0`` is the system contact.
+    ``contact_id`` is the speaker; ``SYSTEM_CONTACT_ID`` is reserved.
     Publish writes the same row into MessageBook before the Job is claimable.
     """
 
     conversation_id: int
     text: str
-    contact_id: int = 0
+    contact_id: int = SYSTEM_CONTACT_ID
 
 
 @dataclass
@@ -36,7 +37,9 @@ class ChatNotifyResult(BaseJobResult):
 class ChatNotifyRow(BaseJobRow):
     __tablename__ = "jobs_chat_notify"
 
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    contact_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=SYSTEM_CONTACT_ID
+    )
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 

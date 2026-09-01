@@ -1,5 +1,11 @@
 """Concrete Books. Not part of the Firmware public surface."""
-from .contactBook import Contact, ContactBook, ContactRole
+from .contactBook import (
+    MAGI_CONTACT_ID,
+    SYSTEM_CONTACT_ID,
+    Contact,
+    ContactBook,
+    ContactRole,
+)
 from .contactNoteBook import ContactNote, ContactNoteBook, NoteKind
 from .conversationBook import Conversation, ConversationBook
 from .memoryBook import Memory, MemoryBook, MemoryKind
@@ -14,6 +20,8 @@ __all__ = [
     "Contact",
     "ContactBook",
     "ContactRole",
+    "MAGI_CONTACT_ID",
+    "SYSTEM_CONTACT_ID",
     "ContactNote",
     "ContactNoteBook",
     "NoteKind",
