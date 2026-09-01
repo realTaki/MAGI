@@ -8,7 +8,8 @@ from typing import Any
 from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
+from ...base.hookableJobBoard import HookableJobBoard
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ class RunToolJobRow(BaseJobRow):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class RunToolJobBoard(BaseJobBoard[RunToolJob, RunToolResult, RunToolJobRow]):
+class RunToolJobBoard(HookableJobBoard[RunToolJob, RunToolResult, RunToolJobRow]):
     job_cls = RunToolJob
     result_cls = RunToolResult
     row_cls = RunToolJobRow

@@ -40,7 +40,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         assert claimed.messages == [LLMMessage(role=LLMMessageRole.USER, content="hello")]
         assert claimed.tools == [LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})]
 
-        assert await board.submit_result(
+        assert board.submit_result(
             CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="ok"))
         )
         result = board.get_result(job_id)

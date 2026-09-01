@@ -21,7 +21,6 @@ from bus import (
     RunToolJob,
     RunToolResult,
 )
-from bus.base.go import go
 
 
 def _wait_for_claim(board, *, timeout: float = 5.0):
@@ -82,17 +81,15 @@ def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
         assert request is not None
         assert request.messages[-1] == LLMMessage(role=LLMMessageRole.USER, content="hello")
 
-        assert go(
-            llm.submit_result(
+        assert llm.submit_result(
                 CallLLMResult(
                     id=request.id,
                     message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="world"),
                 )
-            )
-        ).result(timeout=5)
+        )
         reply = _wait_for_claim(delivery)
         assert reply is not None and reply.conversation_id == conversation_id and reply.text == "world"
-        assert go(delivery.submit_result(DeliveryNotifyResult(id=reply.id))).result(timeout=5)
+        assert delivery.submit_result(DeliveryNotifyResult(id=reply.id))
 
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and chat.check_job_status(chat_id) is not JobStatus.COMPLETED:
@@ -117,28 +114,24 @@ def test_agent_routes_claimed_turns_to_one_serial_conversation(tmp_path) -> None
         second_id = chat.publish(
             ChatNotify(publisher="test", conversation_id=conversation_id, text="follow up")
         )
-        assert go(
-            llm.submit_result(
+        assert llm.submit_result(
                 CallLLMResult(
                     id=first.id,
                     message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="first reply"),
                 )
-            )
-        ).result(timeout=5)
+        )
         first_reply = _wait_for_claim(delivery)
         assert first_reply is not None and first_reply.text == "first reply"
 
         second = _wait_for_claim(llm)
         assert second is not None
         assert LLMMessage(role=LLMMessageRole.USER, content="follow up") in second.messages
-        assert go(
-            llm.submit_result(
+        assert llm.submit_result(
                 CallLLMResult(
                     id=second.id,
                     message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="second reply"),
                 )
-            )
-        ).result(timeout=5)
+        )
 
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -167,8 +160,7 @@ def test_agent_routes_different_conversations_independently(tmp_path) -> None:
         assert first is not None and second is not None
         assert {request.messages[-1].content for request in (first, second)} == {"first", "second"}
         for request in (first, second):
-            assert go(
-                llm.submit_result(
+            assert llm.submit_result(
                     CallLLMResult(
                         id=request.id,
                         message=LLMMessage(
@@ -176,8 +168,7 @@ def test_agent_routes_different_conversations_independently(tmp_path) -> None:
                             content=f"reply: {request.messages[-1].content}",
                         ),
                     )
-                )
-            ).result(timeout=5)
+            )
         replies = [_wait_for_claim(delivery), _wait_for_claim(delivery)]
         assert {reply.text for reply in replies if reply is not None} == {
             "reply: first",
@@ -198,8 +189,7 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
         chat.publish(ChatNotify(publisher="test", conversation_id=conversation_id, text="look it up"))
         first = _wait_for_claim(llm)
         assert first is not None
-        assert go(
-            llm.submit_result(
+        assert llm.submit_result(
                 CallLLMResult(
                     id=first.id,
                     message=LLMMessage(
@@ -212,24 +202,21 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
                         ],
                     ),
                 )
-            )
-        ).result(timeout=5)
+        )
         tool = _wait_for_claim(tools)
         assert tool is not None and tool.call.tool_call_id == "call-1"
-        assert go(tools.submit_result(RunToolResult(id=tool.id, content="found it"))).result(timeout=5)
+        assert tools.submit_result(RunToolResult(id=tool.id, content="found it"))
 
         second = _wait_for_claim(llm)
         assert second is not None
         assert second.messages[-1] == LLMMessage(
             role=LLMMessageRole.TOOL, tool_call_id="call-1", content="found it"
         )
-        assert go(
-            llm.submit_result(
+        assert llm.submit_result(
                 CallLLMResult(
                     id=second.id,
                     message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="Here it is."),
                 )
-            )
-        ).result(timeout=5)
+        )
         reply = _wait_for_claim(delivery)
         assert reply is not None and reply.text == "Here it is."

@@ -112,7 +112,7 @@ class BaseWorker:
         """Accept a Job result without waiting."""
         board = self.board(job_type)
         if board is not None:
-            go(board.submit_result(result))
+            board.submit_result(result)
 
     async def call(self, fn, /, *args, **kwargs):
         """Run a synchronous BUS operation away from the listen loop."""

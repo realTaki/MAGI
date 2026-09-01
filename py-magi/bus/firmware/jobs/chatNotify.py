@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
-from ...base.go import go
+from ...base.hookableJobBoard import HookableJobBoard
 from ..books.contactBook import SYSTEM_CONTACT_ID
 from ..books.messageBook import Message, MessageBook
 
@@ -44,7 +44,7 @@ class ChatNotifyRow(BaseJobRow):
     text: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
-class ChatNotifyBoard(BaseJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyRow]):
+class ChatNotifyBoard(HookableJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyRow]):
     job_cls = ChatNotify
     result_cls = ChatNotifyResult
     row_cls = ChatNotifyRow
@@ -53,15 +53,11 @@ class ChatNotifyBoard(BaseJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyRow])
         super().__init__(factory)
         self._messages = book
 
-    def publish(self, job: ChatNotify) -> int:
-        job_id = self._publish(job)
-        published = replace(job, id=job_id)
+    def _prepare(self, job: ChatNotify) -> None:
         self._messages.add(
             Message(
-                contact_id=published.contact_id,
-                content=published.text,
-                conversation_id=published.conversation_id,
+                contact_id=job.contact_id,
+                content=job.text,
+                conversation_id=job.conversation_id,
             )
         )
-        go(self._post_publish(published))
-        return job_id
