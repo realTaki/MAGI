@@ -11,6 +11,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
 
 
+@dataclass(frozen=True)
+class LLMTool:
+    """The LLM-facing portion of a catalogued tool."""
+
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
 @dataclass(kw_only=True)
 class Tool(BaseRecord):
     """One Agent-visible tool definition.
@@ -20,9 +29,7 @@ class Tool(BaseRecord):
     only the durable row shape.
     """
 
-    name: str 
-    description: str 
-    input_schema: dict[str, Any] 
+    definition: LLMTool
     enabled: bool = True
 
 
@@ -31,8 +38,7 @@ class ToolRow(BaseRecordMixin):
     __table_args__ = (UniqueConstraint("name", name="uq_books_tools_name"),)
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 

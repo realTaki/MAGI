@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Text, select
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.toolsBook import Tool, ToolRow
+from ..books.toolsBook import LLMTool, Tool, ToolRow
 
 
 def _valid_name(name: str) -> bool:
@@ -19,7 +19,7 @@ def _valid_name(name: str) -> bool:
 
 @dataclass
 class GetToolJob(BaseJob):
-    name: str 
+    name: str
 
 
 @dataclass
@@ -48,10 +48,9 @@ class GetToolJobBoard(OperateBookJobBoard[GetToolJob, GetToolResult, GetToolJobR
 
 @dataclass
 class SetToolJob(BaseJob):
-    name: str
-    description: str 
-    input_schema: dict[str, Any] 
+    definition: LLMTool
     enabled: bool = True
+
 
 @dataclass
 class SetToolResult(BaseJobResult):
@@ -61,9 +60,7 @@ class SetToolResult(BaseJobResult):
 class SetToolJobRow(BaseJobRow):
     __tablename__ = "jobs_set_tool"
 
-    name: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    input_schema: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
@@ -73,22 +70,19 @@ class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobR
     row_cls = SetToolJobRow
 
     def _execute(self, session: Session, job: SetToolJob) -> SetToolResult:
-        if not _valid_name(job.name):
+        if not _valid_name(job.definition.name):
             return SetToolResult(status=JobStatus.FAILED, error="tool name must be non-empty")
-        name = job.name.strip()
+        name = job.definition.name.strip()
         row = session.scalar(select(ToolRow).where(ToolRow.name == name))
+        definition = LLMTool(
+            name=name,
+            description=job.definition.description,
+            input_schema=dict(job.definition.input_schema),
+        )
         if row is None:
-            session.add(
-                ToolRow(
-                    name=name,
-                    description=job.description,
-                    input_schema=dict(job.input_schema),
-                    enabled=job.enabled,
-                )
-            )
+            session.add(ToolRow(name=name, definition=asdict(definition), enabled=job.enabled))
         else:
-            row.description = job.description
-            row.input_schema = dict(job.input_schema)
+            row.definition = asdict(definition)
             row.enabled = job.enabled
         session.flush()
         return SetToolResult()
