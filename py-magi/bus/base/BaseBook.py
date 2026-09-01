@@ -15,62 +15,6 @@ from .engine import EngineFactory
 from .time import BaseTime, load_dt, utcnow
 
 
-def _parse_value(annotation: Any, value: Any) -> Any:
-    """Restore JSON-compatible values to their annotation's runtime shape."""
-    if value is None or annotation is Any:
-        return value
-
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin in {Union, UnionType}:
-        for candidate in args:
-            if candidate is type(None):
-                continue
-            if isinstance(candidate, type) and isinstance(value, candidate):
-                return value
-        for candidate in args:
-            if candidate is type(None):
-                continue
-            try:
-                return _parse_value(candidate, value)
-            except (TypeError, ValueError):
-                continue
-        return value
-    if origin is list and isinstance(value, list):
-        item_type = args[0] if args else Any
-        return [_parse_value(item_type, item) for item in value]
-    if origin is set and isinstance(value, (list, set)):
-        item_type = args[0] if args else Any
-        return {_parse_value(item_type, item) for item in value}
-    if origin is tuple and isinstance(value, (list, tuple)):
-        if len(args) == 2 and args[1] is Ellipsis:
-            return tuple(_parse_value(args[0], item) for item in value)
-        return tuple(_parse_value(item_type, item) for item_type, item in zip(args, value, strict=False))
-    if origin is dict and isinstance(value, Mapping):
-        key_type, value_type = args if len(args) == 2 else (Any, Any)
-        return {
-            _parse_value(key_type, key): _parse_value(value_type, item)
-            for key, item in value.items()
-        }
-    if isinstance(annotation, type):
-        if isinstance(value, annotation):
-            return value
-        if issubclass(annotation, BaseRecord) and isinstance(value, Mapping):
-            return annotation.parse(value)
-        if is_dataclass(annotation) and isinstance(value, Mapping):
-            hints = get_type_hints(annotation)
-            return annotation(
-                **{
-                    key: _parse_value(hints[key], item)
-                    for key, item in value.items()
-                    if key in hints
-                }
-            )
-        if issubclass(annotation, Enum):
-            return annotation(value)
-    return load_dt(annotation, value)
-
-
 @dataclass(kw_only=True)
 class BaseRecord:
     """id / created_at / updated_at. BUS assigns these."""
@@ -97,9 +41,72 @@ class BaseRecord:
         return get_type_hints(cls, localns=localns)
 
     @classmethod
+    def _parse_value(cls, annotation: Any, value: Any) -> Any:
+        """Restore a JSON-compatible value to *annotation*'s runtime shape."""
+        if value is None or annotation is Any:
+            return value
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        if origin in {Union, UnionType}:
+            for candidate in args:
+                if candidate is type(None):
+                    continue
+                if isinstance(candidate, type) and isinstance(value, candidate):
+                    return value
+            for candidate in args:
+                if candidate is type(None):
+                    continue
+                try:
+                    return cls._parse_value(candidate, value)
+                except (TypeError, ValueError):
+                    continue
+            return value
+        if origin is list and isinstance(value, list):
+            item_type = args[0] if args else Any
+            return [cls._parse_value(item_type, item) for item in value]
+        if origin is set and isinstance(value, (list, set)):
+            item_type = args[0] if args else Any
+            return {cls._parse_value(item_type, item) for item in value}
+        if origin is tuple and isinstance(value, (list, tuple)):
+            if len(args) == 2 and args[1] is Ellipsis:
+                return tuple(cls._parse_value(args[0], item) for item in value)
+            return tuple(
+                cls._parse_value(item_type, item) for item_type, item in zip(args, value, strict=False)
+            )
+        if origin is dict and isinstance(value, Mapping):
+            key_type, value_type = args if len(args) == 2 else (Any, Any)
+            return {
+                cls._parse_value(key_type, key): cls._parse_value(value_type, item)
+                for key, item in value.items()
+            }
+        if isinstance(annotation, type):
+            if isinstance(value, annotation):
+                return value
+            if issubclass(annotation, BaseRecord) and isinstance(value, Mapping):
+                return annotation.parse(value)
+            if is_dataclass(annotation) and isinstance(value, Mapping):
+                hints = get_type_hints(annotation)
+                return annotation(
+                    **{
+                        key: cls._parse_value(hints[key], item)
+                        for key, item in value.items()
+                        if key in hints
+                    }
+                )
+            if issubclass(annotation, Enum):
+                return annotation(value)
+        return load_dt(annotation, value)
+
+    @classmethod
     def parse(cls, data: Mapping[str, Any]) -> Self:
         hints = cls._type_hints()
-        return cls(**{key: _parse_value(hints[key], value) for key, value in data.items() if key in hints})
+        return cls(
+            **{
+                key: cls._parse_value(hints[key], value)
+                for key, value in data.items()
+                if key in hints
+            }
+        )
 
     @classmethod
     def from_row(cls, row: BaseRecordMixin) -> Self:
