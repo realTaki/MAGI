@@ -77,7 +77,7 @@ def firmware_metadata() -> MetaData:
         DeleteToolJobRow,
         GetToolJobRow,
         ListToolsJobRow,
-        SetToolJobRow,
+        SetToolsJobRow,
     )
 
     return BaseRecordMixin.metadata

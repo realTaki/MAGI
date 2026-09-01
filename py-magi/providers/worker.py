@@ -11,7 +11,6 @@ that Job's terminal ``CallLLMResult(error=...)``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 
 from bus import (
@@ -41,8 +40,8 @@ class ProvidersWorker(BaseWorker):
         self._client = LiteLLMClient()
 
     async def on_attached(self) -> None:
-        listed = await self.ask(ListSettingsJob())
-        settings = listed.settings if listed is not None else {}
+        listed = await self.ask(ListSettingsJob(publisher=self.worker_name))
+        settings = listed.settings or {} if listed is not None else {}
         self._client.configure(
             provider_name=settings.get(NAME_KEY),
             api_key=settings.get(API_KEY),
@@ -71,8 +70,5 @@ class ProvidersWorker(BaseWorker):
     async def _on_llm(self, job: CallLLMJob) -> None:
         try:
             self.submit(CallLLMJob, await self._client.complete(job))
-        except asyncio.CancelledError:
-            self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error="cancelled"))
-            raise
-        except Exception as exc:  # noqa: BLE001 -- every LLM failure belongs on CallLLMResult
+        except Exception as exc:  # noqa: BLE001 -- LLM failure belongs on CallLLMResult
             self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc)))

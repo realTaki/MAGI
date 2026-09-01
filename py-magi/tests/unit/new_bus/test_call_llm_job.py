@@ -15,7 +15,7 @@ from bus import (
     LLMTool,
     LLMToolCall,
     RunToolJob,
-    SetToolJob,
+    SetToolsJob,
     Tool,
 )
 
@@ -57,16 +57,16 @@ async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> 
 
     call = LLMToolCall(tool_call_id="call-1", name="echo", arguments={"text": "hello"})
     with Bus("@llm-tool-wrapper", workspace=tmp_path) as bus:
-        set_tools = bus.board(SetToolJob)
+        set_tools = bus.board(SetToolsJob)
         list_tools = bus.board(ListToolsJob)
         board = bus.board(RunToolJob)
         assert set_tools is not None
         assert list_tools is not None
         assert board is not None
         set_id = set_tools.publish(
-            SetToolJob(
+            SetToolsJob(
                 publisher="test",
-                definition=definition,
+                tools=[catalog_tool],
             )
         )
         job_id = board.publish(RunToolJob(publisher="test", call=call))

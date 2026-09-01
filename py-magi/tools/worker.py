@@ -14,6 +14,7 @@ from bus import (
     BaseWorker,
     JobStatus,
     ListToolsJob,
+    LLMTool,
     RunToolJob,
     RunToolResult,
     SetToolJob,
@@ -38,27 +39,23 @@ class ToolsWorker(BaseWorker):
         return True
 
     async def _boost_builtins(self) -> None:
-        try:
-            listed = await self.ask(ListToolsJob(include_disabled=True))
-            existing = {tool.name for tool in listed.tools}
-        except Exception:  # noqa: BLE001 -- missing catalog must not block attach
-            logger.exception("tools worker: list tools failed")
-            existing = set()
+        listed = await self.ask(ListToolsJob(include_disabled=True))
+        existing = {tool.definition.name for tool in listed.tools} if listed is not None else set()
         seeded = 0
         for spec in builtin_catalog():
             if spec["name"] in existing:
                 continue
-            try:
-                await self.ask(
-                    SetToolJob(
+            if await self.ask(
+                SetToolJob(
+                    definition=LLMTool(
                         name=spec["name"],
                         description=spec["description"],
                         input_schema=spec["input_schema"],
-                        enabled=True,
-                    )
+                    ),
+                    enabled=True,
                 )
-            except Exception as exc:  # noqa: BLE001 -- one seed failure must not block the rest
-                logger.warning("tools worker: failed to seed %r (%s)", spec["name"], exc)
+            ) is None:
+                logger.warning("tools worker: failed to seed %r", spec["name"])
                 continue
             seeded += 1
         if seeded:
@@ -70,9 +67,8 @@ class ToolsWorker(BaseWorker):
         except asyncio.CancelledError:
             self._fail(job, "tools worker cancelled")
             raise
-        except Exception:  # noqa: BLE001 -- no job can kill the worker
-            logger.exception("tools worker: unhandled exception on job %s", job.id)
-            self._fail(job, "tool execution is not attached")
+        except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
+            self._fail(job, str(exc))
 
     def _fail(self, job: RunToolJob, error: str) -> None:
         self.submit(

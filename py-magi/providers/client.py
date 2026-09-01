@@ -128,7 +128,7 @@ class LiteLLMClient:
                 finish_reason=self._finish_reason(getattr(choice, "finish_reason", None)),
             )
         except Exception as exc:  # noqa: BLE001 -- every adapter/SDK failure becomes a Job failure
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=self._error_text(exc, self.host.id))
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
 
     def _message(self, message: LLMMessage) -> dict[str, Any]:
         role = LLMMessageRole(message.role)
@@ -217,34 +217,6 @@ class LiteLLMClient:
         if reason in {"content_filter", "safety", "refusal"}:
             return LLMFinishReason.REFUSED
         return None
-
-    def _error_text(self, exc: BaseException, label: str) -> str:
-        name = type(exc).__name__.lower()
-        text = str(exc).lower()
-        status = getattr(exc, "status_code", None)
-        if any(
-            marker in text
-            for marker in (
-                "context length",
-                "context_length",
-                "maximum context",
-                "prompt is too long",
-                "reduce the length",
-                "tokens must be reduced",
-            )
-        ):
-            return f"{label} context overflow: {exc}"
-        if "auth" in name or "permission" in name:
-            return f"{label} auth/permission failed: {exc}"
-        if "ratelimit" in name or "rate_limit" in name or "rate limit" in text:
-            return f"{label} rate limited: {exc}"
-        if "timeout" in name or "connection" in name:
-            return f"{label} network error: {exc}"
-        if "badrequest" in name or "invalidrequest" in name:
-            return f"{label} bad request: {exc}"
-        if status:
-            return f"{label} status {status}: {exc}"
-        return f"{label} error: {exc}"
 
     def _dump(self, obj: Any) -> dict[str, Any] | None:
         if obj is None:
