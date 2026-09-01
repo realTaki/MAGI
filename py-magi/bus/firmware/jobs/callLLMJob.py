@@ -38,15 +38,6 @@ class LLMMessage:
     tool_call_id: str | None = None
     is_error: bool = False
 
-@dataclass(frozen=True)
-class LLMUsage:
-    """Provider-independent token accounting, when it is reported."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cached_input_tokens: int = 0
-
-
 @dataclass
 class CallLLMJob(BaseJob):
     """One backend-neutral text-and-tools completion request.
@@ -67,8 +58,6 @@ class CallLLMResult(BaseJobResult):
 
     message: LLMMessage | None = None
     finish_reason: LLMFinishReason | None = None
-    usage: LLMUsage | None = None
-    model: str | None = None
 
 
 class CallLLMJobRow(BaseJobRow):
@@ -79,8 +68,6 @@ class CallLLMJobRow(BaseJobRow):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    model: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CallLLMJobBoard(BaseJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):

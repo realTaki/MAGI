@@ -37,11 +37,11 @@ class AspClient:
             base_url=self.base, headers=self._headers, timeout=30.0
         ) as http:
             self._http = http
-            if ready is not None:
-                ready.set()
             async with websockets.connect(
                 self._ws_url(), additional_headers=self._headers
             ) as ws:
+                if ready is not None:
+                    ready.set()
                 async for raw in ws:
                     await on_event(json.loads(raw))
 

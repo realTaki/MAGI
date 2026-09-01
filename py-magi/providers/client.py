@@ -17,16 +17,6 @@ from bus import (
     LLMMessageRole,
     LLMTool,
     LLMToolCall,
-    LLMUsage,
-)
-
-_CONTEXT_MARKERS = (
-    "context length",
-    "context_length",
-    "maximum context",
-    "prompt is too long",
-    "reduce the length",
-    "tokens must be reduced",
 )
 
 
@@ -116,8 +106,8 @@ class LiteLLMClient:
         model = self.model or self.host.default_model
         params: dict[str, Any] = {
             "model": f"{self.host.prefix}/{model}",
-            "messages": [message.to_dict() for message in job.messages],
-            "max_tokens": job.max_output_tokens,
+            "messages": [self._message(message) for message in job.messages],
+            "max_tokens": job.max_tokens,
             "api_key": self.api_key,
             "timeout": 30.0,
             "drop_params": True,
@@ -125,156 +115,148 @@ class LiteLLMClient:
         if self.host.api_base:
             params["api_base"] = self.host.api_base
         if job.tools:
-            params["tools"] = _tools(job.tools)
+            params["tools"] = self._tools(job.tools)
         try:
             response = await self.litellm.acompletion(**params)
             choices = getattr(response, "choices", None) or ()
             if not choices:
                 return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=f"{self.host.id} provider: response carried no choices")
-            return _result(job.id, choices[0].message, response, model)
-        except Exception as exc:  # noqa: BLE001 -- every adapter/SDK failure becomes a Job failure
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=_error_text(exc, self.host.id))
-
-def _tools(tools: list[LLMTool]) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.input_schema,
-            },
-        }
-        for tool in tools
-    ]
-
-
-def _result(job_id: int | None, raw_message: Any, raw_response: Any, fallback_model: str) -> CallLLMResult:
-    message = _response_message(raw_message)
-    model = str(getattr(raw_response, "model", "") or "") or fallback_model
-    if "/" in model:
-        model = model.split("/", 1)[1]
-    choices = getattr(raw_response, "choices", None) or ()
-    reason = getattr(choices[0], "finish_reason", None) if choices else None
-    return CallLLMResult(
-        id=job_id,
-        message=message,
-        finish_reason=_finish_reason(reason),
-        usage=_usage(getattr(raw_response, "usage", None)),
-        model=model,
-    )
-
-
-def _response_message(raw: Any) -> LLMMessage:
-    data = _dump(raw)
-    if data is None:
-        raise ValueError("provider returned a message that cannot be decoded")
-    content = data.get("content")
-    if content is None:
-        text = ""
-    elif isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        text = "".join(
-            str(part.get("text") or "") for part in content if isinstance(part, dict)
-        )
-    else:
-        raise ValueError("provider returned non-text assistant content")
-    calls: list[LLMToolCall] = []
-    for raw_call in data.get("tool_calls") or ():
-        call = _dump(raw_call)
-        function = _dump(call.get("function")) if call else None
-        if not call or not function or not call.get("id") or not function.get("name"):
-            raise ValueError("provider returned an invalid tool call")
-        calls.append(
-            LLMToolCall(
-                tool_call_id=str(call["id"]),
-                name=str(function["name"]),
-                arguments=_arguments(function.get("arguments")),
+            choice = choices[0]
+            return CallLLMResult(
+                id=job.id,
+                message=self._response_message(choice.message),
+                finish_reason=self._finish_reason(getattr(choice, "finish_reason", None)),
             )
-        )
-    return LLMMessage(role=LLMMessageRole.ASSISTANT, text=text, tool_calls=calls)
+        except Exception as exc:  # noqa: BLE001 -- every adapter/SDK failure becomes a Job failure
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=self._error_text(exc, self.host.id))
 
+    def _message(self, message: LLMMessage) -> dict[str, Any]:
+        role = LLMMessageRole(message.role)
+        if role in {LLMMessageRole.SYSTEM, LLMMessageRole.USER}:
+            return {"role": role.value, "content": message.content}
+        if role is LLMMessageRole.TOOL:
+            return {
+                "role": "tool",
+                "tool_call_id": message.tool_call_id,
+                "content": message.content if not message.is_error else f"Tool failed:\n{message.content}",
+            }
+        result: dict[str, Any] = {"role": "assistant", "content": message.content}
+        if message.tool_calls:
+            result["tool_calls"] = [
+                {
+                    "id": call.tool_call_id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)},
+                }
+                for call in message.tool_calls
+            ]
+        return result
 
-def _arguments(value: Any) -> dict[str, Any]:
-    if value is None or value == "":
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str):
-        parsed = json.loads(value)
-        if isinstance(parsed, dict):
-            return parsed
-    raise ValueError("provider returned non-object tool arguments")
+    def _tools(self, tools: list[LLMTool]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            }
+            for tool in tools
+        ]
 
+    def _response_message(self, raw: Any) -> LLMMessage:
+        data = self._dump(raw)
+        if data is None:
+            raise ValueError("provider returned a message that cannot be decoded")
+        content = data.get("content")
+        if content is None:
+            text = ""
+        elif isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = "".join(
+                str(part.get("text") or "") for part in content if isinstance(part, dict)
+            )
+        else:
+            raise ValueError("provider returned non-text assistant content")
+        calls: list[LLMToolCall] = []
+        for raw_call in data.get("tool_calls") or ():
+            call = self._dump(raw_call)
+            function = self._dump(call.get("function")) if call else None
+            if not call or not function or not call.get("id") or not function.get("name"):
+                raise ValueError("provider returned an invalid tool call")
+            calls.append(
+                LLMToolCall(
+                    tool_call_id=str(call["id"]),
+                    name=str(function["name"]),
+                    arguments=self._arguments(function.get("arguments")),
+                )
+            )
+        return LLMMessage(role=LLMMessageRole.ASSISTANT, content=text, tool_calls=calls)
 
-def _usage(raw_usage: Any) -> LLMUsage | None:
-    raw = _dump(raw_usage)
-    if raw is None:
+    def _arguments(self, value: Any) -> dict[str, Any]:
+        if value is None or value == "":
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        raise ValueError("provider returned non-object tool arguments")
+
+    def _finish_reason(self, value: Any) -> LLMFinishReason | None:
+        reason = str(value or "").strip().lower()
+        if reason in {"stop", "end_turn"}:
+            return LLMFinishReason.END_TURN
+        if reason in {"tool_calls", "function_call", "tool_use"}:
+            return LLMFinishReason.TOOL_USE
+        if reason in {"length", "max_tokens"}:
+            return LLMFinishReason.MAX_OUTPUT
+        if reason in {"content_filter", "safety", "refusal"}:
+            return LLMFinishReason.REFUSED
         return None
-    input_tokens = _integer(raw.get("prompt_tokens") or raw.get("input_tokens"))
-    output_tokens = _integer(raw.get("completion_tokens") or raw.get("output_tokens"))
-    details = _dump(raw.get("prompt_tokens_details")) or {}
-    cached_input_tokens = _integer(raw.get("cache_read_input_tokens") or details.get("cached_tokens"))
-    if input_tokens == output_tokens == cached_input_tokens == 0:
+
+    def _error_text(self, exc: BaseException, label: str) -> str:
+        name = type(exc).__name__.lower()
+        text = str(exc).lower()
+        status = getattr(exc, "status_code", None)
+        if any(
+            marker in text
+            for marker in (
+                "context length",
+                "context_length",
+                "maximum context",
+                "prompt is too long",
+                "reduce the length",
+                "tokens must be reduced",
+            )
+        ):
+            return f"{label} context overflow: {exc}"
+        if "auth" in name or "permission" in name:
+            return f"{label} auth/permission failed: {exc}"
+        if "ratelimit" in name or "rate_limit" in name or "rate limit" in text:
+            return f"{label} rate limited: {exc}"
+        if "timeout" in name or "connection" in name:
+            return f"{label} network error: {exc}"
+        if "badrequest" in name or "invalidrequest" in name:
+            return f"{label} bad request: {exc}"
+        if status:
+            return f"{label} status {status}: {exc}"
+        return f"{label} error: {exc}"
+
+    def _dump(self, obj: Any) -> dict[str, Any] | None:
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj
+        for attr in ("model_dump", "to_dict", "dict"):
+            fn = getattr(obj, attr, None)
+            if callable(fn):
+                dumped = fn()
+                if isinstance(dumped, dict):
+                    return dumped
+        if hasattr(obj, "__dict__"):
+            return dict(obj.__dict__)
         return None
-    return LLMUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cached_input_tokens=cached_input_tokens,
-    )
-
-
-def _finish_reason(value: Any) -> LLMFinishReason | None:
-    reason = str(value or "").strip().lower()
-    if reason in {"stop", "end_turn"}:
-        return LLMFinishReason.END_TURN
-    if reason in {"tool_calls", "function_call", "tool_use"}:
-        return LLMFinishReason.TOOL_USE
-    if reason in {"length", "max_tokens"}:
-        return LLMFinishReason.MAX_OUTPUT
-    if reason in {"content_filter", "safety", "refusal"}:
-        return LLMFinishReason.REFUSED
-    return None
-
-
-def _error_text(exc: BaseException, label: str) -> str:
-    name = type(exc).__name__.lower()
-    text = str(exc).lower()
-    status = getattr(exc, "status_code", None)
-    if any(marker in text for marker in _CONTEXT_MARKERS):
-        return f"{label} context overflow: {exc}"
-    if "auth" in name or "permission" in name:
-        return f"{label} auth/permission failed: {exc}"
-    if "ratelimit" in name or "rate_limit" in name or "rate limit" in text:
-        return f"{label} rate limited: {exc}"
-    if "timeout" in name or "connection" in name:
-        return f"{label} network error: {exc}"
-    if "badrequest" in name or "invalidrequest" in name:
-        return f"{label} bad request: {exc}"
-    if status:
-        return f"{label} status {status}: {exc}"
-    return f"{label} error: {exc}"
-
-
-def _dump(obj: Any) -> dict[str, Any] | None:
-    if obj is None:
-        return None
-    if isinstance(obj, dict):
-        return obj
-    for attr in ("model_dump", "to_dict", "dict"):
-        fn = getattr(obj, attr, None)
-        if callable(fn):
-            dumped = fn()
-            if isinstance(dumped, dict):
-                return dumped
-    if hasattr(obj, "__dict__"):
-        return dict(obj.__dict__)
-    return None
-
-
-def _integer(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
