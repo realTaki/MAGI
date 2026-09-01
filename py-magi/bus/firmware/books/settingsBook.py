@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -34,3 +34,8 @@ class SettingRow(BaseRecordMixin):
 class SettingsBook(BaseBook[Setting]):
     record_cls = Setting
     row_cls = SettingRow
+
+    def get_by_key(self, key: str) -> Setting | None:
+        with self._session() as session:
+            row = session.scalar(select(SettingRow).where(SettingRow.key == key))
+            return None if row is None else Setting.from_row(row)

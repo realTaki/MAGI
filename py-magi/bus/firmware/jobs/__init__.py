@@ -81,9 +81,6 @@ from .memoryJobs import (
     UpdateMemoryResult,
 )
 from .messageJobs import (
-    AppendMessageJob,
-    AppendMessageJobBoard,
-    AppendMessageResult,
     ArchiveMessagesJob,
     ArchiveMessagesJobBoard,
     ArchiveMessagesResult,
@@ -157,9 +154,6 @@ from .toolsBookJobs import (
 )
 
 __all__ = [
-    "AppendMessageJob",
-    "AppendMessageJobBoard",
-    "AppendMessageResult",
     "ArchiveMessagesJob",
     "ArchiveMessagesJobBoard",
     "ArchiveMessagesResult",

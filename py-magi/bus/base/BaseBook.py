@@ -177,6 +177,12 @@ class BaseBook[RecordT: BaseRecord]:
             session.commit()
             return True
 
+    def upsert(self, record: RecordT) -> int:
+        if record.id and self.exists(record.id):
+            self.update(record)
+            return record.id
+        return self.add(record)
+
     def delete(self, record_id: int) -> bool:
         with self._session() as session:
             row = session.get(type(self).row_cls, record_id)

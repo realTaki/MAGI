@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from sqlalchemy import Text, select
+from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
-from ...base.time import utcnow
-from ..books.settingsBook import SettingRow, SettingsBook
+from ...base.go import go
+from ..books.settingsBook import Setting, SettingsBook
 
 PROVIDER_NAME_KEY = "provider.name"
 PROVIDER_API_KEY_KEY = "provider.api_key"
@@ -22,11 +22,8 @@ class ChangeProviderNotify(BaseJob):
     """Replace the Runtime's provider configuration.
 
     A field set to a string replaces its setting; ``None`` leaves it unchanged.
-    Publishing persists the supplied settings atomically before the provider
-    Worker claims this notify and updates its cached client in place when one
-    exists. Provider, credential, and model validation occurs only while
-    handling a CallLLMJob, whose terminal result carries any error back to the
-    conversation.
+    Publishing persists the supplied settings before the provider Worker
+    claims this notify. Validation happens on CallLLMJob.
     """
 
     provider: str | None = None
@@ -58,29 +55,18 @@ class ChangeProviderNotifyBoard(
         super().__init__(factory)
         self._settings = settings
 
-    def _publish(self, job: ChangeProviderNotify) -> int:
-        """Atomically persist configuration and enqueue its update signal."""
-        now = utcnow()
-        prepared = replace(job, created_at=now, updated_at=now)
-        values = prepared.to_dict()
-        values.pop("id", None)
-        values["status"] = JobStatus.PENDING.value
-        with self._settings._session() as books:
-            for key, value in (
-                (PROVIDER_NAME_KEY, job.provider),
-                (PROVIDER_API_KEY_KEY, job.api_key),
-                (PROVIDER_MODEL_KEY, job.model),
-            ):
-                if value is None:
-                    continue
-                setting = books.scalar(select(SettingRow).where(SettingRow.key == key))
-                if setting is None:
-                    books.add(SettingRow(key=key, value=value))
-                else:
-                    setting.value = value
-            books.commit()
-        with self._session() as session:
-            row = ChangeProviderNotifyRow(**values)
-            session.add(row)
-            session.commit()
-            return int(row.id)
+    def publish(self, job: ChangeProviderNotify) -> int:
+        job_id = self._publish(job)
+        published = replace(job, id=job_id)
+        for key, value in (
+            (PROVIDER_NAME_KEY, published.provider),
+            (PROVIDER_API_KEY_KEY, published.api_key),
+            (PROVIDER_MODEL_KEY, published.model),
+        ):
+            if value is None:
+                continue
+            setting = self._settings.get_by_key(key) or Setting(key=key, value=value)
+            setting.value = value
+            self._settings.upsert(setting)
+        go(self._post_publish(published))
+        return job_id

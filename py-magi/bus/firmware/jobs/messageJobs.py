@@ -5,66 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, Text, and_, select, update
+from sqlalchemy import JSON, Boolean, Integer
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
-from ...base.time import BaseTime, utcnow
-from ..books.contactBook import ContactRow
-from ..books.conversationBook import ConversationRow
-from ..books.messageBook import Message, MessageRow
-
-
-@dataclass
-class AppendMessageJob(BaseJob):
-    conversation_id: int  
-    contact_id: int  
-    content: str  
-    
-
-
-@dataclass
-class AppendMessageResult(BaseJobResult):
-    message_id: int | None = None
-
-
-class AppendMessageJobRow(BaseJobRow):
-    __tablename__ = "jobs_append_message"
-
-    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    timestamp: Mapped[BaseTime] = mapped_column(DateTime, nullable=False, default=utcnow)
-    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-
-class AppendMessageJobBoard(
-    OperateBookJobBoard[AppendMessageJob, AppendMessageResult, AppendMessageJobRow]
-):
-    job_cls = AppendMessageJob
-    result_cls = AppendMessageResult
-    row_cls = AppendMessageJobRow
-
-    def _execute(self, session: Session, job: AppendMessageJob) -> AppendMessageResult:
-        if session.get(ConversationRow, job.conversation_id) is None:
-            return AppendMessageResult(
-                status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
-            )
-        if session.get(ContactRow, job.contact_id) is None:
-            return AppendMessageResult(
-                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
-            )
-        row = MessageRow(
-            conversation_id=job.conversation_id,
-            contact_id=job.contact_id,
-            content=job.content,
-            timestamp=utcnow(),
-            archived=False,
-        )
-        session.add(row)
-        session.flush()
-        return AppendMessageResult(message_id=row.id)
+from ..books.messageBook import Message
 
 
 @dataclass
@@ -97,11 +43,12 @@ class ListConversationMessagesJobBoard(
     def _execute(
         self, session: Session, job: ListConversationMessagesJob
     ) -> ListConversationMessagesResult:
-        stmt = select(MessageRow).where(MessageRow.conversation_id == job.conversation_id)
-        if not job.include_archived:
-            stmt = stmt.where(MessageRow.archived.is_(False))
-        rows = list(session.scalars(stmt.order_by(MessageRow.id)))
-        return ListConversationMessagesResult(messages=[Message.from_row(row) for row in rows])
+        del session
+        if job.include_archived:
+            messages = self._book.list(conversation_id=job.conversation_id)
+        else:
+            messages = self._book.list(conversation_id=job.conversation_id, archived=False)
+        return ListConversationMessagesResult(messages=messages)
 
 
 @dataclass
@@ -131,10 +78,12 @@ class ArchiveMessagesJobBoard(
     row_cls = ArchiveMessagesJobRow
 
     def _execute(self, session: Session, job: ArchiveMessagesJob) -> ArchiveMessagesResult:
-        conditions = [
-            MessageRow.conversation_id == job.conversation_id,
-            MessageRow.archived.is_(False),
-        ]
-        conditions.append(MessageRow.id < job.before_message_id)
-        changed = session.execute(update(MessageRow).where(and_(*conditions)).values(archived=True))
-        return ArchiveMessagesResult(archived_count=int(getattr(changed, "rowcount", 0) or 0))
+        del session
+        archived = 0
+        for message in self._book.list(conversation_id=job.conversation_id, archived=False):
+            if message.id >= job.before_message_id:
+                continue
+            message.archived = True
+            self._book.update(message)
+            archived += 1
+        return ArchiveMessagesResult(archived_count=archived)

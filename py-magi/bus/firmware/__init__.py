@@ -19,9 +19,6 @@ from .books.skillsBook import SkillsBook
 from .books.taskBook import Task, TaskBook, TaskSource
 from .books.toolsBook import Tool
 from .jobs import (
-    AppendMessageJob,
-    AppendMessageJobBoard,
-    AppendMessageResult,
     ArchiveMessagesJob,
     ArchiveMessagesJobBoard,
     ArchiveMessagesResult,
@@ -183,7 +180,6 @@ def create_job_boards(
     skills = SkillsBook(files)
     return {
         CreateConversationJob: CreateConversationJobBoard(factory, book=conversations),
-        AppendMessageJob: AppendMessageJobBoard(factory, book=messages),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, book=messages),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, book=messages),
         UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(
@@ -205,7 +201,7 @@ def create_job_boards(
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
         ChatNotify: ChatNotifyBoard(factory, book=messages),
-        DeliveryNotify: DeliveryNotifyBoard(factory),
+        DeliveryNotify: DeliveryNotifyBoard(factory, book=messages),
         RunTaskNotify: RunTaskNotifyBoard(factory, book=tasks),
         GetTaskJob: GetTaskJobBoard(factory, book=tasks),
         ListTasksJob: ListTasksJobBoard(factory, book=tasks),
@@ -244,9 +240,6 @@ __all__ = [
     "Task",
     "TaskSource",
     "Tool",
-    "AppendMessageJob",
-    "AppendMessageJobBoard",
-    "AppendMessageResult",
     "ArchiveMessagesJob",
     "ArchiveMessagesJobBoard",
     "ArchiveMessagesResult",

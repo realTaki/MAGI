@@ -13,8 +13,6 @@ from .base.go import go, wait
 from .BaseWorker import BaseWorker
 from .bus import Bus
 from .firmware import (
-    AppendMessageJob,
-    AppendMessageResult,
     ArchiveMessagesJob,
     ArchiveMessagesResult,
     CallLLMJob,
@@ -179,8 +177,6 @@ __all__ = [
     "UpdateContactNoteResult",
     "RegisterPromptJob",
     "RegisterPromptResult",
-    "AppendMessageJob",
-    "AppendMessageResult",
     "ArchiveMessagesJob",
     "ArchiveMessagesResult",
     "CreateConversationJob",
