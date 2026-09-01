@@ -15,8 +15,8 @@ class ChatNotify(BaseJob):
     """One inbound agent turn.
 
     Channels, tasks, and steering republish this envelope. ``text`` is
-    the user message; ``conversation_id`` is the session it belongs to.
-    Contact and channel live on the Conversation row, not on this notify.
+    the inbound body; ``conversation_id`` is the session it belongs to.
+    ``contact_id`` is the speaker; ``0`` is the system contact.
     """
     contact_id: int
     conversation_id: int 
