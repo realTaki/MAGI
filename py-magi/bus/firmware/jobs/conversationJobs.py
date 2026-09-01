@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
 from ..books.conversationBook import Conversation
@@ -88,12 +88,11 @@ class UpdateConversationSummaryJobBoard(
     row_cls = UpdateConversationSummaryJobRow
 
     def _execute(self, job: UpdateConversationSummaryJob) -> UpdateConversationSummaryResult:
-        conversation = self._book.get(job.conversation_id)
-        if conversation is None:
-            return UpdateConversationSummaryResult(
-                status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
+        self._book.update(
+            Conversation(
+                id=job.conversation_id,
+                summary=job.summary,
+                last_compaction_at=utcnow(),
             )
-        conversation.summary = job.summary
-        conversation.last_compaction_at = utcnow()
-        self._book.update(conversation)
+        )
         return UpdateConversationSummaryResult()
