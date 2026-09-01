@@ -54,7 +54,7 @@ class Conversation:
     async def _run_turn(self, job: ChatNotify) -> None:
         self._context.add_chat(job)
         try:
-            if not await self._context.load():
+            if not await self._context.refresh():
                 self._context.fail("会话不存在。")
                 return
             await self._process()
@@ -66,11 +66,14 @@ class Conversation:
 
     async def _process(self) -> None:
         llm_timeout = await self._context.setting_float("llm_timeout_seconds", 120)
-        await self._context.compact(call_llm=partial(self._call_llm, timeout=llm_timeout))
         max_tokens = await self._context.setting_int("max_tokens", 1024)
         tool_wait_seconds = await self._context.setting_float("tool_wait_seconds", 300)
 
         while True:
+            await self._context.compact(
+                call_llm=partial(self._call_llm, timeout=llm_timeout),
+                max_tokens=max_tokens,
+            )
             llm = await self._call_llm(
                 self._context.messages(),
                 self._context.tools,
