@@ -14,9 +14,11 @@ class AgentWorker(BaseWorker):
     worker_name = "agent"
     default_settings = {
         "max_tokens": "1024",
+        "thinking_tokens": "8192",
         "tool_wait_seconds": "300",
         "llm_timeout_seconds": "120",
         "compact_keep_recent": "20",
+        "compact_summary_tokens": "10000",
         "compact_context_window": "100000",
         "compact_threshold_pct": "80",
     }
