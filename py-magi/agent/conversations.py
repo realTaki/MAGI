@@ -111,6 +111,13 @@ class Conversation:
 
     async def _run(self) -> None:
         try:
+            conversation = await self._conversation()
+            if conversation is not None:
+                self.conversation = conversation
+                self.summary = self._summary_message(conversation.summary)
+            active = await self._get_active_messages()
+            self.active_from_id = None if not active else active[0].id
+            self.history = self._messages_from_records(active)
             while self._pending:
                 await self._run_turn(self._pending.popleft())
         finally:
@@ -182,8 +189,7 @@ class Conversation:
 
     def _begin_turn(self, job: ChatNotify) -> None:
         self.jobs = [job]
-        if self.history:
-            self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
+        self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
         self.retained_text = []
         self.final_reply = ""
@@ -191,14 +197,11 @@ class Conversation:
         self._assistant = None
 
     async def _refresh(self) -> bool:
-        """Refresh external dependencies; load summary and history when empty."""
+        """Refresh per-turn SYSTEM context and tools."""
         conversation = await self._conversation()
         if conversation is None:
             return False
         self.conversation = conversation
-        if not self.history:
-            self.summary = self._summary_message(conversation.summary)
-            self.history = await self._history()
         await self._refresh_system(conversation)
         self.tools = await self._tools()
         return True
@@ -345,11 +348,6 @@ class Conversation:
             )
         )
         return [] if result is None or result.messages is None else result.messages
-
-    async def _history(self) -> list[LLMMessage]:
-        live = await self._get_active_messages()
-        self.active_from_id = None if not live else live[0].id
-        return self._messages_from_records(live)
 
     async def _refresh_system(self, conversation) -> None:
         """Refresh the independently visible sections of the SYSTEM message."""
