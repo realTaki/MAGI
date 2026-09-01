@@ -63,7 +63,6 @@ class TaskWorker(BaseWorker):
         return task.updated_at is None or previous_window > task.updated_at
 
     async def _on_trigger(self, trigger: RunTaskNotify) -> None:
-        got = None
         try:
             got = await self.ask(GetTaskJob(task_id=trigger.task_id, publisher=cast(str, self.worker_name)))
             if got is None or got.task is None:
@@ -72,8 +71,6 @@ class TaskWorker(BaseWorker):
             self._fire(got.task, manual=trigger.manual)
             self._submit(trigger, None)
         except Exception as exc:  # noqa: BLE001 -- one task cannot kill the worker
-            if got is not None and got.task is not None:
-                self._report(got.task, str(exc))
             self._submit(trigger, str(exc))
 
     def _report(self, task: Task, error: str) -> None:

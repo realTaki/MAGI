@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Mapping
 from concurrent.futures import Future
 from contextlib import suppress
@@ -14,8 +13,6 @@ from .base.go import go
 
 if TYPE_CHECKING:
     from .bus import Bus
-
-logger = logging.getLogger("bus.worker")
 
 _JOIN_TIMEOUT = 2.0
 
@@ -128,11 +125,8 @@ class BaseWorker:
     async def _run(self) -> None:
         try:
             while True:
-                try:
-                    if await self._poll():
-                        continue
-                except Exception:  # noqa: BLE001 -- a BUS blip must not kill the loop
-                    logger.exception("%s worker: BUS operation failed", type(self).worker_name)
+                if await self._poll():
+                    continue
                 await asyncio.sleep(self.poll_seconds)
         finally:
             with suppress(Exception):

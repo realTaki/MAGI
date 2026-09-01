@@ -12,12 +12,16 @@ from bus import (
     CallLLMJob,
     CallLLMResult,
     JobStatus,
-    LLMFinishReason,
     LLMMessage,
     LLMMessageRole,
     LLMTool,
     LLMToolCall,
 )
+
+litellm.telemetry = False
+litellm.suppress_debug_info = True
+litellm.drop_params = True
+litellm.modify_params = True
 
 
 @dataclass(frozen=True)
@@ -56,7 +60,9 @@ def options() -> list[dict[str, str]]:
 
 
 class LiteLLMClient:
-    """Mutable provider configuration plus one MAGI-to-LiteLLM adapter."""
+    """Provider settings plus MAGI Job ↔ LiteLLM chat completion."""
+
+    _ok_finish = {"", "stop", "end_turn", "tool_calls", "function_call", "tool_use"}
 
     def __init__(
         self,
@@ -65,16 +71,9 @@ class LiteLLMClient:
         api_key: str | None = None,
         model: str | None = None,
     ) -> None:
-        self.provider_name: str | None = None
+        self.host: Host | None = None
         self.api_key: str | None = None
         self.model: str | None = None
-        self.host: Host | None = None
-        self.host_error: str | None = "no LLM provider configured; set provider.name in settings"
-        self.litellm = litellm
-        self.litellm.telemetry = False
-        self.litellm.suppress_debug_info = True
-        self.litellm.drop_params = True
-        self.litellm.modify_params = True
         self.configure(provider_name=provider_name, api_key=api_key, model=model)
 
     def configure(
@@ -85,88 +84,81 @@ class LiteLLMClient:
         model: str | None = None,
     ) -> None:
         if provider_name is not None:
-            self.provider_name = provider_name
             name = provider_name.strip().lower()
             self.host = _BY_ID.get(_ALIASES.get(name, name))
-            self.host_error = (
-                None
-                if self.host is not None
-                else f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(item.id for item in HOSTS)}"
-            )
         if api_key is not None:
             self.api_key = api_key
         if model is not None:
             self.model = model
 
     async def complete(self, job: CallLLMJob) -> CallLLMResult:
-        if self.host is None:
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=self.host_error or "no LLM provider configured; set provider.name in settings")
+        host = self.host
+        if host is None:
+            return self._failed(job, "no LLM provider configured; set provider.name in settings")
         if not self.api_key:
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error="no API key configured; set provider.api_key in settings")
-        model = self.model or self.host.default_model
+            return self._failed(job, "no API key configured; set provider.api_key in settings")
         params: dict[str, Any] = {
-            "model": f"{self.host.prefix}/{model}",
-            "messages": [self._message(message) for message in job.messages],
+            "model": f"{host.prefix}/{self.model or host.default_model}",
+            "messages": [self._request_message(message) for message in job.messages],
             "max_tokens": job.max_tokens,
             "api_key": self.api_key,
             "timeout": 30.0,
             "drop_params": True,
         }
-        if self.host.api_base:
-            params["api_base"] = self.host.api_base
+        if host.api_base:
+            params["api_base"] = host.api_base
         if job.tools:
-            params["tools"] = self._tools(job.tools)
+            params["tools"] = [self._request_tool(tool) for tool in job.tools]
         try:
-            response = await self.litellm.acompletion(**params)
+            response = await litellm.acompletion(**params)
             choices = getattr(response, "choices", None) or ()
             if not choices:
-                return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=f"{self.host.id} provider: response carried no choices")
+                return self._failed(job, f"{host.id} provider: response carried no choices")
             choice = choices[0]
-            return CallLLMResult(
-                id=job.id,
-                message=self._response_message(choice.message),
-                finish_reason=self._finish_reason(getattr(choice, "finish_reason", None)),
-            )
-        except Exception as exc:  # noqa: BLE001 -- every adapter/SDK failure becomes a Job failure
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
+            reason = str(getattr(choice, "finish_reason", "") or "").strip().lower()
+            if reason not in self._ok_finish:
+                return self._failed(job, f"provider finish: {reason or 'unknown'}")
+            return CallLLMResult(id=job.id, message=self._assistant_message(choice.message))
+        except Exception as exc:  # noqa: BLE001 -- SDK failure belongs on CallLLMResult
+            return self._failed(job, str(exc))
 
-    def _message(self, message: LLMMessage) -> dict[str, Any]:
+    def _failed(self, job: CallLLMJob, error: str) -> CallLLMResult:
+        return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error)
+
+    def _request_tool(self, tool: LLMTool) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.input_schema,
+            },
+        }
+
+    def _request_message(self, message: LLMMessage) -> dict[str, Any]:
         role = LLMMessageRole(message.role)
         if role in {LLMMessageRole.SYSTEM, LLMMessageRole.USER}:
             return {"role": role.value, "content": message.content}
         if role is LLMMessageRole.TOOL:
-            return {
-                "role": "tool",
-                "tool_call_id": message.tool_call_id,
-                "content": message.content if not message.is_error else f"Tool failed:\n{message.content}",
-            }
-        result: dict[str, Any] = {"role": "assistant", "content": message.content}
+            content = message.content if not message.is_error else f"Tool failed:\n{message.content}"
+            return {"role": "tool", "tool_call_id": message.tool_call_id, "content": content}
+        payload: dict[str, Any] = {"role": "assistant", "content": message.content}
         if message.tool_calls:
-            result["tool_calls"] = [
+            payload["tool_calls"] = [
                 {
                     "id": call.tool_call_id,
                     "type": "function",
-                    "function": {"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)},
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                    },
                 }
                 for call in message.tool_calls
             ]
-        return result
+        return payload
 
-    def _tools(self, tools: list[LLMTool]) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema,
-                },
-            }
-            for tool in tools
-        ]
-
-    def _response_message(self, raw: Any) -> LLMMessage:
-        data = self._dump(raw)
+    def _assistant_message(self, raw: Any) -> LLMMessage:
+        data = self._mapping(raw)
         if data is None:
             raise ValueError("provider returned a message that cannot be decoded")
         content = data.get("content")
@@ -175,16 +167,14 @@ class LiteLLMClient:
         elif isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = "".join(
-                str(part.get("text") or "") for part in content if isinstance(part, dict)
-            )
+            text = "".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
         else:
             raise ValueError("provider returned non-text assistant content")
         calls: list[LLMToolCall] = []
-        for raw_call in data.get("tool_calls") or ():
-            call = self._dump(raw_call)
-            function = self._dump(call.get("function")) if call else None
-            if not call or not function or not call.get("id") or not function.get("name"):
+        for item in data.get("tool_calls") or ():
+            call = self._mapping(item) or {}
+            function = self._mapping(call.get("function")) or {}
+            if not call.get("id") or not function.get("name"):
                 raise ValueError("provider returned an invalid tool call")
             calls.append(
                 LLMToolCall(
@@ -193,7 +183,7 @@ class LiteLLMClient:
                     arguments=self._arguments(function.get("arguments")),
                 )
             )
-        return LLMMessage(role=LLMMessageRole.ASSISTANT, content=text, tool_calls=calls)
+        return LLMMessage(role=LLMMessageRole.ASSISTANT, content=text, tool_calls=calls or None)
 
     def _arguments(self, value: Any) -> dict[str, Any]:
         if value is None or value == "":
@@ -206,29 +196,15 @@ class LiteLLMClient:
                 return parsed
         raise ValueError("provider returned non-object tool arguments")
 
-    def _finish_reason(self, value: Any) -> LLMFinishReason | None:
-        reason = str(value or "").strip().lower()
-        if reason in {"stop", "end_turn"}:
-            return LLMFinishReason.END_TURN
-        if reason in {"tool_calls", "function_call", "tool_use"}:
-            return LLMFinishReason.TOOL_USE
-        if reason in {"length", "max_tokens"}:
-            return LLMFinishReason.MAX_OUTPUT
-        if reason in {"content_filter", "safety", "refusal"}:
-            return LLMFinishReason.REFUSED
-        return None
-
-    def _dump(self, obj: Any) -> dict[str, Any] | None:
+    def _mapping(self, obj: Any) -> dict[str, Any] | None:
         if obj is None:
             return None
         if isinstance(obj, dict):
             return obj
-        for attr in ("model_dump", "to_dict", "dict"):
-            fn = getattr(obj, attr, None)
-            if callable(fn):
-                dumped = fn()
-                if isinstance(dumped, dict):
-                    return dumped
-        if hasattr(obj, "__dict__"):
-            return dict(obj.__dict__)
-        return None
+        dump = getattr(obj, "model_dump", None)
+        if callable(dump):
+            dumped = dump()
+            if isinstance(dumped, dict):
+                return dumped
+        data = getattr(obj, "__dict__", None)
+        return dict(data) if isinstance(data, dict) else None
