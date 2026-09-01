@@ -46,6 +46,7 @@ class Conversation:
     def __init__(self, worker: AgentWorker, conversation_id: int) -> None:
         self._worker = worker
         self.conversation_id = conversation_id
+        self._context = AgentContext(worker, conversation_id=conversation_id)
         self._pending: deque[ChatNotify] = deque()
         self._running = False
 
@@ -90,36 +91,30 @@ class Conversation:
                 )
 
     async def _process(self, ctx: RunContext) -> None:
-        context = AgentContext(
-            self._worker,
-            conversation_id=ctx.conversation_id,
-            contact_id=ctx.contact_id,
-        )
-        record = await context.conversation()
-        if record is None:
+        if not await self._context.get(ctx.contact_id):
             ctx.failed = True
             ctx.final_reply = "会话不存在。"
-            self._deliver(ctx)
             return
 
-        llm_timeout = await context.setting_float("llm_timeout_seconds", 120)
-        history, source_messages = await context.history(record.summary)
-        ctx.messages = await context.compact(
+        record = self._context.conversation
+        assert record is not None
+        llm_timeout = await self._context.setting_float("llm_timeout_seconds", 120)
+        ctx.messages = await self._context.compact(
             summary=record.summary,
-            history=history,
-            records=source_messages,
+            history=self._context.history,
+            records=self._context.records,
             call_llm=partial(self._call_llm, timeout=llm_timeout),
         )
-        system = await context.system_prompt(record.instruction, record.info)
-        tools = await context.tools()
-        max_iterations = await context.setting_int("max_iterations", 10)
-        max_tokens = await context.setting_int("max_tokens", 1024)
-        tool_wait_seconds = await context.setting_float("tool_wait_seconds", 300)
+        max_tokens = await self._context.setting_int("max_tokens", 1024)
+        tool_wait_seconds = await self._context.setting_float("tool_wait_seconds", 300)
 
-        for _ in range(max_iterations):
+        while True:
             llm = await self._call_llm(
-                [LLMMessage(role=LLMMessageRole.SYSTEM, content=system), *ctx.messages],
-                tools,
+                [
+                    LLMMessage(role=LLMMessageRole.SYSTEM, content=self._context.system),
+                    *ctx.messages,
+                ],
+                self._context.tools,
                 max_tokens=max_tokens,
                 timeout=llm_timeout,
             )
@@ -147,9 +142,6 @@ class Conversation:
                 pending = self._pending.popleft()
                 ctx.jobs.append(pending)
                 ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=pending.text))
-
-        ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
-        self._deliver(ctx)
 
     async def _run_tools(
         self,
