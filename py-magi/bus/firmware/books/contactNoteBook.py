@@ -22,7 +22,7 @@ class NoteKind(StrEnum):
 class ContactNote(BaseRecord):
     """One note belonging to a Contact."""
 
-    contact_id: int
+    contact_id: int | None = None
     note: str | None = "Nothing to say"
     kind: NoteKind | None = NoteKind.PERMANENT
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Integer, Text
@@ -90,7 +90,7 @@ class ListContactNotesJobRow(BaseJobRow):
     __tablename__ = "jobs_list_contact_notes"
 
     contact_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     contact_notes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
@@ -101,7 +101,10 @@ class ListContactNotesJobBoard(
     result_cls = ListContactNotesResult
     row_cls = ListContactNotesJobRow
     def _execute(self, job: ListContactNotesJob) -> ListContactNotesResult:
-        notes = self._book.list(contact_id=job.contact_id, kind=job.kind.value)
+        notes = self._book.list(
+            contact_id=job.contact_id,
+            kind=None if job.kind is None else job.kind.value,
+        )
         return ListContactNotesResult(contact_notes=list(reversed(notes)))
 
 
