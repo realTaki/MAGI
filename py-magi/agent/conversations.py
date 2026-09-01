@@ -11,6 +11,7 @@ from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from bus import (
+    MAGI_CONTACT_ID,
     ArchiveMessagesJob,
     CallLLMJob,
     CallLLMResult,
@@ -28,7 +29,6 @@ from bus import (
     LLMMessage,
     LLMMessageRole,
     LLMToolCall,
-    MAGI_CONTACT_ID,
     RunToolJob,
     Skill,
     UpdateConversationSummaryJob,
