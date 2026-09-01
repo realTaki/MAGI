@@ -3,7 +3,7 @@ instances the tools worker dispatches to.
 
 This is **not** the agent-visible catalog. The catalog lives on
 BUS ``ToolsBook`` and is seeded by the worker through
-``SetToolJob``. This module owns the dispatch half: a cache of
+``SetToolsJob``. This module owns the dispatch half: a cache of
 :class:`~tools.BaseTool.BaseTool` instances.
 
 Builtin tools are hard-coded here. External subsystems (MCP,

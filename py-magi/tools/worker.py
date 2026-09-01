@@ -1,35 +1,46 @@
 """Tools worker: seed the catalog, then claim RunToolJob.
 
-Attach publishes missing builtin rows through ``SetToolJob``. The loop
+Attach publishes missing builtin rows through ``SetToolsJob``. The loop
 claims ``RunToolJob`` and ``go()``s the handler. Builtin ``run``
 implementations are not attached yet.
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
-
 from bus import (
     BaseWorker,
     JobStatus,
-    ListToolsJob,
     LLMTool,
+    ListToolsJob,
     RunToolJob,
     RunToolResult,
-    SetToolJob,
+    SetToolsJob,
+    Tool,
     go,
 )
 from tools.registry import builtin_catalog
-
-logger = logging.getLogger("tools.worker")
 
 
 class ToolsWorker(BaseWorker):
     worker_name = "tools"
 
     async def on_attached(self) -> None:
-        await self._boost_builtins()
+        listed = await self.ask(ListToolsJob(include_disabled=True, publisher=self.worker_name))
+        existing = {tool.definition.name for tool in listed.tools or []} if listed is not None else set()
+        tools = [
+            Tool(
+                name=spec["name"],
+                definition=LLMTool(
+                    name=spec["name"],
+                    description=spec["description"],
+                    input_schema=spec["input_schema"],
+                ),
+            )
+            for spec in builtin_catalog()
+            if spec["name"] not in existing
+        ]
+        if tools:
+            await self.ask(SetToolsJob(publisher=self.worker_name, tools=tools))
 
     async def _poll(self) -> bool:
         job = await self.claim(RunToolJob)
@@ -38,35 +49,9 @@ class ToolsWorker(BaseWorker):
         go(self._on_run(job))
         return True
 
-    async def _boost_builtins(self) -> None:
-        listed = await self.ask(ListToolsJob(include_disabled=True))
-        existing = {tool.definition.name for tool in listed.tools} if listed is not None else set()
-        seeded = 0
-        for spec in builtin_catalog():
-            if spec["name"] in existing:
-                continue
-            if await self.ask(
-                SetToolJob(
-                    definition=LLMTool(
-                        name=spec["name"],
-                        description=spec["description"],
-                        input_schema=spec["input_schema"],
-                    ),
-                    enabled=True,
-                )
-            ) is None:
-                logger.warning("tools worker: failed to seed %r", spec["name"])
-                continue
-            seeded += 1
-        if seeded:
-            logger.info("tools worker: seeded %d builtin tool(s)", seeded)
-
     async def _on_run(self, job: RunToolJob) -> None:
         try:
             self._fail(job, "tool execution is not attached")
-        except asyncio.CancelledError:
-            self._fail(job, "tools worker cancelled")
-            raise
         except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
             self._fail(job, str(exc))
 
