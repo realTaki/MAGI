@@ -5,8 +5,9 @@ from dataclasses import fields
 import pytest
 
 from bus import Bus
+from bus.base.time import BaseTime
 from bus.firmware.books.contactBook import Contact, ContactBook, ContactRow
-from bus.firmware.books.contactNoteBook import ContactNote, ContactNoteRow
+from bus.firmware.books.contactNoteBook import ContactNote, ContactNoteRow, NoteKind
 from bus.firmware.books.conversationBook import Conversation, ConversationBook, ConversationRow
 from bus.firmware.books.memoryBook import Memory, MemoryRow
 from bus.firmware.books.messageBook import Message, MessageRow
@@ -115,6 +116,22 @@ def test_message_timestamp_is_created_with_the_record() -> None:
     message = Message(contact_id=1, content="message", conversation_id=1)
 
     assert message.timestamp is not None
+    assert message.updated_at is not None
+
+
+def test_book_add_owns_record_timestamps(tmp_path) -> None:
+    supplied = BaseTime(2000, 1, 1)
+
+    with Bus("@book-optionality", workspace=tmp_path) as bus:
+        book = ContactBook(bus._factory)
+        contact_id = book.add(
+            Contact(name="timestamp-owner", created_at=supplied, updated_at=supplied)
+        )
+        contact = book.get(contact_id)
+
+    assert contact is not None
+    assert contact.created_at > supplied
+    assert contact.updated_at > supplied
 
 
 def test_list_contact_notes_can_omit_the_kind_filter() -> None:
@@ -125,4 +142,15 @@ def test_list_contact_notes_can_omit_the_kind_filter() -> None:
 
     assert result.contact_notes == [
         {"contact_id": 7, "kind": None},
+    ]
+
+
+def test_list_contact_notes_defaults_to_permanent() -> None:
+    book = type("Book", (), {"list": lambda _self, **filters: [filters]})()
+    result = ListContactNotesJobBoard(None, book=book)._execute(
+        ListContactNotesJob(publisher="test", contact_id=7)
+    )
+
+    assert result.contact_notes == [
+        {"contact_id": 7, "kind": NoteKind.PERMANENT.value},
     ]
