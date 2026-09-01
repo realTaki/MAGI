@@ -85,8 +85,6 @@ class Conversation:
     history: list[LLMMessage] = field(init=False, default_factory=list)
     # First active MessageBook id; compact archives everything before the next cut.
     active_from_id: int | None = field(init=False, default=None)
-    # Guards the one-time MessageBook snapshot load during this Conversation lifetime.
-    _history_loaded: bool = field(init=False, default=False)
     # Text preserved after older active tool rounds drop their large TOOL payloads.
     retained_text: list[LLMMessage] = field(init=False, default_factory=list)
     # At most two newest complete assistant-tool-result exchanges for the current LLM run.
@@ -184,7 +182,7 @@ class Conversation:
 
     def _begin_turn(self, job: ChatNotify) -> None:
         self.jobs = [job]
-        if self._history_loaded:
+        if self.history:
             self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
         self.retained_text = []
@@ -193,15 +191,14 @@ class Conversation:
         self._assistant = None
 
     async def _refresh(self) -> bool:
-        """Refresh external dependencies; load summary and history only once."""
+        """Refresh external dependencies; load summary and history when empty."""
         conversation = await self._conversation()
         if conversation is None:
             return False
         self.conversation = conversation
-        if not self._history_loaded:
+        if not self.history:
             self.summary = self._summary_message(conversation.summary)
             self.history = await self._history()
-            self._history_loaded = True
         await self._refresh_system(conversation)
         self.tools = await self._tools()
         return True
@@ -229,7 +226,7 @@ class Conversation:
             return
 
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
-        live = await self._live_messages()
+        live = await self._get_active_messages()
         if len(live) <= keep:
             return
         cut_id = live[-keep].id
@@ -340,7 +337,7 @@ class Conversation:
         )
         return None if result is None else result.conversation
 
-    async def _live_messages(self) -> list:
+    async def _get_active_messages(self) -> list:
         result = await self._worker.ask(
             ListConversationMessagesJob(
                 publisher=self._worker.worker_name,
@@ -350,7 +347,7 @@ class Conversation:
         return [] if result is None or result.messages is None else result.messages
 
     async def _history(self) -> list[LLMMessage]:
-        live = await self._live_messages()
+        live = await self._get_active_messages()
         self.active_from_id = None if not live else live[0].id
         return self._messages_from_records(live)
 
