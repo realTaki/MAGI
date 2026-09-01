@@ -17,7 +17,7 @@ from ..books.contactNoteBook import ContactNote, NoteKind
 class CreateContactNoteJob(BaseJob):
     contact_id: int 
     note: str = "nothing to say"
-    kind: NoteKind = NoteKind.PERMANENT
+    kind: NoteKind = NoteKind.DAILY
 
 
 @dataclass
@@ -78,7 +78,7 @@ class GetContactNoteJobBoard(
 @dataclass
 class ListContactNotesJob(BaseJob):
     contact_id: int 
-    kind: NoteKind | None = NoteKind.PERMANENT
+    kind: NoteKind | None = None
 
 
 @dataclass

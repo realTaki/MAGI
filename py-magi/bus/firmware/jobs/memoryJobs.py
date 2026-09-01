@@ -5,17 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Integer, Text, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, Boolean, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.memoryBook import Memory, MemoryKind, MemoryRow
-
-
-def _valid_topic(topic: str) -> bool:
-    return isinstance(topic, str) and bool(topic.strip())
-
+from ..books.memoryBook import Memory, MemoryKind
 
 @dataclass
 class CreateMemoryJob(BaseJob):
@@ -45,13 +40,11 @@ class CreateMemoryJobBoard(
     result_cls = CreateMemoryResult
     row_cls = CreateMemoryJobRow
 
-    def _execute(self, session: Session, job: CreateMemoryJob) -> CreateMemoryResult:
-        if not _valid_topic(job.topic):
-            return CreateMemoryResult(status=JobStatus.FAILED, error="memory topic must be non-empty")
-        row = MemoryRow(topic=job.topic, detail=job.detail, kind=job.kind.value, archived=False)
-        session.add(row)
-        session.flush()
-        return CreateMemoryResult(memory_id=row.id)
+    def _execute(self, job: CreateMemoryJob) -> CreateMemoryResult:
+        memory_id = self._book.add(
+            Memory(topic=job.topic, detail=job.detail, kind=job.kind)
+        )
+        return CreateMemoryResult(memory_id=memory_id)
 
 
 @dataclass
@@ -76,14 +69,13 @@ class GetMemoryJobBoard(OperateBookJobBoard[GetMemoryJob, GetMemoryResult, GetMe
     result_cls = GetMemoryResult
     row_cls = GetMemoryJobRow
 
-    def _execute(self, session: Session, job: GetMemoryJob) -> GetMemoryResult:
-        row = session.get(MemoryRow, job.memory_id)
-        return GetMemoryResult(memory=None if row is None else Memory.from_row(row))
+    def _execute(self, job: GetMemoryJob) -> GetMemoryResult:
+        return GetMemoryResult(memory=self._book.get(job.memory_id))
 
 
 @dataclass
 class ListMemoriesJob(BaseJob):
-    kind: MemoryKind = MemoryKind.LONG_TERM
+    kind: MemoryKind | None = MemoryKind.LONG_TERM
     include_archived: bool = False
 
 
@@ -95,7 +87,7 @@ class ListMemoriesResult(BaseJobResult):
 class ListMemoriesJobRow(BaseJobRow):
     __tablename__ = "jobs_list_memories"
 
-    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=True)
     include_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     memories: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
@@ -107,13 +99,13 @@ class ListMemoriesJobBoard(
     result_cls = ListMemoriesResult
     row_cls = ListMemoriesJobRow
 
-    def _execute(self, session: Session, job: ListMemoriesJob) -> ListMemoriesResult:
-        stmt = select(MemoryRow).order_by(MemoryRow.id)
-        if job.kind is not None:
-            stmt = stmt.where(MemoryRow.kind == job.kind.value)
-        if not job.include_archived:
-            stmt = stmt.where(MemoryRow.archived.is_(False))
-        return ListMemoriesResult(memories=[Memory.from_row(row) for row in session.scalars(stmt)])
+    def _execute(self, job: ListMemoriesJob) -> ListMemoriesResult:
+        return ListMemoriesResult(
+            memories=self._book.list(
+                kind=job.kind.value if job.kind else None,
+                archived=None if job.include_archived else False,
+            )
+        )
 
 
 @dataclass
@@ -147,22 +139,16 @@ class UpdateMemoryJobBoard(
     result_cls = UpdateMemoryResult
     row_cls = UpdateMemoryJobRow
 
-    def _execute(self, session: Session, job: UpdateMemoryJob) -> UpdateMemoryResult:
-        row = session.get(MemoryRow, job.memory_id)
-        if row is None:
-            return UpdateMemoryResult(
-                status=JobStatus.FAILED, error=f"memory {job.memory_id} does not exist"
+    def _execute(self, job: UpdateMemoryJob) -> UpdateMemoryResult:
+        self._book.update(
+            Memory(
+                id=job.memory_id,
+                topic=job.topic,
+                detail=job.detail,
+                kind=job.kind,
+                archived=job.archived,
             )
-        if job.topic is not None:
-            if not _valid_topic(job.topic):
-                return UpdateMemoryResult(status=JobStatus.FAILED, error="memory topic must be non-empty")
-            row.topic = job.topic
-        if job.detail is not None:
-            row.detail = job.detail
-        if job.kind is not None:
-            row.kind = job.kind.value
-        if job.archived is not None:
-            row.archived = job.archived
+        )
         return UpdateMemoryResult()
 
 
@@ -189,11 +175,6 @@ class DeleteMemoryJobBoard(
     result_cls = DeleteMemoryResult
     row_cls = DeleteMemoryJobRow
 
-    def _execute(self, session: Session, job: DeleteMemoryJob) -> DeleteMemoryResult:
-        row = session.get(MemoryRow, job.memory_id)
-        if row is None:
-            return DeleteMemoryResult(
-                status=JobStatus.FAILED, error=f"memory {job.memory_id} does not exist"
-            )
-        session.delete(row)
+    def _execute(self, job: DeleteMemoryJob) -> DeleteMemoryResult:
+        self._book.delete(job.memory_id)
         return DeleteMemoryResult()
