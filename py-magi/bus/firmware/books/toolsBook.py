@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -29,6 +29,7 @@ class Tool(BaseRecord):
     only the durable row shape.
     """
 
+    name: str
     definition: LLMTool
     enabled: bool = True
 
@@ -47,3 +48,17 @@ class ToolsBook(BaseBook[Tool]):
 
     record_cls = Tool
     row_cls = ToolRow
+
+    def get(self, name: str) -> Tool | None:  # type: ignore[override]
+        with self._session() as session:
+            row = session.scalar(select(ToolRow).where(ToolRow.name == name))
+            return None if row is None else Tool.from_row(row)
+
+    def upsert(self, record: Tool) -> int:
+        existing = self.get(record.name)
+        if existing is None:
+            return self.add(record)
+        existing.definition = record.definition
+        existing.enabled = record.enabled
+        super().update(existing)
+        return existing.id

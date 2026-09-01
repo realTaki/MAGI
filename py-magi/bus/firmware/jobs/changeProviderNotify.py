@@ -65,8 +65,6 @@ class ChangeProviderNotifyBoard(
         ):
             if value is None:
                 continue
-            setting = self._settings.get_by_key(key) or Setting(key=key, value=value)
-            setting.value = value
-            self._settings.upsert(setting)
+            self._settings.upsert(Setting(key=key, value=value))
         go(self._post_publish(published))
         return job_id

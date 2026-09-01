@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from sqlalchemy.orm import Session
-
 from .BaseBook import BaseBook
 from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
 from .engine import EngineFactory
@@ -43,14 +41,12 @@ class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRo
     async def _operate(self, job: JobT) -> None:
         if await self._post_publish(job) is not JobStatus.PENDING:
             return
-        with self._book._session() as books:
-            result = self._execute(books, job)
-            books.commit()
+        result = self._execute(job)
         with self._session() as session:
             row = session.get_one(type(self).row_cls, job.id)
             self._write_result(row, result)
             session.commit()
 
-    def _execute(self, session: Session, job: JobT) -> ResultT:
-        """Operate on the Book in the memories store."""
+    def _execute(self, job: JobT) -> ResultT:
+        """Operate on the Book."""
         raise NotImplementedError

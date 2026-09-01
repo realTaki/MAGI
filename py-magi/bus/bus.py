@@ -49,14 +49,7 @@ class Bus:
             memories=self._memories,
             files=self._files,
         )
-        contacts = ContactBook(self._memories)
-        magi = contacts.get(1)
-        if magi is None:
-            contacts.add(Contact(name=handle, role=ContactRole.MAGI))
-        else:
-            magi.name = handle
-            magi.role = ContactRole.MAGI
-            contacts.update(magi)
+        ContactBook(self._memories).upsert(Contact(id=1, name=handle, role=ContactRole.MAGI))
         self._workers: dict[str, BaseWorker] = {}
         self._stopped = False
 
@@ -146,12 +139,9 @@ class Bus:
             return False
         book = SettingsBook(self._memories)
         for key, value in prepared.items():
-            existing = book.get_by_key(key)
-            if existing is None:
-                book.add(Setting(key=key, value=value))
-            elif overwrite:
-                existing.value = value
-                book.update(existing)
+            if not overwrite and book.get(key) is not None:
+                continue
+            book.upsert(Setting(key=key, value=value))
         return True
 
     def __enter__(self) -> Bus:
