@@ -11,14 +11,17 @@ that Job's terminal ``CallLLMResult(error=...)``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from bus import (
     BaseWorker,
     Bus,
     CallLLMJob,
+    CallLLMResult,
     ChangeProviderNotify,
     ChangeProviderNotifyResult,
+    JobStatus,
     ListSettingsJob,
     go,
 )
@@ -66,4 +69,10 @@ class ProvidersWorker(BaseWorker):
         self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
 
     async def _on_llm(self, job: CallLLMJob) -> None:
-        self.submit(CallLLMJob, await self._client.complete(job))
+        try:
+            self.submit(CallLLMJob, await self._client.complete(job))
+        except asyncio.CancelledError:
+            self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error="cancelled"))
+            raise
+        except Exception as exc:  # noqa: BLE001 -- every LLM failure belongs on CallLLMResult
+            self.submit(CallLLMJob, CallLLMResult(id=job.id, status=JobStatus.FAILED, error=str(exc)))

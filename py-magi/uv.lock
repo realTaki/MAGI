@@ -1240,6 +1240,7 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "litellm" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -1267,7 +1268,6 @@ dev = [
 eva = [
     { name = "apscheduler" },
     { name = "croniter" },
-    { name = "litellm" },
     { name = "python-telegram-bot", extra = ["ext"] },
 ]
 
@@ -1281,7 +1281,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jinja2", marker = "extra == 'adam'", specifier = ">=3.1.4" },
-    { name = "litellm", marker = "extra == 'eva'", specifier = ">=1.75.0" },
+    { name = "litellm", specifier = ">=1.75.0" },
     { name = "mcp", marker = "extra == 'adam'", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "pgvector", marker = "extra == 'adam'", specifier = ">=0.3.6" },
