@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
-from ...base.go import go
+from ...base.hookableJobBoard import HookableJobBoard
 from ..books.settingsBook import Setting, SettingsBook
 
 PROVIDER_NAME_KEY = "provider.name"
@@ -45,7 +45,7 @@ class ChangeProviderNotifyRow(BaseJobRow):
 
 
 class ChangeProviderNotifyBoard(
-    BaseJobBoard[ChangeProviderNotify, ChangeProviderNotifyResult, ChangeProviderNotifyRow]
+    HookableJobBoard[ChangeProviderNotify, ChangeProviderNotifyResult, ChangeProviderNotifyRow]
 ):
     job_cls = ChangeProviderNotify
     result_cls = ChangeProviderNotifyResult
@@ -55,16 +55,12 @@ class ChangeProviderNotifyBoard(
         super().__init__(factory)
         self._settings = settings
 
-    def publish(self, job: ChangeProviderNotify) -> int:
-        job_id = self._publish(job)
-        published = replace(job, id=job_id)
+    def _prepare(self, job: ChangeProviderNotify) -> None:
         for key, value in (
-            (PROVIDER_NAME_KEY, published.provider),
-            (PROVIDER_API_KEY_KEY, published.api_key),
-            (PROVIDER_MODEL_KEY, published.model),
+            (PROVIDER_NAME_KEY, job.provider),
+            (PROVIDER_API_KEY_KEY, job.api_key),
+            (PROVIDER_MODEL_KEY, job.model),
         ):
             if value is None:
                 continue
             self._settings.upsert(Setting(key=key, value=value))
-        go(self._post_publish(published))
-        return job_id

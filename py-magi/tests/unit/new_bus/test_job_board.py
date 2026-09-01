@@ -4,14 +4,12 @@ import threading
 import time
 from datetime import datetime
 
-import pytest
-
-from bus import BaseJobResult, Bus, JobStatus, go
+from bus import BaseJobResult, Bus, JobStatus
 from tests.unit.new_bus.testing import PingBus, PingJob, PingJobBoard, attach_board, wait_publish
 
 
 def _submit(board, result):
-    return go(board.submit_result(result)).result()
+    return board.submit_result(result)
 
 
 def _claim(board):
@@ -135,6 +133,5 @@ def test_claim_is_exclusive(tmp_path) -> None:
 
 
 def test_unmounted_job_is_invalid(tmp_path) -> None:
-    with Bus(tmp_path) as bus:
-        with pytest.raises(KeyError, match="PingJob"):
-            bus.board(PingJob)
+    with Bus("@unmounted", workspace=tmp_path) as bus:
+        assert bus.board(PingJob) is None

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
-from ...base.go import go
+from ...base.hookableJobBoard import HookableJobBoard
 from ..books.contactBook import MAGI_CONTACT_ID
 from ..books.messageBook import Message, MessageBook
 
@@ -41,7 +41,7 @@ class DeliveryNotifyRow(BaseJobRow):
 
 
 class DeliveryNotifyBoard(
-    BaseJobBoard[DeliveryNotify, DeliveryNotifyResult, DeliveryNotifyRow]
+    HookableJobBoard[DeliveryNotify, DeliveryNotifyResult, DeliveryNotifyRow]
 ):
     job_cls = DeliveryNotify
     result_cls = DeliveryNotifyResult
@@ -51,15 +51,11 @@ class DeliveryNotifyBoard(
         super().__init__(factory)
         self._messages = book
 
-    def publish(self, job: DeliveryNotify) -> int:
-        job_id = self._publish(job)
-        published = replace(job, id=job_id)
+    def _prepare(self, job: DeliveryNotify) -> None:
         self._messages.add(
             Message(
                 contact_id=MAGI_CONTACT_ID,
-                content=published.text,
-                conversation_id=published.conversation_id,
+                content=job.text,
+                conversation_id=job.conversation_id,
             )
         )
-        go(self._post_publish(published))
-        return job_id

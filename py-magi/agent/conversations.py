@@ -83,8 +83,8 @@ class Conversation:
     summary: LLMMessage | None = field(init=False, default=None)
     # In-memory non-archived chat transcript, extended after each visible turn.
     history: list[LLMMessage] = field(init=False, default_factory=list)
-    # First live MessageBook id; compact archives everything before the next cut.
-    live_from_id: int | None = field(init=False, default=None)
+    # First active MessageBook id; compact archives everything before the next cut.
+    active_from_id: int | None = field(init=False, default=None)
     # Guards the one-time MessageBook snapshot load during this Conversation lifetime.
     _history_loaded: bool = field(init=False, default=False)
     # Text preserved after older active tool rounds drop their large TOOL payloads.
@@ -281,7 +281,7 @@ class Conversation:
             )
         )
         self.summary = self._summary_message(summary)
-        self.live_from_id = cut_id
+        self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
         if self.conversation is not None:
             self.conversation.summary = summary
@@ -351,7 +351,7 @@ class Conversation:
 
     async def _history(self) -> list[LLMMessage]:
         live = await self._live_messages()
-        self.live_from_id = None if not live else live[0].id
+        self.active_from_id = None if not live else live[0].id
         return self._messages_from_records(live)
 
     async def _refresh_system(self, conversation) -> None:

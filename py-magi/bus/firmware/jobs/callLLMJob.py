@@ -9,7 +9,8 @@ from typing import Any
 from sqlalchemy import JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
+from ...base.hookableJobBoard import HookableJobBoard
 from ..books.toolsBook import LLMTool
 from .runToolJob import LLMToolCall
 
@@ -61,7 +62,7 @@ class CallLLMJobRow(BaseJobRow):
     message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
-class CallLLMJobBoard(BaseJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):
+class CallLLMJobBoard(HookableJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):
     job_cls = CallLLMJob
     result_cls = CallLLMResult
     row_cls = CallLLMJobRow

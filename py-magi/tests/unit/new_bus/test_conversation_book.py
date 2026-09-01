@@ -185,7 +185,8 @@ def test_create_conversation_keeps_optional_text_unconstrained(tmp_path) -> None
 
 def test_firmware_commands_are_not_claimable_work(tmp_path) -> None:
     bus = _bus(tmp_path)
-    assert _board(bus, CreateConversationJob()).claim() is None
+    board = _board(bus, CreateConversationJob())
+    assert not hasattr(board, "claim")
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:

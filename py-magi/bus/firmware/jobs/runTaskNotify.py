@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from sqlalchemy import Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
+from ...base.hookableJobBoard import HookableJobBoard
 from ..books.taskBook import TaskBook
 
 
@@ -21,7 +22,7 @@ class RunTaskNotify(BaseJob):
     an operator/tool trigger versus a cron fire.
     """
 
-    task_id: int 
+    task_id: int
     manual: bool = True
 
 
@@ -38,7 +39,7 @@ class RunTaskNotifyRow(BaseJobRow):
 
 
 class RunTaskNotifyBoard(
-    BaseJobBoard[RunTaskNotify, RunTaskNotifyResult, RunTaskNotifyRow]
+    HookableJobBoard[RunTaskNotify, RunTaskNotifyResult, RunTaskNotifyRow]
 ):
     job_cls = RunTaskNotify
     result_cls = RunTaskNotifyResult
@@ -48,13 +49,8 @@ class RunTaskNotifyBoard(
         super().__init__(factory)
         self._tasks = book
 
-    def _publish(self, job: RunTaskNotify) -> int:
-        job_id = super()._publish(job)
-        self._touch_task(job.task_id)
-        return job_id
-
-    def _touch_task(self, task_id: int) -> None:
-        task = self._tasks.get(task_id)
+    def _prepare(self, job: RunTaskNotify) -> None:
+        task = self._tasks.get(job.task_id)
         if task is None:
             return
         self._tasks.update(task)
