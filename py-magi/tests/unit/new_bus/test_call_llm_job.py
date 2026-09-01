@@ -28,7 +28,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         job_id = board.publish(
             CallLLMJob(
                 publisher="test",
-                messages=[LLMMessage(role=LLMMessageRole.USER, text="hello")],
+                messages=[LLMMessage(role=LLMMessageRole.USER, content="hello")],
                 tools=[LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})],
             )
         )
@@ -37,16 +37,16 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         claimed = board.claim()
         assert claimed is not None
         assert claimed.id == job_id
-        assert claimed.messages == [LLMMessage(role=LLMMessageRole.USER, text="hello")]
+        assert claimed.messages == [LLMMessage(role=LLMMessageRole.USER, content="hello")]
         assert claimed.tools == [LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})]
 
         assert await board.submit_result(
-            CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, text="ok"))
+            CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="ok"))
         )
         result = board.get_result(job_id)
 
     assert result is not None
-    assert result.message == LLMMessage(role=LLMMessageRole.ASSISTANT, text="ok")
+    assert result.message == LLMMessage(role=LLMMessageRole.ASSISTANT, content="ok")
 
 
 @pytest.mark.asyncio

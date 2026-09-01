@@ -34,15 +34,16 @@ def upgrade() -> None:
         sa.column("message", sa.JSON()),
     )
     for row in bind.execute(sa.select(jobs)).mappings():
-        messages = [
-            {**message, "content": message.pop("text")}
-            if isinstance(message, dict) and "text" in message
-            else message
-            for message in row["messages"] or ()
-        ]
+        messages = []
+        for message in row["messages"] or ():
+            if isinstance(message, dict) and "text" in message:
+                message = dict(message)
+                message["content"] = message.pop("text")
+            messages.append(message)
         message = row["message"]
         if isinstance(message, dict) and "text" in message:
-            message = {**message, "content": message.pop("text")}
+            message = dict(message)
+            message["content"] = message.pop("text")
         bind.execute(
             jobs.update().where(jobs.c.id == row["id"]).values(messages=messages, message=message)
         )

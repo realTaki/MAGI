@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -38,29 +37,6 @@ class LLMMessage:
     tool_calls: list[LLMToolCall] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        role = LLMMessageRole(self.role)
-        if role in {LLMMessageRole.SYSTEM, LLMMessageRole.USER}:
-            return {"role": role.value, "content": self.content}
-        if role is LLMMessageRole.TOOL:
-            return {
-                "role": "tool",
-                "tool_call_id": self.tool_call_id,
-                "content": self.content if not self.is_error else f"Tool failed:\n{self.content}",
-            }
-        message: dict[str, Any] = {"role": "assistant", "content": self.content}
-        if self.tool_calls:
-            message["tool_calls"] = [
-                {
-                    "id": call.tool_call_id,
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)},
-                }
-                for call in self.tool_calls
-            ]
-        return message
-
 
 @dataclass(frozen=True)
 class LLMUsage:
