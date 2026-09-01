@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 
 from agent.worker import AgentWorker
@@ -46,6 +47,25 @@ def _conversation(bus: Bus) -> int:
     return result.conversation_id
 
 
+def test_agent_has_no_worker_local_concurrency_limit() -> None:
+    assert "concurrency" not in inspect.signature(AgentWorker).parameters
+
+
+def test_agent_worker_only_claims_and_routes_conversations() -> None:
+    assert all(
+        not hasattr(AgentWorker, method)
+        for method in (
+            "_run_turn",
+            "_process",
+            "_system_prompt",
+            "_run_tools",
+            "_call_llm",
+            "_deliver",
+            "_maybe_compact",
+        )
+    )
+
+
 def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
     with Bus("@agent-contract", workspace=tmp_path) as bus:
         assert bus.attach(AgentWorker)
@@ -80,22 +100,89 @@ def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
         assert chat.check_job_status(chat_id) is JobStatus.COMPLETED
 
 
-def test_chat_board_reserves_active_conversations_for_steering(tmp_path) -> None:
+def test_agent_routes_claimed_turns_to_one_serial_conversation(tmp_path) -> None:
     with Bus("@agent-steering", workspace=tmp_path) as bus:
-        first, second = _conversation(bus), _conversation(bus)
+        conversation_id = _conversation(bus)
+        assert bus.attach(AgentWorker)
         chat = bus.board(ChatNotify)
-        assert chat is not None
-        chat.publish(ChatNotify(publisher="test", conversation_id=first, text="first"))
-        chat.publish(ChatNotify(publisher="test", conversation_id=first, text="follow up"))
-        chat.publish(ChatNotify(publisher="test", conversation_id=second, text="second"))
-        time.sleep(0.1)
+        llm = bus.board(CallLLMJob)
+        delivery = bus.board(DeliveryNotify)
+        assert chat is not None and llm is not None and delivery is not None
+        first_id = chat.publish(
+            ChatNotify(publisher="test", conversation_id=conversation_id, text="first")
+        )
+        first = _wait_for_claim(llm)
+        assert first is not None
 
-        initial = chat.claim_for_new_conversation(active_conversation_ids=set())
-        assert initial is not None and initial.conversation_id == first
-        concurrent = chat.claim_for_new_conversation(active_conversation_ids={first})
-        assert concurrent is not None and concurrent.conversation_id == second
-        steering = chat.claim_for_steering(conversation_id=first)
-        assert steering is not None and steering.text == "follow up"
+        second_id = chat.publish(
+            ChatNotify(publisher="test", conversation_id=conversation_id, text="follow up")
+        )
+        assert go(
+            llm.submit_result(
+                CallLLMResult(
+                    id=first.id,
+                    message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="first reply"),
+                )
+            )
+        ).result(timeout=5)
+        first_reply = _wait_for_claim(delivery)
+        assert first_reply is not None and first_reply.text == "first reply"
+
+        second = _wait_for_claim(llm)
+        assert second is not None
+        assert LLMMessage(role=LLMMessageRole.USER, content="follow up") in second.messages
+        assert go(
+            llm.submit_result(
+                CallLLMResult(
+                    id=second.id,
+                    message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="second reply"),
+                )
+            )
+        ).result(timeout=5)
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if all(
+                chat.check_job_status(job_id) is JobStatus.COMPLETED
+                for job_id in (first_id, second_id)
+            ):
+                break
+            time.sleep(0.02)
+        assert chat.check_job_status(first_id) is JobStatus.COMPLETED
+        assert chat.check_job_status(second_id) is JobStatus.COMPLETED
+
+
+def test_agent_routes_different_conversations_independently(tmp_path) -> None:
+    with Bus("@agent-conversations", workspace=tmp_path) as bus:
+        assert bus.attach(AgentWorker)
+        first_conversation, second_conversation = _conversation(bus), _conversation(bus)
+        chat = bus.board(ChatNotify)
+        llm = bus.board(CallLLMJob)
+        delivery = bus.board(DeliveryNotify)
+        assert chat is not None and llm is not None and delivery is not None
+        chat.publish(ChatNotify(publisher="test", conversation_id=first_conversation, text="first"))
+        chat.publish(ChatNotify(publisher="test", conversation_id=second_conversation, text="second"))
+
+        first, second = _wait_for_claim(llm), _wait_for_claim(llm)
+        assert first is not None and second is not None
+        assert {request.messages[-1].content for request in (first, second)} == {"first", "second"}
+        for request in (first, second):
+            assert go(
+                llm.submit_result(
+                    CallLLMResult(
+                        id=request.id,
+                        message=LLMMessage(
+                            role=LLMMessageRole.ASSISTANT,
+                            content=f"reply: {request.messages[-1].content}",
+                        ),
+                    )
+                )
+            ).result(timeout=5)
+        replies = [_wait_for_claim(delivery), _wait_for_claim(delivery)]
+        assert {reply.text for reply in replies if reply is not None} == {
+            "reply: first",
+            "reply: second",
+        }
 
 
 def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> None:

@@ -323,15 +323,12 @@ def test_publish_chat_d22_skipped_when_no_conversations_book(factory, contact_id
 
 
 # ---------------------------------------------------------------------------
-# publish() (lower-level, used by submit_agent_message etc.) gets the
-# same D.22 treatment, no messages_book write.
+# Direct publish() callers get the same D.22 treatment, no messages_book write.
 # ---------------------------------------------------------------------------
 
 
 def test_publish_direct_enforces_d22(factory, contact_id):
-    """Direct :meth:`publish` callers (e.g. :func:`submit_agent_message`
-    for internal steering republishes) get the same D.22 guard.
-    """
+    """Direct :meth:`publish` callers receive the same D.22 guard."""
     from bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
 
     sbook = ConversationBook(factory, settings_book=_seeded_settings_book(factory))
