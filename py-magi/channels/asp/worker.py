@@ -9,6 +9,7 @@ from typing import Any
 
 from bus import (
     BaseWorker,
+    Bus,
     ChatNotify,
     CreateConversationJob,
     DeliveryNotify,
@@ -26,10 +27,11 @@ class AspWorker(BaseWorker):
     """Receive ASP messages and deliver conversation replies through ASP."""
 
     worker_name = "asp"
+    default_settings = {"handle": "", "base": "", "token": ""}
 
     def __init__(
         self,
-        bus,
+        bus: Bus,
         *,
         poll_seconds: float = 0.25,
     ) -> None:
@@ -41,12 +43,13 @@ class AspWorker(BaseWorker):
         self._listen_task: asyncio.Task[None] | None = None
 
     async def on_attached(self) -> None:
-        settings = await self.ask(ListSettingsJob())
-        self.handle = settings.settings.get("asp.handle") or ""
+        listed = await self.ask(ListSettingsJob(publisher=self.worker_name))
+        settings = listed.settings or {} if listed is not None else {}
+        self.handle = settings.get("asp.handle") or ""
         self._client = AspClient(
             handle=self.handle,
-            base=settings.settings.get("asp.base") or "",
-            token=settings.settings.get("asp.token") or "",
+            base=settings.get("asp.base") or "",
+            token=settings.get("asp.token") or "",
         )
         assert self._client is not None
         ready = asyncio.Event()
@@ -94,8 +97,8 @@ class AspWorker(BaseWorker):
                     await self.call(self._ingest, session_id, initial)
             elif kind == "session.message" and payload.get("sender") != self.handle:
                 await self.call(self._ingest, session_id, payload)
-        except Exception:  # noqa: BLE001 -- one ASP event cannot stop the channel
-            logger.exception("ASP event %s on %s failed", kind, session_id)
+        except Exception as exc:  # noqa: BLE001 -- one ASP event cannot stop the channel
+            await self._tell(session_id, f"[asp error]\n{exc}")
 
     def _ingest(self, session_id: str, payload: dict[str, Any]) -> None:
         text = _content_text(payload.get("content"))
@@ -103,22 +106,22 @@ class AspWorker(BaseWorker):
             return
         conversation_id = self._conversation_id(session_id)
         if conversation_id is None:
-            logger.warning("ASP session %s has no local conversation", session_id)
-            return
-        self.board(ChatNotify).publish(
-            ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text)
-        )
+            raise RuntimeError(f"ASP session {session_id} has no local conversation")
+        self.publish(ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text))
 
     def _conversation_id(self, session_id: str) -> int | None:
         known = self._conversations.get(session_id)
         if known is not None:
             return known
         board = self.board(CreateConversationJob)
+        if board is None:
+            return None
         job_id = board.publish(
             CreateConversationJob(
                 publisher=self.handle,
                 channel="asp",
                 delivery_address=session_id,
+                topic="New Conversation",
             )
         )
         result = board.get_result(job_id)
@@ -132,7 +135,7 @@ class AspWorker(BaseWorker):
         return conversation_id
 
     async def _deliver(self, job: DeliveryNotify) -> None:
-        session_id = self._sessions.get(job.conversation_id) if job.conversation_id else None
+        session_id = self._sessions.get(job.conversation_id)
         if not session_id or not job.text:
             await self._submit_delivery(
                 DeliveryNotifyResult(
@@ -152,7 +155,13 @@ class AspWorker(BaseWorker):
         await self._submit_delivery(DeliveryNotifyResult(id=job.id))
 
     async def _submit_delivery(self, result: DeliveryNotifyResult) -> None:
-        await self.board(DeliveryNotify).submit_result(result)
+        self.submit(DeliveryNotify, result)
+
+    async def _tell(self, session_id: str, text: str) -> None:
+        if self._client is None:
+            return
+        with suppress(Exception):
+            await self._client.send(session_id, text)
 
 
 def _content_text(content: object) -> str:
