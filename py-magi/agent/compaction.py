@@ -28,7 +28,7 @@ class ToolRound:
 
     def without_tools(self) -> tuple[LLMMessage, ...]:
         """Keep conversational text while removing one obsolete tool exchange."""
-        assistant = replace(self.assistant, tool_calls=None)
+        assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
         return (assistant, *((self.pending,) if self.pending is not None else ()))
 
 
@@ -67,10 +67,18 @@ def estimate_value_tokens(value: Any) -> int:
 def compact_source_messages(
     messages: list[LLMMessage] | tuple[LLMMessage, ...],
 ) -> tuple[LLMMessage, ...]:
-    """Keep durable dialogue. Tool results are temporary and not summarised."""
-    return tuple(
-        message for message in messages if message.role is not LLMMessageRole.TOOL
-    )
+    """Dialogue only. Tool calls and results stay in the live two-round cache."""
+    kept: list[LLMMessage] = []
+    for message in messages:
+        if message.role is LLMMessageRole.TOOL:
+            continue
+        if not (message.content or "").strip():
+            continue
+        if message.tool_calls or message.thinking_blocks:
+            kept.append(replace(message, tool_calls=None, thinking_blocks=None))
+            continue
+        kept.append(message)
+    return tuple(kept)
 
 
 def tool_rounds_messages(rounds: tuple[ToolRound, ...]) -> tuple[LLMMessage, ...]:

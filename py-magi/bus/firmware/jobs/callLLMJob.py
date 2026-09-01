@@ -50,8 +50,8 @@ class CallLLMJob(BaseJob):
 
     messages: list[LLMMessage]
     tools: list[LLMTool]
-    max_tokens: int = 10000
-    thinking_tokens: int = 10000
+    max_tokens: int = 1024
+    thinking_tokens: int = 8192
 
 
 @dataclass
