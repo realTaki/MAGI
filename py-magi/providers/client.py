@@ -123,7 +123,10 @@ class LiteLLMClient:
             reason = str(getattr(choice, "finish_reason", "") or "").strip().lower()
             if reason not in self._ok_finish:
                 return self._failed(job, f"provider finish: {reason or 'unknown'}")
-            return CallLLMResult(id=job.id, message=self._assistant_message(choice.message))
+            message = self._assistant_message(choice.message)
+            if isinstance(message, str):
+                return self._failed(job, message)
+            return CallLLMResult(id=job.id, message=message)
         except Exception as exc:  # noqa: BLE001 -- SDK failure belongs on CallLLMResult
             return self._failed(job, str(exc))
 
@@ -164,10 +167,10 @@ class LiteLLMClient:
             ]
         return payload
 
-    def _assistant_message(self, raw: Any) -> LLMMessage:
+    def _assistant_message(self, raw: Any) -> LLMMessage | str:
         data = self._mapping(raw)
         if data is None:
-            raise ValueError("provider returned a message that cannot be decoded")
+            return "provider returned a message that cannot be decoded"
         content = data.get("content")
         if content is None:
             text = ""
@@ -181,7 +184,7 @@ class LiteLLMClient:
                 and part.get("type") not in {"thinking", "redacted_thinking"}
             )
         else:
-            raise ValueError("provider returned non-text assistant content")
+            return "provider returned non-text assistant content"
         blocks = data.get("thinking_blocks")
         thinking_blocks = [item for item in blocks if isinstance(item, dict)] if isinstance(blocks, list) else None
         calls: list[LLMToolCall] = []
@@ -189,12 +192,15 @@ class LiteLLMClient:
             call = self._mapping(item) or {}
             function = self._mapping(call.get("function")) or {}
             if not call.get("id") or not function.get("name"):
-                raise ValueError("provider returned an invalid tool call")
+                return "provider returned an invalid tool call"
+            arguments = self._arguments(function.get("arguments"))
+            if isinstance(arguments, str):
+                return arguments
             calls.append(
                 LLMToolCall(
                     tool_call_id=str(call["id"]),
                     name=str(function["name"]),
-                    arguments=self._arguments(function.get("arguments")),
+                    arguments=arguments,
                 )
             )
         return LLMMessage(
@@ -204,7 +210,7 @@ class LiteLLMClient:
             thinking_blocks=thinking_blocks or None,
         )
 
-    def _arguments(self, value: Any) -> dict[str, Any]:
+    def _arguments(self, value: Any) -> dict[str, Any] | str:
         if value is None or value == "":
             return {}
         if isinstance(value, dict):
@@ -213,7 +219,7 @@ class LiteLLMClient:
             parsed = json.loads(value)
             if isinstance(parsed, dict):
                 return parsed
-        raise ValueError("provider returned non-object tool arguments")
+        return "provider returned non-object tool arguments"
 
     def _mapping(self, obj: Any) -> dict[str, Any] | None:
         if obj is None:
