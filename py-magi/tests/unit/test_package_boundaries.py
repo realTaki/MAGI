@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # ``deliveryNotifyJob`` board and no longer has a channels/delivery.py module.
 BUS_ONLY_PATHS: tuple[str, ...] = (
     "agent/worker.py",
-    "agent/agent_context.py",
+    "agent/context.py",
     "tools/BaseTool.py",
     "tools/worker.py",
 )

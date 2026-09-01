@@ -34,11 +34,11 @@ from bus import (
     RegisterPromptJob,
     RunToolJob,
     UpdateConversationSummaryJob,
-    go,
 )
 
-from .context import format_system_prompt, messages_from_records, render_instruction_block
 from .compaction import estimate_messages_tokens, estimate_string_tokens
+from .conversations import Conversation
+from .context import format_system_prompt, messages_from_records, render_instruction_block
 from .prompt_defaults import prompt_defaults
 
 logger = logging.getLogger("agent.worker")
@@ -67,37 +67,29 @@ class AgentWorker(BaseWorker):
         "compact_threshold_pct": "80",
     }
 
-    def __init__(self, bus, *, poll_seconds: float = 0.25, concurrency: int = 4) -> None:
+    def __init__(self, bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
-        self.concurrency = max(1, concurrency)
-        self._active_conversations: set[int] = set()
-        self._active_count = 0
+        self._conversations: dict[int, Conversation] = {}
 
     async def on_attached(self) -> None:
         for key, value in prompt_defaults():
             await self.ask(RegisterPromptJob(publisher=self.worker_name, key=key, value=value))
 
     async def _poll(self) -> bool:
-        if self._active_count >= self.concurrency:
-            return False
-        board = self.board(ChatNotify)
-        if board is None:
-            return False
-        job = await self.call(
-            board.claim_for_new_conversation,
-            active_conversation_ids=self._active_conversations,
-        )
+        job = await self.claim(ChatNotify)
         if job is None:
             return False
-        self._active_count += 1
-        self._active_conversations.add(job.conversation_id)
-        go(self._run_turn(job))
+        conversation = self._conversations.get(job.conversation_id)
+        if conversation is None:
+            conversation = Conversation(self, job.conversation_id)
+            self._conversations[job.conversation_id] = conversation
+        conversation.submit(job)
         return True
 
-    async def _run_turn(self, job: ChatNotify) -> None:
+    async def _run_turn(self, conversation: Conversation, job: ChatNotify) -> None:
         ctx = RunContext(conversation_id=job.conversation_id, contact_id=job.contact_id)
         try:
-            await self._process(ctx)
+            await self._process(conversation, ctx)
         except asyncio.CancelledError:
             ctx.failed = True
             raise
@@ -109,10 +101,12 @@ class AgentWorker(BaseWorker):
         finally:
             status = JobStatus.FAILED if ctx.failed else JobStatus.COMPLETED
             self.submit(ChatNotify, ChatNotifyResult(id=job.id, status=status))
-            self._active_conversations.discard(job.conversation_id)
-            self._active_count -= 1
 
-    async def _process(self, ctx: RunContext) -> None:
+    def _release_conversation(self, conversation: Conversation) -> None:
+        if self._conversations.get(conversation.conversation_id) is conversation:
+            self._conversations.pop(conversation.conversation_id, None)
+
+    async def _process(self, conversation: Conversation, ctx: RunContext) -> None:
         conversation = await self._conversation(ctx.conversation_id)
         if conversation is None:
             ctx.failed = True
@@ -148,7 +142,7 @@ class AgentWorker(BaseWorker):
                 ctx.final_reply = assistant.content
                 await self._deliver(ctx)
                 return
-            ctx.messages.extend(await self._run_tools(ctx, assistant.tool_calls))
+            ctx.messages.extend(await self._run_tools(conversation, ctx, assistant.tool_calls))
 
         ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
         await self._deliver(ctx)
@@ -208,7 +202,9 @@ class AgentWorker(BaseWorker):
         result = await self.ask(ListToolsJob(publisher=self.worker_name))
         return [] if result is None or result.tools is None else [tool.definition for tool in result.tools]
 
-    async def _run_tools(self, ctx: RunContext, calls: list[LLMToolCall]) -> list[LLMMessage]:
+    async def _run_tools(
+        self, conversation: Conversation, ctx: RunContext, calls: list[LLMToolCall]
+    ) -> list[LLMMessage]:
         board = self.board(RunToolJob)
         if board is None:
             return [
@@ -226,15 +222,10 @@ class AgentWorker(BaseWorker):
         }
         results: dict[str, Any] = {}
         deadline = asyncio.get_running_loop().time() + await self._setting_float("tool_wait_seconds", 300)
-        chat_board = self.board(ChatNotify)
         while pending and asyncio.get_running_loop().time() < deadline:
-            if chat_board is not None:
-                steering = await self.call(
-                    chat_board.claim_for_steering, conversation_id=ctx.conversation_id
-                )
-                if steering is not None:
-                    ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=steering.text))
-                    self.submit(ChatNotify, ChatNotifyResult(id=steering.id))
+            for steering in conversation.take_steering():
+                ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=steering.text))
+                self.submit(ChatNotify, ChatNotifyResult(id=steering.id))
             for call_id, (_, job_id) in tuple(pending.items()):
                 status = await self.call(board.check_job_status, job_id)
                 if status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
