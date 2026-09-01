@@ -53,7 +53,6 @@ def firmware_metadata() -> MetaData:
         UpdateMemoryJobRow,
     )
     from ..jobs.messageJobs import (  # noqa: F401
-        AppendMessageJobRow,
         ArchiveMessagesJobRow,
         ListConversationMessagesJobRow,
     )

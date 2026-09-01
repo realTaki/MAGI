@@ -7,12 +7,14 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from sqlalchemy import select
-
 from .base.BaseJob import BaseJob, BaseJobBoard
 from .base.engine import EngineFactory
 from .base.file import FileEngine
 from .BaseWorker import BaseWorker
+from .firmware import create_job_boards
+from .firmware.books.contactBook import Contact, ContactBook, ContactRole
+from .firmware.books.settingsBook import Setting, SettingsBook
+from .firmware.versions.schema import prepare_schema
 
 JobT = TypeVar("JobT", bound=BaseJob)
 
@@ -36,39 +38,25 @@ class Bus:
             / "workspace"
         )
         self.workspace.mkdir(parents=True, exist_ok=True)
-        from .firmware.versions.schema import prepare_schema
-
         self._memories = self._open_sqlite("memories")
         self._logs = self._open_sqlite("logs")
         self._factory = self._memories
         prepare_schema(self._memories)
         prepare_schema(self._logs)
         self._files = FileEngine(self.workspace)
-        from .firmware import create_job_boards
-
         self._job_boards = create_job_boards(
             self._logs,
             memories=self._memories,
             files=self._files,
         )
-        from .base.time import utcnow
-        from .firmware.books.contactBook import ContactRole, ContactRow
-
-        with self._memories.session() as session:
-            magi = session.get(ContactRow, 1)
-            if magi is None:
-                session.add(
-                    ContactRow(
-                        id=1,
-                        name=handle,
-                        role=ContactRole.MAGI.value,
-                        last_seen_at=utcnow(),
-                    )
-                )
-            else:
-                magi.name = handle
-                magi.role = ContactRole.MAGI.value
-            session.commit()
+        contacts = ContactBook(self._memories)
+        magi = contacts.get(1)
+        if magi is None:
+            contacts.add(Contact(name=handle, role=ContactRole.MAGI))
+        else:
+            magi.name = handle
+            magi.role = ContactRole.MAGI
+            contacts.update(magi)
         self._workers: dict[str, BaseWorker] = {}
         self._stopped = False
 
@@ -144,8 +132,6 @@ class Bus:
         *,
         overwrite: bool,
     ) -> bool:
-        from .firmware.books.settingsBook import SettingRow
-
         namespace = self._setting_segment(worker_name)
         if namespace is None:
             return False
@@ -158,18 +144,14 @@ class Bus:
             isinstance(value, str) for value in prepared.values()
         ):
             return False
-
-        try:
-            with self._memories.session() as session:
-                for key, value in prepared.items():
-                    existing = session.scalar(select(SettingRow).where(SettingRow.key == key))
-                    if existing is None:
-                        session.add(SettingRow(key=key, value=value))
-                    elif overwrite:
-                        existing.value = value
-                session.commit()
-        except Exception:
-            return False
+        book = SettingsBook(self._memories)
+        for key, value in prepared.items():
+            existing = book.get_by_key(key)
+            if existing is None:
+                book.add(Setting(key=key, value=value))
+            elif overwrite:
+                existing.value = value
+                book.update(existing)
         return True
 
     def __enter__(self) -> Bus:

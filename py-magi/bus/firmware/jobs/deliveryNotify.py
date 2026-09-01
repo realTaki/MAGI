@@ -7,13 +7,10 @@ from dataclasses import dataclass, replace
 from sqlalchemy import Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from ...base.engine import EngineFactory
 from ...base.go import go
-from ...base.time import utcnow
-from ..books.contactBook import ContactRow
-from ..books.conversationBook import ConversationRow
-from ..books.messageBook import MessageBook, MessageRow
+from ..books.messageBook import Message, MessageBook
 
 
 @dataclass
@@ -56,29 +53,12 @@ class DeliveryNotifyBoard(
     def publish(self, job: DeliveryNotify) -> int:
         job_id = self._publish(job)
         published = replace(job, id=job_id)
-        error = None
-        with self._messages._session() as session:
-            if session.get(ConversationRow, published.conversation_id) is None:
-                error = f"conversation {published.conversation_id} does not exist"
-            elif session.get(ContactRow, 1) is None:
-                error = "contact 1 does not exist"
-            else:
-                session.add(
-                    MessageRow(
-                        conversation_id=published.conversation_id,
-                        contact_id=1,
-                        content=published.text,
-                        timestamp=utcnow(),
-                        archived=False,
-                    )
-                )
-                session.commit()
-        if error is not None:
-            with self._session() as session:
-                row = session.get_one(type(self).row_cls, job_id)
-                row.status = JobStatus.FAILED.value
-                row.error = error
-                session.commit()
-            return job_id
+        self._messages.add(
+            Message(
+                contact_id=1,
+                content=published.text,
+                conversation_id=published.conversation_id,
+            )
+        )
         go(self._post_publish(published))
         return job_id
