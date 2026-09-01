@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import Integer, Text
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
-from ..books.conversationBook import ConversationRow
+from ..books.conversationBook import Conversation
 
 
 @dataclass
@@ -45,17 +45,17 @@ class CreateConversationJobBoard(
     result_cls = CreateConversationResult
     row_cls = CreateConversationJobRow
 
-    def _execute(self, session: Session, job: CreateConversationJob) -> CreateConversationResult:
-        row = ConversationRow(
-            delivery_address=job.delivery_address,
-            channel=job.channel,
-            topic=job.topic,
-            instruction=job.instruction,
-            info=job.info,
+    def _execute(self, job: CreateConversationJob) -> CreateConversationResult:
+        conversation_id = self._book.add(
+            Conversation(
+                delivery_address=job.delivery_address,
+                channel=job.channel,
+                topic=job.topic,
+                instruction=job.instruction,
+                info=job.info,
+            )
         )
-        session.add(row)
-        session.flush()
-        return CreateConversationResult(conversation_id=row.id)
+        return CreateConversationResult(conversation_id=conversation_id)
 
 
 @dataclass
@@ -87,14 +87,13 @@ class UpdateConversationSummaryJobBoard(
     result_cls = UpdateConversationSummaryResult
     row_cls = UpdateConversationSummaryJobRow
 
-    def _execute(
-        self, session: Session, job: UpdateConversationSummaryJob
-    ) -> UpdateConversationSummaryResult:
-        row = session.get(ConversationRow, job.conversation_id)
-        if row is None:
+    def _execute(self, job: UpdateConversationSummaryJob) -> UpdateConversationSummaryResult:
+        conversation = self._book.get(job.conversation_id)
+        if conversation is None:
             return UpdateConversationSummaryResult(
                 status=JobStatus.FAILED, error=f"conversation {job.conversation_id} does not exist"
             )
-        row.summary = job.summary
-        row.last_compaction_at = utcnow()
+        conversation.summary = job.summary
+        conversation.last_compaction_at = utcnow()
+        self._book.update(conversation)
         return UpdateConversationSummaryResult()

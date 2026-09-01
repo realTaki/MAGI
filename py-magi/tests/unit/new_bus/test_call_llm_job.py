@@ -52,7 +52,7 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
 @pytest.mark.asyncio
 async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> None:
     definition = LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})
-    catalog_tool = Tool(definition=definition)
+    catalog_tool = Tool(name=definition.name, definition=definition)
     assert Tool.parse(asdict(catalog_tool)).definition == definition
 
     call = LLMToolCall(tool_call_id="call-1", name="echo", arguments={"text": "hello"})

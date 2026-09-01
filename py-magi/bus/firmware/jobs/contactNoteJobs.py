@@ -5,13 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import JSON, Integer, Text, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.contactBook import ContactRow
-from ..books.contactNoteBook import ContactNote, ContactNoteRow, NoteKind
+from ..books.contactNoteBook import ContactNote, NoteKind
 
 
 @dataclass
@@ -42,21 +41,13 @@ class CreateContactNoteJobBoard(
     result_cls = CreateContactNoteResult
     row_cls = CreateContactNoteJobRow
 
-    def _execute(self, session: Session, job: CreateContactNoteJob) -> CreateContactNoteResult:
-        if session.get(ContactRow, job.contact_id) is None:
-            return CreateContactNoteResult(
-                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
-            )
+    def _execute(self, job: CreateContactNoteJob) -> CreateContactNoteResult:
         if not job.note.strip():
             return CreateContactNoteResult(status=JobStatus.FAILED, error="contact note must be non-empty")
-        row = ContactNoteRow(
-            contact_id=job.contact_id,
-            note=job.note,
-            kind=job.kind.value,
+        note_id = self._book.add(
+            ContactNote(contact_id=job.contact_id, note=job.note, kind=job.kind)
         )
-        session.add(row)
-        session.flush()
-        return CreateContactNoteResult(contact_note_id=row.id)
+        return CreateContactNoteResult(contact_note_id=note_id)
 
 
 @dataclass
@@ -82,9 +73,8 @@ class GetContactNoteJobBoard(
     job_cls = GetContactNoteJob
     result_cls = GetContactNoteResult
     row_cls = GetContactNoteJobRow
-    def _execute(self, session: Session, job: GetContactNoteJob) -> GetContactNoteResult:
-        row = session.get(ContactNoteRow, job.contact_note_id)
-        return GetContactNoteResult(contact_note=None if row is None else ContactNote.from_row(row))
+    def _execute(self, job: GetContactNoteJob) -> GetContactNoteResult:
+        return GetContactNoteResult(contact_note=self._book.get(job.contact_note_id))
 
 
 @dataclass
@@ -112,12 +102,9 @@ class ListContactNotesJobBoard(
     job_cls = ListContactNotesJob
     result_cls = ListContactNotesResult
     row_cls = ListContactNotesJobRow
-    def _execute(self, session: Session, job: ListContactNotesJob) -> ListContactNotesResult:
-        stmt = select(ContactNoteRow).where(ContactNoteRow.contact_id == job.contact_id)
-        if job.kind is not None:
-            stmt = stmt.where(ContactNoteRow.kind == job.kind.value)
-        rows = session.scalars(stmt.order_by(ContactNoteRow.id.desc()))
-        return ListContactNotesResult(contact_notes=[ContactNote.from_row(row) for row in rows])
+    def _execute(self, job: ListContactNotesJob) -> ListContactNotesResult:
+        notes = self._book.list(contact_id=job.contact_id, kind=job.kind.value)
+        return ListContactNotesResult(contact_notes=list(reversed(notes)))
 
 
 @dataclass
@@ -149,9 +136,9 @@ class UpdateContactNoteJobBoard(
     result_cls = UpdateContactNoteResult
     row_cls = UpdateContactNoteJobRow
 
-    def _execute(self, session: Session, job: UpdateContactNoteJob) -> UpdateContactNoteResult:
-        row = session.get(ContactNoteRow, job.contact_note_id)
-        if row is None:
+    def _execute(self, job: UpdateContactNoteJob) -> UpdateContactNoteResult:
+        note = self._book.get(job.contact_note_id)
+        if note is None:
             return UpdateContactNoteResult(
                 status=JobStatus.FAILED, error=f"contact note {job.contact_note_id} does not exist"
             )
@@ -160,9 +147,10 @@ class UpdateContactNoteJobBoard(
                 return UpdateContactNoteResult(
                     status=JobStatus.FAILED, error="contact note must be non-empty"
                 )
-            row.note = job.note
+            note.note = job.note
         if job.kind is not None:
-            row.kind = job.kind.value
+            note.kind = job.kind
+        self._book.update(note)
         return UpdateContactNoteResult()
 
 
@@ -189,11 +177,9 @@ class DeleteContactNoteJobBoard(
     result_cls = DeleteContactNoteResult
     row_cls = DeleteContactNoteJobRow
 
-    def _execute(self, session: Session, job: DeleteContactNoteJob) -> DeleteContactNoteResult:
-        row = session.get(ContactNoteRow, job.contact_note_id)
-        if row is None:
+    def _execute(self, job: DeleteContactNoteJob) -> DeleteContactNoteResult:
+        if not self._book.delete(job.contact_note_id):
             return DeleteContactNoteResult(
                 status=JobStatus.FAILED, error=f"contact note {job.contact_note_id} does not exist"
             )
-        session.delete(row)
         return DeleteContactNoteResult()

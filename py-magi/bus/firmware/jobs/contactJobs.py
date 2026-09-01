@@ -8,14 +8,10 @@ from typing import Any
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
 from ...base.time import utcnow
 from ..books.contactBook import Contact, ContactRole
-
-
-def _valid_name(name: str) -> bool:
-    return isinstance(name, str) and bool(name.strip())
 
 
 @dataclass
@@ -47,8 +43,6 @@ class CreateContactJobBoard(
     row_cls = CreateContactJobRow
 
     def _execute(self, job: CreateContactJob) -> CreateContactResult:
-        if not _valid_name(job.name):
-            return CreateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
         contact_id = self._book.add(
             Contact(name=job.name.strip(), nickname=job.nickname, role=job.role)
         )
@@ -105,9 +99,9 @@ class ListContactsJobBoard(
     row_cls = ListContactsJobRow
 
     def _execute(self, job: ListContactsJob) -> ListContactsResult:
-        if job.role is None:
-            return ListContactsResult(contacts=self._book.list())
-        return ListContactsResult(contacts=self._book.list(role=job.role.value))
+        return ListContactsResult(
+            contacts=self._book.list(role=None if job.role is None else job.role.value)
+        )
 
 
 @dataclass
@@ -142,20 +136,14 @@ class UpdateContactJobBoard(
     row_cls = UpdateContactJobRow
 
     def _execute(self, job: UpdateContactJob) -> UpdateContactResult:
-        contact = self._book.get(job.contact_id)
-        if contact is None:
-            return UpdateContactResult(
-                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
+        self._book.update(
+            Contact(
+                id=job.contact_id,
+                name=job.name.strip() if job.name is not None else None,
+                nickname=job.nickname,
+                role=job.role,
             )
-        if job.name is not None:
-            if not _valid_name(job.name):
-                return UpdateContactResult(status=JobStatus.FAILED, error="contact name must be non-empty")
-            contact.name = job.name.strip()
-        if job.nickname is not None:
-            contact.nickname = job.nickname
-        if job.role is not None:
-            contact.role = job.role
-        self._book.update(contact)
+        )
         return UpdateContactResult()
 
 
@@ -183,13 +171,7 @@ class TouchContactJobBoard(
     row_cls = TouchContactJobRow
 
     def _execute(self, job: TouchContactJob) -> TouchContactResult:
-        contact = self._book.get(job.contact_id)
-        if contact is None:
-            return TouchContactResult(
-                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
-            )
-        contact.last_seen_at = utcnow()
-        self._book.update(contact)
+        self._book.update(Contact(id=job.contact_id, last_seen_at=utcnow()))
         return TouchContactResult()
 
 
@@ -217,8 +199,5 @@ class DeleteContactJobBoard(
     row_cls = DeleteContactJobRow
 
     def _execute(self, job: DeleteContactJob) -> DeleteContactResult:
-        if not self._book.delete(job.contact_id):
-            return DeleteContactResult(
-                status=JobStatus.FAILED, error=f"contact {job.contact_id} does not exist"
-            )
+        self._book.delete(job.contact_id)
         return DeleteContactResult()
