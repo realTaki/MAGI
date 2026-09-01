@@ -6,7 +6,7 @@ workspace root.
 
 Atomicity: write is via ``tempfile.mkstemp`` in the same
 directory, ``fsync``, then ``os.replace`` — matching the
-PromptBook-backed persona editor ([`magi/channels/api/soul.py`]).
+PromptBook-backed persona editor.
 A crash mid-write leaves the old file intact.
 
 Content cap: 256 KB. Larger writes are rejected — the

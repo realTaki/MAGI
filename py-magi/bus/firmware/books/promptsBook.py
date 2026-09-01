@@ -7,8 +7,8 @@ from typing import Final
 from ...base.BaseFileBook import BaseFileBook
 
 KNOWN_PROMPTS: Final[dict[str, str]] = {
-    "agent/soul": "Active workspace persona used for every agent turn.",
-    "agent/defaults/soul": "AgentWorker upgrade-managed soul reset default.",
+    "agent/AGENT": "Active workspace persona used for every agent turn.",
+    "agent/defaults/AGENT": "AgentWorker upgrade-managed AGENT.md reset default.",
     "agent/compaction": "Active system prompt for conversation compaction.",
     "agent/defaults/compaction": "Upgrade-managed compaction reset default.",
     "agent/skills_block": "Active header template for the available-skills block.",

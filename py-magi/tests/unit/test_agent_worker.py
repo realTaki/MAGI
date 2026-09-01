@@ -15,6 +15,6 @@ async def test_agent_attach_registers_prompts_and_defaults(tmp_path) -> None:
         prompts = bus.board(GetPromptJob)
         assert prompts is not None
 
-        soul_id = prompts.publish(GetPromptJob(publisher="test", key="agent/soul"))
-        soul = prompts.get_result(soul_id)
-        assert soul is not None and soul.value and "MAGI Soul" in soul.value
+        prompt_id = prompts.publish(GetPromptJob(publisher="test", key="agent/AGENT"))
+        prompt = prompts.get_result(prompt_id)
+        assert prompt is not None and prompt.value and "MAGI" in prompt.value
