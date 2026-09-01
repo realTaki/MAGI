@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any
 
-from bus import LLMMessage, LLMTool
+from bus import LLMMessage, LLMMessageRole, LLMTool
 
 TOKENS_PER_MESSAGE_OVERHEAD = 4
 
@@ -64,6 +64,15 @@ def estimate_value_tokens(value: Any) -> int:
     return estimate_string_tokens(json.dumps(value, ensure_ascii=False, default=default))
 
 
+def compact_source_messages(
+    messages: list[LLMMessage] | tuple[LLMMessage, ...],
+) -> tuple[LLMMessage, ...]:
+    """Keep durable dialogue. Tool results are temporary and not summarised."""
+    return tuple(
+        message for message in messages if message.role is not LLMMessageRole.TOOL
+    )
+
+
 def tool_rounds_messages(rounds: tuple[ToolRound, ...]) -> tuple[LLMMessage, ...]:
     return tuple(message for round_ in rounds for message in round_.messages())
 
@@ -83,6 +92,7 @@ def trim_tool_rounds(
 __all__ = [
     "TOKENS_PER_MESSAGE_OVERHEAD",
     "ToolRound",
+    "compact_source_messages",
     "estimate_messages_tokens",
     "estimate_string_tokens",
     "estimate_tools_tokens",
