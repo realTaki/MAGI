@@ -10,6 +10,8 @@ from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
+from ..books.toolsBook import LLMTool
+from .runToolJob import LLMToolCall
 
 
 class LLMMessageRole(StrEnum):
@@ -27,54 +29,14 @@ class LLMFinishReason(StrEnum):
 
 
 @dataclass(frozen=True)
-class LLMTool:
-    """A backend-neutral tool definition without catalog lifecycle fields."""
-
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class LLMToolCall:
-    """One model tool request, without the later RunToolJob identity."""
-
-    tool_call_id: str
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass(frozen=True)
 class LLMMessage:
-    """One backend-neutral item in an LLM conversation.
-
-    ``system`` and ``user`` carry text. ``assistant`` carries text and/or
-    tool calls. ``tool`` carries one tool result matched by ``tool_call_id``.
-    """
+    """One backend-neutral item in an LLM conversation."""
 
     role: LLMMessageRole
     text: str
     tool_calls: list[LLMToolCall] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
-
-    def __post_init__(self) -> None:
-        role = LLMMessageRole(self.role)
-        object.__setattr__(self, "role", role)
-        if not isinstance(self.text, str):
-            raise TypeError("LLM message text must be a string")
-        if not all(isinstance(call, LLMToolCall) for call in self.tool_calls or ()):
-            raise TypeError("LLM message tool_calls must contain LLMToolCall values")
-        if role is LLMMessageRole.TOOL:
-            if not self.tool_call_id:
-                raise ValueError("tool messages require tool_call_id")
-            if self.tool_calls:
-                raise ValueError("tool messages cannot contain tool_calls")
-            return
-        if self.tool_call_id is not None or self.is_error:
-            raise ValueError("only tool messages may set tool_call_id or is_error")
-        if role is not LLMMessageRole.ASSISTANT and self.tool_calls:
-            raise ValueError("only assistant messages may contain tool_calls")
 
 
 @dataclass(frozen=True)
