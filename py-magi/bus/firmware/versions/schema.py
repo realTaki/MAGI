@@ -72,7 +72,7 @@ def firmware_metadata() -> MetaData:
     )
     from ..jobs.skillJobs import GetSkillJobRow, ListSkillsJobRow  # noqa: F401
     from ..jobs.taskJobs import GetTaskJobRow, ListTasksJobRow  # noqa: F401
-    from ..jobs.toolsBookJobs import (  # noqa: F401
+    from ..jobs.toolsJobs import (  # noqa: F401
         DeleteToolJobRow,
         GetToolJobRow,
         ListToolsJobRow,

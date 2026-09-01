@@ -9,7 +9,7 @@ from bus.base.time import BaseTime
 from bus.firmware.books.contactBook import Contact, ContactBook, ContactRow
 from bus.firmware.books.contactNoteBook import ContactNote, ContactNoteRow, NoteKind
 from bus.firmware.books.conversationBook import Conversation, ConversationBook, ConversationRow
-from bus.firmware.books.memoryBook import Memory, MemoryRow
+from bus.firmware.books.memoryBook import Memory, MemoryKind, MemoryRow
 from bus.firmware.books.messageBook import Message, MessageRow
 from bus.firmware.books.settingsBook import Setting, SettingRow
 from bus.firmware.books.taskBook import Task, TaskRow, TaskSource
@@ -70,6 +70,45 @@ def test_book_records_allow_none_without_widening_row_constraints(
     assert all(getattr(record, name) is None for name in domain_fields)
     assert all(getattr(record, name) is not None for name in required_values)
     assert all(row_cls.__table__.c[name].nullable is False for name in required_columns)
+
+
+def test_remaining_book_record_defaults_are_safe_for_their_construction_paths() -> None:
+    note = ContactNote()
+    conversation = Conversation()
+    memory = Memory()
+    message = Message(contact_id=1, content="message", conversation_id=1)
+    task = Task(conversation_id=1, prompt="prompt", cron="* * * * *")
+    tool = Tool(
+        name="tool",
+        definition=LLMTool(name="tool", description="description", input_schema={}),
+    )
+
+    assert (note.contact_id, note.note, note.kind) == (
+        None,
+        "Nothing to say",
+        NoteKind.PERMANENT,
+    )
+    assert (
+        conversation.delivery_address,
+        conversation.channel,
+        conversation.topic,
+        conversation.instruction,
+        conversation.info,
+        conversation.summary,
+        conversation.last_compaction_at,
+    ) == (None, None, None, None, None, "", None)
+    assert memory.topic is not None
+    assert (memory.detail, memory.kind, memory.archived) == (
+        "Noting in particular.",
+        MemoryKind.TEMPORARY,
+        False,
+    )
+    assert message.timestamp is not None
+    assert message.archived is False
+    assert (task.name, task.source, task.enabled) == ("New Task", TaskSource.USER, True)
+    assert tool.enabled is True
+    with pytest.raises(TypeError):
+        Setting()
 
 
 def test_book_write_omits_none_and_uses_row_defaults(tmp_path) -> None:
@@ -145,12 +184,12 @@ def test_list_contact_notes_can_omit_the_kind_filter() -> None:
     ]
 
 
-def test_list_contact_notes_defaults_to_permanent() -> None:
+def test_list_contact_notes_defaults_to_no_kind_filter() -> None:
     book = type("Book", (), {"list": lambda _self, **filters: [filters]})()
     result = ListContactNotesJobBoard(None, book=book)._execute(
         ListContactNotesJob(publisher="test", contact_id=7)
     )
 
     assert result.contact_notes == [
-        {"contact_id": 7, "kind": NoteKind.PERMANENT.value},
+        {"contact_id": 7, "kind": None},
     ]
