@@ -15,6 +15,7 @@ from ...base.time import BaseTime, utcnow
 class ContactRole(StrEnum):
     """One Runtime's relationship to a human or agent contact."""
 
+    SYSTEM = "system"
     AUTHORIZED = "authorized"
     STRANGER = "stranger"
     MAGI = "magi"
@@ -43,3 +44,17 @@ class ContactRow(BaseRecordMixin):
 class ContactBook(BaseBook[Contact]):
     record_cls = Contact
     row_cls = ContactRow
+
+    def __init__(self, factory) -> None:
+        super().__init__(factory)
+        with self._session() as session:
+            if session.get(ContactRow, 0) is None:
+                session.add(
+                    ContactRow(
+                        id=0,
+                        name="system",
+                        role=ContactRole.SYSTEM.value,
+                        last_seen_at=utcnow(),
+                    )
+                )
+                session.commit()
