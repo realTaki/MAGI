@@ -47,45 +47,45 @@ class GetToolJobBoard(OperateBookJobBoard[GetToolJob, GetToolResult, GetToolJobR
 
 
 @dataclass
-class SetToolJob(BaseJob):
-    definition: LLMTool
-    enabled: bool = True
+class SetToolsJob(BaseJob):
+    tools: list[Tool]
 
 
 @dataclass
-class SetToolResult(BaseJobResult):
+class SetToolsResult(BaseJobResult):
     pass
 
 
-class SetToolJobRow(BaseJobRow):
-    __tablename__ = "jobs_set_tool"
+class SetToolsJobRow(BaseJobRow):
+    __tablename__ = "jobs_set_tools"
 
-    definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
 
 
-class SetToolJobBoard(OperateBookJobBoard[SetToolJob, SetToolResult, SetToolJobRow]):
-    job_cls = SetToolJob
-    result_cls = SetToolResult
-    row_cls = SetToolJobRow
+class SetToolsJobBoard(OperateBookJobBoard[SetToolsJob, SetToolsResult, SetToolsJobRow]):
+    job_cls = SetToolsJob
+    result_cls = SetToolsResult
+    row_cls = SetToolsJobRow
 
-    def _execute(self, session: Session, job: SetToolJob) -> SetToolResult:
-        if not _valid_name(job.definition.name):
-            return SetToolResult(status=JobStatus.FAILED, error="tool name must be non-empty")
-        name = job.definition.name.strip()
-        row = session.scalar(select(ToolRow).where(ToolRow.name == name))
-        definition = LLMTool(
-            name=name,
-            description=job.definition.description,
-            input_schema=dict(job.definition.input_schema),
-        )
-        if row is None:
-            session.add(ToolRow(name=name, definition=asdict(definition), enabled=job.enabled))
-        else:
-            row.definition = asdict(definition)
-            row.enabled = job.enabled
+    def _execute(self, session: Session, job: SetToolsJob) -> SetToolsResult:
+        for tool in job.tools:
+            if not _valid_name(tool.definition.name):
+                return SetToolsResult(status=JobStatus.FAILED, error="tool name must be non-empty")
+            name = tool.definition.name.strip()
+            definition = LLMTool(
+                name=name,
+                description=tool.definition.description,
+                input_schema=dict(tool.definition.input_schema),
+            )
+            row = session.scalar(select(ToolRow).where(ToolRow.name == name))
+            payload = asdict(definition)
+            if row is None:
+                session.add(ToolRow(name=name, definition=payload, enabled=tool.enabled))
+            else:
+                row.definition = payload
+                row.enabled = tool.enabled
         session.flush()
-        return SetToolResult()
+        return SetToolsResult()
 
 
 @dataclass

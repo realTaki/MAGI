@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Integer, Text
+from sqlalchemy import JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
@@ -19,13 +19,6 @@ class LLMMessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
-
-
-class LLMFinishReason(StrEnum):
-    END_TURN = "end_turn"
-    TOOL_USE = "tool_use"
-    MAX_OUTPUT = "max_output"
-    REFUSED = "refused"
 
 
 @dataclass(frozen=True)
@@ -57,7 +50,6 @@ class CallLLMResult(BaseJobResult):
     """The terminal response, ready for the Agent to append to its history."""
 
     message: LLMMessage | None = None
-    finish_reason: LLMFinishReason | None = None
 
 
 class CallLLMJobRow(BaseJobRow):
@@ -67,7 +59,6 @@ class CallLLMJobRow(BaseJobRow):
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CallLLMJobBoard(BaseJobBoard[CallLLMJob, CallLLMResult, CallLLMJobRow]):
