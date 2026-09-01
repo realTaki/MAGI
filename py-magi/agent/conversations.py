@@ -11,6 +11,7 @@ from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from bus import (
+    MAGI_CONTACT_ID,
     ArchiveMessagesJob,
     CallLLMJob,
     CallLLMResult,
@@ -28,7 +29,6 @@ from bus import (
     LLMMessage,
     LLMMessageRole,
     LLMToolCall,
-    MAGI_CONTACT_ID,
     RunToolJob,
     Skill,
     UpdateConversationSummaryJob,
@@ -37,6 +37,7 @@ from bus import (
 
 from .compaction import (
     ToolRound,
+    compact_source_messages,
     estimate_messages_tokens,
     estimate_tools_tokens,
     tool_rounds_messages,
@@ -78,15 +79,13 @@ class Conversation:
     # Conversation-specific metadata from the Conversation record.
     conversation_info: str = field(init=False, default="")
 
-    # Remaining LLM message layout: summary → history → retained text → tool rounds.
+    # Remaining LLM message layout: summary → history → tool rounds.
     # Durable summary that replaces archived MessageBook history.
     summary: LLMMessage | None = field(init=False, default=None)
-    # In-memory non-archived chat transcript, extended after each visible turn.
+    # In-memory non-archived chat transcript, including text retained from old tool rounds.
     history: list[LLMMessage] = field(init=False, default_factory=list)
     # First active MessageBook id; compact archives everything before the next cut.
     active_from_id: int | None = field(init=False, default=None)
-    # Text preserved after older active tool rounds drop their large TOOL payloads.
-    retained_text: list[LLMMessage] = field(init=False, default_factory=list)
     # At most two newest complete assistant-tool-result exchanges for the current LLM run.
     tool_rounds: tuple[ToolRound, ...] = field(init=False, default=())
     # Current Agent-visible tool definitions passed to CallLLMJob.
@@ -193,7 +192,6 @@ class Conversation:
         self.jobs = [job]
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
-        self.retained_text = []
         self.final_reply = ""
         self.failed = False
         self._assistant = None
@@ -215,7 +213,6 @@ class Conversation:
                 (self._system_message(),),
                 self._summary_messages(),
                 self.history,
-                self.retained_text,
                 tool_rounds_messages(self.tool_rounds),
             )
         )
@@ -226,7 +223,7 @@ class Conversation:
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
         max_tokens: int,
     ) -> None:
-        """Summarize durable history when the next complete payload exceeds budget."""
+        """Summarize durable conversation history when it exceeds budget."""
         if self._estimated_payload_tokens(max_tokens=max_tokens) <= await self._context_threshold():
             return
 
@@ -236,14 +233,16 @@ class Conversation:
             return
         cut_id = live[-keep].id
         overflow = len(self.history) - keep
-        source_messages = [
-            *self._summary_messages(),
-            *(
-                self.history[:overflow]
-                if overflow > 0
-                else self._messages_from_records(live[:-keep])
-            ),
-        ]
+        source_messages = compact_source_messages(
+            (
+                *self._summary_messages(),
+                *(
+                    self.history[:overflow]
+                    if overflow > 0
+                    else self._messages_from_records(live[:-keep])
+                ),
+            )
+        )
         prompt = await self._prompt("agent/compaction")
         if not prompt:
             return
@@ -299,12 +298,12 @@ class Conversation:
         if pending is not None:
             self.jobs.append(pending)
             next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
-        rounds, retained_text = trim_tool_rounds(
+        rounds, expired_text = trim_tool_rounds(
             (*self.tool_rounds, ToolRound(assistant, tuple(results), next_input)),
             keep=2,
         )
         self.tool_rounds = rounds
-        self.retained_text.extend(retained_text)
+        self.history.extend(expired_text)
         self._assistant = None
 
     def _fail(self, error: str) -> None:
@@ -319,7 +318,6 @@ class Conversation:
         if text:
             self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
         self.tool_rounds = ()
-        self.retained_text = []
 
     def _settle(self) -> None:
         status = JobStatus.FAILED if self.failed else JobStatus.COMPLETED
@@ -387,12 +385,11 @@ class Conversation:
         return window * percent // 100
 
     def _estimated_payload_tokens(self, *, max_tokens: int) -> int:
+        """Estimate durable conversation size. Temporary tool rounds are excluded."""
         return (
-            +estimate_messages_tokens((self._system_message(),))
+            estimate_messages_tokens((self._system_message(),))
             + estimate_messages_tokens(self._summary_messages())
             + estimate_messages_tokens(self.history)
-            + estimate_messages_tokens(self.retained_text)
-            + estimate_messages_tokens(tool_rounds_messages(self.tool_rounds))
             + estimate_tools_tokens(self.tools)
             + max_tokens
         )
@@ -425,9 +422,7 @@ class Conversation:
         """Render the declared SYSTEM sections in their field order."""
         sections = [self.soul]
         if self.skills:
-            listing = "\n".join(
-                f"- {skill.name}: {skill.description}" for skill in self.skills
-            )
+            listing = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.skills)
             header = self.skills_block or "## Available skills"
             sections.append(f"{header}\n{listing}")
         if self.memories:
