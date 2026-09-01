@@ -2,8 +2,8 @@
 
 A BaseJob is something that needs to happen, is happening, or has happened.
 A BaseJobResult is the outcome fields on the same record.
-A BaseJobBoard runs that Job in-process: publish writes the row, executes,
-and stores the result. Cross-worker Jobs use HookableJobBoard instead.
+A BaseJobBoard is the durable container for one Job type: insert the row,
+read status, wait for a result. How work actually runs is left to subclasses.
 """
 
 from __future__ import annotations
@@ -57,11 +57,11 @@ class BaseJobRow(BaseRecordMixin):
 
 
 class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
-    """In-process JobBoard. ``publish`` executes and writes the result.
+    """Durable Job row store for one Job type.
 
-    There is no worker claim phase and no publish/result hook. Book-operation
-    Jobs use this class. Jobs that another Worker must claim use
-    :class:`~bus.base.hookableJobBoard.HookableJobBoard`.
+    ``publish`` writes the row. Book-operation Boards execute during publish;
+    cross-worker Boards enqueue for :class:`~bus.base.hookableJobBoard.HookableJobBoard`
+    claim.
     """
 
     job_cls: ClassVar[type[BaseJob]]
@@ -75,13 +75,8 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         return self._factory.session()
 
     def publish(self, job: JobT) -> int:
-        job_id = self._publish(job)
-        result = self._execute(replace(job, id=job_id))
-        with self._session() as session:
-            row = session.get_one(type(self).row_cls, job_id)
-            self._write_result(row, result)
-            session.commit()
-        return job_id
+        """Write the Job row and return its id."""
+        return self._publish(job)
 
     def _publish(self, job: JobT) -> int:
         now = utcnow()
@@ -98,10 +93,6 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
             session.add(row)
             session.commit()
             return int(row.id)
-
-    def _execute(self, job: JobT) -> ResultT:
-        """Operate on the Book. Firmware boards implement this."""
-        raise NotImplementedError
 
     def _write_result(self, row: RowT, result: BaseJobResult) -> None:
         prepared = replace(result, created_at=row.created_at, updated_at=utcnow())
