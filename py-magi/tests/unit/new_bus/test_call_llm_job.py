@@ -66,9 +66,7 @@ async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> 
         set_id = set_tools.publish(
             SetToolJob(
                 publisher="test",
-                name=definition.name,
-                description=definition.description,
-                input_schema=definition.input_schema,
+                definition=definition,
             )
         )
         job_id = board.publish(RunToolJob(publisher="test", call=call))

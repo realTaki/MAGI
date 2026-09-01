@@ -34,7 +34,7 @@ class LLMMessage:
     """One backend-neutral item in an LLM conversation."""
 
     role: LLMMessageRole
-    text: str
+    content: str
     tool_calls: list[LLMToolCall] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
@@ -42,14 +42,14 @@ class LLMMessage:
     def to_dict(self) -> dict[str, Any]:
         role = LLMMessageRole(self.role)
         if role in {LLMMessageRole.SYSTEM, LLMMessageRole.USER}:
-            return {"role": role.value, "content": self.text}
+            return {"role": role.value, "content": self.content}
         if role is LLMMessageRole.TOOL:
             return {
                 "role": "tool",
                 "tool_call_id": self.tool_call_id,
-                "content": self.text if not self.is_error else f"Tool failed:\n{self.text}",
+                "content": self.content if not self.is_error else f"Tool failed:\n{self.content}",
             }
-        message: dict[str, Any] = {"role": "assistant", "content": self.text}
+        message: dict[str, Any] = {"role": "assistant", "content": self.content}
         if self.tool_calls:
             message["tool_calls"] = [
                 {
@@ -82,7 +82,7 @@ class CallLLMJob(BaseJob):
 
     messages: list[LLMMessage]
     tools: list[LLMTool]
-    max_output_tokens: int = 1024
+    max_tokens: int = 1024
 
 
 @dataclass
@@ -100,7 +100,7 @@ class CallLLMJobRow(BaseJobRow):
 
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    max_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
+    max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

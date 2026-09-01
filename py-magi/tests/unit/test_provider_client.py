@@ -121,7 +121,7 @@ class _FakeLiteLLM:
 @pytest.mark.asyncio
 async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeLiteLLM()
-    monkeypatch.setattr("providers.client._litellm", lambda: fake)
+    monkeypatch.setattr("providers.client.litellm", fake)
     client = LiteLLMClient(provider_name="openai", api_key="key", model="gpt-5.6")
     job = CallLLMJob(
         id=7,
