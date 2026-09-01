@@ -6,7 +6,7 @@ from .memoryBook import Memory, MemoryBook, MemoryKind
 from .messageBook import Message, MessageBook
 from .promptsBook import KNOWN_PROMPTS, PromptsBook
 from .settingsBook import Setting, SettingsBook
-from .skillsBook import SkillsBook
+from .skillsBook import Skill, SkillsBook
 from .taskBook import Task, TaskBook, TaskSource
 from .toolsBook import Tool, ToolsBook
 
@@ -28,6 +28,7 @@ __all__ = [
     "SettingsBook",
     "KNOWN_PROMPTS",
     "PromptsBook",
+    "Skill",
     "SkillsBook",
     "Task",
     "TaskBook",
