@@ -37,11 +37,9 @@ from bus import (
     go,
 )
 
-from .agent_context import messages_from_records
+from .context import format_system_prompt, messages_from_records, render_instruction_block
 from .compaction import estimate_messages_tokens, estimate_string_tokens
-from .instructions import render_instruction_block
 from .prompt_defaults import prompt_defaults
-from .system_prompt import format_system_prompt
 
 logger = logging.getLogger("agent.worker")
 

@@ -1,6 +1,38 @@
-"""Pure Agent system-prompt formatting; BUS reads belong to ``AgentWorker``."""
+"""Pure Agent context construction from public BUS DTOs."""
 
 from __future__ import annotations
+
+from bus import LLMMessage, LLMMessageRole
+
+
+def messages_from_records(*, summary: str, records) -> list[LLMMessage]:
+    """Render a durable conversation snapshot without reaching into BUS Books."""
+    messages: list[LLMMessage] = []
+    if summary:
+        messages.append(
+            LLMMessage(role=LLMMessageRole.USER, content=f"[Prior conversation summary]\n{summary}")
+        )
+    messages.extend(
+        LLMMessage(
+            role=LLMMessageRole.ASSISTANT if record.contact_id == 1 else LLMMessageRole.USER,
+            content=record.content,
+        )
+        for record in records
+    )
+    return messages
+
+
+def render_instruction_block(personal_instruction: str | None) -> str:
+    value = (personal_instruction or "").strip()
+    if not value:
+        return ""
+    return (
+        "# Instructions\n"
+        "These instructions are part of your operating context. Try to comply with all of them. "
+        "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
+        "## Your personal instruction\n"
+        + value
+    )
 
 
 def format_system_prompt(
@@ -37,3 +69,6 @@ def format_system_prompt(
     if daily_note:
         parts.append("## Daily note\n" + daily_note)
     return "\n\n".join(part for part in parts if part).strip() or soul
+
+
+__all__ = ["format_system_prompt", "messages_from_records", "render_instruction_block"]
