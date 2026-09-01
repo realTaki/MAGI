@@ -150,6 +150,7 @@ class BaseBook[RecordT: BaseRecord]:
         with self._session() as session:
             values = prepared.to_dict()
             values.pop("id", None)
+            values = {key: value for key, value in values.items() if value is not None}
             row = type(self).row_cls(**values)
             session.add(row)
             session.commit()
@@ -169,11 +170,14 @@ class BaseBook[RecordT: BaseRecord]:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
                 return False
-            stored = replace(record, created_at=row.created_at, updated_at=utcnow())
-            values = stored.to_dict()
+            values = record.to_dict()
             values.pop("id", None)
+            values.pop("created_at", None)
             for key, value in values.items():
+                if value is None:
+                    continue
                 setattr(row, key, value)
+            row.updated_at = utcnow()
             session.commit()
             return True
 
@@ -195,7 +199,8 @@ class BaseBook[RecordT: BaseRecord]:
     def list(self, **filters: object) -> list[RecordT]:
         row_cls = type(self).row_cls
         stmt = select(row_cls).order_by(row_cls.id)
-        if filters:
-            stmt = stmt.filter_by(**filters)
+        applied = {key: value for key, value in filters.items() if value is not None}
+        if applied:
+            stmt = stmt.filter_by(**applied)
         with self._session() as session:
             return [type(self).record_cls.from_row(row) for row in session.scalars(stmt)]
