@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bus import Bus, FileEngine
+from bus import Bus, FileEngine, GetSkillJob, ListSkillsJob
 from bus.base.BaseJob import JobStatus
 from bus.firmware.books.promptsBook import PromptsBook
 from bus.firmware.books.skillsBook import SkillsBook
@@ -60,14 +60,33 @@ def test_prompts_book_round_trip(tmp_path) -> None:
 def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:
     files = FileEngine(tmp_path / "workspace")
     book = SkillsBook(files)
-    assert "web_lookup" in book.list()
+    listed = {skill.name: skill.description for skill in book.list()}
+    assert "web_lookup" in listed
+    assert listed["web_lookup"]
     assert book.exists("web_lookup")
     body = book.read("web_lookup")
+    assert body is not None
     assert "Web 检索" in body
+    assert "name: web_lookup" not in body
     assert book.read("does-not-exist") is None
-    assert files.book("skills").write_text("web_lookup/SKILL.md", "operator copy") is True
+    operator = (
+        "---\nname: web_lookup\ndescription: operator copy\n---\n\noperator body\n"
+    )
+    assert files.book("skills").write_text("web_lookup/SKILL.md", operator) is True
     again = SkillsBook(files)
-    assert again.read("web_lookup") == "operator copy"
+    assert again.get("web_lookup") is not None
+    assert again.get("web_lookup").description == "operator copy"
+    assert again.read("web_lookup") == "operator body"
+
+
+def test_skills_book_skips_entries_without_description(tmp_path) -> None:
+    files = FileEngine(tmp_path / "workspace")
+    store = files.book("skills")
+    assert store.write_text("nodesc/SKILL.md", "---\nname: nodesc\n---\n\nbody\n") is True
+    book = SkillsBook(files)
+    assert book.get("nodesc") is None
+    assert book.read("nodesc") is None
+    assert all(skill.name != "nodesc" for skill in book.list())
 
 
 def test_file_store_returns_false_when_target_is_a_directory(tmp_path) -> None:
@@ -84,6 +103,31 @@ class _FailingPromptsBook:
     def reset(self, *, key: str) -> bool:
         del key
         return False
+
+
+def test_skill_jobs_list_catalog_and_read_body(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    with Bus("@skills", workspace=workspace) as bus:
+        listed = bus.board(ListSkillsJob)
+        fetched = bus.board(GetSkillJob)
+        assert listed is not None and fetched is not None
+        catalog = listed.get_result(listed.publish(ListSkillsJob(publisher="test")))
+        assert catalog is not None and catalog.skills
+        names = {skill.name: skill.description for skill in catalog.skills}
+        assert "web_lookup" in names
+        assert names["web_lookup"]
+        body = fetched.get_result(
+            fetched.publish(GetSkillJob(publisher="test", name="web_lookup"))
+        )
+        assert body is not None
+        assert body.content is not None
+        assert "Web 检索" in body.content
+        assert "name: web_lookup" not in body.content
+        missing = fetched.get_result(
+            fetched.publish(GetSkillJob(publisher="test", name="does-not-exist"))
+        )
+        assert missing is not None
+        assert missing.content is None
 
 
 def test_prompt_jobs_record_file_failures() -> None:

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateFileBookJob import OperateFileBookJobBoard
-from ..books.skillsBook import SkillsBook
+from ..books.skillsBook import Skill, SkillsBook
 
 
 @dataclass
 class GetSkillJob(BaseJob):
-    name: str 
+    name: str
 
 
 @dataclass
@@ -43,19 +44,19 @@ class GetSkillJobBoard(OperateFileBookJobBoard[GetSkillJob, GetSkillResult, GetS
 
 
 @dataclass
-class ListSkillsJob(BaseJob):
-    pass
+class ListSkillsResult(BaseJobResult):
+    skills: list[Skill] | None = None
 
 
 @dataclass
-class ListSkillsResult(BaseJobResult):
-    names: list[str] | None = None
+class ListSkillsJob(BaseJob[ListSkillsResult]):
+    pass
 
 
 class ListSkillsJobRow(BaseJobRow):
     __tablename__ = "jobs_list_skills"
 
-    names: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    skills: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
 class ListSkillsJobBoard(OperateFileBookJobBoard[ListSkillsJob, ListSkillsResult, ListSkillsJobRow]):
@@ -69,4 +70,4 @@ class ListSkillsJobBoard(OperateFileBookJobBoard[ListSkillsJob, ListSkillsResult
 
     def _execute(self, job: ListSkillsJob) -> ListSkillsResult:
         del job
-        return ListSkillsResult(names=self._skills.list())
+        return ListSkillsResult(skills=self._skills.list())

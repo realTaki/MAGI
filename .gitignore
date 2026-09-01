@@ -254,6 +254,7 @@ magi.db
 magi.db-*
 
 # Agents
+AGENTS.md
 .codebuddy/
 .codex/
 .agents/
