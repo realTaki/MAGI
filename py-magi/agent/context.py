@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
+from itertools import chain
 from typing import TYPE_CHECKING
 
 from bus import (
     ArchiveMessagesJob,
     CallLLMResult,
+    ChatNotify,
+    ChatNotifyResult,
     ContactNote,
+    DeliveryNotify,
     GetContactJob,
     GetConversationJob,
     GetPromptJob,
@@ -32,71 +38,6 @@ if TYPE_CHECKING:
     from .worker import AgentWorker
 
 
-def messages_from_records(*, summary: str, records) -> list[LLMMessage]:
-    """Render a durable conversation snapshot without reaching into BUS Books."""
-    messages: list[LLMMessage] = []
-    if summary:
-        messages.append(
-            LLMMessage(role=LLMMessageRole.USER, content=f"[Prior conversation summary]\n{summary}")
-        )
-    messages.extend(
-        LLMMessage(
-            role=LLMMessageRole.ASSISTANT if record.contact_id == 1 else LLMMessageRole.USER,
-            content=record.content,
-        )
-        for record in records
-    )
-    return messages
-
-
-def render_instruction_block(personal_instruction: str | None) -> str:
-    value = (personal_instruction or "").strip()
-    if not value:
-        return ""
-    return (
-        "# Instructions\n"
-        "These instructions are part of your operating context. Try to comply with all of them. "
-        "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
-        "## Your personal instruction\n" + value
-    )
-
-
-def format_system_prompt(
-    *,
-    soul: str,
-    instruction: str,
-    skills: list[str],
-    memories,
-    contact,
-    notes,
-    daily_note: str | None,
-    conversation_instruction: str | None,
-    conversation_info: str | None,
-) -> str:
-    parts = [soul]
-    if instruction:
-        parts.append(instruction)
-    if skills:
-        parts.append("## Available skills\n" + "\n".join(f"- {name}" for name in skills))
-    if memories:
-        parts.append(
-            "## Long-term memory\n"
-            + "\n".join(f"- {memory.topic}: {memory.detail}" for memory in memories)
-        )
-    if contact is not None:
-        name = contact.nickname or contact.name or "Unknown"
-        note_lines = [f"## Current chatter\nName: {name}"]
-        note_lines.extend(f"- {note.note}" for note in notes if note.note)
-        parts.append("\n".join(note_lines))
-    if conversation_instruction:
-        parts.append("## Conversation instruction\n" + conversation_instruction)
-    if conversation_info:
-        parts.append("## Conversation info\n" + conversation_info)
-    if daily_note:
-        parts.append("## Daily note\n" + daily_note)
-    return "\n\n".join(part for part in parts if part).strip() or soul
-
-
 class AgentContext:
     """Load and construct the data used by one conversation run."""
 
@@ -104,22 +45,49 @@ class AgentContext:
         self._worker = worker
         self.conversation_id = conversation_id
         self.conversation = None
+        self.summary = ""
         self.history: list[LLMMessage] = []
         self.records: list = []
         self.system = ""
         self.tools = []
+        self.jobs: list[ChatNotify] = []
+        self.tool_rounds: deque[list[LLMMessage]] = deque()
+        self.final_reply = ""
+        self.failed = False
+        self._assistant: LLMMessage | None = None
 
-    async def get(self, contact_id: int) -> bool:
+    def messages(self) -> list[LLMMessage]:
+        """Return the next LLM input in its protocol order."""
+        return list(
+            chain(
+                # 1. System context: soul, instructions, skills, memory, contact, conversation.
+                (LLMMessage(role=LLMMessageRole.SYSTEM, content=self.system),),
+                # 2. Durable summary of archived conversation history.
+                self._summary_messages(),
+                # 3. Non-archived conversation messages, in MessageBook order.
+                self.history,
+                # 4. The two newest complete tool rounds from this active run.
+                *self.tool_rounds,
+            )
+        )
+
+    async def get(self, job: ChatNotify) -> bool:
         """Refresh the context snapshot for the next run of this conversation."""
+        self.jobs = [job]
+        self.tool_rounds.clear()
+        self.final_reply = ""
+        self.failed = False
+        self._assistant = None
         conversation = await self._conversation()
         if conversation is None:
             return False
-        history, records = await self._history(conversation.summary)
+        history, records = await self._history()
         self.conversation = conversation
+        self.summary = conversation.summary
         self.history = history
         self.records = records
         self.system = await self._system_prompt(
-            contact_id,
+            job.contact_id,
             conversation.instruction,
             conversation.info,
         )
@@ -135,7 +103,7 @@ class AgentContext:
         )
         return None if result is None else result.conversation
 
-    async def _history(self, summary: str) -> tuple[list[LLMMessage], list]:
+    async def _history(self) -> tuple[list[LLMMessage], list]:
         result = await self._worker.ask(
             ListConversationMessagesJob(
                 publisher=self._worker.worker_name,
@@ -143,7 +111,7 @@ class AgentContext:
             )
         )
         records = [] if result is None or result.messages is None else result.messages
-        return messages_from_records(summary=summary, records=records), records
+        return self._messages_from_records(records), records
 
     async def _system_prompt(
         self,
@@ -152,7 +120,7 @@ class AgentContext:
         conversation_info: str | None,
     ) -> str:
         soul = await self.prompt("agent/soul") or "You are a helpful assistant."
-        instruction = render_instruction_block(await self.setting("instruction"))
+        instruction = self._render_instruction_block(await self.setting("instruction"))
         skills = await self.skills()
         memories_result = await self._worker.ask(
             ListMemoriesJob(publisher=self._worker.worker_name)
@@ -190,7 +158,7 @@ class AgentContext:
             if daily_result is None or not daily_result.contact_notes
             else daily_result.contact_notes[0].note
         )
-        return format_system_prompt(
+        return self._format_system_prompt(
             soul=soul,
             instruction=instruction,
             skills=skills,
@@ -210,26 +178,97 @@ class AgentContext:
             else [tool.definition for tool in result.tools]
         )
 
+    def _summary_messages(self) -> tuple[LLMMessage, ...]:
+        if not self.summary:
+            return ()
+        return (
+            LLMMessage(
+                role=LLMMessageRole.USER,
+                content=f"[Prior conversation summary]\n{self.summary}",
+            ),
+        )
+
+    @staticmethod
+    def _messages_from_records(records) -> list[LLMMessage]:
+        return [
+            LLMMessage(
+                role=LLMMessageRole.ASSISTANT if record.contact_id == 1 else LLMMessageRole.USER,
+                content=record.content,
+            )
+            for record in records
+        ]
+
+    @staticmethod
+    def _render_instruction_block(personal_instruction: str | None) -> str:
+        value = (personal_instruction or "").strip()
+        if not value:
+            return ""
+        return (
+            "# Instructions\n"
+            "These instructions are part of your operating context. Try to comply with all of them. "
+            "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
+            "## Your personal instruction\n" + value
+        )
+
+    @staticmethod
+    def _format_system_prompt(
+        *,
+        soul: str,
+        instruction: str,
+        skills: list[str],
+        memories,
+        contact,
+        notes,
+        daily_note: str | None,
+        conversation_instruction: str | None,
+        conversation_info: str | None,
+    ) -> str:
+        system = soul
+        if instruction:
+            system += "\n\n" + instruction
+        if skills:
+            system += "\n\n## Available skills\n" + "\n".join(f"- {name}" for name in skills)
+        if memories:
+            system += "\n\n## Long-term memory\n" + "\n".join(
+                f"- {memory.topic}: {memory.detail}" for memory in memories
+            )
+        if contact is not None:
+            name = contact.nickname or contact.name or "Unknown"
+            contact_block = f"## Current chatter\nName: {name}"
+            for note in notes:
+                if note.note:
+                    contact_block += f"\n- {note.note}"
+            system += "\n\n" + contact_block
+        if conversation_instruction:
+            system += "\n\n## Conversation instruction\n" + conversation_instruction
+        if conversation_info:
+            system += "\n\n## Conversation info\n" + conversation_info
+        if daily_note:
+            system += "\n\n## Daily note\n" + daily_note
+        return system.strip() or soul
+
     async def compact(
         self,
         *,
-        summary: str,
-        history: list[LLMMessage],
-        records: list,
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
-    ) -> list[LLMMessage]:
+    ) -> None:
+        conversation = self.conversation
+        assert conversation is not None
+        summary = self.summary
+        history = self.history
+        records = self.records
         window = await self.setting_int("compact_context_window", 100_000)
         threshold = window * await self.setting_int("compact_threshold_pct", 80) // 100
         if estimate_string_tokens(summary) + estimate_messages_tokens(history) <= threshold:
-            return history
+            return
         keep = max(1, await self.setting_int("compact_keep_recent", 20))
         tail_records = records[-keep:]
         to_archive = records[: len(records) - len(tail_records)]
         if not to_archive:
-            return history
+            return
         prompt = await self.prompt("agent/compaction")
         if not prompt:
-            return history
+            return
         source = "\n\n".join(
             f"[{message.role.value.upper()}]\n{message.content}"
             for message in history[: -len(tail_records)]
@@ -243,10 +282,10 @@ class AgentContext:
             max_tokens=1024,
         )
         if result is None or result.status is not JobStatus.COMPLETED or result.message is None:
-            return history
+            return
         new_summary = result.message.content.strip()
         if not new_summary:
-            return history
+            return
         updated = await self._worker.ask(
             UpdateConversationSummaryJob(
                 publisher=self._worker.worker_name,
@@ -255,7 +294,7 @@ class AgentContext:
             )
         )
         if updated is None:
-            return history
+            return
         await self._worker.ask(
             ArchiveMessagesJob(
                 publisher=self._worker.worker_name,
@@ -263,7 +302,62 @@ class AgentContext:
                 before_message_id=tail_records[0].id,
             )
         )
-        return messages_from_records(summary=new_summary, records=tail_records)
+        conversation.summary = new_summary
+        self.summary = new_summary
+        self.records = tail_records
+        self.history = self._messages_from_records(tail_records)
+
+    def add_llm(self, message: LLMMessage) -> bool:
+        """Accept one LLM result and report whether tool results are required."""
+        self._assistant = message
+        if message.tool_calls:
+            return True
+        self.final_reply = message.content
+        return False
+
+    def add_tools(self, messages: list[LLMMessage], pending: ChatNotify | None) -> None:
+        """Add one complete tool round, retaining only its two newest instances."""
+        assistant = self._assistant
+        assert assistant is not None and assistant.tool_calls
+        round_ = [assistant, *messages]
+        self._assistant = None
+        if pending is not None:
+            self.jobs.append(pending)
+            round_.append(LLMMessage(role=LLMMessageRole.USER, content=pending.text))
+        self.tool_rounds.append(round_)
+        while len(self.tool_rounds) > 2:
+            for message in self.tool_rounds.popleft():
+                if message.role is LLMMessageRole.TOOL:
+                    continue
+                if message.role is LLMMessageRole.ASSISTANT:
+                    self.history.append(replace(message, tool_calls=None))
+                else:
+                    self.history.append(message)
+
+    def fail(self, error: str) -> None:
+        self.failed = True
+        self.final_reply = error
+
+    def deliver(self) -> None:
+        self._worker.publish_notify(
+            DeliveryNotify(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+                text=self.final_reply or "处理完毕。",
+            )
+        )
+
+    def settle(self) -> None:
+        status = JobStatus.FAILED if self.failed else JobStatus.COMPLETED
+        for job in self.jobs:
+            self._worker.submit(
+                ChatNotify,
+                ChatNotifyResult(
+                    id=job.id,
+                    status=status,
+                    error=self.final_reply if self.failed else None,
+                ),
+            )
 
     async def prompt(self, key: str) -> str | None:
         result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
@@ -304,9 +398,4 @@ class AgentContext:
             return default
 
 
-__all__ = [
-    "AgentContext",
-    "format_system_prompt",
-    "messages_from_records",
-    "render_instruction_block",
-]
+__all__ = ["AgentContext"]

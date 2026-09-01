@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
@@ -12,8 +11,6 @@ from bus import (
     CallLLMJob,
     CallLLMResult,
     ChatNotify,
-    ChatNotifyResult,
-    DeliveryNotify,
     JobStatus,
     LLMMessage,
     LLMMessageRole,
@@ -26,18 +23,6 @@ from .context import AgentContext
 
 if TYPE_CHECKING:
     from .worker import AgentWorker
-
-
-@dataclass
-class RunContext:
-    """Mutable state belonging to one run of this conversation."""
-
-    conversation_id: int
-    contact_id: int
-    messages: list[LLMMessage] = field(default_factory=list)
-    jobs: list[ChatNotify] = field(default_factory=list)
-    final_reply: str = ""
-    failed: bool = False
 
 
 class Conversation:
@@ -67,81 +52,48 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        ctx = RunContext(
-            conversation_id=job.conversation_id,
-            contact_id=job.contact_id,
-            jobs=[job],
-        )
         try:
-            await self._process(ctx)
+            if not await self._context.get(job):
+                self._context.fail("会话不存在。")
+                return
+            await self._process()
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
-            ctx.failed = True
-            ctx.final_reply = f"处理请求时发生错误：{exc}"
-            self._deliver(ctx)
+            self._context.fail(f"处理请求时发生错误：{exc}")
+            self._context.deliver()
         finally:
-            status = JobStatus.FAILED if ctx.failed else JobStatus.COMPLETED
-            for submitted in ctx.jobs:
-                self._worker.submit(
-                    ChatNotify,
-                    ChatNotifyResult(
-                        id=submitted.id,
-                        status=status,
-                        error=ctx.final_reply if ctx.failed else None,
-                    ),
-                )
+            self._context.settle()
 
-    async def _process(self, ctx: RunContext) -> None:
-        if not await self._context.get(ctx.contact_id):
-            ctx.failed = True
-            ctx.final_reply = "会话不存在。"
-            return
-
-        record = self._context.conversation
-        assert record is not None
+    async def _process(self) -> None:
         llm_timeout = await self._context.setting_float("llm_timeout_seconds", 120)
-        ctx.messages = await self._context.compact(
-            summary=record.summary,
-            history=self._context.history,
-            records=self._context.records,
-            call_llm=partial(self._call_llm, timeout=llm_timeout),
-        )
+        await self._context.compact(call_llm=partial(self._call_llm, timeout=llm_timeout))
         max_tokens = await self._context.setting_int("max_tokens", 1024)
         tool_wait_seconds = await self._context.setting_float("tool_wait_seconds", 300)
 
         while True:
             llm = await self._call_llm(
-                [
-                    LLMMessage(role=LLMMessageRole.SYSTEM, content=self._context.system),
-                    *ctx.messages,
-                ],
+                self._context.messages(),
                 self._context.tools,
                 max_tokens=max_tokens,
                 timeout=llm_timeout,
             )
             if llm is None:
-                ctx.failed = True
-                ctx.final_reply = "回复生成超时，请稍后再试。"
-                self._deliver(ctx)
+                self._context.fail("回复生成超时，请稍后再试。")
+                self._context.deliver()
                 return
             if llm.status is not JobStatus.COMPLETED or llm.message is None:
-                ctx.failed = True
-                ctx.final_reply = llm.error or "回复生成失败。"
-                self._deliver(ctx)
+                self._context.fail(llm.error or "回复生成失败。")
+                self._context.deliver()
                 return
 
-            assistant = llm.message
-            ctx.messages.append(assistant)
-            if not assistant.tool_calls:
-                ctx.final_reply = assistant.content
-                self._deliver(ctx)
+            if not self._context.add_llm(llm.message):
+                self._context.deliver()
                 return
-            ctx.messages.extend(
-                await self._run_tools(assistant.tool_calls, wait_seconds=tool_wait_seconds)
+            tool_messages = await self._run_tools(
+                llm.message.tool_calls or [],
+                wait_seconds=tool_wait_seconds,
             )
-            if self._pending:
-                pending = self._pending.popleft()
-                ctx.jobs.append(pending)
-                ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=pending.text))
+            pending = self._pending.popleft() if self._pending else None
+            self._context.add_tools(tool_messages, pending)
 
     async def _run_tools(
         self,
@@ -225,12 +177,3 @@ class Conversation:
             ),
         )
         return await self._worker.call(board.get_result, job_id, timeout=timeout)
-
-    def _deliver(self, ctx: RunContext) -> None:
-        self._worker.publish_notify(
-            DeliveryNotify(
-                publisher=self._worker.worker_name,
-                conversation_id=ctx.conversation_id,
-                text=ctx.final_reply or "处理完毕。",
-            )
-        )
