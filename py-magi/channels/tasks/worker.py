@@ -77,7 +77,6 @@ class TaskWorker(BaseWorker):
         self.publish_notify(
             ChatNotify(
                 publisher=cast(str, self.worker_name),
-                contact_id=0,
                 conversation_id=task.conversation_id,
                 text=f"[task error]\nname: {task.name}\n{error}",
             )
@@ -92,7 +91,6 @@ class TaskWorker(BaseWorker):
         self.publish_notify(
             ChatNotify(
                 publisher=cast(str, self.worker_name),
-                contact_id=0,
                 conversation_id=task.conversation_id,
                 text=text,
             )
