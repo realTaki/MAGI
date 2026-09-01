@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
 from ..books.contactNoteBook import ContactNote, NoteKind
 
@@ -16,7 +16,7 @@ from ..books.contactNoteBook import ContactNote, NoteKind
 @dataclass
 class CreateContactNoteJob(BaseJob):
     contact_id: int 
-    note: str 
+    note: str = "nothing to say"
     kind: NoteKind = NoteKind.PERMANENT
 
 
@@ -42,8 +42,6 @@ class CreateContactNoteJobBoard(
     row_cls = CreateContactNoteJobRow
 
     def _execute(self, job: CreateContactNoteJob) -> CreateContactNoteResult:
-        if not job.note.strip():
-            return CreateContactNoteResult(status=JobStatus.FAILED, error="contact note must be non-empty")
         note_id = self._book.add(
             ContactNote(contact_id=job.contact_id, note=job.note, kind=job.kind)
         )
@@ -80,7 +78,7 @@ class GetContactNoteJobBoard(
 @dataclass
 class ListContactNotesJob(BaseJob):
     contact_id: int 
-    kind: NoteKind = NoteKind.PERMANENT
+    kind: NoteKind | None = NoteKind.PERMANENT
 
 
 @dataclass
@@ -137,20 +135,13 @@ class UpdateContactNoteJobBoard(
     row_cls = UpdateContactNoteJobRow
 
     def _execute(self, job: UpdateContactNoteJob) -> UpdateContactNoteResult:
-        note = self._book.get(job.contact_note_id)
-        if note is None:
-            return UpdateContactNoteResult(
-                status=JobStatus.FAILED, error=f"contact note {job.contact_note_id} does not exist"
+        self._book.update(
+            ContactNote(
+                id=job.contact_note_id,
+                note=job.note,
+                kind=job.kind,
             )
-        if job.note is not None:
-            if not job.note.strip():
-                return UpdateContactNoteResult(
-                    status=JobStatus.FAILED, error="contact note must be non-empty"
-                )
-            note.note = job.note
-        if job.kind is not None:
-            note.kind = job.kind
-        self._book.update(note)
+        )
         return UpdateContactNoteResult()
 
 
@@ -178,8 +169,5 @@ class DeleteContactNoteJobBoard(
     row_cls = DeleteContactNoteJobRow
 
     def _execute(self, job: DeleteContactNoteJob) -> DeleteContactNoteResult:
-        if not self._book.delete(job.contact_note_id):
-            return DeleteContactNoteResult(
-                status=JobStatus.FAILED, error=f"contact note {job.contact_note_id} does not exist"
-            )
+        self._book.delete(job.contact_note_id)
         return DeleteContactNoteResult()

@@ -23,8 +23,8 @@ class ContactNote(BaseRecord):
     """One note belonging to a Contact."""
 
     contact_id: int
-    note: str
-    kind: NoteKind = NoteKind.PERMANENT
+    note: str | None = "Nothing to say"
+    kind: NoteKind | None = NoteKind.PERMANENT
 
 
 class ContactNoteRow(BaseRecordMixin):
