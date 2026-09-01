@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
-from sqlalchemy import JSON, Boolean, Text, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, Boolean, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
-from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
+from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.toolsBook import LLMTool, Tool, ToolRow
-
-
-def _valid_name(name: str) -> bool:
-    return isinstance(name, str) and bool(name.strip())
+from ..books.toolsBook import LLMTool, Tool, ToolsBook
 
 
 @dataclass
@@ -39,11 +35,8 @@ class GetToolJobBoard(OperateBookJobBoard[GetToolJob, GetToolResult, GetToolJobR
     result_cls = GetToolResult
     row_cls = GetToolJobRow
 
-    def _execute(self, session: Session, job: GetToolJob) -> GetToolResult:
-        if not _valid_name(job.name):
-            return GetToolResult(status=JobStatus.FAILED, error="tool name must be non-empty")
-        row = session.scalar(select(ToolRow).where(ToolRow.name == job.name.strip()))
-        return GetToolResult(tool=None if row is None else Tool.from_row(row))
+    def _execute(self, job: GetToolJob) -> GetToolResult:
+        return GetToolResult(tool=cast(ToolsBook, self._book).get_by_name(job.name.strip()))
 
 
 @dataclass
@@ -67,24 +60,20 @@ class SetToolsJobBoard(OperateBookJobBoard[SetToolsJob, SetToolsResult, SetTools
     result_cls = SetToolsResult
     row_cls = SetToolsJobRow
 
-    def _execute(self, session: Session, job: SetToolsJob) -> SetToolsResult:
+    def _execute(self, job: SetToolsJob) -> SetToolsResult:
         for tool in job.tools:
-            if not _valid_name(tool.definition.name):
-                return SetToolsResult(status=JobStatus.FAILED, error="tool name must be non-empty")
             name = tool.definition.name.strip()
-            definition = LLMTool(
-                name=name,
-                description=tool.definition.description,
-                input_schema=dict(tool.definition.input_schema),
+            cast(ToolsBook, self._book).upsert(
+                Tool(
+                    name=name,
+                    definition=LLMTool(
+                        name=name,
+                        description=tool.definition.description,
+                        input_schema=dict(tool.definition.input_schema),
+                    ),
+                    enabled=tool.enabled,
+                )
             )
-            row = session.scalar(select(ToolRow).where(ToolRow.name == name))
-            payload = asdict(definition)
-            if row is None:
-                session.add(ToolRow(name=name, definition=payload, enabled=tool.enabled))
-            else:
-                row.definition = payload
-                row.enabled = tool.enabled
-        session.flush()
         return SetToolsResult()
 
 
@@ -109,13 +98,10 @@ class DeleteToolJobBoard(OperateBookJobBoard[DeleteToolJob, DeleteToolResult, De
     result_cls = DeleteToolResult
     row_cls = DeleteToolJobRow
 
-    def _execute(self, session: Session, job: DeleteToolJob) -> DeleteToolResult:
-        if not _valid_name(job.name):
-            return DeleteToolResult(status=JobStatus.FAILED, error="tool name must be non-empty")
-        row = session.scalar(select(ToolRow).where(ToolRow.name == job.name.strip()))
-        if row is None:
-            return DeleteToolResult()
-        session.delete(row)
+    def _execute(self, job: DeleteToolJob) -> DeleteToolResult:
+        tool = cast(ToolsBook, self._book).get_by_name(job.name.strip())
+        if tool is not None:
+            self._book.delete(tool.id)
         return DeleteToolResult()
 
 
@@ -141,8 +127,9 @@ class ListToolsJobBoard(OperateBookJobBoard[ListToolsJob, ListToolsResult, ListT
     result_cls = ListToolsResult
     row_cls = ListToolsJobRow
 
-    def _execute(self, session: Session, job: ListToolsJob) -> ListToolsResult:
-        stmt = select(ToolRow).order_by(ToolRow.name)
-        if not job.include_disabled:
-            stmt = stmt.where(ToolRow.enabled.is_(True))
-        return ListToolsResult(tools=[Tool.from_row(row) for row in session.scalars(stmt)])
+    def _execute(self, job: ListToolsJob) -> ListToolsResult:
+        return ListToolsResult(
+            tools=cast(ToolsBook, self._book).list(
+                enabled=None if job.include_disabled else True
+            )
+        )

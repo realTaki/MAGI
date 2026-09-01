@@ -32,14 +32,12 @@ class Task(BaseRecord):
     only the durable row shape.
     """
 
-    conversation_id: int 
+    conversation_id: int
     prompt: str
-    cron: str 
+    cron: str
     name: str = "New Task"
     source: TaskSource = TaskSource.USER
     enabled: bool = True
-    
-    
 
 
 class TaskRow(BaseRecordMixin):

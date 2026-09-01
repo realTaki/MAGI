@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy import JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.settingsBook import Setting
+from ..books.settingsBook import Setting, SettingsBook
 
 
 def _valid_key(key: str) -> bool:
@@ -18,7 +19,7 @@ def _valid_key(key: str) -> bool:
 
 @dataclass
 class GetSettingJob(BaseJob):
-    key: str  
+    key: str
 
 
 @dataclass
@@ -41,13 +42,13 @@ class GetSettingJobBoard(OperateBookJobBoard[GetSettingJob, GetSettingResult, Ge
     def _execute(self, job: GetSettingJob) -> GetSettingResult:
         if not _valid_key(job.key):
             return GetSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        setting = self._book.get(job.key)
+        setting = cast(SettingsBook, self._book).get_by_key(job.key)
         return GetSettingResult(value=None if setting is None else setting.value)
 
 
 @dataclass
 class SetSettingJob(BaseJob):
-    key: str 
+    key: str
     value: str
 
 
@@ -71,13 +72,13 @@ class SetSettingJobBoard(OperateBookJobBoard[SetSettingJob, SetSettingResult, Se
     def _execute(self, job: SetSettingJob) -> SetSettingResult:
         if not _valid_key(job.key):
             return SetSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        self._book.upsert(Setting(key=job.key, value=job.value))
+        cast(SettingsBook, self._book).upsert(Setting(key=job.key, value=job.value))
         return SetSettingResult()
 
 
 @dataclass
 class DeleteSettingJob(BaseJob):
-    key: str  
+    key: str
 
 
 @dataclass
@@ -101,7 +102,7 @@ class DeleteSettingJobBoard(
     def _execute(self, job: DeleteSettingJob) -> DeleteSettingResult:
         if not _valid_key(job.key):
             return DeleteSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        setting = self._book.get(job.key)
+        setting = cast(SettingsBook, self._book).get_by_key(job.key)
         if setting is not None:
             self._book.delete(setting.id)
         return DeleteSettingResult()
@@ -131,5 +132,5 @@ class ListSettingsJobBoard(
 
     def _execute(self, job: ListSettingsJob) -> ListSettingsResult:
         del job
-        settings = {item.key: item.value for item in self._book.list()}
+        settings = {item.key: item.value for item in cast(SettingsBook, self._book).list()}
         return ListSettingsResult(settings=settings)

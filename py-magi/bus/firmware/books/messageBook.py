@@ -5,7 +5,7 @@ The record type :class:`Message` is the field list for this BaseBook.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,10 +25,11 @@ class Message(BaseRecord):
     archived: hidden from the live transcript
     """
 
-    contact_id: int 
-    content: str 
-    conversation_id: int 
-    archived: bool | None = None
+    contact_id: int
+    content: str
+    conversation_id: int
+    timestamp: BaseTime = field(default_factory=utcnow)
+    archived: bool = False
 
 
 class MessageRow(BaseRecordMixin):

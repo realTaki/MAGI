@@ -35,13 +35,13 @@ class SettingsBook(BaseBook[Setting]):
     record_cls = Setting
     row_cls = SettingRow
 
-    def get(self, key: str) -> Setting | None:  # type: ignore[override]
+    def get_by_key(self, key: str) -> Setting | None:
         with self._session() as session:
             row = session.scalar(select(SettingRow).where(SettingRow.key == key))
             return None if row is None else Setting.from_row(row)
 
     def upsert(self, record: Setting) -> int:
-        existing = self.get(record.key)
+        existing = self.get_by_key(record.key)
         if existing is None:
             return self.add(record)
         existing.value = record.value

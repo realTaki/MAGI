@@ -49,13 +49,13 @@ class ToolsBook(BaseBook[Tool]):
     record_cls = Tool
     row_cls = ToolRow
 
-    def get(self, name: str) -> Tool | None:  # type: ignore[override]
+    def get_by_name(self, name: str) -> Tool | None:
         with self._session() as session:
             row = session.scalar(select(ToolRow).where(ToolRow.name == name))
             return None if row is None else Tool.from_row(row)
 
     def upsert(self, record: Tool) -> int:
-        existing = self.get(record.name)
+        existing = self.get_by_name(record.name)
         if existing is None:
             return self.add(record)
         existing.definition = record.definition

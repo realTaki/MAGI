@@ -7,7 +7,7 @@ import pytest
 from bus import Bus
 from bus.firmware.books.contactBook import Contact, ContactBook, ContactRow
 from bus.firmware.books.contactNoteBook import ContactNote, ContactNoteRow
-from bus.firmware.books.conversationBook import Conversation, ConversationRow
+from bus.firmware.books.conversationBook import Conversation, ConversationBook, ConversationRow
 from bus.firmware.books.memoryBook import Memory, MemoryRow
 from bus.firmware.books.messageBook import Message, MessageRow
 from bus.firmware.books.settingsBook import Setting, SettingRow
@@ -27,7 +27,7 @@ from bus.firmware.jobs.contactNoteJobs import ListContactNotesJob, ListContactNo
             Message,
             MessageRow,
             {"contact_id": 1, "content": "message", "conversation_id": 1, "archived": False},
-            {"contact_id", "content", "conversation_id", "archived"},
+            {"contact_id", "content", "conversation_id", "timestamp", "archived"},
         ),
         (Setting, SettingRow, {"key": "key", "value": "value"}, {"key", "value"}),
         (
@@ -90,6 +90,31 @@ def test_book_write_omits_none_and_uses_row_defaults(tmp_path) -> None:
     assert updated.name == "partial-renamed"
     assert updated.role is not None
     assert updated.last_seen_at is not None
+
+
+def test_partial_conversation_update_does_not_restore_the_topic_default(tmp_path) -> None:
+    with Bus("@book-optionality", workspace=tmp_path) as bus:
+        book = ConversationBook(bus._factory)
+        conversation_id = book.add(
+            Conversation(
+                delivery_address="test:1",
+                channel="test",
+                topic="keep this topic",
+            )
+        )
+
+        assert book.update(Conversation(id=conversation_id, summary="new summary"))
+        conversation = book.get(conversation_id)
+
+    assert conversation is not None
+    assert conversation.topic == "keep this topic"
+    assert conversation.summary == "new summary"
+
+
+def test_message_timestamp_is_created_with_the_record() -> None:
+    message = Message(contact_id=1, content="message", conversation_id=1)
+
+    assert message.timestamp is not None
 
 
 def test_list_contact_notes_can_omit_the_kind_filter() -> None:
