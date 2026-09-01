@@ -17,13 +17,11 @@ from bus import (
     ChatNotify,
     ChatNotifyResult,
     DeliveryNotify,
-    GetContactJob,
     GetConversationJob,
     GetPromptJob,
     GetSettingJob,
     GetSkillJob,
     JobStatus,
-    ListContactNotesJob,
     ListConversationMessagesJob,
     ListMemoriesJob,
     ListSkillsJob,
@@ -31,7 +29,6 @@ from bus import (
     LLMMessage,
     LLMMessageRole,
     LLMToolCall,
-    NoteKind,
     RunToolJob,
     UpdateConversationSummaryJob,
     go,
@@ -40,7 +37,6 @@ from bus import (
 from .compaction import (
     ToolRound,
     estimate_messages_tokens,
-    estimate_string_tokens,
     estimate_tools_tokens,
     tool_rounds_messages,
     trim_tool_rounds,
@@ -54,28 +50,56 @@ if TYPE_CHECKING:
 class Conversation:
     """One conversation's serial queue, durable snapshot, and current LLM run."""
 
+    # Worker is this Conversation's only BUS gateway.
     _worker: AgentWorker
+    # Stable durable Conversation id; also the key used by AgentWorker to route jobs here.
     conversation_id: int
 
+    # Claimed ChatNotify jobs waiting for this Conversation's serial loop.
     _pending: deque[ChatNotify] = field(init=False, default_factory=deque)
+    # Whether that serial loop has already been started.
     _running: bool = field(init=False, default=False)
 
+    # Latest durable Conversation record; refreshed before each outer turn.
     conversation: Any | None = field(init=False, default=None)
-    contact_id: int = field(init=False, default=0)
 
-    # LLM message layout: SYSTEM → summary → history → retained text → tool rounds.
-    system: str = field(init=False, default="")
+    # SYSTEM message layout: soul → instructions → skills → memories → conversation metadata.
+    # Base personality prompt.
+    soul: str = field(init=False, default="")
+    # User-configured operating instruction.
+    instruction: str = field(init=False, default="")
+    # Names of currently available skills.
+    skills: list[str] = field(init=False, default_factory=list)
+    # Global long-term memories available to the agent.
+    memories: list[Any] = field(init=False, default_factory=list)
+    # Conversation-specific instruction from the Conversation record.
+    conversation_instruction: str = field(init=False, default="")
+    # Conversation-specific metadata from the Conversation record.
+    conversation_info: str = field(init=False, default="")
+
+    # Remaining LLM message layout: summary → history → retained text → tool rounds.
+    # Durable summary that replaces archived MessageBook history.
     summary: str = field(init=False, default="")
+    # In-memory non-archived chat transcript, extended after each visible turn.
     history: list[LLMMessage] = field(init=False, default_factory=list)
+    # Durable MessageBook rows behind the initially loaded transcript; used for archival ids.
     records: list[Any] = field(init=False, default_factory=list)
+    # Guards the one-time MessageBook snapshot load during this Conversation lifetime.
     _history_loaded: bool = field(init=False, default=False)
+    # Text preserved after older active tool rounds drop their large TOOL payloads.
     retained_text: list[LLMMessage] = field(init=False, default_factory=list)
+    # At most two newest complete assistant-tool-result exchanges for the current LLM run.
     tool_rounds: tuple[ToolRound, ...] = field(init=False, default=())
+    # Current Agent-visible tool definitions passed to CallLLMJob.
     tools: list[Any] = field(init=False, default_factory=list)
 
+    # All inbound jobs absorbed by this run, including one pending job taken after tools.
     jobs: list[ChatNotify] = field(init=False, default_factory=list)
+    # Text to publish as DeliveryNotify and record as the turn's final assistant message.
     final_reply: str = field(init=False, default="")
+    # Determines whether every absorbed ChatNotify is settled COMPLETED or FAILED.
     failed: bool = field(init=False, default=False)
+    # Most recent CallLLM assistant result, held until its tool results are attached.
     _assistant: LLMMessage | None = field(init=False, default=None)
 
     def submit(self, job: ChatNotify) -> None:
@@ -156,7 +180,6 @@ class Conversation:
 
     def _begin_turn(self, job: ChatNotify) -> None:
         self.jobs = [job]
-        self.contact_id = job.contact_id
         if self._history_loaded:
             self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
@@ -175,10 +198,7 @@ class Conversation:
         if not self._history_loaded:
             self.history, self.records = await self._history()
             self._history_loaded = True
-        self.system = await self._system_prompt(
-            conversation_instruction=conversation.instruction,
-            conversation_info=conversation.info,
-        )
+        await self._refresh_system(conversation)
         self.tools = await self._tools()
         return True
 
@@ -186,7 +206,7 @@ class Conversation:
         """Return the next LLM input in its protocol order."""
         return list(
             chain(
-                (LLMMessage(role=LLMMessageRole.SYSTEM, content=self.system),),
+                (self._system_message(),),
                 self._summary_messages(),
                 self.history,
                 self.retained_text,
@@ -323,54 +343,17 @@ class Conversation:
         records = [] if result is None or result.messages is None else result.messages
         return self._messages_from_records(records), records
 
-    async def _system_prompt(
-        self,
-        *,
-        conversation_instruction: str | None,
-        conversation_info: str | None,
-    ) -> str:
-        soul = await self._prompt("agent/soul") or "You are a helpful assistant."
-        instruction = self._instruction_block(await self._setting("instruction"))
-        skills = await self._skills()
+    async def _refresh_system(self, conversation) -> None:
+        """Refresh the independently visible sections of the SYSTEM message."""
+        self.soul = await self._prompt("agent/soul") or "You are a helpful assistant."
+        self.instruction = await self._setting("instruction") or ""
+        self.skills = await self._skills()
         memories_result = await self._worker.ask(
             ListMemoriesJob(publisher=self._worker.worker_name)
         )
-        memories = [] if memories_result is None else memories_result.memories or []
-        contact_result = await self._worker.ask(
-            GetContactJob(publisher=self._worker.worker_name, contact_id=self.contact_id)
-        )
-        contact = None if contact_result is None else contact_result.contact
-        notes_result = await self._worker.ask(
-            ListContactNotesJob(
-                publisher=self._worker.worker_name,
-                contact_id=self.contact_id,
-                kind=NoteKind.PERMANENT,
-            )
-        )
-        notes = [] if notes_result is None else notes_result.contact_notes or []
-        daily_result = await self._worker.ask(
-            ListContactNotesJob(
-                publisher=self._worker.worker_name,
-                contact_id=self.contact_id,
-                kind=NoteKind.DAILY,
-            )
-        )
-        daily_note = (
-            None
-            if daily_result is None or not daily_result.contact_notes
-            else daily_result.contact_notes[0].note
-        )
-        return self._format_system(
-            soul=soul,
-            instruction=instruction,
-            skills=skills,
-            memories=memories,
-            contact=contact,
-            notes=notes,
-            conversation_instruction=conversation_instruction,
-            conversation_info=conversation_info,
-            daily_note=daily_note,
-        )
+        self.memories = [] if memories_result is None else memories_result.memories or []
+        self.conversation_instruction = conversation.instruction or ""
+        self.conversation_info = conversation.info or ""
 
     async def _tools(self) -> list[Any]:
         result = await self._worker.ask(ListToolsJob(publisher=self._worker.worker_name))
@@ -387,7 +370,7 @@ class Conversation:
 
     def _estimated_payload_tokens(self, *, max_tokens: int) -> int:
         return (
-            estimate_string_tokens(self.system)
+            +estimate_messages_tokens((self._system_message(),))
             + estimate_messages_tokens(self._summary_messages())
             + estimate_messages_tokens(self.history)
             + estimate_messages_tokens(self.retained_text)
@@ -417,52 +400,33 @@ class Conversation:
         ]
 
     @staticmethod
-    def _instruction_block(value: str | None) -> str:
-        instruction = (value or "").strip()
-        if not instruction:
-            return ""
-        return (
-            "# Instructions\n"
-            "These instructions are part of your operating context. Try to comply with all of them. "
-            "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
-            "## Your personal instruction\n" + instruction
-        )
-
-    @staticmethod
-    def _format_system(
-        *,
-        soul: str,
-        instruction: str,
-        skills: list[str],
-        memories,
-        contact,
-        notes,
-        conversation_instruction: str | None,
-        conversation_info: str | None,
-        daily_note: str | None,
-    ) -> str:
-        system = soul
-        if instruction:
-            system += "\n\n" + instruction
-        if skills:
-            system += "\n\n## Available skills\n" + "\n".join(f"- {name}" for name in skills)
-        if memories:
-            system += "\n\n## Long-term memory\n" + "\n".join(
-                f"- {memory.topic}: {memory.detail}" for memory in memories
+    def _system_message(self) -> LLMMessage:
+        """Render the declared SYSTEM sections in their field order."""
+        sections = [self.soul]
+        if self.instruction:
+            sections.append(
+                "# Instructions\n"
+                "These instructions are part of your operating context. Try to comply with all of them. "
+                "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
+                "## Your personal instruction\n" + self.instruction
             )
-        if contact is not None:
-            block = f"## Current chatter\nName: {contact.nickname or contact.name or 'Unknown'}"
-            for note in notes:
-                if note.note:
-                    block += f"\n- {note.note}"
-            system += "\n\n" + block
-        if conversation_instruction:
-            system += "\n\n## Conversation instruction\n" + conversation_instruction
-        if conversation_info:
-            system += "\n\n## Conversation info\n" + conversation_info
-        if daily_note:
-            system += "\n\n## Daily note\n" + daily_note
-        return system.strip() or soul
+        if self.skills:
+            sections.append(
+                "## Available skills\n" + "\n".join(f"- {name}" for name in self.skills)
+            )
+        if self.memories:
+            sections.append(
+                "## Long-term memory\n"
+                + "\n".join(f"- {memory.topic}: {memory.detail}" for memory in self.memories)
+            )
+        if self.conversation_instruction:
+            sections.append("## Conversation instruction\n" + self.conversation_instruction)
+        if self.conversation_info:
+            sections.append("## Conversation info\n" + self.conversation_info)
+        return LLMMessage(
+            role=LLMMessageRole.SYSTEM,
+            content="\n\n".join(sections).strip() or "You are a helpful assistant.",
+        )
 
     async def _prompt(self, key: str) -> str | None:
         result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
