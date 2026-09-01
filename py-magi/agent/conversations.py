@@ -28,6 +28,7 @@ from bus import (
     LLMMessage,
     LLMMessageRole,
     LLMToolCall,
+    MAGI_CONTACT_ID,
     RunToolJob,
     Skill,
     UpdateConversationSummaryJob,
@@ -79,11 +80,11 @@ class Conversation:
 
     # Remaining LLM message layout: summary → history → retained text → tool rounds.
     # Durable summary that replaces archived MessageBook history.
-    summary: str = field(init=False, default="")
+    summary: LLMMessage | None = field(init=False, default=None)
     # In-memory non-archived chat transcript, extended after each visible turn.
     history: list[LLMMessage] = field(init=False, default_factory=list)
-    # Durable MessageBook rows behind the initially loaded transcript; used for archival ids.
-    records: list[Any] = field(init=False, default_factory=list)
+    # First live MessageBook id; compact archives everything before the next cut.
+    live_from_id: int | None = field(init=False, default=None)
     # Guards the one-time MessageBook snapshot load during this Conversation lifetime.
     _history_loaded: bool = field(init=False, default=False)
     # Text preserved after older active tool rounds drop their large TOOL payloads.
@@ -192,14 +193,14 @@ class Conversation:
         self._assistant = None
 
     async def _refresh(self) -> bool:
-        """Refresh external dependencies; load the message snapshot only once."""
+        """Refresh external dependencies; load summary and history only once."""
         conversation = await self._conversation()
         if conversation is None:
             return False
         self.conversation = conversation
-        self.summary = conversation.summary
         if not self._history_loaded:
-            self.history, self.records = await self._history()
+            self.summary = self._summary_message(conversation.summary)
+            self.history = await self._history()
             self._history_loaded = True
         await self._refresh_system(conversation)
         self.tools = await self._tools()
@@ -228,12 +229,18 @@ class Conversation:
             return
 
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
-        tail_records = self.records[-keep:]
-        if len(tail_records) == len(self.records):
+        live = await self._live_messages()
+        if len(live) <= keep:
             return
+        cut_id = live[-keep].id
+        overflow = len(self.history) - keep
         source_messages = [
             *self._summary_messages(),
-            *self.history[: len(self.history) - len(tail_records)],
+            *(
+                self.history[:overflow]
+                if overflow > 0
+                else self._messages_from_records(live[:-keep])
+            ),
         ]
         prompt = await self._prompt("agent/compaction")
         if not prompt:
@@ -270,12 +277,12 @@ class Conversation:
             ArchiveMessagesJob(
                 publisher=self._worker.worker_name,
                 conversation_id=self.conversation_id,
-                before_message_id=tail_records[0].id,
+                before_message_id=cut_id,
             )
         )
-        self.summary = summary
-        self.history = self._messages_from_records(tail_records)
-        self.records = tail_records
+        self.summary = self._summary_message(summary)
+        self.live_from_id = cut_id
+        self.history = self._messages_from_records(live[-keep:])
         if self.conversation is not None:
             self.conversation.summary = summary
 
@@ -333,15 +340,19 @@ class Conversation:
         )
         return None if result is None else result.conversation
 
-    async def _history(self) -> tuple[list[LLMMessage], list]:
+    async def _live_messages(self) -> list:
         result = await self._worker.ask(
             ListConversationMessagesJob(
                 publisher=self._worker.worker_name,
                 conversation_id=self.conversation_id,
             )
         )
-        records = [] if result is None or result.messages is None else result.messages
-        return self._messages_from_records(records), records
+        return [] if result is None or result.messages is None else result.messages
+
+    async def _history(self) -> list[LLMMessage]:
+        live = await self._live_messages()
+        self.live_from_id = None if not live else live[0].id
+        return self._messages_from_records(live)
 
     async def _refresh_system(self, conversation) -> None:
         """Refresh the independently visible sections of the SYSTEM message."""
@@ -380,20 +391,24 @@ class Conversation:
         )
 
     def _summary_messages(self) -> tuple[LLMMessage, ...]:
-        if not self.summary:
-            return ()
-        return (
-            LLMMessage(
-                role=LLMMessageRole.USER,
-                content=f"[Prior conversation summary]\n{self.summary}",
-            ),
+        return () if self.summary is None else (self.summary,)
+
+    @staticmethod
+    def _summary_message(text: str | None) -> LLMMessage | None:
+        if not text:
+            return None
+        return LLMMessage(
+            role=LLMMessageRole.USER,
+            content=f"[Prior conversation summary]\n{text}",
         )
 
     @staticmethod
     def _messages_from_records(records) -> list[LLMMessage]:
         return [
             LLMMessage(
-                role=LLMMessageRole.ASSISTANT if record.contact_id == 1 else LLMMessageRole.USER,
+                role=LLMMessageRole.ASSISTANT
+                if record.contact_id == MAGI_CONTACT_ID
+                else LLMMessageRole.USER,
                 content=record.content,
             )
             for record in records

@@ -12,7 +12,7 @@ from .base.engine import EngineFactory
 from .base.file import FileEngine
 from .BaseWorker import BaseWorker
 from .firmware import create_job_boards
-from .firmware.books.contactBook import Contact, ContactBook, ContactRole
+from .firmware.books.contactBook import MAGI_CONTACT_ID, Contact, ContactBook, ContactRole
 from .firmware.books.settingsBook import Setting, SettingsBook
 from .firmware.versions.schema import prepare_schema
 
@@ -49,7 +49,9 @@ class Bus:
             memories=self._memories,
             files=self._files,
         )
-        ContactBook(self._memories).upsert(Contact(id=1, name=handle, role=ContactRole.MAGI))
+        ContactBook(self._memories).upsert(
+            Contact(id=MAGI_CONTACT_ID, name=handle, role=ContactRole.MAGI)
+        )
         self._workers: dict[str, BaseWorker] = {}
         self._stopped = False
 

@@ -8,7 +8,7 @@ from typing import Any
 from ..base.BaseJob import BaseJob, BaseJobBoard
 from ..base.engine import EngineFactory
 from ..base.file import FileEngine
-from .books.contactBook import Contact, ContactRole
+from .books.contactBook import MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, Contact, ContactRole
 from .books.contactNoteBook import ContactNote, NoteKind
 from .books.conversationBook import Conversation
 from .books.memoryBook import Memory, MemoryKind
@@ -235,6 +235,8 @@ __all__ = [
     "Conversation",
     "Contact",
     "ContactRole",
+    "MAGI_CONTACT_ID",
+    "SYSTEM_CONTACT_ID",
     "ContactNote",
     "NoteKind",
     "Memory",
