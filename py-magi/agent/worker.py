@@ -1,662 +1,389 @@
-"""AgentWorker — bus 上唯一的 agent turn consumer.
-
-设计原则（与 :class:`~tools.worker.ToolsWorker` 、
-:class:`~providers.worker.ProvidersWorker` 对齐）：
-
-- **只依赖 bus**。老的 ``bus`` store / facade 一概不碰。
-- **构造靠注入**。``AgentWorker(bus: Bus)`` 由 composition root 显式注入。
-- **board claim steering**：steering 不通过进程内队列，而是在
-  ``_gather_all`` 中主动 ``claim_for_steering`` 认领同 session 的新
-  ChatNotifyJob。board 本身是唯一持久化协调点。
-- **ChatNotify 的接收回执是 ``PROCESSING``**：channel 观察 claim 写下的
-  durable lease，而不等待整轮执行的终态。
-- **回复走 delivery notify board**：回复文本统一由 ``_publish_delivery`` 投递。
-
-本步骤已完成 Phase 2 子模块迁移，现已委托调用：
-- ``system_prompt.build_system_prompt(bus=...)``
-- ``agent_context.build_messages_from_conversation(bus=...)``
-- ``auto_title.request_conversation_title(bus=...)``
-"""
+"""Agent Worker: durable turns in, durable LLM/tool/delivery Jobs out."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from old_bus.bases.job import JobStatus
-from runtime_worker import RuntimeWorker
+from bus import (
+    ArchiveMessagesJob,
+    BaseWorker,
+    CallLLMJob,
+    CallLLMResult,
+    ChatNotify,
+    ChatNotifyResult,
+    ContactNote,
+    DeliveryNotify,
+    GetContactJob,
+    GetConversationJob,
+    GetPromptJob,
+    GetSettingJob,
+    GetSkillJob,
+    JobStatus,
+    ListContactNotesJob,
+    ListConversationMessagesJob,
+    ListMemoriesJob,
+    ListSkillsJob,
+    ListToolsJob,
+    LLMMessage,
+    LLMMessageRole,
+    LLMToolCall,
+    NoteKind,
+    RegisterPromptJob,
+    RunToolJob,
+    UpdateConversationSummaryJob,
+    go,
+)
 
-if TYPE_CHECKING:
-    from old_bus.firmwares.jobs.callLLMJob import CallLLMResult
-    from old_bus.firmwares.jobs.runToolJob import RunToolJob
-
-    from old_bus import Bus
+from .agent_context import messages_from_records
+from .compaction import estimate_messages_tokens, estimate_string_tokens
+from .instructions import render_instruction_block
+from .prompt_defaults import prompt_defaults
+from .system_prompt import format_system_prompt
 
 logger = logging.getLogger("agent.worker")
-
-# ---------------------------------------------------------------------------
-# constants
-# ---------------------------------------------------------------------------
-
-_MAX_STEERING_PARTS = 16
-_DEFAULT_MAX_ITERATIONS = 10
-_DEFAULT_MAX_TOKENS = 1024
-_DEFAULT_TOOL_WAIT_SECONDS = 300.0
-_DEFAULT_LLM_TIMEOUT_SECONDS = 120.0
-
-# ---------------------------------------------------------------------------
-# RunContext
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class RunContext:
-    contact_id: int | None
-    channel: str
-    conversation_id: int = 0  # chat_conversations.id；0 = 无会话（transcript 不可用时）
-    messages: list[dict] = field(default_factory=list)
-    max_iterations: int = _DEFAULT_MAX_ITERATIONS
-    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    conversation_id: int
+    contact_id: int
+    messages: list[LLMMessage] = field(default_factory=list)
     final_reply: str = ""
-    failed: bool = False  # 失败标志（succeeded = not failed）
-    cancelled: bool = False
+    failed: bool = False
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _SplitJobs:
-    tool_jobs: list = field(default_factory=list)
-
-
-@dataclass
-class _GatherResult:
-    tool_results: dict[str, Any] = field(default_factory=dict)
-    steering_text: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# AgentWorker
-# ---------------------------------------------------------------------------
-
-
-class AgentWorker(RuntimeWorker):
-    """Concurrent-by-conversation consumer of one MAGI's turn streams."""
+class AgentWorker(BaseWorker):
+    """Consume ``ChatNotify`` while keeping one active turn per conversation."""
 
     worker_name = "agent"
+    default_settings = {
+        "max_iterations": "10",
+        "max_tokens": "1024",
+        "tool_wait_seconds": "300",
+        "llm_timeout_seconds": "120",
+        "compact_keep_recent": "20",
+        "compact_context_window": "100000",
+        "compact_threshold_pct": "80",
+    }
 
-    def __init__(
-        self,
-        bus: Bus,
-        *,
-        poll_seconds: float = 0.25,
-        concurrency: int | None = None,
-    ) -> None:
-        super().__init__(bus, poll_seconds=poll_seconds, concurrency=concurrency)
-        # ``self.worker_id`` 已经在 :class:`RuntimeWorker.__init__` 里生成
-        # (``f"{self.worker_name}-{uuid.uuid4().hex}"``), 此处不用再赋一次
-        # —— 覆盖会丢掉原 UUID 又生成一个新 UUID, 白消耗一次熵。
-        self._in_flight: dict[int, asyncio.Event] = {}  # conversation_id → cancel_event
-        self._claim_lock = asyncio.Lock()
-        self._managed_contexts: set[int] = set()
+    def __init__(self, bus, *, poll_seconds: float = 0.25, concurrency: int = 4) -> None:
+        super().__init__(bus, poll_seconds=poll_seconds)
+        self.concurrency = max(1, concurrency)
+        self._active_conversations: set[int] = set()
+        self._active_count = 0
 
-    async def on_start(self) -> None:
-        """Register AgentWorker-owned defaults before consuming turns."""
-        from agent.prompt_defaults import ensure_agent_prompt_defaults
+    async def on_attached(self) -> None:
+        for key, value in prompt_defaults():
+            await self.ask(RegisterPromptJob(publisher=self.worker_name, key=key, value=value))
 
-        await self.call(ensure_agent_prompt_defaults, self.bus.prompt_book)
+    async def _poll(self) -> bool:
+        if self._active_count >= self.concurrency:
+            return False
+        board = self.board(ChatNotify)
+        if board is None:
+            return False
+        job = await self.call(
+            board.claim_for_new_conversation,
+            active_conversation_ids=self._active_conversations,
+        )
+        if job is None:
+            return False
+        self._active_count += 1
+        self._active_conversations.add(job.conversation_id)
+        go(self._run_turn(job))
+        return True
 
-    # -- main loop -----------------------------------------------------------
-
-    async def _run(self) -> None:
-        """Run one claim loop per local execution slot.
-
-        The shared claim lock reserves a conversation in ``_in_flight`` before
-        another loop can select it.  Thus different conversations make
-        progress concurrently while a same-conversation message remains
-        available for in-band steering.
-        """
-        await asyncio.gather(*(self._run_consumer() for _ in range(self.concurrency)))
-
-    async def _run_consumer(self) -> None:
-        from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
-
-        while not self._stopping:
-            job = await self._claim_next_turn()
-            if job is None:
-                await asyncio.sleep(self.poll_seconds)
-                continue
-
-            conversation_id = getattr(job, "conversation_id", None) or 0
-            ctx = RunContext(
-                contact_id=job.contact_id,
-                conversation_id=(conversation_id or 0),
-                channel=job.channel,
-                messages=[],
-                max_iterations=await self._read_max_iterations(),
-            )
-            try:
-                self._managed_contexts.add(id(ctx))
-                await self._process(ctx)
-            except asyncio.CancelledError:
-                ctx.failed = True
-                raise
-            except Exception:
-                logger.exception("agent run failed conv=%s", conversation_id)
-                ctx.failed = True
-                ctx.final_reply = ctx.final_reply or "抱歉，处理请求时发生了错误。"
-                await self._publish_delivery(ctx)
-            finally:
-                succeeded = not ctx.failed
-                chat_job_id = job.job_id
-                await self.call(
-                    self.bus.agent_job_board.submit_result,
-                    job_id=chat_job_id,
-                    worker_id=self.worker_id,
-                    result=ChatNotifyResult(
-                        job_id=chat_job_id,
-                        status=JobStatus.COMPLETED if succeeded else JobStatus.FAILED,
-                    ),
-                )
-                current_event = self._in_flight.get(ctx.conversation_id)
-                if current_event is ctx.cancel_event:
-                    self._in_flight.pop(ctx.conversation_id, None)
-                self._managed_contexts.discard(id(ctx))
-
-    async def _claim_next_turn(self) -> Any | None:
-        """Claim the next unreserved conversation turn."""
-        async with self._claim_lock:
-            job = await self.call(
-                self.bus.agent_job_board.claim_for_new_conversation,
-                worker_id=self.worker_id,
-                active_conversation_ids=set(self._in_flight),
-            )
-            if job is not None:
-                conversation_id = getattr(job, "conversation_id", None) or 0
-                if conversation_id:
-                    # Reserve the key before dropping ``_claim_lock``.
-                    # ``_process`` replaces this placeholder with the
-                    # context's real cancellation event.
-                    self._in_flight[conversation_id] = asyncio.Event()
-            return job
-
-    # -- agent loop ----------------------------------------------------------
+    async def _run_turn(self, job: ChatNotify) -> None:
+        ctx = RunContext(conversation_id=job.conversation_id, contact_id=job.contact_id)
+        try:
+            await self._process(ctx)
+        except asyncio.CancelledError:
+            ctx.failed = True
+            raise
+        except Exception as exc:  # noqa: BLE001 -- terminal failure belongs on ChatNotify
+            logger.exception("agent turn failed conversation=%s", job.conversation_id)
+            ctx.failed = True
+            ctx.final_reply = f"处理请求时发生错误：{exc}"
+            await self._deliver(ctx)
+        finally:
+            status = JobStatus.FAILED if ctx.failed else JobStatus.COMPLETED
+            self.submit(ChatNotify, ChatNotifyResult(id=job.id, status=status))
+            self._active_conversations.discard(job.conversation_id)
+            self._active_count -= 1
 
     async def _process(self, ctx: RunContext) -> None:
-        await self._load_history(ctx)
-        self._in_flight[ctx.conversation_id] = ctx.cancel_event
-        try:
-            for _ in range(ctx.max_iterations):
-                if ctx.cancel_event.is_set():
-                    ctx.cancelled = True
-                    ctx.final_reply = "任务已取消。"
-                    await self._publish_delivery(ctx)
-                    return
-
-                llm_job = await self._build_llm_job(ctx)
-                if llm_job is None:
-                    # Defensive only — ``_build_llm_job`` always returns a
-                    # :class:`CallLLMJob` today. If it ever returns ``None``
-                    # it's an internal agent failure with no upstream to
-                    # forward; surface a short constant.
-                    ctx.final_reply = "内部错误：无法构建 LLM 请求"
-                    ctx.failed = True
-                    await self._publish_delivery(ctx)
-                    return
-
-                llm_job_id = await self.call(self.bus.llm_job_board.publish, llm_job)
-                result = await self._wait_for_llm(llm_job_id)
-
-                if ctx.cancel_event.is_set():
-                    ctx.cancelled = True
-                    ctx.final_reply = "任务已取消。"
-                    await self._publish_delivery(ctx)
-                    return
-
-                if result is None:
-                    ctx.final_reply = "抱歉，回复生成超时，请稍后再试。"
-                    ctx.failed = True
-                    await self._publish_delivery(ctx)
-                    return
-                if result.status != JobStatus.COMPLETED:
-                    # Forward the upstream ``error`` verbatim. The provider
-                    # worker already ships a human-readable failure string;
-                    # rephrasing it here would lose fidelity.
-                    ctx.final_reply = _format_llm_error(result)
-                    ctx.failed = True
-                    await self._publish_delivery(ctx)
-                    return
-
-                assistant_msg = self._build_assistant_message(result)
-                ctx.messages.append(assistant_msg)
-
-                resp = getattr(result, "response", None) or {}
-                text: str = resp.get("text") or ""
-                tool_uses: list[dict] = resp.get("tool_uses") or []
-
-                if not tool_uses:
-                    ctx.final_reply = text
-                    await self._publish_delivery(ctx)
-                    self._maybe_title(ctx)
-                    return
-
-                split = await self._split_tools(ctx, tool_uses)
-                tool_jobs_by_call = await self._publish_effects(split)
-                gather = await self._gather_all(ctx, tool_jobs_by_call)
-                if gather is None:
-                    ctx.failed = True
-                    return
-
-                self._append_tool_result_user_message(ctx, gather)
-
-            ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
-            await self._publish_delivery(ctx)
-        finally:
-            if (
-                id(ctx) not in self._managed_contexts
-                and self._in_flight.get(ctx.conversation_id) is ctx.cancel_event
-            ):
-                self._in_flight.pop(ctx.conversation_id, None)
-
-    # -- context assembly ----------------------------------------------------
-
-    async def _load_history(self, ctx: RunContext) -> None:
-        if ctx.messages:
-            return
-        if not ctx.conversation_id or ctx.contact_id is None:
-            return
-        from agent.agent_context import build_messages_from_conversation
-
-        try:
-            msgs = await self.call(
-                build_messages_from_conversation,
-                contact_id=ctx.contact_id,
-                conversation_id=ctx.conversation_id,
-                new_user_text="",
-                bus=self.bus,
-            )
-            ctx.messages = list(msgs)  # already list[dict]
-        except Exception:
-            logger.warning("load_history failed, starting fresh", exc_info=True)
+        conversation = await self._conversation(ctx.conversation_id)
+        if conversation is None:
+            ctx.failed = True
+            ctx.final_reply = "会话不存在。"
+            await self._deliver(ctx)
             return
 
-        # Auto-compaction: if history (with summary) crosses the
-        # threshold, fold old messages into the cumulative summary,
-        # archive them, and replace ctx.messages with the new dict list.
-        # Awaited (not fire-and-forget) because the result feeds back
-        # into ctx.messages. Compaction is rare so the await cost is OK.
-        try:
-            from agent.compaction import maybe_compact
+        history, source_messages = await self._history(ctx.conversation_id, conversation.summary)
+        ctx.messages = await self._maybe_compact(ctx, conversation.summary, history, source_messages)
+        system = await self._system_prompt(ctx.contact_id, conversation.instruction, conversation.info)
+        tools = await self._tools()
 
-            dtos = self.bus.messages_book.list_for_conversation(
-                conversation_id=ctx.conversation_id, include_archived=False
+        for _ in range(await self._setting_int("max_iterations", 10)):
+            llm = await self._call_llm(
+                [LLMMessage(role=LLMMessageRole.SYSTEM, content=system), *ctx.messages],
+                tools,
+                max_tokens=await self._setting_int("max_tokens", 1024),
             )
-            # ``maybe_compact`` is ``async def``; ``call`` (which uses
-            # ``asyncio.to_thread``) only handles sync callables — using it
-            # here would return a coroutine object instead of the awaited
-            # value, breaking the ``is not None`` narrow below.
-            compacted = await maybe_compact(
-                contact_id=ctx.contact_id,
-                conversation_id=ctx.conversation_id,
-                message_dtos=dtos,
-                bus=self.bus,
+            if llm is None:
+                ctx.failed = True
+                ctx.final_reply = "回复生成超时，请稍后再试。"
+                await self._deliver(ctx)
+                return
+            if llm.status is not JobStatus.COMPLETED or llm.message is None:
+                ctx.failed = True
+                ctx.final_reply = llm.error or "回复生成失败。"
+                await self._deliver(ctx)
+                return
+
+            assistant = llm.message
+            ctx.messages.append(assistant)
+            if not assistant.tool_calls:
+                ctx.final_reply = assistant.content
+                await self._deliver(ctx)
+                return
+            ctx.messages.extend(await self._run_tools(ctx, assistant.tool_calls))
+
+        ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
+        await self._deliver(ctx)
+
+    async def _conversation(self, conversation_id: int):
+        result = await self.ask(
+            GetConversationJob(publisher=self.worker_name, conversation_id=conversation_id)
+        )
+        return None if result is None else result.conversation
+
+    async def _history(self, conversation_id: int, summary: str) -> tuple[list[LLMMessage], list]:
+        result = await self.ask(
+            ListConversationMessagesJob(publisher=self.worker_name, conversation_id=conversation_id)
+        )
+        records = [] if result is None or result.messages is None else result.messages
+        return messages_from_records(summary=summary, records=records), records
+
+    async def _system_prompt(
+        self, contact_id: int, conversation_instruction: str | None, conversation_info: str | None
+    ) -> str:
+        soul = await self._prompt("agent/soul") or "You are a helpful assistant."
+        instruction = render_instruction_block(await self._setting("instruction"))
+        skills = await self._skills()
+        memories_result = await self.ask(ListMemoriesJob(publisher=self.worker_name))
+        memories = [] if memories_result is None or memories_result.memories is None else memories_result.memories
+        contact_result = await self.ask(GetContactJob(publisher=self.worker_name, contact_id=contact_id))
+        contact = None if contact_result is None else contact_result.contact
+        notes_result = await self.ask(
+            ListContactNotesJob(
+                publisher=self.worker_name, contact_id=contact_id, kind=NoteKind.PERMANENT
             )
-            if compacted is not None:
-                ctx.messages = compacted
-        except Exception:
-            logger.warning("maybe_compact failed, continuing with loaded history", exc_info=True)
-
-    async def _build_llm_job(self, ctx: RunContext) -> Any:
-        """组装完整 LLM 请求。不检查 provider 配置——ProvidersWorker 自己处理。"""
-        from old_bus.firmwares.jobs.callLLMJob import CallLLMJob
-
-        system = await self._system_prompt(ctx)
-        messages = [{"role": "system", "content": system}] + list(ctx.messages)
-        tools = await self._tool_schemas(ctx.contact_id)
-
-        return CallLLMJob(
-            messages=messages,
-            contact_id=ctx.contact_id,
-            max_tokens=await self._read_max_tokens(),
-            tools=tools or None,
-            streaming=False,
+        )
+        notes: list[ContactNote] = (
+            [] if notes_result is None or notes_result.contact_notes is None else notes_result.contact_notes
+        )
+        daily_result = await self.ask(
+            ListContactNotesJob(publisher=self.worker_name, contact_id=contact_id, kind=NoteKind.DAILY)
+        )
+        daily = (
+            None
+            if daily_result is None or not daily_result.contact_notes
+            else daily_result.contact_notes[0].note
+        )
+        return format_system_prompt(
+            soul=soul,
+            instruction=instruction,
+            skills=skills,
+            memories=memories,
+            contact=contact,
+            notes=notes,
+            daily_note=daily,
+            conversation_instruction=conversation_instruction,
+            conversation_info=conversation_info,
         )
 
-    async def _system_prompt(self, ctx: RunContext) -> str:
-        from agent.system_prompt import build_system_prompt, read_soul
+    async def _tools(self):
+        result = await self.ask(ListToolsJob(publisher=self.worker_name))
+        return [] if result is None or result.tools is None else [tool.definition for tool in result.tools]
 
-        try:
-            system = await self.call(
-                lambda: build_system_prompt(
-                    contact_id=ctx.contact_id or 0,
-                    soul=read_soul(bus=self.bus),
-                    bus=self.bus,
+    async def _run_tools(self, ctx: RunContext, calls: list[LLMToolCall]) -> list[LLMMessage]:
+        board = self.board(RunToolJob)
+        if board is None:
+            return [
+                LLMMessage(
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=call.tool_call_id,
+                    content="tool board is not mounted",
+                    is_error=True,
+                )
+                for call in calls
+            ]
+        pending = {
+            call.tool_call_id: (call, await self.call(board.publish, RunToolJob(publisher=self.worker_name, call=call)))
+            for call in calls
+        }
+        results: dict[str, Any] = {}
+        deadline = asyncio.get_running_loop().time() + await self._setting_float("tool_wait_seconds", 300)
+        chat_board = self.board(ChatNotify)
+        while pending and asyncio.get_running_loop().time() < deadline:
+            if chat_board is not None:
+                steering = await self.call(
+                    chat_board.claim_for_steering, conversation_id=ctx.conversation_id
+                )
+                if steering is not None:
+                    ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=steering.text))
+                    self.submit(ChatNotify, ChatNotifyResult(id=steering.id))
+            for call_id, (_, job_id) in tuple(pending.items()):
+                status = await self.call(board.check_job_status, job_id)
+                if status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
+                    continue
+                result = await self.call(board.get_result, job_id, timeout=0)
+                if result is not None:
+                    results[call_id] = result
+                    del pending[call_id]
+            if pending:
+                await asyncio.sleep(0.1)
+        messages: list[LLMMessage] = []
+        for call_id in pending:
+            results[call_id] = None
+        for call in calls:
+            result = results.get(call.tool_call_id)
+            failed = result is None or result.status is not JobStatus.COMPLETED
+            content = "tool execution timed out" if result is None else (result.error if failed else result.content)
+            messages.append(
+                LLMMessage(
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=call.tool_call_id,
+                    content=content or "tool execution failed",
+                    is_error=failed,
                 )
             )
-            return system
-        except Exception:
-            logger.exception("system_prompt build failed; falling back to bare soul")
-            return "You are a helpful assistant."
+        return messages
 
-    async def _tool_schemas(self, contact_id: int | None) -> list[dict] | None:
-        try:
-            # Resolve the caller's role live from the Contact row rather
-            # than trusting a publish-time snapshot — a demoted operator
-            # must immediately lose access to elevated tools.
-            caller_role: str | None = None
-            if contact_id is not None:
-                contact = await self.call(self.bus.contacts_book.get, contact_id=contact_id)
-                caller_role = contact.role if contact else None
-            defs = await self.call(
-                self.bus.tool_definitions_book.list_enabled,
-                caller_role=caller_role,
-            )
-            result = []
-            for d in defs or []:
-                result.append(
-                    {
-                        "name": getattr(d, "name", ""),
-                        "description": getattr(d, "description", ""),
-                        "input_schema": getattr(d, "input_schema", {}),
-                    }
-                )
-            return result if result else None
-        except Exception:
-            logger.warning("tool schemas load failed", exc_info=True)
-            return None
-
-    # -- LLM wait ------------------------------------------------------------
-
-    async def _wait_for_llm(self, llm_job_id: int) -> CallLLMResult | None:
-        # ``get_result`` is a one-shot query that returns ``None`` the
-        # instant the result row does not exist yet — wrapping it in
-        # ``asyncio.wait_for`` only enforces an upper bound, so the
-        # call returned ``None`` long before the providers worker
-        # could poll (0.25s cadence) and complete the call. The board
-        # exposes ``wait_for_result`` which polls every 50ms; use it
-        # so the agent actually waits for the LLM result instead of
-        # declaring a spurious timeout.
-        timeout = await self._read_llm_timeout()
-        try:
-            result = await self.bus.llm_job_board.wait_for_result(
-                job_id=llm_job_id,
-                timeout=timeout,
-                poll_interval=0.05,
-            )
-        except Exception:
-            logger.exception("llm wait crashed for %s", llm_job_id)
-            return None
-        if result is None:
-            logger.warning("llm job %s timed out (%.0fs)", llm_job_id, timeout)
-        return result
-
-    # -- split tools ---------------------------------------------------------
-
-    @staticmethod
-    def _make_tool_job(
-        tool_call_id: str,
-        tool_name: str,
-        arguments: dict,
-        context: dict,
-    ) -> RunToolJob:
-        from old_bus.firmwares.jobs.runToolJob import RunToolJob
-
-        return RunToolJob(
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            payload={"arguments": arguments, "context": context},
-        )
-
-    async def _split_tools(self, ctx: RunContext, tool_uses: list[dict]) -> _SplitJobs:
-        tool_jobs: list[RunToolJob] = []
-
-        for tu in tool_uses:
-            name = tu.get("name", "")
-            args = dict(tu.get("input") or {})
-            tool_call_id = str(tu.get("id") or uuid.uuid4().hex)
-            context = {
-                "workspace": "",
-                "contact_id": ctx.contact_id or 0,
-                "channel": ctx.channel,
-                "conversation_id": ctx.conversation_id or 0,
-            }
-            tool_jobs.append(
-                self._make_tool_job(
-                    tool_call_id,
-                    name or "",
-                    args,
-                    context,
-                )
-            )
-        return _SplitJobs(tool_jobs=tool_jobs)
-
-    # -- publish effects -----------------------------------------------------
-
-    async def _publish_effects(self, split: _SplitJobs) -> dict[str, int]:
-        """Publish tool effects keyed by the originating LLM tool-call id."""
-        tool_jobs_by_call: dict[str, int] = {}
-        for tj in split.tool_jobs:
-            tool_job_id = await self.call(self.bus.tool_job_board.publish, tj)
-            tool_jobs_by_call[tj.tool_call_id] = tool_job_id
-        return tool_jobs_by_call
-
-    # -- gather results + steering -------------------------------------------
-
-    async def _gather_all(
-        self,
-        ctx: RunContext,
-        tool_jobs_by_call: dict[str, int],  # tool_call_id → tool_job_id
-    ) -> _GatherResult | None:
-        deadline = asyncio.get_running_loop().time() + await self._read_tool_wait()
-        pending_tool_jobs: dict[str, int] = dict(tool_jobs_by_call)  # tool_call_id → tool_job_id (copy to mutate)
-        tool_results: dict[str, Any] = {}
-        steering_parts: list[str] = []
-
-        while pending_tool_jobs:
-            if ctx.cancel_event.is_set():
-                break
-
-            # steering
-            if ctx.conversation_id and len(steering_parts) < _MAX_STEERING_PARTS:
-                steer = await self.call(
-                    self.bus.agent_job_board.claim_for_steering,
-                    conversation_id=ctx.conversation_id,
-                    worker_id=self.worker_id,
-                )
-                if steer is not None:
-                    text = steer.text or ""
-                    if text:
-                        steering_parts.append(text)
-                    from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyResult
-
-                    chat_steer_job_id = steer.job_id
-                    await self.call(
-                        self.bus.agent_job_board.submit_result,
-                        job_id=chat_steer_job_id,
-                        worker_id=self.worker_id,
-                        result=ChatNotifyResult(
-                            job_id=chat_steer_job_id,
-                            status=JobStatus.COMPLETED,
-                        ),
-                    )
-
-            # tool results
-            for tool_call_id, tool_job_id in list(pending_tool_jobs.items()):
-                r = await self.call(self.bus.tool_job_board.get_result, job_id=tool_job_id)
-                if r is not None:
-                    tool_results[tool_call_id] = r
-                    del pending_tool_jobs[tool_call_id]
-
-            if not pending_tool_jobs:
-                break
-            if asyncio.get_running_loop().time() >= deadline:
-                logger.warning("gather timeout, pending_tools=%d", len(pending_tool_jobs))
-                break
-            await asyncio.sleep(0.1)
-
-        from old_bus.firmwares.jobs.runToolJob import RunToolResult, ToolErrorCode
-
-        for tool_call_id, tool_job_id in pending_tool_jobs.items():
-            tool_results[tool_call_id] = RunToolResult(
-                job_id=tool_job_id,
-                status=JobStatus.FAILED,
-                content="tool execution timed out",
-                error_code=ToolErrorCode.FAILED,
-                tool_call_id=tool_call_id,
-            )
-
-        steering_text = "\n\n".join(steering_parts) if steering_parts else None
-        return _GatherResult(
-            tool_results=tool_results,
-            steering_text=steering_text,
-        )
-
-    # -- output --------------------------------------------------------------
-
-    def _append_tool_result_user_message(self, ctx: RunContext, gather: _GatherResult) -> None:
-        from old_bus.firmwares.jobs.runToolJob import ToolErrorCode
-
-        blocks: list[dict] = []
-        for tool_call_id, r in gather.tool_results.items():
-            blocks.append(
-                {
-                    "tool_use_id": tool_call_id,
-                    "type": "tool_result",
-                    "content": getattr(r, "content", "") or "",
-                    "is_error": getattr(r, "error_code", ToolErrorCode.NONE) != ToolErrorCode.NONE,
-                }
-            )
-        if gather.steering_text:
-            blocks.append({"type": "text", "text": gather.steering_text})
-        ctx.messages.append(
-            {
-                "role": "user",
-                "content": gather.steering_text or "",
-                "content_blocks": blocks,
-            }
-        )
-
-    async def _publish_delivery(self, ctx: RunContext) -> None:
-        from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
-
-        # Resolve the reply address from the conversation row (D.28): the
-        # delivery worker needs ``destination`` for address-based channels
-        # (TG chat id). WebUI appends by ``conversation_id`` and ignores it.
-        destination: str | None = None
-        if ctx.contact_id is not None:
-            conversation = await self.call(
-                self.bus.conversations_book.get_for_owner,
-                contact_id=ctx.contact_id,
-                conversation_id=ctx.conversation_id,
-            )
-            if conversation is not None:
-                destination = getattr(conversation, "delivery_address", None) or None
-
-        await self.call(
-            self.bus.delivery_notify_job_board.publish,
-            DeliveryNotifyJob(
-                channel=ctx.channel,
-                text=ctx.final_reply or "处理完毕。",
-                conversation_id=ctx.conversation_id,
-                contact_id=ctx.contact_id,
-                destination=destination,
+    async def _call_llm(self, messages: list[LLMMessage], tools, *, max_tokens: int) -> CallLLMResult | None:
+        board = self.board(CallLLMJob)
+        if board is None:
+            return CallLLMResult(status=JobStatus.FAILED, error="LLM board is not mounted")
+        job_id = await self.call(
+            board.publish,
+            CallLLMJob(
+                publisher=self.worker_name,
+                messages=messages,
+                tools=tools,
+                max_tokens=max_tokens,
             ),
         )
-
-    def _maybe_title(self, ctx: RunContext) -> None:
-        if not ctx.conversation_id or ctx.contact_id is None:
-            return
-        from agent.auto_title import request_conversation_title
-
-        self.spawn(
-            request_conversation_title(ctx.contact_id, ctx.conversation_id, bus=self.bus),
-            name=f"magi-title-{ctx.conversation_id}",
+        return await self.call(
+            board.get_result,
+            job_id,
+            timeout=await self._setting_float("llm_timeout_seconds", 120),
         )
 
-    # -- helpers -------------------------------------------------------------
+    async def _deliver(self, ctx: RunContext) -> None:
+        self.publish_notify(
+            DeliveryNotify(
+                publisher=self.worker_name,
+                conversation_id=ctx.conversation_id,
+                text=ctx.final_reply or "处理完毕。",
+            )
+        )
 
-    def _build_assistant_message(self, result: CallLLMResult) -> dict:
-        resp = getattr(result, "response", None) or {}
-        msg = {"role": "assistant", "content": resp.get("text") or ""}
-        blocks = resp.get("raw_blocks")
-        if blocks:
-            msg["content_blocks"] = blocks
-        return msg
+    async def _maybe_compact(self, ctx: RunContext, summary: str, history: list[LLMMessage], records: list) -> list[LLMMessage]:
+        window = await self._setting_int("compact_context_window", 100_000)
+        threshold = window * await self._setting_int("compact_threshold_pct", 80) // 100
+        if estimate_string_tokens(summary) + estimate_messages_tokens(history) <= threshold:
+            return history
+        keep = max(1, await self._setting_int("compact_keep_recent", 20))
+        tail_records = records[-keep:]
+        to_archive = records[: len(records) - len(tail_records)]
+        if not to_archive:
+            return history
+        prompt = await self._prompt("agent/compaction")
+        if not prompt:
+            return history
+        source = "\n\n".join(
+            f"[{message.role.value.upper()}]\n{message.content}" for message in history[:-len(tail_records)]
+        )
+        result = await self._call_llm(
+            [
+                LLMMessage(role=LLMMessageRole.SYSTEM, content=prompt),
+                LLMMessage(role=LLMMessageRole.USER, content=source),
+            ],
+            [],
+            max_tokens=1024,
+        )
+        if result is None or result.status is not JobStatus.COMPLETED or result.message is None:
+            return history
+        new_summary = result.message.content.strip()
+        if not new_summary:
+            return history
+        updated = await self.ask(
+            UpdateConversationSummaryJob(
+                publisher=self.worker_name,
+                conversation_id=ctx.conversation_id,
+                summary=new_summary,
+            )
+        )
+        if updated is None:
+            return history
+        await self.ask(
+            ArchiveMessagesJob(
+                publisher=self.worker_name,
+                conversation_id=ctx.conversation_id,
+                before_message_id=tail_records[0].id,
+            )
+        )
+        return messages_from_records(summary=new_summary, records=tail_records)
 
-    # -- cancel --------------------------------------------------------------
+    async def _prompt(self, key: str) -> str | None:
+        result = await self.ask(GetPromptJob(publisher=self.worker_name, key=key))
+        return None if result is None else result.value
 
-    def _broadcast_cancel(self, conversation_id: int) -> None:
-        event = self._in_flight.get(conversation_id)
-        if event is not None:
-            event.set()
+    async def _skills(self) -> list[str]:
+        listed = await self.ask(ListSkillsJob(publisher=self.worker_name))
+        if listed is None or not listed.names:
+            return []
+        found: list[str] = []
+        for name in listed.names:
+            if await self.ask(GetSkillJob(publisher=self.worker_name, name=name)) is not None:
+                found.append(name)
+        return found
 
-    # -- settings helpers ----------------------------------------------------
+    async def _setting(self, key: str) -> str | None:
+        result = await self.ask(GetSettingJob(publisher=self.worker_name, key=key))
+        if result is not None and result.value is not None:
+            return result.value
+        result = await self.ask(GetSettingJob(publisher=self.worker_name, key=f"agent.{key}"))
+        return None if result is None else result.value
 
-    async def _read_max_iterations(self) -> int:
-        raw = await self.call(self.bus.settings_book.get_value, key="agent.max_iterations")
-        return _coerce_int(raw, _DEFAULT_MAX_ITERATIONS)
+    async def _setting_int(self, key: str, default: int) -> int:
+        try:
+            return int(await self._setting(key) or default)
+        except ValueError:
+            return default
 
-    async def _read_max_tokens(self) -> int:
-        raw = await self.call(self.bus.settings_book.get_value, key="agent.max_tokens")
-        return _coerce_int(raw, _DEFAULT_MAX_TOKENS)
-
-    async def _read_tool_wait(self) -> float:
-        raw = await self.call(self.bus.settings_book.get_value, key="agent.tool_wait_seconds")
-        return _coerce_float(raw, _DEFAULT_TOOL_WAIT_SECONDS)
-
-    async def _read_llm_timeout(self) -> float:
-        raw = await self.call(self.bus.settings_book.get_value, key="agent.llm_timeout_seconds")
-        return _coerce_float(raw, _DEFAULT_LLM_TIMEOUT_SECONDS)
+    async def _setting_float(self, key: str, default: float) -> float:
+        try:
+            return float(await self._setting(key) or default)
+        except ValueError:
+            return default
 
 
-async def submit_agent_message(bus: Bus, message: Any) -> int:
-    from old_bus.firmwares.jobs.chatNotifyJob import ChatNotifyJob
-
-    job = ChatNotifyJob(
-        # ``job_id`` is database-owned and is filled after publish().
-        conversation_id=getattr(message, "conversation_id", None) or 0,
-        text=getattr(message, "text", ""),
-        channel=getattr(message, "channel", ""),
-        contact_id=getattr(message, "contact_id", None),
+async def submit_agent_message(bus, message: Any) -> int | None:
+    """Compatibility entrypoint for adapters that publish one incoming turn."""
+    board = bus.board(ChatNotify)
+    if board is None:
+        return None
+    return await asyncio.to_thread(
+        board.publish,
+        ChatNotify(
+            publisher="agent",
+            conversation_id=getattr(message, "conversation_id", 0),
+            contact_id=getattr(message, "contact_id", 0),
+            text=getattr(message, "text", ""),
+        ),
     )
-    return await asyncio.to_thread(bus.agent_job_board.publish, job)
-
-
-# ---------------------------------------------------------------------------
-# private helpers
-# ---------------------------------------------------------------------------
-
-
-def _coerce_int(raw: Any, default: int) -> int:
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_float(raw: Any, default: float) -> float:
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _format_llm_error(result: Any) -> str:
-    """Return the upstream failure text from a failed :class:`CallLLMResult`.
-
-    The provider worker already ships a human-readable ``error`` string;
-    the agent forwards it verbatim. A constant placeholder is used only
-    when that field is empty.
-    """
-    error = getattr(result, "error", None) or ""
-    return error or "回复生成失败"

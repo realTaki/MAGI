@@ -1,6 +1,6 @@
-"""MAGI's message-driven agent runtime — bus only.
+"""MAGI's message-driven Agent runtime.
 
-Channels publish durable ``ChatNotifyJob`` inputs to ``agent_job_board``.
-:class:`AgentWorker` consumes them, drives the agent loop, and delegates
-LLM / tool / delivery effects to their respective job boards and workers.
+Channels publish :class:`bus.ChatNotify`; :class:`agent.worker.AgentWorker`
+consumes it and delegates LLM, tool, context, and delivery work through the
+public Firmware JobBoards.
 """
