@@ -138,7 +138,7 @@ from .taskJobs import (
     ListTasksJobBoard,
     ListTasksResult,
 )
-from .toolsBookJobs import (
+from .toolsJobs import (
     DeleteToolJob,
     DeleteToolJobBoard,
     DeleteToolResult,
