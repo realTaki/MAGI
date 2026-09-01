@@ -501,12 +501,14 @@ Job
 ## 12.1 Failure Transport
 
 MAGI 是 Agent-first 系统：大多数行为由 chat 链条驱动，少量行为由前端发起。
-两条链都不应依赖跨层抛异常来传递可预期的失败。
+两条链都不应依赖跨层抛异常来传递可预期的失败。失败按下面的顺序处理：
 
-- Firmware Job 的业务校验、Book 操作、文件或数据库等外部系统失败，必须转换为该 Job 的 `FAILED` result；`error` 保存可向调用方转发的人类可读文本。
-- Chat 链应由 Agent 将该 result 继续写成 conversation 中可见的 Message；前端链应将同一错误文本交给前端显示。
-- 已持久化 Job 的失败不能只写日志：Job Row 的请求、状态、结果和 `error` 就是唯一审计记录。
-- 任何无法沿当前调用链正常返回的失败（包括 Worker 取消）都不能只重新抛出或只写日志：必须写入发起 Job 的 `FAILED` result，或发布 `ChatNotify` / `DeliveryNotify` 形成可见 Message。Chat turn 同时写入失败 result 和 Delivery；两者都是持久化记录。
+1. 先判断能否传出。可以传出时，发布 `ChatNotify` 或 `DeliveryNotify`，让用户或 MAGI 看见该消息；两种 Notify 都会写入 conversation 的 MessageBook，形成可见记录。
+2. 找不到合适的传出路径时，发起 Job 的 `FAILED` result 就是失败日志：Job Row 的请求、状态、结果和 `error` 构成完整审计记录。
+
+因此，任何无法沿当前调用链正常返回的失败（包括 Worker 取消）都不能只重新抛出或只写日志。Chat turn 同时发布 Delivery，并提交 `ChatNotifyResult(FAILED, error=...)`；前端链将同一错误文本交给前端显示。`logger` 不承担业务失败的传递或审计职责，正常失败路径理论上不需要它。
+
+Firmware Job 的业务校验、Book 操作、文件或数据库等外部系统失败，均必须遵守上述规则；`error` 保存可向调用方转发的人类可读文本。
 - `BusForWorker` / `JobBoardClient` 是 BUS 对 Worker 的公开边界。未挂载 Job、未持有 Slot、查询不到记录或基础设施暂时不可用时，返回该操作的正常空值（`None` / `False` / `0` / `[]`），不向 Worker 抛 BUS 异常。
 - Python 异常只留在 BUS 内部实现边界；Worker 不按异常类别决定业务失败路径，而是把失败转换为上述 BUS result 或可见 Message。
 
