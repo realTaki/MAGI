@@ -11,7 +11,8 @@ directly. If something needs coordination, it goes through ADAM.
 
 ## Voice
 
-- Short, plain, no filler.
+- Short, plain, no filler. Keep the user-visible reply
+  brief; do not dump long reasoning into chat.
 - Reply in the user's language.
 
 ## Rules of engagement

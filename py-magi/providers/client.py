@@ -62,7 +62,7 @@ def options() -> list[dict[str, str]]:
 class LiteLLMClient:
     """Provider settings plus MAGI Job ↔ LiteLLM chat completion."""
 
-    _ok_finish = {"", "stop", "end_turn", "tool_calls", "function_call", "tool_use"}
+    _ok_finish = {"", "stop", "end_turn", "tool_calls", "function_call", "tool_use", "length", "max_tokens"}
 
     def __init__(
         self,
@@ -100,13 +100,18 @@ class LiteLLMClient:
         params: dict[str, Any] = {
             "model": f"{host.prefix}/{self.model or host.default_model}",
             "messages": [self._request_message(message) for message in job.messages],
-            "max_tokens": job.max_tokens,
+            "max_tokens": job.max_tokens + max(0, job.thinking_tokens),
             "api_key": self.api_key,
-            "timeout": 30.0,
+            "timeout": 120.0,
             "drop_params": True,
         }
         if host.api_base:
             params["api_base"] = host.api_base
+        if job.thinking_tokens > 0:
+            params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": job.thinking_tokens,
+            }
         if job.tools:
             params["tools"] = [self._request_tool(tool) for tool in job.tools]
         try:
@@ -143,6 +148,8 @@ class LiteLLMClient:
             content = message.content if not message.is_error else f"Tool failed:\n{message.content}"
             return {"role": "tool", "tool_call_id": message.tool_call_id, "content": content}
         payload: dict[str, Any] = {"role": "assistant", "content": message.content}
+        if message.thinking_blocks:
+            payload["thinking_blocks"] = message.thinking_blocks
         if message.tool_calls:
             payload["tool_calls"] = [
                 {
@@ -167,9 +174,16 @@ class LiteLLMClient:
         elif isinstance(content, str):
             text = content
         elif isinstance(content, list):
-            text = "".join(str(part.get("text") or "") for part in content if isinstance(part, dict))
+            text = "".join(
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict)
+                and part.get("type") not in {"thinking", "redacted_thinking"}
+            )
         else:
             raise ValueError("provider returned non-text assistant content")
+        blocks = data.get("thinking_blocks")
+        thinking_blocks = [item for item in blocks if isinstance(item, dict)] if isinstance(blocks, list) else None
         calls: list[LLMToolCall] = []
         for item in data.get("tool_calls") or ():
             call = self._mapping(item) or {}
@@ -183,7 +197,12 @@ class LiteLLMClient:
                     arguments=self._arguments(function.get("arguments")),
                 )
             )
-        return LLMMessage(role=LLMMessageRole.ASSISTANT, content=text, tool_calls=calls or None)
+        return LLMMessage(
+            role=LLMMessageRole.ASSISTANT,
+            content=text,
+            tool_calls=calls or None,
+            thinking_blocks=thinking_blocks or None,
+        )
 
     def _arguments(self, value: Any) -> dict[str, Any]:
         if value is None or value == "":

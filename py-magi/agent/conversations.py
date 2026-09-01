@@ -39,6 +39,7 @@ from .compaction import (
     ToolRound,
     compact_source_messages,
     estimate_messages_tokens,
+    estimate_string_tokens,
     estimate_tools_tokens,
     tool_rounds_messages,
     trim_tool_rounds,
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class Conversation:
-    """One conversation's serial queue and current LLM run."""
+    """One conversation's serial queue, durable snapshot, and current LLM run."""
 
     # Worker is this Conversation's only BUS gateway.
     _worker: AgentWorker
@@ -138,18 +139,24 @@ class Conversation:
     async def _process(self) -> None:
         llm_timeout = await self._setting_float("llm_timeout_seconds", 120)
         max_tokens = await self._setting_int("max_tokens", 1024)
+        thinking_tokens = await self._setting_int("thinking_tokens", 8192)
         tool_wait_seconds = await self._setting_float("tool_wait_seconds", 300)
+        call_llm = partial(
+            self._call_llm,
+            timeout=llm_timeout,
+            thinking_tokens=thinking_tokens,
+        )
 
         while True:
             await self._compact(
-                call_llm=partial(self._call_llm, timeout=llm_timeout),
+                call_llm=call_llm,
                 max_tokens=max_tokens,
+                thinking_tokens=thinking_tokens,
             )
-            llm = await self._call_llm(
+            llm = await call_llm(
                 self._messages(),
                 self.tools,
                 max_tokens=max_tokens,
-                timeout=llm_timeout,
             )
             if llm is None:
                 error = "回复生成超时，请稍后再试。"
@@ -217,9 +224,16 @@ class Conversation:
         *,
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
         max_tokens: int,
+        thinking_tokens: int,
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
-        if self._estimated_payload_tokens(max_tokens=max_tokens) <= await self._context_threshold():
+        if (
+            self._estimated_payload_tokens(
+                max_tokens=max_tokens,
+                thinking_tokens=thinking_tokens,
+            )
+            <= await self._context_threshold()
+        ):
             return
 
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
@@ -241,6 +255,7 @@ class Conversation:
         prompt = await self._prompt("agent/compaction")
         if not prompt:
             return
+        summary_tokens = max(1, await self._setting_int("compact_summary_tokens", 10_000))
         result = await call_llm(
             [
                 LLMMessage(role=LLMMessageRole.SYSTEM, content=prompt),
@@ -253,13 +268,15 @@ class Conversation:
                 ),
             ],
             [],
-            max_tokens=1024,
+            max_tokens=summary_tokens,
         )
         if result is None or result.status is not JobStatus.COMPLETED or result.message is None:
             return
         summary = result.message.content.strip()
         if not summary:
             return
+        if estimate_string_tokens(summary) > summary_tokens:
+            summary = summary[: summary_tokens * 4]
         updated = await self._worker.ask(
             UpdateConversationSummaryJob(
                 publisher=self._worker.worker_name,
@@ -279,6 +296,8 @@ class Conversation:
         self.summary = self._summary_message(summary)
         self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
+        if self.conversation is not None:
+            self.conversation.summary = summary
 
     def _add_llm(self, message: LLMMessage) -> bool:
         self._assistant = message
@@ -377,7 +396,7 @@ class Conversation:
         percent = await self._setting_int("compact_threshold_pct", 80)
         return window * percent // 100
 
-    def _estimated_payload_tokens(self, *, max_tokens: int) -> int:
+    def _estimated_payload_tokens(self, *, max_tokens: int, thinking_tokens: int = 0) -> int:
         """Estimate durable conversation size. Temporary tool rounds are excluded."""
         return (
             estimate_messages_tokens((self._system_message(),))
@@ -385,6 +404,7 @@ class Conversation:
             + estimate_messages_tokens(self.history)
             + estimate_tools_tokens(self.tools)
             + max_tokens
+            + thinking_tokens
         )
 
     def _summary_messages(self) -> tuple[LLMMessage, ...]:
@@ -530,6 +550,7 @@ class Conversation:
         tools: list[Any],
         *,
         max_tokens: int,
+        thinking_tokens: int,
         timeout: float,
     ) -> CallLLMResult | None:
         board = self._worker.board(CallLLMJob)
@@ -542,6 +563,7 @@ class Conversation:
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens,
+                thinking_tokens=thinking_tokens,
             ),
         )
         return await self._worker.call(board.get_result, job_id, timeout=timeout)
