@@ -8,8 +8,9 @@ from enum import StrEnum
 from sqlalchemy import Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from bus.base.time import utcnow
+
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
-from ...base.time import utcnow
 
 
 class MemoryKind(StrEnum):
@@ -24,12 +25,10 @@ class MemoryKind(StrEnum):
 class Memory(BaseRecord):
     """One remembered item."""
 
-    # default_factory, not a bare default: a bare default is evaluated once at
-    # import time, so every Memory would share the process start timestamp.
-    topic: str = field(default_factory=lambda: utcnow().strftime("%Y-%m-%d %H:%M:%S"))
-    detail: str = ""
-    kind: MemoryKind = MemoryKind.TEMPORARY
-    archived: bool = False
+    topic: str | None = field(default_factory=lambda: utcnow().strftime("%Y-%m-%d %H:%M:%S"))
+    detail: str | None = "Noting in particular."
+    kind: MemoryKind | None = MemoryKind.TEMPORARY
+    archived: bool | None = False
 
 
 class MemoryRow(BaseRecordMixin):
