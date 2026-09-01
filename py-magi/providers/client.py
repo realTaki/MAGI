@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import litellm
+
 from bus import (
     CallLLMJob,
     CallLLMResult,
@@ -18,7 +20,6 @@ from bus import (
     LLMUsage,
 )
 
-_LITELLM_READY = False
 _CONTEXT_MARKERS = (
     "context length",
     "context_length",
@@ -74,9 +75,17 @@ class LiteLLMClient:
         api_key: str | None = None,
         model: str | None = None,
     ) -> None:
-        self.provider_name = provider_name
-        self.api_key = api_key
-        self.model = model
+        self.provider_name: str | None = None
+        self.api_key: str | None = None
+        self.model: str | None = None
+        self.host: Host | None = None
+        self.host_error: str | None = "no LLM provider configured; set provider.name in settings"
+        self.litellm = litellm
+        self.litellm.telemetry = False
+        self.litellm.suppress_debug_info = True
+        self.litellm.drop_params = True
+        self.litellm.modify_params = True
+        self.configure(provider_name=provider_name, api_key=api_key, model=model)
 
     def configure(
         self,
@@ -87,96 +96,44 @@ class LiteLLMClient:
     ) -> None:
         if provider_name is not None:
             self.provider_name = provider_name
+            name = provider_name.strip().lower()
+            self.host = _BY_ID.get(_ALIASES.get(name, name))
+            self.host_error = (
+                None
+                if self.host is not None
+                else f"Unknown LLM provider: {provider_name!r}. Known: {', '.join(item.id for item in HOSTS)}"
+            )
         if api_key is not None:
             self.api_key = api_key
         if model is not None:
             self.model = model
 
     async def complete(self, job: CallLLMJob) -> CallLLMResult:
-        def fail(error: str) -> CallLLMResult:
-            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=error)
-
-        host, host_error = self._host()
-        if host is None:
-            return fail(host_error or "no LLM provider configured; set provider.name in settings")
+        if self.host is None:
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=self.host_error or "no LLM provider configured; set provider.name in settings")
         if not self.api_key:
-            return fail("no API key configured; set provider.api_key in settings")
-        try:
-            litellm = _litellm()
-        except Exception as exc:  # noqa: BLE001 -- optional SDK becomes a Job failure
-            return fail(str(exc))
-
-        model = self.model or host.default_model
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error="no API key configured; set provider.api_key in settings")
+        model = self.model or self.host.default_model
         params: dict[str, Any] = {
-            "model": f"{host.prefix}/{model}",
-            "messages": _messages(job.messages),
+            "model": f"{self.host.prefix}/{model}",
+            "messages": [message.to_dict() for message in job.messages],
             "max_tokens": job.max_output_tokens,
             "api_key": self.api_key,
             "timeout": 30.0,
             "drop_params": True,
         }
-        if host.api_base:
-            params["api_base"] = host.api_base
+        if self.host.api_base:
+            params["api_base"] = self.host.api_base
         if job.tools:
             params["tools"] = _tools(job.tools)
         try:
-            response = await litellm.acompletion(**params)
+            response = await self.litellm.acompletion(**params)
             choices = getattr(response, "choices", None) or ()
             if not choices:
-                return fail(f"{host.id} provider: response carried no choices")
+                return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=f"{self.host.id} provider: response carried no choices")
             return _result(job.id, choices[0].message, response, model)
         except Exception as exc:  # noqa: BLE001 -- every adapter/SDK failure becomes a Job failure
-            return fail(_error_text(exc, host.id))
-
-    def _host(self) -> tuple[Host | None, str | None]:
-        if not self.provider_name:
-            return None, "no LLM provider configured; set provider.name in settings"
-        name = self.provider_name.strip().lower()
-        host = _BY_ID.get(_ALIASES.get(name, name))
-        if host is None:
-            known = ", ".join(item.id for item in HOSTS)
-            return None, f"Unknown LLM provider: {self.provider_name!r}. Known: {known}"
-        return host, None
-
-
-def _litellm() -> Any:
-    global _LITELLM_READY
-    import litellm  # type: ignore[import-not-found]
-
-    if not _LITELLM_READY:
-        litellm.telemetry = False
-        litellm.suppress_debug_info = True
-        litellm.drop_params = True
-        litellm.modify_params = True
-        _LITELLM_READY = True
-    return litellm
-
-
-def _messages(messages: list[LLMMessage]) -> list[dict[str, Any]]:
-    return [_message(message) for message in messages]
-
-
-def _message(message: LLMMessage) -> dict[str, Any]:
-    if message.role in {LLMMessageRole.SYSTEM, LLMMessageRole.USER}:
-        return {"role": message.role.value, "content": message.text}
-    if message.role is LLMMessageRole.TOOL:
-        return {
-            "role": "tool",
-            "tool_call_id": message.tool_call_id,
-            "content": message.text if not message.is_error else f"Tool failed:\n{message.text}",
-        }
-    out: dict[str, Any] = {"role": "assistant", "content": message.text}
-    if message.tool_calls:
-        out["tool_calls"] = [
-            {
-                "id": call.id,
-                "type": "function",
-                "function": {"name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)},
-            }
-            for call in message.tool_calls
-        ]
-    return out
-
+            return CallLLMResult(id=job.id, status=JobStatus.FAILED, error=_error_text(exc, self.host.id))
 
 def _tools(tools: list[LLMTool]) -> list[dict[str, Any]]:
     return [
@@ -231,7 +188,7 @@ def _response_message(raw: Any) -> LLMMessage:
             raise ValueError("provider returned an invalid tool call")
         calls.append(
             LLMToolCall(
-                id=str(call["id"]),
+                tool_call_id=str(call["id"]),
                 name=str(function["name"]),
                 arguments=_arguments(function.get("arguments")),
             )

@@ -25,6 +25,10 @@ uv sync --group dev
 
 ## Code conventions
 
+Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard to read. Extra glue that converts the same idea between two shapes is also noise — unify the type instead of mapping back and forth.
+
+Then:
+
 - **Python 3.12+** with `ruff` for linting
 - **TypeScript** + **React** for the operator app
 - Follow what's already in the codebase:
