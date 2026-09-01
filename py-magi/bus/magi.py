@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
+from agent.worker import AgentWorker
 from channels.asp import AspWorker
 from providers.worker import ProvidersWorker
 from tools.worker import ToolsWorker
@@ -15,6 +16,7 @@ from .bus import Bus
 WORKERS: tuple[type[BaseWorker], ...] = (
     ProvidersWorker,
     ToolsWorker,
+    AgentWorker,
     AspWorker,
 )
 

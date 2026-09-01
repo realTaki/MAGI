@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from sqlalchemy import Integer, Text
+from sqlalchemy import Integer, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
@@ -62,3 +62,38 @@ class ChatNotifyBoard(BaseJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyRow])
         )
         go(self._post_publish(published))
         return job_id
+
+    def claim_for_new_conversation(self, *, active_conversation_ids: set[int]) -> ChatNotify | None:
+        """Claim the oldest pending turn whose conversation is not local-active.
+
+        Agent parallelism is per conversation: a worker may process several
+        conversations, but it must leave follow-up turns in an active one for
+        :meth:`claim_for_steering`.  The queue remains the durable coordinator;
+        callers supply only their process-local active set.
+        """
+        return self._claim_matching(
+            ChatNotifyRow.conversation_id.not_in(active_conversation_ids)
+            if active_conversation_ids
+            else None
+        )
+
+    def claim_for_steering(self, *, conversation_id: int) -> ChatNotify | None:
+        """Claim the next pending follow-up for an already-active conversation."""
+        return self._claim_matching(ChatNotifyRow.conversation_id == conversation_id)
+
+    def _claim_matching(self, condition) -> ChatNotify | None:
+        with self._session() as session:
+            stmt = (
+                select(ChatNotifyRow)
+                .where(ChatNotifyRow.status == "pending")
+                .order_by(ChatNotifyRow.created_at, ChatNotifyRow.id)
+                .limit(1)
+            )
+            if condition is not None:
+                stmt = stmt.where(condition)
+            row = session.scalar(stmt)
+            if row is None:
+                return None
+            row.status = "claimed"
+            session.commit()
+            return ChatNotify.from_row(row)
