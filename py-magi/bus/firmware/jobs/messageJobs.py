@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Integer
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
@@ -40,15 +40,13 @@ class ListConversationMessagesJobBoard(
     job_cls = ListConversationMessagesJob
     result_cls = ListConversationMessagesResult
     row_cls = ListConversationMessagesJobRow
-    def _execute(
-        self, session: Session, job: ListConversationMessagesJob
-    ) -> ListConversationMessagesResult:
-        del session
-        if job.include_archived:
-            messages = self._book.list(conversation_id=job.conversation_id)
-        else:
-            messages = self._book.list(conversation_id=job.conversation_id, archived=False)
-        return ListConversationMessagesResult(messages=messages)
+    def _execute(self, job: ListConversationMessagesJob) -> ListConversationMessagesResult:
+        return ListConversationMessagesResult(
+            messages=self._book.list(
+                conversation_id=job.conversation_id,
+                archived=None if job.include_archived else False,
+            )
+        )
 
 
 @dataclass
@@ -77,8 +75,7 @@ class ArchiveMessagesJobBoard(
     result_cls = ArchiveMessagesResult
     row_cls = ArchiveMessagesJobRow
 
-    def _execute(self, session: Session, job: ArchiveMessagesJob) -> ArchiveMessagesResult:
-        del session
+    def _execute(self, job: ArchiveMessagesJob) -> ArchiveMessagesResult:
         archived = 0
         for message in self._book.list(conversation_id=job.conversation_id, archived=False):
             if message.id >= job.before_message_id:
