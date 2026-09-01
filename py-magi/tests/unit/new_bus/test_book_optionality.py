@@ -13,33 +13,35 @@ from bus.firmware.books.messageBook import Message, MessageRow
 from bus.firmware.books.settingsBook import Setting, SettingRow
 from bus.firmware.books.taskBook import Task, TaskRow
 from bus.firmware.books.toolsBook import Tool, ToolRow
+from bus.firmware.jobs.contactNoteJobs import ListContactNotesJob, ListContactNotesJobBoard
 
 
 @pytest.mark.parametrize(
-    ("record_cls", "row_cls", "required_columns"),
+    ("record_cls", "row_cls", "required_record_fields", "required_columns"),
     [
-        (Contact, ContactRow, {"name", "role", "last_seen_at"}),
-        (ContactNote, ContactNoteRow, {"contact_id", "note", "kind"}),
-        (Conversation, ConversationRow, {"delivery_address", "channel", "topic", "summary"}),
-        (Memory, MemoryRow, {"topic", "detail", "kind", "archived"}),
-        (Message, MessageRow, {"contact_id", "content", "conversation_id", "archived"}),
-        (Setting, SettingRow, {"key", "value"}),
-        (Task, TaskRow, {"conversation_id", "prompt", "cron", "name", "source", "enabled"}),
-        (Tool, ToolRow, {"name", "definition", "enabled"}),
+        (Contact, ContactRow, set(), {"name", "role", "last_seen_at"}),
+        (ContactNote, ContactNoteRow, {"contact_id"}, {"contact_id", "note", "kind"}),
+        (Conversation, ConversationRow, set(), {"delivery_address", "channel", "topic", "summary"}),
+        (Memory, MemoryRow, set(), {"topic", "detail", "kind", "archived"}),
+        (Message, MessageRow, set(), {"contact_id", "content", "conversation_id", "archived"}),
+        (Setting, SettingRow, set(), {"key", "value"}),
+        (Task, TaskRow, set(), {"conversation_id", "prompt", "cron", "name", "source", "enabled"}),
+        (Tool, ToolRow, set(), {"name", "definition", "enabled"}),
     ],
 )
 def test_book_records_allow_none_without_widening_row_constraints(
-    record_cls, row_cls, required_columns
+    record_cls, row_cls, required_record_fields, required_columns
 ) -> None:
     domain_fields = {
         field.name: None
         for field in fields(record_cls)
-        if field.name not in {"id", "created_at", "updated_at"}
+        if field.name not in {"id", "created_at", "updated_at", *required_record_fields}
     }
 
-    record = record_cls(**domain_fields)
+    record = record_cls(**({name: 1 for name in required_record_fields} | domain_fields))
 
     assert all(getattr(record, name) is None for name in domain_fields)
+    assert all(getattr(record, name) is not None for name in required_record_fields)
     assert all(row_cls.__table__.c[name].nullable is False for name in required_columns)
 
 
@@ -62,3 +64,14 @@ def test_book_write_omits_none_and_uses_row_defaults(tmp_path) -> None:
     assert updated.name == "partial-renamed"
     assert updated.role is not None
     assert updated.last_seen_at is not None
+
+
+def test_list_contact_notes_can_omit_the_kind_filter() -> None:
+    book = type("Book", (), {"list": lambda _self, **filters: [filters]})()
+    result = ListContactNotesJobBoard(None, book=book)._execute(
+        ListContactNotesJob(publisher="test", contact_id=7, kind=None)
+    )
+
+    assert result.contact_notes == [
+        {"contact_id": 7, "kind": None},
+    ]
