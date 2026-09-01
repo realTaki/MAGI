@@ -45,6 +45,7 @@ class AgentContext:
         self._worker = worker
         self.conversation_id = conversation_id
         self.conversation = None
+        self.contact_id = 0
         self.summary = ""
         self.history: list[LLMMessage] = []
         self.records: list = []
@@ -71,13 +72,17 @@ class AgentContext:
             )
         )
 
-    async def get(self, job: ChatNotify) -> bool:
-        """Refresh the context snapshot for the next run of this conversation."""
+    def add_chat(self, job: ChatNotify) -> None:
+        """Begin a run from one claimed ChatNotify."""
         self.jobs = [job]
         self.tool_rounds.clear()
         self.final_reply = ""
         self.failed = False
         self._assistant = None
+        self.contact_id = job.contact_id
+
+    async def load(self) -> bool:
+        """Load this conversation's context snapshot for the current run."""
         conversation = await self._conversation()
         if conversation is None:
             return False
@@ -87,7 +92,7 @@ class AgentContext:
         self.history = history
         self.records = records
         self.system = await self._system_prompt(
-            job.contact_id,
+            self.contact_id,
             conversation.instruction,
             conversation.info,
         )

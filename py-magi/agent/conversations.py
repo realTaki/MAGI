@@ -52,8 +52,9 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
+        self._context.add_chat(job)
         try:
-            if not await self._context.get(job):
+            if not await self._context.load():
                 self._context.fail("会话不存在。")
                 return
             await self._process()
