@@ -139,7 +139,7 @@ class UpdateContactJobBoard(
         self._book.update(
             Contact(
                 id=job.contact_id,
-                name=job.name.strip() if job.name is not None else None,
+                name=None if job.name is None else job.name.strip(),
                 nickname=job.nickname,
                 role=job.role,
             )
