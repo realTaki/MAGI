@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from sqlalchemy import DateTime, Text
@@ -29,7 +29,7 @@ class Contact(BaseRecord):
     name: str | None = None
     nickname: str | None = None
     role: ContactRole | None = None
-    last_seen_at: BaseTime | None = None
+    last_seen_at: BaseTime = field(default_factory=utcnow)
 
 
 class ContactRow(BaseRecordMixin):
