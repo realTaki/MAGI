@@ -4,42 +4,23 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
-from .go import go
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 
 
 class OperateFileBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
     BaseJobBoard[JobT, ResultT, RowT]
 ):
-    """Execute file-Book Jobs inside BUS after publish.
-
-    File Books cannot share the Job row's SQL transaction, but the Book remains
-    entirely BUS-private: only this Board invokes its public methods.
-    ``publish`` returns the Job id immediately; ``get_result`` waits for
-    the written result.
-    """
-
-    def _claim(self) -> JobT | None:
-        return None
-
-    def _submit_result(self, result: BaseJobResult) -> bool:
-        """Book operations write their own result; workers do not submit."""
-        del result
-        return False
+    """File-Book Jobs execute inside ``publish``. Workers do not claim them."""
 
     def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
-        go(self._operate(replace(job, id=job_id)))
-        return job_id
-
-    async def _operate(self, job: JobT) -> None:
-        if await self._post_publish(job) is not JobStatus.PENDING:
-            return
-        result = self._execute(job)
+        result = self._execute(replace(job, id=job_id))
         with self._session() as session:
-            row = session.get_one(type(self).row_cls, job.id)
+            row = session.get_one(type(self).row_cls, job_id)
             self._write_result(row, result)
             session.commit()
+        return job_id
 
     def _execute(self, job: JobT) -> ResultT:
+        """Operate on the file Book. Firmware boards implement this."""
         raise NotImplementedError

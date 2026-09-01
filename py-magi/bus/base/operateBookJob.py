@@ -1,8 +1,8 @@
 """Base JobBoard for BUS-owned operations on an internal Book.
 
-These jobs have no worker ``claim`` phase. ``publish`` returns the Job
-id immediately; ``get_result`` waits for the Book operation. The Job
-row lives in the logs store; the Book mutation uses the memories store.
+These jobs have no worker claim phase. ``publish`` executes the Book
+mutation on the calling thread and writes the result before returning
+the Job id.
 """
 
 from __future__ import annotations
@@ -10,43 +10,28 @@ from __future__ import annotations
 from dataclasses import replace
 
 from .BaseBook import BaseBook
-from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow, JobStatus
+from .BaseJob import BaseJob, BaseJobBoard, BaseJobResult, BaseJobRow
 from .engine import EngineFactory
-from .go import go
 
 
 class OperateBookJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
     BaseJobBoard[JobT, ResultT, RowT]
 ):
-    """A Book-operation board with no worker claim."""
+    """A Book-operation board: ``publish`` runs :meth:`_execute` immediately."""
 
     def __init__(self, factory: EngineFactory, *, book: BaseBook) -> None:
         super().__init__(factory)
         self._book = book
 
-    def _claim(self) -> JobT | None:
-        """Book operations execute in the BUS and therefore cannot be claimed."""
-        return None
-
-    def _submit_result(self, result: BaseJobResult) -> bool:
-        """Book operations have no worker result to submit."""
-        del result
-        return False
-
     def publish(self, job: JobT) -> int:
         job_id = self._publish(job)
-        go(self._operate(replace(job, id=job_id)))
-        return job_id
-
-    async def _operate(self, job: JobT) -> None:
-        if await self._post_publish(job) is not JobStatus.PENDING:
-            return
-        result = self._execute(job)
+        result = self._execute(replace(job, id=job_id))
         with self._session() as session:
-            row = session.get_one(type(self).row_cls, job.id)
+            row = session.get_one(type(self).row_cls, job_id)
             self._write_result(row, result)
             session.commit()
+        return job_id
 
     def _execute(self, job: JobT) -> ResultT:
-        """Operate on the Book."""
+        """Operate on the Book. Firmware boards implement this."""
         raise NotImplementedError
