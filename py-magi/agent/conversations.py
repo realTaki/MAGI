@@ -101,6 +101,15 @@ class Conversation:
     # Most recent CallLLM assistant result, held until its tool results are attached.
     _assistant: LLMMessage | None = field(init=False, default=None)
 
+    def __post_init__(self) -> None:
+        conversation = self._conversation()
+        if conversation is not None:
+            self.conversation = conversation
+            self.summary = self._summary_message(conversation.summary)
+        active = self._get_active_messages()
+        self.active_from_id = None if not active else active[0].id
+        self.history = self._messages_from_records(active)
+
     def submit(self, job: ChatNotify) -> None:
         """Queue a claimed turn without running two turns for this conversation."""
         self._pending.append(job)
@@ -111,13 +120,6 @@ class Conversation:
 
     async def _run(self) -> None:
         try:
-            conversation = await self._conversation()
-            if conversation is not None:
-                self.conversation = conversation
-                self.summary = self._summary_message(conversation.summary)
-            active = await self._get_active_messages()
-            self.active_from_id = None if not active else active[0].id
-            self.history = self._messages_from_records(active)
             while self._pending:
                 await self._run_turn(self._pending.popleft())
         finally:
@@ -198,7 +200,7 @@ class Conversation:
 
     async def _refresh(self) -> bool:
         """Refresh per-turn SYSTEM context and tools."""
-        conversation = await self._conversation()
+        conversation = self._conversation()
         if conversation is None:
             return False
         self.conversation = conversation
@@ -229,7 +231,7 @@ class Conversation:
             return
 
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
-        live = await self._get_active_messages()
+        live = self._get_active_messages()
         if len(live) <= keep:
             return
         cut_id = live[-keep].id
@@ -331,20 +333,30 @@ class Conversation:
                 ),
             )
 
-    async def _conversation(self):
-        result = await self._worker.ask(
-            GetConversationJob(
-                publisher=self._worker.worker_name,
-                conversation_id=self.conversation_id,
+    def _conversation(self):
+        board = self._worker.board(GetConversationJob)
+        if board is None:
+            return None
+        result = board.get_result(
+            board.publish(
+                GetConversationJob(
+                    publisher=self._worker.worker_name,
+                    conversation_id=self.conversation_id,
+                )
             )
         )
         return None if result is None else result.conversation
 
-    async def _get_active_messages(self) -> list:
-        result = await self._worker.ask(
-            ListConversationMessagesJob(
-                publisher=self._worker.worker_name,
-                conversation_id=self.conversation_id,
+    def _get_active_messages(self) -> list:
+        board = self._worker.board(ListConversationMessagesJob)
+        if board is None:
+            return []
+        result = board.get_result(
+            board.publish(
+                ListConversationMessagesJob(
+                    publisher=self._worker.worker_name,
+                    conversation_id=self.conversation_id,
+                )
             )
         )
         return [] if result is None or result.messages is None else result.messages
