@@ -129,6 +129,9 @@ class BaseBook[RecordT: BaseRecord]:
     """Internal record collection. Firmware jobs operate through Rows.
 
     Firmware Books set ``record_cls`` and ``row_cls``. CRUD goes through the Row.
+    Book records are intentionally permissive: domain fields may be ``None``.
+    Rows retain their storage constraints, so ``None`` fields are omitted on
+    writes. JobBoards define the required inputs and validate command semantics.
     """
 
     record_cls: type[RecordT]
@@ -170,14 +173,12 @@ class BaseBook[RecordT: BaseRecord]:
             row = session.get(type(self).row_cls, record.id)
             if row is None:
                 return False
-            values = record.to_dict()
+            stored = replace(record, created_at=row.created_at, updated_at=utcnow())
+            values = stored.to_dict()
             values.pop("id", None)
-            values.pop("created_at", None)
             for key, value in values.items():
-                if value is None:
-                    continue
-                setattr(row, key, value)
-            row.updated_at = utcnow()
+                if value is not None:
+                    setattr(row, key, value)
             session.commit()
             return True
 

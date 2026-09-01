@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from sqlalchemy import DateTime, Text
@@ -26,10 +26,10 @@ class ContactRole(StrEnum):
 class Contact(BaseRecord):
     """A channel-independent human or agent known to this Runtime."""
 
-    name: str
+    name: str | None = None
     nickname: str | None = None
-    role: ContactRole = ContactRole.STRANGER
-    last_seen_at: BaseTime = field(default_factory=utcnow)
+    role: ContactRole | None = None
+    last_seen_at: BaseTime | None = None
 
 
 class ContactRow(BaseRecordMixin):
