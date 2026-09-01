@@ -204,7 +204,7 @@ def create_job_boards(
         GetSkillJob: GetSkillJobBoard(factory, skills=skills),
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
-        ChatNotify: ChatNotifyBoard(factory),
+        ChatNotify: ChatNotifyBoard(factory, book=messages),
         DeliveryNotify: DeliveryNotifyBoard(factory),
         RunTaskNotify: RunTaskNotifyBoard(factory, book=tasks),
         GetTaskJob: GetTaskJobBoard(factory, book=tasks),

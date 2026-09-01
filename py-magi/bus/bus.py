@@ -51,6 +51,24 @@ class Bus:
             memories=self._memories,
             files=self._files,
         )
+        from .base.time import utcnow
+        from .firmware.books.contactBook import ContactRole, ContactRow
+
+        with self._memories.session() as session:
+            magi = session.get(ContactRow, 1)
+            if magi is None:
+                session.add(
+                    ContactRow(
+                        id=1,
+                        name=handle,
+                        role=ContactRole.MAGI.value,
+                        last_seen_at=utcnow(),
+                    )
+                )
+            else:
+                magi.name = handle
+                magi.role = ContactRole.MAGI.value
+            session.commit()
         self._workers: dict[str, BaseWorker] = {}
         self._stopped = False
 
