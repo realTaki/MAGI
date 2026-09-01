@@ -15,7 +15,7 @@ from .books.memoryBook import Memory, MemoryKind
 from .books.messageBook import Message
 from .books.promptsBook import PromptsBook
 from .books.settingsBook import Setting
-from .books.skillsBook import SkillsBook
+from .books.skillsBook import Skill, SkillsBook
 from .books.taskBook import Task, TaskBook, TaskSource
 from .books.toolsBook import Tool
 from .jobs import (
@@ -241,6 +241,7 @@ __all__ = [
     "MemoryKind",
     "Message",
     "Setting",
+    "Skill",
     "Task",
     "TaskSource",
     "Tool",

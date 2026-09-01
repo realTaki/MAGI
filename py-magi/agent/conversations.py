@@ -95,7 +95,7 @@ class Conversation:
 
     # All inbound jobs absorbed by this run, including one pending job taken after tools.
     jobs: list[ChatNotify] = field(init=False, default_factory=list)
-    # Text to publish as DeliveryNotify and record as the turn's final assistant message.
+    # Error text for ChatNotifyResult when this turn failed.
     final_reply: str = field(init=False, default="")
     # Determines whether every absorbed ChatNotify is settled COMPLETED or FAILED.
     failed: bool = field(init=False, default=False)
@@ -126,8 +126,9 @@ class Conversation:
                 return
             await self._process()
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
-            self._fail(f"处理请求时发生错误：{exc}")
-            self._deliver()
+            error = f"处理请求时发生错误：{exc}"
+            self._fail(error)
+            self._deliver(error)
         finally:
             self._settle()
 
@@ -148,16 +149,18 @@ class Conversation:
                 timeout=llm_timeout,
             )
             if llm is None:
-                self._fail("回复生成超时，请稍后再试。")
-                self._deliver()
+                error = "回复生成超时，请稍后再试。"
+                self._fail(error)
+                self._deliver(error)
                 return
             if llm.status is not JobStatus.COMPLETED or llm.message is None:
-                self._fail(llm.error or "回复生成失败。")
-                self._deliver()
+                error = llm.error or "回复生成失败。"
+                self._fail(error)
+                self._deliver(error)
                 return
 
             if not self._add_llm(llm.message):
-                self._deliver()
+                self._deliver(llm.message.content)
                 return
             tool_messages = await self._run_tools(
                 llm.message.tool_calls or [],
@@ -166,9 +169,9 @@ class Conversation:
             pending = self._pending.popleft() if self._pending else None
             self._add_tools(tool_messages, pending)
 
-    def _deliver(self) -> None:
+    def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
-        text = self.final_reply or "处理完毕。"
+        text = text or "处理完毕。"
         self._worker.publish_notify(
             DeliveryNotify(
                 publisher=self._worker.worker_name,
@@ -176,7 +179,7 @@ class Conversation:
                 text=text,
             )
         )
-        self._commit_reply()
+        self._commit_reply(text)
 
     def _begin_turn(self, job: ChatNotify) -> None:
         self.jobs = [job]
@@ -278,10 +281,7 @@ class Conversation:
 
     def _add_llm(self, message: LLMMessage) -> bool:
         self._assistant = message
-        if message.tool_calls:
-            return True
-        self.final_reply = message.content
-        return False
+        return bool(message.tool_calls)
 
     def _add_tools(self, results: list[LLMMessage], pending: ChatNotify | None) -> None:
         assistant = self._assistant
@@ -302,13 +302,13 @@ class Conversation:
         self.failed = True
         self.final_reply = error
 
-    def _commit_reply(self) -> None:
+    def _commit_reply(self, text: str) -> None:
         """Move this run's visible input/output into the local history."""
         for round_ in self.tool_rounds:
             if round_.pending is not None:
                 self.history.append(round_.pending)
-        if self.final_reply:
-            self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=self.final_reply))
+        if text:
+            self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
         self.tool_rounds = ()
         self.retained_text = []
 
@@ -399,7 +399,6 @@ class Conversation:
             for record in records
         ]
 
-    @staticmethod
     def _system_message(self) -> LLMMessage:
         """Render the declared SYSTEM sections in their field order."""
         sections = [self.soul]
@@ -503,7 +502,7 @@ class Conversation:
                     results[call_id] = result
                     del pending[call_id]
             if pending:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1)
         messages: list[LLMMessage] = []
         for call_id in pending:
             results[call_id] = None
