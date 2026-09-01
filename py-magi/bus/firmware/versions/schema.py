@@ -42,6 +42,7 @@ def firmware_metadata() -> MetaData:
     )
     from ..jobs.conversationJobs import (  # noqa: F401
         CreateConversationJobRow,
+        GetConversationJobRow,
         UpdateConversationSummaryJobRow,
     )
     from ..jobs.deliveryNotify import DeliveryNotifyRow  # noqa: F401

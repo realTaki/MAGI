@@ -1,51 +1,21 @@
-"""Worker-owned prompt and BUS-owned skill workspace asset lifecycle."""
+"""Agent prompt assets are registered through Firmware Jobs on attach."""
 
 from __future__ import annotations
 
+import pytest
+
+from agent.prompt_defaults import prompt_defaults
 from agent.worker import AgentWorker
-from old_bus.firmwares.books.file import PromptBook
-from old_bus.provision import provision_node_storage
-from proactive.preset_tasks import _load_preset
-from proactive.worker import ProactiveWorker
+from bus import Bus, GetPromptJob
 
 
-async def test_workers_seed_only_their_prompt_records_and_skills_seed_at_bus_open(tmp_path) -> None:
-    workspace = tmp_path / "eva-000"
-    bus = provision_node_storage(state_dir=str(workspace / "memories"), magis_url=None)
-
-    assert PromptBook.KNOWN_PROMPTS["agent/soul"] == "Active workspace persona used for every agent turn."
-    assert bus.prompt_book.list() == []
-    assert {item.name for item in bus.skills_book.list()} >= {
-        "codebase_search",
-        "reminder_template",
-        "web_lookup",
-    }
-    assert (workspace / "skills" / "web_lookup" / "SKILL.md").is_file()
-
-    await AgentWorker(bus).on_start()
-    assert bus.prompt_book.get(key="agent/soul")
-    assert (workspace / "prompts" / "agent" / "soul.md").is_file()
-    assert not (workspace / "prompts" / "proactive" / "task_presets").exists()
-
-    await ProactiveWorker(bus).on_start()
-    preset_keys = {
-        key.removeprefix("proactive/")
-        for key in bus.prompt_book.list()
-        if key.startswith("proactive/")
-    }
-    assert preset_keys == {
-        "daily_standup_brief",
-        "weekly_review",
-        "morning_brief",
-        "night_summary",
-    }
-    assert (workspace / "prompts" / "proactive" / "daily_standup_brief.md").is_file()
-    assert _load_preset(bus, "daily_standup_brief")["prompt"].startswith("You are generating")
-
-    bus.prompt_book.set(key="agent/soul", value="operator persona")
-    bus.prompt_book.register(key="agent/soul", value="upgraded module default")
-    assert bus.prompt_book.get(key="agent/soul") == "operator persona"
-    bus.prompt_book.reset(key="agent/soul")
-    assert bus.prompt_book.get(key="agent/soul") == "upgraded module default"
-    assert bus.prompt_book.delete(key="agent/soul")
-    assert bus.prompt_book.get(key="agent/soul") != "operator persona"
+@pytest.mark.asyncio
+async def test_agent_prompt_assets_are_bus_owned(tmp_path) -> None:
+    expected = {key for key, _ in prompt_defaults()}
+    with Bus("@agent-assets", workspace=tmp_path) as bus:
+        assert bus.attach(AgentWorker)
+        board = bus.board(GetPromptJob)
+        assert board is not None
+        for key in expected:
+            result = board.get_result(board.publish(GetPromptJob(publisher="test", key=key)))
+            assert result is not None and result.value

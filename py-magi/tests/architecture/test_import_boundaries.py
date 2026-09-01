@@ -46,6 +46,17 @@ def test_domain_modules_do_not_reach_into_bus_storage() -> None:
     )
 
 
+def test_agent_uses_only_the_public_bus_contract() -> None:
+    """Agent reads and writes Firmware state exclusively through published Jobs."""
+    forbidden = ("old_bus", "runtime_worker", "bus.base", "bus.firmware")
+    offenders: list[str] = []
+    for path in (MAGI_ROOT / "agent").rglob("*.py"):
+        for module, lineno in _imports(path):
+            if any(module == root or module.startswith(root + ".") for root in forbidden):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno} -> {module}")
+    assert not offenders, "agent must depend only on public BUS Jobs:\n  " + "\n  ".join(offenders)
+
+
 def test_retired_bus_package_names_are_not_imported() -> None:
     """``guild`` / ``library`` / top-level ``bus.db`` have no import surface."""
     retired = ("bus.db", "bus.guild", "bus.library")

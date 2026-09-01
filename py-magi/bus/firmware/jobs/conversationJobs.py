@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import Integer, Text
+from sqlalchemy import JSON, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
@@ -15,9 +16,9 @@ from ..books.conversationBook import Conversation
 
 @dataclass
 class CreateConversationJob(BaseJob):
-    delivery_address: str 
-    channel: str  
-    topic: str  
+    delivery_address: str
+    channel: str
+    topic: str
     instruction: str | None = None
     info: str | None = None
 
@@ -59,9 +60,39 @@ class CreateConversationJobBoard(
 
 
 @dataclass
+class GetConversationJob(BaseJob):
+    """Read the durable context and delivery metadata of one conversation."""
+
+    conversation_id: int
+
+
+@dataclass
+class GetConversationResult(BaseJobResult):
+    conversation: Conversation | None = None
+
+
+class GetConversationJobRow(BaseJobRow):
+    __tablename__ = "jobs_get_conversation"
+
+    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    conversation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class GetConversationJobBoard(
+    OperateBookJobBoard[GetConversationJob, GetConversationResult, GetConversationJobRow]
+):
+    job_cls = GetConversationJob
+    result_cls = GetConversationResult
+    row_cls = GetConversationJobRow
+
+    def _execute(self, job: GetConversationJob) -> GetConversationResult:
+        return GetConversationResult(conversation=self._book.get(job.conversation_id))
+
+
+@dataclass
 class UpdateConversationSummaryJob(BaseJob):
-    conversation_id: int 
-    summary: str 
+    conversation_id: int
+    summary: str
 
 
 @dataclass
