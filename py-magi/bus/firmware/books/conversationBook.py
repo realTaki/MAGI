@@ -30,12 +30,12 @@ class Conversation(BaseRecord):
     last_compaction_at: when summary was last written
     """
 
-    delivery_address: str
-    channel: str
-    topic: str = "New Conversation"
+    delivery_address: str | None = None
+    channel: str | None = None
+    topic: str | None = "New Conversation"
     instruction: str | None = None
     info: str | None = None
-    summary: str = ""
+    summary: str | None = ""
     last_compaction_at: BaseTime | None = None
 
 
