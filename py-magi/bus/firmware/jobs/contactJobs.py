@@ -10,7 +10,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
 from ...base.operateBookJob import OperateBookJobBoard
-from ...base.time import utcnow
 from ..books.contactBook import Contact, ContactRole
 
 
@@ -171,7 +170,7 @@ class TouchContactJobBoard(
     row_cls = TouchContactJobRow
 
     def _execute(self, job: TouchContactJob) -> TouchContactResult:
-        self._book.update(Contact(id=job.contact_id, last_seen_at=utcnow()))
+        self._book.update(Contact(id=job.contact_id))
         return TouchContactResult()
 
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import JSON, Text, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.settingsBook import SettingRow
+from ..books.settingsBook import Setting
 
 
 def _valid_key(key: str) -> bool:
@@ -38,11 +38,11 @@ class GetSettingJobBoard(OperateBookJobBoard[GetSettingJob, GetSettingResult, Ge
     result_cls = GetSettingResult
     row_cls = GetSettingJobRow
 
-    def _execute(self, session: Session, job: GetSettingJob) -> GetSettingResult:
+    def _execute(self, job: GetSettingJob) -> GetSettingResult:
         if not _valid_key(job.key):
             return GetSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        row = session.scalar(select(SettingRow).where(SettingRow.key == job.key))
-        return GetSettingResult(value=None if row is None else row.value)
+        setting = self._book.get(job.key)
+        return GetSettingResult(value=None if setting is None else setting.value)
 
 
 @dataclass
@@ -68,16 +68,10 @@ class SetSettingJobBoard(OperateBookJobBoard[SetSettingJob, SetSettingResult, Se
     result_cls = SetSettingResult
     row_cls = SetSettingJobRow
 
-    def _execute(self, session: Session, job: SetSettingJob) -> SetSettingResult:
+    def _execute(self, job: SetSettingJob) -> SetSettingResult:
         if not _valid_key(job.key):
             return SetSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        row = session.scalar(select(SettingRow).where(SettingRow.key == job.key))
-        if row is None:
-            row = SettingRow(key=job.key, value=job.value)
-            session.add(row)
-        else:
-            row.value = job.value
-        session.flush()
+        self._book.upsert(Setting(key=job.key, value=job.value))
         return SetSettingResult()
 
 
@@ -104,13 +98,12 @@ class DeleteSettingJobBoard(
     result_cls = DeleteSettingResult
     row_cls = DeleteSettingJobRow
 
-    def _execute(self, session: Session, job: DeleteSettingJob) -> DeleteSettingResult:
+    def _execute(self, job: DeleteSettingJob) -> DeleteSettingResult:
         if not _valid_key(job.key):
             return DeleteSettingResult(status=JobStatus.FAILED, error="setting key must be non-empty")
-        row = session.scalar(select(SettingRow).where(SettingRow.key == job.key))
-        if row is None:
-            return DeleteSettingResult()
-        session.delete(row)
+        setting = self._book.get(job.key)
+        if setting is not None:
+            self._book.delete(setting.id)
         return DeleteSettingResult()
 
 
@@ -136,7 +129,7 @@ class ListSettingsJobBoard(
     result_cls = ListSettingsResult
     row_cls = ListSettingsJobRow
 
-    def _execute(self, session: Session, job: ListSettingsJob) -> ListSettingsResult:
+    def _execute(self, job: ListSettingsJob) -> ListSettingsResult:
         del job
-        rows = session.scalars(select(SettingRow).order_by(SettingRow.key)).all()
-        return ListSettingsResult(settings={row.key: row.value for row in rows})
+        settings = {item.key: item.value for item in self._book.list()}
+        return ListSettingsResult(settings=settings)
