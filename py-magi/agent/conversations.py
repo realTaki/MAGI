@@ -53,6 +53,7 @@ class RunContext:
     conversation_id: int
     contact_id: int
     messages: list[LLMMessage] = field(default_factory=list)
+    jobs: list[ChatNotify] = field(default_factory=list)
     final_reply: str = ""
     failed: bool = False
 
@@ -74,12 +75,6 @@ class Conversation:
         self._running = True
         go(self._run())
 
-    def take_steering(self) -> list[ChatNotify]:
-        """Take turns received while the active turn is waiting for a tool."""
-        steering = list(self._pending)
-        self._pending.clear()
-        return steering
-
     async def _run(self) -> None:
         try:
             while self._pending:
@@ -89,27 +84,29 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        ctx = RunContext(conversation_id=job.conversation_id, contact_id=job.contact_id)
+        ctx = RunContext(
+            conversation_id=job.conversation_id,
+            contact_id=job.contact_id,
+            jobs=[job],
+        )
         try:
             await self._process(ctx)
-        except asyncio.CancelledError:
-            ctx.failed = True
-            raise
-        except Exception as exc:  # noqa: BLE001 -- terminal failure belongs on ChatNotify
+        except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
             logger.exception("agent turn failed conversation=%s", job.conversation_id)
             ctx.failed = True
             ctx.final_reply = f"处理请求时发生错误：{exc}"
-            await self._deliver(ctx)
+            self._deliver(ctx)
         finally:
             status = JobStatus.FAILED if ctx.failed else JobStatus.COMPLETED
-            self._worker.submit(ChatNotify, ChatNotifyResult(id=job.id, status=status))
+            for submitted in ctx.jobs:
+                self._worker.submit(ChatNotify, ChatNotifyResult(id=submitted.id, status=status))
 
     async def _process(self, ctx: RunContext) -> None:
         record = await self._conversation(ctx.conversation_id)
         if record is None:
             ctx.failed = True
             ctx.final_reply = "会话不存在。"
-            await self._deliver(ctx)
+            self._deliver(ctx)
             return
 
         history, source_messages = await self._history(ctx.conversation_id, record.summary)
@@ -126,24 +123,28 @@ class Conversation:
             if llm is None:
                 ctx.failed = True
                 ctx.final_reply = "回复生成超时，请稍后再试。"
-                await self._deliver(ctx)
+                self._deliver(ctx)
                 return
             if llm.status is not JobStatus.COMPLETED or llm.message is None:
                 ctx.failed = True
                 ctx.final_reply = llm.error or "回复生成失败。"
-                await self._deliver(ctx)
+                self._deliver(ctx)
                 return
 
             assistant = llm.message
             ctx.messages.append(assistant)
             if not assistant.tool_calls:
                 ctx.final_reply = assistant.content
-                await self._deliver(ctx)
+                self._deliver(ctx)
                 return
-            ctx.messages.extend(await self._run_tools(ctx, assistant.tool_calls))
+            ctx.messages.extend(await self._run_tools(assistant.tool_calls))
+            if self._pending:
+                pending = self._pending.popleft()
+                ctx.jobs.append(pending)
+                ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=pending.text))
 
         ctx.final_reply = "已达到最大工具调用次数，请简化你的请求。"
-        await self._deliver(ctx)
+        self._deliver(ctx)
 
     async def _conversation(self, conversation_id: int):
         result = await self._worker.ask(
@@ -229,7 +230,7 @@ class Conversation:
             else [tool.definition for tool in result.tools]
         )
 
-    async def _run_tools(self, ctx: RunContext, calls: list[LLMToolCall]) -> list[LLMMessage]:
+    async def _run_tools(self, calls: list[LLMToolCall]) -> list[LLMMessage]:
         board = self._worker.board(RunToolJob)
         if board is None:
             return [
@@ -256,9 +257,6 @@ class Conversation:
             "tool_wait_seconds", 300
         )
         while pending and asyncio.get_running_loop().time() < deadline:
-            for steering in self.take_steering():
-                ctx.messages.append(LLMMessage(role=LLMMessageRole.USER, content=steering.text))
-                self._worker.submit(ChatNotify, ChatNotifyResult(id=steering.id))
             for call_id, (_, job_id) in tuple(pending.items()):
                 status = await self._worker.call(board.check_job_status, job_id)
                 if status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
@@ -315,7 +313,7 @@ class Conversation:
             timeout=await self._setting_float("llm_timeout_seconds", 120),
         )
 
-    async def _deliver(self, ctx: RunContext) -> None:
+    def _deliver(self, ctx: RunContext) -> None:
         self._worker.publish_notify(
             DeliveryNotify(
                 publisher=self._worker.worker_name,
