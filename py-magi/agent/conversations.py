@@ -20,7 +20,6 @@ from bus import (
     GetConversationJob,
     GetPromptJob,
     GetSettingJob,
-    GetSkillJob,
     JobStatus,
     ListConversationMessagesJob,
     ListMemoriesJob,
@@ -30,6 +29,7 @@ from bus import (
     LLMMessageRole,
     LLMToolCall,
     RunToolJob,
+    Skill,
     UpdateConversationSummaryJob,
     go,
 )
@@ -63,13 +63,13 @@ class Conversation:
     # Latest durable Conversation record; refreshed before each outer turn.
     conversation: Any | None = field(init=False, default=None)
 
-    # SYSTEM message layout: soul → instructions → skills → memories → conversation metadata.
+    # SYSTEM message layout: soul → skills → memories → conversation metadata.
     # Base personality prompt.
     soul: str = field(init=False, default="")
-    # User-configured operating instruction.
-    instruction: str = field(init=False, default="")
-    # Names of currently available skills.
-    skills: list[str] = field(init=False, default_factory=list)
+    # Names and one-line descriptions of currently available skills.
+    skills: list[Skill] = field(init=False, default_factory=list)
+    # Header for the SYSTEM skills section; body listing is name + description only.
+    skills_block: str = field(init=False, default="")
     # Global long-term memories available to the agent.
     memories: list[Any] = field(init=False, default_factory=list)
     # Conversation-specific instruction from the Conversation record.
@@ -346,8 +346,8 @@ class Conversation:
     async def _refresh_system(self, conversation) -> None:
         """Refresh the independently visible sections of the SYSTEM message."""
         self.soul = await self._prompt("agent/soul") or "You are a helpful assistant."
-        self.instruction = await self._setting("instruction") or ""
         self.skills = await self._skills()
+        self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
         memories_result = await self._worker.ask(
             ListMemoriesJob(publisher=self._worker.worker_name)
         )
@@ -402,17 +402,12 @@ class Conversation:
     def _system_message(self) -> LLMMessage:
         """Render the declared SYSTEM sections in their field order."""
         sections = [self.soul]
-        if self.instruction:
-            sections.append(
-                "# Instructions\n"
-                "These instructions are part of your operating context. Try to comply with all of them. "
-                "If they conflict irreconcilably, explain the conflict instead of silently choosing one.\n\n"
-                "## Your personal instruction\n" + self.instruction
-            )
         if self.skills:
-            sections.append(
-                "## Available skills\n" + "\n".join(f"- {name}" for name in self.skills)
+            listing = "\n".join(
+                f"- {skill.name}: {skill.description}" for skill in self.skills
             )
+            header = self.skills_block or "## Available skills"
+            sections.append(f"{header}\n{listing}")
         if self.memories:
             sections.append(
                 "## Long-term memory\n"
@@ -431,16 +426,11 @@ class Conversation:
         result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
         return None if result is None else result.value
 
-    async def _skills(self) -> list[str]:
+    async def _skills(self) -> list[Skill]:
         listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
-        if listed is None or not listed.names:
+        if listed is None or not listed.skills:
             return []
-        return [
-            name
-            for name in listed.names
-            if await self._worker.ask(GetSkillJob(publisher=self._worker.worker_name, name=name))
-            is not None
-        ]
+        return list(listed.skills)
 
     async def _setting(self, key: str) -> str | None:
         result = await self._worker.ask(GetSettingJob(publisher=self._worker.worker_name, key=key))
