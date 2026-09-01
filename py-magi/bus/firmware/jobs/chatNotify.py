@@ -17,8 +17,8 @@ from ..books.messageBook import Message, MessageBook
 class ChatNotify(BaseJob):
     """One inbound agent turn.
 
-    Channels, tasks, and steering republish this envelope. ``text`` is
-    the inbound body; ``conversation_id`` is the session it belongs to.
+    Channels and tasks publish this envelope. ``text`` is the inbound body;
+    ``conversation_id`` is the session it belongs to.
     ``contact_id`` is the speaker; ``0`` is the system contact.
     Publish writes the same row into MessageBook before the Job is claimable.
     """

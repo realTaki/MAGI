@@ -506,8 +506,9 @@ MAGI 是 Agent-first 系统：大多数行为由 chat 链条驱动，少量行�
 - Firmware Job 的业务校验、Book 操作、文件或数据库等外部系统失败，必须转换为该 Job 的 `FAILED` result；`error` 保存可向调用方转发的人类可读文本。
 - Chat 链应由 Agent 将该 result 继续写成 conversation 中可见的 Message；前端链应将同一错误文本交给前端显示。
 - 已持久化 Job 的失败不能只写日志：Job Row 的请求、状态、结果和 `error` 就是唯一审计记录。
+- 任何无法沿当前调用链正常返回的失败（包括 Worker 取消）都不能只重新抛出或只写日志：必须写入发起 Job 的 `FAILED` result，或发布 `ChatNotify` / `DeliveryNotify` 形成可见 Message。Chat turn 同时写入失败 result 和 Delivery；两者都是持久化记录。
 - `BusForWorker` / `JobBoardClient` 是 BUS 对 Worker 的公开边界。未挂载 Job、未持有 Slot、查询不到记录或基础设施暂时不可用时，返回该操作的正常空值（`None` / `False` / `0` / `[]`），不向 Worker 抛 BUS 异常。
-- Python 异常仅留在 BUS 内部实现边界，用于被 JobBoard 捕获并落成 `FAILED`；`KeyboardInterrupt`、取消等 `BaseException` 不吞掉。
+- Python 异常只留在 BUS 内部实现边界；Worker 不按异常类别决定业务失败路径，而是把失败转换为上述 BUS result 或可见 Message。
 
 若 Job Row 本身无法写入（例如数据库完全不可用），BUS 无法凭空持久化一条失败记录；公开调用仍返回空值。恢复后由上层重试或重新投递。
 
