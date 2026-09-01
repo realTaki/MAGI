@@ -9,12 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Integer, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import JSON, Boolean, Integer
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
 from ...base.operateBookJob import OperateBookJobBoard
-from ..books.taskBook import Task, TaskRow
+from ..books.taskBook import Task
 
 
 @dataclass
@@ -41,14 +41,14 @@ class GetTaskJobBoard(OperateBookJobBoard[GetTaskJob, GetTaskResult, GetTaskJobR
     result_cls = GetTaskResult
     row_cls = GetTaskJobRow
 
-    def _execute(self, session: Session, job: GetTaskJob) -> GetTaskResult:
-        row = session.get(TaskRow, job.task_id)
-        if row is None:
+    def _execute(self, job: GetTaskJob) -> GetTaskResult:
+        task = self._book.get(job.task_id)
+        if task is None:
             return GetTaskResult(
                 status=JobStatus.FAILED,
                 error=f"task {job.task_id} does not exist",
             )
-        return GetTaskResult(task=Task.from_row(row))
+        return GetTaskResult(task=task)
 
 
 @dataclass
@@ -75,8 +75,5 @@ class ListTasksJobBoard(OperateBookJobBoard[ListTasksJob, ListTasksResult, ListT
     result_cls = ListTasksResult
     row_cls = ListTasksJobRow
 
-    def _execute(self, session: Session, job: ListTasksJob) -> ListTasksResult:
-        stmt = select(TaskRow).order_by(TaskRow.id)
-        if job.enabled is not None:
-            stmt = stmt.where(TaskRow.enabled.is_(job.enabled))
-        return ListTasksResult(tasks=[Task.from_row(row) for row in session.scalars(stmt)])
+    def _execute(self, job: ListTasksJob) -> ListTasksResult:
+        return ListTasksResult(tasks=self._book.list(enabled=job.enabled))
