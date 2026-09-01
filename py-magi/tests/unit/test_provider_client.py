@@ -40,10 +40,10 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
     job = CallLLMJob(
         publisher="test",
         messages=[
-            LLMMessage(role=LLMMessageRole.SYSTEM, text="be concise"),
+            LLMMessage(role=LLMMessageRole.SYSTEM, content="be concise"),
             LLMMessage(
                 role=LLMMessageRole.ASSISTANT,
-                text="",
+                content="",
                 tool_calls=[
                     LLMToolCall(
                         tool_call_id="call-1",
@@ -54,7 +54,7 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
             ),
         ],
         tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
-        max_output_tokens=128,
+        max_tokens=128,
     )
 
     restored = CallLLMJob.parse(job.to_dict())
@@ -127,11 +127,11 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
         id=7,
         publisher="test",
         messages=[
-            LLMMessage(role=LLMMessageRole.USER, text="What is the weather?"),
-            LLMMessage(role=LLMMessageRole.TOOL, tool_call_id="earlier", text="sunny"),
+            LLMMessage(role=LLMMessageRole.USER, content="What is the weather?"),
+            LLMMessage(role=LLMMessageRole.TOOL, tool_call_id="earlier", content="sunny"),
         ],
         tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
-        max_output_tokens=128,
+        max_tokens=128,
     )
 
     result = await client.complete(job)
@@ -160,7 +160,7 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
     assert result.status is JobStatus.COMPLETED
     assert result.message == LLMMessage(
         role=LLMMessageRole.ASSISTANT,
-        text="Calling weather",
+        content="Calling weather",
         tool_calls=[
             LLMToolCall(
                 tool_call_id="call-1",
@@ -180,7 +180,7 @@ async def test_invalid_provider_configuration_fails_the_call_job() -> None:
         CallLLMJob(
             id=2,
             publisher="test",
-            messages=[LLMMessage(role=LLMMessageRole.USER, text="hi")],
+            messages=[LLMMessage(role=LLMMessageRole.USER, content="hi")],
             tools=[],
         )
     )
