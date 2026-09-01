@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class Conversation:
-    """One conversation's serial queue, durable snapshot, and current LLM run."""
+    """One conversation's serial queue and current LLM run."""
 
     # Worker is this Conversation's only BUS gateway.
     _worker: AgentWorker
@@ -61,9 +61,6 @@ class Conversation:
     _pending: deque[ChatNotify] = field(init=False, default_factory=deque)
     # Whether that serial loop has already been started.
     _running: bool = field(init=False, default=False)
-
-    # Latest durable Conversation record; refreshed before each outer turn.
-    conversation: Any | None = field(init=False, default=None)
 
     # SYSTEM message layout: soul → skills → memories → conversation metadata.
     # Base personality prompt.
@@ -103,7 +100,6 @@ class Conversation:
     def __post_init__(self) -> None:
         conversation = self._conversation()
         if conversation is not None:
-            self.conversation = conversation
             self.summary = self._summary_message(conversation.summary)
         active = self._get_active_messages()
         self.active_from_id = None if not active else active[0].id
@@ -201,7 +197,6 @@ class Conversation:
         conversation = self._conversation()
         if conversation is None:
             return False
-        self.conversation = conversation
         await self._refresh_system(conversation)
         self.tools = await self._tools()
         return True
@@ -284,8 +279,6 @@ class Conversation:
         self.summary = self._summary_message(summary)
         self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
-        if self.conversation is not None:
-            self.conversation.summary = summary
 
     def _add_llm(self, message: LLMMessage) -> bool:
         self._assistant = message
