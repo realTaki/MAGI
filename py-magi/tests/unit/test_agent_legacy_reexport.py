@@ -2,8 +2,7 @@
 
 Design §19 / Phase 6 commits to removing the single-turn
 ``agent.loop.handle_message`` shim once all production call
-sites have migrated to the actor runtime
-(``submit_agent_message`` + ``wait_for_agent_run``). The current
+sites have migrated to the actor runtime (publishing ``ChatNotify``). The current
 state — confirmed by audit — is:
 
   - ``magi/agent/loop.py`` no longer exists (the module that
