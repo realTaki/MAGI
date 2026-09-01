@@ -100,12 +100,33 @@ def format_system_prompt(
 class AgentContext:
     """Load and construct the data used by one conversation run."""
 
-    def __init__(self, worker: AgentWorker, *, conversation_id: int, contact_id: int) -> None:
+    def __init__(self, worker: AgentWorker, *, conversation_id: int) -> None:
         self._worker = worker
         self.conversation_id = conversation_id
-        self.contact_id = contact_id
+        self.conversation = None
+        self.history: list[LLMMessage] = []
+        self.records: list = []
+        self.system = ""
+        self.tools = []
 
-    async def conversation(self):
+    async def get(self, contact_id: int) -> bool:
+        """Refresh the context snapshot for the next run of this conversation."""
+        conversation = await self._conversation()
+        if conversation is None:
+            return False
+        history, records = await self._history(conversation.summary)
+        self.conversation = conversation
+        self.history = history
+        self.records = records
+        self.system = await self._system_prompt(
+            contact_id,
+            conversation.instruction,
+            conversation.info,
+        )
+        self.tools = await self._tools()
+        return True
+
+    async def _conversation(self):
         result = await self._worker.ask(
             GetConversationJob(
                 publisher=self._worker.worker_name,
@@ -114,7 +135,7 @@ class AgentContext:
         )
         return None if result is None else result.conversation
 
-    async def history(self, summary: str) -> tuple[list[LLMMessage], list]:
+    async def _history(self, summary: str) -> tuple[list[LLMMessage], list]:
         result = await self._worker.ask(
             ListConversationMessagesJob(
                 publisher=self._worker.worker_name,
@@ -124,8 +145,9 @@ class AgentContext:
         records = [] if result is None or result.messages is None else result.messages
         return messages_from_records(summary=summary, records=records), records
 
-    async def system_prompt(
+    async def _system_prompt(
         self,
+        contact_id: int,
         conversation_instruction: str | None,
         conversation_info: str | None,
     ) -> str:
@@ -141,13 +163,13 @@ class AgentContext:
             else memories_result.memories
         )
         contact_result = await self._worker.ask(
-            GetContactJob(publisher=self._worker.worker_name, contact_id=self.contact_id)
+            GetContactJob(publisher=self._worker.worker_name, contact_id=contact_id)
         )
         contact = None if contact_result is None else contact_result.contact
         notes_result = await self._worker.ask(
             ListContactNotesJob(
                 publisher=self._worker.worker_name,
-                contact_id=self.contact_id,
+                contact_id=contact_id,
                 kind=NoteKind.PERMANENT,
             )
         )
@@ -159,7 +181,7 @@ class AgentContext:
         daily_result = await self._worker.ask(
             ListContactNotesJob(
                 publisher=self._worker.worker_name,
-                contact_id=self.contact_id,
+                contact_id=contact_id,
                 kind=NoteKind.DAILY,
             )
         )
@@ -180,7 +202,7 @@ class AgentContext:
             conversation_info=conversation_info,
         )
 
-    async def tools(self):
+    async def _tools(self):
         result = await self._worker.ask(ListToolsJob(publisher=self._worker.worker_name))
         return (
             []

@@ -13,7 +13,6 @@ class AgentWorker(BaseWorker):
 
     worker_name = "agent"
     default_settings = {
-        "max_iterations": "10",
         "max_tokens": "1024",
         "tool_wait_seconds": "300",
         "llm_timeout_seconds": "120",
