@@ -63,9 +63,9 @@ class Conversation:
     # Whether that serial loop has already been started.
     _running: bool = field(init=False, default=False)
 
-    # SYSTEM message layout: soul → skills → memories → conversation metadata.
-    # Base personality prompt.
-    soul: str = field(init=False, default="")
+    # SYSTEM message layout: AGENT.md → skills → memories → conversation metadata.
+    # Base personality prompt from AGENT.md.
+    agent_md: str = field(init=False, default="")
     # Names and one-line descriptions of currently available skills.
     skills: list[Skill] = field(init=False, default_factory=list)
     # Header for the SYSTEM skills section; body listing is name + description only.
@@ -373,7 +373,7 @@ class Conversation:
 
     async def _refresh_system(self, conversation) -> None:
         """Refresh the independently visible sections of the SYSTEM message."""
-        self.soul = await self._prompt("agent/soul") or "You are a helpful assistant."
+        self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
         self.skills = await self._skills()
         self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
         memories_result = await self._worker.ask(
@@ -433,7 +433,7 @@ class Conversation:
 
     def _system_message(self) -> LLMMessage:
         """Render the declared SYSTEM sections in their field order."""
-        sections = [self.soul]
+        sections = [self.agent_md]
         if self.skills:
             listing = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.skills)
             header = self.skills_block or "## Available skills"

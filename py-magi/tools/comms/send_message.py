@@ -2,9 +2,8 @@
 operator without leaving the tool loop.
 
 Use case: the LLM is partway through a multi-turn tool
-chain (e.g. "read SOUL, list skills, then reply") and
-wants to give the user a status update ("Reading your
-SOUL...") instead of going silent for the full tool
+chain (e.g. "read AGENT.md, list skills, then reply") and
+wants to give the user a status update ("Reading AGENT.md...") instead of going silent for the full tool
 chain duration. Scheduled tasks also use this tool to
 push results to whichever channel the task targets.
 

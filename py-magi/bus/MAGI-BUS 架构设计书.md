@@ -1101,7 +1101,7 @@ iterate
 ```
 
 路径必须落在 Book 目录内，写入是原子的。
-`PromptsBook` 用无后缀相对路径（例如 `agent/soul`）对应 `.md` 文件。
+`PromptsBook` 用无后缀相对路径（例如 `agent/AGENT`）对应 `.md` 文件（`AGENT.md`）。
 `SkillsBook` 把每个含 `SKILL.md` 的子目录当成一个 skill，并在空目录时
 从包装内的默认 skills 拷入。
 

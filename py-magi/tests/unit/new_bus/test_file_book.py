@@ -37,24 +37,24 @@ def test_file_store_rejects_path_escape(tmp_path) -> None:
 
 def test_file_store_writes_nested_names(tmp_path) -> None:
     store = FileEngine(tmp_path / "workspace").book("notes")
-    assert store.write_text("agent/soul.md", "nested") is True
-    assert store.read_text("agent/soul.md") == "nested"
-    assert store.file_names() == ["agent/soul.md"]
+    assert store.write_text("nested/file.md", "nested") is True
+    assert store.read_text("nested/file.md") == "nested"
+    assert store.file_names() == ["nested/file.md"]
 
 
 def test_prompts_book_round_trip(tmp_path) -> None:
     book = PromptsBook(FileEngine(tmp_path / "workspace"))
     assert book.directory == tmp_path / "workspace" / "prompts"
-    assert book.register(key="agent/soul", value="default soul") is True
-    assert book.get(key="agent/soul") == "default soul"
-    book.set(key="agent/soul", value="custom soul")
-    assert book.get(key="agent/soul") == "custom soul"
-    assert book.register(key="agent/soul", value="newer default") is False
-    assert book.get(key="agent/soul") == "custom soul"
-    book.reset(key="agent/soul")
-    assert book.get(key="agent/soul") == "newer default"
+    assert book.register(key="agent/AGENT", value="default persona") is True
+    assert book.get(key="agent/AGENT") == "default persona"
+    book.set(key="agent/AGENT", value="custom persona")
+    assert book.get(key="agent/AGENT") == "custom persona"
+    assert book.register(key="agent/AGENT", value="newer default") is True
+    assert book.get(key="agent/AGENT") == "custom persona"
+    book.reset(key="agent/AGENT")
+    assert book.get(key="agent/AGENT") == "newer default"
     assert book.set(key="../outside", value="bad") is False
-    assert book.get(key="agent/defaults/soul") is None
+    assert book.get(key="agent/defaults/AGENT") is None
 
 
 def test_skills_book_seeds_packaged_defaults(tmp_path) -> None:

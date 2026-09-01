@@ -271,7 +271,7 @@ export default {
     autoCompact: "自动压缩",
     timezone: "系统时区",
     // Card subtitles / descriptions.
-    registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 SOUL.md 决定启用哪些。",
+    registryDesc: "MAGI 系统识别的 skill / connector / channel 等组件目录。生产部署由 AGENT.md 决定启用哪些。",
     directoryDesc: "联系人列表：成员与 admin，可管理角色和登录权限。",
     channelsDesc: "各 IM 通道的启用/停用开关。切换即时生效，无需重启。",
     webuiAccessDesc: "拥有 WebUI 登录权限的操作员。每个联系人的 admin 标志独立于角色 (assigned / guest)。新操作员通过 Telegram 验证码握手流程添加。",
@@ -399,7 +399,7 @@ export default {
   },
   chat: {
     headerFallback: "新对话",
-    subtitle: "跟系统 LLM 直接对话。回复会用 SOUL.md 里定义的 persona。",
+    subtitle: "跟系统 LLM 直接对话。回复会用 AGENT.md 里定义的 persona。",
     inputPlaceholder: "输入消息…",
     emptyHint: "输入消息开始对话。回车换行，⌘/Ctrl + 回车发送。",
     sending: "正在回复",
@@ -550,10 +550,10 @@ export default {
     overdue: "已逾期",
   },
   persona: {
-    title: "个性（SOUL.md）",
+    title: "个性（AGENT.md）",
     description: "系统回复时使用的个性（人设）。编辑后保存即生效 — 下一条消息会用新的个性调 LLM。重置会恢复成内置的默认模板。",
-    fallbackBanner: "当前没有自定义的 SOUL.md — agent 在用内置的通用回退人设。点「保存」会创建自定义版本。",
-    draftLabel: "SOUL.md 内容",
+    fallbackBanner: "当前没有自定义的 AGENT.md — agent 在用内置的通用回退人设。点「保存」会创建自定义版本。",
+    draftLabel: "AGENT.md 内容",
     draftHint: "下方文本就是 agent 当前正在用的个性。直接在原地编辑，点「保存」才会生效；点「重置」恢复成内置默认模板。",
     charsLine: "{chars} / {max} 字符",
     overLimitHint: " — 超出上限，请删减",
