@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, fields, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from enum import Enum
 from types import UnionType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
@@ -20,8 +20,8 @@ class BaseRecord:
     """id / created_at / updated_at. BUS assigns these."""
 
     id: int = 0
-    created_at: BaseTime | None = None
-    updated_at: BaseTime | None = None
+    created_at: BaseTime = field(default_factory=utcnow)
+    updated_at: BaseTime = field(default_factory=utcnow)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -147,7 +147,7 @@ class BaseBook[RecordT: BaseRecord]:
         now = utcnow()
         prepared = replace(
             record,
-            created_at=record.created_at or now,
+            created_at=now,
             updated_at=now,
         )
         with self._session() as session:
