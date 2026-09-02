@@ -68,8 +68,8 @@ class Bus:
         """Create and attach one worker to this BUS.
 
         *settings* are startup parameters (for example CLI values from
-        ``magi.py``). They are boosted onto the BUS before the worker
-        starts, replacing that worker's defaults for those keys.
+        ``magi.py``). They are forwarded to the worker; the worker decides
+        whether to persist them with :meth:`boost_settings`.
         """
         if self._stopped:
             raise ValueError("Bus is stopped")
@@ -79,9 +79,7 @@ class Bus:
             raise ValueError(f"{type(instance).__qualname__} needs worker_name")
         if worker_name in self._workers:
             raise ValueError(f"duplicate worker_name: {worker_name}")
-        if settings is not None:
-            self.boost_settings(worker_name=worker_name, settings=settings)
-        if not instance.attach():
+        if not instance.attach(settings):
             instance.detach()
             return False
         self._workers[worker_name] = instance
