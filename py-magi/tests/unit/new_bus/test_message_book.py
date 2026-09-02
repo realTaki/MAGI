@@ -94,6 +94,12 @@ def test_append_and_list_messages_follow_the_conversation_contract(bus: Bus) -> 
     transcript = _result(bus, listed)
     assert transcript is not None
     assert [item.content for item in transcript.messages] == ["hello", "hi"]
+    latest = _result(
+        bus,
+        _publish(bus, ListConversationMessagesJob(conversation_id=conversation_id, last_n=1)),
+    )
+    assert latest is not None
+    assert [item.content for item in latest.messages] == ["hi"]
 
 
 def test_archive_is_scoped_to_one_conversation_and_hidden_by_default(bus: Bus) -> None:
