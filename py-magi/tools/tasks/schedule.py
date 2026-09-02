@@ -306,25 +306,17 @@ class ScheduleTaskTool(BaseTool):
             title=f"[定时] {name}",
             delivery_address=task_conversation_delivery_address,
         )
-        try:
-            task_id, is_update = self.bus.tasks_book.upsert_by_name(
-                name=name,
-                prompt=prompt,
-                cron=cron,
-                run_at=run_at_iso,
-                delivery_to=delivery_to,
-                target_channel=target_channel,
-                contact_id=operator_id,
-                conversation_id=new_conversation_id_str,
-                tz=resolved_tz,
-            )
-        except ValueError as e:
-            # Book owns the write invariants (length caps,
-            # channel enum, source enum). Translate the
-            # ValueError to a clean LLM-facing error
-            # rather than letting it bubble to the worker's
-            # "tool.crashed" envelope.
-            return ToolResult.err(str(e))
+        task_id, is_update = self.bus.tasks_book.upsert_by_name(
+            name=name,
+            prompt=prompt,
+            cron=cron,
+            run_at=run_at_iso,
+            delivery_to=delivery_to,
+            target_channel=target_channel,
+            contact_id=operator_id,
+            conversation_id=new_conversation_id_str,
+            tz=resolved_tz,
+        )
 
         return ToolResult(
             content=(

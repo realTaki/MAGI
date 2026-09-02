@@ -87,21 +87,15 @@ class UpdateMemoryTool(BaseTool):
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
-        try:
-            candidate = replace(
-                existing,
-                subject=kwargs.get("subject", existing.subject),
-                body=kwargs.get("body", existing.body),
-                priority=kwargs.get("priority", existing.priority),
-            )
-            if not self.bus.memory_book.update(candidate):
-                return ToolResult.err(f"memory {memory_id} no longer exists")
-            view = self.bus.memory_book.get(memory_id)
-            assert view is not None
-        except LookupError as e:
-            return ToolResult.err(str(e))
-        except ValueError as e:
-            return ToolResult.err(f"update_memory failed: {e}")
+        candidate = replace(
+            existing,
+            subject=kwargs.get("subject", existing.subject),
+            body=kwargs.get("body", existing.body),
+            priority=kwargs.get("priority", existing.priority),
+        )
+        if not self.bus.memory_book.update(candidate):
+            return ToolResult.err(f"memory {memory_id} no longer exists")
+        view = self.bus.memory_book.get(memory_id)
         logger.info(
             "update_memory: row %s updated by %s",
             memory_id,

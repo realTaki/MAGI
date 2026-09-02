@@ -100,61 +100,21 @@ class AddContactTool(BaseTool):
             return ToolResult.err(
                 f"role must be one of {sorted(r.value for r in Role)!r}, got {role_str!r}"
             )
-        try:
-            record_id = self.bus.contacts_book.add(Contact(
-                name=name,
-                display_name=kwargs.get("display_name"),
-                role=role,
-                tgid=kwargs.get("tgid"),
-            ))
-            contact = self.bus.contacts_book.get(record_id)
-            if contact is None:
-                raise RuntimeError(f"contact row {record_id} disappeared after insert")
-        except ValueError as e:
-            # ``contacts_book.add`` owns write invariants
-            # (non-empty name, role enum membership).
-            # Translate to a clean LLM-facing
-            # error rather than letting it bubble to the
-            # worker's "tool.crashed" envelope (which would
-            # imply a programming error rather than a
-            # caller-fixable validation).
-            return ToolResult.err(str(e))
+        record_id = self.bus.contacts_book.add(Contact(
+            name=name,
+            display_name=kwargs.get("display_name"),
+            role=role,
+            tgid=kwargs.get("tgid"),
+        ))
+        contact = self.bus.contacts_book.get(record_id)
 
         initial_note = kwargs.get("notes")
         if initial_note and str(initial_note).strip():
-            # Forwarded to a second Book so the contact row
-            # and its first note live on the same schema
-            # they would have had via a follow-up
-            # ``add_contact_note`` call. We collapse both
-            # outcomes into one ``{"created": ...,
-            # "initial_note": ...}`` payload so the LLM
-            # doesn't have to thread two tool results.
-            try:
-                note_id = self.bus.contact_notes_book.add(ContactNote(
-                    contact_id=contact.id,
-                    note=str(initial_note),
-                ))
-                note = self.bus.contact_notes_book.get(note_id)
-                if note is None:
-                    raise RuntimeError(f"contact note {note_id} disappeared after insert")
-            except ValueError as e:
-                # Contact row was created — surface the
-                # note-validation failure but keep the
-                # partial-success contact in the payload so
-                # the LLM can decide whether to retry the
-                # note write.
-                logger.warning(
-                    "add_contact: contact %s created but initial note rejected: %s",
-                    contact.id,
-                    e,
-                )
-                return ToolResult.ok(
-                    {
-                        "created": contact.to_dict(),
-                        "initial_note": None,
-                        "initial_note_error": str(e),
-                    }
-                )
+            note_id = self.bus.contact_notes_book.add(ContactNote(
+                contact_id=contact.id,
+                note=str(initial_note),
+            ))
+            note = self.bus.contact_notes_book.get(note_id)
             logger.info(
                 "add_contact: contact=%s created with initial note=%s",
                 contact.id,

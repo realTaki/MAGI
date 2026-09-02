@@ -99,19 +99,9 @@ class CompleteActionItemTool(BaseTool):
             return ToolResult.err(
                 f"action item {item_id} not found or not owned by the calling operator"
             )
-        try:
-            row = self.bus.action_items_book.complete(
-                action_item_id=item_id,
-                note=note,
-            )
-        except ValueError as e:
-            # ``note`` length invariant lives on the Book.
-            # Translate the ValueError to an LLM-facing
-            # error rather than letting it bubble to the
-            # worker's "tool.crashed" envelope (which would
-            # imply a programming error rather than a
-            # caller fixable at the prompt).
-            return ToolResult.err(str(e))
-        assert row is not None  # just looked it up
+        row = self.bus.action_items_book.complete(
+            action_item_id=item_id,
+            note=note,
+        )
         logger.info("complete_action_item: item %s completed by %s", item_id, ct_id)
         return ToolResult.ok({"item": row.to_dict()})

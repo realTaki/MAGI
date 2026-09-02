@@ -102,19 +102,11 @@ class UpdateDailyNoteTool(BaseTool):
             except ValueError:
                 return ToolResult.err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
 
-        try:
-            row = self.bus.contact_notes_book.upsert_daily_note(
-                contact_id=int(contact_id),
-                body_delta=body_delta,
-                note_date=note_date,
-            )
-        except ValueError as e:
-            # ``contact_notes_book.upsert_daily_note`` owns
-            # the non-empty-after-strip invariant and the
-            # length caps. Translate to a clean LLM-facing
-            # error rather than letting it bubble to the
-            # worker's "tool.crashed" envelope.
-            return ToolResult.err(str(e))
+        row = self.bus.contact_notes_book.upsert_daily_note(
+            contact_id=int(contact_id),
+            body_delta=body_delta,
+            note_date=note_date,
+        )
 
         logger.info(
             "update_daily_note: contact=%s appended to row=%s",

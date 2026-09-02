@@ -50,10 +50,7 @@ class ToolsWorker(BaseWorker):
         return True
 
     async def _on_run(self, job: RunToolJob) -> None:
-        try:
-            self._fail(job, "tool execution is not attached")
-        except Exception as exc:  # noqa: BLE001 -- no job can kill the worker
-            self._fail(job, str(exc))
+        self._fail(job, "tool execution is not attached")
 
     def _fail(self, job: RunToolJob, error: str) -> None:
         self.submit(

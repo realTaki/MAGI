@@ -159,36 +159,20 @@ class AddActionItemTool(BaseTool):
             try:
                 due_date = datetime.fromisoformat(raw)
             except ValueError:
-                try:
-                    due_date = datetime.strptime(raw, "%Y-%m-%d")
-                except ValueError:
-                    return ToolResult.err(
-                        f"due_date must be a valid date (YYYY-MM-DD), got {raw!r}"
-                    )
+                return ToolResult.err(
+                    f"due_date must be a valid date (YYYY-MM-DD), got {raw!r}"
+                )
 
-        try:
-            item_id = self.bus.action_items_book.add(ActionItem(
-                contact_id=int(kwargs.get("contact_id") or 0),
-                title=title,
-                description=description,
-                target_url=target_url,
-                priority=priority,
-                due_date=due_date,
-                source=source,
-            ))
-            item = self.bus.action_items_book.get(item_id)
-            if item is None:
-                raise RuntimeError(f"action item {item_id} disappeared after insert")
-        except ValueError as e:
-            # Book owns the write invariants (title
-            # non-empty, length caps, enum membership for
-            # ``priority`` / ``source``). Translate the
-            # ValueError to a clean LLM-facing error;
-            # without this the worker would only catch it
-            # at the outer layer and surface as a
-            # "tool.crashed" envelope, which misleads
-            # callers into thinking a bug fired.
-            return ToolResult.err(str(e))
+        item_id = self.bus.action_items_book.add(ActionItem(
+            contact_id=int(kwargs.get("contact_id") or 0),
+            title=title,
+            description=description,
+            target_url=target_url,
+            priority=priority,
+            due_date=due_date,
+            source=source,
+        ))
+        item = self.bus.action_items_book.get(item_id)
 
         logger.info(
             "add_action_item: item %s created for contact=%s title=%r source=%r",
