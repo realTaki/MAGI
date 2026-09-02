@@ -37,7 +37,7 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || die "$1 is required on PATH";
 if ! command -v magi >/dev/null 2>&1; then
   warn "'magi' is not on PATH. Attempting to install via uv ..."
   require_cmd uv
-  ( cd "$REPO_ROOT" && uv tool install --extra adam --extra eva . )
+  ( cd "$REPO_ROOT/py-magi" && uv tool install --extra adam --extra eva . )
   if ! command -v magi >/dev/null 2>&1; then
     die "uv install finished but 'magi' is still not on PATH. Try: uv tool dir/bin"
   fi

@@ -8,7 +8,12 @@ permalink: /architecture/
 
 The current MAGI runtime is organised around one durable boundary — **BUS**
 (`magi.bus`) — that owns Books (typed CRUD), Job Boards (publish → claim →
-submit_result), and the file-backed prompt/skill shelves. This document is
+submit_result), and the file-backed prompt/skill shelves. Inside that
+boundary the package is split in two: **bases** (`magi/bus/bases/`) hold
+the Job/Book contracts and the database integration (engines, `Base`,
+`FileShelf`) without any table or column definitions; **firmwares**
+(`magi/bus/firmwares/`) hold the concrete Jobs, Books, and their
+schema/Alembic revisions. This document is
 the authoritative architecture for the current runtime: canonical naming,
 dependency rules, runtime shape, composition root, durable invariants, and
 how each domain package attaches to BUS.
@@ -32,10 +37,19 @@ user-facing documentation. They are the only supported names.
 `open_bus(magis_url=…)` returns a deliberately narrower `MagisBus`: a
 database-only control-plane facade, not a second node runtime or compatibility
 layer. It does not create a workspace, local SQLite database, file shelf, or
-workers. There is no fallback singleton, dual-write path, or alternate node BUS
-implementation. The retired
-`magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are banned by
-`tests/architecture/test_import_boundaries.py`.
+workers. There is no fallback singleton or dual-write path in the current
+runtime.
+
+The naming has two generations: the live `magi.bus` is the evolved, adopted
+successor of the previous **new BUS** work; `magi.new_bus` is the next
+**MAGI-BUS vNext** iteration now being developed alongside it. The latter is
+not a retired compatibility package. It currently has its own `Bus`,
+`BusForWorker`, Dock/Slot lifecycle, storage backends, and Firmware contract; its
+design baseline lives in
+[`magi/new_bus/MAGI-BUS 架构设计书.md`](../py-magi/magi/new_bus/MAGI-BUS%20架构设计书.md).
+The production runtime described below is still composed through
+`magi.bus.bootstrap.open_bus(...)` until that migration is explicitly wired
+through the startup composition root.
 
 Identifiers follow one name per concept — `magi_id`, `contact_id`,
 `conversation_id`, `job_id`, `tgid` — across ORM columns, DTO fields,
@@ -76,11 +90,10 @@ still appear in git history and old database dumps, is in
                 └─────────────────────────────────────┘
 ```
 
-A single process owns one `Bus`; the Bus facade is built by
+A single process owns one runtime `Bus`; the facade is built by
 `magi.bus.bootstrap.open_bus(...)` and injected (by constructor) into every
-Worker. There is no process-global `BUS` singleton and no alternate Bus
-implementation — the import-boundary tests in `tests/architecture/` enforce
-this.
+Worker. There is no process-global `BUS` singleton. `magi.new_bus` is the
+separate vNext implementation and is not yet the runtime composition root.
 
 ## Composition root
 
@@ -152,12 +165,15 @@ Durable runtime rules (enforced by the architecture guard):
 | Path | Responsibility |
 | --- | --- |
 | `magi/bus/bootstrap.py` | `Bus` dataclass + `open_bus(...)` composition |
-| `magi/bus/db/` | SQLAlchemy `Base`, engine factories, `FileShelf` (private) |
-| `magi/bus/guild/` | Job Boards (`BaseJobBoard`, `publish → claim → submit_result`) |
-| `magi/bus/library/local/` | Local-SQLite Books (conversations, tasks, contacts, memory, …) |
-| `magi/bus/library/magis/` | MAGIS-side Books (society, members, roles, control plane) |
-| `magi/bus/library/file/` | File-backed `PromptBook` + `SkillsBook` |
-| `magi/bus/stream.py` | `StreamHub` — ephemeral SSE notification only |
+| `magi/bus/bases/` | Job/Book/Stream bases (`BaseJobBoard`, `BaseBook`, `BaseFileBook`, `StreamHub`) |
+| `magi/bus/bases/db/` | SQLAlchemy `Base`, engine factories, `FileShelf` — no tables |
+| `magi/bus/firmwares/schema.py` | Scope-filtered `create_all` + Alembic upgrade |
+| `magi/bus/firmwares/alembic/` | Revisioned DDL for firmware tables |
+| `magi/bus/firmwares/jobs/` | Concrete Job Boards (`publish → claim → submit_result`) |
+| `magi/bus/firmwares/books/local/` | Local-SQLite Books (conversations, tasks, contacts, memory, …) |
+| `magi/bus/firmwares/books/magis/` | MAGIS-side Books (society, members, roles, control plane) |
+| `magi/bus/firmwares/books/file/` | File-backed `PromptBook` + `SkillsBook` |
+| `magi/bus/bases/stream.py` | `StreamHub` — ephemeral SSE notification only |
 | `magi/startup/runtime.py` | composition root + worker lifecycle |
 | `magi/startup/workers.py` | `WorkerRegistry` — sole owner of all Worker instances |
 | `magi/startup/worker.py` | `RuntimeWorker` — shared lifecycle primitives |
@@ -169,13 +185,15 @@ Durable runtime rules (enforced by the architecture guard):
 | `magi/channels/worker_base.py` | `ChannelWorker` — shared outbound-delivery template |
 | `magi/channels/{tg,webui,tasks}/worker.py` | per-channel Worker implementations |
 | `magi/channels/api/app.py` | FastAPI app factory (Runtime, Control, standalone) |
-| `magi/bus/library/magis/membershipBook.py` | `MagisMembershipBook.responsibility` + collaboration directory |
+| `magi/bus/firmwares/books/magis/membershipBook.py` | `MagisMembershipBook.responsibility` + collaboration directory |
 | `magi/proactive/worker.py` | system-level proactive policies (last to start) |
 | `magi/connectors/` | long-lived external data sources + in-process event bus |
+| `magi/new_bus/` | Next MAGI-BUS vNext iteration: next-generation protocol backplane under active integration |
 
-There is no alternate BUS implementation or compatibility import path; the
-retired `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names are
-forbidden by `tests/architecture/test_import_boundaries.py`.
+The current runtime and the next MAGI-BUS vNext iteration coexist during the
+migration: `magi.bus` is the live, evolved form of the previous new BUS, while
+`magi.new_bus` is the next BUS implementation being validated independently.
+Do not treat either package as a compatibility alias for the other.
 
 ## Channel egress — `ChannelWorker` template
 
@@ -288,11 +306,10 @@ Boards above.
 | `magi.mcp` | MCP connection lifecycle, `ChangeMCPServerJob` glue | `magi.bus`, `magi.tools` |
 | `magi.channels` | HTTP, WebUI, Telegram, task adapters | `magi.bus` |
 | `magi.proactive` | system-level proactive policies + Worker | `magi.bus` |
-| `magi.connectors` | long-lived external data sources, in-process event bus | `magi.bus` (configs) |
 
 Dependency direction is enforced one-way: `magi.{agent,channels,tools,mcp,
-providers,proactive,connectors} → magi.bus`. Domain code must never import
-`magi.bus.db` (tests/architecture/test_import_boundaries.py).
+providers,proactive} → magi.bus`. Domain code must never import
+`magi.bus.bases.db` (tests/architecture/test_import_boundaries.py).
 
 ### `magi.agent` — AgentWorker
 
@@ -303,7 +320,7 @@ providers,proactive,connectors} → magi.bus`. Domain code must never import
   chat loop and vice versa.
 - Receives a fully-wired `Bus` and the runtime's `magi_id` via constructor
   injection (`AgentWorker(bus, magi_id=…)`). `magi_id` is used to render the
-  per-MAGI instruction block via `magi.bus.library.magis.membershipBook
+  per-MAGI instruction block via `magi.bus.firmwares.books.magis.membershipBook
   .MagisMembershipBook.instruction_context` and to scope the
   **MAGIS collaboration directory** the LLM sees at every turn
   (`MagisMembershipBook.list_collaboration_directory(magi_id=…)`, filtered to
@@ -491,26 +508,12 @@ setting.
 - Main loop drains `seed_preset_tasks_job_board` via
   `magi.proactive.preset_tasks.handle_seed_job`.
 
-### `magi.connectors` — external data streams
-
-- Long-lived objects with `connect()` / `disconnect()` / `fetch()` /
-  `name()` / `config()` (see `magi.connectors.base.Connector`).
-- Lifecycle: operator adds a `ConnectorConfig` row; the runtime calls
-  `connectors.registry.load_connectors()` at boot, which constructs one
-  connector per enabled config and calls `await connector.connect()`.
-- Emits `ConnectorEvent`s into an in-process pub/sub bus
-  (`magi.connectors.bus.EventBus`) — shared with the plugins subsystem.
-  The bus is in-process only; cross-MAGI event sharing would route via
-  a2a (deferred).
-- The LLM never calls a connector directly; tool wrappers call
-  `connector.fetch(...)` (Gmail, Calendar, Linear, …).
-
 ## Storage ownership
 
 | Scope | Location | Book(s) |
 | --- | --- | --- |
-| **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.library.local.*` Books (conversations, messages, memory, contacts, settings, tasks, tool catalog state, durable local job boards, delivery state) |
-| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.library.magis.*` Books (society tree, admins, memberships, roles, runtime-control records, singleton WebUI control settings) **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
+| **MAGI private** | `<workspace>/memories/magi.db` (SQLite) | All `magi.bus.firmwares.books.local.*` Books (conversations, messages, memory, contacts, settings, tasks, tool catalog state, durable local job boards, delivery state) |
+| **MAGIS shared** | `MAGIS_DATABASE_URL`, or `MAGI_Societies/<magis-name>/magis.db` for named local SQLite | `magi.bus.firmwares.books.magis.*` Books (society tree, admins, memberships, roles, runtime-control records, singleton WebUI control settings) **and** the MAGIS-shared A2A request/notify job boards (instantiated via `Bus._magis_factory`, never written to a MAGI's local SQLite) |
 | **File-backed** | `<workspace>/prompts/<owner>/…`, `<workspace>/skills/<name>/…` | `PromptBook`, `SkillsBook` |
 
 `magi.bus` owns the engine factories, table registration, and file-backed
@@ -540,7 +543,7 @@ afterward `SkillsBook` reads only that workspace directory.
 Schema materialisation is scoped: `synchronise_schema(local_factory,
 scope=LOCAL_SCOPE)` creates local Books and durable local job boards only
 in the MAGI-private store, while `synchronise_schema(magis_factory,
-scope=MAGIS_SCOPE)` creates `library.magis` Books and the A2A boards only
+scope=MAGIS_SCOPE)` creates `firmwares.books.magis` Books and the A2A boards only
 in the MAGIS store. Two distinct DSNs therefore cannot accidentally
 receive each other's tables.
 
@@ -559,10 +562,12 @@ or dual writes.
 The architecture guard in `tests/architecture/test_import_boundaries.py`
 enforces:
 
-- Domain code does not import `magi.bus.db`.
+- Domain code does not import `magi.bus.bases.db`.
+- `magi/bus/bases/` does not import firmwares. Table and column definitions live only in `magi/bus/firmwares/`.
 - BUS does not import domain worker implementations.
-- The retired `magi.new_bus` / `NewBus` / `bootstrap_new_bus` names never
-  reappear in production code.
+- `magi.new_bus` is MAGI-BUS vNext, not a retired import path. Its adoption by
+  the runtime must be an explicit composition-root migration rather than an
+  implicit compatibility shim.
 
 The hook subsystem has its own guard tests (`test_hook_import_boundaries.py`
 and `test_hook_envelope_purity.py`).

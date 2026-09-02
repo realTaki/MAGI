@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+from dataclasses import fields
+
+import pytest
+
+from bus import Bus
+from bus.base.time import BaseTime
+from bus.firmware.books.contactBook import Contact, ContactBook, ContactRow
+from bus.firmware.books.contactNoteBook import ContactNote, ContactNoteRow, NoteKind
+from bus.firmware.books.conversationBook import Conversation, ConversationBook, ConversationRow
+from bus.firmware.books.memoryBook import Memory, MemoryKind, MemoryRow
+from bus.firmware.books.messageBook import Message, MessageRow
+from bus.firmware.books.settingsBook import Setting, SettingRow
+from bus.firmware.books.taskBook import Task, TaskRow, TaskSource
+from bus.firmware.books.toolsBook import LLMTool, Tool, ToolRow
+from bus.firmware.jobs.contactNoteJobs import ListContactNotesJob, ListContactNotesJobBoard
+
+
+@pytest.mark.parametrize(
+    ("record_cls", "row_cls", "required_values", "required_columns"),
+    [
+        (Contact, ContactRow, {}, {"name", "role", "last_seen_at"}),
+        (ContactNote, ContactNoteRow, {}, {"contact_id", "note", "kind"}),
+        (Conversation, ConversationRow, {}, {"delivery_address", "channel", "topic", "summary"}),
+        (Memory, MemoryRow, {}, {"topic", "detail", "kind", "archived"}),
+        (
+            Message,
+            MessageRow,
+            {"contact_id": 1, "content": "message", "conversation_id": 1, "archived": False},
+            {"contact_id", "content", "conversation_id", "timestamp", "archived"},
+        ),
+        (Setting, SettingRow, {"key": "key", "value": "value"}, {"key", "value"}),
+        (
+            Task,
+            TaskRow,
+            {
+                "conversation_id": 1,
+                "prompt": "prompt",
+                "cron": "* * * * *",
+                "name": "task",
+                "source": TaskSource.USER,
+                "enabled": True,
+            },
+            {"conversation_id", "prompt", "cron", "name", "source", "enabled"},
+        ),
+        (
+            Tool,
+            ToolRow,
+            {
+                "name": "tool",
+                "definition": LLMTool(name="tool", description="description", input_schema={}),
+                "enabled": True,
+            },
+            {"name", "definition", "enabled"},
+        ),
+    ],
+)
+def test_book_records_allow_none_without_widening_row_constraints(
+    record_cls, row_cls, required_values, required_columns
+) -> None:
+    domain_fields = {
+        field.name: None
+        for field in fields(record_cls)
+        if field.name not in {"id", "created_at", "updated_at", *required_values}
+    }
+
+    record = record_cls(**(required_values | domain_fields))
+
+    assert all(getattr(record, name) is None for name in domain_fields)
+    assert all(getattr(record, name) is not None for name in required_values)
+    assert all(row_cls.__table__.c[name].nullable is False for name in required_columns)
+
+
+def test_remaining_book_record_defaults_are_safe_for_their_construction_paths() -> None:
+    note = ContactNote()
+    conversation = Conversation()
+    memory = Memory()
+    message = Message(contact_id=1, content="message", conversation_id=1)
+    task = Task(conversation_id=1, prompt="prompt", cron="* * * * *")
+    tool = Tool(
+        name="tool",
+        definition=LLMTool(name="tool", description="description", input_schema={}),
+    )
+
+    assert (note.contact_id, note.note, note.kind) == (
+        None,
+        "Nothing to say",
+        NoteKind.PERMANENT,
+    )
+    assert (
+        conversation.delivery_address,
+        conversation.channel,
+        conversation.topic,
+        conversation.instruction,
+        conversation.info,
+        conversation.summary,
+        conversation.last_compaction_at,
+    ) == (None, None, None, None, None, "", None)
+    assert memory.topic is not None
+    assert (memory.detail, memory.kind, memory.archived) == (
+        "Noting in particular.",
+        MemoryKind.TEMPORARY,
+        False,
+    )
+    assert message.timestamp is not None
+    assert message.archived is False
+    assert (task.name, task.source, task.enabled) == ("New Task", TaskSource.USER, True)
+    assert tool.enabled is True
+    with pytest.raises(TypeError):
+        Setting()
+
+
+def test_book_write_omits_none_and_uses_row_defaults(tmp_path) -> None:
+    with Bus("@book-optionality", workspace=tmp_path) as bus:
+        book = ContactBook(bus._factory)
+        contact_id = book.add(
+            Contact(name="partial", role=None, last_seen_at=None)
+        )
+        contact = book.get(contact_id)
+        assert contact is not None
+        assert contact.role is not None
+        assert contact.last_seen_at is not None
+        assert book.update(
+            Contact(id=contact_id, name="partial-renamed")
+        )
+        updated = book.get(contact_id)
+
+    assert updated is not None
+    assert updated.name == "partial-renamed"
+    assert updated.role is not None
+    assert updated.last_seen_at is not None
+
+
+def test_partial_conversation_update_does_not_restore_the_topic_default(tmp_path) -> None:
+    with Bus("@book-optionality", workspace=tmp_path) as bus:
+        book = ConversationBook(bus._factory)
+        conversation_id = book.add(
+            Conversation(
+                delivery_address="test:1",
+                channel="test",
+                topic="keep this topic",
+            )
+        )
+
+        assert book.update(Conversation(id=conversation_id, summary="new summary"))
+        conversation = book.get(conversation_id)
+
+    assert conversation is not None
+    assert conversation.topic == "keep this topic"
+    assert conversation.summary == "new summary"
+
+
+def test_message_timestamp_is_created_with_the_record() -> None:
+    message = Message(contact_id=1, content="message", conversation_id=1)
+
+    assert message.timestamp is not None
+    assert message.updated_at is not None
+
+
+def test_book_add_owns_record_timestamps(tmp_path) -> None:
+    supplied = BaseTime(2000, 1, 1)
+
+    with Bus("@book-optionality", workspace=tmp_path) as bus:
+        book = ContactBook(bus._factory)
+        contact_id = book.add(
+            Contact(name="timestamp-owner", created_at=supplied, updated_at=supplied)
+        )
+        contact = book.get(contact_id)
+
+    assert contact is not None
+    assert contact.created_at > supplied
+    assert contact.updated_at > supplied
+
+
+def test_list_contact_notes_can_omit_the_kind_filter() -> None:
+    book = type("Book", (), {"list": lambda _self, **filters: [filters]})()
+    result = ListContactNotesJobBoard(None, book=book)._execute(
+        ListContactNotesJob(publisher="test", contact_id=7, kind=None)
+    )
+
+    assert result.contact_notes == [
+        {"contact_id": 7, "kind": None},
+    ]
+
+
+def test_list_contact_notes_defaults_to_no_kind_filter() -> None:
+    book = type("Book", (), {"list": lambda _self, **filters: [filters]})()
+    result = ListContactNotesJobBoard(None, book=book)._execute(
+        ListContactNotesJob(publisher="test", contact_id=7)
+    )
+
+    assert result.contact_notes == [
+        {"contact_id": 7, "kind": None},
+    ]

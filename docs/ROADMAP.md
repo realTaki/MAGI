@@ -57,13 +57,13 @@ Identifiers below follow the canonical names in
 
 | Item | Status | Notes |
 |---|---|---|
-| Skills `allowed-tools` enforcement | **Later** | `magi/bus/library/file/skillsBook.py` parses `allowed-tools` / `license` / `metadata` but does not act on them. Trigger: an operator wants "this contact's skills may read files but not run bash". |
+| Skills `allowed-tools` enforcement | **Later** | `magi/bus/firmwares/books/file/skillsBook.py` parses `allowed-tools` / `license` / `metadata` but does not act on them. Trigger: an operator wants "this contact's skills may read files but not run bash". |
 | Skill hot-reload | **Open** | Editing `<workspace>/skills/<name>/SKILL.md` needs a restart. See Open question 4. |
 | `load_skill` body section slicing (offset / limit) | **Later** | `magi/tools/skills/load_skill.py`. Trigger: a skill body exceeds ~10 KB and the model wants one section. |
 | Skill usage audit | **Later** | Trigger: an operator wants to prune the skill catalog by actual usage. |
 | MCP per-server rate limit / auto-pause on flake | **Later** | `magi/mcp/worker.py`. Trigger: a flaky MCP server degrades the agent loop. |
 | MCP tool-call audit log | **Later** | Trigger: an operator asks how often a given MCP tool ran. |
-| MCP `mcp.json` hot-reload | **Later** | `magi/bus/library/local/mcpServerBook.py` already carries the rows; the change job board carries the updates. Trigger: adding a server without a restart. |
+| MCP `mcp.json` hot-reload | **Later** | `magi/bus/firmwares/books/local/mcpServerBook.py` already carries the rows; the change job board carries the updates. Trigger: adding a server without a restart. |
 | MCP tool-output token cap | **Later** | Trigger: any MCP result pushes the turn over the context limit. |
 | `edit_file` `replace_globally` switch | **Later** | `magi/tools/filesystem/edit_file.py`. Trigger: a real rename-across-file workflow. |
 | Token-aware output truncation (`tiktoken`) | **Later** | Trigger: the model reports "truncated but still too much". Adds a native dependency. |
@@ -73,7 +73,7 @@ Identifiers below follow the canonical names in
 
 | Item | Status | Notes |
 |---|---|---|
-| Encrypt `provider.api_key` at rest | **Open** | `magi/bus/library/local/settingBook.py` stores it in plain text. Key distribution undecided — see Open question 5. |
+| Encrypt `provider.api_key` at rest | **Open** | `magi/bus/firmwares/books/local/settingBook.py` stores it in plain text. Key distribution undecided — see Open question 5. |
 | Symlink / path-traversal containment for file tools | **Next** | `magi/tools/_safe_path.py` documents the residual risk: `Path.resolve()` follows symlinks. Swap in a `realpath()` plus containment check. |
 | Audit outbox lag monitoring + degraded-mode alert | **Later** | Trigger: the `/ingest/audit` route above ships and starts accumulating lag. |
 

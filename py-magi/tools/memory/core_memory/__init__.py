@@ -1,0 +1,15 @@
+"""Self / core-memory tools — long-arc facts the MAGI keeps
+about its operator.
+
+One module per tool — see :mod:`tools.registry` for
+the dispatcher that wires them up.
+
+LLM-driven, not automatic — the operator must say
+"记住 X" (or the LLM must judge the fact long-arc
+enough) for these to fire. Person records are NOT
+writable here; they live in the contacts subpackage.
+
+  - :mod:`tools.memory.core_memory.save_memory`
+  - :mod:`tools.memory.core_memory.complete_memory`
+  - :mod:`tools.memory.core_memory.delete_memory`
+"""

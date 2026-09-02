@@ -1,0 +1,25 @@
+{
+  "name": "ts-magi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @magi/bus && npm run build -w @magi/caller && npm run build -w @magi/provider && npm run build -w @magi/result-reader && npm run build -w @magi/launcher",
+    "generate:migration": "npm run generate:migration -w @magi/bus",
+    "demo": "npm run build && npm run demo -w @magi/launcher",
+    "test": "npm run build && npm run test -w @magi/launcher"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.10.0",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.7.0"
+  }
+}

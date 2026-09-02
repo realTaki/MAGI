@@ -194,12 +194,11 @@ cython_debug/
 #   Learn more at https://abstra.io/docs
 .abstra/
 
-# Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#   you could uncomment the following to ignore the entire vscode folder
-.vscode/
+# Visual Studio Code — keep the workspace interpreter so Pylance
+# resolves packages from ``py-magi/.venv`` (sqlalchemy, alembic, …).
+# Ignore the rest of .vscode (local UI state).
+.vscode/*
+!.vscode/settings.json
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
@@ -218,23 +217,24 @@ __marimo__/
 .streamlit/secrets.toml
 
 # -----------------------------------------------------------------------------
-# Frontend (magi/WebUI/) — single Vite SPA, lives inside the magi/ folder
-# so every MAGI node ships agent + WebUI together.
+# Frontend (app/) — operator UI, sibling to the Python and TypeScript
+# projects.
 # -----------------------------------------------------------------------------
 node_modules/
-magi/WebUI/dist/
-magi/WebUI/build/
+app/dist/
+app/build/
+app/release/
 .vite/
-magi/WebUI/.vite/
-magi/WebUI/coverage/
-magi/WebUI/.env
-magi/WebUI/.env.local
-magi/WebUI/.env.*.local
-magi/WebUI/npm-debug.log*
-magi/WebUI/yarn-debug.log*
-magi/WebUI/yarn-error.log*
-magi/WebUI/pnpm-debug.log*
-magi/WebUI/*.tsbuildinfo
+app/.vite/
+app/coverage/
+app/.env
+app/.env.local
+app/.env.*.local
+app/npm-debug.log*
+app/yarn-debug.log*
+app/yarn-error.log*
+app/pnpm-debug.log*
+app/*.tsbuildinfo
 
 # -----------------------------------------------------------------------------
 # Runtime data — local SQLite / bind-mounted volumes
@@ -254,6 +254,7 @@ magi.db
 magi.db-*
 
 # Agents
+AGENTS.md
 .codebuddy/
 .codex/
 .agents/

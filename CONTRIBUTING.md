@@ -25,13 +25,17 @@ uv sync --group dev
 
 ## Code conventions
 
+Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard to read. Extra glue that converts the same idea between two shapes is also noise — unify the type instead of mapping back and forth.
+
+Then:
+
 - **Python 3.12+** with `ruff` for linting
-- **TypeScript** + **React** for the WebUI
+- **TypeScript** + **React** for the operator app
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
   - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`)
   - FastAPI dependency injection pattern
-- `ruff check . && pytest tests/` should pass before pushing
+- `cd py-magi && ruff check . && pytest tests/` should pass before pushing
 
 ## Commit style
 
@@ -54,10 +58,11 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `magi/agent/` | Agent loop, LLM providers, memory, tools |
-| `magi/channels/` | Telegram + WebUI channel adapters |
-| `magi/WebUI/` | React frontend |
-| `tests/` | Unit and integration tests |
+| `py-magi/agent/` | Agent loop, memory, tools |
+| `py-magi/channels/` | Telegram + HTTP channel adapters |
+| `webapp/` | Browser operator UI and local application storage |
+| `desktop/` | Electron desktop process |
+| `py-magi/tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
 
 ## Questions?

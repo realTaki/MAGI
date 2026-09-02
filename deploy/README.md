@@ -54,7 +54,7 @@ deploy/
   PVC 挂载到容器根 `/`，workspace 推导为 `/MAGI_Citizens/<name>`。
   如需覆盖可显式传入。
 - CLI 进程：`HOST_WORKSPACE_DIR`（默认 `~/.magi`）+ `MAGI_NAME`。
-  不存在硬编码的 `/workspace` 路径。`magi/startup/paths.py` 是唯一暴露
+  不存在硬编码的 `/workspace` 路径。`py-magi/magi/startup/paths.py` 是唯一暴露
   路径布局的地方。其余代码只读环境变量，不假设任何具体 mount 类型。
 
 WebUI 绑定 host 由 `MAGI_WEBUI_HOST` 决定：

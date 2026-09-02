@@ -1,0 +1,32 @@
+{
+  "name": "@magi/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "shell/main.mjs",
+  "description": "MAGI Electron desktop shell.",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder",
+    "build:desktop": "electron-builder",
+    "test": "npm run test --prefix ../webapp"
+  },
+  "build": {
+    "appId": "ai.magi.app",
+    "productName": "MAGI",
+    "files": [
+      "shell/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.0"
+  }
+}
