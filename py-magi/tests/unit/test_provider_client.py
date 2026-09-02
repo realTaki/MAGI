@@ -37,6 +37,21 @@ def test_provider_notify_uses_none_for_an_unchanged_setting() -> None:
     assert change.model == "claude-opus-5"
 
 
+def test_client_reads_the_configured_model_context_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def get_model_info(**kwargs: Any) -> dict[str, int]:
+        seen.update(kwargs)
+        return {"max_input_tokens": 128_000}
+
+    monkeypatch.setattr("providers.client.litellm.get_model_info", get_model_info)
+
+    client = LiteLLMClient(provider_name="openai", api_key="key", model="gpt-5.6")
+
+    assert client.context_window() == 128_000
+    assert seen["model"] == "openai/gpt-5.6"
+
+
 def test_llm_dtos_round_trip_through_json_record_data() -> None:
     job = CallLLMJob(
         publisher="test",

@@ -20,8 +20,10 @@ from bus import (
     CallLLMResult,
     ChangeProviderNotify,
     ChangeProviderNotifyResult,
+    DeleteSettingJob,
     JobStatus,
     ListSettingsJob,
+    SetSettingJob,
     go,
 )
 from providers.client import LiteLLMClient, options
@@ -29,6 +31,7 @@ from providers.client import LiteLLMClient, options
 NAME_KEY = "provider.name"
 API_KEY = "provider.api_key"
 MODEL_KEY = "provider.model"
+CONTEXT_WINDOW_KEY = "provider.context_window"
 
 
 class ProvidersWorker(BaseWorker):
@@ -42,7 +45,7 @@ class ProvidersWorker(BaseWorker):
     async def on_attached(self) -> None:
         listed = await self.ask(ListSettingsJob(publisher=self.worker_name))
         settings = listed.settings or {} if listed is not None else {}
-        self._client.configure(
+        await self._configure(
             provider_name=settings.get(NAME_KEY),
             api_key=settings.get(API_KEY),
             model=settings.get(MODEL_KEY),
@@ -60,12 +63,32 @@ class ProvidersWorker(BaseWorker):
         return False
 
     async def _on_change(self, job: ChangeProviderNotify) -> None:
-        self._client.configure(
+        await self._configure(
             provider_name=job.provider,
             api_key=job.api_key,
             model=job.model,
         )
         self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
+
+    async def _configure(
+        self,
+        *,
+        provider_name: str | None,
+        api_key: str | None,
+        model: str | None,
+    ) -> None:
+        self._client.configure(provider_name=provider_name, api_key=api_key, model=model)
+        window = self._client.context_window()
+        if window is None:
+            await self.ask(DeleteSettingJob(publisher=self.worker_name, key=CONTEXT_WINDOW_KEY))
+            return
+        await self.ask(
+            SetSettingJob(
+                publisher=self.worker_name,
+                key=CONTEXT_WINDOW_KEY,
+                value=str(window),
+            )
+        )
 
     async def _on_llm(self, job: CallLLMJob) -> None:
         try:

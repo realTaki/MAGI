@@ -92,6 +92,22 @@ class LiteLLMClient:
         if model is not None:
             self.model = model
 
+    def context_window(self) -> int | None:
+        """Return LiteLLM's input-context limit for the configured route."""
+        host = self.host
+        if host is None:
+            return None
+        try:
+            info = litellm.get_model_info(
+                model=f"{host.prefix}/{self.model or host.default_model}",
+                api_base=host.api_base,
+                api_key=self.api_key,
+            )
+            window = int(info.get("max_input_tokens"))
+        except Exception:  # LiteLLM has no metadata for every configured model.
+            return None
+        return window if window > 0 else None
+
     async def complete(self, job: CallLLMJob) -> CallLLMResult:
         host = self.host
         if host is None:
