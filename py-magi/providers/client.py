@@ -100,18 +100,14 @@ class LiteLLMClient:
         params: dict[str, Any] = {
             "model": f"{host.prefix}/{self.model or host.default_model}",
             "messages": [self._request_message(message) for message in job.messages],
-            "max_tokens": job.max_tokens + max(0, job.thinking_tokens),
+            "max_tokens": job.max_tokens,
+            "reasoning_effort": "high",
             "api_key": self.api_key,
             "timeout": 120.0,
             "drop_params": True,
         }
         if host.api_base:
             params["api_base"] = host.api_base
-        if job.thinking_tokens > 0:
-            params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": job.thinking_tokens,
-            }
         if job.tools:
             params["tools"] = [self._request_tool(tool) for tool in job.tools]
         try:

@@ -143,8 +143,9 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
             {"role": "tool", "tool_call_id": "earlier", "content": "sunny"},
         ],
         "max_tokens": 128,
+        "reasoning_effort": "high",
         "api_key": "key",
-        "timeout": 30.0,
+        "timeout": 120.0,
         "drop_params": True,
         "tools": [
             {
