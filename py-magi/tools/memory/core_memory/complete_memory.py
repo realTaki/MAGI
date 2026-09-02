@@ -34,15 +34,6 @@ class CompleteMemoryTool(BaseTool):
 
     name = "complete_memory"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The agent worker resolves the operator's role from the
-    # Contact row and filters the tool menu so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Mark a quick_note memory row as done. The row stays in the "
         "table for the audit trail but is no longer rendered in the "

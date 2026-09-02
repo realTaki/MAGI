@@ -11,13 +11,6 @@ Person records are NOT writable here — they live in
 tool set (the LLM-managed directory of people the MAGI
 knows about).
 
-Admin gate: same as the API — only ``admin`` and
-``assigned`` contacts can write to their own memory.
-``contact`` and ``guest`` get ``is_error=True`` on every
-write tool. Reads (no read tool yet — the system-prompt
-block is the read path for v0) would carry the same
-gate when added.
-
 Bus plumbing: this tool talks to bus (:class:`bus.Bus`) via
 ``self.bus.memory_book``.  It validates its command vocabulary at ingress;
 the Book persists free text without imposing a second input policy.
@@ -42,15 +35,6 @@ class AddMemoryTool(BaseTool):
 
     name = "add_memory"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The agent worker resolves the operator's role from the
-    # Contact row and filters the tool menu so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Persist a new fact into MAGI's mid-term memory. "
         "Use when the operator says '记住 X' / '记下 Y' / "
