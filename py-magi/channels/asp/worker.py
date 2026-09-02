@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import Future
 from contextlib import suppress
 from typing import Any
 
@@ -15,6 +16,7 @@ from bus import (
     DeliveryNotify,
     DeliveryNotifyResult,
     JobStatus,
+    go,
 )
 
 from .client import AspClient
@@ -27,52 +29,43 @@ class AspWorker(BaseWorker):
 
     worker_name = "asp"
 
-    def __init__(
-        self,
-        bus: Bus,
-        *,
-        handle: str,
-        base: str,
-        token: str,
-        poll_seconds: float = 0.25,
-    ) -> None:
+    def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
-        self.handle = handle
-        self._base = base
-        self._token = token
+        self.handle = bus.handle
         self._client: AspClient | None = None
         self._conversations: dict[str, int] = {}
         self._sessions: dict[int, str] = {}
-        self._listen_task: asyncio.Task[None] | None = None
+        self._listen: Future[None] | None = None
 
     async def on_attached(self) -> None:
+        self.handle = self._settings.get("handle") or self.bus.handle
         self._client = AspClient(
             handle=self.handle,
-            base=self._base,
-            token=self._token,
+            base=self._settings.get("base", ""),
+            token=self._settings.get("token", ""),
         )
-        assert self._client is not None
         ready = asyncio.Event()
-        listen = asyncio.create_task(self._client.listen(self._on_event, ready=ready))
-        self._listen_task = listen
-        ready_wait = asyncio.create_task(ready.wait())
-        done, pending = await asyncio.wait(
-            (listen, ready_wait), return_when=asyncio.FIRST_COMPLETED
+        listen = go(self._client.listen(self._on_event, ready=ready))
+        self._listen = listen
+        connected = go(ready.wait())
+        await asyncio.wait(
+            {asyncio.wrap_future(listen), asyncio.wrap_future(connected)},
+            return_when=asyncio.FIRST_COMPLETED,
         )
-        if ready_wait in pending:
-            ready_wait.cancel()
-        if listen in done:
+        if not connected.done():
+            connected.cancel()
+        if listen.done():
             listen.result()
         listen.add_done_callback(_report_listener_exit)
 
     async def on_detached(self) -> None:
-        listen = self._listen_task
-        self._listen_task = None
+        listen = self._listen
+        self._listen = None
         if listen is not None and not listen.done():
             listen.cancel()
         if listen is not None:
             with suppress(asyncio.CancelledError):
-                await listen
+                await asyncio.wrap_future(listen)
         self._conversations.clear()
         self._sessions.clear()
 
@@ -80,7 +73,7 @@ class AspWorker(BaseWorker):
         job = await self.claim(DeliveryNotify)
         if job is None:
             return False
-        await self._deliver(job)
+        go(self._deliver(job))
         return True
 
     async def _on_event(self, event: dict[str, Any]) -> None:
@@ -175,9 +168,9 @@ def _content_text(content: object) -> str:
     return ""
 
 
-def _report_listener_exit(task: asyncio.Task[None]) -> None:
-    with suppress(asyncio.CancelledError):
-        try:
-            task.result()
-        except Exception:  # noqa: BLE001 -- channel listener exit is diagnostic
-            logger.exception("ASP listener stopped")
+def _report_listener_exit(future: Future[None]) -> None:
+    if future.cancelled():
+        return
+    exc = future.exception()
+    if exc is not None:
+        logger.error("ASP listener stopped", exc_info=exc)
