@@ -11,30 +11,25 @@ async def compact_messages(
     messages: list[LLMMessage],
     *,
     context_window: int,
-    keep_recent: int,
     prompt: str,
     call_llm: Callable[..., Awaitable[CallLLMResult | None]],
 ) -> str | None:
     """Return a replacement summary when ``messages`` exceed the window.
 
-    The caller retains the newest ``keep_recent`` history messages. The input
-    contains only the existing summary followed by normal chat history; live
-    tool continuation state is deliberately outside this function.
+    The input contains only the existing summary followed by normal chat
+    history; live tool continuation state is deliberately outside this
+    function.
     """
     if sum(message.estimated_tokens() for message in messages) <= context_window:
         return None
 
-    if len(messages) <= keep_recent:
-        return None
-    source = messages[:-keep_recent]
     result = await call_llm(
         [
             LLMMessage(role=LLMMessageRole.SYSTEM, content=prompt),
+            *messages,
             LLMMessage(
                 role=LLMMessageRole.USER,
-                content="\n\n".join(
-                    f"[{message.role.value.upper()}]\n{message.content}" for message in source
-                ),
+                content="请仅总结上面的对话历史，并遵循 system 指令。",
             ),
         ],
         [],

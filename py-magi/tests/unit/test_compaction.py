@@ -14,7 +14,7 @@ def test_estimates_are_non_negative_and_include_message_overhead() -> None:
 
 
 @pytest.mark.asyncio
-async def test_compact_messages_preserves_the_recent_history_tail() -> None:
+async def test_compact_messages_keeps_all_source_messages() -> None:
     calls = []
 
     async def call_llm(messages, tools):
@@ -29,8 +29,12 @@ async def test_compact_messages_preserves_the_recent_history_tail() -> None:
     assert await compact_messages(
         [old, recent],
         context_window=1,
-        keep_recent=1,
         prompt="summarize",
         call_llm=call_llm,
     ) == "summary"
-    assert calls[0][0][1].content == "[USER]\nold"
+    assert calls[0][0][1] == old
+    assert calls[0][0][2] == recent
+    assert calls[0][0][-1] == LLMMessage(
+        role=LLMMessageRole.USER,
+        content="请仅总结上面的对话历史，并遵循 system 指令。",
+    )

@@ -15,7 +15,6 @@ from bus import (
     DeliveryNotify,
     DeliveryNotifyResult,
     JobStatus,
-    ListSettingsJob,
 )
 
 from .client import AspClient
@@ -27,29 +26,30 @@ class AspWorker(BaseWorker):
     """Receive ASP messages and deliver conversation replies through ASP."""
 
     worker_name = "asp"
-    default_settings = {"handle": "", "base": "", "token": ""}
 
     def __init__(
         self,
         bus: Bus,
         *,
+        handle: str,
+        base: str,
+        token: str,
         poll_seconds: float = 0.25,
     ) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
-        self.handle = ""
+        self.handle = handle
+        self._base = base
+        self._token = token
         self._client: AspClient | None = None
         self._conversations: dict[str, int] = {}
         self._sessions: dict[int, str] = {}
         self._listen_task: asyncio.Task[None] | None = None
 
     async def on_attached(self) -> None:
-        listed = await self.ask(ListSettingsJob(publisher=self.worker_name))
-        settings = listed.settings or {} if listed is not None else {}
-        self.handle = settings.get("asp.handle") or ""
         self._client = AspClient(
             handle=self.handle,
-            base=settings.get("asp.base") or "",
-            token=settings.get("asp.token") or "",
+            base=self._base,
+            token=self._token,
         )
         assert self._client is not None
         ready = asyncio.Event()

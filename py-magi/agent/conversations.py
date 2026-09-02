@@ -251,7 +251,6 @@ class Conversation:
         summary = await compact_messages(
             [*self._summary_messages(), *self.history],
             context_window=window,
-            keep_recent=COMPACT_KEEP_RECENT,
             prompt=prompt,
             call_llm=call_llm,
         )

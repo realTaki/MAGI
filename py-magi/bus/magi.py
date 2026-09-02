@@ -31,14 +31,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     bus = Bus(args.handle)
     try:
         for worker in WORKERS:
-            settings = None
             if worker.worker_name == "asp":
-                settings = {
-                    "handle": args.handle,
-                    "base": args.base,
-                    "token": args.token,
-                }
-            if not bus.attach(worker, settings=settings):
+                worker = AspWorker(
+                    bus,
+                    handle=args.handle,
+                    base=args.base,
+                    token=args.token,
+                )
+            if not bus.attach(worker):
                 raise RuntimeError("MAGI could not attach its configured workers")
         bus.start()
     finally:
