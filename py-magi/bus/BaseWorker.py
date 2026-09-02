@@ -93,8 +93,8 @@ class BaseWorker:
         if board is not None:
             go(asyncio.to_thread(board.publish, job))
 
-    def publish(self, job: BaseJob) -> int | None:
-        """Enqueue *job* and return its id, or None if no board is mounted."""
+    def publish(self, job: BaseJob) -> int | BaseJobResult | None:
+        """Publish a Job, returning its id or a direct Book-operation result."""
         board = self.board(type(job))
         return None if board is None else board.publish(job)
 
@@ -103,7 +103,10 @@ class BaseWorker:
         board = self.board(type(job))
         if board is None:
             return None
-        result = await self.call(board.get_result, await self.call(board.publish, job))
+        published = await self.call(board.publish, job)
+        if isinstance(published, BaseJobResult):
+            return published if published.status is JobStatus.COMPLETED else None
+        result = await self.call(board.get_result, published)
         if result is not None and result.status is JobStatus.COMPLETED:
             return result
         return None
