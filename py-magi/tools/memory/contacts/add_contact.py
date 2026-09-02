@@ -1,31 +1,31 @@
-"""``add_contact`` tool — create a new contact in the
-directory.
-
-Notes about an existing contact are recorded separately
-via :mod:`tools.memory.contacts.save_contact_note`; this
-tool accepts an optional ``notes`` argument as a convenience
-for "create + first observation" flows and writes the same
-``contact_notes`` row shape.
-
-Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``self.bus.contacts_book``
-and ``self.bus.contact_notes_book`` — the Books own
-write invariants (length caps,
-empty-content rejection) and expose ``add(...)`` plus
-``to_dict`` on the returned DTO. The legacy service at
-bus Book API is no longer
-imported here.
-"""
+"""``add_contact`` tool — create a Contact through Jobs."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from old_bus.firmwares.books.local.contactBook import Contact, ContactNote, Role
+from bus import (
+    ContactRole,
+    CreateContactJob,
+    CreateContactNoteJob,
+    GetContactJob,
+    GetContactNoteJob,
+    NoteKind,
+)
 from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.add_contact")
+
+_PUBLISHER = "tools"
+_ROLES = {
+    "assigned": ContactRole.AUTHORIZED,
+    "authorized": ContactRole.AUTHORIZED,
+    "guest": ContactRole.STRANGER,
+    "stranger": ContactRole.STRANGER,
+    "magi": ContactRole.MAGI,
+    "third_party_agent": ContactRole.THIRD_PARTY_AGENT,
+}
 
 
 class AddContactTool(BaseTool):
@@ -33,95 +33,93 @@ class AddContactTool(BaseTool):
 
     name = "add_contact"
     description = (
-        "Create a new contact (person) in the directory. "
-        "Name is required. display_name, tgid, "
-        "role ('assigned' default / 'guest'), and "
-        "notes (initial note, optional) are optional. "
-        "To add notes about an existing contact, use "
-        "save_contact_note instead."
+        "Create a new contact. Name is required. nickname, role, and "
+        "notes (initial permanent note) are optional. To add notes about "
+        "an existing contact, use save_contact_note."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "name": {
                 "type": "string",
-                "description": (
-                    "Contact name (required, ≤120 chars)."
-                ),
+                "description": "Contact name (required).",
             },
-            "display_name": {
+            "nickname": {
                 "type": "string",
                 "description": "Display name (optional).",
             },
-            "tgid": {
-                "type": "integer",
-                "description": "Telegram user id (optional).",
-            },
             "role": {
                 "type": "string",
-                "enum": ["assigned", "guest"],
-                "default": "guest",
+                "enum": sorted(_ROLES),
+                "default": "stranger",
                 "description": (
-                    "MAGI-local role tag. ``assigned`` "
-                    "marks the operator this MAGI serves; "
-                    "``guest`` (default) marks everyone else. "
-                    "Admin lives on the separate MAGIS table, "
-                    "not here."
+                    "authorized | stranger | magi | third_party_agent. "
+                    "assigned maps to authorized; guest maps to stranger."
                 ),
             },
             "notes": {
                 "type": "string",
-                "description": (
-                    "Initial note (optional, ≤8 KB). Forwarded "
-                    "to save_contact_note after the contact row "
-                    "is created — same shape as a permanent "
-                    "fact, just bundled for convenience."
-                ),
+                "description": "Initial permanent note (optional).",
             },
         },
         "required": ["name"],
     }
 
     @BaseTool.require_bus
-    async def run(
-        self,
-        **kwargs: Any) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
         name = kwargs.get("name")
         if not isinstance(name, str) or not name.strip():
             return ToolResult.err("name is required (non-empty string)")
-        role_str = kwargs.get("role") or "guest"
-        try:
-            role = Role(role_str)
-        except ValueError:
-            return ToolResult.err(
-                f"role must be one of {sorted(r.value for r in Role)!r}, got {role_str!r}"
+        role_str = kwargs.get("role") or "stranger"
+        role = _ROLES.get(str(role_str).strip().lower())
+        if role is None:
+            return ToolResult.err(f"role must be one of {sorted(_ROLES)!r}, got {role_str!r}")
+        nickname = kwargs.get("nickname")
+        created = await self.publish(
+            CreateContactJob(
+                publisher=_PUBLISHER,
+                name=name.strip(),
+                nickname=None if nickname is None else str(nickname),
+                role=role,
             )
-        record_id = self.bus.contacts_book.add(Contact(
-            name=name,
-            display_name=kwargs.get("display_name"),
-            role=role,
-            tgid=kwargs.get("tgid"),
-        ))
-        contact = self.bus.contacts_book.get(record_id)
-
+        )
+        if created is None or created.contact_id is None:
+            return ToolResult.err("contact book is not available")
+        fetched = await self.publish(
+            GetContactJob(publisher=_PUBLISHER, contact_id=created.contact_id)
+        )
+        contact = None if fetched is None else fetched.contact
+        payload: dict[str, Any] = {
+            "created": None if contact is None else contact.to_dict(),
+        }
         initial_note = kwargs.get("notes")
         if initial_note and str(initial_note).strip():
-            note_id = self.bus.contact_notes_book.add(ContactNote(
-                contact_id=contact.id,
-                note=str(initial_note),
-            ))
-            note = self.bus.contact_notes_book.get(note_id)
+            note_created = await self.publish(
+                CreateContactNoteJob(
+                    publisher=_PUBLISHER,
+                    contact_id=created.contact_id,
+                    note=str(initial_note).strip(),
+                    kind=NoteKind.PERMANENT,
+                )
+            )
+            if note_created is None or note_created.contact_note_id is None:
+                return ToolResult.err("contact note book is not available")
+            note_fetched = await self.publish(
+                GetContactNoteJob(
+                    publisher=_PUBLISHER,
+                    contact_note_id=note_created.contact_note_id,
+                )
+            )
+            payload["initial_note"] = (
+                None if note_fetched is None or note_fetched.contact_note is None
+                else note_fetched.contact_note.to_dict()
+            )
             logger.info(
                 "add_contact: contact=%s created with initial note=%s",
-                contact.id,
-                note.id,
+                created.contact_id,
+                note_created.contact_note_id,
             )
-            return ToolResult.ok(
-                {
-                    "created": contact.to_dict(),
-                    "initial_note": note.to_dict(),
-                }
-            )
+            return ToolResult.ok(payload)
 
-        logger.info("add_contact: contact=%s created", contact.id)
-        return ToolResult.ok({"created": contact.to_dict()})
+        logger.info("add_contact: contact=%s created", created.contact_id)
+        return ToolResult.ok(payload)

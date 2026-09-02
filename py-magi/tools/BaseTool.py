@@ -10,11 +10,13 @@ Runtime (Jobs, workspace path) take ``bus`` at construction.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 
@@ -46,6 +48,8 @@ _MAX_CONTENT = 8 * 1024
 def _tool_json_default(value: object) -> object:
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
@@ -65,6 +69,13 @@ class BaseTool(ABC):
 
     def __init__(self, *, bus: Any = None) -> None:
         self.bus = bus
+
+    async def publish(self, job: Any) -> Any:
+        """Run one OperateBook ``publish`` off the worker loop."""
+        board = None if self.bus is None else self.bus.board(type(job))
+        if board is None:
+            return None
+        return await asyncio.to_thread(board.publish, job)
 
     @staticmethod
     def require_bus(method):
