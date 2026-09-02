@@ -22,7 +22,7 @@ from bus.firmware.jobs.messageJobs import (
     ArchiveMessagesJobBoard,
     ListConversationMessagesJobBoard,
 )
-from tests.unit.new_bus.testing import attach_board, wait_publish, wait_result
+from tests.unit.new_bus.testing import attach_board
 
 BOARD_BY_JOB = {
     CreateConversationJob: CreateConversationJobBoard,
@@ -41,13 +41,13 @@ def _board(bus: Bus, job: BaseJob):
     return attach_board(bus, BOARD_BY_JOB[type(job)])
 
 
-def _publish[JobT: BaseJob](bus: Bus, job: JobT) -> JobT:
-    job.id = wait_publish(_board(bus, job), job)
-    return job
+def _publish[JobT: BaseJob](bus: Bus, job: JobT):
+    return _board(bus, job).publish(job)
 
 
-def _result(bus: Bus, job: BaseJob):
-    return wait_result(_board(bus, job), job.id)
+def _result(bus: Bus, result):
+    del bus
+    return result
 
 
 def _contact_id(bus: Bus, name: str = "alice") -> int:

@@ -87,7 +87,7 @@ async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> 
         assert set_tools is not None
         assert list_tools is not None
         assert board is not None
-        set_id = set_tools.publish(
+        set_result = set_tools.publish(
             SetToolsJob(
                 publisher="test",
                 tools=[catalog_tool],
@@ -95,13 +95,11 @@ async def test_tool_catalog_and_execution_job_wrap_pure_llm_values(tmp_path) -> 
         )
         job_id = board.publish(RunToolJob(publisher="test", call=call))
         await asyncio.sleep(0.05)
-        assert set_tools.get_result(set_id) is not None
-        listed_id = list_tools.publish(ListToolsJob(publisher="test"))
+        assert set_result is not None
+        listed = list_tools.publish(ListToolsJob(publisher="test"))
         await asyncio.sleep(0.05)
-        listed = list_tools.get_result(listed_id)
         claimed = board.claim()
 
-    assert listed is not None
     assert listed.tools is not None
     assert [tool.definition for tool in listed.tools] == [definition]
     assert claimed is not None
