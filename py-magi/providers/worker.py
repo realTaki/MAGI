@@ -20,7 +20,6 @@ from bus import (
     CallLLMResult,
     ChangeProviderNotify,
     ChangeProviderNotifyResult,
-    DeleteSettingJob,
     JobStatus,
     ListSettingsJob,
     SetSettingJob,
@@ -79,16 +78,14 @@ class ProvidersWorker(BaseWorker):
     ) -> None:
         self._client.configure(provider_name=provider_name, api_key=api_key, model=model)
         window = self._client.context_window()
-        if window is None:
-            await self.ask(DeleteSettingJob(publisher=self.worker_name, key=CONTEXT_WINDOW_KEY))
-            return
-        await self.ask(
-            SetSettingJob(
-                publisher=self.worker_name,
-                key=CONTEXT_WINDOW_KEY,
-                value=str(window),
+        if window is not None:
+            await self.ask(
+                SetSettingJob(
+                    publisher=self.worker_name,
+                    key=CONTEXT_WINDOW_KEY,
+                    value=str(window),
+                )
             )
-        )
 
     async def _on_llm(self, job: CallLLMJob) -> None:
         try:

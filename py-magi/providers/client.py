@@ -97,16 +97,8 @@ class LiteLLMClient:
         host = self.host
         if host is None:
             return None
-        try:
-            info = litellm.get_model_info(
-                model=f"{host.prefix}/{self.model or host.default_model}",
-                api_base=host.api_base,
-                api_key=self.api_key,
-            )
-            window = int(info.get("max_input_tokens"))
-        except Exception:  # LiteLLM has no metadata for every configured model.
-            return None
-        return window if window > 0 else None
+        info = litellm.get_model_info(model=f"{host.prefix}/{self.model or host.default_model}")
+        return info.get("max_input_tokens")
 
     async def complete(self, job: CallLLMJob) -> CallLLMResult:
         host = self.host
