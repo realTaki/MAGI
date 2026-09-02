@@ -17,7 +17,7 @@ traffic happens in CI. The behaviour under test:
   delete the Book row and tear down the connection;
 - a change job with ``kind="toggled"`` causes the Worker to
   flip ``enabled`` and (re)connect / disconnect;
-- the MCP CRUD tools (``add_mcp_server`` / ...) are registered
+- the MCP manage tool (``mcp_server``) is registered
   via the builtin tools path, **not** by the worker;
 - an unknown kind records an error in the result instead of
   leaking the job as ``processing``;
@@ -53,10 +53,7 @@ from old_bus.firmwares.books.local.mcpServerBook import McpServer
 from old_bus.firmwares.books.local.toolsBook import ToolDefinitionBook
 from mcp.worker import McpWorker
 from tools import registry as tool_registry
-from tools.mcp.add_mcp_server import AddMcpServerTool
-from tools.mcp.delete_mcp_server import DeleteMcpServerTool
-from tools.mcp.list_mcp_servers import ListMcpServersTool
-from tools.mcp.update_mcp_server import UpdateMcpServerTool
+from tools.mcp.mcp_server import McpServerTool
 
 # -- helpers -------------------------------------------------------------
 
@@ -261,25 +258,23 @@ def test_bootstrap_skips_failing_servers(bus, monkeypatch, caplog):
 
 
 def test_manage_tools_are_builtin_not_injected():
-    """The CRUD tools live in :mod:`tools.mcp` and are
+    """The manage tool lives in :mod:`tools.mcp` and is
     registered by the standard builtin tools path — the
-    worker doesn't import or inject them. Verify they're
+    worker doesn't import or inject it. Verify it's
     reachable through ``get_tool`` without any injection.
     """
-    # Force the builtin cache to rebuild with the four MCP tools.
+    # Force the builtin cache to rebuild with mcp_server.
     tool_registry._tools_cache = None
     builtins = {t.name for t in tool_registry.get_tool.__globals__["_build_tools"]()}
-    assert {
-        "add_mcp_server",
-        "list_mcp_servers",
-        "update_mcp_server",
-        "delete_mcp_server",
-    } <= builtins
-    # And they're instantiable.
-    assert AddMcpServerTool().name == "add_mcp_server"
-    assert ListMcpServersTool().name == "list_mcp_servers"
-    assert UpdateMcpServerTool().name == "update_mcp_server"
-    assert DeleteMcpServerTool().name == "delete_mcp_server"
+    assert "mcp_server" in builtins
+    assert McpServerTool().name == "mcp_server"
+    assert McpServerTool.input_schema["required"] == ["action"]
+    assert McpServerTool.input_schema["properties"]["action"]["enum"] == [
+        "list",
+        "add",
+        "update",
+        "delete",
+    ]
 
 
 # -- per-change handling (worker is sole writer) ------------------------

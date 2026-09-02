@@ -43,11 +43,10 @@ Lifecycle
 Tool registration
 -----------------
 
-The four CRUD tools (``add_mcp_server`` / ``list_mcp_servers`` /
-``update_mcp_server`` / ``delete_mcp_server``) live under
-:mod:`tools.mcp` and are registered by the standard builtin
-tools path (``tools.registry._build_tools``) — the MCP
-worker does **not** import or register them. Discovered tools are
+The manage tool (``mcp_server``) lives under :mod:`tools.mcp`
+and is registered by the standard builtin tools path
+(``tools.registry._build_tools``) — the MCP worker does
+**not** import or register it. Discovered tools are
 still registered under source ``"mcp"`` here, so the ToolsWorker
 listener re-publishes the catalog whenever the connection set
 changes.

@@ -20,10 +20,9 @@ from old_bus.bases.db.engine import EngineFactory
 from old_bus.firmwares.books.local.contactBook import Contact, ContactBook
 from old_bus.firmwares.books.local.memoryBook import Memory, MemoryBook
 from tools.BaseTool import ToolContext, ToolResult
-from tools.memory.core_memory.add_memory import AddMemoryTool
 from tools.memory.core_memory.complete_memory import CompleteMemoryTool
 from tools.memory.core_memory.delete_memory import DeleteMemoryTool
-from tools.memory.core_memory.update_memory import UpdateMemoryTool
+from tools.memory.core_memory.save_memory import SaveMemoryTool
 
 # -- minimal Bus surface -----------------------------------------------
 
@@ -96,7 +95,7 @@ def contact_id(bus: _BusStub) -> int:
 async def test_add_memory_creates_row_and_returns_dto(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
-    tool = AddMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(
         ctx,
         kind="fact",
@@ -125,10 +124,10 @@ async def test_add_memory_creates_row_and_returns_dto(
 async def test_add_memory_missing_required_field(
     ctx: ToolContext,
 ) -> None:
-    tool = AddMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(ctx, kind="fact", subject="x")
     assert result.is_error is True
-    assert "add_memory requires fields" in result.content
+    assert "save_memory create requires fields" in result.content
     assert "body" in result.content
 
 
@@ -137,7 +136,7 @@ async def test_add_memory_book_value_error_becomes_tool_error(
     ctx: ToolContext,
 ) -> None:
     """The Tool validates its own required fields and kind vocabulary."""
-    tool = AddMemoryTool()
+    tool = SaveMemoryTool()
     # Empty subject.
     bad_subject = await tool.run(
         ctx,
@@ -169,7 +168,7 @@ async def test_add_memory_bus_none_fails_closed(tmp_path: Path) -> None:
         conversation_id=0,
         bus=None,
     )
-    tool = AddMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(
         ctx_no_bus,
         kind="fact",
@@ -312,7 +311,7 @@ async def test_update_memory_patches_owned_row(
     ctx: ToolContext, bus: _BusStub, contact_id: int
 ) -> None:
     row = bus.memory_book.get(bus.memory_book.add(Memory(contact_id=contact_id, kind='quick_note', subject='orig', body='orig body', priority=2)))
-    tool = UpdateMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(
         ctx,
         memory_id=row.id,
@@ -340,7 +339,7 @@ async def test_update_memory_rejects_cross_contact(
 ) -> None:
     other_id = bus.contacts_book.get(bus.contacts_book.add(Contact(name='other'))).id
     foreign = bus.memory_book.get(bus.memory_book.add(Memory(contact_id=other_id, kind='fact', subject='orig', body='private', priority=3)))
-    tool = UpdateMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(
         ctx,
         memory_id=foreign.id,
@@ -361,7 +360,7 @@ async def test_update_memory_allows_unconstrained_free_text(
 ) -> None:
     """The memory tool does not impose DTO text or priority caps."""
     row = bus.memory_book.get(bus.memory_book.add(Memory(contact_id=contact_id, kind='fact', subject='ok', body='ok', priority=3)))
-    tool = UpdateMemoryTool()
+    tool = SaveMemoryTool()
 
     updated_subject = await tool.run(
         ctx,
@@ -389,7 +388,7 @@ async def test_update_memory_allows_unconstrained_free_text(
 async def test_update_memory_missing_id(
     ctx: ToolContext,
 ) -> None:
-    tool = UpdateMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(
         ctx,
         memory_id=99999,
@@ -403,7 +402,7 @@ async def test_update_memory_missing_id(
 async def test_update_memory_rejects_non_int(
     ctx: ToolContext,
 ) -> None:
-    tool = UpdateMemoryTool()
+    tool = SaveMemoryTool()
     result = await tool.run(ctx, memory_id="17")
     assert result.is_error is True
     assert "memory_id must be int" in result.content

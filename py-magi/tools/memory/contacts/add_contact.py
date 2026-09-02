@@ -2,11 +2,10 @@
 directory.
 
 Notes about an existing contact are recorded separately
-via :mod:`tools.memory.contacts.add_contact_note`; this
+via :mod:`tools.memory.contacts.save_contact_note`; this
 tool accepts an optional ``notes`` argument as a convenience
-for "create + first observation" flows and forwards it to
-:mod:`tools.memory.contacts.add_contact_note` so both
-paths land on the same ``contact_notes`` row shape.
+for "create + first observation" flows and writes the same
+``contact_notes`` row shape.
 
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contacts_book``
@@ -39,7 +38,7 @@ class AddContactTool(BaseTool):
         "role ('assigned' default / 'guest'), and "
         "notes (initial note, optional) are optional. "
         "To add notes about an existing contact, use "
-        "add_contact_note instead."
+        "save_contact_note instead."
     )
     input_schema = {
         "type": "object",
@@ -74,7 +73,7 @@ class AddContactTool(BaseTool):
                 "type": "string",
                 "description": (
                     "Initial note (optional, ≤8 KB). Forwarded "
-                    "to add_contact_note after the contact row "
+                    "to save_contact_note after the contact row "
                     "is created — same shape as a permanent "
                     "fact, just bundled for convenience."
                 ),

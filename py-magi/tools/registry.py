@@ -43,24 +43,32 @@ _BUILTIN_TOOLS: tuple[BuiltinTool, ...] = (
     ("tools.shell.output", "BashOutputTool"),
     ("tools.shell.kill", "BashKillTool"),
     ("tools.skills.load_skill", "LoadSkillTool"),
-    ("tools.memory.core_memory.add_memory", "AddMemoryTool"),
-    ("tools.memory.core_memory.update_memory", "UpdateMemoryTool"),
+    ("tools.memory.core_memory.save_memory", "SaveMemoryTool"),
     ("tools.memory.core_memory.complete_memory", "CompleteMemoryTool"),
     ("tools.memory.core_memory.delete_memory", "DeleteMemoryTool"),
     ("tools.memory.contacts.add_contact", "AddContactTool"),
-    ("tools.memory.contacts.add_contact_note", "AddContactNoteTool"),
-    ("tools.memory.contacts.update_contact_note", "UpdateContactNoteTool"),
+    ("tools.memory.contacts.save_contact_note", "SaveContactNoteTool"),
     ("tools.memory.contacts.delete_contact_note", "DeleteContactNoteTool"),
     ("tools.memory.contacts.search_contacts", "SearchContactsTool"),
     ("tools.memory.contacts.update_daily_note", "UpdateDailyNoteTool"),
     ("tools.tasks.add_action_item", "AddActionItemTool"),
     ("tools.tasks.complete_action_item", "CompleteActionItemTool"),
     ("tools.tasks.list_action_items", "ListActionItemsTool"),
-    ("tools.mcp.add_mcp_server", "AddMcpServerTool"),
-    ("tools.mcp.list_mcp_servers", "ListMcpServersTool"),
-    ("tools.mcp.update_mcp_server", "UpdateMcpServerTool"),
-    ("tools.mcp.delete_mcp_server", "DeleteMcpServerTool"),
+    ("tools.mcp.mcp_server", "McpServerTool"),
 )
+
+#: Names that used to be builtins. ToolsWorker drops leftover catalog rows
+#: so a renamed merge does not leave the old LLM menu entries behind.
+RETIRED_BUILTIN_NAMES: frozenset[str] = frozenset({
+    "add_memory",
+    "update_memory",
+    "add_contact_note",
+    "update_contact_note",
+    "add_mcp_server",
+    "list_mcp_servers",
+    "update_mcp_server",
+    "delete_mcp_server",
+})
 
 
 def configure(*, bus=None) -> None:
@@ -81,7 +89,9 @@ def builtin_catalog() -> list[dict[str, Any]]:
 
 
 def _catalog_spec(builtin: BuiltinTool) -> dict[str, Any] | None:
-    cls = _load_builtin(builtin)
+    cls = _try_load_builtin(builtin)
+    if cls is None:
+        return None
     name = getattr(cls, "name", "") or ""
     if not name:
         return None
@@ -98,11 +108,16 @@ def _catalog_spec(builtin: BuiltinTool) -> dict[str, Any] | None:
 def _build_tools() -> list[BaseTool]:
     """Construct builtin dispatch instances on demand.
 
-    Unlike catalog seeding, dispatch fails loudly if a declared builtin cannot
-    be imported. MCP management is builtin; only discovered MCP tools are
+    Builtins that still import a retired layout are skipped so the rest
+    can run. MCP management is builtin; only discovered MCP tools are
     injected under the ``"mcp"`` source.
     """
-    return [_load_builtin(builtin)(bus=_bus) for builtin in _BUILTIN_TOOLS]
+    tools: list[BaseTool] = []
+    for builtin in _BUILTIN_TOOLS:
+        cls = _try_load_builtin(builtin)
+        if cls is not None:
+            tools.append(cls(bus=_bus))
+    return tools
 
 
 # -- public API -----------------------------------------------------------
@@ -178,6 +193,14 @@ def _load_builtin(builtin: BuiltinTool) -> type[BaseTool]:
     return getattr(importlib.import_module(module_name), class_name)
 
 
+def _try_load_builtin(builtin: BuiltinTool) -> type[BaseTool] | None:
+    try:
+        return _load_builtin(builtin)
+    except Exception:
+        logger.warning("tools registry: skipping unloadable builtin %s.%s", *builtin, exc_info=True)
+        return None
+
+
 def _fire_listeners() -> None:
     for cb in _listeners:
         try:
@@ -196,4 +219,5 @@ __all__ = [
     "register_tools",
     "on_tools_changed",
     "list_injected",
+    "RETIRED_BUILTIN_NAMES",
 ]
