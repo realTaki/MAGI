@@ -111,22 +111,16 @@ def test_skill_jobs_list_catalog_and_read_body(tmp_path) -> None:
         listed = bus.board(ListSkillsJob)
         fetched = bus.board(GetSkillJob)
         assert listed is not None and fetched is not None
-        catalog = listed.get_result(listed.publish(ListSkillsJob(publisher="test")))
-        assert catalog is not None and catalog.skills
+        catalog = listed.publish(ListSkillsJob(publisher="test"))
+        assert catalog.skills
         names = {skill.name: skill.description for skill in catalog.skills}
         assert "web_lookup" in names
         assert names["web_lookup"]
-        body = fetched.get_result(
-            fetched.publish(GetSkillJob(publisher="test", name="web_lookup"))
-        )
-        assert body is not None
+        body = fetched.publish(GetSkillJob(publisher="test", name="web_lookup"))
         assert body.content is not None
         assert "Web 检索" in body.content
         assert "name: web_lookup" not in body.content
-        missing = fetched.get_result(
-            fetched.publish(GetSkillJob(publisher="test", name="does-not-exist"))
-        )
-        assert missing is not None
+        missing = fetched.publish(GetSkillJob(publisher="test", name="does-not-exist"))
         assert missing.content is None
 
 

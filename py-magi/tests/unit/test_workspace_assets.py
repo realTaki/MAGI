@@ -17,5 +17,5 @@ async def test_agent_prompt_assets_are_bus_owned(tmp_path) -> None:
         board = bus.board(GetPromptJob)
         assert board is not None
         for key in expected:
-            result = board.get_result(board.publish(GetPromptJob(publisher="test", key=key)))
-            assert result is not None and result.value
+            result = board.publish(GetPromptJob(publisher="test", key=key))
+            assert result.value

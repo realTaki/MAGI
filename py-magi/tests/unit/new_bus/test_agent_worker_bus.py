@@ -36,13 +36,12 @@ def _wait_for_claim(board, *, timeout: float = 5.0):
 def _conversation(bus: Bus) -> int:
     board = bus.board(CreateConversationJob)
     assert board is not None
-    job_id = board.publish(
+    result = board.publish(
         CreateConversationJob(
             publisher="test", delivery_address="local", channel="test", topic="test"
         )
     )
-    result = board.get_result(job_id)
-    assert result is not None and result.conversation_id is not None
+    assert result.conversation_id is not None
     return result.conversation_id
 
 

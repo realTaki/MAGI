@@ -23,8 +23,7 @@ class CatalogWorker(BaseWorker):
 
 def _listed(bus: Bus) -> dict[str, str]:
     board = bus.board(ListSettingsJob)
-    result = board.get_result(board.publish(ListSettingsJob()))
-    assert result is not None
+    result = board.publish(ListSettingsJob())
     return result.settings
 
 
