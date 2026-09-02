@@ -1,5 +1,7 @@
 """Background-shell termination — :class:`BashKillTool`.
 
+Jobs: none. Signals a shell tracked by ``_BackgroundShellManager``.
+
 Cancels the monitor task, drains any remaining stdout,
 then sends SIGTERM (5 s grace) → SIGKILL if the process
 refuses to die.  Removes the shell from the registry.

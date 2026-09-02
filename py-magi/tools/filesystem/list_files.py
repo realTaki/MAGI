@@ -1,6 +1,8 @@
 """``list_files`` tool — list immediate children of a
 directory inside the workspace.
 
+Jobs: none. Path is ``bus.workspace / path``.
+
 Non-recursive by design: a recursive walk could dump tens
 of thousands of ``node_modules`` files into the LLM's
 context and burn the next turn's input budget. The model

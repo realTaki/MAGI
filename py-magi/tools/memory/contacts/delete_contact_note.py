@@ -1,13 +1,8 @@
-"""``delete_contact_note`` tool — remove a contact note by
-id. Idempotent (deleting a non-existent id is a no-op
-success). Use when the operator says '忘了那条 / 删掉'.
+"""``delete_contact_note`` — remove a ContactNote.
 
-Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``self.bus.contact_notes_book``
-— the Book owns the data write and returns ``True`` if a
-row was removed, ``False`` if no row matched (the same
-``existed`` flag the bus's ``ContactsService.delete_note``
-exposed). The old service is no longer imported here.
+Jobs:
+  GetContactNoteJob — tell the caller whether the id existed.
+  DeleteContactNoteJob — delete the row; missing id is still success.
 """
 
 from __future__ import annotations
@@ -15,9 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from bus import DeleteContactNoteJob, GetContactNoteJob
 from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.delete_contact_note")
+
+_PUBLISHER = "tools"
 
 
 class DeleteContactNoteTool(BaseTool):
@@ -25,9 +23,8 @@ class DeleteContactNoteTool(BaseTool):
 
     name = "delete_contact_note"
     description = (
-        "Delete a contact note by id. Idempotent — "
-        "deleting a non-existent id is a no-op success. "
-        "Use when the operator says '忘了那条 / 删掉'."
+        "Delete a contact note by id. Idempotent — deleting a missing "
+        "id is a no-op success."
     )
     input_schema = {
         "type": "object",
@@ -41,17 +38,20 @@ class DeleteContactNoteTool(BaseTool):
     }
 
     @BaseTool.require_bus
-    async def run(
-        self,
-        **kwargs: Any) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
         note_id = kwargs.get("note_id")
         if not isinstance(note_id, int):
             return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
-
-        existed = self.bus.contact_notes_book.delete(note_id)
-        logger.info(
-            "delete_contact_note: note=%s existed=%s",
-            note_id,
-            existed,
+        existing = await self.publish(
+            GetContactNoteJob(publisher=_PUBLISHER, contact_note_id=note_id)
         )
+        if existing is None:
+            return ToolResult.err("contact note book is not available")
+        existed = existing.contact_note is not None
+        deleted = await self.publish(
+            DeleteContactNoteJob(publisher=_PUBLISHER, contact_note_id=note_id)
+        )
+        if deleted is None:
+            return ToolResult.err("contact note book is not available")
+        logger.info("delete_contact_note: note=%s existed=%s", note_id, existed)
         return ToolResult.ok({"note_id": note_id, "existed": existed})

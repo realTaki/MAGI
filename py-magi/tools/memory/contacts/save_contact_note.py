@@ -1,19 +1,29 @@
-"""``save_contact_note`` tool — create or edit a contact note.
+"""``save_contact_note`` — create or replace one ContactNote.
 
-``contact_id`` + ``note`` appends a row. ``note_id`` + ``note``
-patches an existing row. Delete stays on ``delete_contact_note``.
+Jobs:
+  GetContactJob — create path: reject unknown ``contact_id``.
+  CreateContactNoteJob — append a note when ``note_id`` is omitted.
+  GetContactNoteJob — load before patch; return the row after write.
+  UpdateContactNoteJob — replace text/kind when ``note_id`` is set.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from typing import Any
 
-from old_bus.firmwares.books.local.contactBook import ContactNote
+from bus import (
+    CreateContactNoteJob,
+    GetContactJob,
+    GetContactNoteJob,
+    NoteKind,
+    UpdateContactNoteJob,
+)
 from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.save_contact_note")
+
+_PUBLISHER = "tools"
 
 
 class SaveContactNoteTool(BaseTool):
@@ -22,10 +32,9 @@ class SaveContactNoteTool(BaseTool):
     name = "save_contact_note"
     description = (
         "Add or update a note about a contact. "
-        "Create: contact_id + note (one fact per row, ≤8 KB). "
-        "Update: note_id + note. If both ids are present, note_id wins. "
-        "To delete, use delete_contact_note. "
-        "note_id is visible in the create result and search_contacts output."
+        "Create: contact_id + note. Update: note_id + note. "
+        "If both ids are present, note_id wins. "
+        "To delete, use delete_contact_note."
     )
     input_schema = {
         "type": "object",
@@ -36,14 +45,16 @@ class SaveContactNoteTool(BaseTool):
             },
             "note_id": {
                 "type": "integer",
-                "description": "id of an existing note row to replace. Required when updating.",
+                "description": "id of an existing note row to replace.",
             },
             "note": {
                 "type": "string",
-                "description": (
-                    "One short fact, or the replacement text. "
-                    "≤8 KB; the Book clamps whitespace and rejects empty."
-                ),
+                "description": "One short fact, or the replacement text.",
+            },
+            "kind": {
+                "type": "string",
+                "enum": [kind.value for kind in NoteKind],
+                "description": "permanent | daily. Defaults to permanent on create.",
             },
         },
         "required": ["note"],
@@ -55,6 +66,14 @@ class SaveContactNoteTool(BaseTool):
             return await self._update(**kwargs)
         return await self._create(**kwargs)
 
+    async def _kind(self, raw: Any, *, default: NoteKind | None) -> NoteKind | ToolResult | None:
+        if raw is None:
+            return default
+        try:
+            return NoteKind(raw)
+        except ValueError:
+            return ToolResult.err("kind must be permanent or daily")
+
     async def _create(self, **kwargs: Any) -> ToolResult:
         contact_id = kwargs.get("contact_id")
         note = kwargs.get("note")
@@ -62,23 +81,30 @@ class SaveContactNoteTool(BaseTool):
             return ToolResult.err(f"contact_id must be int, got {type(contact_id).__name__}")
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err("note is required (non-empty string)")
-
-        contact = self.bus.contacts_book.get(contact_id)
-        if contact is None:
-            return ToolResult.err(f"contact {contact_id!r} not found")
-
-        note_id = self.bus.contact_notes_book.add(ContactNote(
-            contact_id=contact_id,
-            note=note,
-        ))
-        row = self.bus.contact_notes_book.get(note_id)
-
-        logger.info(
-            "save_contact_note: note=%s appended to contact=%s",
-            row.id,
-            contact_id,
+        kind = await self._kind(kwargs.get("kind"), default=NoteKind.PERMANENT)
+        if isinstance(kind, ToolResult):
+            return kind
+        found = await self.publish(GetContactJob(publisher=_PUBLISHER, contact_id=contact_id))
+        if found is None:
+            return ToolResult.err("contact book is not available")
+        if found.contact is None:
+            return ToolResult.err(f"contact {contact_id} not found")
+        created = await self.publish(
+            CreateContactNoteJob(
+                publisher=_PUBLISHER,
+                contact_id=contact_id,
+                note=note.strip(),
+                kind=kind,
+            )
         )
-        return ToolResult.ok({"created": row.to_dict()})
+        if created is None or created.contact_note_id is None:
+            return ToolResult.err("contact note book is not available")
+        fetched = await self.publish(
+            GetContactNoteJob(publisher=_PUBLISHER, contact_note_id=created.contact_note_id)
+        )
+        row = None if fetched is None else fetched.contact_note
+        logger.info("save_contact_note: note=%s appended to contact=%s", created.contact_note_id, contact_id)
+        return ToolResult.ok({"created": None if row is None else row.to_dict()})
 
     async def _update(self, **kwargs: Any) -> ToolResult:
         note_id = kwargs.get("note_id")
@@ -87,15 +113,29 @@ class SaveContactNoteTool(BaseTool):
             return ToolResult.err(f"note_id must be int, got {type(note_id).__name__}")
         if not isinstance(note, str) or not note.strip():
             return ToolResult.err("note is required (non-empty string)")
-
-        book = self.bus.contact_notes_book
-        existing = book.get(note_id)
-        if existing is None:
-            return ToolResult.err(f"contact_note {note_id!r} not found")
-        book.update(replace(existing, note=note))
-        row = book.get(note_id) or replace(existing, note=note)
-        logger.info(
-            "save_contact_note: note=%s updated",
-            row.id,
+        kind = await self._kind(kwargs.get("kind"), default=None)
+        if isinstance(kind, ToolResult):
+            return kind
+        existing = await self.publish(
+            GetContactNoteJob(publisher=_PUBLISHER, contact_note_id=note_id)
         )
-        return ToolResult.ok({"updated": row.to_dict()})
+        if existing is None:
+            return ToolResult.err("contact note book is not available")
+        if existing.contact_note is None:
+            return ToolResult.err(f"contact_note {note_id} not found")
+        updated = await self.publish(
+            UpdateContactNoteJob(
+                publisher=_PUBLISHER,
+                contact_note_id=note_id,
+                note=note.strip(),
+                kind=kind,
+            )
+        )
+        if updated is None:
+            return ToolResult.err("contact note book is not available")
+        fetched = await self.publish(
+            GetContactNoteJob(publisher=_PUBLISHER, contact_note_id=note_id)
+        )
+        row = None if fetched is None else fetched.contact_note
+        logger.info("save_contact_note: note=%s updated", note_id)
+        return ToolResult.ok({"updated": None if row is None else row.to_dict()})

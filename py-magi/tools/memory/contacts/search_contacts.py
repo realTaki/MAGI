@@ -1,16 +1,8 @@
-"""``search_contacts`` tool — search contacts by name or by
-note content.
+"""``search_contacts`` — substring match over contacts and their notes.
 
-Returns the matching contacts and a sample of their
-notes. Use when the operator says '查一下 Lily / 谁在财务部'.
-
-Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``self.bus.contacts_book``
-for the contact-side join (name + note match,
-``last_seen_at`` ordering) and ``self.bus.contact_notes_book``
-for the per-contact note sample. The legacy service at
-bus Book API is no longer
-imported here.
+Jobs:
+  ListContactsJob — load the directory (no search Job; filter here).
+  ListContactNotesJob — per contact, attach a note sample and match query text.
 """
 
 from __future__ import annotations
@@ -18,92 +10,78 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from bus import ListContactNotesJob, ListContactsJob
 from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.search_contacts")
 
+_PUBLISHER = "tools"
+
 
 class SearchContactsTool(BaseTool):
-    """Search contacts by name or by note content."""
+    """Search contacts by name, nickname, or note text."""
 
     name = "search_contacts"
     description = (
-        "Search the contact directory by name or by note "
-        "text. Returns the matching contacts and a sample "
-        "of their notes. Use when the operator says "
-        "'查一下 Lily / 谁在财务部'."
+        "Search the contact directory by name, nickname, or note text. "
+        "Returns matching contacts and a sample of their notes."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": (
-                    "Search string (matches name or note text, case-insensitive substring)."
-                ),
+                "description": "Case-insensitive substring over name, nickname, or notes.",
             },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 100,
                 "default": 20,
-                "description": ("Max contacts to return. Default 20."),
+                "description": "Max contacts to return. Default 20.",
             },
             "notes_per_contact": {
                 "type": "integer",
-                "minimum": 1,
+                "minimum": 0,
                 "maximum": 50,
                 "default": 5,
-                "description": (
-                    "Max notes to attach per contact in the "
-                    "response. Default 5 (newest first). "
-                    "Set to 0 to skip notes entirely."
-                ),
+                "description": "Max notes to attach per contact. Default 5.",
             },
         },
         "required": ["query"],
     }
 
     @BaseTool.require_bus
-    async def run(
-        self,
-        **kwargs: Any) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
         query = kwargs.get("query")
         if not isinstance(query, str) or not query.strip():
             return ToolResult.err("query is required (non-empty string)")
+        needle = query.strip().lower()
         limit = int(kwargs.get("limit") or 20)
         notes_per_contact = int(kwargs.get("notes_per_contact") or 5)
+        listed = await self.publish(ListContactsJob(publisher=_PUBLISHER))
+        if listed is None or listed.contacts is None:
+            return ToolResult.err("contact book is not available")
 
-        contacts = self.bus.contacts_book.search(
-            query=query,
-            limit=limit,
-        )
-
-        results: list[dict] = []
-        for contact in contacts:
-            entry: dict = contact.to_dict()
+        matches: list[dict[str, Any]] = []
+        for contact in listed.contacts:
+            notes_result = await self.publish(
+                ListContactNotesJob(publisher=_PUBLISHER, contact_id=contact.id)
+            )
+            notes = [] if notes_result is None or notes_result.contact_notes is None else notes_result.contact_notes
+            haystacks = [
+                contact.name or "",
+                contact.nickname or "",
+                *(item.note or "" for item in notes),
+            ]
+            if not any(needle in text.lower() for text in haystacks):
+                continue
+            entry = contact.to_dict()
             if notes_per_contact > 0:
-                # Slice in-place to bound the response —
-                # ``list_for_contact`` returns the full
-                # corpus sorted newest-first, so a prefix
-                # is the same "sample" the legacy
-                # ``ContactView`` returned.
-                notes = self.bus.contact_notes_book.list_for_contact(
-                    contact_id=contact.id,
-                )[:notes_per_contact]
-                entry["notes"] = [n.to_dict() for n in notes]
-            results.append(entry)
+                entry["notes"] = [item.to_dict() for item in notes[:notes_per_contact]]
+            matches.append(entry)
+            if len(matches) >= limit:
+                break
 
-        logger.info(
-            "search_contacts: query=%r limit=%s returned=%s",
-            query,
-            limit,
-            len(results),
-        )
-        return ToolResult.ok(
-            {
-                "query": query,
-                "count": len(results),
-                "contacts": results,
-            }
-        )
+        logger.info("search_contacts: query=%r returned=%s", query, len(matches))
+        return ToolResult.ok({"query": query, "contacts": matches})
