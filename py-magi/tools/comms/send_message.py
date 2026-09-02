@@ -1,160 +1,65 @@
-"""``send_message`` tool — deliver a message to the
-operator without leaving the tool loop.
-
-Use case: the LLM is partway through a multi-turn tool
-chain (e.g. "read AGENT.md, list skills, then reply") and
-wants to give the user a status update ("Reading AGENT.md...") instead of going silent for the full tool
-chain duration. Scheduled tasks also use this tool to
-push results to whichever channel the task targets.
-
-Cross-channel delivery (D.28)
------------------------------
-
-The push target is determined by the **conversation's channel**
-(``chat_conversations.channel``) and dispatched via the channel-
-owned delivery worker. The tool never reads the per-channel
-IM id itself — that's the adapter's job.
-
-  - WebUI conversation (``channel="webui"``) — the dispatcher
-    appends the message directly to the chat conversation store
-    so the operator sees it as a chat bubble in the WebUI
-    scroll.
-  - TG conversation (``channel="tg"``) — the TG adapter
-    resolves the user's bound chat id and pushes via the
-    python-telegram-bot client.
-  - Scheduled task conversation (``channel="scheduled"``) —
-    the runner creates a conversation with the task's
-    ``target_channel``; the dispatcher routes to the
-    corresponding adapter.
-  - Future channels (Slack, WeChat, etc.) — write an
-    adapter + register it; this tool doesn't change.
-
-The tool is fully channel-agnostic. A single scheduled
-task with ``target_channel="tg"`` can deliver to Telegram;
-another with ``target_channel="webui"`` delivers to the
-WebUI chat scroll. The LLM calls ``send_message`` the
-same way regardless.
-
-Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via
-``self.bus.conversations_book`` (cross-contact-safe conversation
-lookup via :meth:`ConversationBook.get_for_owner`) and
-``self.bus.delivery_notify_job_board`` (publish a
-:class:`bus.firmwares.jobs.deliveryNotifyJob.DeliveryNotifyJob` to
-the durable ``delivery_notify_jobs`` queue — the channel-owned
-ChannelWorker performs the actual protocol I/O after the
-agent transition has committed). The legacy services at
-bus Book API and
-bus Book API are no longer
-imported here.
-"""
+"""Send a message to one conversation."""
 
 from __future__ import annotations
 
-import logging
+import asyncio
 from typing import Any
 
-from old_bus.firmwares.jobs.deliveryNotifyJob import DeliveryNotifyJob
+from bus import DeliveryNotify, GetConversationJob
 from tools.BaseTool import BaseTool, ToolResult
-
-logger = logging.getLogger("tools.comms.send_message")
-
-
-_MAX_TEXT_LEN = 4000  # matches common IM client caps (TG 4096, Slack 40k, ...)
 
 
 class SendMessageTool(BaseTool):
-    """Send a side-channel message to the current user."""
+    """Deliver text to a conversation through ``DeliveryNotify``."""
 
     name = "send_message"
-
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The agent worker resolves the operator's role from the
-    # Contact row and filters the tool menu so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Deliver a message to the operator without "
-        "ending the tool loop. Use sparingly — most "
-        "communication should happen in the final reply. "
-        "Cross-channel: works for WebUI, Telegram, and "
-        "scheduled-task conversations equally. The dispatcher "
-        "routes to the conversation's channel; the tool is "
-        "fully channel-agnostic."
+        "Send a message to a conversation. Use when the operator "
+        "should see text in that conversation without waiting for "
+        "the final assistant reply."
     )
     input_schema = {
         "type": "object",
         "properties": {
+            "conversation_id": {
+                "type": "integer",
+                "description": "Conversation to deliver to.",
+            },
             "text": {
                 "type": "string",
-                "description": ("Message body. Up to 4000 characters."),
+                "description": "Message body.",
             },
         },
-        "required": ["text"],
+        "required": ["conversation_id", "text"],
     }
 
     @BaseTool.require_bus
-    async def run(
-        self,
-        **kwargs: Any,
-    ) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
+        try:
+            conversation_id = int(kwargs.get("conversation_id"))
+        except (TypeError, ValueError):
+            return ToolResult.err("conversation_id is required")
         text = kwargs.get("text")
+        if conversation_id <= 0:
+            return ToolResult.err("conversation_id is required")
         if not isinstance(text, str) or not text:
-            return ToolResult(
-                content="send_message: ``text`` is required and must be a non-empty string",
-                is_error=True,
-            )
-        if len(text) > _MAX_TEXT_LEN:
-            return ToolResult(
-                content=(f"send_message: text is {len(text)} chars; v0 limit is {_MAX_TEXT_LEN}."),
-                is_error=True,
-            )
+            return ToolResult.err("text is required")
 
-        conversation_id = int(kwargs.get("conversation_id") or 0)
-        contact_id = int(kwargs.get("contact_id") or 0)
-        if not conversation_id:
-            return ToolResult(
-                content=(
-                    "send_message: no conversation context; "
-                    "the LLM must be invoked from inside a "
-                    "conversation for side-channel push."
-                ),
-                is_error=True,
-            )
+        conversations = self.bus.board(GetConversationJob)
+        deliveries = self.bus.board(DeliveryNotify)
+        if conversations is None or deliveries is None:
+            return ToolResult.err("delivery is not available")
+        found = await asyncio.to_thread(
+            conversations.publish,
+            GetConversationJob(publisher="tools", conversation_id=conversation_id),
+        )
+        if found.conversation is None:
+            return ToolResult.err(f"unknown conversation {conversation_id}")
+        await asyncio.to_thread(
+            deliveries.publish,
+            DeliveryNotify(publisher="tools", conversation_id=conversation_id, text=text),
+        )
+        return ToolResult(content=f"queued to conversation {conversation_id}")
 
-        # A tool never invokes a channel adapter.  It writes a durable
-        # delivery intent; the channel-owned ChannelWorker performs the
-        # actual protocol I/O after the agent transition has committed.
-        logger.info(
-            "send_message: enqueueing %d chars for conversation=%s channel=%s",
-            len(text),
-            conversation_id,
-            str(kwargs.get("channel") or ""),
-        )
-        conversation = self.bus.conversations_book.get_for_owner(
-            contact_id=contact_id,
-            conversation_id=conversation_id,
-        )
-        if conversation is None:
-            return ToolResult(
-                content=f"send_message: unknown conversation {conversation_id!r}",
-                is_error=True,
-            )
-        self.bus.delivery_notify_job_board.publish(
-            DeliveryNotifyJob(
-                channel=conversation.channel,
-                destination=conversation.delivery_address or None,
-                text=text,
-                conversation_id=conversation.id,
-                contact_id=conversation.contact_id,
-            )
-        )
-        logger.info("send_message: queued for conversation=%s", conversation_id)
 
-        return ToolResult(
-            content=f"send_message: queued {len(text)} chars to conversation {conversation_id}"
-        )
+__all__ = ["SendMessageTool"]
