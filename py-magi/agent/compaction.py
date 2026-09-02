@@ -13,7 +13,6 @@ async def compact_messages(
     context_window: int,
     keep_recent: int,
     prompt: str,
-    max_tokens: int,
     call_llm: Callable[..., Awaitable[CallLLMResult | None]],
 ) -> str | None:
     """Return a replacement summary when ``messages`` exceed the window.
@@ -39,7 +38,6 @@ async def compact_messages(
             ),
         ],
         [],
-        max_tokens=max_tokens,
     )
     if result is None or result.status is not JobStatus.COMPLETED or result.message is None:
         return None

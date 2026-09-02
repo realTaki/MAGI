@@ -109,7 +109,6 @@ class LiteLLMClient:
         params: dict[str, Any] = {
             "model": f"{host.prefix}/{self.model or host.default_model}",
             "messages": [self._request_message(message) for message in job.messages],
-            "max_tokens": job.max_tokens,
             "reasoning_effort": "high",
             "api_key": self.api_key,
             "timeout": 120.0,

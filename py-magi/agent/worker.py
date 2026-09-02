@@ -12,14 +12,6 @@ class AgentWorker(BaseWorker):
     """Route each claimed ``ChatNotify`` to its serial ``Conversation``."""
 
     worker_name = "agent"
-    default_settings = {
-        "max_tokens": "1024",
-        "tool_wait_seconds": "300",
-        "llm_timeout_seconds": "120",
-        "compact_keep_recent": "20",
-        "compact_summary_tokens": "10000",
-        "compact_context_window": "100000",
-    }
 
     def __init__(self, bus, *, poll_seconds: float = 0.25) -> None:
         super().__init__(bus, poll_seconds=poll_seconds)
