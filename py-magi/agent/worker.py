@@ -19,7 +19,6 @@ class AgentWorker(BaseWorker):
         "compact_keep_recent": "20",
         "compact_summary_tokens": "10000",
         "compact_context_window": "100000",
-        "compact_threshold_pct": "80",
     }
 
     def __init__(self, bus, *, poll_seconds: float = 0.25) -> None:
