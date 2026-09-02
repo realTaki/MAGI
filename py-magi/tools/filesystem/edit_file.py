@@ -47,16 +47,6 @@ class EditFileTool(BaseTool):
 
     name = "edit_file"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The agent worker resolves the operator's role from the
-    # Contact row and filters the tool menu so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-
     description = (
         "Replace an exact substring in a file. The ``old_str`` "
         "argument must match **uniquely** in the file — if the "

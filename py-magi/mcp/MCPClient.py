@@ -92,12 +92,6 @@ class MCPTool(BaseTool):
     ``github__create_issue`` so two servers offering the same
     unqualified tool name (e.g. both expose ``search``) don't
     shadow each other in the LLM's tool menu.
-
-    MCP tools are intentionally unrestricted by role
-    (``ALLOWED_ROLES`` left as the default empty frozenset).
-    The MCP server operator decides which tools to expose;
-    tightening comes later via per-tool ``allowed_roles``
-    frontmatter on the server config side.
     """
 
     def __init__(

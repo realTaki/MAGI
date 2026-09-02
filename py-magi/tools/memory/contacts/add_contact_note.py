@@ -5,8 +5,6 @@ Notes are individual ``contact_notes`` rows; the LLM can
 update or delete by id without rewriting anything else
 about the same person.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns write invariants (non-empty note,
@@ -31,7 +29,6 @@ class AddContactNoteTool(BaseTool):
     """Append one new note row to a contact."""
 
     name = "add_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Add a new note about an existing contact (by contact_id). "
         "Each call creates one row in contact_notes — "

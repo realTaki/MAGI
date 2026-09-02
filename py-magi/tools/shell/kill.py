@@ -22,12 +22,6 @@ class BashKillTool(BaseTool):
 
     name = "bash_kill"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as :class:`~tools.tasks.schedule.ScheduleTaskTool`
-    # / the action-item trio.
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-
     description = (
         "Terminate a background bash shell by id. "
         "Sends SIGTERM first; if the process doesn't "

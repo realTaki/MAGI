@@ -7,11 +7,6 @@ the existing row (same convention as
 privacy: a tool call from operator A never sees operator B's
 rows, even if the LLM asks for an id it doesn't own — the
 row is missing rather than shared.
-
-Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
-``Contact.role``) operators may operate on their own action
-items. ``guest`` callers don't see the tool in their menu.
 """
 
 from __future__ import annotations
@@ -65,8 +60,6 @@ class CompleteActionItemTool(BaseTool):
         },
         "required": ["item_id"],
     }
-
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     @BaseTool.require_bus
     async def run(

@@ -69,7 +69,6 @@ class AddMcpServerTool(BaseTool):
     """Create a new MCP server. Requires name + connection_type."""
 
     name = "add_mcp_server"
-    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Add a new MCP (Model-Context-Protocol) server. "
         "The operator must provide at least ``name`` and "

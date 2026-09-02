@@ -63,7 +63,6 @@ class UpdateMcpServerTool(BaseTool):
     """Update an existing MCP server's fields."""
 
     name = "update_mcp_server"
-    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Update an existing MCP server by name. The new "
         "state replaces the existing row entirely — "

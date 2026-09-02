@@ -5,8 +5,6 @@ Use when the operator says '改一下那条 / 把 ... 改成 ...'.
 The ``note_id`` is visible in the ``add_contact_note``
 result and the ``search_contacts`` output.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contact_notes_book``.
 The flow is ``get`` → ``with_changes`` → base ``update``;
@@ -31,7 +29,6 @@ class UpdateContactNoteTool(BaseTool):
     """Edit an existing note by id."""
 
     name = "update_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Update an existing contact note by id. Use when "
         "the operator says '改一下那条 / 把 ... 改成 ...'. "

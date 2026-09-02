@@ -4,11 +4,6 @@ operator's *own* action items.
 Strict per-contact privacy: a tool call from operator A
 never sees operator B's rows, even if the LLM asks for an
 id it doesn't own — the row is missing rather than shared.
-
-Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
-``Contact.role``) operators may list their own action
-items. ``guest`` callers don't see the tool in their menu.
 """
 
 from __future__ import annotations
@@ -62,8 +57,6 @@ class ListActionItemsTool(BaseTool):
             },
         },
     }
-
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     @BaseTool.require_bus
     async def run(

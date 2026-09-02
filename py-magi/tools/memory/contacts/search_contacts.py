@@ -4,8 +4,6 @@ note content.
 Returns the matching contacts and a sample of their
 notes. Use when the operator says '查一下 Lily / 谁在财务部'.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contacts_book``
 for the contact-side join (name + note match,
@@ -29,7 +27,6 @@ class SearchContactsTool(BaseTool):
     """Search contacts by name or by note content."""
 
     name = "search_contacts"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Search the contact directory by name or by note "
         "text. Returns the matching contacts and a sample "

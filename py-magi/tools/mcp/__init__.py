@@ -1,7 +1,7 @@
 """MCP server administration tools.
 
-LLM-callable CRUD tools for configuring MCP servers. Admin-only;
-the LLM uses these to help the operator add / list / update /
+LLM-callable CRUD tools for configuring MCP servers.
+The LLM uses these to help the operator add / list / update /
 delete server rows. The :class:`~mcp.worker.McpWorker` does
 not call these tools — it only reads the resulting rows from
 ``bus.mcp_servers_book`` to manage live connections.
@@ -24,8 +24,7 @@ Tools
 - :mod:`tools.mcp.update_mcp_server`  — :class:`UpdateMcpServerTool`
 - :mod:`tools.mcp.delete_mcp_server`  — :class:`DeleteMcpServerTool`
 
-Scope (admin-only): MCP servers are infrastructure — only
-``admin`` operators can create / update / delete them. The
-``ALLOWED_ROLES`` constant on each tool is catalog metadata
-for the agent menu.
+MCP servers are infrastructure configuration. The LLM uses
+these tools when the operator asks to add, list, update, or
+remove a server.
 """

@@ -25,7 +25,6 @@ class ListMcpServersTool(BaseTool):
     """List all configured MCP servers (metadata only)."""
 
     name = "list_mcp_servers"
-    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "List all configured MCP servers with their metadata "
         "(name, type, enabled status, timeouts). Env vars "

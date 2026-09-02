@@ -25,7 +25,6 @@ class DeleteMcpServerTool(BaseTool):
     if the server doesn't exist."""
 
     name = "delete_mcp_server"
-    ALLOWED_ROLES = frozenset({"admin"})
     description = (
         "Delete an MCP server by name. Removing a server also "
         "removes all tools it surfaced. If the server doesn't "

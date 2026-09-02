@@ -21,8 +21,6 @@ class LoadSkillTool(BaseTool):
 
     name = "load_skill"
 
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-
     description = (
         "Read the full body of a registered skill. Use when "
         "the system prompt's 'Available skills' summary is not "
