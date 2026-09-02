@@ -41,6 +41,11 @@ if TYPE_CHECKING:
     from .worker import AgentWorker
 
 
+LLM_TIMEOUT_SECONDS = 300
+TOOL_WAIT_SECONDS = 120
+COMPACT_KEEP_RECENT = 20
+
+
 @dataclass(frozen=True)
 class LLMContinuation:
     """One assistant tool-call state retained to continue the LLM response."""
@@ -100,8 +105,8 @@ class Conversation:
     # Current Agent-visible tool definitions passed to CallLLMJob.
     tools: list[Any] = field(init=False, default_factory=list)
 
-    # ChatNotify jobs whose inputs have been absorbed into the current LLM turn.
-    _jobs: list[ChatNotify] = field(init=False, default_factory=list)
+    # The ChatNotify whose turn is still awaiting a terminal result.
+    _job: ChatNotify | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         conversation = self._conversation()
@@ -128,7 +133,7 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        self._jobs = [job]
+        self._job = job
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.latest_continuation = None
         try:
@@ -162,19 +167,13 @@ class Conversation:
         self._settle(error)
 
     async def _process(self) -> str | None:
-        llm_timeout = await self._setting_float("llm_timeout_seconds", 120)
-        max_tokens = await self._setting_int("max_tokens", 1024)
-        tool_wait_seconds = await self._setting_float("tool_wait_seconds", 300)
         call_llm = partial(
             self._call_llm,
-            timeout=llm_timeout,
+            timeout=LLM_TIMEOUT_SECONDS,
         )
 
         while True:
-            await self._compact(
-                call_llm=call_llm,
-                max_tokens=max_tokens,
-            )
+            await self._compact(call_llm=call_llm)
             llm = await call_llm(
                 list(
                     chain(
@@ -187,7 +186,6 @@ class Conversation:
                     )
                 ),
                 self.tools,
-                max_tokens=max_tokens,
             )
             if llm is None:
                 return "回复生成超时，请稍后再试。"
@@ -198,15 +196,17 @@ class Conversation:
                 return None
             tool_messages = await self._run_tools(
                 llm.message.tool_calls,
-                wait_seconds=tool_wait_seconds,
+                wait_seconds=TOOL_WAIT_SECONDS,
             )
             pending = list(self._pending)
             self._pending.clear()
-            self._jobs.extend(pending)
             pending_inputs = [
-                LLMMessage(role=LLMMessageRole.USER, content=job.text)
-                for job in pending
+                LLMMessage(role=LLMMessageRole.USER, content=pending_job.text)
+                for pending_job in pending
             ]
+            for pending_job in pending:
+                self._settle()
+                self._job = pending_job
             if self.latest_continuation is not None:
                 self.history.extend(self.latest_continuation.without_tools())
             self.latest_continuation = LLMContinuation(
@@ -235,26 +235,24 @@ class Conversation:
         self,
         *,
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
-        max_tokens: int,
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
-        model_window = await self._setting_int("provider.context_window", 0)
-        window = (
-            max(1, model_window // 2)
-            if model_window
-            else await self._setting_int("compact_context_window", 100_000)
+        setting = await self._worker.ask(
+            GetSettingJob(publisher=self._worker.worker_name, key="provider.context_window")
         )
-        keep = max(1, await self._setting_int("compact_keep_recent", 20))
+        if setting is None or setting.value is None:
+            return
+        window = int(setting.value) // 2
+        if window < 1:
+            return
         prompt = await self._prompt("agent/compaction")
         if not prompt:
             return
-        summary_tokens = max(1, await self._setting_int("compact_summary_tokens", 10_000))
         summary = await compact_messages(
             [*self._summary_messages(), *self.history],
             context_window=window,
-            keep_recent=keep,
+            keep_recent=COMPACT_KEEP_RECENT,
             prompt=prompt,
-            max_tokens=summary_tokens,
             call_llm=call_llm,
         )
         if not summary:
@@ -269,8 +267,8 @@ class Conversation:
         if updated is None:
             return
         live = self._get_active_messages()
-        if len(live) > keep:
-            cut_id = live[-keep].id
+        if len(live) > COMPACT_KEEP_RECENT:
+            cut_id = live[-COMPACT_KEEP_RECENT].id
             await self._worker.ask(
                 ArchiveMessagesJob(
                     publisher=self._worker.worker_name,
@@ -280,21 +278,21 @@ class Conversation:
             )
             self.active_from_id = cut_id
         self.summary = self._summary_message(summary)
-        self.history = self.history[-keep:]
+        self.history = self.history[-COMPACT_KEEP_RECENT:]
 
     def _settle(self, error: str | None = None) -> None:
-        if not self._jobs:
+        job = self._job
+        if job is None:
             return
-        for job in self._jobs:
-            self._worker.submit(
-                ChatNotify,
-                ChatNotifyResult(
-                    id=job.id,
-                    status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
-                    error=error,
-                ),
-            )
-        self._jobs.clear()
+        self._job = None
+        self._worker.submit(
+            ChatNotify,
+            ChatNotifyResult(
+                id=job.id,
+                status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
+                error=error,
+            ),
+        )
 
     def _conversation(self):
         board = self._worker.board(GetConversationJob)
@@ -373,27 +371,6 @@ class Conversation:
         result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
         return None if result is None else result.value
 
-    async def _setting(self, key: str) -> str | None:
-        result = await self._worker.ask(GetSettingJob(publisher=self._worker.worker_name, key=key))
-        if result is not None and result.value is not None:
-            return result.value
-        result = await self._worker.ask(
-            GetSettingJob(publisher=self._worker.worker_name, key=f"agent.{key}")
-        )
-        return None if result is None else result.value
-
-    async def _setting_int(self, key: str, default: int) -> int:
-        try:
-            return int(await self._setting(key) or default)
-        except ValueError:
-            return default
-
-    async def _setting_float(self, key: str, default: float) -> float:
-        try:
-            return float(await self._setting(key) or default)
-        except ValueError:
-            return default
-
     async def _run_tools(
         self,
         calls: list[LLMToolCall],
@@ -460,7 +437,6 @@ class Conversation:
         messages: list[LLMMessage],
         tools: list[Any],
         *,
-        max_tokens: int,
         timeout: float,
     ) -> CallLLMResult | None:
         board = self._worker.board(CallLLMJob)
@@ -472,7 +448,6 @@ class Conversation:
                 publisher=self._worker.worker_name,
                 messages=messages,
                 tools=tools,
-                max_tokens=max_tokens,
             ),
         )
         return await self._worker.call(board.get_result, job_id, timeout=timeout)

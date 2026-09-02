@@ -77,7 +77,6 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
             ),
         ],
         tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
-        max_tokens=128,
     )
 
     restored = CallLLMJob.parse(job.to_dict())
@@ -155,7 +154,6 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
             LLMMessage(role=LLMMessageRole.TOOL, tool_call_id="earlier", content="sunny"),
         ],
         tools=[LLMTool(name="weather", description="Get weather", input_schema={"type": "object"})],
-        max_tokens=128,
     )
 
     result = await client.complete(job)
@@ -166,7 +164,6 @@ async def test_client_maps_only_the_public_llm_contract(monkeypatch: pytest.Monk
             {"role": "user", "content": "What is the weather?"},
             {"role": "tool", "tool_call_id": "earlier", "content": "sunny"},
         ],
-        "max_tokens": 128,
         "reasoning_effort": "high",
         "api_key": "key",
         "timeout": 120.0,

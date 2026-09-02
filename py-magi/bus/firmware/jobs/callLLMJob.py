@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Integer
+from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow
@@ -63,14 +63,13 @@ class LLMMessage:
 class CallLLMJob(BaseJob):
     """One backend-neutral text-and-tools completion request.
 
-    ``max_tokens`` caps the completion. Provider selection, credentials and
-    SDK-specific options remain private Settings/adapter concerns. Streaming
-    remains absent until BUS has a durable stream contract.
+    Provider selection, credentials, and SDK-specific options remain private
+    Settings/adapter concerns. Streaming remains absent until BUS has a durable
+    stream contract.
     """
 
     messages: list[LLMMessage]
     tools: list[LLMTool]
-    max_tokens: int = 1024
 
 
 @dataclass
@@ -85,7 +84,6 @@ class CallLLMJobRow(BaseJobRow):
 
     messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
     message: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 

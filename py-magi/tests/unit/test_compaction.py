@@ -17,8 +17,8 @@ def test_estimates_are_non_negative_and_include_message_overhead() -> None:
 async def test_compact_messages_preserves_the_recent_history_tail() -> None:
     calls = []
 
-    async def call_llm(messages, tools, *, max_tokens):
-        calls.append((messages, tools, max_tokens))
+    async def call_llm(messages, tools):
+        calls.append((messages, tools))
         return CallLLMResult(
             status=JobStatus.COMPLETED,
             message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="summary"),
@@ -31,7 +31,6 @@ async def test_compact_messages_preserves_the_recent_history_tail() -> None:
         context_window=1,
         keep_recent=1,
         prompt="summarize",
-        max_tokens=100,
         call_llm=call_llm,
     ) == "summary"
     assert calls[0][0][1].content == "[USER]\nold"
