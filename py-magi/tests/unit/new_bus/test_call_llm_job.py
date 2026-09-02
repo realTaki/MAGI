@@ -12,6 +12,7 @@ from bus import (
     ListToolsJob,
     LLMMessage,
     LLMMessageRole,
+    LLMThinkingBlock,
     LLMTool,
     LLMToolCall,
     RunToolJob,
@@ -41,12 +42,35 @@ async def test_call_llm_job_round_trips_typed_contract_through_job_board(tmp_pat
         assert claimed.tools == [LLMTool(name="echo", description="Echo input", input_schema={"type": "object"})]
 
         assert board.submit_result(
-            CallLLMResult(id=job_id, message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="ok"))
+            CallLLMResult(
+                id=job_id,
+                message=LLMMessage(
+                    role=LLMMessageRole.ASSISTANT,
+                    content="ok",
+                    thinking_blocks=[
+                        LLMThinkingBlock(
+                            type="thinking",
+                            thinking="I checked the tool result.",
+                            signature="signature",
+                        )
+                    ],
+                ),
+            )
         )
         result = board.get_result(job_id)
 
     assert result is not None
-    assert result.message == LLMMessage(role=LLMMessageRole.ASSISTANT, content="ok")
+    assert result.message == LLMMessage(
+        role=LLMMessageRole.ASSISTANT,
+        content="ok",
+        thinking_blocks=[
+            LLMThinkingBlock(
+                type="thinking",
+                thinking="I checked the tool result.",
+                signature="signature",
+            )
+        ],
+    )
 
 
 @pytest.mark.asyncio

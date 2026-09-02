@@ -24,6 +24,15 @@ class LLMMessageRole(StrEnum):
 
 
 @dataclass(frozen=True)
+class LLMThinkingBlock:
+    """LiteLLM thinking state required for a tool-result continuation."""
+
+    type: str
+    thinking: str
+    signature: str
+
+
+@dataclass(frozen=True)
 class LLMMessage:
     """One backend-neutral item in an LLM conversation.
 
@@ -36,7 +45,7 @@ class LLMMessage:
     tool_calls: list[LLMToolCall] | None = None
     tool_call_id: str | None = None
     is_error: bool = False
-    thinking_blocks: list[dict[str, Any]] | None = None
+    thinking_blocks: list[LLMThinkingBlock] | None = None
 
     def estimated_tokens(self) -> int:
         """Cheap provider-neutral estimate of this message's context cost."""
