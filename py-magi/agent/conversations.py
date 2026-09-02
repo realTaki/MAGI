@@ -238,9 +238,11 @@ class Conversation:
         max_tokens: int,
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
-        window = await self._setting_int(
-            "provider.context_window",
-            await self._setting_int("compact_context_window", 100_000),
+        model_window = await self._setting_int("provider.context_window", 0)
+        window = (
+            max(1, model_window // 2)
+            if model_window
+            else await self._setting_int("compact_context_window", 100_000)
         )
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
         prompt = await self._prompt("agent/compaction")
