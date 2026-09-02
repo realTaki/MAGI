@@ -7,11 +7,6 @@ with the same title creates a *new* row — the operator
 may want two parallel action items with similar titles;
 we don't guess duplicates from a free-text title.
 
-Scope (per-contact, role-gated): only ``admin`` (per
-:attr:`self.bus.magis_admins_book`) and ``assigned`` (per
-``Contact.role``) operators may operate on their own action
-items. ``guest`` callers don't see the tool in their menu.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.action_items_book``
 — the Book is pure CRUD and exposes ``add(...)`` plus
@@ -126,8 +121,6 @@ class AddActionItemTool(BaseTool):
         },
         "required": ["title"],
     }
-
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
 
     @BaseTool.require_bus
     async def run(

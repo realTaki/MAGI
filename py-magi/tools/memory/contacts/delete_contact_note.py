@@ -2,8 +2,6 @@
 id. Idempotent (deleting a non-existent id is a no-op
 success). Use when the operator says '忘了那条 / 删掉'.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns the data write and returns ``True`` if a
@@ -26,7 +24,6 @@ class DeleteContactNoteTool(BaseTool):
     """Remove a contact note by id. Idempotent."""
 
     name = "delete_contact_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Delete a contact note by id. Idempotent — "
         "deleting a non-existent id is a no-op success. "

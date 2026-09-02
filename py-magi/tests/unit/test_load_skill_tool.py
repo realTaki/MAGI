@@ -57,7 +57,3 @@ async def test_load_skill_no_bus_returns_require_bus_error() -> None:
     result = await LoadSkillTool(bus=None).run(name="anything")
     assert result.is_error is True
     assert "tool was constructed without a bus" in result.content
-
-
-def test_load_skill_is_gated_to_admin_and_assigned() -> None:
-    assert LoadSkillTool.ALLOWED_ROLES == frozenset({"admin", "assigned"})

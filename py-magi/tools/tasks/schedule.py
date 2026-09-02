@@ -27,14 +27,6 @@ own provider / API key. This mirrors the WebUI flow so
 the operator's mental model stays consistent: "when this
 fires, it runs as me".
 
-Admin gate: callers whose effective role-tag set
-(``Contact.role`` ∪ ``{admin}`` if
-``self.bus.magis_admins_book.is_admin_for(contact_id=...)`` is
-truthy) doesn't intersect ``{"admin", "assigned"}``
-get ``is_error=True`` at the gate step. ``guest``
-callers have no MAGI-node operator context and aren't expected
-to chat.
-
 Idempotent on ``name``: a second call with the same
 name updates the existing row in place. The LLM retries
 often on transient errors and we want a single
@@ -51,19 +43,12 @@ from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.tasks.schedule")
 
-# ``admin`` and ``assigned`` may see this tool in the
-# catalog. ``guest`` is filtered out of the agent menu.
-
 
 class ScheduleTaskTool(BaseTool):
     name = "schedule_task"
 
-    # ``admin`` is catalog metadata, not a Contact.role value.
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
-        "Create or update a recurring scheduled task. Requires "
-        "admin or assigned-contact scope (i.e. the calling "
-        "operator is signed in to this MAGI). Each fire is an "
+        "Create or update a recurring scheduled task. Each fire is an "
         "independent chat conversation; the conversation history "
         "shows every cron-driven reply as its own conversation under "
         "the operator's chat history. The task fires on "

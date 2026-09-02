@@ -8,8 +8,6 @@ for "create + first observation" flows and forwards it to
 :mod:`tools.memory.contacts.add_contact_note` so both
 paths land on the same ``contact_notes`` row shape.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contacts_book``
 and ``self.bus.contact_notes_book`` — the Books own
@@ -35,7 +33,6 @@ class AddContactTool(BaseTool):
     """Create a new contact."""
 
     name = "add_contact"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Create a new contact (person) in the directory. "
         "Name is required. display_name, tgid, "

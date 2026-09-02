@@ -43,12 +43,6 @@ class BashRunTool(BaseTool):
 
     name = "bash"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as :class:`~tools.tasks.schedule.ScheduleTaskTool`
-    # / the action-item trio.
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-
     def _build_description(self) -> str:
         """OS-specific description block."""
         if self.is_windows:

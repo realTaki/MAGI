@@ -20,17 +20,6 @@ class BashOutputTool(BaseTool):
 
     name = "bash_output"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as :class:`~tools.tasks.schedule.ScheduleTaskTool`
-    # / the action-item trio. The agent worker resolves the
-    # operator's role from the Contact row and filters the
-    # tool menu so non-eligible callers never see these
-    # tools in the LLM's menu. ``MCPTool`` is intentionally
-    # permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
-
     description = (
         "Retrieve new output from a background bash shell. "
         "Returns only stdout accumulated since the last "

@@ -18,8 +18,6 @@ Capture rules (full text lives in
   writes hit a unique-on-``(contact_id, kind, note_date)``
   index and serialize on the row update.
 
-Catalog filter: ``ALLOWED_ROLES = {"admin", "assigned"}``.
-
 Bus plumbing: this tool talks to bus
 (:class:`bus.Bus`) via ``self.bus.contact_notes_book``
 — the Book owns the upsert + daily-append logic,
@@ -45,7 +43,6 @@ class UpdateDailyNoteTool(BaseTool):
     """Append a delta to today's daily note for the caller."""
 
     name = "update_daily_note"
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Append a delta to today's daily note for the "
         "current operator (or the contact_id you pass). One row "
