@@ -210,6 +210,13 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
 
         second = _wait_for_claim(llm)
         assert second is not None
+        looking = [
+            message
+            for message in second.messages
+            if message.role is LLMMessageRole.ASSISTANT and message.content == "Looking it up."
+        ]
+        assert len(looking) == 1
+        assert looking[0].tool_calls
         assert second.messages[-1] == LLMMessage(
             role=LLMMessageRole.TOOL, tool_call_id="call-1", content="found it"
         )
@@ -221,3 +228,56 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
         )
         reply = _wait_for_claim(delivery)
         assert reply is not None and reply.text == "Here it is."
+
+
+def test_agent_tool_failure_returns_as_tool_result_not_delivery(tmp_path) -> None:
+    with Bus("@agent-tool-error", workspace=tmp_path) as bus:
+        assert bus.attach(AgentWorker)
+        conversation_id = _conversation(bus)
+        chat = bus.board(ChatNotify)
+        llm = bus.board(CallLLMJob)
+        tools = bus.board(RunToolJob)
+        delivery = bus.board(DeliveryNotify)
+        assert chat is not None and llm is not None and tools is not None and delivery is not None
+
+        chat.publish(ChatNotify(publisher="test", conversation_id=conversation_id, text="look it up"))
+        first = _wait_for_claim(llm)
+        assert first is not None
+        assert llm.submit_result(
+            CallLLMResult(
+                id=first.id,
+                message=LLMMessage(
+                    role=LLMMessageRole.ASSISTANT,
+                    content="Looking it up.",
+                    tool_calls=[
+                        LLMToolCall(
+                            tool_call_id="call-1", name="lookup", arguments={"q": "MAGI"}
+                        )
+                    ],
+                ),
+            )
+        )
+        progress = _wait_for_claim(delivery)
+        assert progress is not None and progress.text == "Looking it up."
+        tool = _wait_for_claim(tools)
+        assert tool is not None
+        assert tools.submit_result(
+            RunToolResult(id=tool.id, status=JobStatus.FAILED, error="lookup failed")
+        )
+
+        second = _wait_for_claim(llm)
+        assert second is not None
+        assert second.messages[-1] == LLMMessage(
+            role=LLMMessageRole.TOOL,
+            tool_call_id="call-1",
+            content="lookup failed",
+            is_error=True,
+        )
+        assert llm.submit_result(
+            CallLLMResult(
+                id=second.id,
+                message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="It failed."),
+            )
+        )
+        reply = _wait_for_claim(delivery)
+        assert reply is not None and reply.text == "It failed."
