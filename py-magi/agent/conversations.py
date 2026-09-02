@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 LLM_TIMEOUT_SECONDS = 300
 TOOL_WAIT_SECONDS = 120
 COMPACT_KEEP_RECENT = 20
+COMPACT_CONTEXT_WINDOW = 200_000
 
 
 @dataclass(frozen=True)
@@ -242,12 +243,11 @@ class Conversation:
         setting = await self._worker.ask(
             GetSettingJob(publisher=self._worker.worker_name, key="provider.context_window")
         )
-        if setting is None or setting.value is None:
-            return
         try:
-            window = int(setting.value) // 2
-        except ValueError:
-            return
+            window = int(None if setting is None else setting.value)
+        except (TypeError, ValueError):
+            window = COMPACT_CONTEXT_WINDOW
+        window //= 2
         if window < 1:
             return
         prompt = await self._prompt("agent/compaction")
