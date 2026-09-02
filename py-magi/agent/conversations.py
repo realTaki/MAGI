@@ -46,23 +46,23 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class ToolRound:
-    """One complete tool exchange retained for the next LLM call."""
+class LLMContinuation:
+    """One assistant tool-call state retained to continue the LLM response."""
 
     assistant: LLMMessage
     results: tuple[LLMMessage, ...]
-    pending: LLMMessage | None = None
+    pending: list[LLMMessage] = field(default_factory=list)
 
     def messages(self) -> tuple[LLMMessage, ...]:
         return (
             self.assistant,
             *self.results,
-            *((self.pending,) if self.pending is not None else ()),
+            *self.pending,
         )
 
     def without_tools(self) -> tuple[LLMMessage, ...]:
         assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
-        return (assistant, *((self.pending,) if self.pending is not None else ()))
+        return (assistant, *self.pending)
 
 @dataclass
 class Conversation:
@@ -99,13 +99,13 @@ class Conversation:
     history: list[LLMMessage] = field(init=False, default_factory=list)
     # First active MessageBook id; compact archives everything before the next cut.
     active_from_id: int | None = field(init=False, default=None)
-    # At most two newest complete assistant-tool-result exchanges for the current LLM run.
-    tool_rounds: tuple[ToolRound, ...] = field(init=False, default=())
+    # The only assistant-tool-result exchange needed for the next LLM call.
+    latest_continuation: LLMContinuation | None = field(init=False, default=None)
     # Current Agent-visible tool definitions passed to CallLLMJob.
     tools: list[Any] = field(init=False, default_factory=list)
 
-    # The ChatNotify this turn still needs to settle. Always at most one.
-    _job: ChatNotify | None = field(init=False, default=None)
+    # ChatNotify jobs whose inputs have been absorbed into the current LLM turn.
+    _jobs: list[ChatNotify] = field(init=False, default_factory=list)
 
     def __post_init__(self) -> None:
         conversation = self._conversation()
@@ -132,9 +132,9 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        self._job = job
+        self._jobs = [job]
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
-        self.tool_rounds = ()
+        self.latest_continuation = None
         try:
             conversation = self._conversation()
             if conversation is None:
@@ -185,7 +185,9 @@ class Conversation:
                         (self._system_message(),),
                         self._summary_messages(),
                         self.history,
-                        tuple(message for round_ in self.tool_rounds for message in round_.messages()),
+                        ()
+                        if self.latest_continuation is None
+                        else self.latest_continuation.messages(),
                     )
                 ),
                 self.tools,
@@ -202,29 +204,20 @@ class Conversation:
                 llm.message.tool_calls,
                 wait_seconds=tool_wait_seconds,
             )
-            pending = self._pending.popleft() if self._pending else None
-            next_input = None
-            if pending is not None:
-                self._settle()
-                self._job = pending
-                next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
-            rounds, expired_text = self._trim_tool_rounds(
-                (
-                    *self.tool_rounds,
-                    ToolRound(llm.message, tuple(tool_messages), next_input),
-                ),
-                keep=2,
+            pending = list(self._pending)
+            self._pending.clear()
+            self._jobs.extend(pending)
+            pending_inputs = [
+                LLMMessage(role=LLMMessageRole.USER, content=job.text)
+                for job in pending
+            ]
+            if self.latest_continuation is not None:
+                self.history.extend(self.latest_continuation.without_tools())
+            self.latest_continuation = LLMContinuation(
+                llm.message,
+                tuple(tool_messages),
+                pending_inputs,
             )
-            self.tool_rounds = rounds
-            self.history.extend(expired_text)
-
-    def _trim_tool_rounds(
-        self, rounds: tuple[ToolRound, ...], *, keep: int = 2
-    ) -> tuple[tuple[ToolRound, ...], tuple[LLMMessage, ...]]:
-        if len(rounds) <= keep:
-            return rounds, ()
-        expired, retained = rounds[:-keep], rounds[-keep:]
-        return retained, tuple(message for round_ in expired for message in round_.without_tools())
 
     def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
@@ -236,12 +229,11 @@ class Conversation:
                 text=text,
             )
         )
-        for round_ in self.tool_rounds:
-            if round_.pending is not None:
-                self.history.append(round_.pending)
+        if self.latest_continuation is not None:
+            self.history.extend(self.latest_continuation.pending)
         if text:
             self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
-        self.tool_rounds = ()
+        self.latest_continuation = None
 
     async def _compact(
         self,
@@ -324,18 +316,18 @@ class Conversation:
         self.history = self._messages_from_records(live[-keep:])
 
     def _settle(self, error: str | None = None) -> None:
-        job = self._job
-        if job is None:
+        if not self._jobs:
             return
-        self._job = None
-        self._worker.submit(
-            ChatNotify,
-            ChatNotifyResult(
-                id=job.id,
-                status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
-                error=error,
-            ),
-        )
+        for job in self._jobs:
+            self._worker.submit(
+                ChatNotify,
+                ChatNotifyResult(
+                    id=job.id,
+                    status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
+                    error=error,
+                ),
+            )
+        self._jobs.clear()
 
     def _conversation(self):
         board = self._worker.board(GetConversationJob)
