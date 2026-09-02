@@ -24,9 +24,10 @@ class BaseWorker:
     :meth:`_poll` to claim work: return True to skip the idle sleep.
     ``go()`` anything that should not block the next claim.
 
-    Declare :attr:`default_settings` on the subclass. :meth:`Bus.attach`
-    writes startup parameters first; :meth:`attach` then fills any
-    missing defaults.
+    Declare :attr:`default_settings` on the subclass. :meth:`attach`
+    fills any missing defaults. Startup *settings* from
+    :meth:`Bus.attach` stay on the worker; persist them with
+    :meth:`Bus.boost_settings` only if this worker wants that.
     """
 
     worker_name: ClassVar[str]
@@ -35,12 +36,14 @@ class BaseWorker:
     def __init__(self, bus: Bus, *, poll_seconds: float = 0.25) -> None:
         self.poll_seconds = poll_seconds
         self.bus = bus
+        self._settings: dict[str, str] = {}
         self._running: Future[Any] | None = None
 
-    def attach(self) -> bool:
+    def attach(self, settings: Mapping[str, str] | None = None) -> bool:
         """Fill missing defaults, run ``on_attached``, then start the listen loop."""
         if self.is_alive():
             return True
+        self._settings = dict(settings or {})
         defaults = dict(type(self).default_settings)
         if defaults:
             self.bus.boost_default_settings(worker_name=type(self).worker_name, settings=defaults)
