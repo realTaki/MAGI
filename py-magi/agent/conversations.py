@@ -35,11 +35,7 @@ from bus import (
     go,
 )
 
-from .compaction import (
-    compact_source_messages,
-    estimate_string_tokens,
-    estimate_tools_tokens,
-)
+from .compaction import compact_messages
 
 if TYPE_CHECKING:
     from .worker import AgentWorker
@@ -243,58 +239,21 @@ class Conversation:
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
         window = await self._setting_int("compact_context_window", 100_000)
-        percent = await self._setting_int("compact_threshold_pct", 80)
-        payload = (
-            self._system_message().estimated_tokens()
-            + sum(message.estimated_tokens() for message in self._summary_messages())
-            + sum(message.estimated_tokens() for message in self.history)
-            + estimate_tools_tokens(self.tools)
-            + max_tokens
-        )
-        if payload <= window * percent // 100:
-            return
-
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
-        live = self._get_active_messages()
-        if len(live) <= keep:
-            return
-        cut_id = live[-keep].id
-        overflow = len(self.history) - keep
-        source_messages = compact_source_messages(
-            (
-                *self._summary_messages(),
-                *(
-                    self.history[:overflow]
-                    if overflow > 0
-                    else self._messages_from_records(live[:-keep])
-                ),
-            )
-        )
         prompt = await self._prompt("agent/compaction")
         if not prompt:
             return
         summary_tokens = max(1, await self._setting_int("compact_summary_tokens", 10_000))
-        result = await call_llm(
-            [
-                LLMMessage(role=LLMMessageRole.SYSTEM, content=prompt),
-                LLMMessage(
-                    role=LLMMessageRole.USER,
-                    content="\n\n".join(
-                        f"[{message.role.value.upper()}]\n{message.content}"
-                        for message in source_messages
-                    ),
-                ),
-            ],
-            [],
+        summary = await compact_messages(
+            [*self._summary_messages(), *self.history],
+            context_window=window,
+            keep_recent=keep,
+            prompt=prompt,
             max_tokens=summary_tokens,
+            call_llm=call_llm,
         )
-        if result is None or result.status is not JobStatus.COMPLETED or result.message is None:
-            return
-        summary = result.message.content.strip()
         if not summary:
             return
-        if estimate_string_tokens(summary) > summary_tokens:
-            summary = summary[: summary_tokens * 4]
         updated = await self._worker.ask(
             UpdateConversationSummaryJob(
                 publisher=self._worker.worker_name,
@@ -304,16 +263,19 @@ class Conversation:
         )
         if updated is None:
             return
-        await self._worker.ask(
-            ArchiveMessagesJob(
-                publisher=self._worker.worker_name,
-                conversation_id=self.conversation_id,
-                before_message_id=cut_id,
+        live = self._get_active_messages()
+        if len(live) > keep:
+            cut_id = live[-keep].id
+            await self._worker.ask(
+                ArchiveMessagesJob(
+                    publisher=self._worker.worker_name,
+                    conversation_id=self.conversation_id,
+                    before_message_id=cut_id,
+                )
             )
-        )
+            self.active_from_id = cut_id
         self.summary = self._summary_message(summary)
-        self.active_from_id = cut_id
-        self.history = self._messages_from_records(live[-keep:])
+        self.history = self.history[-keep:]
 
     def _settle(self, error: str | None = None) -> None:
         if not self._jobs:
