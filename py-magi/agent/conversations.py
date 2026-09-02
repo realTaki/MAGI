@@ -105,9 +105,6 @@ class Conversation:
     # Current Agent-visible tool definitions passed to CallLLMJob.
     tools: list[Any] = field(init=False, default_factory=list)
 
-    # The ChatNotify whose turn is still awaiting a terminal result.
-    _job: ChatNotify | None = field(init=False, default=None)
-
     def __post_init__(self) -> None:
         conversation = self._conversation()
         if conversation is not None:
@@ -133,87 +130,98 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        self._job = job
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.latest_continuation = None
         try:
             conversation = self._conversation()
             if conversation is None:
-                self._settle("会话不存在。")
+                error = "会话不存在。"
+            else:
+                self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
+                listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
+                self.skills = [] if listed is None or not listed.skills else list(listed.skills)
+                self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
+                memories_result = await self._worker.ask(
+                    ListMemoriesJob(publisher=self._worker.worker_name)
+                )
+                self.memories = [] if memories_result is None else memories_result.memories or []
+                self.conversation_instruction = conversation.instruction or ""
+                self.conversation_info = conversation.info or ""
+                tools_result = await self._worker.ask(
+                    ListToolsJob(publisher=self._worker.worker_name)
+                )
+                self.tools = (
+                    []
+                    if tools_result is None or tools_result.tools is None
+                    else [tool.definition for tool in tools_result.tools]
+                )
+                await self._process(job)
                 return
-            self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
-            listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
-            self.skills = [] if listed is None or not listed.skills else list(listed.skills)
-            self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
-            memories_result = await self._worker.ask(
-                ListMemoriesJob(publisher=self._worker.worker_name)
-            )
-            self.memories = [] if memories_result is None else memories_result.memories or []
-            self.conversation_instruction = conversation.instruction or ""
-            self.conversation_info = conversation.info or ""
-            tools_result = await self._worker.ask(
-                ListToolsJob(publisher=self._worker.worker_name)
-            )
-            self.tools = (
-                []
-                if tools_result is None or tools_result.tools is None
-                else [tool.definition for tool in tools_result.tools]
-            )
-            error = await self._process()
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
             error = f"处理请求时发生错误：{exc}"
         if error is not None:
             self._deliver(error)
-        self._settle(error)
+        self._settle(job, error)
 
-    async def _process(self) -> str | None:
+    async def _process(self, job: ChatNotify) -> None:
         call_llm = partial(
             self._call_llm,
             timeout=LLM_TIMEOUT_SECONDS,
         )
-
-        while True:
-            await self._compact(call_llm=call_llm)
-            llm = await call_llm(
-                list(
-                    chain(
-                        (self._system_message(),),
-                        self._summary_messages(),
-                        self.history,
-                        ()
-                        if self.latest_continuation is None
-                        else self.latest_continuation.messages(),
-                    )
-                ),
-                self.tools,
-            )
-            if llm is None:
-                return "回复生成超时，请稍后再试。"
-            if llm.status is not JobStatus.COMPLETED or llm.message is None:
-                return llm.error or "回复生成失败。"
-            if not llm.message.tool_calls:
-                self._deliver(llm.message.content)
-                return None
-            tool_messages = await self._run_tools(
-                llm.message.tool_calls,
-                wait_seconds=TOOL_WAIT_SECONDS,
-            )
-            pending = list(self._pending)
-            self._pending.clear()
-            pending_inputs = [
-                LLMMessage(role=LLMMessageRole.USER, content=pending_job.text)
-                for pending_job in pending
-            ]
-            for pending_job in pending:
-                self._settle()
-                self._job = pending_job
-            if self.latest_continuation is not None:
-                self.history.extend(self.latest_continuation.without_tools())
-            self.latest_continuation = LLMContinuation(
-                llm.message,
-                tuple(tool_messages),
-                pending_inputs,
-            )
+        try:
+            while True:
+                await self._compact(call_llm=call_llm)
+                llm = await call_llm(
+                    list(
+                        chain(
+                            (self._system_message(),),
+                            self._summary_messages(),
+                            self.history,
+                            ()
+                            if self.latest_continuation is None
+                            else self.latest_continuation.messages(),
+                        )
+                    ),
+                    self.tools,
+                )
+                if llm is None:
+                    error = "回复生成超时，请稍后再试。"
+                    self._deliver(error)
+                    self._settle(job, error)
+                    return
+                if llm.status is not JobStatus.COMPLETED or llm.message is None:
+                    error = llm.error or "回复生成失败。"
+                    self._deliver(error)
+                    self._settle(job, error)
+                    return
+                if not llm.message.tool_calls:
+                    self._deliver(llm.message.content)
+                    self._settle(job)
+                    return
+                tool_messages = await self._run_tools(
+                    llm.message.tool_calls,
+                    wait_seconds=TOOL_WAIT_SECONDS,
+                )
+                pending = list(self._pending)
+                self._pending.clear()
+                pending_inputs = [
+                    LLMMessage(role=LLMMessageRole.USER, content=pending_job.text)
+                    for pending_job in pending
+                ]
+                for pending_job in pending:
+                    self._settle(job)
+                    job = pending_job
+                if self.latest_continuation is not None:
+                    self.history.extend(self.latest_continuation.without_tools())
+                self.latest_continuation = LLMContinuation(
+                    llm.message,
+                    tuple(tool_messages),
+                    pending_inputs,
+                )
+        except BaseException as exc:  # noqa: BLE001 -- preserve the latest ChatNotify
+            error = f"处理请求时发生错误：{exc}"
+            self._deliver(error)
+            self._settle(job, error)
 
     def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
@@ -279,11 +287,7 @@ class Conversation:
         self.summary = self._summary_message(summary)
         self.history = self.history[-COMPACT_KEEP_RECENT:]
 
-    def _settle(self, error: str | None = None) -> None:
-        job = self._job
-        if job is None:
-            return
-        self._job = None
+    def _settle(self, job: ChatNotify, error: str | None = None) -> None:
         self._worker.submit(
             ChatNotify,
             ChatNotifyResult(
