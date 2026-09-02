@@ -1,113 +1,94 @@
-"""``update_daily_note`` tool — append a delta to today's
-daily note for the caller.
-
-The daily note is the running log the LLM appends to over
-the course of a conversation — "I sent the Q3 invoice to
-Lily", "Mark mentioned he's OOO Friday", "user prefers
-shorter replies". The morning / night report reads
-today's row verbatim; permanent ``save_contact_note``
-rows stay separate.
-
-Capture rules (full text lives in
-``prompts/context/daily_note.md`` — folded into the system prompt):
-
-- Record from the user (tasks done, preferences, project
-  context). Don't record trivial external facts.
-- Append only — never delete or rewrite prior deltas. The
-  upsert appends with a newline separator; concurrent
-  writes hit a unique-on-``(contact_id, kind, note_date)``
-  index and serialize on the row update.
-
-Bus plumbing: this tool talks to bus
-(:class:`bus.Bus`) via ``self.bus.contact_notes_book``
-— the Book owns the upsert + daily-append logic,
-length cap, and ``note_date`` defaulting. Returns the
-DTO so the LLM sees the post-write row. The bus
-service at
-bus Book API
-is no longer imported here.
-"""
+"""``update_daily_note`` tool — append to the contact's daily note through Jobs."""
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
+from bus import CreateContactNoteJob, ListContactNotesJob, NoteKind, UpdateContactNoteJob
 from tools.BaseTool import BaseTool, ToolResult
 
 logger = logging.getLogger("tools.memory.update_daily_note")
 
+_PUBLISHER = "tools"
+
 
 class UpdateDailyNoteTool(BaseTool):
-    """Append a delta to today's daily note for the caller."""
+    """Append a delta to the contact's current daily note."""
 
     name = "update_daily_note"
     description = (
-        "Append a delta to today's daily note for the "
-        "current operator (or the contact_id you pass). One row "
-        "per (contact_id, day). Use when something meaningful "
-        "happened — task finished, email sent, user "
-        "shared a preference, project context changed. "
-        "Don't write trivial external facts. The morning "
-        "/ night report reads today's row verbatim."
+        "Append a delta to the calling contact's daily note. One daily "
+        "note row per contact; later calls append with a newline. Use "
+        "when something meaningful happened — task finished, preference "
+        "shared, project context changed."
     )
     input_schema = {
         "type": "object",
         "properties": {
             "body_delta": {
                 "type": "string",
-                "description": (
-                    "One short fact to append. ≤8 KB; the "
-                    "Book strips whitespace and clamps to "
-                    "the per-row 32 KB cap."
-                ),
+                "description": "One short fact to append.",
             },
-            "note_date": {
-                "type": "string",
-                "description": (
-                    "YYYY-MM-DD; defaults to today UTC. "
-                    "Pass explicit only for back-filling a "
-                    "missed day."
-                ),
+            "contact_id": {
+                "type": "integer",
+                "description": "Contact that owns the daily note.",
             },
         },
         "required": ["body_delta"],
     }
 
     @BaseTool.require_bus
-    async def run(
-        self,
-        **kwargs: Any) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
         body_delta = kwargs.get("body_delta")
         if not isinstance(body_delta, str) or not body_delta.strip():
             return ToolResult.err("body_delta is required (non-empty string)")
-        # Default to the operator's own contact_id — the LLM
-        # never specifies a different contact_id here (no
-        # override on input_schema). Future cross-contact
-        # notes should go through a separate
-        # ``update_daily_note_for`` shape.
-        contact_id = int(kwargs.get("contact_id") or 0)
-        if contact_id is None or contact_id == 0:
+        try:
+            contact_id = int(kwargs.get("contact_id") or 0)
+        except (TypeError, ValueError):
+            contact_id = 0
+        if contact_id <= 0:
             return ToolResult.err("no contact_id on the calling context")
-
-        note_date: datetime | None = None
-        raw_date = kwargs.get("note_date")
-        if raw_date:
-            try:
-                note_date = datetime.strptime(raw_date, "%Y-%m-%d")
-            except ValueError:
-                return ToolResult.err(f"note_date must be YYYY-MM-DD, got {raw_date!r}")
-
-        row = self.bus.contact_notes_book.upsert_daily_note(
-            contact_id=int(contact_id),
-            body_delta=body_delta,
-            note_date=note_date,
+        listed = await self.publish(
+            ListContactNotesJob(
+                publisher=_PUBLISHER,
+                contact_id=contact_id,
+                kind=NoteKind.DAILY,
+            )
         )
+        if listed is None:
+            return ToolResult.err("contact note book is not available")
+        notes = listed.contact_notes or []
+        delta = body_delta.strip()
+        if not notes:
+            created = await self.publish(
+                CreateContactNoteJob(
+                    publisher=_PUBLISHER,
+                    contact_id=contact_id,
+                    note=delta,
+                    kind=NoteKind.DAILY,
+                )
+            )
+            if created is None or created.contact_note_id is None:
+                return ToolResult.err("contact note book is not available")
+            logger.info(
+                "update_daily_note: contact=%s created daily note=%s",
+                contact_id,
+                created.contact_note_id,
+            )
+            return ToolResult.ok({"contact_note_id": created.contact_note_id, "created": True})
 
-        logger.info(
-            "update_daily_note: contact=%s appended to row=%s",
-            contact_id,
-            row.id,
+        current = notes[0]
+        merged = f"{(current.note or '').rstrip()}\n{delta}".strip()
+        updated = await self.publish(
+            UpdateContactNoteJob(
+                publisher=_PUBLISHER,
+                contact_note_id=current.id,
+                note=merged,
+                kind=NoteKind.DAILY,
+            )
         )
-        return ToolResult.ok({"updated": row.to_dict()})
+        if updated is None:
+            return ToolResult.err("contact note book is not available")
+        logger.info("update_daily_note: contact=%s appended to note=%s", contact_id, current.id)
+        return ToolResult.ok({"contact_note_id": current.id, "created": False})
