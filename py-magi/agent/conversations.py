@@ -157,7 +157,7 @@ class Conversation:
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
             error = f"处理请求时发生错误：{exc}"
         if error is not None:
-            self._deliver(error)
+            await self._deliver(error)
         self._settle(job, error)
 
     async def _process(self, job: ChatNotify) -> None:
@@ -183,18 +183,20 @@ class Conversation:
                 )
                 if llm is None:
                     error = "回复生成超时，请稍后再试。"
-                    self._deliver(error)
+                    await self._deliver(error)
                     self._settle(job, error)
                     return
                 if llm.status is not JobStatus.COMPLETED or llm.message is None:
                     error = llm.error or "回复生成失败。"
-                    self._deliver(error)
+                    await self._deliver(error)
                     self._settle(job, error)
                     return
                 if not llm.message.tool_calls:
-                    self._deliver(llm.message.content)
+                    await self._deliver(llm.message.content)
                     self._settle(job)
                     return
+                if llm.message.content:
+                    await self._deliver(llm.message.content)
                 tool_messages = await self._run_tools(
                     llm.message.tool_calls,
                     wait_seconds=TOOL_WAIT_SECONDS,
@@ -217,19 +219,22 @@ class Conversation:
                 )
         except BaseException as exc:  # noqa: BLE001 -- preserve the latest ChatNotify
             error = f"处理请求时发生错误：{exc}"
-            self._deliver(error)
+            await self._deliver(error)
             self._settle(job, error)
 
-    def _deliver(self, text: str) -> None:
+    async def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
         text = text or "处理完毕。"
-        self._worker.publish_notify(
-            DeliveryNotify(
-                publisher=self._worker.worker_name,
-                conversation_id=self.conversation_id,
-                text=text,
+        board = self._worker.board(DeliveryNotify)
+        if board is not None:
+            await self._worker.call(
+                board.publish,
+                DeliveryNotify(
+                    publisher=self._worker.worker_name,
+                    conversation_id=self.conversation_id,
+                    text=text,
+                ),
             )
-        )
         if self.latest_continuation is not None:
             self.history.extend(self.latest_continuation.pending)
         if text:

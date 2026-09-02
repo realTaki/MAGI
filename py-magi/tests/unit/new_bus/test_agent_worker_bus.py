@@ -193,7 +193,7 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
                     id=first.id,
                     message=LLMMessage(
                         role=LLMMessageRole.ASSISTANT,
-                        content="",
+                        content="Looking it up.",
                         tool_calls=[
                             LLMToolCall(
                                 tool_call_id="call-1", name="lookup", arguments={"q": "MAGI"}
@@ -202,6 +202,8 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
                     ),
                 )
         )
+        progress = _wait_for_claim(delivery)
+        assert progress is not None and progress.text == "Looking it up."
         tool = _wait_for_claim(tools)
         assert tool is not None and tool.call.tool_call_id == "call-1"
         assert tools.submit_result(RunToolResult(id=tool.id, content="found it"))
