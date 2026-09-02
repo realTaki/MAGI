@@ -97,15 +97,6 @@ class SearchConversationsTool(BaseTool):
 
     name = "search_conversations"
 
-    # Visible only to ``admin`` and ``assigned``
-    # operators — same gate as the WebUI dashboard and
-    # as ``ScheduleTaskTool`` / the action-item trio.
-    # The agent worker resolves the operator's role from the
-    # Contact row and filters the tool menu so non-eligible
-    # callers never see these tools in the LLM's menu.
-    # ``MCPTool`` is intentionally permissive
-    # (operator-configured at the MCP server level).
-    ALLOWED_ROLES = frozenset({"admin", "assigned"})
     description = (
         "Search the operator's past conversations with EVA "
         "for messages containing a query string. Returns each "
