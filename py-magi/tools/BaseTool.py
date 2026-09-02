@@ -52,8 +52,7 @@ def _tool_json_default(value: object) -> object:
 class BaseTool(ABC):
     """One callable the LLM can request.
 
-    Set ``name`` / ``description`` / ``input_schema`` / ``ALLOWED_ROLES``.
-    ``ALLOWED_ROLES`` is catalog metadata; it is not checked at run.
+    Set ``name`` / ``description`` / ``input_schema``.
 
     Tools that touch the Runtime take ``bus`` at construction. Workspace
     is ``bus.workspace`` — it is not a separate argument. ``run`` only
@@ -63,7 +62,6 @@ class BaseTool(ABC):
     name: str = ""
     description: str = ""
     input_schema: dict[str, Any] = {}
-    ALLOWED_ROLES: frozenset[str] = frozenset()
 
     def __init__(self, *, bus: Any = None) -> None:
         self.bus = bus
