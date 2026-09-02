@@ -15,6 +15,8 @@ permalink: /terms/
 | **EVA** | A worker-archetype MAGIC that serves an assigned employee or workload. |
 | **BUS** | The sole durable application boundary, implemented by `magi.bus`. |
 | **Bus** | The process-local BUS facade opened by `open_bus(...)`. |
+| **bases** | BUS primitives: Job/Book bases and the database layer (`magi/bus/bases/`). |
+| **firmwares** | Concrete Job Boards, Books, and their schema (`magi/bus/firmwares/`). |
 | **Book** | A BUS API for durable CRUD/query operations that returns DTOs or JSON-safe values. |
 | **Job Board** | A BUS API for durable `publish -> claim -> submit_result` workflows. |
 | **ChatNotifyJob** | Durable agent input from a channel, task, or A2A ingress. |
@@ -24,8 +26,11 @@ permalink: /terms/
 | **A2A** | Internal agent-to-agent transport; it is not an authorization system. |
 
 The Python package `magi.bus` owns Books, Job Boards, database factories, and
-their ORM implementation. Domain code uses its public contracts and does not
-open sessions or expose ORM rows.
+their ORM implementation. Bases (`magi/bus/bases/`) hold the contracts and
+storage engines; firmwares (`magi/bus/firmwares/`) hold the concrete
+Jobs, Books, and their table/column definitions.
+Domain code uses its public contracts and does not open sessions or expose
+ORM rows.
 
 ## Canonical ID names
 

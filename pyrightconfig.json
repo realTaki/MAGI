@@ -1,0 +1,33 @@
+{
+  "venvPath": "py-magi",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "extraPaths": ["py-magi"],
+  "useLibraryCodeForTypes": false,
+  "executionEnvironments": [
+    {
+      "root": "py-magi",
+      "extraPaths": []
+    }
+  ],
+  "exclude": [
+    "**/.venv",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.mypy_cache",
+    "**/.pytest_cache",
+    "**/.ruff_cache",
+    "**/.git",
+    "**/dist",
+    "**/build",
+    "**/.vite",
+    "**/coverage",
+    "**/deploy",
+    "**/docs",
+    "**/.agents",
+    "**/.claude",
+    "**/.codebuddy",
+    "**/.codex",
+    "WebUI"
+  ]
+}

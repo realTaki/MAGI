@@ -46,7 +46,7 @@ permalink: /business-flows/
 > - Channel ingress → `magi/channels/telegram/worker.py::_on_tg_message` 等
 > - Credential 解析 → `magi/providers/factory.py::get_provider(bus=...)`
 > - Task 调度 → `magi/channels/tasks/worker.py::TaskWorker._run`
-> - 手动 / tool 触发任务 → `bus.run_task_job_board.publish(RunTaskJob(...))`（走 `magi/bus/guild/runTaskJob.py`）
+> - 手动 / tool 触发任务 → `bus.run_task_job_board.publish(RunTaskJob(...))`（走 `magi/bus/firmwares/jobs/runTaskJob.py`）
 > - 系统级主动策略 → `magi/proactive/worker.py::ProactiveWorker._run`
 > - 外部数据流 → `magi/connectors/`（按需启动，非默认 Worker）
 >
@@ -177,7 +177,7 @@ permalink: /business-flows/
 
 ## 3. Conversation 生命周期与 D.22 通道守卫
 
-**入口**: `magi/bus/library/local/conversationBook.py::{ConversationBook, MessageBook}`
+**入口**: `magi/bus/firmwares/books/local/conversationBook.py::{ConversationBook, MessageBook}`
 
 ### 创建对话
 ```
@@ -645,38 +645,7 @@ FTS5 搜索:
 
 ---
 
-## 14. Connector 外部数据流
-
-**入口**: `magi/connectors/`（非默认 Worker，按需启用）
-
-```
-生命周期:
-  1. Operator 通过 WebUI 添加 ConnectorConfig 行（POST /api/connectors）
-  2. Runtime boot 调 connectors.registry.load_connectors() 读 enabled configs
-  3. 对每个 config 构造 Connector，await connector.connect()
-  4. Connector 订阅上游，发出 ConnectorEvent 到 EventBus
-  5. Domain code 通过 bus.subscribe(kind, handler) 消费
-  6. Shutdown 时 unload_all() 调 await connector.disconnect()
-
-事件总线 (magi.connectors.bus.EventBus):
-  └─ 进程内 asyncio pub/sub；dedup window 默认 5s（防 webhook 重投）
-  └─ 与 plugins 子系统共享（magi.plugins.bus re-exports 同 primitives）
-  └─ Handlers MUST NOT raise — bus catches + logs，不重试
-
-LLM 调用方式:
-  └─ LLM 不直接调 Connector；调包装 connector 的 tool wrapper
-  └─ Tool wrapper 调 await connector.fetch(query) → JSON-serialisable dict
-```
-
-**不可改的守卫**:
-
-- Connector 协议是 `connect / disconnect / fetch / name / config`，小且稳定
-- Connector 异步、长跑任务在 `connect()` 内 spawn，`disconnect()` 内 cancel
-- EventBus 不跨进程；跨 MAGI 事件共享走 a2a（未来）
-
----
-
-## 15. A2A — 同一 MAGIS 内 MAGI ↔ MAGI 协作
+## 14. A2A — 同一 MAGIS 内 MAGI ↔ MAGI 协作
 
 **入口**: `magi/tools/comms/message_magi.py`（出站 actor effect）+ `magi/agent/worker.py::AgentWorker._run`（入站 claim + 终态处理）
 
