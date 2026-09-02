@@ -1,6 +1,8 @@
 """``read_file`` tool — read a UTF-8 file inside the
 workspace root.
 
+Jobs: none. Path is ``bus.workspace / path``.
+
 Path semantics: ``path`` is interpreted **relative to the
 workspace root**. v0 also rejects paths that don't exist or
 that are directories; the LLM should call ``list_files``

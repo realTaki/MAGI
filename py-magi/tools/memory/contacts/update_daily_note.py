@@ -1,4 +1,10 @@
-"""``update_daily_note`` tool — append to the contact's daily note through Jobs."""
+"""``update_daily_note`` — append to one DAILY note per contact.
+
+Jobs:
+  ListContactNotesJob — find the contact's current daily note (kind=daily).
+  CreateContactNoteJob — first delta creates that daily row.
+  UpdateContactNoteJob — later deltas append with a newline.
+"""
 
 from __future__ import annotations
 

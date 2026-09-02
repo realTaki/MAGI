@@ -7,10 +7,12 @@ import time
 
 from agent.worker import AgentWorker
 from bus import (
+    SYSTEM_CONTACT_ID,
     Bus,
     CallLLMJob,
     CallLLMResult,
     ChatNotify,
+    CreateContactJob,
     CreateConversationJob,
     DeliveryNotify,
     DeliveryNotifyResult,
@@ -21,6 +23,15 @@ from bus import (
     RunToolJob,
     RunToolResult,
 )
+
+
+def _body(content: str) -> str:
+    return content.split("\n", 1)[-1]
+
+
+def _is_stamped(content: str, *, contact_id: int, text: str) -> bool:
+    header, _, body = content.partition("\n")
+    return header.startswith(f"[contact id {contact_id} | ") and body == text
 
 
 def _wait_for_claim(board, *, timeout: float = 5.0):
@@ -78,7 +89,17 @@ def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
         )
         request = _wait_for_claim(llm)
         assert request is not None
-        assert request.messages[-1] == LLMMessage(role=LLMMessageRole.USER, content="hello")
+        system = request.messages[0]
+        assert system.role is LLMMessageRole.SYSTEM
+        assert f"conversation_id: {conversation_id}" in system.content
+        assert "channel: test" in system.content
+        assert "delivery_address: local" in system.content
+        assert "topic: test" in system.content
+        assert "MAGI_CONTACT_ID:" in system.content
+        assert "SYSTEM_CONTACT_ID:" in system.content
+        last = request.messages[-1]
+        assert last.role is LLMMessageRole.USER
+        assert _is_stamped(last.content, contact_id=SYSTEM_CONTACT_ID, text="hello")
 
         assert llm.submit_result(
                 CallLLMResult(
@@ -124,7 +145,11 @@ def test_agent_routes_claimed_turns_to_one_serial_conversation(tmp_path) -> None
 
         second = _wait_for_claim(llm)
         assert second is not None
-        assert LLMMessage(role=LLMMessageRole.USER, content="follow up") in second.messages
+        assert any(
+            message.role is LLMMessageRole.USER
+            and _is_stamped(message.content, contact_id=SYSTEM_CONTACT_ID, text="follow up")
+            for message in second.messages
+        )
         assert llm.submit_result(
                 CallLLMResult(
                     id=second.id,
@@ -157,14 +182,17 @@ def test_agent_routes_different_conversations_independently(tmp_path) -> None:
 
         first, second = _wait_for_claim(llm), _wait_for_claim(llm)
         assert first is not None and second is not None
-        assert {request.messages[-1].content for request in (first, second)} == {"first", "second"}
+        assert {_body(request.messages[-1].content) for request in (first, second)} == {
+            "first",
+            "second",
+        }
         for request in (first, second):
             assert llm.submit_result(
                     CallLLMResult(
                         id=request.id,
                         message=LLMMessage(
                             role=LLMMessageRole.ASSISTANT,
-                            content=f"reply: {request.messages[-1].content}",
+                            content=f"reply: {_body(request.messages[-1].content)}",
                         ),
                     )
             )
@@ -281,3 +309,54 @@ def test_agent_tool_failure_returns_as_tool_result_not_delivery(tmp_path) -> Non
         )
         reply = _wait_for_claim(delivery)
         assert reply is not None and reply.text == "It failed."
+
+
+def test_agent_stamps_distinct_contact_ids_on_user_messages(tmp_path) -> None:
+    with Bus("@agent-speakers", workspace=tmp_path) as bus:
+        assert bus.attach(AgentWorker)
+        conversation_id = _conversation(bus)
+        contacts = bus.board(CreateContactJob)
+        chat = bus.board(ChatNotify)
+        llm = bus.board(CallLLMJob)
+        delivery = bus.board(DeliveryNotify)
+        assert contacts is not None and chat is not None and llm is not None and delivery is not None
+        alice = contacts.publish(CreateContactJob(publisher="test", name="alice")).contact_id
+        bob = contacts.publish(CreateContactJob(publisher="test", name="bob")).contact_id
+        assert alice is not None and bob is not None
+
+        chat.publish(
+            ChatNotify(
+                publisher="test",
+                conversation_id=conversation_id,
+                contact_id=alice,
+                text="hi",
+            )
+        )
+        first = _wait_for_claim(llm)
+        assert first is not None
+        assert _is_stamped(first.messages[-1].content, contact_id=alice, text="hi")
+        assert llm.submit_result(
+            CallLLMResult(
+                id=first.id,
+                message=LLMMessage(role=LLMMessageRole.ASSISTANT, content="hello alice"),
+            )
+        )
+        assert _wait_for_claim(delivery) is not None
+
+        chat.publish(
+            ChatNotify(
+                publisher="test",
+                conversation_id=conversation_id,
+                contact_id=bob,
+                text="yo",
+            )
+        )
+        second = _wait_for_claim(llm)
+        assert second is not None
+        assert any(
+            message.role is LLMMessageRole.USER
+            and _is_stamped(message.content, contact_id=alice, text="hi")
+            for message in second.messages
+        )
+        assert second.messages[-1].role is LLMMessageRole.USER
+        assert _is_stamped(second.messages[-1].content, contact_id=bob, text="yo")

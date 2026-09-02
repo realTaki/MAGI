@@ -1,4 +1,9 @@
-"""``search_contacts`` tool — filter Contact + note Jobs in-process."""
+"""``search_contacts`` — substring match over contacts and their notes.
+
+Jobs:
+  ListContactsJob — load the directory (no search Job; filter here).
+  ListContactNotesJob — per contact, attach a note sample and match query text.
+"""
 
 from __future__ import annotations
 

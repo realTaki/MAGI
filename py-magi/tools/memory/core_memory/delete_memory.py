@@ -1,4 +1,9 @@
-"""``delete_memory`` tool — remove a MemoryBook row through Jobs."""
+"""``delete_memory`` — remove a MemoryBook row.
+
+Jobs:
+  GetMemoryJob — tell the caller whether the id existed.
+  DeleteMemoryJob — delete the row; missing id is still success.
+"""
 
 from __future__ import annotations
 

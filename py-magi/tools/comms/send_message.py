@@ -1,4 +1,9 @@
-"""Send a message to one conversation."""
+"""``send_message`` — deliver text to an existing conversation.
+
+Jobs:
+  GetConversationJob — confirm the conversation exists before sending.
+  DeliveryNotify — enqueue the outbound body for the channel Worker.
+"""
 
 from __future__ import annotations
 

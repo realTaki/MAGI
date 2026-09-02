@@ -1,4 +1,9 @@
-"""``complete_memory`` tool — archive a MemoryBook row through Jobs."""
+"""``complete_memory`` — hide a memory from the active list.
+
+Jobs:
+  GetMemoryJob — fail if the id does not exist.
+  UpdateMemoryJob — set ``archived=True`` (row stays in the book).
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,11 @@
-"""``save_contact_note`` tool — create or edit a note through Jobs."""
+"""``save_contact_note`` — create or replace one ContactNote.
+
+Jobs:
+  GetContactJob — create path: reject unknown ``contact_id``.
+  CreateContactNoteJob — append a note when ``note_id`` is omitted.
+  GetContactNoteJob — load before patch; return the row after write.
+  UpdateContactNoteJob — replace text/kind when ``note_id`` is set.
+"""
 
 from __future__ import annotations
 

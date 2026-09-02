@@ -1,6 +1,8 @@
 """``write_file`` tool — atomically write a UTF-8 file
 inside the workspace root.
 
+Jobs: none. Path is ``bus.workspace / path``.
+
 Path semantics: same as ``read_file`` — relative to the
 workspace root.
 
