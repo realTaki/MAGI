@@ -8,21 +8,10 @@ from typing import Any
 
 from bus import LLMMessage, LLMMessageRole, LLMTool
 
-TOKENS_PER_MESSAGE_OVERHEAD = 4
-
 
 def estimate_string_tokens(value: str | None) -> int:
     """A deliberately cheap, provider-neutral token estimate."""
     return max(0, len(value or "") // 4)
-
-
-def estimate_messages_tokens(messages: list[LLMMessage] | tuple[LLMMessage, ...]) -> int:
-    return sum(
-        TOKENS_PER_MESSAGE_OVERHEAD
-        + estimate_string_tokens(message.content)
-        + estimate_value_tokens(message.tool_calls)
-        for message in messages
-    )
 
 
 def estimate_tools_tokens(tools: list[LLMTool]) -> int:
@@ -61,9 +50,7 @@ def compact_source_messages(
 
 
 __all__ = [
-    "TOKENS_PER_MESSAGE_OVERHEAD",
     "compact_source_messages",
-    "estimate_messages_tokens",
     "estimate_string_tokens",
     "estimate_tools_tokens",
     "estimate_value_tokens",

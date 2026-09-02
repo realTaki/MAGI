@@ -37,7 +37,6 @@ from bus import (
 
 from .compaction import (
     compact_source_messages,
-    estimate_messages_tokens,
     estimate_string_tokens,
     estimate_tools_tokens,
 )
@@ -64,16 +63,6 @@ class ToolRound:
     def without_tools(self) -> tuple[LLMMessage, ...]:
         assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
         return (assistant, *((self.pending,) if self.pending is not None else ()))
-
-
-def _trim_tool_rounds(
-    rounds: tuple[ToolRound, ...], *, keep: int = 2
-) -> tuple[tuple[ToolRound, ...], tuple[LLMMessage, ...]]:
-    if len(rounds) <= keep:
-        return rounds, ()
-    expired, retained = rounds[:-keep], rounds[-keep:]
-    return retained, tuple(message for round_ in expired for message in round_.without_tools())
-
 
 @dataclass
 class Conversation:
@@ -179,19 +168,16 @@ class Conversation:
     async def _process(self) -> str | None:
         llm_timeout = await self._setting_float("llm_timeout_seconds", 120)
         max_tokens = await self._setting_int("max_tokens", 1024)
-        thinking_tokens = await self._setting_int("thinking_tokens", 8192)
         tool_wait_seconds = await self._setting_float("tool_wait_seconds", 300)
         call_llm = partial(
             self._call_llm,
             timeout=llm_timeout,
-            thinking_tokens=thinking_tokens,
         )
 
         while True:
             await self._compact(
                 call_llm=call_llm,
                 max_tokens=max_tokens,
-                thinking_tokens=thinking_tokens,
             )
             llm = await call_llm(
                 list(
@@ -222,7 +208,7 @@ class Conversation:
                 self._settle()
                 self._job = pending
                 next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
-            rounds, expired_text = _trim_tool_rounds(
+            rounds, expired_text = self._trim_tool_rounds(
                 (
                     *self.tool_rounds,
                     ToolRound(llm.message, tuple(tool_messages), next_input),
@@ -231,6 +217,14 @@ class Conversation:
             )
             self.tool_rounds = rounds
             self.history.extend(expired_text)
+
+    def _trim_tool_rounds(
+        self, rounds: tuple[ToolRound, ...], *, keep: int = 2
+    ) -> tuple[tuple[ToolRound, ...], tuple[LLMMessage, ...]]:
+        if len(rounds) <= keep:
+            return rounds, ()
+        expired, retained = rounds[:-keep], rounds[-keep:]
+        return retained, tuple(message for round_ in expired for message in round_.without_tools())
 
     def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
@@ -254,18 +248,16 @@ class Conversation:
         *,
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
         max_tokens: int,
-        thinking_tokens: int,
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
         window = await self._setting_int("compact_context_window", 100_000)
         percent = await self._setting_int("compact_threshold_pct", 80)
         payload = (
-            estimate_messages_tokens((self._system_message(),))
-            + estimate_messages_tokens(self._summary_messages())
-            + estimate_messages_tokens(self.history)
+            self._system_message().estimated_tokens()
+            + sum(message.estimated_tokens() for message in self._summary_messages())
+            + sum(message.estimated_tokens() for message in self.history)
             + estimate_tools_tokens(self.tools)
             + max_tokens
-            + thinking_tokens
         )
         if payload <= window * percent // 100:
             return
@@ -510,7 +502,6 @@ class Conversation:
         tools: list[Any],
         *,
         max_tokens: int,
-        thinking_tokens: int,
         timeout: float,
     ) -> CallLLMResult | None:
         board = self._worker.board(CallLLMJob)
@@ -523,7 +514,6 @@ class Conversation:
                 messages=messages,
                 tools=tools,
                 max_tokens=max_tokens,
-                thinking_tokens=thinking_tokens,
             ),
         )
         return await self._worker.call(board.get_result, job_id, timeout=timeout)

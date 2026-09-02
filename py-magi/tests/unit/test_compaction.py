@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from agent.compaction import (
-    TOKENS_PER_MESSAGE_OVERHEAD,
     compact_source_messages,
-    estimate_messages_tokens,
     estimate_string_tokens,
 )
 from bus import LLMMessage, LLMMessageRole, LLMToolCall
@@ -14,7 +12,7 @@ from bus import LLMMessage, LLMMessageRole, LLMToolCall
 def test_estimates_are_non_negative_and_include_message_overhead() -> None:
     message = LLMMessage(role=LLMMessageRole.USER, content="abcdefgh")
     assert estimate_string_tokens(message.content) == 2
-    assert estimate_messages_tokens([message]) == TOKENS_PER_MESSAGE_OVERHEAD + 2
+    assert message.estimated_tokens() == 6
     assert estimate_string_tokens(None) == 0
 
 
