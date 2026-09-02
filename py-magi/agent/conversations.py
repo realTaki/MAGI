@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from bus import (
     MAGI_CONTACT_ID,
-    ArchiveMessagesJob,
     CallLLMJob,
     CallLLMResult,
     ChatNotify,
@@ -98,8 +97,6 @@ class Conversation:
     summary: LLMMessage | None = field(init=False, default=None)
     # In-memory non-archived chat transcript, including text retained from old tool rounds.
     history: list[LLMMessage] = field(init=False, default_factory=list)
-    # First active MessageBook id; compact archives everything before the next cut.
-    active_from_id: int | None = field(init=False, default=None)
     # The only assistant-tool-result exchange needed for the next LLM call.
     latest_continuation: LLMContinuation | None = field(init=False, default=None)
     # Current Agent-visible tool definitions passed to CallLLMJob.
@@ -109,9 +106,9 @@ class Conversation:
         conversation = self._conversation()
         if conversation is not None:
             self.summary = self._summary_message(conversation.summary)
-        active = self._get_active_messages()
-        self.active_from_id = None if not active else active[0].id
-        self.history = self._messages_from_records(active)
+        self.history = self._messages_from_records(
+            self._get_active_messages(last_n=COMPACT_KEEP_RECENT)
+        )
 
     def submit(self, job: ChatNotify) -> None:
         """Queue a claimed turn without running two turns for this conversation."""
@@ -273,19 +270,10 @@ class Conversation:
         )
         if updated is None:
             return
-        live = self._get_active_messages()
-        if len(live) > COMPACT_KEEP_RECENT:
-            cut_id = live[-COMPACT_KEEP_RECENT].id
-            await self._worker.ask(
-                ArchiveMessagesJob(
-                    publisher=self._worker.worker_name,
-                    conversation_id=self.conversation_id,
-                    before_message_id=cut_id,
-                )
-            )
-            self.active_from_id = cut_id
         self.summary = self._summary_message(summary)
-        self.history = self.history[-COMPACT_KEEP_RECENT:]
+        self.history = self._messages_from_records(
+            self._get_active_messages(last_n=COMPACT_KEEP_RECENT)
+        )
 
     def _settle(self, job: ChatNotify, error: str | None = None) -> None:
         self._worker.submit(
@@ -311,7 +299,7 @@ class Conversation:
         )
         return None if result is None else result.conversation
 
-    def _get_active_messages(self) -> list:
+    def _get_active_messages(self, *, last_n: int | None = None) -> list:
         board = self._worker.board(ListConversationMessagesJob)
         if board is None:
             return []
@@ -320,6 +308,7 @@ class Conversation:
                 ListConversationMessagesJob(
                     publisher=self._worker.worker_name,
                     conversation_id=self.conversation_id,
+                    last_n=last_n,
                 )
             )
         )

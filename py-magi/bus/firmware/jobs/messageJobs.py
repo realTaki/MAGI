@@ -17,6 +17,7 @@ from ..books.messageBook import Message
 class ListConversationMessagesJob(BaseJob):
     conversation_id: int  
     include_archived: bool = False
+    last_n: int | None = None
 
 
 @dataclass
@@ -29,6 +30,7 @@ class ListConversationMessagesJobRow(BaseJobRow):
 
     conversation_id: Mapped[int] = mapped_column(Integer, nullable=False)
     include_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_n: Mapped[int | None] = mapped_column(Integer, nullable=True)
     messages: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
@@ -45,6 +47,7 @@ class ListConversationMessagesJobBoard(
             messages=self._book.list(
                 conversation_id=job.conversation_id,
                 archived=None if job.include_archived else False,
+                last_n=job.last_n,
             )
         )
 
