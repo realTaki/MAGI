@@ -1,5 +1,7 @@
 """Background-shell output polling — :class:`BashOutputTool`.
 
+Jobs: none. Reads the in-process ``_BackgroundShellManager``.
+
 Returns only lines accumulated since the last poll
 against the same ``bash_id`` — the LLM doesn't have to
 track what it has already read. An optional regex

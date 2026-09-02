@@ -1,5 +1,8 @@
 """Foreground / background command execution — :class:`BashRunTool`.
 
+Jobs: none. cwd is ``bus.workspace``. Background shells live in
+``tools.shell._manager``, not on BUS.
+
 The subprocess's **initial cwd is the workspace root**
 (``bus.workspace``).  We don't enforce stay-
 inside-workspace on subsequent ``cd`` calls — the LLM

@@ -1,5 +1,8 @@
 """``load_skill`` tool — fetch one skill's markdown body on demand.
 
+Jobs:
+  GetSkillJob — read the SKILL.md body (frontmatter stripped) by name.
+
 The system prompt lists each skill's name and description. Call this
 when that summary is not enough and the full runbook is needed.
 """

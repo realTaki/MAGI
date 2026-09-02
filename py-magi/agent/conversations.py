@@ -6,12 +6,14 @@ import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from functools import partial
 from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from bus import (
     MAGI_CONTACT_ID,
+    SYSTEM_CONTACT_ID,
     CallLLMJob,
     CallLLMResult,
     ChatNotify,
@@ -93,6 +95,9 @@ class Conversation:
     conversation_instruction: str = field(init=False, default="")
     # Conversation-specific metadata from the Conversation record.
     conversation_info: str = field(init=False, default="")
+    conversation_channel: str = field(init=False, default="")
+    conversation_delivery_address: str = field(init=False, default="")
+    conversation_topic: str = field(init=False, default="")
 
     # Remaining LLM message layout: summary → history → latest continuation.
     # Durable summary that replaces older MessageBook history in the LLM window.
@@ -133,7 +138,12 @@ class Conversation:
                 self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
+        self.history.append(
+            LLMMessage(
+                role=LLMMessageRole.USER,
+                content=self._stamp(job.contact_id, job.text),
+            )
+        )
         self.latest_continuation = None
         conversation = self._conversation()
         if conversation is None:
@@ -150,6 +160,9 @@ class Conversation:
         self.memories = [] if memories_result is None else memories_result.memories or []
         self.conversation_instruction = conversation.instruction or ""
         self.conversation_info = conversation.info or ""
+        self.conversation_channel = conversation.channel or ""
+        self.conversation_delivery_address = conversation.delivery_address or ""
+        self.conversation_topic = conversation.topic or ""
         tools_result = await self._worker.ask(
             ListToolsJob(publisher=self._worker.worker_name)
         )
@@ -200,14 +213,16 @@ class Conversation:
             pending = list(self._pending)
             self._pending.clear()
             pending_inputs = [
-                LLMMessage(role=LLMMessageRole.USER, content=pending_job.text)
+                LLMMessage(
+                    role=LLMMessageRole.USER,
+                    content=self._stamp(pending_job.contact_id, pending_job.text),
+                )
                 for pending_job in pending
             ]
             for pending_job in pending:
                 self._settle(job)
                 job = pending_job
-            if self.latest_continuation is not None:
-                self.history.extend(self.latest_continuation.without_tools())
+            self._flush_continuation()
             self.latest_continuation = LLMContinuation(
                 llm.message,
                 tuple(tool_messages),
@@ -226,10 +241,14 @@ class Conversation:
         )
         if not commit:
             return
-        if self.latest_continuation is not None:
-            self.history.extend(self.latest_continuation.without_tools())
+        self._flush_continuation()
         if text:
-            self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
+            self.history.append(
+                LLMMessage(
+                    role=LLMMessageRole.ASSISTANT,
+                    content=self._stamp(MAGI_CONTACT_ID, text),
+                )
+            )
         self.latest_continuation = None
 
     async def _compact(
@@ -326,6 +345,25 @@ class Conversation:
             content=f"[Prior conversation summary]\n{text}",
         )
 
+    def _flush_continuation(self) -> None:
+        if self.latest_continuation is None:
+            return
+        assistant, *pending = self.latest_continuation.without_tools()
+        self.history.append(
+            LLMMessage(
+                role=LLMMessageRole.ASSISTANT,
+                content=self._stamp(MAGI_CONTACT_ID, assistant.content),
+            )
+        )
+        self.history.extend(pending)
+
+    @staticmethod
+    def _stamp(contact_id: int, content: str, when: datetime | None = None) -> str:
+        moment = datetime.now(UTC) if when is None else when
+        if moment.tzinfo is not None:
+            moment = moment.astimezone(UTC)
+        return f"[contact id {contact_id} | {moment.strftime('%Y-%m-%d:%H-%M')}]\n{content}"
+
     @staticmethod
     def _messages_from_records(records) -> list[LLMMessage]:
         return [
@@ -333,7 +371,7 @@ class Conversation:
                 role=LLMMessageRole.ASSISTANT
                 if record.contact_id == MAGI_CONTACT_ID
                 else LLMMessageRole.USER,
-                content=record.content,
+                content=Conversation._stamp(record.contact_id, record.content, record.timestamp),
             )
             for record in records
         ]
@@ -354,6 +392,15 @@ class Conversation:
             sections.append("## Conversation instruction\n" + self.conversation_instruction)
         if self.conversation_info:
             sections.append("## Conversation info\n" + self.conversation_info)
+        sections.append(
+            "## Session\n"
+            f"conversation_id: {self.conversation_id}\n"
+            f"channel: {self.conversation_channel}\n"
+            f"delivery_address: {self.conversation_delivery_address}\n"
+            f"topic: {self.conversation_topic}\n"
+            f"MAGI_CONTACT_ID: {MAGI_CONTACT_ID}\n"
+            f"SYSTEM_CONTACT_ID: {SYSTEM_CONTACT_ID}"
+        )
         return LLMMessage(
             role=LLMMessageRole.SYSTEM,
             content="\n\n".join(sections).strip() or "You are a helpful assistant.",

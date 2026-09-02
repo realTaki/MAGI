@@ -1,5 +1,7 @@
 """``edit_file`` tool — exact-string replacement in a workspace file.
 
+Jobs: none. Path is ``bus.workspace / path``.
+
 Why this exists as a separate tool from ``write_file``:
 
 - LLM doesn't have to repeat the full file content
