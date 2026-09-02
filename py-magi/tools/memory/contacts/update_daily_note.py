@@ -5,7 +5,7 @@ The daily note is the running log the LLM appends to over
 the course of a conversation — "I sent the Q3 invoice to
 Lily", "Mark mentioned he's OOO Friday", "user prefers
 shorter replies". The morning / night report reads
-today's row verbatim; permanent ``add_contact_note``
+today's row verbatim; permanent ``save_contact_note``
 rows stay separate.
 
 Capture rules (full text lives in

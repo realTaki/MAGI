@@ -9,8 +9,7 @@ LLM-driven, not automatic — the operator must say
 enough) for these to fire. Person records are NOT
 writable here; they live in the contacts subpackage.
 
-  - :mod:`tools.memory.core_memory.add_memory`
-  - :mod:`tools.memory.core_memory.update_memory`
+  - :mod:`tools.memory.core_memory.save_memory`
   - :mod:`tools.memory.core_memory.complete_memory`
   - :mod:`tools.memory.core_memory.delete_memory`
 """

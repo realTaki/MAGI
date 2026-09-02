@@ -24,11 +24,10 @@ worker composes.
          tools.registry.register_tools("mcp", ...)
          → on_tools_changed listener → ToolsWorker re-publishes catalog
 
-The four CRUD tools (``add_mcp_server`` /
-``list_mcp_servers`` / ``update_mcp_server`` /
-``delete_mcp_server``) live in :mod:`tools.mcp` and are
-registered as builtins by :mod:`tools.registry`. They publish
-to ``bus.change_mcp_server_job_board`` and wait for the worker
+The manage tool (``mcp_server``, actions list / add / update /
+delete) lives in :mod:`tools.mcp` and is registered as a
+builtin by :mod:`tools.registry`. It publishes
+to ``bus.change_mcp_server_job_board`` and waits for the worker
 to apply the change; the worker is the **only** writer to the
 Book so the LLM's view of the world and the live connections
 stay in sync.
