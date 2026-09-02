@@ -3,33 +3,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, is_dataclass, replace
 from typing import Any
 
 from bus import LLMMessage, LLMMessageRole, LLMTool
 
 TOKENS_PER_MESSAGE_OVERHEAD = 4
-
-
-@dataclass(frozen=True)
-class ToolRound:
-    """One complete LLM tool-call exchange and its optional next user input."""
-
-    assistant: LLMMessage
-    results: tuple[LLMMessage, ...]
-    pending: LLMMessage | None = None
-
-    def messages(self) -> tuple[LLMMessage, ...]:
-        return (
-            self.assistant,
-            *self.results,
-            *((self.pending,) if self.pending is not None else ()),
-        )
-
-    def without_tools(self) -> tuple[LLMMessage, ...]:
-        """Keep conversational text while removing one obsolete tool exchange."""
-        assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
-        return (assistant, *((self.pending,) if self.pending is not None else ()))
 
 
 def estimate_string_tokens(value: str | None) -> int:
@@ -81,30 +60,11 @@ def compact_source_messages(
     return tuple(kept)
 
 
-def tool_rounds_messages(rounds: tuple[ToolRound, ...]) -> tuple[LLMMessage, ...]:
-    return tuple(message for round_ in rounds for message in round_.messages())
-
-
-def trim_tool_rounds(
-    rounds: tuple[ToolRound, ...],
-    *,
-    keep: int = 2,
-) -> tuple[tuple[ToolRound, ...], tuple[LLMMessage, ...]]:
-    """Keep recent complete exchanges and return text retained from older rounds."""
-    if len(rounds) <= keep:
-        return rounds, ()
-    expired, retained = rounds[:-keep], rounds[-keep:]
-    return retained, tuple(message for round_ in expired for message in round_.without_tools())
-
-
 __all__ = [
     "TOKENS_PER_MESSAGE_OVERHEAD",
-    "ToolRound",
     "compact_source_messages",
     "estimate_messages_tokens",
     "estimate_string_tokens",
     "estimate_tools_tokens",
     "estimate_value_tokens",
-    "tool_rounds_messages",
-    "trim_tool_rounds",
 ]

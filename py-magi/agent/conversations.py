@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from itertools import chain
 from typing import TYPE_CHECKING, Any
@@ -36,17 +36,43 @@ from bus import (
 )
 
 from .compaction import (
-    ToolRound,
     compact_source_messages,
     estimate_messages_tokens,
     estimate_string_tokens,
     estimate_tools_tokens,
-    tool_rounds_messages,
-    trim_tool_rounds,
 )
 
 if TYPE_CHECKING:
     from .worker import AgentWorker
+
+
+@dataclass(frozen=True)
+class ToolRound:
+    """One complete tool exchange retained for the next LLM call."""
+
+    assistant: LLMMessage
+    results: tuple[LLMMessage, ...]
+    pending: LLMMessage | None = None
+
+    def messages(self) -> tuple[LLMMessage, ...]:
+        return (
+            self.assistant,
+            *self.results,
+            *((self.pending,) if self.pending is not None else ()),
+        )
+
+    def without_tools(self) -> tuple[LLMMessage, ...]:
+        assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
+        return (assistant, *((self.pending,) if self.pending is not None else ()))
+
+
+def _trim_tool_rounds(
+    rounds: tuple[ToolRound, ...], *, keep: int = 2
+) -> tuple[tuple[ToolRound, ...], tuple[LLMMessage, ...]]:
+    if len(rounds) <= keep:
+        return rounds, ()
+    expired, retained = rounds[:-keep], rounds[-keep:]
+    return retained, tuple(message for round_ in expired for message in round_.without_tools())
 
 
 @dataclass
@@ -119,11 +145,33 @@ class Conversation:
             self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
-        self._begin_turn(job)
+        self._job = job
+        self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
+        self.tool_rounds = ()
+        self._assistant = None
         try:
-            if not await self._refresh():
+            conversation = self._conversation()
+            if conversation is None:
                 self._settle("会话不存在。")
                 return
+            self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
+            listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
+            self.skills = [] if listed is None or not listed.skills else list(listed.skills)
+            self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
+            memories_result = await self._worker.ask(
+                ListMemoriesJob(publisher=self._worker.worker_name)
+            )
+            self.memories = [] if memories_result is None else memories_result.memories or []
+            self.conversation_instruction = conversation.instruction or ""
+            self.conversation_info = conversation.info or ""
+            tools_result = await self._worker.ask(
+                ListToolsJob(publisher=self._worker.worker_name)
+            )
+            self.tools = (
+                []
+                if tools_result is None or tools_result.tools is None
+                else [tool.definition for tool in tools_result.tools]
+            )
             error = await self._process()
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
             error = f"处理请求时发生错误：{exc}"
@@ -149,7 +197,14 @@ class Conversation:
                 thinking_tokens=thinking_tokens,
             )
             llm = await call_llm(
-                self._messages(),
+                list(
+                    chain(
+                        (self._system_message(),),
+                        self._summary_messages(),
+                        self.history,
+                        tuple(message for round_ in self.tool_rounds for message in round_.messages()),
+                    )
+                ),
                 self.tools,
                 max_tokens=max_tokens,
             )
@@ -157,12 +212,12 @@ class Conversation:
                 return "回复生成超时，请稍后再试。"
             if llm.status is not JobStatus.COMPLETED or llm.message is None:
                 return llm.error or "回复生成失败。"
-
-            if not self._add_llm(llm.message):
+            if not llm.message.tool_calls:
                 self._deliver(llm.message.content)
                 return None
+            self._assistant = llm.message
             tool_messages = await self._run_tools(
-                llm.message.tool_calls or [],
+                llm.message.tool_calls,
                 wait_seconds=tool_wait_seconds,
             )
             pending = self._pending.popleft() if self._pending else None
@@ -178,33 +233,12 @@ class Conversation:
                 text=text,
             )
         )
-        self._commit_reply(text)
-
-    def _begin_turn(self, job: ChatNotify) -> None:
-        self._job = job
-        self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
+        for round_ in self.tool_rounds:
+            if round_.pending is not None:
+                self.history.append(round_.pending)
+        if text:
+            self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
         self.tool_rounds = ()
-        self._assistant = None
-
-    async def _refresh(self) -> bool:
-        """Refresh per-turn SYSTEM context and tools."""
-        conversation = self._conversation()
-        if conversation is None:
-            return False
-        await self._refresh_system(conversation)
-        self.tools = await self._tools()
-        return True
-
-    def _messages(self) -> list[LLMMessage]:
-        """Return the next LLM input in its protocol order."""
-        return list(
-            chain(
-                (self._system_message(),),
-                self._summary_messages(),
-                self.history,
-                tool_rounds_messages(self.tool_rounds),
-            )
-        )
 
     async def _compact(
         self,
@@ -214,13 +248,17 @@ class Conversation:
         thinking_tokens: int,
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
-        if (
-            self._estimated_payload_tokens(
-                max_tokens=max_tokens,
-                thinking_tokens=thinking_tokens,
-            )
-            <= await self._context_threshold()
-        ):
+        window = await self._setting_int("compact_context_window", 100_000)
+        percent = await self._setting_int("compact_threshold_pct", 80)
+        payload = (
+            estimate_messages_tokens((self._system_message(),))
+            + estimate_messages_tokens(self._summary_messages())
+            + estimate_messages_tokens(self.history)
+            + estimate_tools_tokens(self.tools)
+            + max_tokens
+            + thinking_tokens
+        )
+        if payload <= window * percent // 100:
             return
 
         keep = max(1, await self._setting_int("compact_keep_recent", 20))
@@ -284,10 +322,6 @@ class Conversation:
         self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
 
-    def _add_llm(self, message: LLMMessage) -> bool:
-        self._assistant = message
-        return bool(message.tool_calls)
-
     def _add_tools(self, results: list[LLMMessage], pending: ChatNotify | None) -> None:
         assistant = self._assistant
         assert assistant is not None and assistant.tool_calls
@@ -296,22 +330,13 @@ class Conversation:
             self._settle()
             self._job = pending
             next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
-        rounds, expired_text = trim_tool_rounds(
+        rounds, expired_text = _trim_tool_rounds(
             (*self.tool_rounds, ToolRound(assistant, tuple(results), next_input)),
             keep=2,
         )
         self.tool_rounds = rounds
         self.history.extend(expired_text)
         self._assistant = None
-
-    def _commit_reply(self, text: str) -> None:
-        """Move this run's visible input/output into the local history."""
-        for round_ in self.tool_rounds:
-            if round_.pending is not None:
-                self.history.append(round_.pending)
-        if text:
-            self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
-        self.tool_rounds = ()
 
     def _settle(self, error: str | None = None) -> None:
         job = self._job
@@ -354,42 +379,6 @@ class Conversation:
             )
         )
         return [] if result is None or result.messages is None else result.messages
-
-    async def _refresh_system(self, conversation) -> None:
-        """Refresh the independently visible sections of the SYSTEM message."""
-        self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
-        self.skills = await self._skills()
-        self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
-        memories_result = await self._worker.ask(
-            ListMemoriesJob(publisher=self._worker.worker_name)
-        )
-        self.memories = [] if memories_result is None else memories_result.memories or []
-        self.conversation_instruction = conversation.instruction or ""
-        self.conversation_info = conversation.info or ""
-
-    async def _tools(self) -> list[Any]:
-        result = await self._worker.ask(ListToolsJob(publisher=self._worker.worker_name))
-        return (
-            []
-            if result is None or result.tools is None
-            else [tool.definition for tool in result.tools]
-        )
-
-    async def _context_threshold(self) -> int:
-        window = await self._setting_int("compact_context_window", 100_000)
-        percent = await self._setting_int("compact_threshold_pct", 80)
-        return window * percent // 100
-
-    def _estimated_payload_tokens(self, *, max_tokens: int, thinking_tokens: int = 0) -> int:
-        """Estimate durable conversation size. Temporary tool rounds are excluded."""
-        return (
-            estimate_messages_tokens((self._system_message(),))
-            + estimate_messages_tokens(self._summary_messages())
-            + estimate_messages_tokens(self.history)
-            + estimate_tools_tokens(self.tools)
-            + max_tokens
-            + thinking_tokens
-        )
 
     def _summary_messages(self) -> tuple[LLMMessage, ...]:
         return () if self.summary is None else (self.summary,)
@@ -439,12 +428,6 @@ class Conversation:
     async def _prompt(self, key: str) -> str | None:
         result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
         return None if result is None else result.value
-
-    async def _skills(self) -> list[Skill]:
-        listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
-        if listed is None or not listed.skills:
-            return []
-        return list(listed.skills)
 
     async def _setting(self, key: str) -> str | None:
         result = await self._worker.ask(GetSettingJob(publisher=self._worker.worker_name, key=key))
