@@ -116,7 +116,7 @@ class AspWorker(BaseWorker):
         board = self.board(CreateConversationJob)
         if board is None:
             return None
-        job_id = board.publish(
+        result = board.publish(
             CreateConversationJob(
                 publisher=self.handle,
                 channel="asp",
@@ -124,8 +124,7 @@ class AspWorker(BaseWorker):
                 topic="New Conversation",
             )
         )
-        result = board.get_result(job_id)
-        if result is None or result.status is not JobStatus.COMPLETED:
+        if result.status is not JobStatus.COMPLETED:
             return None
         conversation_id = result.conversation_id
         if conversation_id is None:

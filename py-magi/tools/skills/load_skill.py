@@ -58,7 +58,7 @@ class LoadSkillTool(BaseTool):
         if board is None:
             return ToolResult.err("skills are not available")
         result = await asyncio.to_thread(
-            lambda: board.get_result(board.publish(GetSkillJob(publisher="tools", name=name)))
+            lambda: board.publish(GetSkillJob(publisher="tools", name=name))
         )
         if result is None or result.status is not JobStatus.COMPLETED:
             return ToolResult.err(
