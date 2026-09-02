@@ -89,12 +89,8 @@ class Conversation:
     # Current Agent-visible tool definitions passed to CallLLMJob.
     tools: list[Any] = field(init=False, default_factory=list)
 
-    # All inbound jobs absorbed by this run, including one pending job taken after tools.
-    jobs: list[ChatNotify] = field(init=False, default_factory=list)
-    # Error text for ChatNotifyResult when this turn failed.
-    final_reply: str = field(init=False, default="")
-    # Determines whether every absorbed ChatNotify is settled COMPLETED or FAILED.
-    failed: bool = field(init=False, default=False)
+    # The ChatNotify this turn still needs to settle. Always at most one.
+    _job: ChatNotify | None = field(init=False, default=None)
     # Most recent CallLLM assistant result, held until its tool results are attached.
     _assistant: LLMMessage | None = field(init=False, default=None)
 
@@ -126,17 +122,16 @@ class Conversation:
         self._begin_turn(job)
         try:
             if not await self._refresh():
-                self._fail("会话不存在。")
+                self._settle("会话不存在。")
                 return
-            await self._process()
+            error = await self._process()
         except BaseException as exc:  # noqa: BLE001 -- every turn failure is durable
             error = f"处理请求时发生错误：{exc}"
-            self._fail(error)
+        if error is not None:
             self._deliver(error)
-        finally:
-            self._settle()
+        self._settle(error)
 
-    async def _process(self) -> None:
+    async def _process(self) -> str | None:
         llm_timeout = await self._setting_float("llm_timeout_seconds", 120)
         max_tokens = await self._setting_int("max_tokens", 1024)
         thinking_tokens = await self._setting_int("thinking_tokens", 8192)
@@ -159,19 +154,13 @@ class Conversation:
                 max_tokens=max_tokens,
             )
             if llm is None:
-                error = "回复生成超时，请稍后再试。"
-                self._fail(error)
-                self._deliver(error)
-                return
+                return "回复生成超时，请稍后再试。"
             if llm.status is not JobStatus.COMPLETED or llm.message is None:
-                error = llm.error or "回复生成失败。"
-                self._fail(error)
-                self._deliver(error)
-                return
+                return llm.error or "回复生成失败。"
 
             if not self._add_llm(llm.message):
                 self._deliver(llm.message.content)
-                return
+                return None
             tool_messages = await self._run_tools(
                 llm.message.tool_calls or [],
                 wait_seconds=tool_wait_seconds,
@@ -192,11 +181,9 @@ class Conversation:
         self._commit_reply(text)
 
     def _begin_turn(self, job: ChatNotify) -> None:
-        self.jobs = [job]
+        self._job = job
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
-        self.final_reply = ""
-        self.failed = False
         self._assistant = None
 
     async def _refresh(self) -> bool:
@@ -296,8 +283,6 @@ class Conversation:
         self.summary = self._summary_message(summary)
         self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
-        if self.conversation is not None:
-            self.conversation.summary = summary
 
     def _add_llm(self, message: LLMMessage) -> bool:
         self._assistant = message
@@ -308,7 +293,8 @@ class Conversation:
         assert assistant is not None and assistant.tool_calls
         next_input = None
         if pending is not None:
-            self.jobs.append(pending)
+            self._settle()
+            self._job = pending
             next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
         rounds, expired_text = trim_tool_rounds(
             (*self.tool_rounds, ToolRound(assistant, tuple(results), next_input)),
@@ -317,10 +303,6 @@ class Conversation:
         self.tool_rounds = rounds
         self.history.extend(expired_text)
         self._assistant = None
-
-    def _fail(self, error: str) -> None:
-        self.failed = True
-        self.final_reply = error
 
     def _commit_reply(self, text: str) -> None:
         """Move this run's visible input/output into the local history."""
@@ -331,17 +313,19 @@ class Conversation:
             self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
         self.tool_rounds = ()
 
-    def _settle(self) -> None:
-        status = JobStatus.FAILED if self.failed else JobStatus.COMPLETED
-        for job in self.jobs:
-            self._worker.submit(
-                ChatNotify,
-                ChatNotifyResult(
-                    id=job.id,
-                    status=status,
-                    error=self.final_reply if self.failed else None,
-                ),
-            )
+    def _settle(self, error: str | None = None) -> None:
+        job = self._job
+        if job is None:
+            return
+        self._job = None
+        self._worker.submit(
+            ChatNotify,
+            ChatNotifyResult(
+                id=job.id,
+                status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
+                error=error,
+            ),
+        )
 
     def _conversation(self):
         board = self._worker.board(GetConversationJob)
