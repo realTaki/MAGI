@@ -64,6 +64,7 @@ class LLMContinuation:
         assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
         return (assistant, *self.pending)
 
+
 @dataclass
 class Conversation:
     """One conversation's serial queue, durable snapshot, and current LLM run."""
@@ -92,10 +93,10 @@ class Conversation:
     # Conversation-specific metadata from the Conversation record.
     conversation_info: str = field(init=False, default="")
 
-    # Remaining LLM message layout: summary → history → tool rounds.
-    # Durable summary that replaces archived MessageBook history.
+    # Remaining LLM message layout: summary → history → latest continuation.
+    # Durable summary that replaces older MessageBook history in the LLM window.
     summary: LLMMessage | None = field(init=False, default=None)
-    # In-memory non-archived chat transcript, including text retained from old tool rounds.
+    # In-memory chat transcript of USER/MAGI text, including text retained from old continuations.
     history: list[LLMMessage] = field(init=False, default_factory=list)
     # The only assistant-tool-result exchange needed for the next LLM call.
     latest_continuation: LLMContinuation | None = field(init=False, default=None)
@@ -124,7 +125,11 @@ class Conversation:
                 await self._run_turn(self._pending.popleft())
         finally:
             self._running = False
-            self._worker._release_conversation(self)
+            if self._pending:
+                self._running = True
+                go(self._run())
+            else:
+                self._worker._release_conversation(self)
 
     async def _run_turn(self, job: ChatNotify) -> None:
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
@@ -186,7 +191,7 @@ class Conversation:
                 self._finish(job, llm.message.content)
                 return
             if llm.message.content:
-                self._deliver(llm.message.content)
+                self._deliver(llm.message.content, commit=False)
             tool_messages = await self._run_tools(
                 llm.message.tool_calls,
                 wait_seconds=TOOL_WAIT_SECONDS,
@@ -208,8 +213,8 @@ class Conversation:
                 pending_inputs,
             )
 
-    def _deliver(self, text: str) -> None:
-        """Publish this turn's visible reply, then retain it in local history."""
+    def _deliver(self, text: str, *, commit: bool = True) -> None:
+        """Publish MAGI text to the user. Commit to local history only when the turn ends."""
         text = text or "处理完毕。"
         self._worker.publish_notify(
             DeliveryNotify(
@@ -218,8 +223,10 @@ class Conversation:
                 text=text,
             )
         )
+        if not commit:
+            return
         if self.latest_continuation is not None:
-            self.history.extend(self.latest_continuation.pending)
+            self.history.extend(self.latest_continuation.without_tools())
         if text:
             self.history.append(LLMMessage(role=LLMMessageRole.ASSISTANT, content=text))
         self.latest_continuation = None
@@ -230,12 +237,17 @@ class Conversation:
         call_llm: Callable[..., Awaitable[CallLLMResult | None]],
     ) -> None:
         """Summarize durable conversation history when it exceeds budget."""
+        if self.latest_continuation is not None:
+            return
         setting = await self._worker.ask(
             GetSettingJob(publisher=self._worker.worker_name, key="provider.context_window")
         )
         if setting is None or setting.value is None:
             return
-        window = int(setting.value) // 2
+        try:
+            window = int(setting.value) // 2
+        except ValueError:
+            return
         if window < 1:
             return
         prompt = await self._prompt("agent/compaction")
