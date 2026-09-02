@@ -1,4 +1,9 @@
-"""``delete_contact_note`` tool — remove a note through Jobs."""
+"""``delete_contact_note`` — remove a ContactNote.
+
+Jobs:
+  GetContactNoteJob — tell the caller whether the id existed.
+  DeleteContactNoteJob — delete the row; missing id is still success.
+"""
 
 from __future__ import annotations
 

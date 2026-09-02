@@ -1,4 +1,10 @@
-"""``save_memory`` tool — create or patch a MemoryBook row through Jobs."""
+"""``save_memory`` — create or patch a MemoryBook row.
+
+Jobs:
+  CreateMemoryJob — insert topic/detail/kind when ``memory_id`` is omitted.
+  GetMemoryJob — load the row after write, and before patch.
+  UpdateMemoryJob — patch topic/detail/kind/archived on an existing id.
+"""
 
 from __future__ import annotations
 

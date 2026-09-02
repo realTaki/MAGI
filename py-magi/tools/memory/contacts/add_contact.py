@@ -1,4 +1,11 @@
-"""``add_contact`` tool — create a Contact through Jobs."""
+"""``add_contact`` — create a Contact, optionally with a first note.
+
+Jobs:
+  CreateContactJob — insert name/nickname/role.
+  GetContactJob — return the created row to the LLM.
+  CreateContactNoteJob — optional initial permanent note.
+  GetContactNoteJob — return that note if one was written.
+"""
 
 from __future__ import annotations
 
