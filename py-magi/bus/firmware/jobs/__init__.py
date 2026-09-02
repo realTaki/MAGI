@@ -4,6 +4,7 @@ from .callLLMJob import (
     CallLLMResult,
     LLMMessage,
     LLMMessageRole,
+    LLMThinkingBlock,
     LLMTool,
     LLMToolCall,
 )
@@ -222,6 +223,7 @@ __all__ = [
     "CallLLMResult",
     "LLMMessage",
     "LLMMessageRole",
+    "LLMThinkingBlock",
     "LLMTool",
     "LLMToolCall",
     "ChatNotify",

@@ -12,6 +12,7 @@ from bus import (
     LLMFinishReason,
     LLMMessage,
     LLMMessageRole,
+    LLMThinkingBlock,
     LLMTool,
     LLMToolCall,
     LLMUsage,
@@ -44,6 +45,13 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
             LLMMessage(
                 role=LLMMessageRole.ASSISTANT,
                 content="",
+                thinking_blocks=[
+                    LLMThinkingBlock(
+                        type="thinking",
+                        thinking="I should call the weather tool.",
+                        signature="signature",
+                    )
+                ],
                 tool_calls=[
                     LLMToolCall(
                         tool_call_id="call-1",
@@ -61,6 +69,7 @@ def test_llm_dtos_round_trip_through_json_record_data() -> None:
 
     assert restored == job
     assert isinstance(restored.messages[1].tool_calls[0], LLMToolCall)
+    assert isinstance(restored.messages[1].thinking_blocks[0], LLMThinkingBlock)
     assert isinstance(restored.tools[0], LLMTool)
     assert job.to_dict()["tools"] == [
         {"name": "weather", "description": "Get weather", "input_schema": {"type": "object"}}

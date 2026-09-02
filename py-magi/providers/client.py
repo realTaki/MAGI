@@ -14,6 +14,7 @@ from bus import (
     JobStatus,
     LLMMessage,
     LLMMessageRole,
+    LLMThinkingBlock,
     LLMTool,
     LLMToolCall,
 )
@@ -148,7 +149,14 @@ class LiteLLMClient:
             return {"role": "tool", "tool_call_id": message.tool_call_id, "content": content}
         payload: dict[str, Any] = {"role": "assistant", "content": message.content}
         if message.thinking_blocks:
-            payload["thinking_blocks"] = message.thinking_blocks
+            payload["thinking_blocks"] = [
+                {
+                    "type": block.type,
+                    "thinking": block.thinking,
+                    "signature": block.signature,
+                }
+                for block in message.thinking_blocks
+            ]
         if message.tool_calls:
             payload["tool_calls"] = [
                 {
@@ -182,7 +190,23 @@ class LiteLLMClient:
         else:
             return "provider returned non-text assistant content"
         blocks = data.get("thinking_blocks")
-        thinking_blocks = [item for item in blocks if isinstance(item, dict)] if isinstance(blocks, list) else None
+        thinking_blocks: list[LLMThinkingBlock] = []
+        if blocks is not None:
+            if not isinstance(blocks, list):
+                return "provider returned invalid thinking blocks"
+            for item in blocks:
+                block = self._mapping(item)
+                if block is None or not all(
+                    isinstance(block.get(key), str) for key in ("type", "thinking", "signature")
+                ):
+                    return "provider returned invalid thinking block"
+                thinking_blocks.append(
+                    LLMThinkingBlock(
+                        type=block["type"],
+                        thinking=block["thinking"],
+                        signature=block["signature"],
+                    )
+                )
         calls: list[LLMToolCall] = []
         for item in data.get("tool_calls") or ():
             call = self._mapping(item) or {}
