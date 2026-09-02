@@ -60,7 +60,7 @@ class LoadSkillTool(BaseTool):
         result = await asyncio.to_thread(
             lambda: board.publish(GetSkillJob(publisher="tools", name=name))
         )
-        if result is None or result.status is not JobStatus.COMPLETED:
+        if result.status is not JobStatus.COMPLETED:
             return ToolResult.err(
                 result.error if result is not None and result.error else "failed to read skill"
             )
