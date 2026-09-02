@@ -289,30 +289,26 @@ class Conversation:
         board = self._worker.board(GetConversationJob)
         if board is None:
             return None
-        result = board.get_result(
-            board.publish(
-                GetConversationJob(
-                    publisher=self._worker.worker_name,
-                    conversation_id=self.conversation_id,
-                )
+        result = board.publish(
+            GetConversationJob(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
             )
         )
-        return None if result is None else result.conversation
+        return result.conversation
 
     def _get_active_messages(self, *, last_n: int | None = None) -> list:
         board = self._worker.board(ListConversationMessagesJob)
         if board is None:
             return []
-        result = board.get_result(
-            board.publish(
-                ListConversationMessagesJob(
-                    publisher=self._worker.worker_name,
-                    conversation_id=self.conversation_id,
-                    last_n=last_n,
-                )
+        result = board.publish(
+            ListConversationMessagesJob(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+                last_n=last_n,
             )
         )
-        return [] if result is None or result.messages is None else result.messages
+        return [] if result.messages is None else result.messages
 
     def _summary_messages(self) -> tuple[LLMMessage, ...]:
         return () if self.summary is None else (self.summary,)
