@@ -204,14 +204,6 @@ class SearchConversationsTool(BaseTool):
             )
         except SearchUnavailable as e:
             return ToolResult(content=f"search_conversations: {e}", is_error=True)
-        except Exception as e:
-            # FTS5 syntax error post-sanitisation shouldn't
-            # happen, but defend with a clear message
-            # instead of a 500.
-            return ToolResult(
-                content=f"search_conversations: query rejected by FTS5: {e}",
-                is_error=True,
-            )
 
         if not hits:
             return ToolResult(content=(f"search_conversations: no matches for q={q!r} (total={total})"))

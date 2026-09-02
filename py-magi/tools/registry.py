@@ -82,21 +82,13 @@ def builtin_catalog() -> list[dict[str, Any]]:
 
 
 def _catalog_spec(builtin: BuiltinTool) -> dict[str, Any] | None:
-    module_name, class_name = builtin
-    try:
-        cls = _load_builtin(builtin)
-    except Exception as exc:  # noqa: BLE001 -- one missing tool must not block seeding
-        logger.warning("tools catalog: skip %s.%s (%s)", module_name, class_name, exc)
-        return None
+    cls = _load_builtin(builtin)
     name = getattr(cls, "name", "") or ""
     if not name:
         return None
     description = cls.__dict__.get("description", "")
     if not isinstance(description, str):
-        try:
-            description = str(cls(bus=None).description)
-        except Exception:  # noqa: BLE001 -- catalog can ship without a live description
-            description = ""
+        description = str(description)
     return {
         "name": name,
         "description": description,

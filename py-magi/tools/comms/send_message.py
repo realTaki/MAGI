@@ -135,45 +135,25 @@ class SendMessageTool(BaseTool):
             conversation_id,
             str(kwargs.get("channel") or ""),
         )
-        try:
-            bus = self.bus
-            conversation = bus.conversations_book.get_for_owner(
-                contact_id=contact_id,
-                conversation_id=conversation_id,
-            )
-            if conversation is None:
-                raise KeyError(f"unknown conversation {conversation_id!r}")
-            bus.delivery_notify_job_board.publish(
-                DeliveryNotifyJob(
-                    channel=conversation.channel,
-                    destination=conversation.delivery_address or None,
-                    text=text,
-                    conversation_id=conversation.id,
-                    contact_id=conversation.contact_id,
-                )
-            )
-            logger.info("send_message: queued for conversation=%s", conversation_id)
-        except KeyError as e:
-            # Unknown channel / missing conversation — surface
-            # the dispatcher's diagnostic verbatim.
+        conversation = self.bus.conversations_book.get_for_owner(
+            contact_id=contact_id,
+            conversation_id=conversation_id,
+        )
+        if conversation is None:
             return ToolResult(
-                content=f"send_message: {e}",
+                content=f"send_message: unknown conversation {conversation_id!r}",
                 is_error=True,
             )
-        except RuntimeError as e:
-            # No IM binding for this user, or no bot
-            # registered. Tool-level error so the LLM can
-            # react ("no-op push; reply text lands in chat
-            # history").
-            return ToolResult(
-                content=f"send_message: {e}",
-                is_error=True,
+        self.bus.delivery_notify_job_board.publish(
+            DeliveryNotifyJob(
+                channel=conversation.channel,
+                destination=conversation.delivery_address or None,
+                text=text,
+                conversation_id=conversation.id,
+                contact_id=conversation.contact_id,
             )
-        except Exception as e:
-            return ToolResult(
-                content=f"send_message: send failed: {e}",
-                is_error=True,
-            )
+        )
+        logger.info("send_message: queued for conversation=%s", conversation_id)
 
         return ToolResult(
             content=f"send_message: queued {len(text)} chars to conversation {conversation_id}"

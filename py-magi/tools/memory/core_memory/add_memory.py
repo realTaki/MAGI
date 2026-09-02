@@ -118,21 +118,14 @@ class AddMemoryTool(BaseTool):
             kind = MemoryKind(kwargs["kind"])
         except ValueError:
             return ToolResult.err("add_memory kind must be 'fact' or 'quick_note'")
-        if self.bus is None:
-            return ToolResult.err("bus not available")
-        try:
-            record_id = self.bus.memory_book.add(Memory(
-                contact_id=int(kwargs.get("contact_id") or 0),
-                kind=kind,
-                subject=kwargs["subject"],
-                body=kwargs["body"],
-                priority=kwargs.get("priority", 3),
-            ))
-            view = self.bus.memory_book.get(record_id)
-            if view is None:
-                raise RuntimeError(f"memory row {record_id} disappeared after insert")
-        except ValueError as e:
-            return ToolResult.err(f"add_memory failed: {e}")
+        record_id = self.bus.memory_book.add(Memory(
+            contact_id=int(kwargs.get("contact_id") or 0),
+            kind=kind,
+            subject=kwargs["subject"],
+            body=kwargs["body"],
+            priority=kwargs.get("priority", 3),
+        ))
+        view = self.bus.memory_book.get(record_id)
         logger.info(
             "add_memory: row %s created for contact=%s kind=%r subject=%r",
             view.id,

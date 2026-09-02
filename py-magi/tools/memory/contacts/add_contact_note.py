@@ -79,19 +79,11 @@ class AddContactNoteTool(BaseTool):
         if contact is None:
             return ToolResult.err(f"contact {contact_id!r} not found")
 
-        try:
-            note_id = self.bus.contact_notes_book.add(ContactNote(
-                contact_id=contact_id,
-                note=note,
-            ))
-            row = self.bus.contact_notes_book.get(note_id)
-            if row is None:
-                raise RuntimeError(f"contact note {note_id} disappeared after insert")
-        except ValueError as e:
-            # ``contact_notes_book.add`` owns the
-            # non-empty-after-strip and length-cap
-            # invariants. Translate to LLM-facing error.
-            return ToolResult.err(str(e))
+        note_id = self.bus.contact_notes_book.add(ContactNote(
+            contact_id=contact_id,
+            note=note,
+        ))
+        row = self.bus.contact_notes_book.get(note_id)
 
         logger.info(
             "add_contact_note: note=%s appended to contact=%s",

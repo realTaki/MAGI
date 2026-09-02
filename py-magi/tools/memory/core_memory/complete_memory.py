@@ -81,10 +81,7 @@ class CompleteMemoryTool(BaseTool):
             return ToolResult.err(
                 f"memory {memory_id} not found or not owned by the calling operator"
             )
-        try:
-            view = self.bus.memory_book.complete(memory_id=memory_id)
-        except LookupError as e:
-            return ToolResult.err(str(e))
+        view = self.bus.memory_book.complete(memory_id=memory_id)
         logger.info(
             "complete_memory: row %s completed by %s",
             memory_id,
