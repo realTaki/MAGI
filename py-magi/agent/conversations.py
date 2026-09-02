@@ -117,8 +117,6 @@ class Conversation:
 
     # The ChatNotify this turn still needs to settle. Always at most one.
     _job: ChatNotify | None = field(init=False, default=None)
-    # Most recent CallLLM assistant result, held until its tool results are attached.
-    _assistant: LLMMessage | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         conversation = self._conversation()
@@ -148,7 +146,6 @@ class Conversation:
         self._job = job
         self.history.append(LLMMessage(role=LLMMessageRole.USER, content=job.text))
         self.tool_rounds = ()
-        self._assistant = None
         try:
             conversation = self._conversation()
             if conversation is None:
@@ -215,13 +212,25 @@ class Conversation:
             if not llm.message.tool_calls:
                 self._deliver(llm.message.content)
                 return None
-            self._assistant = llm.message
             tool_messages = await self._run_tools(
                 llm.message.tool_calls,
                 wait_seconds=tool_wait_seconds,
             )
             pending = self._pending.popleft() if self._pending else None
-            self._add_tools(tool_messages, pending)
+            next_input = None
+            if pending is not None:
+                self._settle()
+                self._job = pending
+                next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
+            rounds, expired_text = _trim_tool_rounds(
+                (
+                    *self.tool_rounds,
+                    ToolRound(llm.message, tuple(tool_messages), next_input),
+                ),
+                keep=2,
+            )
+            self.tool_rounds = rounds
+            self.history.extend(expired_text)
 
     def _deliver(self, text: str) -> None:
         """Publish this turn's visible reply, then retain it in local history."""
@@ -321,22 +330,6 @@ class Conversation:
         self.summary = self._summary_message(summary)
         self.active_from_id = cut_id
         self.history = self._messages_from_records(live[-keep:])
-
-    def _add_tools(self, results: list[LLMMessage], pending: ChatNotify | None) -> None:
-        assistant = self._assistant
-        assert assistant is not None and assistant.tool_calls
-        next_input = None
-        if pending is not None:
-            self._settle()
-            self._job = pending
-            next_input = LLMMessage(role=LLMMessageRole.USER, content=pending.text)
-        rounds, expired_text = _trim_tool_rounds(
-            (*self.tool_rounds, ToolRound(assistant, tuple(results), next_input)),
-            keep=2,
-        )
-        self.tool_rounds = rounds
-        self.history.extend(expired_text)
-        self._assistant = None
 
     def _settle(self, error: str | None = None) -> None:
         job = self._job
