@@ -38,7 +38,6 @@ _BUILTIN_TOOLS: tuple[BuiltinTool, ...] = (
     ("tools.filesystem.list_files", "ListFilesTool"),
     ("tools.memory.conversations.search_conversations", "SearchConversationsTool"),
     ("tools.comms.send_message", "SendMessageTool"),
-    ("tools.comms.message_magi", "MessageMagiTool"),
     ("tools.tasks.schedule", "ScheduleTaskTool"),
     ("tools.shell.run", "BashRunTool"),
     ("tools.shell.output", "BashOutputTool"),
