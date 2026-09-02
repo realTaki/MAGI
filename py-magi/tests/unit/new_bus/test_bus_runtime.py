@@ -23,7 +23,7 @@ class CatalogWorker(BaseWorker):
 
 def _listed(bus: Bus) -> dict[str, str]:
     board = bus.board(ListSettingsJob)
-    result = board.publish(ListSettingsJob())
+    result = board.publish(ListSettingsJob(publisher="test"))
     return result.settings
 
 
@@ -39,7 +39,7 @@ def test_bus_creates_and_attaches_worker_factories(tmp_path) -> None:
         worker = bus.workers["first"]
         assert worker.is_alive()
         assert worker.bus is bus
-        bus.shutdown()
+        bus.stop()
         assert bus.workers == {}
         assert not worker.is_alive()
 
@@ -63,27 +63,22 @@ def test_main_attaches_workers_and_serves(tmp_path, monkeypatch) -> None:
         seen["handle"] = self.handle
         seen["workers"] = set(self.workers)
 
-    monkeypatch.setattr(Bus, "serve", fake_serve)
+    monkeypatch.setattr(Bus, "start", fake_serve)
     assert bus_runtime.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
     assert seen["handle"] == "@alice.magi"
     assert seen["workers"] == {"first", "second"}
 
 
-def test_worker_boosts_defaults_and_attach_settings_overwrite_them(tmp_path) -> None:
-    with Bus("@unit.magi", workspace=tmp_path / "workspace") as bus:
+def test_worker_boosts_defaults_without_persisting_attach_settings(tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    with Bus("@unit.magi", workspace=workspace) as bus:
         assert bus.attach(CatalogWorker)
         listed = _listed(bus)
         assert listed["catalog.theme"] == "dark"
         assert listed["catalog.locale"] == "en"
-        bus.shutdown()
 
+    with Bus("@unit.magi", workspace=workspace) as bus:
         assert bus.attach(CatalogWorker, settings={"theme": "light"})
         listed = _listed(bus)
-        assert listed["catalog.theme"] == "light"
-        assert listed["catalog.locale"] == "en"
-        bus.shutdown()
-
-        assert bus.attach(CatalogWorker)
-        listed = _listed(bus)
-        assert listed["catalog.theme"] == "light"
+        assert listed["catalog.theme"] == "dark"
         assert listed["catalog.locale"] == "en"

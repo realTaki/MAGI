@@ -8,6 +8,8 @@ import channels.asp.worker as asp_worker
 from bus import Bus, ChatNotify, DeliveryNotify, JobStatus
 from channels.asp.worker import AspWorker
 
+_ASP_SETTINGS = {"handle": "@unit.magi", "base": "http://test", "token": "token"}
+
 
 class FakeAspClient:
     def __init__(self, **_settings) -> None:
@@ -31,12 +33,11 @@ async def test_asp_worker_keeps_its_listener_running_after_attach(tmp_path, monk
     client = FakeAspClient()
     monkeypatch.setattr(asp_worker, "AspClient", lambda **_kwargs: client)
     with Bus("@unit.magi", workspace=tmp_path / "workspace") as bus:
-        worker = AspWorker(bus, handle="@unit.magi", base="http://test", token="token")
-        await worker.on_attached()
+        assert bus.attach(AspWorker, settings=_ASP_SETTINGS)
+        worker = bus.workers["asp"]
         await asyncio.sleep(0)
-        assert worker._listen_task is not None
-        assert not worker._listen_task.done()
-        await worker.on_detached()
+        assert worker._listen is not None
+        assert not worker._listen.done()
 
 
 @pytest.mark.asyncio
@@ -44,8 +45,8 @@ async def test_asp_worker_bridges_one_session_to_conversation_jobs(tmp_path, mon
     client = FakeAspClient()
     monkeypatch.setattr(asp_worker, "AspClient", lambda **_kwargs: client)
     with Bus("@unit.magi", workspace=tmp_path / "workspace") as bus:
-        worker = AspWorker(bus, handle="@unit.magi", base="http://test", token="token")
-        await worker.on_attached()
+        assert bus.attach(AspWorker, settings=_ASP_SETTINGS)
+        worker = bus.workers["asp"]
         await worker._on_event(
             {
                 "type": "session.invited",
@@ -72,13 +73,7 @@ async def test_asp_worker_bridges_one_session_to_conversation_jobs(tmp_path, mon
         delivery_id = delivery.publish(
             DeliveryNotify(publisher="test", conversation_id=inbound.conversation_id, text="reply")
         )
-        for _ in range(20):
-            if await worker._poll():
-                break
-            await asyncio.sleep(0.05)
-        else:
-            pytest.fail("ASP worker did not claim the delivery job")
-        result = delivery.get_result(delivery_id)
+        result = delivery.get_result(delivery_id, timeout=5.0)
         assert result is not None
         assert result.status is JobStatus.COMPLETED
         assert client.sent == [("session-1", "reply")]
