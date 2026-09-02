@@ -57,19 +57,6 @@ _BUILTIN_TOOLS: tuple[BuiltinTool, ...] = (
     ("tools.mcp.mcp_server", "McpServerTool"),
 )
 
-#: Names that used to be builtins. ToolsWorker drops leftover catalog rows
-#: so a renamed merge does not leave the old LLM menu entries behind.
-RETIRED_BUILTIN_NAMES: frozenset[str] = frozenset({
-    "add_memory",
-    "update_memory",
-    "add_contact_note",
-    "update_contact_note",
-    "add_mcp_server",
-    "list_mcp_servers",
-    "update_mcp_server",
-    "delete_mcp_server",
-})
-
 
 def configure(*, bus=None) -> None:
     """Bind the BUS passed to newly constructed builtin tools."""
@@ -219,5 +206,4 @@ __all__ = [
     "register_tools",
     "on_tools_changed",
     "list_injected",
-    "RETIRED_BUILTIN_NAMES",
 ]

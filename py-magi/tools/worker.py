@@ -1,24 +1,22 @@
 """Tools worker: seed the catalog, then claim RunToolJob.
 
-Attach upserts builtin catalog rows through ``SetToolsJob`` and drops
-retired names. The loop claims ``RunToolJob`` and dispatches ``run``.
+Attach upserts builtin catalog rows through ``SetToolsJob``. The loop
+claims ``RunToolJob`` and dispatches ``run``.
 """
 
 from __future__ import annotations
 
 from bus import (
     BaseWorker,
-    DeleteToolJob,
     JobStatus,
     LLMTool,
-    ListToolsJob,
     RunToolJob,
     RunToolResult,
     SetToolsJob,
     Tool,
     go,
 )
-from tools.registry import RETIRED_BUILTIN_NAMES, builtin_catalog, configure, get_tool
+from tools.registry import builtin_catalog, configure, get_tool
 
 
 class ToolsWorker(BaseWorker):
@@ -26,8 +24,6 @@ class ToolsWorker(BaseWorker):
 
     async def on_attached(self) -> None:
         configure(bus=self.bus)
-        listed = await self.ask(ListToolsJob(include_disabled=True, publisher=self.worker_name))
-        existing = {tool.definition.name for tool in listed.tools or []} if listed is not None else set()
         catalog = builtin_catalog()
         await self.ask(
             SetToolsJob(
@@ -45,9 +41,6 @@ class ToolsWorker(BaseWorker):
                 ],
             )
         )
-        for name in RETIRED_BUILTIN_NAMES:
-            if name in existing:
-                await self.ask(DeleteToolJob(publisher=self.worker_name, name=name))
 
     async def _poll(self) -> bool:
         job = await self.claim(RunToolJob)
