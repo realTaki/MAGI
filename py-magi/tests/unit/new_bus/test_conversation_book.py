@@ -1,63 +1,50 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 from datetime import datetime
 
 from sqlalchemy import create_engine, inspect, text
 
 from bus import (
-    AppendMessageJob,
-    ArchiveMessagesJob,
-    BaseJob,
     Bus,
-    Conversation,
-    CreateConversationJob,
+    ChatNotify,
+    GetConversationJob,
     JobStatus,
     ListConversationMessagesJob,
     UpdateConversationSummaryJob,
 )
-from bus.firmware.books.contactBook import Contact, ContactBook
-from bus.firmware.books.conversationBook import ConversationBook
-from bus.firmware.jobs.conversationJobs import (
-    CreateConversationJobBoard,
-    UpdateConversationSummaryJobBoard,
-)
-from bus.firmware.jobs.messageJobs import (
-    AppendMessageJobBoard,
-    ArchiveMessagesJobBoard,
-    ListConversationMessagesJobBoard,
-)
-from tests.unit.new_bus.testing import attach_board
-
-BOARD_BY_JOB = {
-    CreateConversationJob: CreateConversationJobBoard,
-    AppendMessageJob: AppendMessageJobBoard,
-    ArchiveMessagesJob: ArchiveMessagesJobBoard,
-    ListConversationMessagesJob: ListConversationMessagesJobBoard,
-    UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard,
-}
+from bus.firmware.books.conversationBook import Conversation, ConversationBook
 
 
 def _bus(workspace) -> Bus:
-    return Bus(workspace)
+    return Bus("@conversation", workspace=workspace)
 
 
-def _board(bus: Bus, job: BaseJob):
-    return attach_board(bus, BOARD_BY_JOB[type(job)])
-
-
-def _publish[JobT: BaseJob](bus: Bus, job: JobT):
-    return _board(bus, job).publish(job)
-
-
-def _result(bus: Bus, result):
-    del bus
-    return result
-
-
-def _conversation(bus: Bus, conversation_id: int | None):
-    assert conversation_id is not None
-    return ConversationBook(bus._factory).get(conversation_id)
+def _open_conversation(
+    bus: Bus,
+    *,
+    channel: str = "webui",
+    delivery_address: str = "webui:1",
+    text: str = "hi",
+) -> int:
+    chat = bus.board(ChatNotify)
+    assert chat is not None
+    chat.publish(
+        ChatNotify(
+            publisher="test",
+            channel=channel,
+            delivery_address=delivery_address,
+            text=text,
+        )
+    )
+    conversation_id = ConversationBook(bus._memories).get_or_add(
+        channel=channel,
+        delivery_address=delivery_address,
+    )
+    conversation = ConversationBook(bus._factory).get(conversation_id)
+    assert conversation is not None
+    return conversation.id
 
 
 def test_conversation_record_keeps_transport_fields() -> None:
@@ -69,28 +56,63 @@ def test_conversation_record_keeps_transport_fields() -> None:
     }
 
 
-def test_create_conversation_returns_its_stable_record(tmp_path) -> None:
+def test_chat_notify_creates_the_conversation_for_its_endpoint(tmp_path) -> None:
     bus = _bus(tmp_path)
-    created = _publish(
+    conversation_id = _open_conversation(
         bus,
-        CreateConversationJob(
-            delivery_address="tg:123",
-            channel="tg",
-            topic="hello",
-            instruction="a chat",
-            info="from telegram",
-        ),
+        channel="tg",
+        delivery_address="tg:123",
+        text="hello",
     )
-    outcome = _result(bus, created)
-    assert outcome is not None
-    assert outcome.status is JobStatus.COMPLETED
-    conversation = _conversation(bus, outcome.conversation_id)
+    conversation = ConversationBook(bus._factory).get(conversation_id)
     assert conversation is not None
     assert conversation.delivery_address == "tg:123"
     assert conversation.channel == "tg"
-    assert conversation.topic == "hello"
-    assert conversation.instruction == "a chat"
-    assert conversation.info == "from telegram"
+
+
+def test_chat_notify_reuses_the_conversation_for_the_same_endpoint(tmp_path) -> None:
+    bus = _bus(tmp_path)
+    chat = bus.board(ChatNotify)
+    assert chat is not None
+    first_id = chat.publish(
+        ChatNotify(
+            publisher="test",
+            channel="webui",
+            delivery_address="webui:same",
+            text="one",
+        )
+    )
+    second_id = chat.publish(
+        ChatNotify(
+            publisher="test",
+            channel="webui",
+            delivery_address="webui:same",
+            text="two",
+        )
+    )
+    first = None
+    second = None
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and (first is None or second is None):
+        claimed = chat.claim()
+        if claimed is None:
+            time.sleep(0.02)
+            continue
+        if first is None:
+            first = claimed
+        else:
+            second = claimed
+    assert first is not None and second is not None
+    assert first is not None and second is not None
+    assert {first.id, second.id} == {first_id, second_id}
+    assert first.conversation_id == second.conversation_id
+    listed = bus.board(ListConversationMessagesJob).publish(
+        ListConversationMessagesJob(
+            publisher="test",
+            conversation_id=first.conversation_id,
+        )
+    )
+    assert [message.content for message in listed.messages] == ["one", "two"]
 
 
 def test_conversation_owner_migration_drops_legacy_owner_and_members(tmp_path) -> None:
@@ -137,91 +159,52 @@ def test_conversation_owner_migration_drops_legacy_owner_and_members(tmp_path) -
             )
         )
 
-    bus = Bus(workspace)
-    try:
+    with Bus("@legacy", workspace=workspace) as bus:
         with bus._factory.engine.connect() as connection:
             columns = {column["name"] for column in inspect(connection).get_columns("books_conversations")}
             assert "contact_id" not in columns
             assert "owner_contact_id" not in columns
             assert "books_conv_members" not in inspect(connection).get_table_names()
-    finally:
-        bus.close()
 
 
 def test_update_summary_is_a_named_operation(tmp_path) -> None:
     bus = _bus(tmp_path)
-    created = _publish(
-        bus,
-        CreateConversationJob(delivery_address="webui:1", channel="webui"),
+    conversation_id = _open_conversation(bus)
+    updated = bus.board(UpdateConversationSummaryJob).publish(
+        UpdateConversationSummaryJob(
+            publisher="test",
+            conversation_id=conversation_id,
+            summary="compact context",
+        )
     )
-    created_outcome = _result(bus, created)
-    assert created_outcome is not None
-    conversation = _conversation(bus, created_outcome.conversation_id)
-    assert conversation is not None
-
-    updated = _publish(
-        bus,
-        UpdateConversationSummaryJob(conversation_id=conversation.id, summary="compact context"),
-    )
-    outcome = _result(bus, updated)
-    assert outcome is not None
-    assert outcome.status is JobStatus.COMPLETED
-    conversation = _conversation(bus, conversation.id)
+    assert updated.status is JobStatus.COMPLETED
+    conversation = ConversationBook(bus._factory).get(conversation_id)
     assert conversation is not None
     assert conversation.summary == "compact context"
     assert isinstance(conversation.last_compaction_at, datetime)
 
 
-def test_create_conversation_keeps_optional_text_unconstrained(tmp_path) -> None:
-    bus = _bus(tmp_path)
-    created = _publish(bus, CreateConversationJob(channel="webui"))
-    outcome = _result(bus, created)
-    assert outcome is not None
-    assert outcome.status is JobStatus.COMPLETED
-    conversation = _conversation(bus, outcome.conversation_id)
-    assert conversation is not None
-    assert conversation.delivery_address == ""
-
-
 def test_firmware_commands_are_not_claimable_work(tmp_path) -> None:
     bus = _bus(tmp_path)
-    board = _board(bus, CreateConversationJob())
+    board = bus.board(GetConversationJob)
+    assert board is not None
     assert not hasattr(board, "claim")
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:
     workspace = tmp_path / "workspace"
-    first = Bus(workspace)
-    try:
-        created = _publish(
+    with Bus("@durable", workspace=workspace) as first:
+        conversation_id = _open_conversation(
             first,
-            CreateConversationJob(delivery_address="webui:durable", channel="webui"),
+            delivery_address="webui:durable",
+            text="persist me",
         )
-        created_result = _result(first, created)
-        assert created_result is not None
-        assert created_result.conversation_id is not None
-        appended = _publish(
-            first,
-            AppendMessageJob(
-                conversation_id=created_result.conversation_id,
-                contact_id=ContactBook(first._factory).add(Contact(name="durable")),
-                content="persist me",
-            ),
-        )
-    finally:
-        first.close()
 
-    reopened = Bus(workspace)
-    try:
-        append_result = _result(reopened, appended)
-        assert append_result is not None
-        assert append_result.message_id is not None
-        listed = _publish(
-            reopened,
-            ListConversationMessagesJob(conversation_id=created_result.conversation_id),
+    with Bus("@durable", workspace=workspace) as reopened:
+        listed = reopened.board(ListConversationMessagesJob).publish(
+            ListConversationMessagesJob(
+                publisher="test",
+                conversation_id=conversation_id,
+            )
         )
-        transcript = _result(reopened, listed)
-        assert transcript is not None
-        assert [message.content for message in transcript.messages] == ["persist me"]
-    finally:
-        reopened.close()
+        assert [message.content for message in listed.messages] == ["persist me"]

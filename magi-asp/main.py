@@ -7,7 +7,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
-from magi_asp.service import AspServer
+from service import AspServer
 
 
 def create_app(
