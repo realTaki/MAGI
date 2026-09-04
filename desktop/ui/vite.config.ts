@@ -9,13 +9,11 @@ const UI_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root: ".",
+  base: "./",
   publicDir: "public",
   plugins: [react(), tailwindcss()],
   server: {
-    // Operator UI origin. py-magi no longer serves this page.
-    port: 42069,
-    // Development serves only the UI. The full Webapp process owns /api and
-    // /asp, both backed by ~/.magi/app.sqlite.
+    port: 5173,
     allowedHosts: true,
   },
   build: {

@@ -15,7 +15,6 @@ from .service import (
     NotAllowed,
     NotFound,
     Service,
-    TrustDenied,
 )
 from .store import Store
 from .transport import Transport
@@ -87,7 +86,7 @@ class ReopenBody(BaseModel):
 
 @dataclass
 class AspOperator:
-    """The ASP subsystem owned and started by the Webapp service."""
+    """The ASP subsystem owned by the ASP server process."""
 
     router: APIRouter
     store: Store
@@ -131,18 +130,16 @@ def create_operator(seed: dict[str, str]) -> AspOperator:
                 status_code=400,
                 detail="end_after_send requires initial_message",
             )
-        try:
-            result = await service.create_session(
-                creator=creator,
-                invite=body.invite,
-                topic=body.topic,
-                initial_message=body.initial_message.model_dump(exclude_none=True)
-                if body.initial_message is not None
-                else None,
-                end_after_send=body.end_after_send,
-            )
-        except TrustDenied:
-            raise HTTPException(status_code=404, detail="not found")
+        result = await service.create_session(
+            creator=creator,
+            invite=body.invite,
+            topic=body.topic,
+            initial_message=body.initial_message.model_dump(exclude_none=True)
+            if body.initial_message is not None
+            else None,
+            end_after_send=body.end_after_send,
+            idempotency_key=body.idempotency_key,
+        )
         out: dict[str, Any] = {"session_id": result.session_id}
         if result.sequence is not None:
             out["sequence"] = result.sequence

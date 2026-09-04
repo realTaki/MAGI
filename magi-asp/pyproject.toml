@@ -1,7 +1,7 @@
 [project]
-name = "magi-webapp"
+name = "magi-asp"
 version = "0.1.0"
-description = "MAGI's single local FastAPI application."
+description = "MAGI ASP server — sessions and live event delivery."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -12,17 +12,15 @@ dependencies = [
 dev = ["pytest>=8.3.0", "httpx>=0.27.0"]
 
 [project.scripts]
-magi-webapp = "main:main"
+magi-asp = "magi_asp.main:main"
 
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["api*", "asp*", "localdb*"]
-
-[tool.setuptools]
-py-modules = ["main", "service"]
+include = ["magi_asp*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

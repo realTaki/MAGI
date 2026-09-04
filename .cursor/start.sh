@@ -5,9 +5,8 @@
 #
 #   * On the first boot it provisions the root Society (Genesis) and the
 #     first MAGI (eva-000) under ~/.magi.
-#   * It then starts (or recovers) the singleton WebUI on :42069 and the
-#     eva-000 node runtime on :42070 as detached, PID-file-managed
-#     processes, and returns.
+#   * It then starts (or recovers) the eva-000 node runtime on :42070 as
+#     detached, PID-file-managed processes, and returns.
 #
 # Re-running is safe: existing Society state is preserved and only
 # processes that are not already alive are (re)started. Service logs live

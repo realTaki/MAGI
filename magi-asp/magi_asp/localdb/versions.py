@@ -1,4 +1,4 @@
-"""Ordered, idempotent schema upgrades for the one Webapp SQLite file."""
+"""Ordered, idempotent schema upgrades for the ASP sqlite file."""
 
 from __future__ import annotations
 
@@ -9,31 +9,14 @@ Migration = Callable[[sqlite3.Connection], None]
 
 
 def _version_1(connection: sqlite3.Connection) -> None:
-    """Create Webapp-owned configuration and local conversation tables."""
+    """ASP-owned settings. Session rows land here in a later revision."""
     connection.executescript(
         """
-        CREATE TABLE app_settings (
+        CREATE TABLE asp_settings (
             key TEXT PRIMARY KEY,
             value_json TEXT NOT NULL,
             updated_at INTEGER NOT NULL
         );
-
-        CREATE TABLE conversations (
-            id TEXT PRIMARY KEY,
-            magi_id TEXT NOT NULL,
-            remote_id TEXT,
-            title TEXT NOT NULL DEFAULT '',
-            sync_cursor TEXT,
-            remote_updated_at INTEGER,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-
-        CREATE UNIQUE INDEX conversations_remote_id
-            ON conversations(magi_id, remote_id)
-            WHERE remote_id IS NOT NULL;
-        CREATE INDEX conversations_by_magi_updated
-            ON conversations(magi_id, updated_at DESC);
         """
     )
 
@@ -61,4 +44,3 @@ def apply_migrations(connection: sqlite3.Connection) -> None:
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, unixepoch() * 1000)",
                 (version,),
             )
-

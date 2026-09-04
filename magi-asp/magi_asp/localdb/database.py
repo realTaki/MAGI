@@ -1,4 +1,4 @@
-"""The one durable SQLite connection owned by a running Webapp process."""
+"""The durable SQLite connection owned by a running ASP server process."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ def default_data_dir() -> Path:
 
 
 def default_database_path() -> Path:
-    return default_data_dir() / "app.sqlite"
+    return default_data_dir() / "asp.sqlite"
 
 
 class LocalDatabase:
-    """Open, migrate and close Webapp's only SQLite database."""
+    """Open, migrate and close the ASP server's SQLite database."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -39,4 +39,3 @@ class LocalDatabase:
             return
         self.connection.close()
         self.connection = None
-

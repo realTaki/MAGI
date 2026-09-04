@@ -8,9 +8,7 @@
 #      ~/.local/bin if it is not already on PATH.
 #   2. The Python virtualenv (`.venv`) with every runtime + dev extra
 #      (`adam`, `eva`, `dev`) resolved from the committed `uv.lock`.
-#   3. The React WebUI production bundle (`webapp/ui/dist`) so the
-#      FastAPI control service serves the SPA at http://127.0.0.1:42069
-#      exactly as production does (no separate Vite dev server needed).
+#   3. The desktop UI production bundle (`desktop/ui/dist`) for Electron.
 #
 # No long-lived process is started here — per-boot service startup lives
 # in `.cursor/start.sh`.
@@ -42,10 +40,11 @@ log "uv: $(command -v uv) ($(uv --version))"
 log "syncing Python dependencies (all extras)"
 ( cd py-magi && uv sync --all-extras )
 
-# 3. WebUI production bundle. `npm ci` is a clean, lockfile-driven install;
-#    `npm run build` type-checks and emits webapp/ui/dist consumed by the
-#    FastAPI SPA mount.
-log "building WebUI (npm ci && npm run build)"
-( cd webapp/ui && npm ci && npm run build )
+log "syncing ASP server Python dependencies"
+( cd magi-asp && uv sync --all-extras )
+
+# 3. Desktop UI production bundle.
+log "building desktop UI (npm ci && npm run build)"
+( cd desktop/ui && npm ci && npm run build )
 
 log "install complete"

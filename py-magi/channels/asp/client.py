@@ -1,4 +1,4 @@
-"""ASP client for webapp/asp: HTTP verbs plus WS /connect."""
+"""ASP client for magi-asp: HTTP verbs plus WS /connect."""
 
 from __future__ import annotations
 

@@ -3,7 +3,7 @@
   "install": "./.cursor/install.sh",
   "start": "./.cursor/start.sh",
   "ports": [
-    { "name": "webui", "port": 42069 },
+    { "name": "asp", "port": 42069 },
     { "name": "runtime", "port": 42070 }
   ]
 }
