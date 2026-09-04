@@ -9,29 +9,21 @@ from datetime import UTC, datetime
 from bus import (
     Bus,
     ChatNotify,
-    CreateConversationJob,
     GetTaskJob,
     JobStatus,
     RunTaskNotify,
     Task,
 )
+from bus.firmware.books.conversationBook import ConversationBook
 from bus.firmware.books.taskBook import TaskBook
 from channels.tasks.worker import TaskWorker
 
 
 def _conversation(bus: Bus) -> int:
-    board = bus.board(CreateConversationJob)
-    assert board is not None
-    result = board.publish(
-        CreateConversationJob(
-            publisher="test",
-            delivery_address="local",
-            channel="test",
-            topic="task",
-        )
+    return ConversationBook(bus._memories).get_or_add(
+        channel="test",
+        delivery_address="local",
     )
-    assert result.conversation_id is not None
-    return result.conversation_id
 
 
 def test_init_has_no_in_memory_schedule_cursor() -> None:

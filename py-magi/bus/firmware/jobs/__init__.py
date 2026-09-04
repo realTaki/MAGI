@@ -52,9 +52,6 @@ from .contactNoteJobs import (
     UpdateContactNoteResult,
 )
 from .conversationJobs import (
-    CreateConversationJob,
-    CreateConversationJobBoard,
-    CreateConversationResult,
     GetConversationJob,
     GetConversationJobBoard,
     GetConversationResult,
@@ -161,9 +158,6 @@ __all__ = [
     "ArchiveMessagesJob",
     "ArchiveMessagesJobBoard",
     "ArchiveMessagesResult",
-    "CreateConversationJob",
-    "CreateConversationJobBoard",
-    "CreateConversationResult",
     "GetConversationJob",
     "GetConversationJobBoard",
     "GetConversationResult",

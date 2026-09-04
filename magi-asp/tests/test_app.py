@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from magi_asp.main import create_app
+from main import create_app
 
 
 def test_health_creates_the_versioned_local_database(tmp_path: Path) -> None:

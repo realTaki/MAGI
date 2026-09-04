@@ -37,9 +37,6 @@ from .jobs import (
     CreateContactNoteJobBoard,
     CreateContactNoteResult,
     CreateContactResult,
-    CreateConversationJob,
-    CreateConversationJobBoard,
-    CreateConversationResult,
     CreateMemoryJob,
     CreateMemoryJobBoard,
     CreateMemoryResult,
@@ -183,7 +180,6 @@ def create_job_boards(
     prompts = PromptsBook(files)
     skills = SkillsBook(files)
     return {
-        CreateConversationJob: CreateConversationJobBoard(factory, book=conversations),
         GetConversationJob: GetConversationJobBoard(factory, book=conversations),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, book=messages),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, book=messages),
@@ -205,7 +201,7 @@ def create_job_boards(
         GetSkillJob: GetSkillJobBoard(factory, skills=skills),
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
-        ChatNotify: ChatNotifyBoard(factory, book=messages),
+        ChatNotify: ChatNotifyBoard(factory, book=messages, conversations=conversations),
         DeliveryNotify: DeliveryNotifyBoard(factory, book=messages),
         RunTaskNotify: RunTaskNotifyBoard(factory, book=tasks),
         GetTaskJob: GetTaskJobBoard(factory, book=tasks),
@@ -251,9 +247,6 @@ __all__ = [
     "ArchiveMessagesJob",
     "ArchiveMessagesJobBoard",
     "ArchiveMessagesResult",
-    "CreateConversationJob",
-    "CreateConversationJobBoard",
-    "CreateConversationResult",
     "GetConversationJob",
     "GetConversationJobBoard",
     "GetConversationResult",

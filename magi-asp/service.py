@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from magi_asp.asp.app import create_operator
-from magi_asp.localdb import LocalDatabase, default_database_path
+from localdb import LocalDatabase, default_database_path
 
 
 class AspServer:

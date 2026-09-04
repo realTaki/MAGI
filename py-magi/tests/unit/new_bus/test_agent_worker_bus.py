@@ -13,7 +13,6 @@ from bus import (
     CallLLMResult,
     ChatNotify,
     CreateContactJob,
-    CreateConversationJob,
     DeliveryNotify,
     DeliveryNotifyResult,
     JobStatus,
@@ -23,6 +22,7 @@ from bus import (
     RunToolJob,
     RunToolResult,
 )
+from bus.firmware.books.conversationBook import ConversationBook
 
 
 def _body(content: str) -> str:
@@ -44,16 +44,26 @@ def _wait_for_claim(board, *, timeout: float = 5.0):
     return None
 
 
-def _conversation(bus: Bus) -> int:
-    board = bus.board(CreateConversationJob)
-    assert board is not None
-    result = board.publish(
-        CreateConversationJob(
-            publisher="test", delivery_address="local", channel="test", topic="test"
-        )
+def _conversation(bus: Bus, *, delivery_address: str = "local") -> int:
+    return ConversationBook(bus._memories).get_or_add(
+        channel="test",
+        delivery_address=delivery_address,
     )
-    assert result.conversation_id is not None
-    return result.conversation_id
+
+
+def _chat(
+    text: str,
+    *,
+    delivery_address: str = "local",
+    contact_id: int = SYSTEM_CONTACT_ID,
+) -> ChatNotify:
+    return ChatNotify(
+        publisher="test",
+        channel="test",
+        delivery_address=delivery_address,
+        contact_id=contact_id,
+        text=text,
+    )
 
 
 def test_agent_has_no_worker_local_concurrency_limit() -> None:
@@ -84,9 +94,7 @@ def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
         delivery = bus.board(DeliveryNotify)
         assert chat is not None and llm is not None and delivery is not None
 
-        chat_id = chat.publish(
-            ChatNotify(publisher="test", conversation_id=conversation_id, text="hello")
-        )
+        chat_id = chat.publish(_chat("hello"))
         request = _wait_for_claim(llm)
         assert request is not None
         system = request.messages[0]
@@ -94,7 +102,7 @@ def test_agent_turn_flows_only_through_bus_jobs(tmp_path) -> None:
         assert f"conversation_id: {conversation_id}" in system.content
         assert "channel: test" in system.content
         assert "delivery_address: local" in system.content
-        assert "topic: test" in system.content
+        assert "topic:" in system.content
         assert "MAGI_CONTACT_ID:" in system.content
         assert "SYSTEM_CONTACT_ID:" in system.content
         last = request.messages[-1]
@@ -125,15 +133,11 @@ def test_agent_routes_claimed_turns_to_one_serial_conversation(tmp_path) -> None
         llm = bus.board(CallLLMJob)
         delivery = bus.board(DeliveryNotify)
         assert chat is not None and llm is not None and delivery is not None
-        first_id = chat.publish(
-            ChatNotify(publisher="test", conversation_id=conversation_id, text="first")
-        )
+        first_id = chat.publish(_chat("first"))
         first = _wait_for_claim(llm)
         assert first is not None
 
-        second_id = chat.publish(
-            ChatNotify(publisher="test", conversation_id=conversation_id, text="follow up")
-        )
+        second_id = chat.publish(_chat("follow up"))
         assert llm.submit_result(
                 CallLLMResult(
                     id=first.id,
@@ -172,13 +176,15 @@ def test_agent_routes_claimed_turns_to_one_serial_conversation(tmp_path) -> None
 def test_agent_routes_different_conversations_independently(tmp_path) -> None:
     with Bus("@agent-conversations", workspace=tmp_path) as bus:
         assert bus.attach(AgentWorker)
-        first_conversation, second_conversation = _conversation(bus), _conversation(bus)
+        first_conversation = _conversation(bus, delivery_address="one")
+        second_conversation = _conversation(bus, delivery_address="two")
+        assert first_conversation != second_conversation
         chat = bus.board(ChatNotify)
         llm = bus.board(CallLLMJob)
         delivery = bus.board(DeliveryNotify)
         assert chat is not None and llm is not None and delivery is not None
-        chat.publish(ChatNotify(publisher="test", conversation_id=first_conversation, text="first"))
-        chat.publish(ChatNotify(publisher="test", conversation_id=second_conversation, text="second"))
+        chat.publish(_chat("first", delivery_address="one"))
+        chat.publish(_chat("second", delivery_address="two"))
 
         first, second = _wait_for_claim(llm), _wait_for_claim(llm)
         assert first is not None and second is not None
@@ -213,7 +219,7 @@ def test_agent_tool_loop_returns_tool_result_to_the_next_llm_call(tmp_path) -> N
         delivery = bus.board(DeliveryNotify)
         assert chat is not None and llm is not None and tools is not None and delivery is not None
 
-        chat.publish(ChatNotify(publisher="test", conversation_id=conversation_id, text="look it up"))
+        chat.publish(_chat("look it up"))
         first = _wait_for_claim(llm)
         assert first is not None
         assert llm.submit_result(
@@ -268,7 +274,7 @@ def test_agent_tool_failure_returns_as_tool_result_not_delivery(tmp_path) -> Non
         delivery = bus.board(DeliveryNotify)
         assert chat is not None and llm is not None and tools is not None and delivery is not None
 
-        chat.publish(ChatNotify(publisher="test", conversation_id=conversation_id, text="look it up"))
+        chat.publish(_chat("look it up"))
         first = _wait_for_claim(llm)
         assert first is not None
         assert llm.submit_result(
@@ -324,14 +330,7 @@ def test_agent_stamps_distinct_contact_ids_on_user_messages(tmp_path) -> None:
         bob = contacts.publish(CreateContactJob(publisher="test", name="bob")).contact_id
         assert alice is not None and bob is not None
 
-        chat.publish(
-            ChatNotify(
-                publisher="test",
-                conversation_id=conversation_id,
-                contact_id=alice,
-                text="hi",
-            )
-        )
+        chat.publish(_chat("hi", contact_id=alice))
         first = _wait_for_claim(llm)
         assert first is not None
         assert _is_stamped(first.messages[-1].content, contact_id=alice, text="hi")
@@ -343,14 +342,7 @@ def test_agent_stamps_distinct_contact_ids_on_user_messages(tmp_path) -> None:
         )
         assert _wait_for_claim(delivery) is not None
 
-        chat.publish(
-            ChatNotify(
-                publisher="test",
-                conversation_id=conversation_id,
-                contact_id=bob,
-                text="yo",
-            )
-        )
+        chat.publish(_chat("yo", contact_id=bob))
         second = _wait_for_claim(llm)
         assert second is not None
         assert any(
