@@ -62,11 +62,10 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ## Repository layout
 
 ```text
-py-magi/   Python backend and launcher (import package: magi)
-ts-magi/   TypeScript BUS playground and its launcher
-webapp/    One local Webapp service: UI, ASP routes and ~/.magi/app.sqlite
-  magi-asp/  ASP routes mounted by Webapp
-desktop/   Electron shell loading the running Webapp
+desktop/     Electron desktop: operator UI and ~/.magi-desktop sqlite
+magi-asp/    Python package magi_asp: /sessions, WS /connect, ~/.magi/asp.sqlite
+py-magi/     One MAGI runtime per process; workspace sqlite of its own
+ts-magi/     TypeScript BUS playground and its launcher
 ```
 
 The projects are siblings. Python production code lives at the
@@ -177,7 +176,9 @@ spin. It runs directly on the host (no Docker, no k8s) and stores
 state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
 Windows). Run `./deploy/cli/install.sh` once: it installs MAGI, provisions
 the first MAGI (`eva-000`) and the root MAGI Society **Genesis**, then starts
-the Runtime and WebUI. Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
+the Runtime, ASP server, and desktop app. ASP listens on
+[http://127.0.0.1:42069](http://127.0.0.1:42069); the operator UI is the
+Electron app under `desktop/`.
 select the running MAGI, then choose the default `admin` account. This local
 bootstrap access is intentionally usable without a password; enable IM
 two-factor verification from Settings before adding administrators or assigned

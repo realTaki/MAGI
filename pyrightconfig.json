@@ -2,7 +2,7 @@
   "venvPath": "py-magi",
   "venv": ".venv",
   "pythonVersion": "3.12",
-  "extraPaths": ["py-magi"],
+  "extraPaths": ["py-magi", "magi-asp"],
   "useLibraryCodeForTypes": false,
   "executionEnvironments": [
     {

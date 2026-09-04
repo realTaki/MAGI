@@ -168,7 +168,7 @@ wheels = [
 ]
 
 [[package]]
-name = "magi-webapp"
+name = "magi-asp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

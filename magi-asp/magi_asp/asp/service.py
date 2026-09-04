@@ -1,8 +1,9 @@
-"""Session lifecycle, trust enforcement, and event fan-out coordination.
+"""Session lifecycle and event fan-out coordination.
 
 Routes call into Service; Service consults Store and dispatches deliveries
 through Transport. Eligibility filtering for both live delivery and history
-fetch lives here.
+fetch lives here. Who may contact whom is left to the agent; this layer
+does not gate invites.
 """
 
 from __future__ import annotations
@@ -20,10 +21,6 @@ from .store import (
     now_ms,
 )
 from .transport import Transport
-
-
-class TrustDenied(Exception):
-    """Raised when at least one invitee is unreachable. The route maps this to 404."""
 
 
 class NotFound(Exception):
@@ -62,30 +59,6 @@ class Service:
         # Wire grace expiry from transport.
         transport._on_grace_expired = self._on_grace_expired  # type: ignore[attr-defined]
 
-    # ---- Trust ----------------------------------------------------------
-
-    def _reachable(self, sender: str, target: str) -> bool:
-        agent = self.store.get_agent(target)
-        if agent is None:
-            return False
-        if agent.inbound_policy == "open":
-            return True
-        # allowlist
-        # Match exact handle or owner glob "@owner.*"
-        if sender in agent.allowlist:
-            return True
-        owner_glob = "@" + sender.split(".", 1)[0][1:] + ".*"
-        if owner_glob in agent.allowlist:
-            return True
-        return False
-
-    def _can_initiate(self, initiator: str, peer: str) -> bool:
-        # Whitepaper §6.2: the allowlist is symmetric. Both gates must pass —
-        # the initiator must be allowed by the peer's policy *and* the peer
-        # must be allowed by the initiator's policy. For mixed pairs
-        # (allowlist + open) the allowlist agent's gate dominates.
-        return self._reachable(initiator, peer) and self._reachable(peer, initiator)
-
     # ---- Sessions: create, invite, join, leave, end, reopen --------------
 
     async def create_session(
@@ -95,46 +68,40 @@ class Service:
         topic: str | None,
         initial_message: dict | None,
         end_after_send: bool,
+        idempotency_key: str | None = None,
     ) -> CreateSessionResult:
         async with self._lock:
-            # All-or-nothing on reachability — preserves the non-enumerating
-            # privacy property (Whitepaper §6.2). If any invitee is unreachable,
-            # the whole request fails with 404.
-            for h in invite:
-                if not self._can_initiate(creator, h):
-                    raise TrustDenied()
+            if idempotency_key is not None:
+                cached = self.store.get_idempotent_session(creator, idempotency_key)
+                if cached is not None:
+                    session_id, sequence = cached
+                    return CreateSessionResult(session_id=session_id, sequence=sequence)
+
+            invitees: list[str] = []
+            seen = {creator}
+            for handle in invite:
+                if handle in seen:
+                    continue
+                seen.add(handle)
+                invitees.append(handle)
 
             sess = self.store.create_session(creator=creator, topic=topic)
             self.store.add_participant(sess.id, creator, status="joined")
 
-            # Add invitees as `invited`. Fire session.invited to each invitee
-            # (and to existing joined participants for awareness).
-            for h in invite:
-                self.store.add_participant(sess.id, h, status="invited")
+            for handle in invitees:
+                self.store.add_participant(sess.id, handle, status="invited")
 
-            initial_message_payload: dict[str, Any] | None = None
             initial_seq: int | None = None
             initial_msg_id: str | None = None
             if initial_message is not None:
                 initial_msg_id = make_id("msg")
 
-            for h in invite:
-                payload: dict[str, Any] = {"invitee": h, "by": creator}
+            for handle in invitees:
+                payload: dict[str, Any] = {"invitee": handle, "by": creator}
                 if topic is not None:
                     payload["topic"] = topic
-                if end_after_send and initial_message is not None:
-                    # send-and-end: carry the initial message inline on
-                    # session.invited (Whitepaper §6.3, §7.2). Build the
-                    # full Message envelope below in initial_message_payload.
-                    pass  # filled in after we build the message below
-                ev = self.store.append_session_event(
-                    sess.id, "session.invited", payload
-                )
-                # We'll patch initial_message into the payload after building it.
+                self.store.append_session_event(sess.id, "session.invited", payload)
 
-            # session.message for the initial message (if any). Goes to the
-            # creator; invited-status invitees only see content via the inline
-            # send-and-end carrier above.
             if initial_message is not None:
                 msg_payload = {
                     "id": initial_msg_id,
@@ -153,8 +120,6 @@ class Service:
                 initial_seq = ev_msg.sequence
 
                 if end_after_send:
-                    # Patch initial_message into each session.invited payload.
-                    initial_message_payload = msg_payload
                     for ev in self.store.session_events[sess.id]:
                         if ev.type == "session.invited":
                             ev.payload["initial_message"] = msg_payload
@@ -163,10 +128,14 @@ class Service:
                 self.store.end_session(sess.id)
                 self.store.append_session_event(sess.id, "session.ended", {"ended_by": creator})
 
-            # Now fan out to live participants.
             await self._fan_out(sess.id)
 
-            return CreateSessionResult(session_id=sess.id, sequence=initial_seq)
+            result = CreateSessionResult(session_id=sess.id, sequence=initial_seq)
+            if idempotency_key is not None:
+                self.store.record_idempotent_session(
+                    creator, idempotency_key, result.session_id, result.sequence
+                )
+            return result
 
     async def join(self, handle: str, session_id: str) -> None:
         async with self._lock:
@@ -197,8 +166,8 @@ class Service:
 
             invited: list[str] = []
             for h in invite:
-                if not self._can_initiate(caller, h):
-                    continue  # silent omission per §6.2
+                if h == caller:
+                    continue
                 p = self.store.get_participant(session_id, h)
                 if p is not None and p.status in ("invited", "joined"):
                     continue
@@ -304,7 +273,7 @@ class Service:
                 session_id, "session.reopened", {"reopened_by": handle}
             )
             for h in invite or []:
-                if not self._can_initiate(handle, h):
+                if h == handle:
                     continue
                 existing = self.store.get_participant(session_id, h)
                 if existing is None:

@@ -105,6 +105,8 @@ class Store:
         self.session_seq: dict[str, int] = {}
         # (session_id, sender_handle, idempotency_key) -> (message_id, sequence)
         self.idempotency: dict[tuple[str, str, str], tuple[str, int]] = {}
+        # (creator_handle, idempotency_key) -> (session_id, sequence)
+        self.session_idempotency: dict[tuple[str, str], tuple[str, int | None]] = {}
 
     # ---- Agents ----------------------------------------------------------
 
@@ -244,3 +246,13 @@ class Store:
         self, session_id: str, sender: str, key: str, message_id: str, sequence: int
     ) -> None:
         self.idempotency[(session_id, sender, key)] = (message_id, sequence)
+
+    def get_idempotent_session(
+        self, creator: str, key: str
+    ) -> tuple[str, int | None] | None:
+        return self.session_idempotency.get((creator, key))
+
+    def record_idempotent_session(
+        self, creator: str, key: str, session_id: str, sequence: int | None
+    ) -> None:
+        self.session_idempotency[(creator, key)] = (session_id, sequence)
