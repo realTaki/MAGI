@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bus import GetConversationJob, JobStatus, SetTaskJob
+from bus import GetConversationJob, SetTaskJob
 from tools.BaseTool import BaseTool, ToolResult
 
 _PUBLISHER = "tools"
@@ -124,8 +124,6 @@ class ScheduleTaskTool(BaseTool):
         )
         if result is None:
             return ToolResult.err("task book is not available")
-        if result.status is JobStatus.FAILED:
-            return ToolResult.err(result.error or "task write failed")
         return ToolResult.ok(
             {
                 "task_id": result.task_id,

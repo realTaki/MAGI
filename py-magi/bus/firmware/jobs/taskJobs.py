@@ -1,15 +1,11 @@
-"""BUS-owned queries over scheduled Task definitions.
-
-The task scheduler is a Worker, so it obtains task DTOs through these
-JobBoards rather than reaching into :mod:`bus.firmware.books.taskBook`.
-"""
+"""BUS-owned Task definitions: read and upsert."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Integer
+from sqlalchemy import JSON, Boolean, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseJob import BaseJob, BaseJobResult, BaseJobRow, JobStatus
@@ -77,3 +73,61 @@ class ListTasksJobBoard(OperateBookJobBoard[ListTasksJob, ListTasksResult, ListT
 
     def _execute(self, job: ListTasksJob) -> ListTasksResult:
         return ListTasksResult(tasks=self._book.list(enabled=job.enabled))
+
+
+@dataclass
+class SetTaskJob(BaseJob):
+    """Create or replace one Task by unique ``name``."""
+
+    name: str
+    prompt: str
+    cron: str
+    conversation_id: int
+
+
+@dataclass
+class SetTaskResult(BaseJobResult):
+    task_id: int | None = None
+
+
+class SetTaskJobRow(BaseJobRow):
+    __tablename__ = "jobs_set_task"
+
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cron: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    conversation_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class SetTaskJobBoard(OperateBookJobBoard[SetTaskJob, SetTaskResult, SetTaskJobRow]):
+    job_cls = SetTaskJob
+    result_cls = SetTaskResult
+    row_cls = SetTaskJobRow
+
+    def _execute(self, job: SetTaskJob) -> SetTaskResult:
+        existing = self._book.list(name=job.name)
+        if existing:
+            current = existing[0]
+            self._book.update(
+                Task(
+                    id=current.id,
+                    name=current.name,
+                    prompt=job.prompt,
+                    cron=job.cron,
+                    conversation_id=current.conversation_id,
+                    source=current.source,
+                    enabled=current.enabled,
+                )
+            )
+            return SetTaskResult(task_id=current.id)
+        return SetTaskResult(
+            task_id=self._book.add(
+                Task(
+                    name=job.name,
+                    prompt=job.prompt,
+                    cron=job.cron,
+                    conversation_id=job.conversation_id,
+                )
+            )
+        )
