@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from agent.worker import AgentWorker
 from channels.asp import AspWorker
+from channels.tasks import TaskWorker
 from channels.telegram import TelegramWorker
 from providers.worker import ProvidersWorker
 from tools.worker import ToolsWorker
@@ -20,6 +21,7 @@ WORKERS: tuple[type[BaseWorker], ...] = (
     AgentWorker,
     AspWorker,
     TelegramWorker,
+    TaskWorker,
 )
 
 
