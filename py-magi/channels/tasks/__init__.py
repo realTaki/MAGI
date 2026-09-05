@@ -10,4 +10,6 @@ proactive policies, including bundled task presets and their seeding, live in
 :mod:`proactive`.
 """
 
-__all__: list[str] = []
+from .worker import TaskWorker
+
+__all__ = ["TaskWorker"]
