@@ -15,53 +15,8 @@ from ..books.conversationBook import Conversation
 
 
 @dataclass
-class CreateConversationJob(BaseJob):
-    delivery_address: str
-    channel: str
-    topic: str
-    instruction: str | None = None
-    info: str | None = None
-
-
-@dataclass
-class CreateConversationResult(BaseJobResult):
-    conversation_id: int | None = None
-
-
-class CreateConversationJobRow(BaseJobRow):
-    __tablename__ = "jobs_create_conversation"
-
-    delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
-    channel: Mapped[str] = mapped_column(Text, nullable=False)
-    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
-    info: Mapped[str | None] = mapped_column(Text, nullable=True)
-    conversation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-
-class CreateConversationJobBoard(
-    OperateBookJobBoard[CreateConversationJob, CreateConversationResult, CreateConversationJobRow]
-):
-    job_cls = CreateConversationJob
-    result_cls = CreateConversationResult
-    row_cls = CreateConversationJobRow
-
-    def _execute(self, job: CreateConversationJob) -> CreateConversationResult:
-        conversation_id = self._book.add(
-            Conversation(
-                delivery_address=job.delivery_address,
-                channel=job.channel,
-                topic=job.topic,
-                instruction=job.instruction,
-                info=job.info,
-            )
-        )
-        return CreateConversationResult(conversation_id=conversation_id)
-
-
-@dataclass
 class GetConversationJob(BaseJob):
-    """Read the durable context and delivery metadata of one conversation."""
+    """Read one conversation by MAGI id."""
 
     conversation_id: int
 
@@ -87,6 +42,44 @@ class GetConversationJobBoard(
 
     def _execute(self, job: GetConversationJob) -> GetConversationResult:
         return GetConversationResult(conversation=self._book.get(job.conversation_id))
+
+
+@dataclass
+class GetConversationForChannelJob(BaseJob):
+    """Read the conversation for one channel endpoint."""
+
+    channel: str
+    delivery_address: str
+
+
+class GetConversationForChannelJobRow(BaseJobRow):
+    __tablename__ = "jobs_get_conversation_for_channel"
+
+    channel: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    delivery_address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    conversation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class GetConversationForChannelJobBoard(
+    OperateBookJobBoard[
+        GetConversationForChannelJob,
+        GetConversationResult,
+        GetConversationForChannelJobRow,
+    ]
+):
+    job_cls = GetConversationForChannelJob
+    result_cls = GetConversationResult
+    row_cls = GetConversationForChannelJobRow
+
+    def _execute(self, job: GetConversationForChannelJob) -> GetConversationResult:
+        channel = job.channel.strip()
+        delivery_address = job.delivery_address.strip()
+        found = (
+            self._book.list(channel=channel, delivery_address=delivery_address)
+            if channel and delivery_address
+            else []
+        )
+        return GetConversationResult(conversation=found[0] if found else None)
 
 
 @dataclass

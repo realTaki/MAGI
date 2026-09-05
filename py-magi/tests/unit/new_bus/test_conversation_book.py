@@ -107,17 +107,11 @@ def test_chat_notify_reuses_the_conversation_for_the_same_endpoint(tmp_path) -> 
     assert {first.id, second.id} == {first_id, second_id}
     assert first.channel == second.channel == "webui"
     assert first.delivery_address == second.delivery_address == "webui:same"
-    got = bus.board(GetConversationForChannelJob).publish(
-        GetConversationForChannelJob(
-            publisher="test",
-            channel=first.channel,
-            delivery_address=first.delivery_address,
-        )
-    )
+    assert first.conversation_id == second.conversation_id
     listed = bus.board(ListConversationMessagesJob).publish(
         ListConversationMessagesJob(
             publisher="test",
-            conversation_id=got.conversation.id,
+            conversation_id=first.conversation_id,
         )
     )
     assert [message.content for message in listed.messages] == ["one", "two"]

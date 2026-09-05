@@ -38,7 +38,8 @@ class HookableJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow](
         job_id = self._publish(job)
         published = replace(job, id=job_id)
         self._prepare(published)
-        go(self._post_publish(published))
+        if self.check_job_status(job_id) not in {JobStatus.COMPLETED, JobStatus.FAILED}:
+            go(self._post_publish(published))
         return job_id
 
     def _prepare(self, job: JobT) -> None:

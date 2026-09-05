@@ -19,10 +19,10 @@ from ..books.messageBook import Message, MessageBook
 class ChatNotify(BaseJob):
     """One inbound agent turn.
 
-    Channels publish this envelope with ``channel`` + ``delivery_address``.
-    The board resolves that endpoint to a Conversation (creating one if
-    needed) and writes the inbound ``text`` into MessageBook before the
-    Job is claimable. ``contact_id`` is the speaker;
+    Channels publish ``channel`` + ``delivery_address`` and ``text``.
+    They leave ``conversation_id`` unset; the board looks up that
+    endpoint (creating a Conversation if needed) and stores the id
+    before the Job is claimable. ``contact_id`` is the speaker;
     ``SYSTEM_CONTACT_ID`` is reserved.
     """
 
@@ -30,6 +30,7 @@ class ChatNotify(BaseJob):
     delivery_address: str
     text: str
     contact_id: int = SYSTEM_CONTACT_ID
+    conversation_id: int | None = None  # filled by board
 
 
 @dataclass
@@ -87,6 +88,20 @@ class ChatNotifyBoard(HookableJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyR
             channel=channel,
             delivery_address=delivery_address,
         )
+        if conversation_id is None:
+            with self._session() as session:
+                row = session.get_one(type(self).row_cls, job.id)
+                self._write_result(
+                    row,
+                    ChatNotifyResult(
+                        id=job.id,
+                        status=JobStatus.FAILED,
+                        error="ChatNotify could not open a conversation for this channel and delivery_address",
+                    ),
+                )
+                session.commit()
+            return
+        job.conversation_id = conversation_id
         with self._session() as session:
             row = session.get_one(type(self).row_cls, job.id)
             row.channel = channel
