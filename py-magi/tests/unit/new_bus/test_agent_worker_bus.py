@@ -45,7 +45,7 @@ def _wait_for_claim(board, *, timeout: float = 5.0):
 
 
 def _conversation(bus: Bus, *, delivery_address: str = "local") -> int:
-    return ConversationBook(bus._memories).get_or_add(
+    return ConversationBook(bus._memories).add_for_channel(
         channel="test",
         delivery_address=delivery_address,
     )

@@ -64,6 +64,8 @@ from .jobs import (
     GetContactNoteJobBoard,
     GetContactNoteResult,
     GetContactResult,
+    GetConversationForChannelJob,
+    GetConversationForChannelJobBoard,
     GetConversationJob,
     GetConversationJobBoard,
     GetConversationResult,
@@ -181,6 +183,9 @@ def create_job_boards(
     skills = SkillsBook(files)
     return {
         GetConversationJob: GetConversationJobBoard(factory, book=conversations),
+        GetConversationForChannelJob: GetConversationForChannelJobBoard(
+            factory, book=conversations
+        ),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, book=messages),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, book=messages),
         UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(
@@ -201,8 +206,10 @@ def create_job_boards(
         GetSkillJob: GetSkillJobBoard(factory, skills=skills),
         ListSkillsJob: ListSkillsJobBoard(factory, skills=skills),
         CallLLMJob: CallLLMJobBoard(factory),
-        ChatNotify: ChatNotifyBoard(factory, book=messages, conversations=conversations),
-        DeliveryNotify: DeliveryNotifyBoard(factory, book=messages),
+        ChatNotify: ChatNotifyBoard(factory, messages=messages, conversations=conversations),
+        DeliveryNotify: DeliveryNotifyBoard(
+            factory, book=messages, conversations=conversations
+        ),
         RunTaskNotify: RunTaskNotifyBoard(factory, book=tasks),
         GetTaskJob: GetTaskJobBoard(factory, book=tasks),
         ListTasksJob: ListTasksJobBoard(factory, book=tasks),
@@ -247,6 +254,8 @@ __all__ = [
     "ArchiveMessagesJob",
     "ArchiveMessagesJobBoard",
     "ArchiveMessagesResult",
+    "GetConversationForChannelJob",
+    "GetConversationForChannelJobBoard",
     "GetConversationJob",
     "GetConversationJobBoard",
     "GetConversationResult",

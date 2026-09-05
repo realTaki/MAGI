@@ -52,7 +52,7 @@ def _contact_id(bus: Bus, name: str = "alice") -> int:
 
 
 def _conversation_id(bus: Bus) -> int:
-    return ConversationBook(bus._memories).get_or_add(
+    return ConversationBook(bus._memories).add_for_channel(
         channel="webui",
         delivery_address="webui:test",
     )

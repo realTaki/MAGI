@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from bus import (
     Bus,
     ChatNotify,
+    GetConversationForChannelJob,
     GetTaskJob,
     JobStatus,
     RunTaskNotify,
@@ -20,7 +21,7 @@ from channels.tasks.worker import TaskWorker
 
 
 def _conversation(bus: Bus) -> int:
-    return ConversationBook(bus._memories).get_or_add(
+    return ConversationBook(bus._memories).add_for_channel(
         channel="test",
         delivery_address="local",
     )
@@ -121,7 +122,17 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
                     break
                 time.sleep(0.01)
             assert chat is not None
-            assert chat.conversation_id == conversation_id
+            assert chat.channel == "test"
+            assert chat.delivery_address == "local"
+            got = bus.board(GetConversationForChannelJob).publish(
+                GetConversationForChannelJob(
+                    publisher="test",
+                    channel=chat.channel,
+                    delivery_address=chat.delivery_address,
+                )
+            )
+            assert got.conversation is not None
+            assert got.conversation.id == conversation_id
             assert "name: daily" in chat.text
             assert "summarise progress" in chat.text
         finally:
