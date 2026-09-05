@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, inspect, text
 from bus import (
     Bus,
     ChatNotify,
+    GetConversationForChannelJob,
     GetConversationJob,
     JobStatus,
     ListConversationMessagesJob,
@@ -38,7 +39,7 @@ def _open_conversation(
             text=text,
         )
     )
-    conversation_id = ConversationBook(bus._memories).get_or_add(
+    conversation_id = ConversationBook(bus._memories).add_for_channel(
         channel=channel,
         delivery_address=delivery_address,
     )
@@ -103,13 +104,20 @@ def test_chat_notify_reuses_the_conversation_for_the_same_endpoint(tmp_path) -> 
         else:
             second = claimed
     assert first is not None and second is not None
-    assert first is not None and second is not None
     assert {first.id, second.id} == {first_id, second_id}
-    assert first.conversation_id == second.conversation_id
+    assert first.channel == second.channel == "webui"
+    assert first.delivery_address == second.delivery_address == "webui:same"
+    got = bus.board(GetConversationForChannelJob).publish(
+        GetConversationForChannelJob(
+            publisher="test",
+            channel=first.channel,
+            delivery_address=first.delivery_address,
+        )
+    )
     listed = bus.board(ListConversationMessagesJob).publish(
         ListConversationMessagesJob(
             publisher="test",
-            conversation_id=first.conversation_id,
+            conversation_id=got.conversation.id,
         )
     )
     assert [message.content for message in listed.messages] == ["one", "two"]
@@ -186,9 +194,10 @@ def test_update_summary_is_a_named_operation(tmp_path) -> None:
 
 def test_firmware_commands_are_not_claimable_work(tmp_path) -> None:
     bus = _bus(tmp_path)
-    board = bus.board(GetConversationJob)
-    assert board is not None
-    assert not hasattr(board, "claim")
+    for job_cls in (GetConversationJob, GetConversationForChannelJob):
+        board = bus.board(job_cls)
+        assert board is not None
+        assert not hasattr(board, "claim")
 
 
 def test_chat_commands_and_results_survive_sqlite_reopen(tmp_path) -> None:

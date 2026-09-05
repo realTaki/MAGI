@@ -41,6 +41,7 @@ def firmware_metadata() -> MetaData:
         UpdateContactNoteJobRow,
     )
     from ..jobs.conversationJobs import (  # noqa: F401
+        GetConversationForChannelJobRow,
         GetConversationJobRow,
         UpdateConversationSummaryJobRow,
     )

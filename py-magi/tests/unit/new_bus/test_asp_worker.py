@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 import channels.asp.worker as asp_worker
-from bus import Bus, ChatNotify, DeliveryNotify, JobStatus
+from bus import Bus, ChatNotify, DeliveryNotify, GetConversationForChannelJob, JobStatus
 from channels.asp.worker import AspWorker
 
 _ASP_SETTINGS = {"handle": "@unit.magi", "base": "http://test", "token": "token"}
@@ -66,12 +66,24 @@ async def test_asp_worker_bridges_one_session_to_conversation_jobs(tmp_path, mon
             await asyncio.sleep(0.05)
         assert inbound is not None
         assert inbound.text == "hello"
-        assert inbound.conversation_id is not None
+        assert inbound.channel == "asp"
+        assert inbound.delivery_address == "session-1"
         assert client.joined == ["session-1"]
 
+        got = bus.board(GetConversationForChannelJob).publish(
+            GetConversationForChannelJob(
+                publisher="test",
+                channel=inbound.channel,
+                delivery_address=inbound.delivery_address,
+            )
+        )
         delivery = bus.board(DeliveryNotify)
         delivery_id = delivery.publish(
-            DeliveryNotify(publisher="test", conversation_id=inbound.conversation_id, text="reply")
+            DeliveryNotify(
+                publisher="test",
+                conversation_id=got.conversation.id,
+                text="reply",
+            )
         )
         result = delivery.get_result(delivery_id, timeout=5.0)
         assert result is not None

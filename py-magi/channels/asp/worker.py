@@ -12,7 +12,6 @@ from bus import (
     BaseWorker,
     Bus,
     ChatNotify,
-    CreateConversationJob,
     DeliveryNotify,
     DeliveryNotifyResult,
     JobStatus,
@@ -33,8 +32,6 @@ class AspWorker(BaseWorker):
         super().__init__(bus, poll_seconds=poll_seconds)
         self.handle = bus.handle
         self._client: AspClient | None = None
-        self._conversations: dict[str, int] = {}
-        self._sessions: dict[int, str] = {}
         self._listen: Future[None] | None = None
 
     async def on_attached(self) -> None:
@@ -66,11 +63,12 @@ class AspWorker(BaseWorker):
         if listen is not None:
             with suppress(asyncio.CancelledError):
                 await asyncio.wrap_future(listen)
-        self._conversations.clear()
-        self._sessions.clear()
 
     async def _poll(self) -> bool:
-        job = await self.claim(DeliveryNotify)
+        board = self.board(DeliveryNotify)
+        if board is None:
+            return False
+        job = await self.call(board.claim_for_channel, "asp")
         if job is None:
             return False
         go(self._deliver(job))
@@ -97,38 +95,17 @@ class AspWorker(BaseWorker):
         text = _content_text(payload.get("content"))
         if not text:
             return
-        conversation_id = self._conversation_id(session_id)
-        if conversation_id is None:
-            raise RuntimeError(f"ASP session {session_id} has no local conversation")
-        self.publish(ChatNotify(publisher=self.handle, conversation_id=conversation_id, text=text))
-
-    def _conversation_id(self, session_id: str) -> int | None:
-        known = self._conversations.get(session_id)
-        if known is not None:
-            return known
-        board = self.board(CreateConversationJob)
-        if board is None:
-            return None
-        result = board.publish(
-            CreateConversationJob(
+        self.publish(
+            ChatNotify(
                 publisher=self.handle,
                 channel="asp",
                 delivery_address=session_id,
-                topic="New Conversation",
+                text=text,
             )
         )
-        if result.status is not JobStatus.COMPLETED:
-            return None
-        conversation_id = result.conversation_id
-        if conversation_id is None:
-            return None
-        self._conversations[session_id] = conversation_id
-        self._sessions[conversation_id] = session_id
-        return conversation_id
 
     async def _deliver(self, job: DeliveryNotify) -> None:
-        session_id = self._sessions.get(job.conversation_id)
-        if not session_id or not job.text:
+        if job.channel != "asp" or not job.address or not job.text:
             await self._submit_delivery(
                 DeliveryNotifyResult(
                     id=job.id,
@@ -138,7 +115,7 @@ class AspWorker(BaseWorker):
             )
             return
         try:
-            await self._client.send(session_id, job.text)
+            await self._client.send(job.address, job.text)
         except Exception as exc:  # noqa: BLE001 -- delivery failure belongs to its Job
             await self._submit_delivery(
                 DeliveryNotifyResult(id=job.id, status=JobStatus.FAILED, error=str(exc))
