@@ -90,6 +90,11 @@ from .messageJobs import (
     ListConversationMessagesJob,
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
+    SearchContactMessagesJob,
+    SearchContactMessagesJobBoard,
+    SearchConversationMessagesJob,
+    SearchConversationMessagesJobBoard,
+    SearchMessagesResult,
 )
 from .promptJobs import (
     GetPromptJob,
@@ -168,6 +173,11 @@ __all__ = [
     "ListConversationMessagesJob",
     "ListConversationMessagesJobBoard",
     "ListConversationMessagesResult",
+    "SearchContactMessagesJob",
+    "SearchContactMessagesJobBoard",
+    "SearchConversationMessagesJob",
+    "SearchConversationMessagesJobBoard",
+    "SearchMessagesResult",
     "CreateMemoryJob",
     "CreateMemoryJobBoard",
     "CreateMemoryResult",

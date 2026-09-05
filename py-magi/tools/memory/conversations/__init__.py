@@ -1,7 +1,5 @@
-"""Cross-conversation search tools — turn history, role recall.
+"""Conversation message search tools.
 
-One module per tool — see :mod:`tools.registry` for
-the dispatcher that wires them up.
-
-  - :mod:`tools.memory.conversations.search_conversations`
+  - :mod:`tools.memory.conversations.search_conversation_messages`
+  - :mod:`tools.memory.conversations.search_contact_messages`
 """

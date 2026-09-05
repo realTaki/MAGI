@@ -13,6 +13,6 @@ three subpackages, one per memory surface:
     about its operator.
   - :mod:`tools.memory.contacts` — contact directory
     + contact notes + the per-day note file.
-  - :mod:`tools.memory.conversations` — cross-conversation
-    search (turn history, role recall).
+  - :mod:`tools.memory.conversations` — search this
+    conversation, or one contact across conversations.
 """
