@@ -62,3 +62,42 @@ class MessageBook(BaseBook[Message]):
         with self._session() as session:
             messages = [Message.from_row(row) for row in session.scalars(stmt)]
         return messages if last_n is None else list(reversed(messages))
+
+    def search_conversation(
+        self, *, conversation_id: int, q: str, limit: int
+    ) -> list[Message]:
+        needle = q.strip()
+        if not needle or limit <= 0:
+            return []
+        stmt = (
+            select(MessageRow)
+            .where(
+                MessageRow.conversation_id == conversation_id,
+                MessageRow.content.ilike(self._like_pattern(needle), escape="\\"),
+            )
+            .order_by(MessageRow.id.desc())
+            .limit(limit)
+        )
+        with self._session() as session:
+            return [Message.from_row(row) for row in session.scalars(stmt)]
+
+    def search_contact(self, *, contact_id: int, q: str, limit: int) -> list[Message]:
+        needle = q.strip()
+        if not needle or limit <= 0:
+            return []
+        stmt = (
+            select(MessageRow)
+            .where(
+                MessageRow.contact_id == contact_id,
+                MessageRow.content.ilike(self._like_pattern(needle), escape="\\"),
+            )
+            .order_by(MessageRow.id.desc())
+            .limit(limit)
+        )
+        with self._session() as session:
+            return [Message.from_row(row) for row in session.scalars(stmt)]
+
+    @staticmethod
+    def _like_pattern(q: str) -> str:
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return f"%{escaped}%"

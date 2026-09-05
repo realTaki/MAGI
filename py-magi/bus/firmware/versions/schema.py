@@ -56,6 +56,8 @@ def firmware_metadata() -> MetaData:
     from ..jobs.messageJobs import (  # noqa: F401
         ArchiveMessagesJobRow,
         ListConversationMessagesJobRow,
+        SearchContactMessagesJobRow,
+        SearchConversationMessagesJobRow,
     )
     from ..jobs.promptJobs import (  # noqa: F401
         GetPromptJobRow,

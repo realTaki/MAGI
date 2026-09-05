@@ -96,6 +96,11 @@ from .jobs import (
     ListConversationMessagesJob,
     ListConversationMessagesJobBoard,
     ListConversationMessagesResult,
+    SearchContactMessagesJob,
+    SearchContactMessagesJobBoard,
+    SearchConversationMessagesJob,
+    SearchConversationMessagesJobBoard,
+    SearchMessagesResult,
     ListMemoriesJob,
     ListMemoriesJobBoard,
     ListMemoriesResult,
@@ -187,6 +192,10 @@ def create_job_boards(
             factory, book=conversations
         ),
         ListConversationMessagesJob: ListConversationMessagesJobBoard(factory, book=messages),
+        SearchConversationMessagesJob: SearchConversationMessagesJobBoard(
+            factory, book=messages
+        ),
+        SearchContactMessagesJob: SearchContactMessagesJobBoard(factory, book=messages),
         ArchiveMessagesJob: ArchiveMessagesJobBoard(factory, book=messages),
         UpdateConversationSummaryJob: UpdateConversationSummaryJobBoard(
             factory, book=conversations
@@ -262,6 +271,11 @@ __all__ = [
     "ListConversationMessagesJob",
     "ListConversationMessagesJobBoard",
     "ListConversationMessagesResult",
+    "SearchContactMessagesJob",
+    "SearchContactMessagesJobBoard",
+    "SearchConversationMessagesJob",
+    "SearchConversationMessagesJobBoard",
+    "SearchMessagesResult",
     "UpdateConversationSummaryJob",
     "UpdateConversationSummaryJobBoard",
     "UpdateConversationSummaryResult",
