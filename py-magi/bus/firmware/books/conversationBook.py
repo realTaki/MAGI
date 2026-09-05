@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import DateTime, Text
+from sqlalchemy import (
+    DateTime,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ...base.BaseBook import BaseBook, BaseRecord, BaseRecordMixin
@@ -41,6 +45,13 @@ class Conversation(BaseRecord):
 
 class ConversationRow(BaseRecordMixin):
     __tablename__ = "books_conversations"
+    __table_args__ = (
+        UniqueConstraint(
+            "channel",
+            "delivery_address",
+            name="uq_books_conversations_endpoint",
+        ),
+    )
 
     delivery_address: Mapped[str] = mapped_column(Text, nullable=False)
     channel: Mapped[str] = mapped_column(Text, nullable=False)
@@ -54,3 +65,12 @@ class ConversationRow(BaseRecordMixin):
 class ConversationBook(BaseBook[Conversation]):
     record_cls = Conversation
     row_cls = ConversationRow
+
+    def add_for_channel(self, *, channel: str, delivery_address: str) -> int:
+        """Return the conversation id for this channel + delivery_address, creating it if needed."""
+        existing = self.list(channel=channel, delivery_address=delivery_address)
+        if existing:
+            return existing[0].id
+        return self.add(
+            Conversation(channel=channel, delivery_address=delivery_address)
+        )
