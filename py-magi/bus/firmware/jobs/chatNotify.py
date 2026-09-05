@@ -19,10 +19,11 @@ from ..books.messageBook import Message, MessageBook
 class ChatNotify(BaseJob):
     """One inbound agent turn.
 
-    Channels publish ``channel`` + ``delivery_address`` and ``text``.
-    Callers that already have a conversation publish ``conversation_id``
-    and ``text``; the board fills the endpoint from ConversationBook.
-    ``contact_id`` is the speaker; ``SYSTEM_CONTACT_ID`` is reserved.
+    External channels publish ``channel`` + ``delivery_address``.
+    Internal callers may publish ``conversation_id`` instead.
+    If the endpoint is given without an id, the board fills
+    ``conversation_id``. ``contact_id`` is the speaker;
+    ``SYSTEM_CONTACT_ID`` is reserved.
     """
 
     text: str
@@ -66,14 +67,12 @@ class ChatNotifyBoard(HookableJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyR
         self._conversations = conversations
 
     def _prepare(self, job: ChatNotify) -> None:
-        if job.conversation_id:
-            conversation = self._conversations.get(job.conversation_id)
-            channel = "" if conversation is None else (conversation.channel or "").strip()
-            delivery_address = (
-                "" if conversation is None else (conversation.delivery_address or "").strip()
-            )
-            job.channel = channel
-            job.delivery_address = delivery_address
+        conversation_id = job.conversation_id
+        channel = job.channel.strip()
+        delivery_address = job.delivery_address.strip()
+        job.channel = channel
+        job.delivery_address = delivery_address
+        if not conversation_id:
             if not channel or not delivery_address:
                 with self._session() as session:
                     row = session.get_one(type(self).row_cls, job.id)
@@ -82,26 +81,7 @@ class ChatNotifyBoard(HookableJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyR
                         ChatNotifyResult(
                             id=job.id,
                             status=JobStatus.FAILED,
-                            error="conversation has no channel address",
-                        ),
-                    )
-                    session.commit()
-                return
-            conversation_id = job.conversation_id
-        else:
-            channel = job.channel.strip()
-            delivery_address = job.delivery_address.strip()
-            job.channel = channel
-            job.delivery_address = delivery_address
-            if not channel or not delivery_address:
-                with self._session() as session:
-                    row = session.get_one(type(self).row_cls, job.id)
-                    self._write_result(
-                        row,
-                        ChatNotifyResult(
-                            id=job.id,
-                            status=JobStatus.FAILED,
-                            error="ChatNotify requires channel and delivery_address",
+                            error="ChatNotify requires conversation_id or channel and delivery_address",
                         ),
                     )
                     session.commit()
@@ -113,8 +93,8 @@ class ChatNotifyBoard(HookableJobBoard[ChatNotify, ChatNotifyResult, ChatNotifyR
             job.conversation_id = conversation_id
         with self._session() as session:
             row = session.get_one(type(self).row_cls, job.id)
-            row.channel = job.channel
-            row.delivery_address = job.delivery_address
+            row.channel = channel
+            row.delivery_address = delivery_address
             row.conversation_id = conversation_id
             session.commit()
         self._messages.add(

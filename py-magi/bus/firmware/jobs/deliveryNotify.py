@@ -19,9 +19,9 @@ from ..books.messageBook import Message, MessageBook
 class DeliveryNotify(BaseJob):
     """One outbound reply to deliver.
 
-    Publish with ``conversation_id`` and ``text``. ``channel`` and
-    ``address`` are filled from ConversationBook during publish so a
-    channel Worker can ``claim_for_channel``.
+    Publish with ``conversation_id`` and ``text``. The board fills
+    ``channel`` and ``address`` from ConversationBook so a channel
+    Worker can ``claim_for_channel``.
     """
 
     conversation_id: int 
