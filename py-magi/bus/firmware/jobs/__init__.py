@@ -145,6 +145,9 @@ from .taskJobs import (
     ListTasksJob,
     ListTasksJobBoard,
     ListTasksResult,
+    SetTaskJob,
+    SetTaskJobBoard,
+    SetTaskResult,
 )
 from .toolsJobs import (
     DeleteToolJob,
@@ -249,6 +252,9 @@ __all__ = [
     "ListTasksJob",
     "ListTasksJobBoard",
     "ListTasksResult",
+    "SetTaskJob",
+    "SetTaskJobBoard",
+    "SetTaskResult",
     "RunToolJob",
     "RunToolJobBoard",
     "RunToolResult",
