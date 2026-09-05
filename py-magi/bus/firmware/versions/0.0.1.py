@@ -1,8 +1,8 @@
-"""Initial Firmware Book tables from ConversationRow / MessageRow.
+"""Current Firmware Book and Job tables.
 
 Revision ID: 0.0.1
 Revises:
-Create Date: 2026-08-18
+Create Date: 2026-09-05
 """
 
 from __future__ import annotations
