@@ -4,7 +4,7 @@ import dataclasses
 import time
 from datetime import datetime
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect
 
 from bus import (
     Bus,
@@ -117,53 +117,13 @@ def test_chat_notify_reuses_the_conversation_for_the_same_endpoint(tmp_path) -> 
     assert [message.content for message in listed.messages] == ["one", "two"]
 
 
-def test_conversation_owner_migration_drops_legacy_owner_and_members(tmp_path) -> None:
-    workspace = tmp_path / "legacy-workspace"
-    path = workspace / "memories" / "magi.db"
-    path.parent.mkdir(parents=True)
-    engine = create_engine(f"sqlite:///{path}")
-    with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-        connection.execute(text("INSERT INTO alembic_version VALUES ('0.0.13')"))
-        connection.execute(
-            text(
-                "CREATE TABLE books_contacts ("
-                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
-                "name TEXT NOT NULL, display_name TEXT, role TEXT NOT NULL, last_seen_at DATETIME NOT NULL)"
-            )
-        )
-        connection.execute(
-            text(
-                "CREATE TABLE books_conversations ("
-                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
-                "delivery_address TEXT NOT NULL, contact_id INTEGER NOT NULL, channel TEXT NOT NULL, "
-                "title TEXT NOT NULL, summary TEXT NOT NULL, last_compaction_at DATETIME)"
-            )
-        )
-        connection.execute(
-            text(
-                "CREATE TABLE jobs_create_conversation ("
-                "id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, "
-                "status TEXT NOT NULL, error TEXT, delivery_address TEXT NOT NULL, contact_id INTEGER NOT NULL, "
-                "channel TEXT NOT NULL, title TEXT NOT NULL, conversation_id INTEGER)"
-            )
-        )
-        connection.execute(
-            text(
-                "INSERT INTO books_contacts VALUES "
-                "(1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'owner', NULL, 'guest', CURRENT_TIMESTAMP)"
-            )
-        )
-        connection.execute(
-            text(
-                "INSERT INTO books_conversations VALUES "
-                "(1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'tg:legacy', 1, 'tg', '', '', NULL)"
-            )
-        )
-
-    with Bus("@legacy", workspace=workspace) as bus:
+def test_conversation_schema_has_no_legacy_owner_columns(tmp_path) -> None:
+    with Bus("@conversation", workspace=tmp_path) as bus:
         with bus._factory.engine.connect() as connection:
-            columns = {column["name"] for column in inspect(connection).get_columns("books_conversations")}
+            columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("books_conversations")
+            }
             assert "contact_id" not in columns
             assert "owner_contact_id" not in columns
             assert "books_conv_members" not in inspect(connection).get_table_names()

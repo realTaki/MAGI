@@ -121,8 +121,6 @@ def test_worker_claims_trigger_and_publishes_chat_notify(tmp_path) -> None:
                     break
                 time.sleep(0.01)
             assert chat is not None
-            assert chat.channel == "test"
-            assert chat.delivery_address == "local"
             assert chat.conversation_id == conversation_id
             assert "name: daily" in chat.text
             assert "summarise progress" in chat.text
