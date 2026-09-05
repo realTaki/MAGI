@@ -87,6 +87,7 @@ class BaseJobBoard[JobT: BaseJob, ResultT: BaseJobResult, RowT: BaseJobRow]:
         )
         values = prepared.to_dict()
         values.pop("id", None)
+        values = {key: value for key, value in values.items() if value is not None}
         values["status"] = JobStatus.PREPARING.value
         with self._session() as session:
             row = type(self).row_cls(**values)
