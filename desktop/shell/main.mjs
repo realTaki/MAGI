@@ -1,5 +1,5 @@
 /** Electron is only a shell for the separately running Webapp. */
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Menu, shell } from "electron";
 
 const WEBAPP_URL = process.env.MAGI_WEBAPP_URL ?? "http://127.0.0.1:42069";
 
@@ -18,9 +18,19 @@ async function waitForUrl(url, timeoutMs = 20_000) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1280, height: 840, minWidth: 900, minHeight: 600, title: "MAGI", show: false,
+    width: 1280,
+    height: 840,
+    minWidth: 900,
+    minHeight: 600,
+    title: "MAGI",
+    show: false,
+    // In-app ProductDemo chrome owns close / fullscreen / minimize and
+    // settings. Native decorations and File/Edit/View would duplicate it.
+    frame: false,
+    autoHideMenuBar: true,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   });
+  win.setMenuBarVisibility(false);
   win.once("ready-to-show", () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -30,6 +40,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
   await waitForUrl(WEBAPP_URL);
   createWindow();
   app.on("activate", () => {
