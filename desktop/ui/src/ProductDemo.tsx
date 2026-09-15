@@ -816,6 +816,7 @@ export function ProductDemo() {
                     setUserMenuOpen(false);
                     setPlusOpen((open) => !open);
                   }}
+                  onMouseDown={(event) => event.stopPropagation()}
                 >
                   +
                 </button>
@@ -892,6 +893,7 @@ export function ProductDemo() {
                 setPlusOpen(false);
                 setUserMenuOpen((open) => !open);
               }}
+              onMouseDown={(event) => event.stopPropagation()}
             >
               <span className="product-demo__user-badge">AK</span>
               <span>Avery Kim</span>

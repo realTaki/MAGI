@@ -68,7 +68,7 @@ body {
   display: grid;
   grid-template-columns: 296px minmax(0, 1fr) 340px;
   height: 660px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid #1e1e20;
   border-radius: var(--radius-frame);
   background: var(--panel);
@@ -93,6 +93,7 @@ body {
 .product-demo__sidebar {
   display: flex;
   flex-direction: column;
+  overflow: visible;
   border-right: 1px solid var(--panel-line);
 }
 
@@ -101,6 +102,8 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 16px 12px;
+  overflow: visible;
+  -webkit-app-region: drag;
 }
 
 .product-demo__drawer-title {
@@ -118,12 +121,18 @@ body {
 
 .product-demo__new,
 .product-demo__sidebar-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--panel-muted-2);
   font-size: 19px;
   line-height: 1;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__sidebar-close {
@@ -140,6 +149,8 @@ body {
 
 .product-demo__plus-wrap {
   position: relative;
+  z-index: 8;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__plus-menu,
@@ -332,6 +343,7 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__user-btn:hover .product-demo__user-badge,
