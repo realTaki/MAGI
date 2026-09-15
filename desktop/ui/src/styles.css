@@ -643,20 +643,22 @@ body {
 
 .product-demo__panel-collapse {
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: #a8a8ad;
-  padding: 0 2px;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.08em;
+  color: #ececee;
+  padding: 4px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   line-height: 1;
   cursor: pointer;
 }
 
 .product-demo__panel-collapse:hover,
 .product-demo__panel-collapse:focus-visible {
-  color: #ececee;
+  background: #1b1b1e;
+  color: #fff;
 }
 
 .product-demo__slot {

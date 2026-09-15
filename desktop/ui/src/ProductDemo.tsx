@@ -1019,9 +1019,10 @@ export function ProductDemo() {
                   type="button"
                   className="product-demo__panel-collapse"
                   aria-label={t("conversationSettings.collapse")}
+                  title={t("conversationSettings.collapse")}
                   onClick={collapseProfile}
                 >
-                  {`>>`}
+                  {">>"}
                 </button>
               </div>
             ) : null}
@@ -1215,9 +1216,10 @@ export function ProductDemo() {
                     type="button"
                     className="product-demo__panel-collapse"
                     aria-label={t("conversationSettings.collapse")}
+                    title={t("conversationSettings.collapse")}
                     onClick={collapseProfile}
                   >
-                    {`>>`}
+                    {">>"}
                   </button>
                 </div>
                 <div className="product-demo__routine-toolbar">
