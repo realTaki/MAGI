@@ -40,6 +40,10 @@ export default {
     title: "Settings",
     language: "Language",
     hint: "Edit a bot or group’s name and description in its conversation.",
+    pageHint: "Interface language. Edit a bot or group’s name and description in its conversation.",
+  },
+  conversationSettings: {
+    title: "Profile",
   },
   landing: {
     tagline: "MAGI Societies, defined by you.",

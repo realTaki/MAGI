@@ -40,6 +40,10 @@ export default {
     title: "设置",
     language: "语言",
     hint: "Bot 和群的名称、简介在各自会话里改。",
+    pageHint: "界面语言。Bot 和群的资料在各自会话里改。",
+  },
+  conversationSettings: {
+    title: "资料",
   },
   landing: {
     tagline: "智能体集群，由你定义。",

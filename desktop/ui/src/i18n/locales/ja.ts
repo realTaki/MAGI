@@ -40,6 +40,10 @@ export default {
     title: "設定",
     language: "言語",
     hint: "bot やグループの名前・説明は、その会話の中で編集します。",
+    pageHint: "界面の言語。bot やグループの名前・説明はその会話の中で編集します。",
+  },
+  conversationSettings: {
+    title: "プロフィール",
   },
   landing: {
     tagline: "エージェントの群れ、あなたが定義する。",

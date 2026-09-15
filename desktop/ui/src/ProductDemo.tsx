@@ -10,7 +10,8 @@ import {
 } from "./demo";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator } from "./asp";
-import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
+import { openSettingsRoute } from "./hash-route";
+import { useT } from "./i18n";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -68,7 +69,7 @@ const ONBOARD = [
 ];
 
 type ExtraMessages = Record<string, DemoMessage[]>;
-type PanelMode = "computer" | "settings" | "routine" | "app";
+type PanelMode = "computer" | "settings" | "routine";
 type ConversationKind = "dm" | "group";
 type LiveBot = DemoBot & {
   title: string;
@@ -365,7 +366,6 @@ function OnboardThread({
 
 export function ProductDemo() {
   const t = useT();
-  const { locale, setLocale } = useI18n();
   const [bots, setBots] = useState<LiveBot[]>(cloneBots);
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -662,9 +662,7 @@ export function ProductDemo() {
 
   function openAppSettings() {
     setUserMenuOpen(false);
-    setPanelOpen(true);
-    setPanelMode("app");
-    setRoutineDraft(null);
+    openSettingsRoute();
   }
 
   function logOut() {
@@ -1014,11 +1012,9 @@ export function ProductDemo() {
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
                 <span>
-                  {panelMode === "app"
-                    ? t("appSettings.title")
-                    : panelMode === "settings"
-                      ? t("account.settings")
-                      : `${active.name}’s computer`}
+                  {panelMode === "settings"
+                    ? t("conversationSettings.title")
+                    : `${active.name}’s computer`}
                 </span>
                 <div className="product-demo__panel-actions">
                   <button type="button" aria-label="Bot settings" onClick={openSettings}>
@@ -1172,25 +1168,6 @@ export function ProductDemo() {
                     </label>
                   </>
                 )}
-              </div>
-            ) : null}
-
-            {panelMode === "app" ? (
-              <div className="product-demo__settings">
-                <p className="product-demo__settings-hint">{t("appSettings.hint")}</p>
-                <label className="product-demo__field">
-                  {t("appSettings.language")}
-                  <select
-                    value={locale}
-                    onChange={(event) => setLocale(event.target.value as typeof locale)}
-                  >
-                    {SUPPORTED_LOCALES.map((code) => (
-                      <option key={code} value={code}>
-                        {LOCALE_LABELS[code]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
             ) : null}
 
