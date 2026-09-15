@@ -9,9 +9,11 @@ does not gate invites.
 from __future__ import annotations
 
 import asyncio
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
+from .spawn import MagiSpawner, SpawnedMagi, spawn_to_wire
 from .store import (
     Event,
     Participant,
@@ -136,6 +138,95 @@ class Service:
                     creator, idempotency_key, result.session_id, result.sequence
                 )
             return result
+
+    async def create_conversation(
+        self,
+        creator: str,
+        kind: str,
+        spawner: MagiSpawner,
+        base_url: str,
+    ) -> dict[str, Any]:
+        """Operator create: spawn a MAGI for `bot`, or open an empty group.
+
+        `kind` is the plus-button action, not a lasting conversation type.
+        """
+        if kind not in ("bot", "group"):
+            raise ValueError("kind must be bot or group")
+        invite: list[str] = []
+        spawned: SpawnedMagi | None = None
+        magi_token: str | None = None
+        if kind == "bot":
+            handle = self.store.next_bot_handle()
+            magi_token = secrets.token_urlsafe(24)
+            self.store.register_agent(handle, magi_token)
+            spawned = spawner.spawn(handle=handle, base=base_url, token=magi_token)
+            invite = [handle]
+        result = await self.create_session(
+            creator=creator,
+            invite=invite,
+            topic=None,
+            initial_message=None,
+            end_after_send=False,
+        )
+        sess = self.store.get_session(result.session_id)
+        if sess is not None:
+            sess.kind = kind
+        view = self.conversation_view(creator, result.session_id)
+        view["spawned"] = bool(spawned and spawned.spawned)
+        if spawned is not None:
+            wire = dict(spawn_to_wire(spawned))
+            if magi_token is not None:
+                wire["token"] = magi_token
+            view["magi"] = wire
+        return view
+
+    def conversation_view(self, caller: str, session_id: str) -> dict[str, Any]:
+        view = self.get_session_view(caller, session_id)
+        sess = self.store.get_session(session_id)
+        agents = [
+            p.handle
+            for p in self.store.participants_in(session_id)
+            if p.handle != caller
+        ]
+        view["conversation_id"] = session_id
+        view["agents"] = agents
+        if sess is not None:
+            view["kind"] = sess.kind or ("bot" if len(agents) == 1 else "group")
+            if sess.description is not None:
+                view["description"] = sess.description
+        return view
+
+    def list_conversations(self, caller: str) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for sess in self.store.sessions.values():
+            if self.store.get_participant(sess.id, caller) is None:
+                continue
+            out.append(self.conversation_view(caller, sess.id))
+        out.sort(key=lambda row: row.get("created_at") or 0, reverse=True)
+        return out
+
+    async def update_conversation(
+        self,
+        caller: str,
+        session_id: str,
+        topic: str | None,
+        description: str | None,
+    ) -> dict[str, Any]:
+        async with self._lock:
+            self._require_active_session(session_id)
+            self._require_joined(session_id, caller)
+            sess = self.store.get_session(session_id)
+            assert sess is not None
+            payload: dict[str, Any] = {"by": caller}
+            if topic is not None:
+                sess.topic = topic
+                payload["topic"] = topic
+            if description is not None:
+                sess.description = description
+                payload["description"] = description
+            self.store.append_session_event(session_id, "session.updated", payload)
+            await self._fan_out(session_id)
+            return self.conversation_view(caller, session_id)
 
     async def join(self, handle: str, session_id: str) -> None:
         async with self._lock:
@@ -322,6 +413,10 @@ class Service:
         }
         if sess.topic is not None:
             view["topic"] = sess.topic
+        if sess.description is not None:
+            view["description"] = sess.description
+        if sess.kind is not None:
+            view["kind"] = sess.kind
         if sess.ended_at is not None:
             view["ended_at"] = sess.ended_at
         return view

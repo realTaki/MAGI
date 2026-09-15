@@ -52,6 +52,9 @@ class Session:
     topic: str | None
     created_at: int
     ended_at: int | None = None
+    description: str | None = None
+    # Create action ("bot" | "group"), not a lasting DM/group type.
+    kind: str | None = None
 
 
 @dataclass
@@ -149,9 +152,40 @@ class Store:
         handle = self.agent_by_token.get(token)
         return None if handle is None else self.agents.get(handle)
 
+    def register_agent(self, handle: str, token: str) -> Agent:
+        """Add or refresh one agent. Used for the desktop operator and spawned MAGI."""
+        existing = self.agents.get(handle)
+        if existing is not None:
+            if existing.token != token:
+                del self.agent_by_token[existing.token]
+                self._ensure_unique_token(token)
+                existing.token = token
+                self.agent_by_token[token] = handle
+            return existing
+        self._ensure_unique_token(token)
+        agent = Agent(handle=handle, token=token)
+        self.agents[handle] = agent
+        self.agent_by_token[token] = handle
+        return agent
+
+    def next_bot_handle(self) -> str:
+        n = 1
+        while True:
+            handle = f"@bot-{n:03d}.magi"
+            if handle not in self.agents:
+                return handle
+            n += 1
+
     # ---- Sessions --------------------------------------------------------
 
-    def create_session(self, creator: str, topic: str | None) -> Session:
+    def create_session(
+        self,
+        creator: str,
+        topic: str | None,
+        *,
+        kind: str | None = None,
+        description: str | None = None,
+    ) -> Session:
         sid = make_id("sess")
         sess = Session(
             id=sid,
@@ -159,6 +193,8 @@ class Store:
             state="active",
             topic=topic,
             created_at=now_ms(),
+            description=description,
+            kind=kind,
         )
         self.sessions[sid] = sess
         self.session_events[sid] = []
