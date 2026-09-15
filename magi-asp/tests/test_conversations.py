@@ -102,3 +102,62 @@ def test_create_conversation_rejects_name_and_settings_payloads(tmp_path: Path) 
         # Extra fields are ignored; create still does not require config.
         assert extra.status_code == 201
         assert extra.json()["kind"] == "bot"
+
+
+def test_bots_lists_spawned_magi_not_a_static_roster(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        token = client.get("/operator").json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        empty = client.get("/bots", headers=headers)
+        assert empty.status_code == 200
+        assert empty.json() == {"bots": []}
+        first = client.post("/conversations", json={"kind": "bot"}, headers=headers)
+        second = client.post("/conversations", json={"kind": "bot"}, headers=headers)
+        assert first.status_code == 201
+        assert second.status_code == 201
+        handle_a = first.json()["agents"][0]
+        handle_b = second.json()["agents"][0]
+        listed = client.get("/bots", headers=headers).json()["bots"]
+        assert {row["handle"] for row in listed} == {handle_a, handle_b}
+        assert all(row["online"] is False for row in listed)
+        assert "user" not in {row["handle"] for row in listed}
+        denied = client.get("/bots")
+        assert denied.status_code == 401
+
+
+def test_group_can_add_a_listed_bot(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        token = client.get("/operator").json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        bot = client.post("/conversations", json={"kind": "bot"}, headers=headers).json()
+        group = client.post("/conversations", json={"kind": "group"}, headers=headers).json()
+        handle = bot["agents"][0]
+        group_id = group["conversation_id"]
+        picker = client.get(
+            "/bots",
+            params={"conversation_id": group_id},
+            headers=headers,
+        )
+        assert picker.status_code == 200
+        rows = picker.json()["bots"]
+        assert rows == [{"handle": handle, "online": False, "in_conversation": False}]
+        added = client.post(
+            f"/conversations/{group_id}/members",
+            json={"handle": handle},
+            headers=headers,
+        )
+        assert added.status_code == 200
+        assert added.json()["agents"] == [handle]
+        assert added.json()["kind"] == "group"
+        after = client.get(
+            "/bots",
+            params={"conversation_id": group_id},
+            headers=headers,
+        ).json()["bots"]
+        assert after == [{"handle": handle, "online": False, "in_conversation": True}]
+        unknown = client.post(
+            f"/conversations/{group_id}/members",
+            json={"handle": "@nobody.magi"},
+            headers=headers,
+        )
+        assert unknown.status_code == 404

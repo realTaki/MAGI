@@ -205,6 +205,45 @@ class Service:
         out.sort(key=lambda row: row.get("created_at") or 0, reverse=True)
         return out
 
+    def list_bots(
+        self, caller: str, conversation_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """MAGI this operator can add — registered agents, not a static roster."""
+        in_conversation: set[str] = set()
+        if conversation_id is not None:
+            if self.store.get_session(conversation_id) is None:
+                raise NotFound()
+            if self.store.get_participant(conversation_id, caller) is None:
+                raise NotFound()
+            in_conversation = {
+                participant.handle
+                for participant in self.store.participants_in(conversation_id)
+                if participant.status in ("invited", "joined")
+            }
+        bots: list[dict[str, Any]] = []
+        for handle in self.store.agents:
+            if handle == caller:
+                continue
+            row: dict[str, Any] = {
+                "handle": handle,
+                "online": self.transport.is_online(handle),
+            }
+            if conversation_id is not None:
+                row["in_conversation"] = handle in in_conversation
+            bots.append(row)
+        bots.sort(key=lambda row: row["handle"])
+        return bots
+
+    async def add_conversation_member(
+        self, caller: str, session_id: str, handle: str
+    ) -> dict[str, Any]:
+        if handle == caller:
+            raise NotAllowed()
+        if self.store.get_agent(handle) is None:
+            raise NotFound()
+        await self.invite(caller, session_id, [handle])
+        return self.conversation_view(caller, session_id)
+
     async def update_conversation(
         self,
         caller: str,

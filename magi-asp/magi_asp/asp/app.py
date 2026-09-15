@@ -89,6 +89,10 @@ class UpdateConversationBody(BaseModel):
     description: str | None = None
 
 
+class AddMemberBody(BaseModel):
+    handle: str
+
+
 # ---------------------------------------------------------------------------
 # Router factory
 # ---------------------------------------------------------------------------
@@ -172,6 +176,30 @@ def create_operator(
         try:
             return await service.update_conversation(
                 caller, conversation_id, body.topic, body.description
+            )
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+        except NotAllowed:
+            raise HTTPException(status_code=404, detail="not found")
+        except Conflict as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
+    @router.get("/bots")
+    async def get_bots(request: Request, conversation_id: str | None = None):
+        caller = auth_handle(request)
+        try:
+            return {"bots": service.list_bots(caller, conversation_id)}
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+
+    @router.post("/conversations/{conversation_id}/members")
+    async def post_conversation_member(
+        conversation_id: str, body: AddMemberBody, request: Request
+    ):
+        caller = auth_handle(request)
+        try:
+            return await service.add_conversation_member(
+                caller, conversation_id, body.handle
             )
         except NotFound:
             raise HTTPException(status_code=404, detail="not found")
