@@ -409,12 +409,25 @@ export function ProductDemo() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
+  const desktopAllowed = active.kind === "dm";
+  const showPanel = panelOpen && (desktopAllowed || panelMode === "settings");
 
   useEffect(() => {
     setHasControl(false);
     setTakeover(false);
     setBootPct(0);
   }, [activeId]);
+
+  useEffect(() => {
+    if (desktopAllowed) {
+      return;
+    }
+    setRoutineDraft(null);
+    if (panelMode === "computer" || panelMode === "routine") {
+      setPanelOpen(false);
+      setPanelMode("settings");
+    }
+  }, [activeId, desktopAllowed, panelMode]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -530,12 +543,18 @@ export function ProductDemo() {
   }
 
   function openComputer() {
+    if (!desktopAllowed) {
+      return;
+    }
     setPanelOpen(true);
     setPanelMode("computer");
     setRoutineDraft(null);
   }
 
   function toggleComputer() {
+    if (!desktopAllowed) {
+      return;
+    }
     if (panelOpen && panelMode === "computer") {
       setPanelOpen(false);
       return;
@@ -550,6 +569,9 @@ export function ProductDemo() {
   }
 
   function openRoutine(routine: DemoRoutine | null, index: number | null) {
+    if (!desktopAllowed) {
+      return;
+    }
     setPanelOpen(true);
     setPanelMode("routine");
     setRoutineDraft({
@@ -635,7 +657,13 @@ export function ProductDemo() {
     setActiveId(conversation.id);
     setDraft("");
     closeMenu();
-    if (panelMode === "routine") {
+    if (kind === "group") {
+      setRoutineDraft(null);
+      if (panelMode === "computer" || panelMode === "routine") {
+        setPanelOpen(false);
+        setPanelMode("settings");
+      }
+    } else if (panelMode === "routine") {
       setPanelMode("computer");
       setRoutineDraft(null);
     }
@@ -693,7 +721,7 @@ export function ProductDemo() {
   }
 
   function takeControl() {
-    if (booting) {
+    if (!desktopAllowed || booting) {
       return;
     }
     if (hasControl) {
@@ -746,6 +774,15 @@ export function ProductDemo() {
   function selectBot(id: string) {
     setActiveId(id);
     closeMenu();
+    const next = bots.find((bot) => bot.id === id);
+    if (next?.kind === "group") {
+      setRoutineDraft(null);
+      if (panelMode === "computer" || panelMode === "routine") {
+        setPanelOpen(false);
+        setPanelMode("settings");
+      }
+      return;
+    }
     if (panelMode === "routine") {
       setPanelMode("computer");
       setRoutineDraft(null);
@@ -788,7 +825,7 @@ export function ProductDemo() {
 
   return (
     <div className="product-demo">
-      <div className={`product-demo__frame${panelOpen ? "" : " is-collapsed"}`}>
+      <div className={`product-demo__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
           id="product-demo-bots"
           className={`product-demo__sidebar${menuOpen ? " is-open" : ""}`}
@@ -948,26 +985,28 @@ export function ProductDemo() {
                 <span className="product-demo__active-name">{active.name}</span>
               </button>
             </div>
-            <button
-              type="button"
-              className="product-demo__panel-toggle"
-              aria-pressed={panelOpen && panelMode === "computer"}
-              aria-label="Toggle computer panel"
-              title="Computer"
-              onClick={toggleComputer}
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
+            {desktopAllowed ? (
+              <button
+                type="button"
+                className="product-demo__panel-toggle"
+                aria-pressed={panelOpen && panelMode === "computer"}
+                aria-label="Toggle computer panel"
+                title="Computer"
+                onClick={toggleComputer}
               >
-                <rect x="2" y="4" width="20" height="13" rx="2" />
-                <path d="M8 21h8M12 17v4" />
-              </svg>
-            </button>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
+                  <rect x="2" y="4" width="20" height="13" rx="2" />
+                  <path d="M8 21h8M12 17v4" />
+                </svg>
+              </button>
+            ) : null}
           </div>
 
           <div className="product-demo__thread" ref={scrollRef}>
@@ -1008,7 +1047,7 @@ export function ProductDemo() {
           </div>
         </main>
 
-        {panelOpen ? (
+        {showPanel ? (
           <aside className="product-demo__panel">
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
@@ -1042,7 +1081,7 @@ export function ProductDemo() {
               </div>
             ) : null}
 
-            {panelMode === "computer" ? (
+            {panelMode === "computer" && desktopAllowed ? (
               <>
                 <button
                   type="button"
@@ -1172,7 +1211,7 @@ export function ProductDemo() {
               </div>
             ) : null}
 
-            {panelMode === "routine" && routineDraft ? (
+            {panelMode === "routine" && desktopAllowed && routineDraft ? (
               <div className="product-demo__routine-editor">
                 <div className="product-demo__routine-nav">
                   <button type="button" onClick={saveRoutine} aria-label="Back to computer">
@@ -1371,7 +1410,7 @@ export function ProductDemo() {
           </aside>
         ) : null}
 
-        {booting || takeover ? (
+        {desktopAllowed && (booting || takeover) ? (
           <div className="product-demo__stage">
             {booting ? (
               <div className="product-demo__boot">
