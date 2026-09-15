@@ -641,6 +641,124 @@ body {
   line-height: 1;
 }
 
+.product-demo__panel-collapse {
+  border: 0;
+  background: transparent;
+  color: #a8a8ad;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.product-demo__panel-collapse:hover,
+.product-demo__panel-collapse:focus-visible {
+  color: #ececee;
+}
+
+.product-demo__slot {
+  margin-top: 8px;
+}
+
+.product-demo__slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 22px 0 12px;
+}
+
+.product-demo__slot-head .product-demo__panel-label {
+  margin: 0;
+}
+
+.product-demo__chip {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #2a2a2e;
+  border-radius: 999px;
+  background: transparent;
+  color: #ececee;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.product-demo__chip:hover,
+.product-demo__chip:focus-visible {
+  background: #18181b;
+}
+
+.product-demo__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border: 0;
+  border-radius: 16px;
+  padding: 0;
+}
+
+.product-demo__preview.is-off {
+  background: #141416;
+  cursor: default;
+}
+
+.product-demo__preview.is-on {
+  background:
+    radial-gradient(120% 90% at 18% 0%, rgba(255, 255, 255, 0.55), transparent 46%),
+    linear-gradient(160deg, #d9d9df 0%, #b4b4bc 42%, #c8c8ce 100%);
+  cursor: pointer;
+}
+
+.product-demo__preview-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.product-demo__preview-caption {
+  margin: 10px 0 0;
+  color: var(--panel-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.product-demo__members {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.product-demo__member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  color: #ececee;
+  font-size: 14.5px;
+}
+
+.product-demo__members-empty {
+  margin: 0 0 8px;
+  color: var(--panel-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 .product-demo__screen {
   display: block;
   width: 100%;

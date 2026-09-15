@@ -61,6 +61,18 @@ export default {
   },
   conversationSettings: {
     title: "Profile",
+    collapse: "Hide profile",
+    screen: "Screen",
+    enable: "Enable",
+    disable: "Disable",
+    open: "Open",
+    screenCaption: "{name}’s screen",
+    members: "Members",
+    membersEmpty: "No members yet. Invite a bot later.",
+    routines: "Routines",
+    routinesEmpty: "Routines are recurring tasks this agent runs on a schedule.",
+    routineCreate: "Create routine",
+    routineNew: "+ New routine",
   },
   landing: {
     tagline: "MAGI Societies, defined by you.",

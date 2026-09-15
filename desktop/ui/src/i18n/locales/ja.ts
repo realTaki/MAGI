@@ -61,6 +61,18 @@ export default {
   },
   conversationSettings: {
     title: "プロフィール",
+    collapse: "プロフィールを隠す",
+    screen: "画面",
+    enable: "有効にする",
+    disable: "無効にする",
+    open: "開く",
+    screenCaption: "{name} の画面",
+    members: "メンバー",
+    membersEmpty: "まだメンバーがいません。あとから bot を招待できます。",
+    routines: "ルーチン",
+    routinesEmpty: "ルーチンはこの bot が予定に沿って繰り返す作業です。",
+    routineCreate: "ルーチンを作成",
+    routineNew: "+ 新しいルーチン",
   },
   landing: {
     tagline: "エージェントの群れ、あなたが定義する。",
