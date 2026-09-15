@@ -112,6 +112,10 @@ async function startLocalAsp() {
   }
 }
 
+function loadChooser(win) {
+  void win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
+}
+
 function loadOperatorUi(win) {
   if (existsSync(UI_DIST) && !process.env.MAGI_UI_URL) {
     void win.loadFile(UI_DIST);
@@ -149,7 +153,7 @@ function createWindow() {
       mainWindow = null;
     }
   });
-  void win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
+  void loadChooser(win);
   return win;
 }
 
@@ -167,6 +171,13 @@ ipcMain.handle("asp:start-local", async () => {
   } finally {
     startingLocal = false;
   }
+});
+
+ipcMain.handle("app:show-chooser", async () => {
+  if (mainWindow === null) {
+    throw new Error("MAGI window is gone");
+  }
+  loadChooser(mainWindow);
 });
 
 ipcMain.handle("window:control", (_event, action) => {

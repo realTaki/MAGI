@@ -21,6 +21,26 @@ export default {
     start: "启动",
     stop: "停止",
   },
+  plusMenu: {
+    aria: "新建",
+    newBot: "新建 bot",
+    newGroup: "创建群聊",
+    listTitle: "对话",
+    newBotName: "New bot",
+    newGroupName: "群聊",
+    botEmpty: "给它布置第一份工作。",
+    groupEmpty: "开始说话，或稍后邀请 bot。",
+  },
+  account: {
+    menuAria: "账号菜单",
+    settings: "设置",
+    logOut: "退出登录",
+  },
+  appSettings: {
+    title: "设置",
+    language: "语言",
+    hint: "Bot 和群的名称、简介在各自会话里改。",
+  },
   landing: {
     tagline: "智能体集群，由你定义。",
     description: "MAGI 是一个模块化自治智能体系统。将 MAGI Citizens（MAGIC）组成 MAGI Societies（MAGIS），由 ADAM 带队、EVA 执行，自主协作分工。你通过控制台设定规则、赋予技能，剩下的交给它们。",

@@ -21,6 +21,26 @@ export default {
     start: "起動",
     stop: "停止",
   },
+  plusMenu: {
+    aria: "新規",
+    newBot: "新規 bot",
+    newGroup: "グループを作成",
+    listTitle: "会話",
+    newBotName: "New bot",
+    newGroupName: "グループ",
+    botEmpty: "最初の仕事をこの bot に頼んでください。",
+    groupEmpty: "話し始めるか、あとから bot を招待できます。",
+  },
+  account: {
+    menuAria: "アカウントメニュー",
+    settings: "設定",
+    logOut: "ログアウト",
+  },
+  appSettings: {
+    title: "設定",
+    language: "言語",
+    hint: "bot やグループの名前・説明は、その会話の中で編集します。",
+  },
   landing: {
     tagline: "エージェントの群れ、あなたが定義する。",
     description: "MAGI はモジュール型の自律エージェントシステムです。MAGI Citizens（MAGIC）を MAGI Societies（MAGIS）に編成し、ADAM が指揮、EVA が実行します。",

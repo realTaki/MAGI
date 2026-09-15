@@ -138,6 +138,54 @@ body {
   color: #c9c9ce;
 }
 
+.product-demo__plus-wrap {
+  position: relative;
+}
+
+.product-demo__plus-menu,
+.product-demo__user-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 156px;
+  padding: 6px;
+  border: 1px solid var(--panel-line-2);
+  border-radius: 12px;
+  background: #171719;
+  box-shadow: 0 16px 40px -18px rgba(0, 0, 0, 0.85);
+}
+
+.product-demo__plus-menu {
+  top: 28px;
+  right: 0;
+}
+
+.product-demo__plus-menu button,
+.product-demo__user-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e9e9ea;
+  text-align: left;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.product-demo__plus-menu button:hover,
+.product-demo__plus-menu button:focus-visible,
+.product-demo__user-menu button:hover,
+.product-demo__user-menu button:focus-visible {
+  background: #242428;
+}
+
+.product-demo__plus-menu button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
 .product-demo__traffic {
   display: flex;
   gap: 7px;
@@ -261,6 +309,7 @@ body {
 }
 
 .product-demo__user {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -268,6 +317,33 @@ body {
   padding: 13px 16px;
   color: #c9c9ce;
   font-size: 14px;
+}
+
+.product-demo__user-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.product-demo__user-btn:hover .product-demo__user-badge,
+.product-demo__user-btn:focus-visible .product-demo__user-badge {
+  color: #e9e9ea;
+}
+
+.product-demo__user-menu {
+  left: 16px;
+  right: 16px;
+  bottom: 56px;
+  min-width: 0;
 }
 
 .product-demo__user-badge {
@@ -895,6 +971,13 @@ body {
   justify-content: center;
 }
 
+.product-demo__settings-hint {
+  margin: 18px 0 0;
+  color: var(--panel-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 .product-demo__field {
   display: flex;
   flex-direction: column;
@@ -910,6 +993,7 @@ body {
 
 .product-demo__field input,
 .product-demo__field textarea,
+.product-demo__field select,
 .product-demo__add-schedule {
   width: 100%;
   box-sizing: border-box;

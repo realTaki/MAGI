@@ -21,6 +21,26 @@ export default {
     start: "Start",
     stop: "Stop",
   },
+  plusMenu: {
+    aria: "New",
+    newBot: "New bot",
+    newGroup: "New group",
+    listTitle: "Conversations",
+    newBotName: "New bot",
+    newGroupName: "New group",
+    botEmpty: "Message this bot to give it a first job.",
+    groupEmpty: "Start talking, or invite a bot later.",
+  },
+  account: {
+    menuAria: "Account menu",
+    settings: "Settings",
+    logOut: "Log out",
+  },
+  appSettings: {
+    title: "Settings",
+    language: "Language",
+    hint: "Edit a bot or group’s name and description in its conversation.",
+  },
   landing: {
     tagline: "MAGI Societies, defined by you.",
     description: "MAGI is a modular autonomous agent system. Form individual MAGI Citizens (MAGIC) into a MAGI Society (MAGIS): ADAM leads and EVAs execute. You set the rules and skills from the console; they collaborate on the rest.",

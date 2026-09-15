@@ -9,6 +9,8 @@ import {
   type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
+import { createAspConversation, patchAspConversation, clearOperator } from "./asp";
+import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -66,12 +68,16 @@ const ONBOARD = [
 ];
 
 type ExtraMessages = Record<string, DemoMessage[]>;
-type PanelMode = "computer" | "settings" | "routine";
+type PanelMode = "computer" | "settings" | "routine" | "app";
+type ConversationKind = "dm" | "group";
 type LiveBot = DemoBot & {
   title: string;
   description: string;
   onboarding: boolean;
   answers: string[];
+  kind: ConversationKind;
+  remoteId?: string;
+  magiHandle?: string;
 };
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
@@ -94,7 +100,35 @@ function cloneBots(): LiveBot[] {
     description: "",
     onboarding: false,
     answers: [],
+    kind: "dm",
   }));
+}
+
+function blankScreen(): DemoScreen {
+  return { host: "desktop", title: "Computer is stopped", lines: [] };
+}
+
+function makeConversation(
+  kind: ConversationKind,
+  name: string,
+  color: string,
+): LiveBot {
+  return {
+    id: `conv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name,
+    color,
+    time: "Now",
+    preview: "",
+    title: "",
+    description: "",
+    onboarding: false,
+    answers: [],
+    kind,
+    routines: [],
+    screen: blankScreen(),
+    thread: [],
+    reply: "on it. tell me the job and i’ll get started.",
+  };
 }
 
 function defaultTrigger(): Trigger {
@@ -330,6 +364,8 @@ function OnboardThread({
 }
 
 export function ProductDemo() {
+  const t = useT();
+  const { locale, setLocale } = useI18n();
   const [bots, setBots] = useState<LiveBot[]>(cloneBots);
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -343,9 +379,15 @@ export function ProductDemo() {
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState<ExtraMessages>({});
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<number[]>([]);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const plusWrapRef = useRef<HTMLDivElement | null>(null);
+  const userWrapRef = useRef<HTMLDivElement | null>(null);
+  const creatingRef = useRef(false);
   const widePanelRef = useRef(true);
   const booting = bootPct > 0;
 
@@ -436,6 +478,33 @@ export function ProductDemo() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [takeover, booting]);
+
+  useEffect(() => {
+    if (!plusOpen && !userMenuOpen) {
+      return;
+    }
+    function onPointer(event: MouseEvent) {
+      const node = event.target as Node | null;
+      if (plusOpen && plusWrapRef.current && node && !plusWrapRef.current.contains(node)) {
+        setPlusOpen(false);
+      }
+      if (userMenuOpen && userWrapRef.current && node && !userWrapRef.current.contains(node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPlusOpen(false);
+        setUserMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [plusOpen, userMenuOpen]);
 
   if (!active) {
     return null;
@@ -542,27 +611,66 @@ export function ProductDemo() {
   }
 
   function startNewBot() {
-    const color = BOT_COLORS[bots.length % BOT_COLORS.length] ?? "#3EC5A8";
-    const bot: LiveBot = {
-      id: `bot-${Date.now()}`,
-      name: "New bot",
-      color,
-      time: "Now",
-      preview: "Say what you want this bot doing",
-      title: "",
-      description: "",
-      onboarding: true,
-      answers: [],
-      routines: [],
-      screen: { host: "desktop", title: "Computer is stopped", lines: [] },
-      thread: [],
-      reply: "on it. tell me the job and i’ll get started.",
-    };
-    setBots((current) => [bot, ...current]);
-    setActiveId(bot.id);
+    void createConversation("bot");
+  }
+
+  function startNewGroup() {
+    void createConversation("group");
+  }
+
+  async function createConversation(action: "bot" | "group") {
+    if (creatingRef.current) {
+      return;
+    }
+    creatingRef.current = true;
+    setCreating(true);
+    setPlusOpen(false);
+    const kind: ConversationKind = action === "bot" ? "dm" : "group";
+    const color =
+      BOT_COLORS[(bots.length + (action === "group" ? 3 : 0)) % BOT_COLORS.length] ?? "#3EC5A8";
+    const name = action === "bot" ? t("plusMenu.newBotName") : t("plusMenu.newGroupName");
+    const conversation = makeConversation(kind, name, color);
+    setBots((current) => [conversation, ...current]);
+    setActiveId(conversation.id);
     setDraft("");
     closeMenu();
-    openSettings();
+    if (panelMode === "routine") {
+      setPanelMode("computer");
+      setRoutineDraft(null);
+    }
+    try {
+      const remote = await createAspConversation(action);
+      if (!remote) {
+        return;
+      }
+      setBots((current) =>
+        current.map((bot) =>
+          bot.id === conversation.id
+            ? {
+                ...bot,
+                remoteId: remote.conversation_id,
+                magiHandle: remote.agents[0],
+              }
+            : bot,
+        ),
+      );
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  }
+
+  function openAppSettings() {
+    setUserMenuOpen(false);
+    setPanelOpen(true);
+    setPanelMode("app");
+    setRoutineDraft(null);
+  }
+
+  function logOut() {
+    setUserMenuOpen(false);
+    clearOperator();
+    void window.magiDesktop?.showChooser?.();
   }
 
   function answerOnboard(value: string) {
@@ -694,16 +802,44 @@ export function ProductDemo() {
               <span />
               <span />
             </div>
-            <span className="product-demo__drawer-title">Bots</span>
+            <span className="product-demo__drawer-title">{t("plusMenu.listTitle")}</span>
             <div className="product-demo__chrome-actions">
-              <button
-                type="button"
-                className="product-demo__new"
-                aria-label="New bot"
-                onClick={startNewBot}
-              >
-                +
-              </button>
+              <div className="product-demo__plus-wrap" ref={plusWrapRef}>
+                <button
+                  type="button"
+                  className="product-demo__new"
+                  aria-label={t("plusMenu.aria")}
+                  aria-haspopup="menu"
+                  aria-expanded={plusOpen}
+                  disabled={creating}
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    setPlusOpen((open) => !open);
+                  }}
+                >
+                  +
+                </button>
+                {plusOpen ? (
+                  <div className="product-demo__plus-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={creating}
+                      onClick={startNewBot}
+                    >
+                      {t("plusMenu.newBot")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={creating}
+                      onClick={startNewGroup}
+                    >
+                      {t("plusMenu.newGroup")}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="product-demo__sidebar-close"
@@ -745,9 +881,31 @@ export function ProductDemo() {
               );
             })}
           </div>
-          <div className="product-demo__user">
-            <span className="product-demo__user-badge">AK</span>
-            <span>Avery Kim</span>
+          <div className="product-demo__user" ref={userWrapRef}>
+            <button
+              type="button"
+              className="product-demo__user-btn"
+              aria-label={t("account.menuAria")}
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              onClick={() => {
+                setPlusOpen(false);
+                setUserMenuOpen((open) => !open);
+              }}
+            >
+              <span className="product-demo__user-badge">AK</span>
+              <span>Avery Kim</span>
+            </button>
+            {userMenuOpen ? (
+              <div className="product-demo__user-menu" role="menu">
+                <button type="button" role="menuitem" onClick={openAppSettings}>
+                  {t("account.settings")}
+                </button>
+                <button type="button" role="menuitem" onClick={logOut}>
+                  {t("account.logOut")}
+                </button>
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -817,7 +975,7 @@ export function ProductDemo() {
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
               <div className="product-demo__empty-thread">
-                Message {active.name} to give it a first job.
+                {active.kind === "group" ? t("plusMenu.groupEmpty") : t("plusMenu.botEmpty")}
               </div>
             ) : (
               <Thread messages={messages} />
@@ -853,7 +1011,13 @@ export function ProductDemo() {
           <aside className="product-demo__panel">
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
-                <span>{panelMode === "settings" ? "settings" : `${active.name}’s computer`}</span>
+                <span>
+                  {panelMode === "app"
+                    ? t("appSettings.title")
+                    : panelMode === "settings"
+                      ? t("account.settings")
+                      : `${active.name}’s computer`}
+                </span>
                 <div className="product-demo__panel-actions">
                   <button type="button" aria-label="Bot settings" onClick={openSettings}>
                     <svg
@@ -943,30 +1107,87 @@ export function ProductDemo() {
                 <div className="product-demo__settings-avatar">
                   <Avatar color={active.color} size={72} />
                 </div>
+                {active.kind === "group" ? (
+                  <>
+                    <label className="product-demo__field">
+                      Topic
+                      <input
+                        value={active.name}
+                        placeholder={t("plusMenu.newGroupName")}
+                        onChange={(event) => patchActive({ name: event.target.value })}
+                        onBlur={(event) => {
+                          if (active.remoteId) {
+                            void patchAspConversation(active.remoteId, {
+                              topic: event.target.value,
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Description
+                      <textarea
+                        rows={4}
+                        value={active.description}
+                        placeholder={t("appSettings.hint")}
+                        onChange={(event) => patchActive({ description: event.target.value })}
+                        onBlur={(event) => {
+                          if (active.remoteId) {
+                            void patchAspConversation(active.remoteId, {
+                              description: event.target.value,
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="product-demo__field">
+                      Name
+                      <input
+                        value={active.name}
+                        placeholder="Name this agent"
+                        onChange={(event) => patchActive({ name: event.target.value })}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Title
+                      <input
+                        value={active.title}
+                        placeholder="Describe what this agent does"
+                        onChange={(event) => patchActive({ title: event.target.value })}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Description
+                      <textarea
+                        rows={4}
+                        value={active.description}
+                        placeholder="What this agent is for"
+                        onChange={(event) => patchActive({ description: event.target.value })}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            {panelMode === "app" ? (
+              <div className="product-demo__settings">
+                <p className="product-demo__settings-hint">{t("appSettings.hint")}</p>
                 <label className="product-demo__field">
-                  Name
-                  <input
-                    value={active.name}
-                    placeholder="Name this agent"
-                    onChange={(event) => patchActive({ name: event.target.value })}
-                  />
-                </label>
-                <label className="product-demo__field">
-                  Title
-                  <input
-                    value={active.title}
-                    placeholder="Describe what this agent does"
-                    onChange={(event) => patchActive({ title: event.target.value })}
-                  />
-                </label>
-                <label className="product-demo__field">
-                  Description
-                  <textarea
-                    rows={4}
-                    value={active.description}
-                    placeholder="What this agent is for"
-                    onChange={(event) => patchActive({ description: event.target.value })}
-                  />
+                  {t("appSettings.language")}
+                  <select
+                    value={locale}
+                    onChange={(event) => setLocale(event.target.value as typeof locale)}
+                  >
+                    {SUPPORTED_LOCALES.map((code) => (
+                      <option key={code} value={code}>
+                        {LOCALE_LABELS[code]}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
             ) : null}
