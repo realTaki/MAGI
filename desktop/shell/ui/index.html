@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAGI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="chrome">
+        <div class="traffic" aria-label="Window controls">
+          <button type="button" class="light light--close" data-window="close" aria-label="Close"></button>
+          <button type="button" class="light light--min" data-window="minimize" aria-label="Minimize"></button>
+          <button type="button" class="light light--full" data-window="fullscreen" aria-label="Fullscreen"></button>
+        </div>
+        <div class="chrome-title">MAGI</div>
+        <button type="button" class="settings" id="open-settings" aria-label="Settings">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </header>
+
+      <main id="view-chooser" class="view">
+        <p class="eyebrow">MAGI</p>
+        <h1>How do you want to begin?</h1>
+        <p class="lede">Start magi-asp on this machine, or connect to one that is already running.</p>
+        <div class="choices">
+          <button type="button" class="choice" id="connect-existing">
+            <strong>Connect to an existing magi-asp</strong>
+            <span>Use an ASP that is already running.</span>
+          </button>
+          <button type="button" class="choice choice--primary" id="start-local">
+            <strong>Start locally</strong>
+            <span>Launch magi-asp on this machine.</span>
+          </button>
+        </div>
+        <p id="status" class="status" role="status"></p>
+      </main>
+
+      <main id="view-coming-soon" class="view" hidden>
+        <p class="eyebrow">MAGI</p>
+        <h1>Coming soon</h1>
+        <p id="coming-soon-copy" class="lede">Connecting to an existing magi-asp is not available yet.</p>
+        <button type="button" class="back" id="back">Back</button>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>
