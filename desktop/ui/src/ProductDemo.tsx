@@ -2,6 +2,7 @@ import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_BOTS,
+  OPERATOR,
   type DemoBot,
   type DemoMessage,
   type DemoRoutine,
@@ -893,8 +894,8 @@ export function ProductDemo() {
               }}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              <span className="product-demo__user-badge">AK</span>
-              <span>Avery Kim</span>
+              <span className="product-demo__user-badge">{OPERATOR.initials}</span>
+              <span>{OPERATOR.name}</span>
             </button>
             {userMenuOpen ? (
               <div className="product-demo__user-menu" role="menu">
