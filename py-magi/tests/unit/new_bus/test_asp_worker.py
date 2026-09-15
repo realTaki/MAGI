@@ -66,12 +66,18 @@ async def test_asp_worker_bridges_one_session_to_conversation_jobs(tmp_path, mon
             await asyncio.sleep(0.05)
         assert inbound is not None
         assert inbound.text == "hello"
-        assert inbound.conversation_id is not None
+        assert inbound.channel == "asp"
+        assert inbound.delivery_address == "session-1"
+        assert inbound.conversation_id > 0
         assert client.joined == ["session-1"]
 
         delivery = bus.board(DeliveryNotify)
         delivery_id = delivery.publish(
-            DeliveryNotify(publisher="test", conversation_id=inbound.conversation_id, text="reply")
+            DeliveryNotify(
+                publisher="test",
+                conversation_id=inbound.conversation_id,
+                text="reply",
+            )
         )
         result = delivery.get_result(delivery_id, timeout=5.0)
         assert result is not None

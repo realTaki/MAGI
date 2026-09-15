@@ -7,6 +7,8 @@ from collections.abc import Sequence
 
 from agent.worker import AgentWorker
 from channels.asp import AspWorker
+from channels.tasks import TaskWorker
+from channels.telegram import TelegramWorker
 from providers.worker import ProvidersWorker
 from tools.worker import ToolsWorker
 
@@ -18,13 +20,15 @@ WORKERS: tuple[type[BaseWorker], ...] = (
     ToolsWorker,
     AgentWorker,
     AspWorker,
+    TelegramWorker,
+    TaskWorker,
 )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one MAGI BUS attached to webapp/asp.")
+    parser = argparse.ArgumentParser(description="Run one MAGI BUS attached to magi-asp.")
     parser.add_argument("handle", help="stable ASP identity, e.g. @alice.magi")
-    parser.add_argument("base", help="operator origin, e.g. http://127.0.0.1:42069")
+    parser.add_argument("base", help="ASP origin, e.g. http://127.0.0.1:42069")
     parser.add_argument("token", help="Bearer token seeded on the operator")
     args = parser.parse_args(argv)
 

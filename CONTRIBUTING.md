@@ -58,10 +58,10 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
+| `desktop/` | Electron desktop and operator UI |
+| `magi-asp/` | ASP session server (`magi_asp` Python package) |
 | `py-magi/agent/` | Agent loop, memory, tools |
-| `py-magi/channels/` | Telegram + HTTP channel adapters |
-| `webapp/` | Browser operator UI and local application storage |
-| `desktop/` | Electron desktop process |
+| `py-magi/channels/` | Telegram + ASP channel adapters |
 | `py-magi/tests/` | Unit and integration tests |
 | `docs/` | Design docs + roadmap |
 

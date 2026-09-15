@@ -73,24 +73,26 @@ class TaskWorker(BaseWorker):
         self._submit(trigger, None)
 
     def _report(self, task: Task, error: str) -> None:
-        self.publish_notify(
-            ChatNotify(
-                publisher=cast(str, self.worker_name),
-                conversation_id=task.conversation_id,
-                text=f"[task error]\nname: {task.name}\n{error}",
-            )
+        self._chat(
+            task.conversation_id,
+            f"[task error]\nname: {task.name}\n{error}",
         )
 
     def _fire(self, task: Task, *, manual: bool = False) -> None:
         schedule = "manual" if manual else task.cron
-        text = (
-            "[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
-            f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
+        self._chat(
+            task.conversation_id,
+            (
+                "[task context]\nYou are EXECUTING a scheduled task that just fired.\n"
+                f"name: {task.name}\nschedule: {schedule}\n\n[task prompt]\n{task.prompt}"
+            ),
         )
+
+    def _chat(self, conversation_id: int, text: str) -> None:
         self.publish_notify(
             ChatNotify(
                 publisher=cast(str, self.worker_name),
-                conversation_id=task.conversation_id,
+                conversation_id=conversation_id,
                 text=text,
             )
         )

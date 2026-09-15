@@ -41,7 +41,7 @@ def firmware_metadata() -> MetaData:
         UpdateContactNoteJobRow,
     )
     from ..jobs.conversationJobs import (  # noqa: F401
-        CreateConversationJobRow,
+        GetConversationForChannelJobRow,
         GetConversationJobRow,
         UpdateConversationSummaryJobRow,
     )
@@ -56,6 +56,8 @@ def firmware_metadata() -> MetaData:
     from ..jobs.messageJobs import (  # noqa: F401
         ArchiveMessagesJobRow,
         ListConversationMessagesJobRow,
+        SearchContactMessagesJobRow,
+        SearchConversationMessagesJobRow,
     )
     from ..jobs.promptJobs import (  # noqa: F401
         GetPromptJobRow,
@@ -72,7 +74,7 @@ def firmware_metadata() -> MetaData:
         SetSettingJobRow,
     )
     from ..jobs.skillJobs import GetSkillJobRow, ListSkillsJobRow  # noqa: F401
-    from ..jobs.taskJobs import GetTaskJobRow, ListTasksJobRow  # noqa: F401
+    from ..jobs.taskJobs import GetTaskJobRow, ListTasksJobRow, SetTaskJobRow  # noqa: F401
     from ..jobs.toolsJobs import (  # noqa: F401
         DeleteToolJobRow,
         GetToolJobRow,

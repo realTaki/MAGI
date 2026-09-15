@@ -1,8 +1,8 @@
-"""Add key/value SettingsBook Firmware tables.
+"""Add message search Jobs.
 
 Revision ID: 0.0.2
 Revises: 0.0.1
-Create Date: 2026-08-27
+Create Date: 2026-09-05
 """
 
 from __future__ import annotations
@@ -22,5 +22,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Firmware revisions are forward-only during the vNext development phase.
-    pass
+    op.drop_table("jobs_search_conversation_messages")
+    op.drop_table("jobs_search_contact_messages")
