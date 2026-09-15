@@ -166,7 +166,7 @@ body {
 }
 
 .product-demo__plus-menu {
-  top: 28px;
+  top: calc(100% + 6px);
   right: 0;
 }
 
