@@ -2,6 +2,7 @@ import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_BOTS,
+  OPERATOR,
   type DemoBot,
   type DemoMessage,
   type DemoRoutine,
@@ -9,6 +10,9 @@ import {
   type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, addAspConversationMember, type AspBot } from "./asp";
+import { openSettingsRoute } from "./hash-route";
+import { useT } from "./i18n";
 
 const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
@@ -66,12 +70,19 @@ const ONBOARD = [
 ];
 
 type ExtraMessages = Record<string, DemoMessage[]>;
-type PanelMode = "computer" | "settings" | "routine";
+type PanelMode = "settings" | "routine";
+type ConversationKind = "dm" | "group";
+type ConversationMember = { id: string; name: string; color: string };
 type LiveBot = DemoBot & {
   title: string;
   description: string;
   onboarding: boolean;
   answers: string[];
+  kind: ConversationKind;
+  screenEnabled: boolean;
+  members: ConversationMember[];
+  remoteId?: string;
+  magiHandle?: string;
 };
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
@@ -94,7 +105,65 @@ function cloneBots(): LiveBot[] {
     description: "",
     onboarding: false,
     answers: [],
+    kind: "dm",
+    screenEnabled: false,
+    members: [],
   }));
+}
+
+function blankScreen(): DemoScreen {
+  return { host: "desktop", title: "Computer is stopped", lines: [] };
+}
+
+function makeConversation(
+  kind: ConversationKind,
+  name: string,
+  color: string,
+): LiveBot {
+  return {
+    id: `conv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name,
+    color,
+    time: "Now",
+    preview: "",
+    title: "",
+    description: "",
+    onboarding: false,
+    answers: [],
+    kind,
+    screenEnabled: false,
+    members: [],
+    routines: [],
+    screen: blankScreen(),
+    thread: [],
+    reply: "on it. tell me the job and i’ll get started.",
+  };
+}
+
+function colorForHandle(handle: string): string {
+  let sum = 0;
+  for (let index = 0; index < handle.length; index += 1) {
+    sum += handle.charCodeAt(index);
+  }
+  return BOT_COLORS[sum % BOT_COLORS.length] ?? "#3EC5A8";
+}
+
+function labelForHandle(handle: string, roster: LiveBot[]): { name: string; color: string } {
+  const local = roster.find((bot) => bot.magiHandle === handle);
+  if (local) {
+    return { name: local.name, color: local.color };
+  }
+  return {
+    name: handle.replace(/^@/, "").replace(/\.magi$/, ""),
+    color: colorForHandle(handle),
+  };
+}
+
+function membersFromAgents(agents: string[], roster: LiveBot[]): ConversationMember[] {
+  return agents.map((handle) => {
+    const label = labelForHandle(handle, roster);
+    return { id: handle, name: label.name, color: label.color };
+  });
 }
 
 function defaultTrigger(): Trigger {
@@ -330,12 +399,13 @@ function OnboardThread({
 }
 
 export function ProductDemo() {
+  const t = useT();
   const [bots, setBots] = useState<LiveBot[]>(cloneBots);
   const [activeId, setActiveId] = useState("inbox");
   const [panelOpen, setPanelOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [compact, setCompact] = useState(false);
-  const [panelMode, setPanelMode] = useState<PanelMode>("computer");
+  const [panelMode, setPanelMode] = useState<PanelMode>("settings");
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
   const [bootPct, setBootPct] = useState(0);
@@ -343,9 +413,19 @@ export function ProductDemo() {
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState<ExtraMessages>({});
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
+  const [loadingBots, setLoadingBots] = useState(false);
+  const [addingHandle, setAddingHandle] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<number[]>([]);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const plusWrapRef = useRef<HTMLDivElement | null>(null);
+  const userWrapRef = useRef<HTMLDivElement | null>(null);
+  const creatingRef = useRef(false);
   const widePanelRef = useRef(true);
   const booting = bootPct > 0;
 
@@ -366,12 +446,30 @@ export function ProductDemo() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
+  const desktopAllowed = active.kind === "dm";
+  const showPanel = panelOpen;
 
   useEffect(() => {
     setHasControl(false);
     setTakeover(false);
     setBootPct(0);
+    setMemberPickerOpen(false);
+    setAvailableBots([]);
+    setAddingHandle(null);
   }, [activeId]);
+
+  useEffect(() => {
+    if (desktopAllowed) {
+      return;
+    }
+    setHasControl(false);
+    setTakeover(false);
+    setBootPct(0);
+    if (panelMode === "routine") {
+      return;
+    }
+    setPanelMode("settings");
+  }, [activeId, desktopAllowed, panelMode]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -437,6 +535,33 @@ export function ProductDemo() {
     return () => window.removeEventListener("keydown", onKey);
   }, [takeover, booting]);
 
+  useEffect(() => {
+    if (!plusOpen && !userMenuOpen) {
+      return;
+    }
+    function onPointer(event: MouseEvent) {
+      const node = event.target as Node | null;
+      if (plusOpen && plusWrapRef.current && node && !plusWrapRef.current.contains(node)) {
+        setPlusOpen(false);
+      }
+      if (userMenuOpen && userWrapRef.current && node && !userWrapRef.current.contains(node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPlusOpen(false);
+        setUserMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [plusOpen, userMenuOpen]);
+
   if (!active) {
     return null;
   }
@@ -459,18 +584,10 @@ export function ProductDemo() {
     menuButtonRef.current?.focus();
   }
 
-  function openComputer() {
-    setPanelOpen(true);
-    setPanelMode("computer");
+  function collapseProfile() {
+    setPanelOpen(false);
     setRoutineDraft(null);
-  }
-
-  function toggleComputer() {
-    if (panelOpen && panelMode === "computer") {
-      setPanelOpen(false);
-      return;
-    }
-    openComputer();
+    setPanelMode("settings");
   }
 
   function openSettings() {
@@ -531,38 +648,73 @@ export function ProductDemo() {
       return;
     }
     persistRoutine(routineDraft);
-    openComputer();
+    openSettings();
   }
 
   function deleteRoutine() {
     if (routineDraft?.index !== null && routineDraft) {
       patchActive({ routines: active.routines.filter((_, index) => index !== routineDraft.index) });
     }
-    openComputer();
+    openSettings();
   }
 
   function startNewBot() {
-    const color = BOT_COLORS[bots.length % BOT_COLORS.length] ?? "#3EC5A8";
-    const bot: LiveBot = {
-      id: `bot-${Date.now()}`,
-      name: "New bot",
-      color,
-      time: "Now",
-      preview: "Say what you want this bot doing",
-      title: "",
-      description: "",
-      onboarding: true,
-      answers: [],
-      routines: [],
-      screen: { host: "desktop", title: "Computer is stopped", lines: [] },
-      thread: [],
-      reply: "on it. tell me the job and i’ll get started.",
-    };
-    setBots((current) => [bot, ...current]);
-    setActiveId(bot.id);
+    void createConversation("bot");
+  }
+
+  function startNewGroup() {
+    void createConversation("group");
+  }
+
+  async function createConversation(action: "bot" | "group") {
+    if (creatingRef.current) {
+      return;
+    }
+    creatingRef.current = true;
+    setCreating(true);
+    setPlusOpen(false);
+    const kind: ConversationKind = action === "bot" ? "dm" : "group";
+    const color =
+      BOT_COLORS[(bots.length + (action === "group" ? 3 : 0)) % BOT_COLORS.length] ?? "#3EC5A8";
+    const name = action === "bot" ? t("plusMenu.newBotName") : t("plusMenu.newGroupName");
+    const conversation = makeConversation(kind, name, color);
+    setBots((current) => [conversation, ...current]);
+    setActiveId(conversation.id);
     setDraft("");
     closeMenu();
-    openSettings();
+    setRoutineDraft(null);
+    setPanelMode("settings");
+    try {
+      const remote = await createAspConversation(action);
+      if (!remote) {
+        return;
+      }
+      setBots((current) =>
+        current.map((bot) =>
+          bot.id === conversation.id
+            ? {
+                ...bot,
+                remoteId: remote.conversation_id,
+                magiHandle: remote.agents[0],
+              }
+            : bot,
+        ),
+      );
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  }
+
+  function openAppSettings() {
+    setUserMenuOpen(false);
+    openSettingsRoute();
+  }
+
+  function logOut() {
+    setUserMenuOpen(false);
+    clearOperator();
+    void window.magiDesktop?.showChooser?.();
   }
 
   function answerOnboard(value: string) {
@@ -586,7 +738,7 @@ export function ProductDemo() {
   }
 
   function takeControl() {
-    if (booting) {
+    if (!desktopAllowed || !active.screenEnabled || booting) {
       return;
     }
     if (hasControl) {
@@ -636,13 +788,60 @@ export function ProductDemo() {
     }, 1350);
   }
 
+  function enableScreen() {
+    if (!desktopAllowed) {
+      return;
+    }
+    patchActive({ screenEnabled: true });
+  }
+
+  function disableScreen() {
+    patchActive({ screenEnabled: false });
+    releaseControl();
+  }
+
+  async function refreshAvailableBots() {
+    if (!active.remoteId) {
+      setAvailableBots([]);
+      return;
+    }
+    setLoadingBots(true);
+    const listed = await listAspBots(active.remoteId);
+    setAvailableBots(listed);
+    setLoadingBots(false);
+  }
+
+  function toggleMemberPicker() {
+    const next = !memberPickerOpen;
+    setMemberPickerOpen(next);
+    if (next) {
+      void refreshAvailableBots();
+    }
+  }
+
+  async function inviteBot(handle: string) {
+    if (!active.remoteId || addingHandle) {
+      return;
+    }
+    setAddingHandle(handle);
+    const updated = await addAspConversationMember(active.remoteId, handle);
+    setAddingHandle(null);
+    if (!updated) {
+      return;
+    }
+    patchActive({ members: membersFromAgents(updated.agents, bots) });
+    setAvailableBots((current) =>
+      current.map((bot) =>
+        bot.handle === handle ? { ...bot, in_conversation: true } : bot,
+      ),
+    );
+  }
+
   function selectBot(id: string) {
     setActiveId(id);
     closeMenu();
-    if (panelMode === "routine") {
-      setPanelMode("computer");
-      setRoutineDraft(null);
-    }
+    setRoutineDraft(null);
+    setPanelMode("settings");
   }
 
   function patchTrigger(index: number, patch: Partial<Trigger>) {
@@ -681,7 +880,7 @@ export function ProductDemo() {
 
   return (
     <div className="product-demo">
-      <div className={`product-demo__frame${panelOpen ? "" : " is-collapsed"}`}>
+      <div className={`product-demo__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
           id="product-demo-bots"
           className={`product-demo__sidebar${menuOpen ? " is-open" : ""}`}
@@ -694,16 +893,45 @@ export function ProductDemo() {
               <span />
               <span />
             </div>
-            <span className="product-demo__drawer-title">Bots</span>
+            <span className="product-demo__drawer-title">{t("plusMenu.listTitle")}</span>
             <div className="product-demo__chrome-actions">
-              <button
-                type="button"
-                className="product-demo__new"
-                aria-label="New bot"
-                onClick={startNewBot}
-              >
-                +
-              </button>
+              <div className="product-demo__plus-wrap" ref={plusWrapRef}>
+                <button
+                  type="button"
+                  className="product-demo__new"
+                  aria-label={t("plusMenu.aria")}
+                  aria-haspopup="menu"
+                  aria-expanded={plusOpen}
+                  disabled={creating}
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    setPlusOpen((open) => !open);
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  +
+                </button>
+                {plusOpen ? (
+                  <div className="product-demo__plus-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={creating}
+                      onClick={startNewBot}
+                    >
+                      {t("plusMenu.newBot")}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={creating}
+                      onClick={startNewGroup}
+                    >
+                      {t("plusMenu.newGroup")}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className="product-demo__sidebar-close"
@@ -745,9 +973,32 @@ export function ProductDemo() {
               );
             })}
           </div>
-          <div className="product-demo__user">
-            <span className="product-demo__user-badge">AK</span>
-            <span>Avery Kim</span>
+          <div className="product-demo__user" ref={userWrapRef}>
+            <button
+              type="button"
+              className="product-demo__user-btn"
+              aria-label={t("account.menuAria")}
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              onClick={() => {
+                setPlusOpen(false);
+                setUserMenuOpen((open) => !open);
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <span className="product-demo__user-badge">{OPERATOR.initials}</span>
+              <span>{OPERATOR.name}</span>
+            </button>
+            {userMenuOpen ? (
+              <div className="product-demo__user-menu" role="menu">
+                <button type="button" role="menuitem" onClick={openAppSettings}>
+                  {t("account.settings")}
+                </button>
+                <button type="button" role="menuitem" onClick={logOut}>
+                  {t("account.logOut")}
+                </button>
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -789,26 +1040,6 @@ export function ProductDemo() {
                 <span className="product-demo__active-name">{active.name}</span>
               </button>
             </div>
-            <button
-              type="button"
-              className="product-demo__panel-toggle"
-              aria-pressed={panelOpen && panelMode === "computer"}
-              aria-label="Toggle computer panel"
-              title="Computer"
-              onClick={toggleComputer}
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-              >
-                <rect x="2" y="4" width="20" height="13" rx="2" />
-                <path d="M8 21h8M12 17v4" />
-              </svg>
-            </button>
           </div>
 
           <div className="product-demo__thread" ref={scrollRef}>
@@ -817,7 +1048,7 @@ export function ProductDemo() {
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
               <div className="product-demo__empty-thread">
-                Message {active.name} to give it a first job.
+                {active.kind === "group" ? t("plusMenu.groupEmpty") : t("plusMenu.botEmpty")}
               </div>
             ) : (
               <Thread messages={messages} />
@@ -849,93 +1080,21 @@ export function ProductDemo() {
           </div>
         </main>
 
-        {panelOpen ? (
+        {showPanel ? (
           <aside className="product-demo__panel">
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
-                <span>{panelMode === "settings" ? "settings" : `${active.name}’s computer`}</span>
-                <div className="product-demo__panel-actions">
-                  <button type="button" aria-label="Bot settings" onClick={openSettings}>
-                    <svg
-                      width="17"
-                      height="17"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                    >
-                      <circle cx="12" cy="12" r="3" />
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Close panel"
-                    onClick={() => setPanelOpen(false)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {panelMode === "computer" ? (
-              <>
+                <span>{t("conversationSettings.title")}</span>
                 <button
                   type="button"
-                  className="product-demo__screen"
-                  onClick={takeControl}
-                  aria-label={hasControl ? "Open computer" : "Take control of computer"}
+                  className="product-demo__panel-collapse"
+                  aria-label={t("conversationSettings.collapse")}
+                  title={t("conversationSettings.collapse")}
+                  onClick={collapseProfile}
                 >
-                  <ComputerDesktop screen={active.screen} />
+                  {">>"}
                 </button>
-                <div className="product-demo__screen-meta">
-                  <span>{hasControl ? "You have control" : `${active.name}’s screen`}</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => (hasControl ? releaseControl() : takeControl())}
-                  >
-                    {hasControl ? "Release" : "Take control"}
-                  </Button>
-                </div>
-                <div className="product-demo__panel-label">Routines</div>
-                {active.routines.length === 0 ? (
-                  <div className="product-demo__empty-routines">
-                    <p>Routines are recurring tasks this agent runs on a schedule.</p>
-                    <button
-                      type="button"
-                      className="product-demo__ghost-btn"
-                      onClick={() => openRoutine(null, null)}
-                    >
-                      Create routine
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {active.routines.map((routine, index) => (
-                      <button
-                        key={`${routine.name}-${index}`}
-                        type="button"
-                        className="product-demo__routine"
-                        onClick={() => openRoutine(routine, index)}
-                      >
-                        <span className="product-demo__routine-icon">◷</span>
-                        <span className="product-demo__routine-name">{routine.name}</span>
-                        <span className="product-demo__routine-when">{routine.when}</span>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="product-demo__quiet"
-                      onClick={() => openRoutine(null, null)}
-                    >
-                      + New routine
-                    </button>
-                  </>
-                )}
-              </>
+              </div>
             ) : null}
 
             {panelMode === "settings" ? (
@@ -943,47 +1102,238 @@ export function ProductDemo() {
                 <div className="product-demo__settings-avatar">
                   <Avatar color={active.color} size={72} />
                 </div>
-                <label className="product-demo__field">
-                  Name
-                  <input
-                    value={active.name}
-                    placeholder="Name this agent"
-                    onChange={(event) => patchActive({ name: event.target.value })}
-                  />
-                </label>
-                <label className="product-demo__field">
-                  Title
-                  <input
-                    value={active.title}
-                    placeholder="Describe what this agent does"
-                    onChange={(event) => patchActive({ title: event.target.value })}
-                  />
-                </label>
-                <label className="product-demo__field">
-                  Description
-                  <textarea
-                    rows={4}
-                    value={active.description}
-                    placeholder="What this agent is for"
-                    onChange={(event) => patchActive({ description: event.target.value })}
-                  />
-                </label>
+                {active.kind === "group" ? (
+                  <>
+                    <label className="product-demo__field">
+                      Topic
+                      <input
+                        value={active.name}
+                        placeholder={t("plusMenu.newGroupName")}
+                        onChange={(event) => patchActive({ name: event.target.value })}
+                        onBlur={(event) => {
+                          if (active.remoteId) {
+                            void patchAspConversation(active.remoteId, {
+                              topic: event.target.value,
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Description
+                      <textarea
+                        rows={4}
+                        value={active.description}
+                        placeholder={t("appSettings.hint")}
+                        onChange={(event) => patchActive({ description: event.target.value })}
+                        onBlur={(event) => {
+                          if (active.remoteId) {
+                            void patchAspConversation(active.remoteId, {
+                              description: event.target.value,
+                            });
+                          }
+                        }}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="product-demo__field">
+                      Name
+                      <input
+                        value={active.name}
+                        placeholder="Name this agent"
+                        onChange={(event) => patchActive({ name: event.target.value })}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Title
+                      <input
+                        value={active.title}
+                        placeholder="Describe what this agent does"
+                        onChange={(event) => patchActive({ title: event.target.value })}
+                      />
+                    </label>
+                    <label className="product-demo__field">
+                      Description
+                      <textarea
+                        rows={4}
+                        value={active.description}
+                        placeholder="What this agent is for"
+                        onChange={(event) => patchActive({ description: event.target.value })}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {desktopAllowed ? (
+                  <div className="product-demo__slot">
+                    <div className="product-demo__slot-head">
+                      <span className="product-demo__panel-label">
+                        {t("conversationSettings.screen")}
+                      </span>
+                      <button
+                        type="button"
+                        className="product-demo__chip"
+                        onClick={active.screenEnabled ? disableScreen : enableScreen}
+                      >
+                        {active.screenEnabled
+                          ? t("conversationSettings.disable")
+                          : t("conversationSettings.enable")}
+                      </button>
+                    </div>
+                    {active.screenEnabled ? (
+                      <button
+                        type="button"
+                        className="product-demo__preview is-on"
+                        onClick={takeControl}
+                      >
+                        <span className="product-demo__preview-open">
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                          >
+                            <path d="M8 16L4 20M4 20h6M4 20V14M16 8l4-4M20 4h-6M20 4v6" />
+                          </svg>
+                          {t("conversationSettings.open")}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="product-demo__preview is-off" />
+                    )}
+                    <div className="product-demo__preview-caption">
+                      {t("conversationSettings.screenCaption").replace("{name}", active.name)}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="product-demo__slot">
+                    <div className="product-demo__slot-head">
+                      <span className="product-demo__panel-label">
+                        {t("conversationSettings.members")}
+                      </span>
+                      <button
+                        type="button"
+                        className="product-demo__chip"
+                        aria-expanded={memberPickerOpen}
+                        onClick={toggleMemberPicker}
+                      >
+                        {t("conversationSettings.membersInvite")}
+                      </button>
+                    </div>
+                    {active.members.length === 0 ? (
+                      <p className="product-demo__members-empty">
+                        {t("conversationSettings.membersEmpty")}
+                      </p>
+                    ) : (
+                      <ul className="product-demo__members">
+                        {active.members.map((member) => (
+                          <li key={member.id} className="product-demo__member">
+                            <Avatar color={member.color} size={32} />
+                            <span>{member.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {memberPickerOpen ? (
+                      <div className="product-demo__bot-picker" role="listbox">
+                        {loadingBots ? (
+                          <p className="product-demo__members-empty">{t("common.loading")}</p>
+                        ) : availableBots.filter((bot) => !bot.in_conversation).length === 0 ? (
+                          <p className="product-demo__members-empty">
+                            {t("conversationSettings.membersNoneAvailable")}
+                          </p>
+                        ) : (
+                          availableBots
+                            .filter((bot) => !bot.in_conversation)
+                            .map((bot) => {
+                              const label = labelForHandle(bot.handle, bots);
+                              return (
+                                <button
+                                  key={bot.handle}
+                                  type="button"
+                                  className="product-demo__bot-pick"
+                                  disabled={addingHandle === bot.handle}
+                                  onClick={() => void inviteBot(bot.handle)}
+                                >
+                                  <Avatar color={label.color} size={28} />
+                                  <span className="product-demo__bot-pick-copy">
+                                    <span>{label.name}</span>
+                                    <span className="product-demo__bot-pick-status">
+                                      {bot.online
+                                        ? t("conversationSettings.membersOnline")
+                                        : t("conversationSettings.membersOffline")}
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                <div className="product-demo__slot">
+                  <div className="product-demo__panel-label">
+                    {t("conversationSettings.routines")}
+                  </div>
+                  {active.routines.length === 0 ? (
+                    <div className="product-demo__empty-routines">
+                      <p>{t("conversationSettings.routinesEmpty")}</p>
+                      <button
+                        type="button"
+                        className="product-demo__ghost-btn"
+                        onClick={() => openRoutine(null, null)}
+                      >
+                        {t("conversationSettings.routineCreate")}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {active.routines.map((routine, index) => (
+                        <button
+                          key={`${routine.name}-${index}`}
+                          type="button"
+                          className="product-demo__routine"
+                          onClick={() => openRoutine(routine, index)}
+                        >
+                          <span className="product-demo__routine-icon">◷</span>
+                          <span className="product-demo__routine-name">{routine.name}</span>
+                          <span className="product-demo__routine-when">{routine.when}</span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="product-demo__quiet"
+                        onClick={() => openRoutine(null, null)}
+                      >
+                        {t("conversationSettings.routineNew")}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ) : null}
 
             {panelMode === "routine" && routineDraft ? (
               <div className="product-demo__routine-editor">
                 <div className="product-demo__routine-nav">
-                  <button type="button" onClick={saveRoutine} aria-label="Back to computer">
+                  <button type="button" onClick={saveRoutine} aria-label="Back to profile">
                     ‹
                   </button>
                   <span>Routine</span>
                   <button
                     type="button"
-                    onClick={() => setPanelOpen(false)}
-                    aria-label="Close panel"
+                    className="product-demo__panel-collapse"
+                    aria-label={t("conversationSettings.collapse")}
+                    title={t("conversationSettings.collapse")}
+                    onClick={collapseProfile}
                   >
-                    ✕
+                    {">>"}
                   </button>
                 </div>
                 <div className="product-demo__routine-toolbar">
@@ -1170,7 +1520,7 @@ export function ProductDemo() {
           </aside>
         ) : null}
 
-        {booting || takeover ? (
+        {desktopAllowed && (booting || takeover) ? (
           <div className="product-demo__stage">
             {booting ? (
               <div className="product-demo__boot">
