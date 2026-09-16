@@ -162,40 +162,26 @@ plus the shared-database and public workspace resources for a MAGIS when needed.
 
 ## Quick start
 
-Pick the deployment that matches your situation. Both paths are supported and
-live under `deploy/`. All startup code paths converge on
-`magi.startup`:
+Two ways to run MAGI. There is no root `deploy/` tree.
 
-| Situation | Path | Entry point |
+| Situation | Where | What you run |
 | --- | --- | --- |
-| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` (installs, initializes, and starts MAGI) |
-| I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
+| Desktop client | [`desktop/`](desktop/) | Electron. No deploy scripts. The UI talks to magi-asp; ASP starts MAGI. |
+| Kubernetes | [`magi-asp/k8s/`](magi-asp/k8s/) | `kubectl apply -k magi-asp/k8s`. ASP is one Deployment; each MAGI start is its own Pod. |
 
-The **single-machine path** is the fastest way to take MAGI for a
-spin. It runs directly on the host (no Docker, no k8s) and stores
-state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
-Windows). Run `./deploy/cli/install.sh` once: it installs MAGI, provisions
-the first MAGI (`eva-000`) and the root MAGI Society **Genesis**, then starts
-the Runtime, ASP server, and desktop app. ASP listens on
-[http://127.0.0.1:42069](http://127.0.0.1:42069); the operator UI is the
-Electron app under `desktop/`.
-select the running MAGI, then choose the default `admin` account. This local
-bootstrap access is intentionally usable without a password; enable IM
-two-factor verification from Settings before adding administrators or assigned
-users. Afterwards, `magi start` safely preserves the existing Society and
-recovers services that are not running. Each new MAGI is a separate
-process: `magi node create --name eva-001`, then `magi node run --name eva-001`.
+**Desktop:** open the Electron app under `desktop/`. **Start locally** launches magi-asp on [http://127.0.0.1:42069](http://127.0.0.1:42069). Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns `eva-000` and starts that MAGI.
 
-For an existing cluster or a production-style deployment, use the
-k8s production path:
+**One MAGI:** `python -m magi <handle> <base> <token>` (or the `magi` console script). py-magi is a single MAGI process.
+
+**Kubernetes:** ASP on a node; MAGI containers are created by ASP, not by the desktop.
 
 ```bash
-MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/k8s/bootstrap-k8s.sh
+docker build -f magi-asp/Dockerfile -t magi-asp:0.1.0 .
+docker build -f py-magi/Dockerfile -t magi:0.1.0 .
+kubectl apply -k magi-asp/k8s
 ```
 
-See the deployment guides for image, storage, networking, Secrets,
-and environment-specific configuration.
+See [`magi-asp/k8s/README.md`](magi-asp/k8s/README.md).
 
 ## From the first MAGIS to a growing organization
 
@@ -286,7 +272,7 @@ For the implementation-level view, see:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Business flows](docs/business-flows.md)
 - [Terms and canonical ID names](docs/terms.md)
-- [Deployment overview](deploy/README.md)
+- [magi-asp Kubernetes](magi-asp/k8s/README.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## Project status

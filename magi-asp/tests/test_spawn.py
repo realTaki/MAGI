@@ -6,14 +6,14 @@ def test_magi_cli_starts_the_intranet_runtime() -> None:
     assert command == [
         "/venv/bin/python",
         "-m",
-        "bus.magi",
+        "magi",
         "@eva-000.magi",
         "http://127.0.0.1:42069",
         "tok",
     ]
 
 
-def test_process_spawner_runs_bus_magi(monkeypatch) -> None:
+def test_process_spawner_runs_python_m_magi(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
     class Proc:

@@ -43,7 +43,7 @@ class RecordingSpawner:
 
 
 class ProcessSpawner:
-    """ASP-side spawn of ``python -m bus.magi``. Desktop clients must not call this."""
+    """ASP-side spawn of ``python -m magi``. Desktop clients must not call this."""
 
     def __init__(self) -> None:
         self._children: list[subprocess.Popen[bytes]] = []
@@ -75,11 +75,19 @@ class ProcessSpawner:
 
 
 def magi_cli(python: str, handle: str, base: str, token: str) -> list[str]:
-    """Intranet MAGI process: attach to this ASP and join invites on receipt."""
-    return [python, "-m", "bus.magi", handle, base, token]
+    """One MAGI: ``python -m magi <handle> <base> <token>``."""
+    return [python, "-m", "magi", handle, base, token]
+
+
+def in_kubernetes() -> bool:
+    return bool(os.environ.get("KUBERNETES_SERVICE_HOST"))
 
 
 def default_spawner() -> MagiSpawner:
+    if in_kubernetes():
+        from .k8s import KubernetesSpawner
+
+        return KubernetesSpawner()
     return ProcessSpawner()
 
 

@@ -6,7 +6,9 @@ HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSo
 
 magi-asp is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
 
-`POST /conversations` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. `bot` is ASP-side spawn only (the desktop never starts MAGI): ASP assigns `name` `eva-000`, then `eva-001`, …, starts that MAGI (`python -m bus.magi`), and returns `name` on the create response. `group` opens a conversation with the operator only.
+`POST /conversations` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. `bot` is ASP-side spawn only (the desktop never starts MAGI): ASP assigns `name` `eva-000`, then `eva-001`, …, starts that MAGI (`python -m magi`), and returns `name` on the create response. `group` opens a conversation with the operator only.
+
+On Kubernetes, ASP is one Deployment and each MAGI start is its own Pod. See [`k8s/`](k8s/).
 
 Group profile **邀请** uses:
 

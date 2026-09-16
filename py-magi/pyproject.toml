@@ -80,6 +80,7 @@ include = [
     "agent*",
     "bus*",
     "channels*",
+    "magi*",
     "mcp*",
     "old_bus*",
     "proactive*",
@@ -87,7 +88,7 @@ include = [
     "skills*",
     "tools*",
 ]
-exclude = ["tests*", "tests.*"]
+exclude = ["tests*", "tests.*", "magi.egg-info*"]
 
 [tool.setuptools]
 py-modules = ["runtime_worker"]

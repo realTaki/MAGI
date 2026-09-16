@@ -122,31 +122,18 @@ PostgreSQL 与公共工作区资源。
 
 ## 快速开始
 
-按你的场景选一条部署路径。两种路径都同等支持并位于 `deploy/` 下，
-所有启动代码都收口在 `magi.startup`：
+两种跑法。仓库根目录没有 `deploy/`。
 
-| 场景 | 路径 | 入口 |
+| 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`（安装、初始化并启动） |
-| 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
+| 桌面客户端 | [`desktop/`](desktop/) | Electron。没有部署脚本。UI 只请求 magi-asp；由 ASP 启动 MAGI。 |
+| Kubernetes | [`magi-asp/k8s/`](magi-asp/k8s/) | `kubectl apply -k magi-asp/k8s`。ASP 一个 Deployment；每次启动 MAGI 是独立 Pod。 |
 
-**单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker，也没有 k8s），
-状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`（macOS、Windows）。只需运行
-`./deploy/cli/install.sh`：它会安装 MAGI，provision 第一个 MAGI（`eva-000`）和根
-MAGI Society **Genesis**（让 `eva-000` 担任 ADAM），并启动 Runtime 与 WebUI。打开
-[http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成
-onboarding。以后只需执行 `magi start`，它会保留现有状态并恢复未运行的服务。需要新 MAGI 时，运行
-`magi node create --name eva-001`、`magi node run --name eva-001` 即可；
-每个新 MAGI 都是独立 OS 进程。
+**一个 MAGI：** `python -m magi <handle> <base> <token>`。
 
-已有 Kubernetes 集群或生产式部署可使用：
+**Kubernetes：** ASP 跑在节点上；MAGI 容器由 ASP 创建，不是桌面端创建。
 
-```bash
-MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/k8s/bootstrap-k8s.sh
-```
-
-镜像、存储、网络、Secret 与环境配置请见各部署路径下的 README。
+见 [`magi-asp/k8s/README.md`](magi-asp/k8s/README.md)。
 
 ## 从第一个 MAGIS 到组织成长
 
@@ -216,7 +203,7 @@ MAGI 与已认证身份。运行时会拒绝发给其他 MAGI 的请求。切换
 - [架构](docs/ARCHITECTURE.md)
 - [关键业务流程](docs/business-flows.md)
 - [术语与 ID 命名规范](docs/terms.md)
-- [部署总览](deploy/README.md)
+- [magi-asp Kubernetes](magi-asp/k8s/README.md)
 - [路线图](docs/ROADMAP.md)
 
 ## 项目状态
