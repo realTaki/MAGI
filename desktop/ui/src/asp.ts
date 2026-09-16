@@ -1,4 +1,4 @@
-/** Operator client for the local (intranet) magi-asp. */
+/** Operator client for magi-asp. The UI only requests; ASP spawns MAGI. */
 
 const ASP_BASE = import.meta.env.VITE_MAGI_ASP_URL ?? "http://127.0.0.1:42069";
 
@@ -11,11 +11,14 @@ export type CreatedConversation = {
   conversation_id: string;
   kind: "bot" | "group";
   agents: string[];
+  /** ASP-assigned MAGI name (`eva-000`, …). Present on `kind: "bot"`. */
+  name?: string;
   spawned?: boolean;
 };
 
 export type AspBot = {
   handle: string;
+  name: string;
   online: boolean;
   in_conversation?: boolean;
 };

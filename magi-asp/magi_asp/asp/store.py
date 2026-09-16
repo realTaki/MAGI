@@ -40,6 +40,7 @@ InboundPolicy = Literal["allowlist", "open"]
 class Agent:
     handle: str
     token: str
+    name: str | None = None
     inbound_policy: InboundPolicy = "open"
     allowlist: set[str] = field(default_factory=set)
 
@@ -136,6 +137,7 @@ class Store:
             self.agents[handle] = Agent(
                 handle=handle,
                 token=token,
+                name=config.get("name"),
                 inbound_policy=policy,
                 allowlist=set(config.get("allowlist", [])),
             )
@@ -152,7 +154,9 @@ class Store:
         handle = self.agent_by_token.get(token)
         return None if handle is None else self.agents.get(handle)
 
-    def register_agent(self, handle: str, token: str) -> Agent:
+    def register_agent(
+        self, handle: str, token: str, *, name: str | None = None
+    ) -> Agent:
         """Add or refresh one agent. Used for the desktop operator and spawned MAGI."""
         existing = self.agents.get(handle)
         if existing is not None:
@@ -161,19 +165,26 @@ class Store:
                 self._ensure_unique_token(token)
                 existing.token = token
                 self.agent_by_token[token] = handle
+            if name is not None:
+                existing.name = name
             return existing
         self._ensure_unique_token(token)
-        agent = Agent(handle=handle, token=token)
+        agent = Agent(handle=handle, token=token, name=name)
         self.agents[handle] = agent
         self.agent_by_token[token] = handle
         return agent
 
-    def next_bot_handle(self) -> str:
-        n = 1
+    @staticmethod
+    def magi_handle(name: str) -> str:
+        return f"@{name}.magi"
+
+    def next_magi_name(self) -> str:
+        """Assigned MAGI names: eva-000, eva-001, … The client does not pick this."""
+        n = 0
         while True:
-            handle = f"@bot-{n:03d}.magi"
-            if handle not in self.agents:
-                return handle
+            name = f"eva-{n:03d}"
+            if self.magi_handle(name) not in self.agents:
+                return name
             n += 1
 
     # ---- Sessions --------------------------------------------------------

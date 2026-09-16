@@ -43,7 +43,7 @@ class RecordingSpawner:
 
 
 class ProcessSpawner:
-    """Spawn ``python -m bus.magi <handle> <base> <token>`` on this intranet ASP."""
+    """ASP-side spawn of ``python -m bus.magi``. Desktop clients must not call this."""
 
     def __init__(self) -> None:
         self._children: list[subprocess.Popen[bytes]] = []

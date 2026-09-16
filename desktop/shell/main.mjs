@@ -61,6 +61,8 @@ function resolveAspPython() {
 }
 
 function spawnLocalAsp() {
+  // Desktop starts magi-asp only. MAGI processes are spawned by ASP on that
+  // host — the client must not start MAGI locally (ASP/MAGI may be remote).
   const python = resolveAspPython();
   const origin = new URL(ASP_URL);
   const child = spawn(python, ["main.py"], {

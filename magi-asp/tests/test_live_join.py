@@ -62,6 +62,8 @@ def test_spawned_magi_joins_group_on_intranet_invite(tmp_path: Path, monkeypatch
         )
         assert bot.status_code == 201, bot.text
         handle = bot.json()["agents"][0]
+        assert bot.json()["name"] == "eva-000"
+        assert handle == "@eva-000.magi"
         assert bot.json()["spawned"] is True
 
         def magi_online():

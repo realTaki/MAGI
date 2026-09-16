@@ -47,8 +47,11 @@ def test_new_bot_spawns_magi_and_opens_a_dm(tmp_path: Path) -> None:
         body = created.json()
         assert body["kind"] == "bot"
         assert body["conversation_id"]
+        assert body["name"] == "eva-000"
         assert len(body["agents"]) == 1
-        assert body["agents"][0].startswith("@bot-")
+        assert body["agents"][0] == "@eva-000.magi"
+        assert body["magi"]["name"] == "eva-000"
+        assert body["magi"]["handle"] == "@eva-000.magi"
         assert body["spawned"] is True
         assert len(spawner.calls) == 1
         assert spawner.calls[0]["handle"] == body["agents"][0]
@@ -74,6 +77,7 @@ def test_new_group_opens_immediately_without_spawn(tmp_path: Path) -> None:
         body = created.json()
         assert body["kind"] == "group"
         assert body["agents"] == []
+        assert "name" not in body
         assert spawner.calls == []
         patched = client.patch(
             f"/conversations/{body['conversation_id']}",
@@ -99,9 +103,12 @@ def test_create_conversation_rejects_name_and_settings_payloads(tmp_path: Path) 
             json={"kind": "bot", "name": "please do not ask", "model": "gpt"},
             headers={"Authorization": f"Bearer {token}"},
         )
-        # Extra fields are ignored; create still does not require config.
+        # Extra fields are ignored; ASP assigns name. The client cannot name MAGI.
         assert extra.status_code == 201
         assert extra.json()["kind"] == "bot"
+        assert extra.json()["name"] == "eva-000"
+        assert extra.json()["name"] != "please do not ask"
+        assert extra.json()["agents"] == ["@eva-000.magi"]
 
 
 def test_bots_lists_spawned_magi_not_a_static_roster(tmp_path: Path) -> None:
@@ -117,8 +124,13 @@ def test_bots_lists_spawned_magi_not_a_static_roster(tmp_path: Path) -> None:
         assert second.status_code == 201
         handle_a = first.json()["agents"][0]
         handle_b = second.json()["agents"][0]
+        assert first.json()["name"] == "eva-000"
+        assert second.json()["name"] == "eva-001"
+        assert handle_a == "@eva-000.magi"
+        assert handle_b == "@eva-001.magi"
         listed = client.get("/bots", headers=headers).json()["bots"]
         assert {row["handle"] for row in listed} == {handle_a, handle_b}
+        assert {row["name"] for row in listed} == {"eva-000", "eva-001"}
         assert all(row["online"] is False for row in listed)
         assert "user" not in {row["handle"] for row in listed}
         denied = client.get("/bots")
@@ -140,7 +152,14 @@ def test_group_can_add_a_listed_bot(tmp_path: Path) -> None:
         )
         assert picker.status_code == 200
         rows = picker.json()["bots"]
-        assert rows == [{"handle": handle, "online": False, "in_conversation": False}]
+        assert rows == [
+            {
+                "handle": handle,
+                "name": "eva-000",
+                "online": False,
+                "in_conversation": False,
+            }
+        ]
         added = client.post(
             f"/conversations/{group_id}/members",
             json={"handle": handle},
@@ -154,7 +173,14 @@ def test_group_can_add_a_listed_bot(tmp_path: Path) -> None:
             params={"conversation_id": group_id},
             headers=headers,
         ).json()["bots"]
-        assert after == [{"handle": handle, "online": False, "in_conversation": True}]
+        assert after == [
+            {
+                "handle": handle,
+                "name": "eva-000",
+                "online": False,
+                "in_conversation": True,
+            }
+        ]
         unknown = client.post(
             f"/conversations/{group_id}/members",
             json={"handle": "@nobody.magi"},
@@ -217,7 +243,12 @@ def test_magi_joins_the_group_when_it_receives_the_invite(tmp_path: Path) -> Non
                 headers=headers,
             ).json()["bots"]
             assert online == [
-                {"handle": handle, "online": True, "in_conversation": False}
+                {
+                    "handle": handle,
+                    "name": bot["name"],
+                    "online": True,
+                    "in_conversation": False,
+                }
             ]
             added = client.post(
                 f"/conversations/{group_id}/members",

@@ -26,7 +26,6 @@ export default {
     newBot: "新規 bot",
     newGroup: "グループを作成",
     listTitle: "会話",
-    newBotName: "New bot",
     newGroupName: "グループ",
     botEmpty: "最初の仕事をこの bot に頼んでください。",
     groupEmpty: "話し始めるか、あとから bot を招待できます。",
