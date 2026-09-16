@@ -14,9 +14,16 @@ def create_app(
     *,
     database_path: Path | None = None,
     asp_seed: dict[str, str] | None = None,
+    magi_spawner=None,
+    asp_base: str | None = None,
 ) -> FastAPI:
     """Create the ASP server application."""
-    return AspServer(database_path=database_path, asp_seed=asp_seed).app
+    return AspServer(
+        database_path=database_path,
+        asp_seed=asp_seed,
+        magi_spawner=magi_spawner,
+        asp_base=asp_base,
+    ).app
 
 
 def main() -> int:

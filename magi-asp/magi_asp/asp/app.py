@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import AfterValidator, BaseModel, Field
@@ -16,6 +16,7 @@ from .service import (
     NotFound,
     Service,
 )
+from .spawn import MagiSpawner, default_spawner
 from .store import Store
 from .transport import Transport
 
@@ -79,6 +80,19 @@ class ReopenBody(BaseModel):
     initial_message: InitialMessage | None = None
 
 
+class CreateConversationBody(BaseModel):
+    kind: Literal["bot", "group"]
+
+
+class UpdateConversationBody(BaseModel):
+    topic: str | None = None
+    description: str | None = None
+
+
+class AddMemberBody(BaseModel):
+    handle: str
+
+
 # ---------------------------------------------------------------------------
 # Router factory
 # ---------------------------------------------------------------------------
@@ -91,12 +105,21 @@ class AspOperator:
     router: APIRouter
     store: Store
     transport: Transport
+    service: Service
+    spawner: MagiSpawner
+    base_url: str = "http://127.0.0.1:42069"
 
     async def close(self) -> None:
+        self.spawner.close()
         await self.transport.close()
 
 
-def create_operator(seed: dict[str, str]) -> AspOperator:
+def create_operator(
+    seed: dict[str, str],
+    *,
+    spawner: MagiSpawner | None = None,
+    base_url: str = "http://127.0.0.1:42069",
+) -> AspOperator:
     """Create ASP routes without creating a second FastAPI application."""
     router = APIRouter()
 
@@ -104,6 +127,7 @@ def create_operator(seed: dict[str, str]) -> AspOperator:
     store.seed_agents(seed)
     transport = Transport(store)
     service = Service(store, transport)
+    magi_spawner = spawner if spawner is not None else default_spawner()
 
     # ---- Auth helper ---------------------------------------------------
 
@@ -116,6 +140,73 @@ def create_operator(seed: dict[str, str]) -> AspOperator:
         if agent is None:
             raise HTTPException(status_code=401, detail="invalid credentials")
         return agent.handle
+
+    # ---- Conversations (operator plus-button) --------------------------
+
+    @router.post("/conversations", status_code=201)
+    async def post_conversations(body: CreateConversationBody, request: Request):
+        creator = auth_handle(request)
+        return await service.create_conversation(
+            creator=creator,
+            kind=body.kind,
+            spawner=magi_spawner,
+            base_url=base_url,
+        )
+
+    @router.get("/conversations")
+    async def get_conversations(request: Request):
+        caller = auth_handle(request)
+        return {"conversations": service.list_conversations(caller)}
+
+    @router.get("/conversations/{conversation_id}")
+    async def get_conversation(conversation_id: str, request: Request):
+        caller = auth_handle(request)
+        try:
+            return service.conversation_view(caller, conversation_id)
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+
+    @router.patch("/conversations/{conversation_id}")
+    async def patch_conversation(
+        conversation_id: str, body: UpdateConversationBody, request: Request
+    ):
+        caller = auth_handle(request)
+        if body.topic is None and body.description is None:
+            raise HTTPException(status_code=400, detail="nothing to update")
+        try:
+            return await service.update_conversation(
+                caller, conversation_id, body.topic, body.description
+            )
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+        except NotAllowed:
+            raise HTTPException(status_code=404, detail="not found")
+        except Conflict as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
+    @router.get("/bots")
+    async def get_bots(request: Request, conversation_id: str | None = None):
+        caller = auth_handle(request)
+        try:
+            return {"bots": service.list_bots(caller, conversation_id)}
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+
+    @router.post("/conversations/{conversation_id}/members")
+    async def post_conversation_member(
+        conversation_id: str, body: AddMemberBody, request: Request
+    ):
+        caller = auth_handle(request)
+        try:
+            return await service.add_conversation_member(
+                caller, conversation_id, body.handle
+            )
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+        except NotAllowed:
+            raise HTTPException(status_code=404, detail="not found")
+        except Conflict as e:
+            raise HTTPException(status_code=409, detail=str(e))
 
     # ---- Sessions ------------------------------------------------------
 
@@ -283,4 +374,11 @@ def create_operator(seed: dict[str, str]) -> AspOperator:
         # blocked behind session.disconnected fan-out.
         asyncio.create_task(transport.disconnect(agent.handle, ws))
 
-    return AspOperator(router=router, store=store, transport=transport)
+    return AspOperator(
+        router=router,
+        store=store,
+        transport=transport,
+        service=service,
+        spawner=magi_spawner,
+        base_url=base_url,
+    )

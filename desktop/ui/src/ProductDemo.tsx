@@ -10,7 +10,7 @@ import {
   type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator } from "./asp";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, addAspConversationMember, type AspBot } from "./asp";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -138,6 +138,32 @@ function makeConversation(
     thread: [],
     reply: "on it. tell me the job and i’ll get started.",
   };
+}
+
+function colorForHandle(handle: string): string {
+  let sum = 0;
+  for (let index = 0; index < handle.length; index += 1) {
+    sum += handle.charCodeAt(index);
+  }
+  return BOT_COLORS[sum % BOT_COLORS.length] ?? "#3EC5A8";
+}
+
+function labelForHandle(handle: string, roster: LiveBot[]): { name: string; color: string } {
+  const local = roster.find((bot) => bot.magiHandle === handle);
+  if (local) {
+    return { name: local.name, color: local.color };
+  }
+  return {
+    name: handle.replace(/^@/, "").replace(/\.magi$/, ""),
+    color: colorForHandle(handle),
+  };
+}
+
+function membersFromAgents(agents: string[], roster: LiveBot[]): ConversationMember[] {
+  return agents.map((handle) => {
+    const label = labelForHandle(handle, roster);
+    return { id: handle, name: label.name, color: label.color };
+  });
 }
 
 function defaultTrigger(): Trigger {
@@ -390,6 +416,10 @@ export function ProductDemo() {
   const [plusOpen, setPlusOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
+  const [loadingBots, setLoadingBots] = useState(false);
+  const [addingHandle, setAddingHandle] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<number[]>([]);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -423,6 +453,9 @@ export function ProductDemo() {
     setHasControl(false);
     setTakeover(false);
     setBootPct(0);
+    setMemberPickerOpen(false);
+    setAvailableBots([]);
+    setAddingHandle(null);
   }, [activeId]);
 
   useEffect(() => {
@@ -765,6 +798,43 @@ export function ProductDemo() {
   function disableScreen() {
     patchActive({ screenEnabled: false });
     releaseControl();
+  }
+
+  async function refreshAvailableBots() {
+    if (!active.remoteId) {
+      setAvailableBots([]);
+      return;
+    }
+    setLoadingBots(true);
+    const listed = await listAspBots(active.remoteId);
+    setAvailableBots(listed);
+    setLoadingBots(false);
+  }
+
+  function toggleMemberPicker() {
+    const next = !memberPickerOpen;
+    setMemberPickerOpen(next);
+    if (next) {
+      void refreshAvailableBots();
+    }
+  }
+
+  async function inviteBot(handle: string) {
+    if (!active.remoteId || addingHandle) {
+      return;
+    }
+    setAddingHandle(handle);
+    const updated = await addAspConversationMember(active.remoteId, handle);
+    setAddingHandle(null);
+    if (!updated) {
+      return;
+    }
+    patchActive({ members: membersFromAgents(updated.agents, bots) });
+    setAvailableBots((current) =>
+      current.map((bot) =>
+        bot.handle === handle ? { ...bot, in_conversation: true } : bot,
+      ),
+    );
   }
 
   function selectBot(id: string) {
@@ -1145,6 +1215,14 @@ export function ProductDemo() {
                       <span className="product-demo__panel-label">
                         {t("conversationSettings.members")}
                       </span>
+                      <button
+                        type="button"
+                        className="product-demo__chip"
+                        aria-expanded={memberPickerOpen}
+                        onClick={toggleMemberPicker}
+                      >
+                        {t("conversationSettings.membersInvite")}
+                      </button>
                     </div>
                     {active.members.length === 0 ? (
                       <p className="product-demo__members-empty">
@@ -1160,6 +1238,42 @@ export function ProductDemo() {
                         ))}
                       </ul>
                     )}
+                    {memberPickerOpen ? (
+                      <div className="product-demo__bot-picker" role="listbox">
+                        {loadingBots ? (
+                          <p className="product-demo__members-empty">{t("common.loading")}</p>
+                        ) : availableBots.filter((bot) => !bot.in_conversation).length === 0 ? (
+                          <p className="product-demo__members-empty">
+                            {t("conversationSettings.membersNoneAvailable")}
+                          </p>
+                        ) : (
+                          availableBots
+                            .filter((bot) => !bot.in_conversation)
+                            .map((bot) => {
+                              const label = labelForHandle(bot.handle, bots);
+                              return (
+                                <button
+                                  key={bot.handle}
+                                  type="button"
+                                  className="product-demo__bot-pick"
+                                  disabled={addingHandle === bot.handle}
+                                  onClick={() => void inviteBot(bot.handle)}
+                                >
+                                  <Avatar color={label.color} size={28} />
+                                  <span className="product-demo__bot-pick-copy">
+                                    <span>{label.name}</span>
+                                    <span className="product-demo__bot-pick-status">
+                                      {bot.online
+                                        ? t("conversationSettings.membersOnline")
+                                        : t("conversationSettings.membersOffline")}
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 

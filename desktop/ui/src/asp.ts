@@ -14,6 +14,12 @@ export type CreatedConversation = {
   spawned?: boolean;
 };
 
+export type AspBot = {
+  handle: string;
+  online: boolean;
+  in_conversation?: boolean;
+};
+
 let operator: Operator | null = null;
 
 async function getOperator(): Promise<Operator | null> {
@@ -84,5 +90,56 @@ export async function patchAspConversation(
     });
   } catch {
     // In-place edit still applies locally.
+  }
+}
+
+export async function listAspBots(conversationId?: string): Promise<AspBot[]> {
+  const creds = await getOperator();
+  if (!creds) {
+    return [];
+  }
+  try {
+    const url = new URL("bots", `${ASP_BASE}/`);
+    if (conversationId) {
+      url.searchParams.set("conversation_id", conversationId);
+    }
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${creds.token}` },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) {
+      return [];
+    }
+    const body = (await response.json()) as { bots?: AspBot[] };
+    return body.bots ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function addAspConversationMember(
+  conversationId: string,
+  handle: string,
+): Promise<CreatedConversation | null> {
+  const creds = await getOperator();
+  if (!creds) {
+    return null;
+  }
+  try {
+    const response = await fetch(`${ASP_BASE}/conversations/${conversationId}/members`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${creds.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ handle }),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as CreatedConversation;
+  } catch {
+    return null;
   }
 }

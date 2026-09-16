@@ -761,6 +761,52 @@ body {
   line-height: 1.5;
 }
 
+.product-demo__bot-picker {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid var(--panel-line-2);
+  border-radius: 12px;
+  background: #111113;
+}
+
+.product-demo__bot-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #ececee;
+  padding: 8px 8px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.product-demo__bot-pick:hover,
+.product-demo__bot-pick:focus-visible {
+  background: #1b1b1e;
+}
+
+.product-demo__bot-pick:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.product-demo__bot-pick-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.product-demo__bot-pick-status {
+  color: var(--panel-muted);
+  font-size: 12px;
+}
+
 .product-demo__screen {
   display: block;
   width: 100%;
