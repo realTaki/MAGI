@@ -44,6 +44,11 @@ export type DemoBot = {
   reply: string;
 };
 
+export const OPERATOR = {
+  name: "Avery Kim",
+  initials: "AK",
+};
+
 export type RosterBot = {
   name: string;
   color: string;

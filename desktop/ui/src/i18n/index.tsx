@@ -14,7 +14,8 @@
  * client-side rendering concern.
  *
  * Detection order on first load:
- *   1. ``localStorage[magi.locale]`` if present
+ *   1. ``localStorage[magi.locale]`` if it is a supported
+ *      locale or the explicit ``system`` preference
  *   2. ``navigator.language`` if it matches one of our
  *      supported locales ("zh", "en", "ja" with optional
  *      region tag)
@@ -22,11 +23,12 @@
  *      strings were the source of truth)
  */
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { MESSAGES, type Catalog } from "./messages";
 
 export type Locale = "zh" | "en" | "ja";
+export type LocalePreference = Locale | "system";
 
 export const SUPPORTED_LOCALES: Locale[] = ["zh", "en", "ja"];
 
@@ -38,26 +40,32 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 
 const STORAGE_KEY = "magi.locale";
 
-function detectLocale(): Locale {
-  if (typeof window === "undefined") return "zh";
-  // 1. Persisted preference.
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored && isSupported(stored)) return stored;
-  } catch {
-    // localStorage may throw in private-mode browsers; fall
-    // through to detection.
-  }
-  // 2. Browser language. Match by primary subtag so
-  //    ``zh-CN``, ``zh-TW``, ``zh-HK`` all map to ``zh``.
+function navigatorLocale(): Locale {
   try {
     const nav = (window.navigator.language || "").toLowerCase();
     const primary = nav.split("-")[0];
     if (isSupported(primary)) return primary;
   } catch {
-    // Same fallback as above.
+    // Fall through to the project default.
   }
   return "zh";
+}
+
+function readPreference(): LocalePreference {
+  if (typeof window === "undefined") return "system";
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored === "system") return "system";
+    if (stored && isSupported(stored)) return stored;
+  } catch {
+    // localStorage may throw in private-mode browsers.
+  }
+  return "system";
+}
+
+function detectLocale(): Locale {
+  const preference = readPreference();
+  return preference === "system" ? navigatorLocale() : preference;
 }
 
 function isSupported(s: string): s is Locale {
@@ -66,7 +74,9 @@ function isSupported(s: string): s is Locale {
 
 type I18nContextValue = {
   locale: Locale;
+  localePreference: LocalePreference;
   setLocale: (l: Locale) => void;
+  setLocalePreference: (p: LocalePreference) => void;
   /** Translate a dotted key. Falls back to the key itself
    *  when missing — better than crashing the page. */
   t: (key: string) => string;
@@ -79,16 +89,38 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // locale — no flash of the default language before the
   // detector runs.
   const [locale, setLocaleState] = useState<Locale>(() => detectLocale());
+  const [localePreference, setPreferenceState] = useState<LocalePreference>(() =>
+    readPreference(),
+  );
 
-  const setLocale = (l: Locale) => {
-    setLocaleState(l);
+  const setLocalePreference = useCallback((p: LocalePreference) => {
+    setPreferenceState(p);
+    setLocaleState(p === "system" ? navigatorLocale() : p);
     try {
-      window.localStorage.setItem(STORAGE_KEY, l);
+      window.localStorage.setItem(STORAGE_KEY, p);
     } catch {
       // Private-mode browsers — the in-memory change still
       // takes effect for this session.
     }
-  };
+  }, []);
+
+  const setLocale = useCallback(
+    (l: Locale) => {
+      setLocalePreference(l);
+    },
+    [setLocalePreference],
+  );
+
+  useEffect(() => {
+    if (localePreference !== "system") {
+      return;
+    }
+    function onLanguageChange() {
+      setLocaleState(navigatorLocale());
+    }
+    window.addEventListener("languagechange", onLanguageChange);
+    return () => window.removeEventListener("languagechange", onLanguageChange);
+  }, [localePreference]);
 
   // Cross-tab sync: if the operator opens the dashboard in
   // two tabs and changes the language in one, the other
@@ -96,7 +128,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // of truth.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEY && e.newValue && isSupported(e.newValue)) {
+      if (e.key !== STORAGE_KEY || !e.newValue) {
+        return;
+      }
+      if (e.newValue === "system") {
+        setPreferenceState("system");
+        setLocaleState(navigatorLocale());
+        return;
+      }
+      if (isSupported(e.newValue)) {
+        setPreferenceState(e.newValue);
         setLocaleState(e.newValue);
       }
     }
@@ -128,8 +169,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   const value = useMemo(
-    () => ({ locale, setLocale, t }),
-    [locale, setLocale, t],
+    () => ({ locale, localePreference, setLocale, setLocalePreference, t }),
+    [locale, localePreference, setLocale, setLocalePreference, t],
   );
 
   return (
