@@ -4,4 +4,11 @@ Python package `magi_asp`. Run with `magi-asp` or `python -m magi_asp`.
 
 HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp.sqlite`. MAGI and the desktop are clients.
 
-`POST /conversations` `{ "kind": "bot" | "group" }` does not take a name, model, or settings. `bot` registers and starts a MAGI, then opens a DM (operator + one agent). `group` opens a conversation with the operator only.
+magi-asp is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
+
+`POST /conversations` `{ "kind": "bot" | "group" }` does not take a name, model, or settings. `bot` registers and starts a MAGI (`python -m bus.magi`), then opens a DM (operator + one agent). `group` opens a conversation with the operator only.
+
+Group profile **邀请** uses:
+
+- `GET /bots` — MAGI this operator can add
+- `POST /conversations/{conversation_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt

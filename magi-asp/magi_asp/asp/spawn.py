@@ -43,7 +43,7 @@ class RecordingSpawner:
 
 
 class ProcessSpawner:
-    """Spawn ``python -m magi <handle> <base> <token>`` when MAGI is installed."""
+    """Spawn ``python -m bus.magi <handle> <base> <token>`` on this intranet ASP."""
 
     def __init__(self) -> None:
         self._children: list[subprocess.Popen[bytes]] = []
@@ -55,11 +55,11 @@ class ProcessSpawner:
         cwd = _py_magi_dir()
         try:
             child = subprocess.Popen(
-                [python, "-m", "magi", handle, base, token],
+                magi_cli(python, handle, base, token),
                 cwd=str(cwd) if cwd is not None else None,
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
         except OSError:
@@ -72,6 +72,11 @@ class ProcessSpawner:
             if child.poll() is None:
                 child.terminate()
         self._children.clear()
+
+
+def magi_cli(python: str, handle: str, base: str, token: str) -> list[str]:
+    """Intranet MAGI process: attach to this ASP and join invites on receipt."""
+    return [python, "-m", "bus.magi", handle, base, token]
 
 
 def default_spawner() -> MagiSpawner:

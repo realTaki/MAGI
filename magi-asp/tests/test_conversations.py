@@ -161,3 +161,103 @@ def test_group_can_add_a_listed_bot(tmp_path: Path) -> None:
             headers=headers,
         )
         assert unknown.status_code == 404
+
+
+def _participant_status(view: dict, handle: str) -> str | None:
+    for row in view.get("participants") or []:
+        if row.get("handle") == handle:
+            return row.get("status")
+    return None
+
+
+def _receive_invite(ws, session_id: str, invitee: str) -> dict:
+    for _ in range(20):
+        event = ws.receive_json()
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        if (
+            event.get("type") == "session.invited"
+            and event.get("session_id") == session_id
+            and payload.get("invitee") == invitee
+        ):
+            return event
+    raise AssertionError(f"no session.invited for {invitee} in {session_id}")
+
+
+def test_intranet_invite_marks_the_payload(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        token = client.get("/operator").json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        bot = client.post("/conversations", json={"kind": "bot"}, headers=headers).json()
+        events = client.get(
+            f"/sessions/{bot['conversation_id']}/events",
+            headers=headers,
+        ).json()["events"]
+        invited = [event for event in events if event["type"] == "session.invited"]
+        assert invited
+        assert invited[0]["payload"]["intranet"] is True
+        assert invited[0]["payload"]["invitee"] == bot["agents"][0]
+
+
+def test_magi_joins_the_group_when_it_receives_the_invite(tmp_path: Path) -> None:
+    """Group profile invite → session.invited → MAGI POST /join. Intranet, no wizard."""
+    with _client(tmp_path) as client:
+        operator = client.get("/operator").json()["token"]
+        headers = {"Authorization": f"Bearer {operator}"}
+        bot = client.post("/conversations", json={"kind": "bot"}, headers=headers).json()
+        group = client.post("/conversations", json={"kind": "group"}, headers=headers).json()
+        handle = bot["agents"][0]
+        magi_token = bot["magi"]["token"]
+        magi_headers = {"Authorization": f"Bearer {magi_token}"}
+        group_id = group["conversation_id"]
+
+        with client.websocket_connect("/connect", headers=magi_headers) as ws:
+            online = client.get(
+                "/bots",
+                params={"conversation_id": group_id},
+                headers=headers,
+            ).json()["bots"]
+            assert online == [
+                {"handle": handle, "online": True, "in_conversation": False}
+            ]
+            added = client.post(
+                f"/conversations/{group_id}/members",
+                json={"handle": handle},
+                headers=headers,
+            )
+            assert added.status_code == 200
+            event = _receive_invite(ws, group_id, handle)
+            assert event["payload"]["intranet"] is True
+            joined = client.post(f"/sessions/{group_id}/join", headers=magi_headers)
+            assert joined.status_code == 200
+
+        view = client.get(f"/conversations/{group_id}", headers=headers).json()
+        assert view["agents"] == [handle]
+        assert _participant_status(view, handle) == "joined"
+
+
+def test_offline_magi_joins_when_it_connects_after_the_invite(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        operator = client.get("/operator").json()["token"]
+        headers = {"Authorization": f"Bearer {operator}"}
+        bot = client.post("/conversations", json={"kind": "bot"}, headers=headers).json()
+        group = client.post("/conversations", json={"kind": "group"}, headers=headers).json()
+        handle = bot["agents"][0]
+        magi_token = bot["magi"]["token"]
+        magi_headers = {"Authorization": f"Bearer {magi_token}"}
+        group_id = group["conversation_id"]
+        added = client.post(
+            f"/conversations/{group_id}/members",
+            json={"handle": handle},
+            headers=headers,
+        )
+        assert added.status_code == 200
+        assert _participant_status(added.json(), handle) == "invited"
+
+        with client.websocket_connect("/connect", headers=magi_headers) as ws:
+            event = _receive_invite(ws, group_id, handle)
+            assert event["payload"]["intranet"] is True
+            joined = client.post(f"/sessions/{group_id}/join", headers=magi_headers)
+            assert joined.status_code == 200
+
+        view = client.get(f"/conversations/{group_id}", headers=headers).json()
+        assert _participant_status(view, handle) == "joined"

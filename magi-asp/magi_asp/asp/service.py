@@ -102,6 +102,7 @@ class Service:
                 payload: dict[str, Any] = {"invitee": handle, "by": creator}
                 if topic is not None:
                     payload["topic"] = topic
+                payload.update(self._intranet_invite_fields())
                 self.store.append_session_event(sess.id, "session.invited", payload)
 
             if initial_message is not None:
@@ -186,7 +187,7 @@ class Service:
         agents = [
             p.handle
             for p in self.store.participants_in(session_id)
-            if p.handle != caller
+            if p.handle != caller and p.status in ("invited", "joined")
         ]
         view["conversation_id"] = session_id
         view["agents"] = agents
@@ -308,6 +309,7 @@ class Service:
                 payload = {"invitee": h, "by": caller}
                 if sess.topic is not None:
                     payload["topic"] = sess.topic
+                payload.update(self._intranet_invite_fields())
                 self.store.append_session_event(session_id, "session.invited", payload)
                 invited.append(h)
             await self._fan_out(session_id)
@@ -411,7 +413,9 @@ class Service:
                 else:
                     self.store.set_status(session_id, h, "invited")
                 self.store.append_session_event(
-                    session_id, "session.invited", {"invitee": h, "by": handle}
+                    session_id,
+                    "session.invited",
+                    {"invitee": h, "by": handle, **self._intranet_invite_fields()},
                 )
             if initial_message is not None:
                 # Use the same shape as create_session for initial_message.
@@ -483,6 +487,10 @@ class Service:
         return [e.to_wire() for e in eligible]
 
     # ---- Helpers --------------------------------------------------------
+
+    def _intranet_invite_fields(self) -> dict[str, Any]:
+        """magi-asp is intranet: MAGI joins this invite on receipt."""
+        return {"intranet": True}
 
     def _require_active_session(self, session_id: str) -> Session:
         sess = self.store.get_session(session_id)

@@ -19,6 +19,7 @@ from bus import (
 )
 
 from .client import AspClient
+from .intranet import should_join_on_invite
 
 logger = logging.getLogger("channels.asp.worker")
 
@@ -81,8 +82,17 @@ class AspWorker(BaseWorker):
         if not isinstance(session_id, str):
             return
         try:
-            if kind == "session.invited" and payload.get("invitee") == self.handle:
-                await self._client.join(session_id)
+            if kind == "session.invited" and should_join_on_invite(
+                origin=self._settings.get("base", ""),
+                invitee=str(payload.get("invitee") or ""),
+                handle=self.handle,
+            ):
+                # Intranet magi-asp: join on receipt. No public-network
+                # approval and no config wizard.
+                client = self._client
+                if client is None:
+                    return
+                await client.join(session_id)
                 initial = payload.get("initial_message")
                 if isinstance(initial, dict):
                     await self.call(self._ingest, session_id, initial)

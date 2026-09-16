@@ -16,7 +16,13 @@ from magi_asp.asp.spawn import MagiSpawner, default_spawner
 from localdb import LocalDatabase, default_database_path
 
 
-def _public_base_url() -> str:
+def _intranet_base_url() -> str:
+    """Origin MAGI processes use to reach this ASP.
+
+    magi-asp is intranet by default (loopback). MAGI_ASP_PUBLIC_URL is only
+    an override when the operator has already placed ASP on another bind.
+    There is no public-network approval wizard on the spawn/invite path.
+    """
     host = os.environ.get("MAGI_ASP_HOST", "127.0.0.1")
     port = os.environ.get("MAGI_ASP_PORT", "42069")
     return os.environ.get("MAGI_ASP_PUBLIC_URL") or f"http://{host}:{port}"
@@ -40,7 +46,7 @@ class AspServer:
         self.asp = create_operator(
             asp_seed or {},
             spawner=self.spawner,
-            base_url=asp_base or _public_base_url(),
+            base_url=asp_base or _intranet_base_url(),
         )
         self.app = FastAPI(title="MAGI ASP", version="0.1.0", lifespan=self._lifespan)
         self.app.add_middleware(

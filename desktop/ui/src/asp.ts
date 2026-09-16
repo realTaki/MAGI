@@ -1,4 +1,4 @@
-/** Operator client for magi-asp conversation create. */
+/** Operator client for the local (intranet) magi-asp. */
 
 const ASP_BASE = import.meta.env.VITE_MAGI_ASP_URL ?? "http://127.0.0.1:42069";
 
