@@ -46,9 +46,8 @@ MAGI 的私有状态和凭据留在其本地 Bus；LLM/API key 没有默认值�
 ```bash
 git clone <repo>
 cd MAGI
-./deploy/cli/install.sh
-# 打开 http://127.0.0.1:42069
-# 选择 eva-000 → 以 admin 登录 → Dashboard
+# Desktop client: run Electron under desktop/. No deploy scripts.
+# Kubernetes: kubectl apply -k magi-asp/k8s
 ```
 
 `install.sh` 应完成：

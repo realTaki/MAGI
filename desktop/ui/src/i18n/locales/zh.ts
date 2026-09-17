@@ -26,7 +26,6 @@ export default {
     newBot: "新建 bot",
     newGroup: "创建群聊",
     listTitle: "对话",
-    newBotName: "New bot",
     newGroupName: "群聊",
     botEmpty: "给它布置第一份工作。",
     groupEmpty: "开始说话，或稍后邀请 bot。",

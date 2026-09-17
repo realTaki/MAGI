@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: magi
   labels:
-    app.kubernetes.io/part-of: magi
+    app.kubernetes.io/name: magi-asp

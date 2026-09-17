@@ -26,7 +26,6 @@ export default {
     newBot: "New bot",
     newGroup: "New group",
     listTitle: "Conversations",
-    newBotName: "New bot",
     newGroupName: "New group",
     botEmpty: "Message this bot to give it a first job.",
     groupEmpty: "Start talking, or invite a bot later.",

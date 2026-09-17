@@ -43,7 +43,7 @@ class RecordingSpawner:
 
 
 class ProcessSpawner:
-    """Spawn ``python -m magi <handle> <base> <token>`` when MAGI is installed."""
+    """ASP-side spawn of ``python -m magi``. Desktop clients must not call this."""
 
     def __init__(self) -> None:
         self._children: list[subprocess.Popen[bytes]] = []
@@ -55,11 +55,11 @@ class ProcessSpawner:
         cwd = _py_magi_dir()
         try:
             child = subprocess.Popen(
-                [python, "-m", "magi", handle, base, token],
+                magi_cli(python, handle, base, token),
                 cwd=str(cwd) if cwd is not None else None,
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
         except OSError:
@@ -74,7 +74,20 @@ class ProcessSpawner:
         self._children.clear()
 
 
+def magi_cli(python: str, handle: str, base: str, token: str) -> list[str]:
+    """One MAGI: ``python -m magi <handle> <base> <token>``."""
+    return [python, "-m", "magi", handle, base, token]
+
+
+def in_kubernetes() -> bool:
+    return bool(os.environ.get("KUBERNETES_SERVICE_HOST"))
+
+
 def default_spawner() -> MagiSpawner:
+    if in_kubernetes():
+        from .k8s import KubernetesSpawner
+
+        return KubernetesSpawner()
     return ProcessSpawner()
 
 

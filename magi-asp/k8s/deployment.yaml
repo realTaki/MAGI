@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magi-asp
+  namespace: magi
+  labels:
+    app.kubernetes.io/name: magi-asp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: magi-asp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: magi-asp
+    spec:
+      serviceAccountName: magi-asp
+      containers:
+        - name: magi-asp
+          image: magi-asp:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MAGI_ASP_HOST
+              value: "0.0.0.0"
+            - name: MAGI_ASP_PORT
+              value: "42069"
+            - name: MAGI_ASP_PUBLIC_URL
+              value: "http://magi-asp:42069"
+            - name: MAGI_IMAGE
+              value: magi:0.1.0
+            - name: MAGI_NAMESPACE
+              value: magi
+          ports:
+            - name: http
+              containerPort: 42069
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20

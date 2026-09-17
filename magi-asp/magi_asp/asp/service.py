@@ -102,6 +102,7 @@ class Service:
                 payload: dict[str, Any] = {"invitee": handle, "by": creator}
                 if topic is not None:
                     payload["topic"] = topic
+                payload.update(self._intranet_invite_fields())
                 self.store.append_session_event(sess.id, "session.invited", payload)
 
             if initial_message is not None:
@@ -146,19 +147,23 @@ class Service:
         spawner: MagiSpawner,
         base_url: str,
     ) -> dict[str, Any]:
-        """Operator create: spawn a MAGI for `bot`, or open an empty group.
+        """Operator create: ASP spawns a MAGI for `bot`, or opens an empty group.
 
         `kind` is the plus-button action, not a lasting conversation type.
+        The desktop only POSTs this; it must not start MAGI itself.
+        ASP assigns MAGI `name` values eva-000, eva-001, …
         """
         if kind not in ("bot", "group"):
             raise ValueError("kind must be bot or group")
         invite: list[str] = []
         spawned: SpawnedMagi | None = None
         magi_token: str | None = None
+        magi_name: str | None = None
         if kind == "bot":
-            handle = self.store.next_bot_handle()
+            magi_name = self.store.next_magi_name()
+            handle = self.store.magi_handle(magi_name)
             magi_token = secrets.token_urlsafe(24)
-            self.store.register_agent(handle, magi_token)
+            self.store.register_agent(handle, magi_token, name=magi_name)
             spawned = spawner.spawn(handle=handle, base=base_url, token=magi_token)
             invite = [handle]
         result = await self.create_session(
@@ -173,10 +178,14 @@ class Service:
             sess.kind = kind
         view = self.conversation_view(creator, result.session_id)
         view["spawned"] = bool(spawned and spawned.spawned)
+        if magi_name is not None:
+            view["name"] = magi_name
         if spawned is not None:
             wire = dict(spawn_to_wire(spawned))
             if magi_token is not None:
                 wire["token"] = magi_token
+            if magi_name is not None:
+                wire["name"] = magi_name
             view["magi"] = wire
         return view
 
@@ -186,7 +195,7 @@ class Service:
         agents = [
             p.handle
             for p in self.store.participants_in(session_id)
-            if p.handle != caller
+            if p.handle != caller and p.status in ("invited", "joined")
         ]
         view["conversation_id"] = session_id
         view["agents"] = agents
@@ -194,6 +203,10 @@ class Service:
             view["kind"] = sess.kind or ("bot" if len(agents) == 1 else "group")
             if sess.description is not None:
                 view["description"] = sess.description
+        if view.get("kind") == "bot" and len(agents) == 1:
+            agent = self.store.get_agent(agents[0])
+            if agent is not None and agent.name:
+                view["name"] = agent.name
         return view
 
     def list_conversations(self, caller: str) -> list[dict[str, Any]]:
@@ -224,8 +237,10 @@ class Service:
         for handle in self.store.agents:
             if handle == caller:
                 continue
+            agent = self.store.get_agent(handle)
             row: dict[str, Any] = {
                 "handle": handle,
+                "name": (agent.name if agent is not None and agent.name else handle),
                 "online": self.transport.is_online(handle),
             }
             if conversation_id is not None:
@@ -308,6 +323,7 @@ class Service:
                 payload = {"invitee": h, "by": caller}
                 if sess.topic is not None:
                     payload["topic"] = sess.topic
+                payload.update(self._intranet_invite_fields())
                 self.store.append_session_event(session_id, "session.invited", payload)
                 invited.append(h)
             await self._fan_out(session_id)
@@ -411,7 +427,9 @@ class Service:
                 else:
                     self.store.set_status(session_id, h, "invited")
                 self.store.append_session_event(
-                    session_id, "session.invited", {"invitee": h, "by": handle}
+                    session_id,
+                    "session.invited",
+                    {"invitee": h, "by": handle, **self._intranet_invite_fields()},
                 )
             if initial_message is not None:
                 # Use the same shape as create_session for initial_message.
@@ -483,6 +501,10 @@ class Service:
         return [e.to_wire() for e in eligible]
 
     # ---- Helpers --------------------------------------------------------
+
+    def _intranet_invite_fields(self) -> dict[str, Any]:
+        """magi-asp is intranet: MAGI joins this invite on receipt."""
+        return {"intranet": True}
 
     def _require_active_session(self, session_id: str) -> Session:
         sess = self.store.get_session(session_id)

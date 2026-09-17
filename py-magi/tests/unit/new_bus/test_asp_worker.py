@@ -83,3 +83,30 @@ async def test_asp_worker_bridges_one_session_to_conversation_jobs(tmp_path, mon
         assert result is not None
         assert result.status is JobStatus.COMPLETED
         assert client.sent == [("session-1", "reply")]
+
+
+@pytest.mark.asyncio
+async def test_asp_worker_joins_intranet_invite_and_ignores_others(
+    tmp_path, monkeypatch
+) -> None:
+    client = FakeAspClient()
+    monkeypatch.setattr(asp_worker, "AspClient", lambda **_kwargs: client)
+    with Bus("@unit.magi", workspace=tmp_path / "workspace") as bus:
+        assert bus.attach(AspWorker, settings={**_ASP_SETTINGS, "base": "http://127.0.0.1:42069"})
+        worker = bus.workers["asp"]
+        await worker._on_event(
+            {
+                "type": "session.invited",
+                "session_id": "group-1",
+                "payload": {"invitee": "@other.magi", "intranet": True},
+            }
+        )
+        assert client.joined == []
+        await worker._on_event(
+            {
+                "type": "session.invited",
+                "session_id": "group-1",
+                "payload": {"invitee": "@unit.magi", "intranet": True},
+            }
+        )
+        assert client.joined == ["group-1"]

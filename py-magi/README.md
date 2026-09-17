@@ -1,8 +1,10 @@
 # py-magi
 
-Python implementation of the MAGI service. Packages live at this project root
-(`magi`, `bus`, `agent`, …). The `magi` package owns one BUS, its workers,
-and channel adapters such as `channels.asp`.
+One MAGI. Start it with one command:
 
-The operator UI lives in [`../desktop/`](../desktop/). MAGI attaches to the
-sibling [`../magi-asp/`](../magi-asp/) over ASP (`/sessions`, `/connect`).
+```bash
+python -m magi <handle> <base> <token>
+```
+
+(`magi` on PATH is the same.) Packages live at this project root (`magi`, `bus`, `agent`, …). MAGI attaches to [`../magi-asp/`](../magi-asp/) over ASP (`/sessions`, `/connect`). The operator UI is [`../desktop/`](../desktop/).
+

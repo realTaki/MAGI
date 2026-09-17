@@ -673,19 +673,30 @@ export function ProductDemo() {
     creatingRef.current = true;
     setCreating(true);
     setPlusOpen(false);
-    const kind: ConversationKind = action === "bot" ? "dm" : "group";
     const color =
       BOT_COLORS[(bots.length + (action === "group" ? 3 : 0)) % BOT_COLORS.length] ?? "#3EC5A8";
-    const name = action === "bot" ? t("plusMenu.newBotName") : t("plusMenu.newGroupName");
-    const conversation = makeConversation(kind, name, color);
-    setBots((current) => [conversation, ...current]);
-    setActiveId(conversation.id);
-    setDraft("");
     closeMenu();
     setRoutineDraft(null);
     setPanelMode("settings");
     try {
-      const remote = await createAspConversation(action);
+      if (action === "bot") {
+        const remote = await createAspConversation("bot");
+        if (!remote?.name) {
+          return;
+        }
+        const conversation = makeConversation("dm", remote.name, color);
+        conversation.remoteId = remote.conversation_id;
+        conversation.magiHandle = remote.agents[0];
+        setBots((current) => [conversation, ...current]);
+        setActiveId(conversation.id);
+        setDraft("");
+        return;
+      }
+      const conversation = makeConversation("group", t("plusMenu.newGroupName"), color);
+      setBots((current) => [conversation, ...current]);
+      setActiveId(conversation.id);
+      setDraft("");
+      const remote = await createAspConversation("group");
       if (!remote) {
         return;
       }
@@ -695,7 +706,6 @@ export function ProductDemo() {
             ? {
                 ...bot,
                 remoteId: remote.conversation_id,
-                magiHandle: remote.agents[0],
               }
             : bot,
         ),
@@ -1251,6 +1261,7 @@ export function ProductDemo() {
                             .filter((bot) => !bot.in_conversation)
                             .map((bot) => {
                               const label = labelForHandle(bot.handle, bots);
+                              const name = bot.name || label.name;
                               return (
                                 <button
                                   key={bot.handle}
@@ -1261,7 +1272,7 @@ export function ProductDemo() {
                                 >
                                   <Avatar color={label.color} size={28} />
                                   <span className="product-demo__bot-pick-copy">
-                                    <span>{label.name}</span>
+                                    <span>{name}</span>
                                     <span className="product-demo__bot-pick-status">
                                       {bot.online
                                         ? t("conversationSettings.membersOnline")
