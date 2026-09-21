@@ -368,7 +368,7 @@ proxy 路径，控制面这层挂载对前端不可达。runtime 那一侧的同
    `access/login-accounts` 是历史流程的遗留。建议开个 follow-up 任务：
    确认运营流程是否真用得到 `control/telegram/send`，再用不着用。
    `tg_bindings.*` 与 `access/login-accounts` 已确认前端不可达，应整组删。
-6. **D1, D2** — 保留，作为 K8s 探针。
+6. **D1, D2** — 保留，作为本地 ASP 的健康探针。
 
 ---
 

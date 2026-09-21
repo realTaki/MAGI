@@ -79,15 +79,7 @@ def magi_cli(python: str, handle: str, base: str, token: str) -> list[str]:
     return [python, "-m", "magi", handle, base, token]
 
 
-def in_kubernetes() -> bool:
-    return bool(os.environ.get("KUBERNETES_SERVICE_HOST"))
-
-
 def default_spawner() -> MagiSpawner:
-    if in_kubernetes():
-        from .k8s import KubernetesSpawner
-
-        return KubernetesSpawner()
     return ProcessSpawner()
 
 
