@@ -225,6 +225,7 @@ app/dist/
 app/build/
 app/release/
 desktop/release/
+desktop/runtime/
 .vite/
 app/.vite/
 app/coverage/
