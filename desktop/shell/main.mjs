@@ -1,11 +1,11 @@
 /** Electron is a frameless shell: launch chooser, then the local operator UI. */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, watch } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import dugite from "dugite";
-import { app, BrowserWindow, Menu, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from "electron";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +23,9 @@ let mainWindow = null;
 let spawnedAsp = null;
 let startingLocal = false;
 let runtimeRootPromise = null;
+let uiWatcher = null;
+let uiReloadTimer = null;
+let uiReloadPromptOpen = false;
 
 function command(command, args, { cwd, env, description }) {
   return new Promise((resolve, reject) => {
@@ -283,18 +286,66 @@ async function startLocalAsp() {
   return checkout;
 }
 
+function stopWatchingOperatorUi() {
+  uiWatcher?.close();
+  uiWatcher = null;
+  if (uiReloadTimer !== null) {
+    clearTimeout(uiReloadTimer);
+    uiReloadTimer = null;
+  }
+}
+
+function watchOperatorUi(win, indexFile) {
+  stopWatchingOperatorUi();
+  uiWatcher = watch(path.dirname(indexFile), (_event, filename) => {
+    if (filename !== null && String(filename) !== path.basename(indexFile)) {
+      return;
+    }
+    if (uiReloadTimer !== null) {
+      clearTimeout(uiReloadTimer);
+    }
+    uiReloadTimer = setTimeout(async () => {
+      uiReloadTimer = null;
+      if (uiReloadPromptOpen || win.isDestroyed() || !existsSync(indexFile)) {
+        return;
+      }
+      uiReloadPromptOpen = true;
+      try {
+        const { response } = await dialog.showMessageBox(win, {
+          type: "info",
+          title: "MAGI interface updated",
+          message: "A new local MAGI interface is ready.",
+          detail: "Reload now to use the newly built interface?",
+          buttons: ["Reload", "Later"],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (response === 0 && !win.isDestroyed()) {
+          await win.loadFile(indexFile);
+        }
+      } finally {
+        uiReloadPromptOpen = false;
+      }
+    }, 500);
+  });
+  uiWatcher.once("error", stopWatchingOperatorUi);
+}
+
 function loadChooser(win) {
+  stopWatchingOperatorUi();
   void win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
 }
 
-function loadOperatorUi(win, checkout) {
+async function loadOperatorUi(win, checkout) {
   const builtUi = app.isPackaged
     ? path.join(checkout, "desktop", "ui", "dist", "index.html")
     : UI_DIST;
   if (existsSync(builtUi) && !process.env.MAGI_UI_URL) {
-    void win.loadFile(builtUi);
+    await win.loadFile(builtUi);
+    watchOperatorUi(win, builtUi);
   } else {
-    void win.loadURL(UI_DEV_URL);
+    stopWatchingOperatorUi();
+    await win.loadURL(UI_DEV_URL);
   }
 }
 
@@ -324,6 +375,7 @@ function createWindow() {
   });
   win.on("closed", () => {
     if (mainWindow === win) {
+      stopWatchingOperatorUi();
       mainWindow = null;
     }
   });
@@ -341,7 +393,7 @@ ipcMain.handle("asp:start-local", async () => {
     if (mainWindow === null) {
       throw new Error("MAGI window is gone");
     }
-    loadOperatorUi(mainWindow, checkout);
+    await loadOperatorUi(mainWindow, checkout);
   } finally {
     startingLocal = false;
   }
@@ -382,6 +434,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  stopWatchingOperatorUi();
   if (spawnedAsp && !spawnedAsp.killed) {
     spawnedAsp.kill("SIGTERM");
   }
