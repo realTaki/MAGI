@@ -2,10 +2,14 @@ import { execFileSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readlinkSync,
   readdirSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -27,6 +31,26 @@ function executableOnPath(name) {
   throw new Error(`${name} is required to prepare the bundled runtime`);
 }
 
+function makeSymlinksRelative(directory, original, copied) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const item = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      makeSymlinksRelative(item, original, copied);
+      continue;
+    }
+    if (!lstatSync(item).isSymbolicLink()) {
+      continue;
+    }
+    const target = readlinkSync(item);
+    if (!path.isAbsolute(target) || !target.startsWith(`${original}${path.sep}`)) {
+      continue;
+    }
+    const rebased = path.join(copied, path.relative(original, target));
+    unlinkSync(item);
+    symlinkSync(path.relative(path.dirname(item), rebased), item);
+  }
+}
+
 const uv = process.env.MAGI_UV_BIN || executableOnPath("uv");
 const temporary = mkdtempSync(path.join(os.tmpdir(), "magi-python-"));
 try {
@@ -44,10 +68,42 @@ try {
 
   rmSync(RUNTIME_DIR, { recursive: true, force: true });
   mkdirSync(path.join(RUNTIME_DIR, "bin"), { recursive: true });
-  cpSync(path.join(temporary, python.name), path.join(RUNTIME_DIR, "python"), {
+  const originalPython = path.join(temporary, python.name);
+  const copiedPython = path.join(RUNTIME_DIR, "python");
+  cpSync(originalPython, copiedPython, {
     recursive: true,
   });
+  makeSymlinksRelative(copiedPython, originalPython, copiedPython);
   cpSync(uv, path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "uv.exe" : "uv"));
+  cpSync(
+    path.join(
+      DESKTOP_ROOT,
+      "node_modules",
+      "node",
+      "bin",
+      process.platform === "win32" ? "node.exe" : "node",
+    ),
+    path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "node.exe" : "node"),
+  );
+
+  const npmArguments = [
+    "install",
+    "--prefix",
+    path.join(RUNTIME_DIR, "npm"),
+    "--omit=dev",
+    "--ignore-scripts",
+    "--no-package-lock",
+    "npm@12.0.2",
+  ];
+  if (process.env.npm_execpath) {
+    execFileSync(process.execPath, [process.env.npm_execpath, ...npmArguments], {
+      stdio: "inherit",
+    });
+  } else {
+    execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", npmArguments, {
+      stdio: "inherit",
+    });
+  }
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }
