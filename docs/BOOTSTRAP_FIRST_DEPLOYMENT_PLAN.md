@@ -20,8 +20,7 @@ Genesis (root MAGIS)
 认证状态：local_no_2fa
 ```
 
-用户选择 `eva-000` 后可直接进入 WebUI。默认服务仅监听 `127.0.0.1`（或 K8s
-cluster-local/`port-forward` 边界），因此未设置两步验证的 admin 仍可持续直接
+用户选择 `eva-000` 后可直接进入 WebUI。默认服务仅监听 `127.0.0.1`，因此未设置两步验证的 admin 仍可持续直接
 使用 WebUI；这是一种有意的开箱即用取舍，不是遗漏的认证流程。用户启用两步
 验证后，登录才要求已绑定 IM 接收的一次性验证码。系统不再提供、保存或兼容
 密码认证。LLM provider 与 API key 同样是进入系统后的渐进式配置，而不是启动
@@ -46,9 +45,7 @@ MAGI 的私有状态和凭据留在其本地 Bus；LLM/API key 没有默认值�
 ```bash
 git clone <repo>
 cd MAGI
-./deploy/cli/install.sh
-# 打开 http://127.0.0.1:42069
-# 选择 eva-000 → 以 admin 登录 → Dashboard
+# Desktop client: run Electron under desktop/. No deploy scripts.
 ```
 
 `install.sh` 应完成：
@@ -64,24 +61,6 @@ cd MAGI
 
 再次执行脚本或 `magi start` 必须只恢复服务，不能重置密码、身份、Society
 或用户数据。
-
-### Kubernetes
-
-Kubernetes 分两类入口，避免把“构建镜像”和“部署到生产集群”混为一谈：
-
-| 场景 | 入口责任 | 镜像策略 |
-| --- | --- | --- |
-| 本地开发（kind 等） | 构建、加载镜像、创建/更新开发集群、部署 | 脚本从当前工作树 build 并 load |
-| 已有/生产集群 | 校验配置、部署、等待 rollout | 调用方提供不可变 `MAGI_IMAGE` 引用 |
-
-K8s 配置（ConfigMap/Secret/PVC）是唯一的部署参数来源；容器不读取宿主机
-`~/.magi`。首次部署 Job/启动路径应完成与 CLI 相同的幂等 bootstrap，随后
-启动 Genesis 控制面、`eva-000` 和 WebUI。
-
-默认 WebUI Service 必须保持 `ClusterIP`，文档使用 `kubectl port-forward`
-访问。默认不得创建 Ingress 或 LoadBalancer。若部署者明确配置外网/LAN
-暴露，配置校验必须要求已配置并已验证的管理员 IM 验证通道；bootstrap 本地
-例外绝不可随 WebUI 暴露到外网，并应在控制面留下审计日志。
 
 ## 认证与授权模型
 
@@ -126,8 +105,7 @@ ActionItem 的归属；它不授予 MAGIS 权限，也不保存认证状态。
 
 1. 选中的 MAGI 是该 admin 被授权的 MAGI；
 2. 认证状态是 `local_no_2fa`；
-3. 请求来自安全部署边界：CLI 的 loopback，或 K8s 的 cluster-local /
-   `port-forward` 入口；
+3. 请求来自本机 loopback；
 4. 部署没有开启外部 WebUI 暴露。
 
 服务端提供专用 local-direct-login endpoint，验证上述条件后签发标准范围、签名
@@ -139,9 +117,9 @@ ActionItem 的归属；它不授予 MAGIS 权限，也不保存认证状态。
 `im_2fa_enabled`。之后的每次新登录都只能走 `send-login-code` /
 `verify-login-code` 的通用 IM 版本。
 
-恢复不能退回密码。管理员失去全部 IM 时，只能由拥有本机 OS 权限或 K8s 管理
-权限的操作者显式执行受审计的恢复命令，切换为 `recovery_local_no_2fa`；该状态
-仍只允许本机/cluster-local 直接访问，并持续创建“重新设置两步验证”的待办。
+恢复不能退回密码。管理员失去全部 IM 时，只能由拥有本机 OS 权限的操作者显式
+执行受审计的恢复命令，切换为 `recovery_local_no_2fa`；该状态仍只允许本机直接
+访问，并持续创建“重新设置两步验证”的待办。
 
 ### 创建额外用户的最小限制
 
@@ -241,8 +219,8 @@ Contact 投影的 `contact_id` 创建和读取待办。只读取当前已认证 
 1. **定义契约与迁移**：增加认证状态、IM binding、VerificationDelivery DTO/
    持久化迁移、bootstrap admin 策略、endpoint 请求/响应契约及审计事件；定义
    旧密码数据的删除和旧实例的受控重新绑定迁移。
-2. **调整 bootstrap**：让 CLI 与 K8s 使用同一个幂等 bootstrap service，创建
-   默认身份并写入状态；补齐 K8s 开发构建入口和生产镜像校验。
+2. **调整 bootstrap**：让本地启动路径使用同一个幂等 bootstrap service，创建
+   默认身份并写入状态。
 3. **认证实现**：实现 local-direct-login/recovery gate、通用 IM 绑定与验证码
    登录、local_no_2fa → im_2fa_enabled 状态原子切换、loopback/cluster exposure
    guard、速率限制，以及 admin/assigned-user 创建写路径的最小限制。
@@ -253,8 +231,8 @@ Contact 投影的 `contact_id` 创建和读取待办。只读取当前已认证 
 5. **Proactive 与上下文**：实现 IM 两步验证待办 reconcile，并安全地将高优先级待办
    注入当前 Contact 的 Agent 上下文。
 6. **删除旧路径与文档更新**：删除 password hash、所有密码 API/UI/测试、完整
-   onboarding 实现及其 compatibility 逻辑；更新 README、CLI/K8s 指南、business
-   flows 和架构文档。
+   onboarding 实现及其 compatibility 逻辑；更新 README、桌面指南、business flows
+   和架构文档。
 7. **整体验证**：在所有迁移完成后再运行全套验证和部署 smoke tests。
 
 ## 验收标准
@@ -267,8 +245,6 @@ Contact 投影的 `contact_id` 创建和读取待办。只读取当前已认证 
   `assigned` user 返回 `403 auth.two_factor_required`，启用后按既有授权规则恢复
   可用。
 - 反复执行 install/start 不重置任何状态；已有实例不自动获得永久免密权限。
-- K8s 开发路径可从工作树构建并启动；生产路径不隐式 build，使用指定镜像。
-- 默认 K8s WebUI 无公网暴露；显式外部暴露而没有已验证 IM 管理员时部署失败。
 - 未启用两步验证时存在一个且仅一个未完成的高优先级两步验证待办；启用成功后
   其自动关闭，但不影响已有正常功能。
 - Agent 只获得当前 Contact 的少量高优先级待办，且不获得任何 secret 或跨用户
@@ -277,12 +253,11 @@ Contact 投影的 `contact_id` 创建和读取待办。只读取当前已认证 
   任何启动时 onboarding 路由；原有配置能力可从 Settings/Organization 找到并完成。
 - 数据库、Bus、API、WebUI 与测试中不存在 `password_hash`、password login 或
   password reset 的有效实现路径；BUS import-boundary AST guard 通过且 allowlist
-  为空；全套测试、CLI smoke test 和 K8s smoke test 均通过。
+  为空；全套测试与本地 smoke test 均通过。
 
 ## 需要先定下的产品决策
 
 本提案的明确决策是：**完全废弃密码模式**，并把两步验证作为安全增强而非
-开箱即用的阻塞条件。默认 `local_no_2fa` admin 可在 `127.0.0.1` 或
-cluster-local/`port-forward` 边界持续直接使用 WebUI；Proactive、Dashboard 和
-Agent 上下文持续推动其启用 IM 一次性验证码。外部可访问部署必须在部署前就有
-可用的 IM 验证管理员。
+开箱即用的阻塞条件。默认 `local_no_2fa` admin 只可在 `127.0.0.1` 本机边界持续
+直接使用 WebUI；Proactive、Dashboard 和 Agent 上下文持续推动其启用 IM 一次性验证码。
+外部可访问部署必须在部署前就有可用的 IM 验证管理员。

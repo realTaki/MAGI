@@ -59,6 +59,18 @@ That leads to three principles:
 The long-term goal is to build the infrastructure in which autonomous
 intelligences can collaborate freely **within explicit, inspectable constraints**.
 
+## Repository layout
+
+```text
+desktop/     Electron desktop: operator UI and ~/.magi-desktop sqlite
+magi-asp/    Python package magi_asp: /sessions, WS /connect, ~/.magi/asp.sqlite
+py-magi/     One MAGI runtime per process; workspace sqlite of its own
+ts-magi/     TypeScript BUS playground and its launcher
+```
+
+The projects are siblings. Python production code lives at the
+`py-magi/` project root (`from bus import Bus`, `from startup.cli import main`).
+
 ## Toward governed collective intelligence
 
 A MAGIS should become better because it has existed — while remaining
@@ -116,20 +128,17 @@ MAGIS-shared database (intra-Society MAGI↔MAGI):
                               message_magi {magi_id, mode, text, deadline_seconds}
 ```
 
-ADAM is a coordinator, not an unrestricted host administrator. It is not
-granted the host Docker socket or broad Kubernetes credentials. Instead, it
-requests lifecycle changes through a restricted, authenticated orchestrator.
-The control plane creates only the scoped private MAGI workspace and runtime,
-plus the shared-database and public workspace resources for a MAGIS when needed.
+ADAM is a coordinator, not an unrestricted host administrator. The ASP service
+owns lifecycle operations and starts only scoped local MAGI processes.
 
 ## What exists today
 
-- **Independent runtimes** — ADAM and every EVA run as separate Kubernetes
-  Deployments with their own persistent workspace.
+- **Independent runtimes** — ADAM and every EVA run as separate local
+  processes with their own workspace.
 - **Society administration** — the WebUI manages MAGIS trees and MAGI,
   including ADAM assignment and EVA provider configuration.
-- **EVA lifecycle control** — an ADAM can request EVA start, stop, and delete
-  operations through the in-cluster orchestrator.
+- **EVA lifecycle control** — the ASP service starts a local MAGI process when
+  the operator creates a bot.
 - **Persistent operational memory** — conversation history, contact knowledge,
   task state, and searchable stored memory survive across conversations.
 - **Channels and tools** — WebUI is available now; Telegram, MCP servers,
@@ -150,38 +159,17 @@ plus the shared-database and public workspace resources for a MAGIS when needed.
 
 ## Quick start
 
-Pick the deployment that matches your situation. Both paths are supported and
-live under `deploy/`. All startup code paths converge on
-`magi.startup`:
+MAGI currently runs as a local ASP service plus local MAGI processes. There is
+no root `deploy/` tree.
 
-| Situation | Path | Entry point |
+| Situation | Where | What you run |
 | --- | --- | --- |
-| I want a single-machine MAGI on my laptop/desktop | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh` (installs, initializes, and starts MAGI) |
-| I have an existing cluster and want to deploy to it | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
+| Desktop client | [`desktop/`](desktop/) | Electron. No deploy scripts. The UI talks to magi-asp; ASP starts MAGI. |
 
-The **single-machine path** is the fastest way to take MAGI for a
-spin. It runs directly on the host (no Docker, no k8s) and stores
-state under `~/.magi/` (Linux) or `~/Documents/.magi/` (macOS,
-Windows). Run `./deploy/cli/install.sh` once: it installs MAGI, provisions
-the first MAGI (`eva-000`) and the root MAGI Society **Genesis**, then starts
-the Runtime and WebUI. Open [http://127.0.0.1:42069](http://127.0.0.1:42069),
-select the running MAGI, then choose the default `admin` account. This local
-bootstrap access is intentionally usable without a password; enable IM
-two-factor verification from Settings before adding administrators or assigned
-users. Afterwards, `magi start` safely preserves the existing Society and
-recovers services that are not running. Each new MAGI is a separate
-process: `magi node create --name eva-001`, then `magi node run --name eva-001`.
+**Desktop:** open the Electron app under `desktop/`. **Start locally** launches magi-asp on [http://127.0.0.1:42069](http://127.0.0.1:42069). Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns `eva-000` and starts that MAGI.
 
-For an existing cluster or a production-style deployment, use the
-k8s production path:
+**One MAGI:** `python -m magi <handle> <base> <token>` (or the `magi` console script). py-magi is a single MAGI process.
 
-```bash
-MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/k8s/bootstrap-k8s.sh
-```
-
-See the deployment guides for image, storage, networking, Secrets,
-and environment-specific configuration.
 
 ## From the first MAGIS to a growing organization
 
@@ -214,65 +202,34 @@ and environment-specific configuration.
                         │          ADAM / MAGI        │
                         │    Society control plane    │
                         └──────────────┬──────────────┘
-                                       │ authenticated lifecycle request
+                                       │ lifecycle request
                         ┌──────────────▼──────────────┐
-                        │       MAGI Orchestrator     │
-                        │   restricted Kubernetes API │
+                        │          MAGI ASP           │
+                        │    local process launcher   │
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
                      │ EVA / MAGI   │  │ EVA / MAGI      │
-                     │ Deployment   │  │ Deployment      │
-                     │ PVC + Secret │  │ PVC + Secret    │
+                     │ local process│  │ local process   │
                      └──────────────┘  └─────────────────┘
 ```
 
-The orchestrator is a **lifecycle authority, not the Society's reasoning
-brain**. Its job is to enforce a narrow execution boundary around operations
-that require infrastructure privileges, while MAGI retain their own runtime,
-state, tools, and role in the Society.
+ASP is the **lifecycle authority, not the Society's reasoning brain**. It
+starts local processes while MAGI retain their own runtime, state, tools, and
+role in the Society. Each MAGI keeps its own local SQLite workspace.
 
-Kubernetes is the current deployment target. It gives each MAGI a concrete
-execution boundary and lets the orchestrator manage isolated runtime resources
-without making ADAM a cluster administrator. Each MAGI keeps a private,
-single-replica SQLite workspace under
-`/MAGI_Citizens/<MAGI_NAME>/memories/magi.db` — the path resolver
-detects `KUBERNETES_SERVICE_HOST` and defaults `HOST_WORKSPACE_DIR`
-to `/`, the PVC mounts the container root, and `MAGI_Citizens/<name>`
-is derived from `MAGI_NAME`. Each MAGIS has its own database and public
-workspace PVC for organization facts and shared files: local deployments use
-an isolated SQLite file under `MAGI_Societies/<MAGIS_NAME>/`, while Kubernetes
-provisions one database per MAGIS in a shared PostgreSQL service. The startup
-inputs (`HOST_WORKSPACE_DIR`, `MAGI_NAME`, `MAGIS_NAME`,
-`MAGIS_DATABASE_URL`, `MAGI_ID`) are
-the only contract Runtime sees; workspace paths are derived, never
-configured. See [the storage boundary](docs/ARCHITECTURE.md#storage-ownership)
-for the exact split and contract.
+### Desktop UI and ASP
 
-### One WebUI, one image
-
-MAGI uses one container image with two selectable service roles. The default
-`magi` command runs one MAGI and exposes only an internal Runtime API. The
-singleton `magi webui` command serves the React application, authentication,
-organization control plane, and a protected proxy to the selected MAGI. A
-browser therefore always visits one WebUI Service; it never connects directly
-to an individual MAGI Pod.
-
-The landing page first selects a running MAGI, then offers only that MAGI's
-direct MAGIS administrators and assigned user. The proxy signs each internal
-request with an HMAC derived from the per-MAGIS `control_secrets` row,
-binding it to the selected MAGI and the authenticated identity. Each runtime
-rejects a request addressed to a different MAGI. Selecting another MAGI
-requires a new login; it is not an in-dashboard target switch. A MAGI's own
-Bot sends login codes when configured; otherwise its direct MAGIS ADAM Bot
-provides the one-time bootstrap fallback.
+The Electron desktop UI is an operator client. It starts or connects to the
+local ASP service; ASP owns HTTP, WebSocket `/connect`, and MAGI process
+creation. The desktop does not start MAGI directly.
 
 For the implementation-level view, see:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Business flows](docs/business-flows.md)
 - [Terms and canonical ID names](docs/terms.md)
-- [Deployment overview](deploy/README.md)
+- [magi-asp](magi-asp/README.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## Project status

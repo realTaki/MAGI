@@ -99,16 +99,14 @@ MAGIS 共享数据库（同一 Society 内 MAGI 之间）：
                               message_magi {magi_id, mode, text, deadline_seconds}
 ```
 
-ADAM 是协调者，而不是不受限制的宿主机管理员。它不会获得宿主机 Docker socket
-或宽泛的 Kubernetes 权限，而是通过受限、认证的 orchestrator 请求生命周期变更。
-控制面只会创建 MAGI 所需范围内的私有工作区与 Runtime，并按需创建 MAGIS 的
-PostgreSQL 与公共工作区资源。
+ADAM 是协调者，而不是不受限制的宿主机管理员。ASP 服务拥有生命周期操作，
+只启动范围受限的本地 MAGI 进程。
 
 ## 当前已具备的能力
 
-- **独立运行时**：ADAM 与每个 EVA 都是独立 Kubernetes Deployment，并有自己的持久化工作区。
+- **独立运行时**：ADAM 与每个 EVA 都是独立本地进程，并有自己的工作区。
 - **组织管理**：WebUI 管理 MAGIS 树与 MAGI，包括 ADAM 指派和 EVA provider 配置。
-- **EVA 生命周期控制**：ADAM 可经由集群内 orchestrator 请求启动、停止与删除 EVA。
+- **EVA 生命周期控制**：操作者创建 bot 时，由 ASP 服务启动本地 MAGI 进程。
 - **持久化运行记忆**：对话历史、联系人知识、任务状态和可搜索记忆跨对话保留。
 - **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
 - **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
@@ -122,31 +120,14 @@ PostgreSQL 与公共工作区资源。
 
 ## 快速开始
 
-按你的场景选一条部署路径。两种路径都同等支持并位于 `deploy/` 下，
-所有启动代码都收口在 `magi.startup`：
+当前 MAGI 运行于本地 ASP 服务加本地 MAGI 进程；仓库根目录没有 `deploy/`。
 
-| 场景 | 路径 | 入口 |
+| 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 我只想在单机上跑一个 MAGI | [deploy/cli/](deploy/cli/) | `./deploy/cli/install.sh`（安装、初始化并启动） |
-| 我有现成集群，要部署上去 | [deploy/k8s/](deploy/k8s/) | `./deploy/k8s/bootstrap-k8s.sh` |
+| 桌面客户端 | [`desktop/`](desktop/) | Electron。没有部署脚本。UI 只请求 magi-asp；由 ASP 启动 MAGI。 |
 
-**单机本地**是上手最快的一条：直接跑在宿主上（没有 Docker，也没有 k8s），
-状态放在 `~/.magi/`（Linux）或 `~/Documents/.magi/`（macOS、Windows）。只需运行
-`./deploy/cli/install.sh`：它会安装 MAGI，provision 第一个 MAGI（`eva-000`）和根
-MAGI Society **Genesis**（让 `eva-000` 担任 ADAM），并启动 Runtime 与 WebUI。打开
-[http://127.0.0.1:42069](http://127.0.0.1:42069)，先选择正在运行的 MAGI，再完成
-onboarding。以后只需执行 `magi start`，它会保留现有状态并恢复未运行的服务。需要新 MAGI 时，运行
-`magi node create --name eva-001`、`magi node run --name eva-001` 即可；
-每个新 MAGI 都是独立 OS 进程。
+**一个 MAGI：** `python -m magi <handle> <base> <token>`。
 
-已有 Kubernetes 集群或生产式部署可使用：
-
-```bash
-MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
-  ./deploy/k8s/bootstrap-k8s.sh
-```
-
-镜像、存储、网络、Secret 与环境配置请见各部署路径下的 README。
 
 ## 从第一个 MAGIS 到组织成长
 
@@ -171,52 +152,32 @@ MAGI_IMAGE=registry.example.com/your-team/magi:0.1.0 \
                         │         ADAM / MAGI         │
                         │        Society 控制面       │
                         └──────────────┬──────────────┘
-                                       │ 经认证的生命周期请求
+                                       │ 生命周期请求
                         ┌──────────────▼──────────────┐
-                        │       MAGI Orchestrator     │
-                        │     受限的 Kubernetes API   │
+                        │          MAGI ASP           │
+                        │       本地进程启动器        │
                         └───────┬──────────────┬───────┘
                                 │              │
                      ┌──────────▼───┐  ┌──────▼──────────┐
                      │ EVA / MAGI   │  │ EVA / MAGI      │
-                     │ Deployment   │  │ Deployment      │
-                     │ PVC + Secret │  │ PVC + Secret    │
+                     │   本地进程   │  │    本地进程     │
                      └──────────────┘  └─────────────────┘
 ```
 
-Orchestrator 是**生命周期权限边界，而不是 Society 的“思考大脑”**。
-它只负责把需要基础设施权限的操作限制在狭窄、可认证的执行边界内；
-每个 MAGI 仍然保有自己的 Runtime、状态、工具和 Society 角色。
+ASP 是**生命周期权限边界，而不是 Society 的“思考大脑”**。它启动本地进程；
+每个 MAGI 仍保有自己的 Runtime、状态、工具和 Society 角色，并各自维护本地 SQLite 工作区。
 
-Kubernetes 是当前部署目标：它为每个 MAGI 提供明确的运行边界，也让 orchestrator
-能管理隔离资源，而不必让 ADAM 成为集群管理员。每个 MAGI 保留私有、单副本的 SQLite
-工作区，落在 `/MAGI_Citizens/<MAGI_NAME>/memories/magi.db`——K8s Pod **不传**
-`HOST_WORKSPACE_DIR`，路径解析器检测 `KUBERNETES_SERVICE_HOST` 自动默认宿主根为 `/`，
-PVC 挂到容器根，`MAGI_Citizens/<name>` 由 `MAGI_NAME` 推导；每个 MAGIS 则有独立
-PostgreSQL 与公共工作区 PVC，承载组织事实和团队共享文件。启动契约只有四个变量
-（`HOST_WORKSPACE_DIR`、`MAGI_NAME`、`MAGIS_DATABASE_URL`、`MAGI_ID`），
-workspace 路径由它们推导，调用方不传入。精确边界见
-[存储边界](docs/ARCHITECTURE.md#storage-ownership)。
+### 桌面 UI 与 ASP
 
-### 一个 WebUI、一个镜像
-
-MAGI 只发布一个容器镜像，但提供两个可选服务角色。默认 `magi` 命令运行单个
-MAGI，并只提供集群内 Runtime API；`magi webui` 则运行唯一的 React 控制台、登录、
-组织控制面，以及到当前所选 MAGI 的受控代理。浏览器始终只访问一个 WebUI Service，
-不会直接连接任何 MAGI Pod。
-
-落地页先选择正在运行的 MAGI，再只显示该 MAGI 的直接 MAGIS Admin 与 assigned user。
-代理用每个 MAGI 在 `control_secrets` 表里的持久 secret 为内部请求签名；签名同时绑定目标
-MAGI 与已认证身份。运行时会拒绝发给其他 MAGI 的请求。切换 MAGI 必须重新登录，不能在已登录
-页面直接切换。MAGI 已配置自己的 Bot 时自行发送验证码；首次尚未配置 Bot 时，才由其直接 MAGIS
-的 ADAM Bot 代发验证码。
+Electron 桌面 UI 是操作者客户端。它启动或连接本地 ASP；ASP 负责 HTTP、WebSocket
+`/connect` 与 MAGI 进程创建。桌面端不直接启动 MAGI。
 
 深入实现请阅读：
 
 - [架构](docs/ARCHITECTURE.md)
 - [关键业务流程](docs/business-flows.md)
 - [术语与 ID 命名规范](docs/terms.md)
-- [部署总览](deploy/README.md)
+- [magi-asp](magi-asp/README.md)
 - [路线图](docs/ROADMAP.md)
 
 ## 项目状态

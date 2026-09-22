@@ -1,0 +1,495 @@
+"""Serial processing and LLM context for one conversation."""
+
+from __future__ import annotations
+
+import asyncio
+from collections import deque
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from functools import partial
+from itertools import chain
+from typing import TYPE_CHECKING, Any
+
+from bus import (
+    MAGI_CONTACT_ID,
+    SYSTEM_CONTACT_ID,
+    CallLLMJob,
+    CallLLMResult,
+    ChatNotify,
+    ChatNotifyResult,
+    DeliveryNotify,
+    GetConversationJob,
+    GetPromptJob,
+    GetSettingJob,
+    JobStatus,
+    ListConversationMessagesJob,
+    ListMemoriesJob,
+    ListSkillsJob,
+    ListToolsJob,
+    LLMMessage,
+    LLMMessageRole,
+    LLMToolCall,
+    RunToolJob,
+    Skill,
+    UpdateConversationSummaryJob,
+    go,
+)
+
+from .compaction import compact_messages
+
+if TYPE_CHECKING:
+    from .worker import AgentWorker
+
+
+LLM_TIMEOUT_SECONDS = 300
+TOOL_WAIT_SECONDS = 120
+COMPACT_KEEP_RECENT = 20
+COMPACT_CONTEXT_WINDOW = 200_000
+
+
+@dataclass(frozen=True)
+class LLMContinuation:
+    """One assistant tool-call state retained to continue the LLM response."""
+
+    assistant: LLMMessage
+    results: tuple[LLMMessage, ...]
+    pending: list[LLMMessage] = field(default_factory=list)
+
+    def messages(self) -> tuple[LLMMessage, ...]:
+        return (
+            self.assistant,
+            *self.results,
+            *self.pending,
+        )
+
+    def without_tools(self) -> tuple[LLMMessage, ...]:
+        assistant = replace(self.assistant, tool_calls=None, thinking_blocks=None)
+        return (assistant, *self.pending)
+
+
+@dataclass
+class Conversation:
+    """One conversation's serial queue, durable snapshot, and current LLM run."""
+
+    # Worker is this Conversation's only BUS gateway.
+    _worker: AgentWorker
+    # Stable durable Conversation id; also the key used by AgentWorker to route jobs here.
+    conversation_id: int
+
+    # Claimed ChatNotify jobs waiting for this Conversation's serial loop.
+    _pending: deque[ChatNotify] = field(init=False, default_factory=deque)
+    # Whether that serial loop has already been started.
+    _running: bool = field(init=False, default=False)
+
+    # SYSTEM message layout: AGENT.md → skills → memories → conversation metadata.
+    # Base personality prompt from AGENT.md.
+    agent_md: str = field(init=False, default="")
+    # Names and one-line descriptions of currently available skills.
+    skills: list[Skill] = field(init=False, default_factory=list)
+    # Header for the SYSTEM skills section; body listing is name + description only.
+    skills_block: str = field(init=False, default="")
+    # Global long-term memories available to the agent.
+    memories: list[Any] = field(init=False, default_factory=list)
+    # Conversation-specific instruction from the Conversation record.
+    conversation_instruction: str = field(init=False, default="")
+    # Conversation-specific metadata from the Conversation record.
+    conversation_info: str = field(init=False, default="")
+    conversation_channel: str = field(init=False, default="")
+    conversation_delivery_address: str = field(init=False, default="")
+    conversation_topic: str = field(init=False, default="")
+
+    # Remaining LLM message layout: summary → history → latest continuation.
+    # Durable summary that replaces older MessageBook history in the LLM window.
+    summary: LLMMessage | None = field(init=False, default=None)
+    # In-memory chat transcript of USER/MAGI text, including text retained from old continuations.
+    history: list[LLMMessage] = field(init=False, default_factory=list)
+    # The only assistant-tool-result exchange needed for the next LLM call.
+    latest_continuation: LLMContinuation | None = field(init=False, default=None)
+    # Current Agent-visible tool definitions passed to CallLLMJob.
+    tools: list[Any] = field(init=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        conversation = self._conversation()
+        if conversation is not None:
+            self.summary = self._summary_message(conversation.summary)
+        self.history = self._messages_from_records(
+            self._get_active_messages(last_n=COMPACT_KEEP_RECENT)
+        )
+
+    def submit(self, job: ChatNotify) -> None:
+        """Queue a claimed turn without running two turns for this conversation."""
+        self._pending.append(job)
+        if self._running:
+            return
+        self._running = True
+        go(self._run())
+
+    async def _run(self) -> None:
+        try:
+            while self._pending:
+                await self._run_turn(self._pending.popleft())
+        finally:
+            self._running = False
+            if self._pending:
+                self._running = True
+                go(self._run())
+            else:
+                self._worker._release_conversation(self)
+
+    async def _run_turn(self, job: ChatNotify) -> None:
+        self.history.append(
+            LLMMessage(
+                role=LLMMessageRole.USER,
+                content=self._stamp(job.contact_id, job.text),
+            )
+        )
+        self.latest_continuation = None
+        conversation = self._conversation()
+        if conversation is None:
+            error = "会话不存在。"
+            self._finish(job, error, error=error)
+            return
+        self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
+        listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
+        self.skills = [] if listed is None or not listed.skills else list(listed.skills)
+        self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
+        memories_result = await self._worker.ask(
+            ListMemoriesJob(publisher=self._worker.worker_name)
+        )
+        self.memories = [] if memories_result is None else memories_result.memories or []
+        self.conversation_instruction = conversation.instruction or ""
+        self.conversation_info = conversation.info or ""
+        self.conversation_channel = conversation.channel or ""
+        self.conversation_delivery_address = conversation.delivery_address or ""
+        self.conversation_topic = conversation.topic or ""
+        tools_result = await self._worker.ask(
+            ListToolsJob(publisher=self._worker.worker_name)
+        )
+        self.tools = (
+            []
+            if tools_result is None or tools_result.tools is None
+            else [tool.definition for tool in tools_result.tools]
+        )
+        await self._process(job)
+
+    async def _process(self, job: ChatNotify) -> None:
+        call_llm = partial(
+            self._call_llm,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        while True:
+            await self._compact(call_llm=call_llm)
+            llm = await call_llm(
+                list(
+                    chain(
+                        (self._system_message(),),
+                        self._summary_messages(),
+                        self.history,
+                        ()
+                        if self.latest_continuation is None
+                        else self.latest_continuation.messages(),
+                    )
+                ),
+                self.tools,
+            )
+            if llm is None:
+                error = "回复生成超时，请稍后再试。"
+                self._finish(job, error, error=error)
+                return
+            if llm.status is not JobStatus.COMPLETED or llm.message is None:
+                error = llm.error or "回复生成失败。"
+                self._finish(job, error, error=error)
+                return
+            if not llm.message.tool_calls:
+                self._finish(job, llm.message.content)
+                return
+            if llm.message.content:
+                self._deliver(llm.message.content, commit=False)
+            tool_messages = await self._run_tools(
+                llm.message.tool_calls,
+                wait_seconds=TOOL_WAIT_SECONDS,
+            )
+            pending = list(self._pending)
+            self._pending.clear()
+            pending_inputs = [
+                LLMMessage(
+                    role=LLMMessageRole.USER,
+                    content=self._stamp(pending_job.contact_id, pending_job.text),
+                )
+                for pending_job in pending
+            ]
+            for pending_job in pending:
+                self._settle(job)
+                job = pending_job
+            self._flush_continuation()
+            self.latest_continuation = LLMContinuation(
+                llm.message,
+                tuple(tool_messages),
+                pending_inputs,
+            )
+
+    def _deliver(self, text: str, *, commit: bool = True) -> None:
+        """Publish MAGI text to the user. Commit to local history only when the turn ends."""
+        text = text or "处理完毕。"
+        self._worker.publish_notify(
+            DeliveryNotify(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+                text=text,
+            )
+        )
+        if not commit:
+            return
+        self._flush_continuation()
+        if text:
+            self.history.append(
+                LLMMessage(
+                    role=LLMMessageRole.ASSISTANT,
+                    content=self._stamp(MAGI_CONTACT_ID, text),
+                )
+            )
+        self.latest_continuation = None
+
+    async def _compact(
+        self,
+        *,
+        call_llm: Callable[..., Awaitable[CallLLMResult | None]],
+    ) -> None:
+        """Summarize durable conversation history when it exceeds budget."""
+        if self.latest_continuation is not None:
+            return
+        setting = await self._worker.ask(
+            GetSettingJob(publisher=self._worker.worker_name, key="provider.context_window")
+        )
+        try:
+            window = int(None if setting is None else setting.value)
+        except (TypeError, ValueError):
+            window = COMPACT_CONTEXT_WINDOW
+        window //= 2
+        if window < 1:
+            return
+        prompt = await self._prompt("agent/compaction")
+        if not prompt:
+            return
+        summary = await compact_messages(
+            [*self._summary_messages(), *self.history],
+            context_window=window,
+            prompt=prompt,
+            call_llm=call_llm,
+        )
+        if not summary:
+            return
+        updated = await self._worker.ask(
+            UpdateConversationSummaryJob(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+                summary=summary,
+            )
+        )
+        if updated is None:
+            return
+        self.summary = self._summary_message(summary)
+        self.history = self._messages_from_records(
+            self._get_active_messages(last_n=COMPACT_KEEP_RECENT)
+        )
+
+    def _settle(self, job: ChatNotify, error: str | None = None) -> None:
+        self._worker.submit(
+            ChatNotify,
+            ChatNotifyResult(
+                id=job.id,
+                status=JobStatus.FAILED if error is not None else JobStatus.COMPLETED,
+                error=error,
+            ),
+        )
+
+    def _finish(self, job: ChatNotify, text: str, *, error: str | None = None) -> None:
+        self._deliver(text)
+        self._settle(job, error)
+
+    def _conversation(self):
+        board = self._worker.board(GetConversationJob)
+        if board is None:
+            return None
+        result = board.publish(
+            GetConversationJob(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+            )
+        )
+        return result.conversation
+
+    def _get_active_messages(self, *, last_n: int | None = None) -> list:
+        board = self._worker.board(ListConversationMessagesJob)
+        if board is None:
+            return []
+        result = board.publish(
+            ListConversationMessagesJob(
+                publisher=self._worker.worker_name,
+                conversation_id=self.conversation_id,
+                last_n=last_n,
+            )
+        )
+        return [] if result.messages is None else result.messages
+
+    def _summary_messages(self) -> tuple[LLMMessage, ...]:
+        return () if self.summary is None else (self.summary,)
+
+    @staticmethod
+    def _summary_message(text: str | None) -> LLMMessage | None:
+        if not text:
+            return None
+        return LLMMessage(
+            role=LLMMessageRole.USER,
+            content=f"[Prior conversation summary]\n{text}",
+        )
+
+    def _flush_continuation(self) -> None:
+        if self.latest_continuation is None:
+            return
+        assistant, *pending = self.latest_continuation.without_tools()
+        self.history.append(
+            LLMMessage(
+                role=LLMMessageRole.ASSISTANT,
+                content=self._stamp(MAGI_CONTACT_ID, assistant.content),
+            )
+        )
+        self.history.extend(pending)
+
+    @staticmethod
+    def _stamp(contact_id: int, content: str, when: datetime | None = None) -> str:
+        moment = datetime.now(UTC) if when is None else when
+        if moment.tzinfo is not None:
+            moment = moment.astimezone(UTC)
+        return f"[contact id {contact_id} | {moment.strftime('%Y-%m-%d:%H-%M')}]\n{content}"
+
+    @staticmethod
+    def _messages_from_records(records) -> list[LLMMessage]:
+        return [
+            LLMMessage(
+                role=LLMMessageRole.ASSISTANT
+                if record.contact_id == MAGI_CONTACT_ID
+                else LLMMessageRole.USER,
+                content=Conversation._stamp(record.contact_id, record.content, record.timestamp),
+            )
+            for record in records
+        ]
+
+    def _system_message(self) -> LLMMessage:
+        """Render the declared SYSTEM sections in their field order."""
+        sections = [self.agent_md]
+        if self.skills:
+            listing = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.skills)
+            header = self.skills_block or "## Available skills"
+            sections.append(f"{header}\n{listing}")
+        if self.memories:
+            sections.append(
+                "## Long-term memory\n"
+                + "\n".join(f"- {memory.topic}: {memory.detail}" for memory in self.memories)
+            )
+        if self.conversation_instruction:
+            sections.append("## Conversation instruction\n" + self.conversation_instruction)
+        if self.conversation_info:
+            sections.append("## Conversation info\n" + self.conversation_info)
+        sections.append(
+            "## Session\n"
+            f"conversation_id: {self.conversation_id}\n"
+            f"channel: {self.conversation_channel}\n"
+            f"delivery_address: {self.conversation_delivery_address}\n"
+            f"topic: {self.conversation_topic}\n"
+            f"MAGI_CONTACT_ID: {MAGI_CONTACT_ID}\n"
+            f"SYSTEM_CONTACT_ID: {SYSTEM_CONTACT_ID}"
+        )
+        return LLMMessage(
+            role=LLMMessageRole.SYSTEM,
+            content="\n\n".join(sections).strip() or "You are a helpful assistant.",
+        )
+
+    async def _prompt(self, key: str) -> str | None:
+        result = await self._worker.ask(GetPromptJob(publisher=self._worker.worker_name, key=key))
+        return None if result is None else result.value
+
+    async def _run_tools(
+        self,
+        calls: list[LLMToolCall],
+        *,
+        wait_seconds: float,
+    ) -> list[LLMMessage]:
+        board = self._worker.board(RunToolJob)
+        if board is None:
+            return [
+                LLMMessage(
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=call.tool_call_id,
+                    content="tool board is not mounted",
+                    is_error=True,
+                )
+                for call in calls
+            ]
+        pending = {
+            call.tool_call_id: (
+                call,
+                await self._worker.call(
+                    board.publish,
+                    RunToolJob(publisher=self._worker.worker_name, call=call),
+                ),
+            )
+            for call in calls
+        }
+        results: dict[str, Any] = {}
+        deadline = asyncio.get_running_loop().time() + wait_seconds
+        while pending and asyncio.get_running_loop().time() < deadline:
+            for call_id, (_, job_id) in tuple(pending.items()):
+                status = await self._worker.call(board.check_job_status, job_id)
+                if status not in {JobStatus.COMPLETED, JobStatus.FAILED}:
+                    continue
+                result = await self._worker.call(board.get_result, job_id, timeout=0)
+                if result is not None:
+                    results[call_id] = result
+                    del pending[call_id]
+            if pending:
+                await asyncio.sleep(1)
+        messages: list[LLMMessage] = []
+        for call_id in pending:
+            results[call_id] = None
+        for call in calls:
+            result = results.get(call.tool_call_id)
+            failed = result is None or result.status is not JobStatus.COMPLETED
+            content = (
+                "tool execution timed out"
+                if result is None
+                else (result.error if failed else result.content)
+            )
+            messages.append(
+                LLMMessage(
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=call.tool_call_id,
+                    content=content or "tool execution failed",
+                    is_error=failed,
+                )
+            )
+        return messages
+
+    async def _call_llm(
+        self,
+        messages: list[LLMMessage],
+        tools: list[Any],
+        *,
+        timeout: float,
+    ) -> CallLLMResult | None:
+        board = self._worker.board(CallLLMJob)
+        if board is None:
+            return CallLLMResult(status=JobStatus.FAILED, error="LLM board is not mounted")
+        job_id = await self._worker.call(
+            board.publish,
+            CallLLMJob(
+                publisher=self._worker.worker_name,
+                messages=messages,
+                tools=tools,
+            ),
+        )
+        return await self._worker.call(board.get_result, job_id, timeout=timeout)
+
+
+__all__ = ["Conversation"]

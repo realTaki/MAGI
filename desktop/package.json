@@ -1,0 +1,36 @@
+{
+  "name": "@magi/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "shell/main.mjs",
+  "description": "MAGI Electron desktop: operator UI and local sqlite.",
+  "scripts": {
+    "dev": "electron .",
+    "dev:ui": "npm run dev --prefix ui",
+    "build": "npm run build --prefix ui && electron-builder",
+    "build:ui": "npm run build --prefix ui",
+    "build:desktop": "electron-builder",
+    "lint": "npm run lint --prefix ui"
+  },
+  "build": {
+    "appId": "ai.magi.app",
+    "productName": "MAGI",
+    "files": [
+      "shell/**",
+      "ui/dist/**",
+      "schema.sql",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^43.5.1",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.0"
+  }
+}
