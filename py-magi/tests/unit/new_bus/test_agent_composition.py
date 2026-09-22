@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agent.worker import AgentWorker
-from bus.magi import WORKERS
+from magi.launcher import WORKERS
 from channels.tasks import TaskWorker
 
 

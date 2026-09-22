@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import bus.magi as bus_runtime
+import magi.launcher as launcher
 from bus import BaseWorker, Bus, ListSettingsJob
 
 
@@ -56,7 +56,7 @@ def test_bus_rejects_duplicate_worker_name(tmp_path) -> None:
 
 def test_main_attaches_workers_and_serves(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
-    monkeypatch.setattr(bus_runtime, "WORKERS", (FirstWorker, SecondWorker))
+    monkeypatch.setattr(launcher, "WORKERS", (FirstWorker, SecondWorker))
     seen: dict[str, object] = {}
 
     def fake_serve(self: Bus) -> None:
@@ -64,7 +64,7 @@ def test_main_attaches_workers_and_serves(tmp_path, monkeypatch) -> None:
         seen["workers"] = set(self.workers)
 
     monkeypatch.setattr(Bus, "start", fake_serve)
-    assert bus_runtime.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
+    assert launcher.main(["@alice.magi", "http://127.0.0.1:42069", "alice-token"]) == 0
     assert seen["handle"] == "@alice.magi"
     assert seen["workers"] == {"first", "second"}
 

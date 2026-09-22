@@ -1,5 +1,5 @@
-"""``python -m magi <handle> <base> <token>`` — one MAGI attached to magi-asp."""
+"""Launch one MAGI attached to magi-asp."""
 
-from bus.magi import main
+from . import main
 
 raise SystemExit(main())

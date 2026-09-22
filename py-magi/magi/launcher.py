@@ -1,4 +1,7 @@
-"""One MAGI process, composed around its BUS."""
+"""MAGI process launcher.
+
+Edit :data:`WORKERS` to change which workers a MAGI process starts.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +9,14 @@ import argparse
 from collections.abc import Sequence
 
 from agent.worker import AgentWorker
+from bus import BaseWorker, Bus
 from channels.asp import AspWorker
 from channels.tasks import TaskWorker
 from channels.telegram import TelegramWorker
 from providers.worker import ProvidersWorker
 from tools.worker import ToolsWorker
 
-from .BaseWorker import BaseWorker
-from .bus import Bus
-
+# This is the one runtime composition list: add or remove startup workers here.
 WORKERS: tuple[type[BaseWorker], ...] = (
     ProvidersWorker,
     ToolsWorker,
@@ -46,7 +48,3 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         bus.stop()
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
