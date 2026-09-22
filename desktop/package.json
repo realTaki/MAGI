@@ -16,11 +16,43 @@
   "build": {
     "appId": "ai.magi.app",
     "productName": "MAGI",
+    "executableName": "MAGI",
     "files": [
       "shell/**",
       "ui/dist/**",
       "schema.sql",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../py-magi",
+        "to": "magi-source/py-magi",
+        "filter": [
+          "**/*",
+          "!**/.venv/**",
+          "!**/__pycache__/**",
+          "!**/.pytest_cache/**",
+          "!**/.mypy_cache/**",
+          "!**/.ruff_cache/**",
+          "!**/*.egg-info/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../magi-asp",
+        "to": "magi-source/magi-asp",
+        "filter": [
+          "**/*",
+          "!**/.venv/**",
+          "!**/__pycache__/**",
+          "!**/.pytest_cache/**",
+          "!**/*.pyc"
+        ]
+      },
+      { "from": "../.gitignore", "to": "magi-source/.gitignore" },
+      { "from": "../README.md", "to": "magi-source/README.md" },
+      { "from": "../README_zh.md", "to": "magi-source/README_zh.md" },
+      { "from": "../LICENSE", "to": "magi-source/LICENSE" }
     ],
     "directories": {
       "output": "release"

@@ -1,6 +1,6 @@
 /** Electron is a frameless shell: launch chooser, then the local operator UI. */
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,7 +8,6 @@ import { app, BrowserWindow, Menu, ipcMain, shell } from "electron";
 
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
-const ASP_DIR = path.join(REPO_ROOT, "magi-asp");
 const UI_DIST = path.join(SHELL_DIR, "..", "ui", "dist", "index.html");
 const UI_DEV_URL = process.env.MAGI_UI_URL ?? "http://127.0.0.1:5173";
 const ASP_URL = process.env.MAGI_ASP_URL ?? "http://127.0.0.1:42069";
@@ -19,6 +18,85 @@ let mainWindow = null;
 // its own store.
 let spawnedAsp = null;
 let startingLocal = false;
+let runtimeRoot = null;
+
+function runGit(checkout, args) {
+  const result = spawnSync("git", args, {
+    cwd: checkout,
+    stdio: "pipe",
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (result.error) {
+    throw new Error(`could not initialize MAGI source Git repository: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `could not initialize MAGI source Git repository: ${result.stderr?.trim() || "git failed"}`,
+    );
+  }
+}
+
+function initializeSourceGit(checkout) {
+  runGit(checkout, ["init", "-q"]);
+  runGit(checkout, ["add", "--all"]);
+  runGit(checkout, [
+    "-c",
+    "user.name=MAGI",
+    "-c",
+    "user.email=magi@localhost",
+    "commit",
+    "--quiet",
+    "--no-gpg-sign",
+    "-m",
+    "MAGI bundled source",
+  ]);
+}
+
+function materializeMagiSource() {
+  const destination = path.join(app.getPath("home"), ".magi", "MAGI");
+  if (existsSync(destination)) {
+    if (!statSync(destination).isDirectory()) {
+      throw new Error(`MAGI source path is not a directory: ${destination}`);
+    }
+    return destination;
+  }
+
+  const bundled = path.join(process.resourcesPath, "magi-source");
+  if (!existsSync(bundled)) {
+    throw new Error(`MAGI bundled source was not found at ${bundled}`);
+  }
+
+  const parent = path.dirname(destination);
+  mkdirSync(parent, { recursive: true });
+  const staging = mkdtempSync(path.join(parent, ".MAGI-"));
+  const checkout = path.join(staging, "MAGI");
+  try {
+    cpSync(bundled, checkout, { recursive: true });
+    initializeSourceGit(checkout);
+    try {
+      renameSync(checkout, destination);
+    } catch (error) {
+      // Two app launches can race on first install. Keep the winner's tree.
+      if (!existsSync(destination)) {
+        throw error;
+      }
+    }
+    return destination;
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+function resolveRuntimeRoot() {
+  if (!app.isPackaged) {
+    return REPO_ROOT;
+  }
+  if (runtimeRoot === null) {
+    runtimeRoot = materializeMagiSource();
+  }
+  return runtimeRoot;
+}
 
 function healthUrl() {
   return new URL("/health", ASP_URL).href;
@@ -48,9 +126,9 @@ async function isAspHealthy() {
   }
 }
 
-function resolveAspPython() {
-  const unix = path.join(ASP_DIR, ".venv", "bin", "python");
-  const win = path.join(ASP_DIR, ".venv", "Scripts", "python.exe");
+function resolveAspPython(aspDir) {
+  const unix = path.join(aspDir, ".venv", "bin", "python");
+  const win = path.join(aspDir, ".venv", "Scripts", "python.exe");
   if (existsSync(unix)) {
     return unix;
   }
@@ -63,10 +141,11 @@ function resolveAspPython() {
 function spawnLocalAsp() {
   // Desktop starts magi-asp only. MAGI processes are spawned by ASP on that
   // host — the client must not start MAGI locally (ASP/MAGI may be remote).
-  const python = resolveAspPython();
+  const aspDir = path.join(resolveRuntimeRoot(), "magi-asp");
+  const python = resolveAspPython(aspDir);
   const origin = new URL(ASP_URL);
   const child = spawn(python, ["main.py"], {
-    cwd: ASP_DIR,
+    cwd: aspDir,
     env: {
       ...process.env,
       PYTHONUNBUFFERED: "1",
@@ -88,8 +167,9 @@ async function startLocalAsp() {
   if (await isAspHealthy()) {
     return;
   }
-  if (!existsSync(path.join(ASP_DIR, "main.py"))) {
-    throw new Error(`magi-asp was not found at ${ASP_DIR}`);
+  const aspDir = path.join(resolveRuntimeRoot(), "magi-asp");
+  if (!existsSync(path.join(aspDir, "main.py"))) {
+    throw new Error(`magi-asp was not found at ${aspDir}`);
   }
   spawnedAsp = spawnLocalAsp();
   try {
