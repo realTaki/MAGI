@@ -37,6 +37,9 @@
     ],
     "directories": {
       "output": "release"
+    },
+    "linux": {
+      "target": ["AppImage"]
     }
   },
   "dependencies": {

@@ -235,6 +235,7 @@ function spawnLocalAsp(checkout) {
     env: {
       ...env,
       PYTHONUNBUFFERED: "1",
+      MAGI_SOURCE_DIR: checkout,
       MAGI_ASP_HOST: origin.hostname,
       MAGI_ASP_PORT: origin.port || "42069",
     },
