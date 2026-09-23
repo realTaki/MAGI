@@ -102,7 +102,7 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
   globalThis.fetch = async (url, options = {}) => {
     const endpoint = new URL(url).pathname;
     requests.push(`${options.method ?? "GET"} ${endpoint}`);
-    if (endpoint === "/health") return Response.json({ status: "ok" });
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
     if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: false }] });
     if (endpoint === "/settings/provider/legacy" && options.method === "DELETE") {

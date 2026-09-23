@@ -9,7 +9,7 @@ import { createApp, intranetBaseUrl } from "./server/app.ts";
 function main(): void {
   const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
   const port = Number(process.env.MAGI_ASP_PORT ?? "42069");
-  const app = createApp({ aspBase: intranetBaseUrl() });
+  const app = createApp({ aspBase: intranetBaseUrl(), requestShutdown: () => process.kill(process.pid, "SIGTERM") });
   let closing = false;
   const shutdown = () => {
     if (closing) {

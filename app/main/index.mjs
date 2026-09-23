@@ -49,8 +49,6 @@ const GITHUB_CLIENT_ID =
   (process.env.MAGI_GITHUB_CLIENT_ID ?? "").trim() || MAGI_GITHUB_CLIENT_ID;
 const GITHUB_TIMEOUT_MS = 20_000;
 const FORK_TIMEOUT_MS = 60_000;
-// How often the checkout's commit is checked for the interface to rebuild.
-const COMMIT_POLL_MS = 5_000;
 const AVATAR_TIMEOUT_MS = 8_000;
 const PROVIDER_POLL_MS = 5_000;
 
@@ -191,7 +189,7 @@ export function createLocalApi(context) {
   const options = { cwd: paths.checkout, env: tools.env };
   let asp = null;
   let deviceFlowPending = false;
-  let commitWatcher = null;
+  let runtimeBusy = false;
   let chatStorePromise = null;
   let providerTimer = null;
   let providerRelayReady = false;
@@ -646,21 +644,27 @@ export function createLocalApi(context) {
     return new URL("/health", ASP_ORIGIN).href;
   }
 
-  async function isAspHealthy() {
+  async function aspHealth() {
     try {
       const response = await fetch(healthUrl(), { signal: AbortSignal.timeout(400) });
-      return response.ok;
+      if (!response.ok) return "unavailable";
+      const health = await response.json();
+      return health?.status === "ok" && health?.runtime === "typescript"
+        ? "ready"
+        : "incompatible";
     } catch {
-      return false;
+      return "unavailable";
     }
   }
 
   async function waitForAsp(timeoutMs = 20_000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (await isAspHealthy()) {
+      const health = await aspHealth();
+      if (health === "ready") {
         return;
       }
+      if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);
       await delay(200);
     }
     throw new Error(`ASP is unavailable at ${healthUrl()}`);
@@ -715,21 +719,7 @@ export function createLocalApi(context) {
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
-  /** The checkout's current commit, empty when Git cannot answer. */
-  async function readCommit() {
-    try {
-      return (
-        await command(git.binary, ["rev-parse", "HEAD"], {
-          ...options,
-          description: "Could not read the checkout commit",
-        })
-      ).trim();
-    } catch {
-      return "";
-    }
-  }
-
-  /** Rebuild the interface from the checkout — what a new commit makes visible. */
+  /** Rebuild the interface only when explicitly requested. */
   async function rebuildInterface() {
     const appDir = path.join(paths.checkout, "app");
     const build = (description) =>
@@ -756,56 +746,6 @@ export function createLocalApi(context) {
   }
 
   /**
-   * The commit is the unit this app reacts to: a pull (or a local commit) in the
-   * checkout rebuilds the interface, then tells the interface to offer a reload.
-   * Files are ignored on purpose. A page reload leaves ASP and MAGI running.
-   */
-  function watchCheckout() {
-    if (commitWatcher !== null || !managed || (process.env.MAGI_APP_URL ?? "").trim() !== "") {
-      return;
-    }
-    const watcher = { commit: "", building: false, stopped: false, timer: null };
-    commitWatcher = watcher;
-    const poll = async () => {
-      const commit = await readCommit();
-      if (watcher.stopped) {
-        return;
-      }
-      if (commit !== "" && commit !== watcher.commit) {
-        const changed = watcher.commit !== "";
-        watcher.commit = commit;
-        if (changed && !watcher.building) {
-          watcher.building = true;
-          try {
-            await rebuildInterface();
-            if (!watcher.stopped) {
-              emit("app.interface-updated", { commit });
-            }
-          } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            console.error(`[magi-app] could not rebuild the interface: ${detail}`);
-          } finally {
-            watcher.building = false;
-          }
-        }
-      }
-      if (!watcher.stopped) {
-        watcher.timer = setTimeout(() => void poll(), COMMIT_POLL_MS);
-      }
-    };
-    void poll();
-  }
-
-  function stopWatchingCheckout() {
-    if (commitWatcher === null) {
-      return;
-    }
-    commitWatcher.stopped = true;
-    clearTimeout(commitWatcher.timer);
-    commitWatcher = null;
-  }
-
-  /**
    * Everything this checkout needs before it can run. Only a managed checkout
    * is prepared: a developer's own tree is already theirs to prepare.
    */
@@ -824,25 +764,31 @@ export function createLocalApi(context) {
       }
     }
 
-    if (managed) {
+    if (managed && !existsSync(path.join(aspDir, "node_modules"))) {
       progress?.("Preparing local ASP…", 0.2);
       await command(tools.node, [tools.npm, "ci"], {
         cwd: aspDir,
         env: tools.env,
         description: "Could not prepare ASP",
       });
+    }
+    if (managed && !existsSync(path.join(magiDir, "node_modules"))) {
       progress?.("Preparing MAGI…", 0.4);
       await command(tools.bun, ["install", "--frozen-lockfile"], {
         cwd: magiDir,
         env: tools.env,
         description: "Could not prepare MAGI",
       });
+    }
+    if (managed && !existsSync(path.join(appDir, "node_modules"))) {
       progress?.("Installing app dependencies…", 0.6);
       await command(tools.node, [tools.npm, "ci"], {
         cwd: appDir,
         env: tools.env,
         description: "Could not install the desktop app dependencies",
       });
+    }
+    if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {
       progress?.("Building the app…", 0.8);
       await command(tools.node, [tools.npm, "run", "build"], {
         cwd: appDir,
@@ -852,7 +798,6 @@ export function createLocalApi(context) {
     }
 
     progress?.("Prepared.", 0.85);
-    watchCheckout();
     return { ui: uiEntry() };
   }
 
@@ -1035,7 +980,9 @@ export function createLocalApi(context) {
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
     progress?.("Checking local ASP…", 0.9);
-    if (await isAspHealthy()) {
+    const health = await aspHealth();
+    if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);
+    if (health === "ready") {
       await ensureDefaultMagis(progress);
       await activateProviderSync();
       return { origin: ASP_ORIGIN.href };
@@ -1070,7 +1017,6 @@ export function createLocalApi(context) {
   }
 
   function dispose() {
-    stopWatchingCheckout();
     if (chatStorePromise !== null) {
       void chatStorePromise.then((store) => store.close());
       chatStorePromise = null;
@@ -1088,6 +1034,86 @@ export function createLocalApi(context) {
       asp.kill("SIGTERM");
     }
     asp = null;
+  }
+
+  async function runtimeAction(action) {
+    requireManaged();
+    if (runtimeBusy) throw new Error("Another runtime operation is still running.");
+    runtimeBusy = true;
+    try {
+      return await action();
+    } finally {
+      runtimeBusy = false;
+    }
+  }
+
+  async function magiControl(action) {
+    const { token } = await aspJson("/operator");
+    return await aspJson(`/runtime/magi/${action}`, { token, method: "POST" });
+  }
+
+  async function stopOwnedAsp() {
+    if ((await aspHealth()) !== "ready") return;
+    if (asp && !asp.killed) {
+      asp.kill("SIGTERM");
+    } else {
+      const { token } = await aspJson("/operator");
+      await aspJson("/runtime/asp/stop", { token, method: "POST" });
+    }
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if ((await aspHealth()) === "unavailable") {
+        asp = null;
+        return;
+      }
+      await delay(200);
+    }
+    throw new Error("ASP did not stop; rebuild was cancelled.");
+  }
+
+  async function runtimeStatus() {
+    const health = await aspHealth();
+    let magiOnline = 0;
+    if (health === "ready") {
+      const { token } = await aspJson("/operator");
+      const bots = (await aspJson("/bots", { token }))?.bots ?? [];
+      magiOnline = bots.filter((bot) => bot.online).length;
+    }
+    return { asp: health, owned: Boolean(asp && !asp.killed), magiOnline };
+  }
+
+  async function rebuildAsp() {
+    return runtimeAction(async () => {
+      await stopOwnedAsp();
+      await command(tools.node, [tools.npm, "ci"], {
+        cwd: path.join(paths.checkout, "asp"), env: tools.env,
+        description: "Could not install ASP dependencies",
+      });
+      await start();
+      return await runtimeStatus();
+    });
+  }
+
+  async function rebuildMagi() {
+    return runtimeAction(async () => {
+      if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding MAGI.");
+      await magiControl("stop");
+      const magiDir = path.join(paths.checkout, "magi");
+      await command(tools.bun, ["install", "--frozen-lockfile"], {
+        cwd: magiDir, env: tools.env, description: "Could not install MAGI dependencies",
+      });
+      await command(tools.bun, ["run", "build"], {
+        cwd: magiDir, env: tools.env, description: "Could not build MAGI",
+      });
+      return await magiControl("start");
+    });
+  }
+
+  async function rebuildApp() {
+    return runtimeAction(async () => {
+      await rebuildInterface();
+      emit("app.interface-updated", {});
+      return { ui: uiEntry() };
+    });
   }
 
   function isAgentic(url) {
@@ -1269,6 +1295,14 @@ export function createLocalApi(context) {
     start,
     dispose,
     shutdown,
+    "runtime.status": runtimeStatus,
+    "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
+    "runtime.startAsp": () => runtimeAction(() => start()),
+    "runtime.rebuildAsp": rebuildAsp,
+    "runtime.stopMagi": () => runtimeAction(() => magiControl("stop")),
+    "runtime.startMagi": () => runtimeAction(() => magiControl("start")),
+    "runtime.rebuildMagi": rebuildMagi,
+    "runtime.rebuildApp": rebuildApp,
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,

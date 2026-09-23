@@ -1776,6 +1776,11 @@ body {
   margin-bottom: 22px;
 }
 
+.settings-card__actions--wrap {
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+
 .settings-card__status {
   color: var(--settings-muted);
   font-size: 13px;

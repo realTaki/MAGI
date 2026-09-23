@@ -19,7 +19,7 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
     const endpoint = new URL(url).pathname;
     if (endpoint === "/health") {
       return healthy
-        ? Response.json({ status: "ok" })
+        ? Response.json({ status: "ok", runtime: "typescript" })
         : Response.json({ status: "starting" }, { status: 503 });
     }
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
@@ -68,4 +68,62 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
 
   api.shutdown();
   assert.deepEqual(signals, ["SIGTERM"], "desktop shutdown stops its ASP child");
+});
+
+test("the app refuses to attach to a running legacy Python ASP", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-legacy-asp-"));
+  const checkout = path.join(root, "checkout");
+  mkdirSync(path.join(checkout, "asp"), { recursive: true });
+  writeFileSync(path.join(checkout, "asp", "main.ts"), "");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (new URL(url).pathname === "/health") return Response.json({ status: "ok" });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+  let spawned = false;
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {},
+    openExternal: async () => {},
+    copy: () => {},
+    spawn() { spawned = true; throw new Error("must not spawn on an occupied port"); },
+  });
+  await assert.rejects(api.start(), /older ASP is already listening/);
+  assert.equal(spawned, false);
+  api.dispose();
+});
+
+test("runtime controls stop MAGI through the operator bridge and report online count", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-controls-"));
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    calls.push(`${options.method ?? "GET"} ${endpoint}`);
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/bots") return Response.json({ bots: [{ online: true }, { online: false }] });
+    if (endpoint === "/runtime/magi/stop") return Response.json({ stopped: true });
+    throw new Error(`unexpected request: ${endpoint}`);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout: root },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "unused", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {}, managed: true,
+  });
+  assert.deepEqual(await api["runtime.status"](), { asp: "ready", owned: false, magiOnline: 1 });
+  assert.deepEqual(await api["runtime.stopMagi"](), { stopped: true });
+  assert.ok(calls.includes("POST /runtime/magi/stop"));
+  api.dispose();
 });
