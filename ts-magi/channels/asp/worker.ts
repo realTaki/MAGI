@@ -39,6 +39,19 @@ export class AspWorker extends BaseWorker {
       }
       return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
     }
+    if (event.type === "agent.provider.update") {
+      const board = this.bus.board("ChangeProviderNotify");
+      const jobId = board.publish({
+        provider: text(event.provider), api_key: text(event.api_key), model: text(event.model),
+      }, this.worker_name);
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        const result = board.result(jobId);
+        if (result) return { type: "agent.provider.updated", request_id: event.request_id, ok: result.status === "completed" };
+        await Bun.sleep(10);
+      }
+      return { type: "agent.provider.updated", request_id: event.request_id, ok: false };
+    }
     const id = event.session_id;
     if (!id) return;
     const payload = event.payload ?? {};
@@ -49,6 +62,7 @@ export class AspWorker extends BaseWorker {
     } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
       this.ingest(id, payload);
     }
+    if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
   }
 
   private ingest(sessionId: string, payload: Record<string, unknown>): void {
@@ -59,4 +73,8 @@ export class AspWorker extends BaseWorker {
     }).join("") : "";
     if (text.trim()) this.bus.publishChat({ text: text.trim(), channel: "asp", delivery_address: sessionId }, this.worker_name);
   }
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

@@ -2,7 +2,11 @@ import type { CallLLMJob, LLMMessage, LLMToolCall } from "../bus/index.js";
 
 export interface LLMClient {
   complete(job: CallLLMJob): Promise<LLMMessage>;
+  verify?(settings: ProviderSettings): Promise<void>;
+  configure?(settings: ProviderSettings): void;
 }
+
+export type ProviderSettings = { provider?: string; api_key?: string; model?: string; api_base?: string };
 
 type ResponseMessage = {
   content?: string | null;
@@ -11,15 +15,36 @@ type ResponseMessage = {
 
 export class OpenAICompatibleClient implements LLMClient {
   constructor(
-    private readonly apiKey: string,
-    private readonly model: string,
-    private readonly apiBase = "https://api.openai.com/v1",
+    private apiKey: string,
+    private model: string,
+    private apiBase = "https://api.openai.com/v1",
     private readonly fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
   ) {}
 
+  configure(settings: ProviderSettings): void {
+    if (settings.api_key !== undefined) this.apiKey = settings.api_key;
+    if (settings.model !== undefined) this.model = settings.model;
+    if (settings.api_base !== undefined) this.apiBase = settings.api_base;
+  }
+
+  async verify(settings: ProviderSettings): Promise<void> {
+    const candidate = new OpenAICompatibleClient(
+      settings.api_key ?? this.apiKey,
+      settings.model ?? this.model,
+      settings.api_base ?? this.apiBase,
+      this.fetcher,
+    );
+    await candidate.request([{ role: "user", content: "Reply OK." }], [], 32);
+  }
+
   async complete(job: CallLLMJob): Promise<LLMMessage> {
     if (!this.apiKey) throw new Error("provider.api_key is missing");
-    const messages = job.messages.map((message) => {
+    return this.request(job.messages, job.tools);
+  }
+
+  private async request(messagesInput: LLMMessage[], tools: CallLLMJob["tools"], maxTokens?: number): Promise<LLMMessage> {
+    if (!this.apiKey) throw new Error("provider.api_key is missing");
+    const messages = messagesInput.map((message) => {
       if (message.role === "tool") return {
         role: "tool", tool_call_id: message.tool_call_id,
         content: message.is_error ? `Tool failed:\n${message.content}` : message.content,
@@ -36,7 +61,7 @@ export class OpenAICompatibleClient implements LLMClient {
     const response = await this.fetcher(`${this.apiBase.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, tools: job.tools.length ? job.tools.map((tool) => ({
+      body: JSON.stringify({ model: this.model, messages, max_tokens: maxTokens, tools: tools.length ? tools.map((tool) => ({
         type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema },
       })) : undefined }),
       signal: AbortSignal.timeout(120_000),

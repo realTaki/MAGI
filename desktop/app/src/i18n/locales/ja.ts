@@ -33,6 +33,8 @@ export default {
   account: {
     menuAria: "アカウントメニュー",
     settings: "設定",
+    unread: "未読メッセージあり",
+    moreUnread: "未読メッセージを表示",
     logOut: "ログアウト",
   },
   github: {

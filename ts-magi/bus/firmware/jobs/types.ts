@@ -20,18 +20,21 @@ export type CallLLMResult = { message: LLMMessage };
 export type RunToolJob = { call: LLMToolCall };
 export type RunToolResult = { content: string };
 export type DeliveryNotify = { conversation_id: number; text: string; channel?: string; address?: string };
+export type ChangeProviderNotify = { provider?: string; api_key?: string; model?: string };
 
 export type JobInput = {
   ChatNotify: ChatNotify;
   CallLLMJob: CallLLMJob;
   RunToolJob: RunToolJob;
   DeliveryNotify: DeliveryNotify;
+  ChangeProviderNotify: ChangeProviderNotify;
 };
 export type JobOutput = {
   ChatNotify: Record<string, never>;
   CallLLMJob: CallLLMResult;
   RunToolJob: RunToolResult;
   DeliveryNotify: Record<string, never>;
+  ChangeProviderNotify: Record<string, never>;
 };
 export type JobType = keyof JobInput;
 export type JobStatus = "pending" | "claimed" | "completed" | "failed";
