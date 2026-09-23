@@ -368,10 +368,11 @@ async function remoteUrl(tools, checkout, name) {
 
 // The helper reads the token file at run time, so rotating the token needs no
 // Git change; the empty entry first drops any helper inherited from global
-// configuration for this checkout.
+// configuration for this checkout. Only shell builtins are used, so the helper
+// works no matter which PATH another Git process runs with.
 function credentialHelperValue() {
   const file = githubTokenFile().split(path.sep).join("/");
-  return `!f() { echo username=x-access-token; echo "password=$(cat "${file}")"; }; f`;
+  return `!f() { read -r MAGI_GITHUB_TOKEN < "${file}"; echo username=x-access-token; echo "password=$MAGI_GITHUB_TOKEN"; }; f`;
 }
 
 async function assignGitIdentity(tools, checkout, viewer) {
