@@ -291,12 +291,29 @@ export type ProviderSettingsSaved = ProviderSettings & {
   failed: { handle: string; detail: string }[];
 };
 
+export type ProviderUsage = {
+  provider: string | null;
+  status: "available" | "unsupported" | "unconfigured" | "error";
+  available?: boolean;
+  balances: Array<{ currency: string; total: string }>;
+  message: string;
+};
+
 export type SourceStatus = {
   available: boolean;
   branch: string;
   commit: string;
+  /** Nearest release tag reachable from this checkout. */
+  tag: string;
+  /** GitHub owner/name for the checkout's origin, normally the operator's fork. */
+  repository: string;
+  /** GitHub owner/name used for the AgenticSociety comparison. */
+  upstreamRepository: string;
+  commitUrl: string;
+  tagUrl: string;
   /** Commit where this checkout diverged from AgenticSociety. Empty when unknown. */
   forkPoint: string;
+  forkPointUrl: string;
   remote: string;
   /** AgenticSociety has commits that are not in this checkout. */
   remoteAhead: boolean;
@@ -312,6 +329,14 @@ export async function getSourceStatus(): Promise<SourceStatus | null> {
 export async function getProviderSettings(): Promise<ProviderSettings | null> {
   const invoke = window.magiDesktop?.invokeLocal;
   return invoke ? (await invoke("provider.settings")) as ProviderSettings : null;
+}
+
+export async function getProviderUsage(): Promise<ProviderUsage> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  if (!invoke) {
+    return { provider: null, status: "error", balances: [], message: "Desktop backend unavailable" };
+  }
+  return (await invoke("provider.usage")) as ProviderUsage;
 }
 
 export async function saveProviderSettings(

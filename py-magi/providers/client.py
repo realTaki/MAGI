@@ -42,7 +42,6 @@ HOSTS: tuple[Host, ...] = (
     Host("gemini", "gemini", ("gemini-3.7-flash", "gemini-3.5-flash", "gemini-pro-latest"), "gemini-3.7-flash"),
     Host("xai", "xai", ("grok-4.6", "grok-4.20"), "grok-4.6"),
     Host("deepseek", "deepseek", ("deepseek-v4-pro", "deepseek-v4-flash"), "deepseek-v4-pro"),
-    Host("mistral", "mistral", ("mistral-large-latest", "mistral-medium-latest"), "mistral-large-latest"),
     Host("minimax-cn", "minimax", ("MiniMax-M3", "MiniMax-M2.5"), "MiniMax-M3", "https://api.minimaxi.com/v1"),
     Host("minimax-global", "minimax", ("MiniMax-M3", "MiniMax-M2.5"), "MiniMax-M3", "https://api.minimax.io/v1"),
 )

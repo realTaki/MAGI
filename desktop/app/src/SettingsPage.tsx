@@ -6,14 +6,12 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
-import { clearOperator, getProviderSettings, getSourceStatus, saveProviderSettings } from "./asp";
-import type { SourceStatus } from "./asp";
+import { clearOperator, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
+import type { ProviderUsage, SourceStatus } from "./asp";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
 type SettingsSection = "general" | "provider" | "usage" | "about";
-
-const APP_VERSION = "0.1.3";
 
 // Fixed catalog. Same pairs as py-magi/providers/client.py HOSTS.
 type ProviderChoice = {
@@ -45,11 +43,6 @@ const PROVIDERS: readonly ProviderChoice[] = [
     defaultModel: "deepseek-v4-pro",
   },
   {
-    id: "mistral",
-    models: ["mistral-large-latest", "mistral-medium-latest"],
-    defaultModel: "mistral-large-latest",
-  },
-  {
     id: "minimax-cn",
     models: ["MiniMax-M3", "MiniMax-M2.5"],
     defaultModel: "MiniMax-M3",
@@ -78,8 +71,28 @@ export function SettingsPage() {
   const [savingProvider, setSavingProvider] = useState(false);
   const [providerStatus, setProviderStatus] = useState("");
   const [providerStatusIsError, setProviderStatusIsError] = useState(false);
+  const [providerUsage, setProviderUsage] = useState<ProviderUsage | null>(null);
+  const [providerUsageLoading, setProviderUsageLoading] = useState(false);
   const [source, setSource] = useState<SourceStatus | null>(null);
   const [sourceLoaded, setSourceLoaded] = useState(false);
+
+  useEffect(() => {
+    if (section !== "usage") {
+      return;
+    }
+    let cancelled = false;
+    setProviderUsageLoading(true);
+    void getProviderUsage()
+      .then((usage) => {
+        if (!cancelled) setProviderUsage(usage);
+      })
+      .finally(() => {
+        if (!cancelled) setProviderUsageLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
 
   useEffect(() => {
     if (section !== "provider") {
@@ -154,6 +167,15 @@ export function SettingsPage() {
       setProviderStatusIsError(true);
     } finally {
       setSavingProvider(false);
+    }
+  }
+
+  async function refreshProviderUsage() {
+    setProviderUsageLoading(true);
+    try {
+      setProviderUsage(await getProviderUsage());
+    } finally {
+      setProviderUsageLoading(false);
     }
   }
 
@@ -394,12 +416,42 @@ export function SettingsPage() {
 
             {section === "usage" ? (
               <>
-                <p className="settings-overlay__lede">{t("appSettings.usageHint")}</p>
                 <div className="settings-card">
                   <label className="settings-card__row">
-                    <span>{t("appSettings.usageLocal")}</span>
-                    <span className="settings-card__value">{t("appSettings.usageLocalValue")}</span>
+                    <span>{t("appSettings.usageProvider")}</span>
+                    <span className="settings-card__value">{providerUsage?.provider || "—"}</span>
                   </label>
+                  {providerUsage?.status === "available"
+                    ? providerUsage.balances.map((balance) => (
+                        <label className="settings-card__row" key={balance.currency}>
+                          <span>{balance.currency}</span>
+                          <span className="settings-card__value">{balance.total}</span>
+                        </label>
+                      ))
+                    : null}
+                </div>
+                <p className="settings-overlay__lede">
+                  {providerUsageLoading
+                    ? t("appSettings.usageLoading")
+                    : providerUsage?.status === "available"
+                      ? providerUsage.available
+                        ? t("appSettings.usageAvailable")
+                        : t("appSettings.usageExhausted")
+                      : providerUsage?.status === "unsupported"
+                        ? t("appSettings.usageUnsupported")
+                        : providerUsage?.status === "error"
+                          ? providerUsage.message
+                          : t("appSettings.usageUnconfigured")}
+                </p>
+                <div className="settings-card__actions">
+                  <button
+                    type="button"
+                    className="settings-card__pill"
+                    disabled={providerUsageLoading}
+                    onClick={() => void refreshProviderUsage()}
+                  >
+                    {t("appSettings.usageRefresh")}
+                  </button>
                 </div>
               </>
             ) : null}
@@ -412,20 +464,31 @@ export function SettingsPage() {
                 ) : null}
                 <div className="settings-card">
                   <label className="settings-card__row">
-                    <span>{t("common.appName")}</span>
-                    <span className="settings-card__value">
-                      {t("appSettings.aboutVersion")} {APP_VERSION}
-                    </span>
+                    <span>{t("common.appName")} {t("appSettings.aboutClient")}</span>
+                    {source?.tagUrl && source.tag ? (
+                      <a
+                        className="settings-card__link"
+                        href={source.tagUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {source.tag} {t("appSettings.aboutTag")}
+                      </a>
+                    ) : (
+                      <span className="settings-card__value">
+                        {source?.tag ? `${source.tag} ${t("appSettings.aboutTag")}` : sourceLoaded ? "—" : "…"}
+                      </span>
+                    )}
                   </label>
                   {source === null && sourceLoaded ? null : (
                     <>
                       <label className="settings-card__row">
                         <span>{t("appSettings.aboutBranch")}</span>
-                        <span className="settings-card__value">
+                        <span className="settings-card__value" title={source?.repository || undefined}>
                           {source?.available
                             ? source.branch === "HEAD"
                               ? t("appSettings.aboutDetached")
-                              : source.branch
+                              : [source.repository, source.branch].filter(Boolean).join(" · ")
                             : sourceLoaded
                               ? t("appSettings.aboutNoCheckout")
                               : "…"}
@@ -433,19 +496,43 @@ export function SettingsPage() {
                       </label>
                       <label className="settings-card__row">
                         <span>{t("appSettings.aboutCommit")}</span>
-                        <span className="settings-card__code" title={source?.commit || undefined}>
-                          {source?.commit ? source.commit.slice(0, 12) : sourceLoaded ? "—" : "…"}
-                        </span>
+                        {source?.commitUrl && source.commit ? (
+                          <a
+                            className="settings-card__link settings-card__code"
+                            href={source.commitUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={source.commit}
+                          >
+                            {source.commit.slice(0, 12)}
+                          </a>
+                        ) : (
+                          <span className="settings-card__code" title={source?.commit || undefined}>
+                            {source?.commit ? source.commit.slice(0, 12) : sourceLoaded ? "—" : "…"}
+                          </span>
+                        )}
                       </label>
                       <label className="settings-card__row">
                         <span>{t("appSettings.aboutForkPoint")}</span>
-                        <span className="settings-card__code" title={source?.forkPoint || undefined}>
-                          {source?.forkPoint
-                            ? source.forkPoint.slice(0, 12)
-                            : sourceLoaded
-                              ? "—"
-                              : "…"}
-                        </span>
+                        {source?.forkPointUrl && source.forkPoint ? (
+                          <a
+                            className="settings-card__link settings-card__code"
+                            href={source.forkPointUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={source.forkPoint}
+                          >
+                            {source.forkPoint.slice(0, 12)}
+                          </a>
+                        ) : (
+                          <span className="settings-card__code" title={source?.forkPoint || undefined}>
+                            {source?.forkPoint
+                              ? source.forkPoint.slice(0, 12)
+                              : sourceLoaded
+                                ? "—"
+                                : "…"}
+                          </span>
+                        )}
                       </label>
                     </>
                   )}

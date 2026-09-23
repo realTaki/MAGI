@@ -13,7 +13,7 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
-const BOT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
+const AGENT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
   "Every hour",
   "Every day",
@@ -72,7 +72,7 @@ type ExtraMessages = Record<string, ConversationMessage[]>;
 type PanelMode = "settings" | "routine";
 type ConversationKind = "dm" | "group";
 type ConversationMember = { id: string; name: string; color: string };
-type LiveBot = ConversationSummary & {
+type ConversationView = ConversationSummary & {
   title: string;
   description: string;
   onboarding: boolean;
@@ -97,7 +97,7 @@ function makeConversation(
   kind: ConversationKind,
   name: string,
   color: string,
-): LiveBot {
+): ConversationView {
   return {
     id: `conv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     name,
@@ -121,10 +121,10 @@ function colorForHandle(handle: string): string {
   for (let index = 0; index < handle.length; index += 1) {
     sum += handle.charCodeAt(index);
   }
-  return BOT_COLORS[sum % BOT_COLORS.length] ?? "#3EC5A8";
+  return AGENT_COLORS[sum % AGENT_COLORS.length] ?? "#3EC5A8";
 }
 
-function labelForHandle(handle: string, roster: LiveBot[]): { name: string; color: string } {
+function labelForHandle(handle: string, roster: ConversationView[]): { name: string; color: string } {
   const local = roster.find((bot) => bot.magiHandle === handle);
   if (local) {
     return { name: local.name, color: local.color };
@@ -135,14 +135,14 @@ function labelForHandle(handle: string, roster: LiveBot[]): { name: string; colo
   };
 }
 
-function membersFromAgents(agents: string[], roster: LiveBot[]): ConversationMember[] {
+function membersFromAgents(agents: string[], roster: ConversationView[]): ConversationMember[] {
   return agents.map((handle) => {
     const label = labelForHandle(handle, roster);
     return { id: handle, name: label.name, color: label.color };
   });
 }
 
-function fromAspConversation(remote: CreatedConversation): LiveBot {
+function fromAspConversation(remote: CreatedConversation): ConversationView {
   const kind = remote.kind === "group" ? "group" : "dm";
   const name = remote.name ?? remote.topic ?? (kind === "group" ? "Group" : remote.agents[0] ?? "MAGI");
   const bot = makeConversation(kind, name, colorForHandle(remote.agents[0] ?? remote.conversation_id));
@@ -220,15 +220,15 @@ function whenLabel(triggers: Trigger[]) {
   return [lead, detail].filter(Boolean).join(" ");
 }
 
-function previewForBot(bot: LiveBot, extra: ExtraMessages) {
-  const last = extra[bot.id]?.at(-1);
+function previewForConversation(conversation: ConversationView, extra: ExtraMessages) {
+  const last = extra[conversation.id]?.at(-1);
   if (last && "text" in last) {
     return last.text;
   }
-  if (bot.onboarding && bot.answers.length > 0) {
-    return bot.answers.at(-1) ?? bot.preview;
+  if (conversation.onboarding && conversation.answers.length > 0) {
+    return conversation.answers.at(-1) ?? conversation.preview;
   }
-  return bot.preview;
+  return conversation.preview;
 }
 
 function Thread({ messages }: { messages: ConversationMessage[] }) {
@@ -362,7 +362,7 @@ function OnboardThread({
 
 export function ConversationPage() {
   const t = useT();
-  const [bots, setBots] = useState<LiveBot[]>([]);
+  const [bots, setBots] = useState<ConversationView[]>([]);
   const [activeId, setActiveId] = useState("");
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -595,7 +595,7 @@ export function ConversationPage() {
     });
   }
 
-  function patchActive(patch: Partial<LiveBot>) {
+  function patchActive(patch: Partial<ConversationView>) {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
   }
 
@@ -971,7 +971,7 @@ export function ConversationPage() {
                       <span className="conversation-page__bot-name">{bot.name}</span>
                       <span className="conversation-page__bot-time">{bot.time}</span>
                     </span>
-                    <span className="conversation-page__bot-preview">{previewForBot(bot, extra)}</span>
+                    <span className="conversation-page__bot-preview">{previewForConversation(bot, extra)}</span>
                   </span>
                 </button>
               );

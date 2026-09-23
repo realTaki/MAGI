@@ -309,6 +309,53 @@ export function createLocalApi(context) {
     }
   }
 
+  async function providerUsage() {
+    const settings = readProvider();
+    const provider = settings?.provider ?? null;
+    if (!provider || !settings?.api_key) {
+      return { provider, status: "unconfigured", balances: [], message: "" };
+    }
+    if (provider !== "deepseek") {
+      return { provider, status: "unsupported", balances: [], message: "" };
+    }
+    try {
+      const response = await fetch("https://api.deepseek.com/user/balance", {
+        headers: { Authorization: `Bearer ${settings.api_key}` },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!response.ok) {
+        return {
+          provider,
+          status: "error",
+          balances: [],
+          message: `DeepSeek balance request failed (${response.status})`,
+        };
+      }
+      const body = await response.json();
+      const balances = Array.isArray(body?.balance_infos)
+        ? body.balance_infos.flatMap((entry) =>
+            typeof entry?.currency === "string" && typeof entry?.total_balance === "string"
+              ? [{ currency: entry.currency, total: entry.total_balance }]
+              : [],
+          )
+        : [];
+      return {
+        provider,
+        status: "available",
+        available: body?.is_available === true,
+        balances,
+        message: "",
+      };
+    } catch (error) {
+      return {
+        provider,
+        status: "error",
+        balances: [],
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   // The account's name and picture are this machine's state, so they live next
   // to the token. Caching the image keeps the avatar visible without the
   // interface reaching GitHub itself.
@@ -1066,11 +1113,19 @@ export function createLocalApi(context) {
   // The checkout's origin may be the operator's fork. The comparison the About
   // page shows is against AgenticSociety, preferring a remote that already
   // points there and otherwise the repository this build was given.
-  async function agenticUrl() {
-    const remotes = await listedRemotes();
+  async function agenticUrl(remotes = await listedRemotes()) {
     const matched = remotes.find((remote) => isAgentic(remote.url));
     if (matched) return matched.url;
     return isAgentic(repository) ? repository : "";
+  }
+
+  function githubRepository(url) {
+    try {
+      const { owner, name } = parseGitHubSlug(url);
+      return `${owner}/${name}`;
+    } catch {
+      return "";
+    }
   }
 
   async function gitText(args, description, env = tools.env) {
@@ -1089,7 +1144,13 @@ export function createLocalApi(context) {
       available: false,
       branch: "",
       commit: "",
+      tag: "",
+      repository: "",
+      upstreamRepository: "",
+      commitUrl: "",
+      tagUrl: "",
       forkPoint: "",
+      forkPointUrl: "",
       remote: "",
       remoteAhead: false,
       remoteChecked: false,
@@ -1099,14 +1160,44 @@ export function createLocalApi(context) {
     }
     let branch = "";
     let commit = "";
+    let tag = "";
     try {
       branch = await gitText(["rev-parse", "--abbrev-ref", "HEAD"], "Could not read the current branch");
       commit = await gitText(["rev-parse", "HEAD"], "Could not read the current commit");
     } catch {
       return blank;
     }
-    const remote = await agenticUrl();
-    const local = { ...blank, available: true, branch, commit, remote };
+    try {
+      tag = await gitText(
+        ["describe", "--tags", "--abbrev=0", "HEAD"],
+        "Could not read the checkout release tag",
+      );
+    } catch {
+      // A development checkout may not have a release tag yet.
+    }
+    const remotes = await listedRemotes();
+    const originUrl = remotes.find((entry) => entry.name === "origin")?.url ?? "";
+    const checkoutRepository = githubRepository(originUrl) || githubRepository(repository);
+    const remote = await agenticUrl(remotes);
+    const upstreamRepository = githubRepository(remote);
+    const local = {
+      ...blank,
+      available: true,
+      branch,
+      commit,
+      tag,
+      repository: checkoutRepository,
+      upstreamRepository,
+      commitUrl:
+        checkoutRepository && commit
+          ? `https://github.com/${checkoutRepository}/commit/${commit}`
+          : "",
+      tagUrl:
+        upstreamRepository && tag
+          ? `https://github.com/${upstreamRepository}/releases/tag/${encodeURIComponent(tag)}`
+          : "",
+      remote,
+    };
     if (remote === "") return local;
     const probeEnv = { ...tools.env, GIT_TERMINAL_PROMPT: "0" };
     try {
@@ -1129,7 +1220,16 @@ export function createLocalApi(context) {
         ["rev-list", "--count", "HEAD..FETCH_HEAD"],
         "Could not compare this checkout with AgenticSociety",
       );
-      return { ...local, forkPoint, remoteAhead: ahead !== "0", remoteChecked: true };
+      return {
+        ...local,
+        forkPoint,
+        forkPointUrl:
+          upstreamRepository && forkPoint
+            ? `https://github.com/${upstreamRepository}/commit/${forkPoint}`
+            : "",
+        remoteAhead: ahead !== "0",
+        remoteChecked: true,
+      };
     } catch {
       return local;
     }
@@ -1144,6 +1244,7 @@ export function createLocalApi(context) {
     "github.signIn": signIn,
     "github.connect": connect,
     "provider.settings": () => readProvider() ?? normalizeProvider(null),
+    "provider.usage": providerUsage,
     "provider.save": saveProvider,
     "source.status": sourceStatus,
     "chat.listConversations": async () => (await chatStore()).listConversations(),
