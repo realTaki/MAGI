@@ -78,7 +78,6 @@ export default {
     providerNote: "キーはこのマシンの ASP データベースに保存され、ローカルの MAGI プロセスに渡されます。",
 
     account: "アカウント",
-    accountRole: "オペレーター",
     appearance: "外観",
     theme: "テーマ",
     themeSystem: "システムに合わせる",

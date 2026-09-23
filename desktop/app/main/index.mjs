@@ -44,6 +44,7 @@ const GITHUB_CLIENT_ID =
   (process.env.MAGI_GITHUB_CLIENT_ID ?? "").trim() || MAGI_GITHUB_CLIENT_ID;
 const GITHUB_TIMEOUT_MS = 20_000;
 const FORK_TIMEOUT_MS = 60_000;
+const AVATAR_TIMEOUT_MS = 8_000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -194,6 +195,10 @@ export function createLocalApi(context) {
 
   const tokenFile = () => path.join(paths.home, ".magi", "github-token");
   const metadataFile = () => path.join(paths.userData, "github.json");
+  const avatarFile = () => path.join(paths.userData, "github-avatar");
+  // Metadata written before the picture was cached gets one download attempt per
+  // account and run, so a blocked network cannot slow every state read.
+  const avatarAttempted = new Set();
 
   // The token doubles as a Git credential: the checkout's local credential
   // helper reads this file, so pushes to the fork need no token in .git/config.
@@ -228,6 +233,57 @@ export function createLocalApi(context) {
   function writeMetadata(metadata) {
     mkdirSync(path.dirname(metadataFile()), { recursive: true });
     writeFileSync(metadataFile(), `${JSON.stringify(metadata, null, 2)}\n`);
+  }
+
+  // The account's name and picture are this machine's state, so they live next
+  // to the token. Caching the image keeps the avatar visible without the
+  // interface reaching GitHub itself.
+  async function cacheAvatar(url, fallbackType) {
+    if (typeof url !== "string" || url === "") {
+      return fallbackType;
+    }
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(AVATAR_TIMEOUT_MS) });
+      if (!response.ok) {
+        return fallbackType;
+      }
+      const bytes = Buffer.from(await response.arrayBuffer());
+      writeFileSync(avatarFile(), bytes);
+      const type = response.headers.get("content-type") ?? "";
+      return type.startsWith("image/") ? type : "image/png";
+    } catch {
+      return fallbackType;
+    }
+  }
+
+  /** Records who is signed in, downloading the avatar when it is not cached yet. */
+  async function rememberViewer(viewer, extra = {}) {
+    const metadata = readMetadata();
+    const avatarType = await cacheAvatar(
+      viewer?.avatar_url,
+      typeof metadata.avatarType === "string" ? metadata.avatarType : "image/png",
+    );
+    const written = {
+      ...metadata,
+      ...extra,
+      login: viewer.login,
+      name:
+        typeof viewer.name === "string" && viewer.name.trim() !== ""
+          ? viewer.name.trim()
+          : viewer.login,
+      avatarType,
+    };
+    writeMetadata(written);
+    return written;
+  }
+
+  function avatarDataUrl(metadata) {
+    try {
+      const type = typeof metadata.avatarType === "string" ? metadata.avatarType : "image/png";
+      return `data:${type};base64,${readFileSync(avatarFile()).toString("base64")}`;
+    } catch {
+      return "";
+    }
   }
 
   // A build may point the clone source at a mirror that is not on GitHub; the
@@ -380,6 +436,8 @@ export function createLocalApi(context) {
       available: managed && upstream !== null,
       upstream: upstream === null ? "" : `${upstream.owner}/${upstream.name}`,
       login: typeof metadata.login === "string" ? metadata.login : "",
+      name: typeof metadata.name === "string" ? metadata.name : "",
+      avatar: "",
       fork: typeof metadata.fork === "string" ? metadata.fork : "",
       signedIn: token !== null,
       verified: false,
@@ -394,8 +452,17 @@ export function createLocalApi(context) {
       state.signedIn = false;
       return state;
     }
+    let current = metadata;
+    if (metadata.login !== viewer.login || !existsSync(avatarFile())) {
+      if (!avatarAttempted.has(viewer.login)) {
+        avatarAttempted.add(viewer.login);
+        current = await rememberViewer(viewer);
+      }
+    }
     state.verified = true;
     state.login = viewer.login;
+    state.name = typeof current.name === "string" ? current.name : viewer.login;
+    state.avatar = avatarDataUrl(current);
     state.connected = state.fork !== "";
     return state;
   }
@@ -423,7 +490,7 @@ export function createLocalApi(context) {
         throw new Error("GitHub did not return an account for this token.");
       }
       writeToken(token);
-      writeMetadata({ ...readMetadata(), login: viewer.login });
+      await rememberViewer(viewer);
       emit("github.signed-in", { login: viewer.login });
       return { login: viewer.login };
     } finally {
@@ -444,7 +511,7 @@ export function createLocalApi(context) {
     const viewer = await githubApi("/user", { token });
     const fork = await ensureFork(token, viewer.login, upstream);
     await pointCheckoutAtFork(fork, upstream, viewer);
-    writeMetadata({ login: viewer.login, fork: fork.full_name, connectedAt: Date.now() });
+    await rememberViewer(viewer, { fork: fork.full_name, connectedAt: Date.now() });
     emit("github.connected", { login: viewer.login, fork: fork.full_name });
     return await currentState();
   }

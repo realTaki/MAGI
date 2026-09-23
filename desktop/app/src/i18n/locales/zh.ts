@@ -78,7 +78,6 @@ export default {
     providerNote: "Key 存在本机 ASP 数据库里，由它交给本机的 MAGI 进程。",
 
     account: "账户",
-    accountRole: "操作员",
     appearance: "外观",
     theme: "主题",
     themeSystem: "跟随系统",

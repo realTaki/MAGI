@@ -15,8 +15,12 @@ export type GitHubState = {
   available: boolean;
   /** `owner/name` of the repository the app clones from. */
   upstream: string;
-  /** GitHub account, empty until a sign-in succeeded once. */
+  /** GitHub login, empty until a sign-in succeeded once. */
   login: string;
+  /** Display name from the GitHub profile, falling back to the login. */
+  name: string;
+  /** The account's avatar as a data URL, cached locally; empty when unknown. */
+  avatar: string;
   /** `owner/name` of the operator's fork, empty until the checkout is wired. */
   fork: string;
   signedIn: boolean;
@@ -124,13 +128,22 @@ export function initialsFromLogin(login: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+/** The account behind the checkout: GitHub's login, name and picture. */
+export type GitHubAccount = {
+  login: string;
+  name: string;
+  avatar: string;
+};
+
+const EMPTY_ACCOUNT: GitHubAccount = { login: "", name: "", avatar: "" };
+
 /**
  * The GitHub account this machine is signed in with — what the interface shows
- * as "the account". Empty until a sign-in succeeded (or outside the desktop
+ * as "the operator". Empty until a sign-in succeeded (or outside the desktop
  * app); callers keep their own local name in that case.
  */
-export function useGitHubLogin(): string {
-  const [login, setLogin] = useState("");
+export function useGitHubAccount(): GitHubAccount {
+  const [account, setAccount] = useState<GitHubAccount>(EMPTY_ACCOUNT);
   useEffect(() => {
     if (!localAppAvailable()) {
       return;
@@ -140,7 +153,7 @@ export function useGitHubLogin(): string {
       void githubState()
         .then((state) => {
           if (!cancelled) {
-            setLogin(state.login);
+            setAccount({ login: state.login, name: state.name, avatar: state.avatar });
           }
         })
         .catch(() => {});
@@ -155,5 +168,5 @@ export function useGitHubLogin(): string {
       cancelled = true;
     };
   }, []);
-  return login;
+  return account;
 }

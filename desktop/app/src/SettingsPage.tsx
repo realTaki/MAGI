@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { OPERATOR } from "./demo";
-import { initialsFromLogin, useGitHubLogin } from "./github-connect";
+import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
@@ -42,7 +42,7 @@ export function SettingsPage() {
   const { localePreference, setLocalePreference } = useI18n();
   const { preference: themePreference, setPreference: setThemePreference, resolved } =
     useTheme();
-  const githubLogin = useGitHubLogin();
+  const account = useGitHubAccount();
   const [section, setSection] = useState<SettingsSection>("general");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -182,11 +182,18 @@ export function SettingsPage() {
                   <div className="settings-card__label">{t("appSettings.account")}</div>
                   <div className="settings-card__account">
                     <span className="settings-card__avatar" aria-hidden="true">
-                      {githubLogin ? initialsFromLogin(githubLogin) : OPERATOR.initials}
+                      {account.avatar ? (
+                        <img src={account.avatar} alt="" />
+                      ) : account.login ? (
+                        initialsFromLogin(account.login)
+                      ) : (
+                        OPERATOR.initials
+                      )}
                     </span>
                     <span className="settings-card__identity">
-                      <span className="settings-card__name">{githubLogin || OPERATOR.name}</span>
-                      <span className="settings-card__role">{t("appSettings.accountRole")}</span>
+                      <span className="settings-card__name">
+                        {account.name || account.login || OPERATOR.name}
+                      </span>
                     </span>
                     <button type="button" className="settings-card__pill" onClick={logOut}>
                       {t("account.logOut")}

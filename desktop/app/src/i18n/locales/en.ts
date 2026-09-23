@@ -78,7 +78,6 @@ export default {
     providerNote: "The key lives in this machine’s ASP database and is handed to local MAGI processes.",
 
     account: "Account",
-    accountRole: "Operator",
     appearance: "Appearance",
     theme: "Theme",
     themeSystem: "System",

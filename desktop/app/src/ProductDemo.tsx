@@ -13,7 +13,7 @@ import {
   initialsFromLogin,
   localAppAvailable,
   openGitHubConnect,
-  useGitHubLogin,
+  useGitHubAccount,
 } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
@@ -380,7 +380,7 @@ export function ProductDemo() {
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const githubLogin = useGitHubLogin();
+  const account = useGitHubAccount();
   const [creating, setCreating] = useState(false);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
@@ -912,9 +912,15 @@ export function ProductDemo() {
               onMouseDown={(event) => event.stopPropagation()}
             >
               <span className="product-demo__user-badge">
-                {githubLogin ? initialsFromLogin(githubLogin) : OPERATOR.initials}
+                {account.avatar ? (
+                  <img src={account.avatar} alt="" />
+                ) : account.login ? (
+                  initialsFromLogin(account.login)
+                ) : (
+                  OPERATOR.initials
+                )}
               </span>
-              <span>{githubLogin || OPERATOR.name}</span>
+              <span>{account.name || account.login || OPERATOR.name}</span>
             </button>
             {userMenuOpen ? (
               <div className="product-demo__user-menu" role="menu">
