@@ -89,7 +89,7 @@ jobs:
           codesign --verify --deep --strict "$app_dir/MAGI.app"
 
       - name: Upload packaged app
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: macos-${{ matrix.arch }}
           path: |
