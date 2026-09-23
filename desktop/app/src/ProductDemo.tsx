@@ -965,7 +965,7 @@ export function ProductDemo() {
                   className={`product-demo__bot-row${isActive ? " is-active" : ""}`}
                   onClick={() => selectBot(bot.id)}
                 >
-                  <Avatar color={bot.color} size={38} />
+                  <Avatar color={bot.color} size={34} />
                   <span className="product-demo__bot-copy">
                     <span className="product-demo__bot-meta">
                       <span className="product-demo__bot-name">{bot.name}</span>
@@ -1109,7 +1109,7 @@ export function ProductDemo() {
             {panelMode === "settings" ? (
               <div className="product-demo__settings">
                 <div className="product-demo__settings-avatar">
-                  <Avatar color={active.color} size={72} />
+                  <Avatar color={active.color} size={64} />
                 </div>
                 {active.kind === "group" ? (
                   <>
