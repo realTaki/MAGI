@@ -25,6 +25,7 @@
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { openChatStore } from "./chat-store.mjs";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
@@ -186,6 +187,7 @@ export function createLocalApi(context) {
   let asp = null;
   let deviceFlowPending = false;
   let commitWatcher = null;
+  let chatStorePromise = null;
   let providerTimer = null;
   const providerDelivered = new Set();
 
@@ -201,6 +203,10 @@ export function createLocalApi(context) {
 
   const appData = path.join(paths.home, ".magi", "app");
   mkdirSync(appData, { recursive: true });
+  function chatStore() {
+    chatStorePromise ??= openChatStore(path.join(appData, "chat.sqlite"));
+    return chatStorePromise;
+  }
   // The app owns these files. Copy older locations once, without changing
   // Electron's Chromium profile or overwriting state already in appData.
   function migrateAppFile(name, legacy = []) {
@@ -976,6 +982,10 @@ export function createLocalApi(context) {
 
   function dispose() {
     stopWatchingCheckout();
+    if (chatStorePromise !== null) {
+      void chatStorePromise.then((store) => store.close());
+      chatStorePromise = null;
+    }
     if (providerTimer !== null) clearTimeout(providerTimer);
     providerTimer = null;
     if (asp && !asp.killed) {
@@ -993,5 +1003,10 @@ export function createLocalApi(context) {
     "github.connect": connect,
     "provider.settings": () => readProvider() ?? normalizeProvider(null),
     "provider.save": saveProvider,
+    "chat.listConversations": async () => (await chatStore()).listConversations(),
+    "chat.saveConversations": async (rows) => (await chatStore()).saveConversations(rows),
+    "chat.listEvents": async (id) => (await chatStore()).listEvents(id),
+    "chat.saveEvents": async ({ id, events }) => (await chatStore()).saveEvents(id, events),
+    "chat.lastSequence": async (id) => (await chatStore()).lastSequence(id),
   };
 }
