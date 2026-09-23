@@ -75,7 +75,7 @@ export default {
     providerSave: "保存して同期",
     providerSynced: "同期済み",
     providerFailed: "未達",
-    providerNote: "キーはこのマシンの ASP データベースに保存され、ローカルの MAGI プロセスに渡されます。",
+    providerNote: "キーはこのアプリに保存されます。ASP は保存せず、MAGI に転送します。",
 
     account: "アカウント",
     appearance: "外観",

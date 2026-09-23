@@ -81,6 +81,7 @@ class AspServer:
     @asynccontextmanager
     async def _lifespan(self, app: FastAPI):
         self.database.open()
+        self.asp.store.activate(self.asp.seed)
         handle, token = load_or_create_operator(self.database)
         self.operator_handle = handle
         self.operator_token = token

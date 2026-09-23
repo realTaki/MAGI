@@ -1,16 +1,14 @@
-"""In-memory store: agents, sessions, participants, events, idempotency.
-
-Designed to be swapped for SQLite or another backend without changing service.py.
-All mutating operations are synchronous; concurrency is gated externally by the
-service layer using asyncio locks.
-"""
+"""ASP relay state, written through to its SQLite database."""
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
+
+from db.database import LocalDatabase
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +96,8 @@ class Event:
 
 
 class Store:
-    def __init__(self) -> None:
+    def __init__(self, storage: LocalDatabase | None = None) -> None:
+        self.storage = storage
         self.agents: dict[str, Agent] = {}
         self.agent_by_token: dict[str, str] = {}
         self.sessions: dict[str, Session] = {}
@@ -113,6 +112,122 @@ class Store:
         # (creator_handle, idempotency_key) -> (session_id, sequence)
         self.session_idempotency: dict[tuple[str, str], tuple[str, int | None]] = {}
 
+    def _db(self):
+        return None if self.storage is None else self.storage.connection
+
+    def activate(self, seed: dict[str, str | dict] | None = None) -> None:
+        """Restore routing state before accepting traffic."""
+        db = self._db()
+        if db is None:
+            self.seed_agents(seed or {})
+            return
+        self.agents.clear()
+        self.agent_by_token.clear()
+        self.sessions.clear()
+        self.participants.clear()
+        self.session_events.clear()
+        self.session_seq.clear()
+        self.idempotency.clear()
+        self.session_idempotency.clear()
+        for row in db.execute("SELECT record_json FROM asp_agents"):
+            data = json.loads(row["record_json"])
+            data["allowlist"] = set(data.get("allowlist", []))
+            agent = Agent(**data)
+            self.agents[agent.handle] = agent
+            self.agent_by_token[agent.token] = agent.handle
+        for row in db.execute("SELECT record_json, next_sequence FROM asp_sessions"):
+            sess = Session(**json.loads(row["record_json"]))
+            self.sessions[sess.id] = sess
+            self.session_seq[sess.id] = row["next_sequence"]
+            self.session_events[sess.id] = []
+        for row in db.execute("SELECT session_id, record_json FROM asp_participants"):
+            participant = Participant(**json.loads(row["record_json"]))
+            self.participants[(row["session_id"], participant.handle)] = participant
+        for row in db.execute("SELECT * FROM asp_events ORDER BY session_id, sequence"):
+            self.session_events[row["session_id"]].append(
+                Event(row["type"], row["event_id"], row["created_at"],
+                      json.loads(row["payload_json"]), row["session_id"], row["sequence"])
+            )
+        for row in db.execute("SELECT * FROM asp_message_keys"):
+            self.idempotency[(row["session_id"], row["sender"], row["key"])] = (
+                row["message_id"], row["sequence"]
+            )
+        for row in db.execute("SELECT * FROM asp_session_keys"):
+            self.session_idempotency[(row["creator"], row["key"])] = (
+                row["session_id"], row["sequence"]
+            )
+        self.seed_agents(seed or {})
+
+    def _save_agent(self, agent: Agent) -> None:
+        db = self._db()
+        if db is not None:
+            data = asdict(agent)
+            data["allowlist"] = sorted(agent.allowlist)
+            with db:
+                db.execute("INSERT OR REPLACE INTO asp_agents VALUES (?, ?)",
+                           (agent.handle, json.dumps(data)))
+
+    def _save_session(self, sess: Session) -> None:
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute("INSERT OR REPLACE INTO asp_sessions VALUES (?, ?, ?)",
+                           (sess.id, json.dumps(asdict(sess)), self.session_seq[sess.id]))
+
+    def _save_participant(self, session_id: str, participant: Participant) -> None:
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute("INSERT OR REPLACE INTO asp_participants VALUES (?, ?, ?)",
+                           (session_id, participant.handle, json.dumps(asdict(participant))))
+
+    def update_agent(self, agent: Agent) -> None:
+        self._save_agent(agent)
+
+    def update_session(self, sess: Session) -> None:
+        self._save_session(sess)
+
+    def update_event(self, event: Event) -> None:
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute("UPDATE asp_events SET payload_json = ? WHERE event_id = ?",
+                           (json.dumps(event.payload), event.event_id))
+
+    def acknowledge(self, handle: str, session_id: str, sequence: int) -> None:
+        """Forget message events only after every intended recipient confirms."""
+        if self.get_participant(session_id, handle) is None:
+            raise KeyError(session_id)
+        db = self._db()
+        if db is None:
+            return
+        with db:
+            db.execute(
+                """UPDATE asp_message_recipients SET acked = 1
+                   WHERE handle = ? AND event_id IN (
+                       SELECT event_id FROM asp_events
+                       WHERE session_id = ? AND sequence <= ? AND type = 'session.message'
+                   )""",
+                (handle, session_id, sequence),
+            )
+            removable = [row[0] for row in db.execute(
+                """SELECT e.event_id FROM asp_events e
+                   WHERE e.session_id = ? AND e.type = 'session.message'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM asp_message_recipients r
+                       WHERE r.event_id = e.event_id AND r.acked = 0
+                     )""", (session_id,)
+            )]
+            if removable:
+                db.executemany("DELETE FROM asp_events WHERE event_id = ?",
+                               [(event_id,) for event_id in removable])
+        if removable:
+            removed = set(removable)
+            self.session_events[session_id] = [
+                event for event in self.session_events[session_id]
+                if event.event_id not in removed
+            ]
+
     # ---- Agents ----------------------------------------------------------
 
     def seed_agents(self, seed: dict[str, str | dict]) -> None:
@@ -123,9 +238,7 @@ class Store:
         Mixed entries in the same map are allowed."""
         for handle, config in seed.items():
             if isinstance(config, str):
-                self._ensure_unique_token(config)
-                self.agents[handle] = Agent(handle=handle, token=config)
-                self.agent_by_token[config] = handle
+                self.register_agent(handle, config)
                 continue
             policy = config.get("inbound_policy", "open")
             if policy not in ("allowlist", "open"):
@@ -134,15 +247,10 @@ class Store:
                     f"expected 'allowlist' or 'open'"
                 )
             token = config["token"]
-            self._ensure_unique_token(token)
-            self.agents[handle] = Agent(
-                handle=handle,
-                token=token,
-                name=config.get("name"),
-                inbound_policy=policy,
-                allowlist=set(config.get("allowlist", [])),
-            )
-            self.agent_by_token[token] = handle
+            agent = self.register_agent(handle, token, name=config.get("name"))
+            agent.inbound_policy = policy
+            agent.allowlist = set(config.get("allowlist", []))
+            self._save_agent(agent)
 
     def _ensure_unique_token(self, token: str) -> None:
         if token in self.agent_by_token:
@@ -168,11 +276,13 @@ class Store:
                 self.agent_by_token[token] = handle
             if name is not None:
                 existing.name = name
+            self._save_agent(existing)
             return existing
         self._ensure_unique_token(token)
         agent = Agent(handle=handle, token=token, name=name)
         self.agents[handle] = agent
         self.agent_by_token[token] = handle
+        self._save_agent(agent)
         return agent
 
     @staticmethod
@@ -211,6 +321,7 @@ class Store:
         self.sessions[sid] = sess
         self.session_events[sid] = []
         self.session_seq[sid] = 0
+        self._save_session(sess)
         return sess
 
     def get_session(self, session_id: str) -> Session | None:
@@ -220,11 +331,13 @@ class Store:
         sess = self.sessions[session_id]
         sess.state = "ended"
         sess.ended_at = now_ms()
+        self._save_session(sess)
 
     def reopen_session(self, session_id: str) -> None:
         sess = self.sessions[session_id]
         sess.state = "active"
         sess.ended_at = None
+        self._save_session(sess)
 
     # ---- Participants ----------------------------------------------------
 
@@ -235,6 +348,7 @@ class Store:
         if status == "joined":
             p.joined_at = now_ms()
         self.participants[(session_id, handle)] = p
+        self._save_participant(session_id, p)
         return p
 
     def get_participant(self, session_id: str, handle: str) -> Participant | None:
@@ -254,6 +368,7 @@ class Store:
             p.joined_at = now_ms()
         if status == "left":
             p.left_at = now_ms()
+        self._save_participant(session_id, p)
 
     # ---- Events ----------------------------------------------------------
 
@@ -271,6 +386,26 @@ class Store:
             sequence=seq,
         )
         self.session_events[session_id].append(ev)
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute(
+                    "INSERT INTO asp_events VALUES (?, ?, ?, ?, ?, ?)",
+                    (session_id, seq, ev.event_id, type, ev.created_at,
+                     json.dumps(payload)),
+                )
+                if type == "session.message":
+                    recipients = [
+                        (ev.event_id, p.handle)
+                        for p in self.participants_in(session_id)
+                        if p.status in ("joined", "invited")
+                    ]
+                    db.executemany(
+                        "INSERT INTO asp_message_recipients (event_id, handle) VALUES (?, ?)",
+                        recipients,
+                    )
+                db.execute("UPDATE asp_sessions SET next_sequence = ? WHERE id = ?",
+                           (self.session_seq[session_id], session_id))
         return ev
 
     def session_events_after(
@@ -294,6 +429,11 @@ class Store:
         self, session_id: str, sender: str, key: str, message_id: str, sequence: int
     ) -> None:
         self.idempotency[(session_id, sender, key)] = (message_id, sequence)
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute("INSERT OR REPLACE INTO asp_message_keys VALUES (?, ?, ?, ?, ?)",
+                           (session_id, sender, key, message_id, sequence))
 
     def get_idempotent_session(
         self, creator: str, key: str
@@ -304,3 +444,8 @@ class Store:
         self, creator: str, key: str, session_id: str, sequence: int | None
     ) -> None:
         self.session_idempotency[(creator, key)] = (session_id, sequence)
+        db = self._db()
+        if db is not None:
+            with db:
+                db.execute("INSERT OR REPLACE INTO asp_session_keys VALUES (?, ?, ?, ?)",
+                           (creator, key, session_id, sequence))

@@ -149,6 +149,7 @@ class Transport:
             nickname = message.get("nickname")
             if agent is not None and (nickname is None or isinstance(nickname, str)):
                 agent.nickname = nickname
+                self.store.update_agent(agent)
             return
         if kind == "agent.nickname.updated":
             pending_requests = self._nickname_requests

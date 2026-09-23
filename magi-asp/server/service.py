@@ -126,6 +126,7 @@ class Service:
                     for ev in self.store.session_events[sess.id]:
                         if ev.type == "session.invited":
                             ev.payload["initial_message"] = msg_payload
+                            self.store.update_event(ev)
 
             if end_after_send:
                 self.store.end_session(sess.id)
@@ -176,6 +177,7 @@ class Service:
         sess = self.store.get_session(result.session_id)
         if sess is not None:
             sess.kind = kind
+            self.store.update_session(sess)
         view = self.conversation_view(creator, result.session_id)
         view["spawned"] = bool(spawned and spawned.spawned)
         if magi_name is not None:
@@ -279,6 +281,7 @@ class Service:
             if description is not None:
                 sess.description = description
                 payload["description"] = description
+            self.store.update_session(sess)
             self.store.append_session_event(session_id, "session.updated", payload)
             await self._fan_out(session_id)
             return self.conversation_view(caller, session_id)
@@ -500,6 +503,12 @@ class Service:
         if limit is not None:
             eligible = eligible[:limit]
         return [e.to_wire() for e in eligible]
+
+    def acknowledge(self, caller: str, session_id: str, sequence: int) -> None:
+        if self.store.get_session(session_id) is None or self.store.get_participant(session_id, caller) is None:
+            raise NotFound()
+        self.store.acknowledge(caller, session_id, sequence)
+        self.transport.advance_cursor(caller, session_id, sequence)
 
     # ---- Helpers --------------------------------------------------------
 

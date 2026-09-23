@@ -79,6 +79,10 @@ class SendMessageBody(BaseModel):
     metadata: dict | None = None
 
 
+class AcknowledgeEventsBody(BaseModel):
+    sequence: int = Field(ge=0)
+
+
 class ReopenBody(BaseModel):
     invite: list[str] | None = None
     initial_message: InitialMessage | None = None
@@ -125,6 +129,7 @@ class AspOperator:
     service: Service
     spawner: MagiSpawner
     base_url: str = "http://127.0.0.1:42069"
+    seed: dict[str, str | dict] | None = None
 
     async def close(self) -> None:
         self.spawner.close()
@@ -141,8 +146,7 @@ def create_operator(
     """Create ASP routes without creating a second FastAPI application."""
     router = APIRouter()
 
-    store = Store()
-    store.seed_agents(seed)
+    store = Store(storage)
     transport = Transport(store)
     service = Service(store, transport)
     magi_spawner = spawner if spawner is not None else default_spawner()
@@ -195,6 +199,7 @@ def create_operator(
         if not updated:
             raise HTTPException(status_code=502, detail="MAGI could not update nickname")
         agent.nickname = nickname
+        store.update_agent(agent)
         return {"handle": handle, "nickname": nickname}
 
     # ---- Provider delivery; the app owns the saved configuration ----------
@@ -434,6 +439,15 @@ def create_operator(
             raise HTTPException(status_code=404, detail="not found")
         return {"events": events}
 
+    @router.post("/sessions/{session_id}/events/ack")
+    async def post_event_ack(session_id: str, body: AcknowledgeEventsBody, request: Request):
+        caller = auth_handle(request)
+        try:
+            service.acknowledge(caller, session_id, body.sequence)
+        except NotFound:
+            raise HTTPException(status_code=404, detail="not found")
+        return {"ok": True}
+
     # ---- WebSocket -----------------------------------------------------
 
     @router.websocket("/connect")
@@ -451,7 +465,16 @@ def create_operator(
             while True:
                 message = json.loads(await ws.receive_text())
                 if isinstance(message, dict):
-                    transport.receive_control(agent.handle, message)
+                    if message.get("type") == "session.ack":
+                        session_id = message.get("session_id")
+                        sequence = message.get("sequence")
+                        if isinstance(session_id, str) and isinstance(sequence, int):
+                            try:
+                                service.acknowledge(agent.handle, session_id, sequence)
+                            except NotFound:
+                                pass
+                    else:
+                        transport.receive_control(agent.handle, message)
         except WebSocketDisconnect:
             pass
         except Exception:
@@ -467,4 +490,5 @@ def create_operator(
         service=service,
         spawner=magi_spawner,
         base_url=base_url,
+        seed=seed,
     )

@@ -65,7 +65,7 @@ export default {
     navUsage: "用量",
     navAbout: "关于",
     navProvider: "模型服务",
-    providerHint: "所有 MAGI 使用的模型服务。保存后交给本机 ASP，由它分发给每个 MAGI（之后连上来的也会补发）。",
+    providerHint: "所有 MAGI 使用的模型服务。App 保存配置，通过 ASP 分发给每个 MAGI；新上线的 MAGI 会补发。",
     providerName: "服务",
     providerNamePlaceholder: "claude、openai…",
     providerModel: "模型",
@@ -75,7 +75,7 @@ export default {
     providerSave: "保存并同步",
     providerSynced: "已同步",
     providerFailed: "未送达",
-    providerNote: "Key 存在本机 ASP 数据库里，由它交给本机的 MAGI 进程。",
+    providerNote: "Key 保存在本机 App 数据中。ASP 只负责转发，不保存 Key。",
 
     account: "账户",
     appearance: "外观",

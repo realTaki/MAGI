@@ -75,7 +75,7 @@ export default {
     providerSave: "Save and sync",
     providerSynced: "Synced to",
     providerFailed: "Not reached",
-    providerNote: "The key lives in this machine’s ASP database and is handed to local MAGI processes.",
+    providerNote: "The key is saved by this app. ASP forwards it to MAGI without storing it.",
 
     account: "Account",
     appearance: "Appearance",

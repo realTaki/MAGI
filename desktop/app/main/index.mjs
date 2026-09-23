@@ -23,7 +23,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
@@ -47,6 +47,7 @@ const FORK_TIMEOUT_MS = 60_000;
 // How often the checkout's commit is checked for the interface to rebuild.
 const COMMIT_POLL_MS = 5_000;
 const AVATAR_TIMEOUT_MS = 8_000;
+const PROVIDER_POLL_MS = 5_000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -185,6 +186,8 @@ export function createLocalApi(context) {
   let asp = null;
   let deviceFlowPending = false;
   let commitWatcher = null;
+  let providerTimer = null;
+  const providerDelivered = new Set();
 
   // A developer's own working tree is not this app's to rewire; only a checkout
   // the shell created (or one it was pointed at explicitly) counts.
@@ -215,6 +218,7 @@ export function createLocalApi(context) {
   const tokenPath = migrateAppFile("github-token", [path.join(paths.home, ".magi", "github-token")]);
   const metadataPath = migrateAppFile("github.json");
   const avatarPath = migrateAppFile("github-avatar");
+  const providerPath = path.join(appData, "provider.json");
   if (existsSync(tokenPath)) chmodSync(tokenPath, 0o600);
   const tokenFile = () => tokenPath;
   const metadataFile = () => metadataPath;
@@ -256,6 +260,31 @@ export function createLocalApi(context) {
   function writeMetadata(metadata) {
     mkdirSync(path.dirname(metadataFile()), { recursive: true });
     writeFileSync(metadataFile(), `${JSON.stringify(metadata, null, 2)}\n`);
+  }
+
+  function normalizeProvider(settings) {
+    return Object.fromEntries(
+      ["provider", "model", "api_key"].map((field) => [
+        field,
+        typeof settings?.[field] === "string" ? settings[field].trim() || null : null,
+      ]),
+    );
+  }
+
+  function readProvider() {
+    if (!existsSync(providerPath)) return null;
+    return normalizeProvider(JSON.parse(readFileSync(providerPath, "utf8")));
+  }
+
+  function writeProvider(settings) {
+    const temporary = `${providerPath}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(settings)}\n`, { mode: 0o600 });
+    try {
+      renameSync(temporary, providerPath);
+      chmodSync(providerPath, 0o600);
+    } finally {
+      rmSync(temporary, { force: true });
+    }
   }
 
   // The account's name and picture are this machine's state, so they live next
@@ -782,6 +811,63 @@ export function createLocalApi(context) {
     return data;
   }
 
+  async function migrateLegacyProvider(token) {
+    const legacy = await aspJson("/settings/provider/legacy", { token });
+    if (legacy === null) return;
+    if (!existsSync(providerPath)) {
+      writeProvider(normalizeProvider(legacy));
+    } else {
+      readProvider(); // Do not remove the old copy if the app's file is unreadable.
+    }
+    await aspJson("/settings/provider/legacy", { token, method: "DELETE" });
+  }
+
+  async function syncProvider(settings, handles, token) {
+    return await aspJson("/settings/provider", {
+      token,
+      method: "PUT",
+      body: { ...settings, ...(handles === null ? {} : { handles }) },
+      timeoutMs: 30_000,
+    });
+  }
+
+  async function saveProvider(input) {
+    const settings = normalizeProvider(input);
+    writeProvider(settings);
+    providerDelivered.clear();
+    const { token } = await aspJson("/operator");
+    const result = await syncProvider(settings, null, token);
+    for (const handle of result.synced ?? []) providerDelivered.add(handle);
+    return result;
+  }
+
+  function watchProviderRecipients(token) {
+    if (providerTimer !== null) return;
+    const poll = async () => {
+      try {
+        const settings = readProvider();
+        if (settings !== null) {
+          const bots = (await aspJson("/bots", { token }))?.bots ?? [];
+          const online = new Set(bots.filter((bot) => bot.online).map((bot) => bot.handle));
+          for (const handle of providerDelivered) {
+            if (!online.has(handle)) providerDelivered.delete(handle);
+          }
+          const pending = [...online].filter((handle) => !providerDelivered.has(handle));
+          if (pending.length > 0) {
+            const result = await syncProvider(settings, pending, token);
+            for (const handle of result.synced ?? []) providerDelivered.add(handle);
+          }
+        }
+      } catch (error) {
+        console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (providerTimer !== null) {
+        providerTimer = setTimeout(() => void poll(), PROVIDER_POLL_MS);
+      }
+    };
+    providerTimer = setTimeout(() => void poll(), 0);
+  }
+
   /** A freshly spawned MAGI answers on its socket only after it has booted. */
   async function nameWhenOnline(handle, nickname, token) {
     const deadline = Date.now() + MAGI_ONLINE_TIMEOUT_MS;
@@ -841,11 +927,22 @@ export function createLocalApi(context) {
     );
   }
 
+  async function activateProviderSync() {
+    const { token } = await aspJson("/operator");
+    try {
+      await migrateLegacyProvider(token);
+    } catch (error) {
+      console.error(`[magi-app] provider migration: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    watchProviderRecipients(token);
+  }
+
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
     progress?.("Checking local magi-asp…", 0.9);
     if (await isAspHealthy()) {
       await ensureDefaultMagis(progress);
+      await activateProviderSync();
       return { origin: ASP_ORIGIN.href };
     }
     const aspDir = path.join(paths.checkout, "magi-asp");
@@ -873,11 +970,14 @@ export function createLocalApi(context) {
       throw error;
     }
     await ensureDefaultMagis(progress);
+    await activateProviderSync();
     return { origin: ASP_ORIGIN.href };
   }
 
   function dispose() {
     stopWatchingCheckout();
+    if (providerTimer !== null) clearTimeout(providerTimer);
+    providerTimer = null;
     if (asp && !asp.killed) {
       asp.kill("SIGTERM");
     }
@@ -891,5 +991,7 @@ export function createLocalApi(context) {
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,
+    "provider.settings": () => readProvider() ?? normalizeProvider(null),
+    "provider.save": saveProvider,
   };
 }
