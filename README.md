@@ -248,12 +248,12 @@ Once the operator connects GitHub from the interface, `origin` is their fork and
 account.
 When `desktop/app/dist/index.html` changes, the app asks before reloading.
 
-Only the bootstrap stays in the installed package: `desktop/shell/` clones,
-prepares, starts ASP and then loads the app from the checkout — both its
-interface (`desktop/app/src/`) and its local backend (`desktop/app/main/`),
-which the shell reaches through one generic bridge. Editing either one takes
-effect without a new package; editing `desktop/shell/` still does not change the
-running shell. Code changes in MAGI or ASP also need the affected process
+Only the bootstrap stays in the installed package: `desktop/shell/` clones the
+checkout, loads the app from it — interface (`desktop/app/src/`) and local
+backend (`desktop/app/main/`) — and then simply asks that backend to prepare the
+checkout, start ASP and name the interface entry, through one generic bridge.
+Editing the app takes effect without a new package; editing `desktop/shell/`
+still does not change the running shell. Code changes in MAGI or ASP also need the affected process
 to restart. The editable checkout is the foundation for RSI, **not** an
 autonomous self-update system yet: MAGI does not currently validate, activate,
 restart, or roll back its own code revisions as one managed operation.

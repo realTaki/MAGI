@@ -9,17 +9,24 @@
  * gets back a table of methods that the operator interface reaches through the
  * ``local:invoke`` bridge. Nothing here talks to ASP or MAGI.
  *
- * Methods:
- *   github.state   — account, fork and whether the checkout is wired.
- *   github.signIn  — OAuth device flow; stores the token for Git to use.
- *   github.connect — fork when the account has none, then point the checkout
- *                    at it.
+ * The shell calls the methods it knows about and nothing else:
+ *   prepare(progress)        — get this checkout ready and report the interface
+ *                              entry point (a file path or a URL).
+ *   start(progress)          — bring up local ASP, the service this app talks to.
+ *   dispose()                — stop what this instance started.
+ *   github.state             — account, fork and whether the checkout is wired.
+ *   github.signIn            — OAuth device flow; stores the token for Git to use.
+ *   github.connect           — fork when the account has none, then point the
+ *                              checkout at it.
+ *
+ * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const GITHUB_DEVICE_URL = `${GITHUB_WEB}/login/device`;
@@ -165,9 +172,21 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, git, emit, openExternal, copy } = context;
-  const options = { cwd: paths.checkout, env: git.env };
+  const { paths, repository, tools, emit, openExternal, copy, managed = false } = context;
+  const git = { binary: tools.git, env: tools.env };
+  const options = { cwd: paths.checkout, env: tools.env };
+  let asp = null;
   let deviceFlowPending = false;
+
+  // A developer's own working tree is not this app's to rewire; only a checkout
+  // the shell created (or one it was pointed at explicitly) counts.
+  function requireManaged() {
+    if (!managed) {
+      throw new Error(
+        "This checkout is not managed by the app. Use the packaged app, or point MAGI_DEV_CHECKOUT at a scratch checkout.",
+      );
+    }
+  }
 
   const tokenFile = () => path.join(paths.home, ".magi", "github-token");
   const metadataFile = () => path.join(paths.userData, "github.json");
@@ -358,7 +377,7 @@ export function createLocalApi(context) {
     const metadata = readMetadata();
     const token = readToken();
     const state = {
-      available: upstream !== null,
+      available: managed && upstream !== null,
       upstream: upstream === null ? "" : `${upstream.owner}/${upstream.name}`,
       login: typeof metadata.login === "string" ? metadata.login : "",
       fork: typeof metadata.fork === "string" ? metadata.fork : "",
@@ -382,6 +401,7 @@ export function createLocalApi(context) {
   }
 
   async function signIn() {
+    requireManaged();
     if (upstreamSlug() === null) {
       throw new Error(`MAGI_REPOSITORY_URL is not a GitHub repository: ${repository}`);
     }
@@ -412,6 +432,7 @@ export function createLocalApi(context) {
   }
 
   async function connect() {
+    requireManaged();
     const upstream = upstreamSlug();
     if (upstream === null) {
       throw new Error(`MAGI_REPOSITORY_URL is not a GitHub repository: ${repository}`);
@@ -428,7 +449,172 @@ export function createLocalApi(context) {
     return await currentState();
   }
 
+  // ---------------------------------------------------------------------
+  // Preparing this checkout and running its local service
+  // ---------------------------------------------------------------------
+
+  function healthUrl() {
+    return new URL("/health", ASP_ORIGIN).href;
+  }
+
+  async function isAspHealthy() {
+    try {
+      const response = await fetch(healthUrl(), { signal: AbortSignal.timeout(400) });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function waitForAsp(timeoutMs = 20_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await isAspHealthy()) {
+        return;
+      }
+      await delay(200);
+    }
+    throw new Error(`magi-asp is unavailable at ${healthUrl()}`);
+  }
+
+  function resolveAspPython(aspDir) {
+    const unix = path.join(aspDir, ".venv", "bin", "python");
+    const win = path.join(aspDir, ".venv", "Scripts", "python.exe");
+    if (existsSync(unix)) {
+      return unix;
+    }
+    if (existsSync(win)) {
+      return win;
+    }
+    return tools.python;
+  }
+
+  function spawnAsp() {
+    const aspDir = path.join(paths.checkout, "magi-asp");
+    const child = spawn(resolveAspPython(aspDir), ["main.py"], {
+      cwd: aspDir,
+      env: {
+        ...tools.env,
+        PYTHONUNBUFFERED: "1",
+        MAGI_SOURCE_DIR: paths.checkout,
+        MAGI_ASP_HOST: ASP_ORIGIN.hostname,
+        MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stderr?.on("data", (chunk) => {
+      const text = String(chunk).trim();
+      if (text) {
+        console.error("[magi-asp]", text);
+      }
+    });
+    return child;
+  }
+
+  /** Interface entry point: the dev server when one is configured, else the build. */
+  function uiEntry() {
+    const devUrl = (process.env.MAGI_APP_URL ?? "").trim();
+    if (devUrl !== "") {
+      return devUrl;
+    }
+    const built = path.join(paths.checkout, "desktop", "app", "dist", "index.html");
+    return existsSync(built) ? built : "http://127.0.0.1:5173";
+  }
+
+  /**
+   * Everything this checkout needs before it can run. Only a managed checkout
+   * is prepared: a developer's own tree is already theirs to prepare.
+   */
+  async function prepare(progress) {
+    const aspDir = path.join(paths.checkout, "magi-asp");
+    const magiDir = path.join(paths.checkout, "py-magi");
+    const appDir = path.join(paths.checkout, "desktop", "app");
+    const required = [
+      path.join(aspDir, "pyproject.toml"),
+      path.join(magiDir, "pyproject.toml"),
+      path.join(appDir, "package-lock.json"),
+    ];
+    for (const file of required) {
+      if (!existsSync(file)) {
+        throw new Error(`MAGI checkout is incomplete: ${file} is missing`);
+      }
+    }
+
+    if (managed) {
+      progress?.("Preparing local magi-asp…", 0.2);
+      await command(tools.uv, ["sync", "--frozen", "--python", tools.python], {
+        cwd: aspDir,
+        env: tools.env,
+        description: "Could not prepare magi-asp",
+      });
+      progress?.("Preparing MAGI…", 0.4);
+      await command(
+        tools.uv,
+        ["sync", "--frozen", "--extra", "eva", "--python", tools.python],
+        { cwd: magiDir, env: tools.env, description: "Could not prepare MAGI" },
+      );
+      progress?.("Installing app dependencies…", 0.6);
+      await command(tools.node, [tools.npm, "ci"], {
+        cwd: appDir,
+        env: tools.env,
+        description: "Could not install the desktop app dependencies",
+      });
+      progress?.("Building the app…", 0.8);
+      await command(tools.node, [tools.npm, "run", "build"], {
+        cwd: appDir,
+        env: tools.env,
+        description: "Could not build the desktop app",
+      });
+    }
+
+    progress?.("Prepared.", 0.85);
+    return { ui: uiEntry() };
+  }
+
+  /** Brings local ASP up unless something already answers on its port. */
+  async function start(progress) {
+    progress?.("Checking local magi-asp…", 0.9);
+    if (await isAspHealthy()) {
+      return { origin: ASP_ORIGIN.href };
+    }
+    const aspDir = path.join(paths.checkout, "magi-asp");
+    if (!existsSync(path.join(aspDir, "main.py"))) {
+      throw new Error(`magi-asp was not found at ${aspDir}`);
+    }
+    progress?.("Starting local magi-asp…", 0.94);
+    asp = spawnAsp();
+    try {
+      await new Promise((resolve, reject) => {
+        asp.once("error", reject);
+        asp.once("spawn", resolve);
+      });
+      progress?.("Waiting for local magi-asp…", 0.97);
+      await Promise.race([
+        waitForAsp(),
+        new Promise((_, reject) => {
+          asp.once("exit", (code, signal) => {
+            reject(new Error(`magi-asp exited (${code ?? signal ?? "unknown"})`));
+          });
+        }),
+      ]);
+    } catch (error) {
+      dispose();
+      throw error;
+    }
+    return { origin: ASP_ORIGIN.href };
+  }
+
+  function dispose() {
+    if (asp && !asp.killed) {
+      asp.kill("SIGTERM");
+    }
+    asp = null;
+  }
+
   return {
+    prepare,
+    start,
+    dispose,
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,

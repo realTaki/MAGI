@@ -4,22 +4,14 @@ const startupStep = document.getElementById("startup-step");
 const progressTrack = document.querySelector(".progress-track");
 const retry = document.getElementById("retry-startup");
 
-const steps = {
-  checking: 0,
-  clone: 1,
-  asp: 2,
-  magi: 3,
-  "app-dependencies": 4,
-  "app-build": 5,
-  starting: 6,
-};
-
-function showProgress({ step, message }) {
-  const value = steps[step] ?? 0;
+// The shell reports its own steps and forwards the app's; both are absolute
+// percentages, so the page needs no vocabulary of its own.
+function showProgress({ message, percent }) {
+  const value = Math.max(0, Math.min(1, Number(percent) || 0));
   startupMessage.textContent = message;
-  startupStep.textContent = `Step ${Math.min(value + 1, 6)} of 6`;
-  startupProgress.style.width = `${(value / 6) * 100}%`;
-  progressTrack.setAttribute("aria-valuenow", String(value));
+  startupStep.textContent = `${Math.round(value * 100)}%`;
+  startupProgress.style.width = `${value * 100}%`;
+  progressTrack.setAttribute("aria-valuenow", String(Math.round(value * 100)));
   startupStep.classList.remove("is-error");
   retry.hidden = true;
 }

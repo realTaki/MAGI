@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "shell/main.mjs",
-  "description": "MAGI Electron desktop: operator UI and local sqlite.",
+  "description": "MAGI Electron shell. It prepares the environment and loads the desktop app.",
   "scripts": {
     "dev": "electron .",
     "dev:app": "npm run dev --prefix app",

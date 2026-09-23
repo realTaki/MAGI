@@ -1,4 +1,8 @@
-/** Electron desktop shell: native macOS controls and a local operator UI. */
+/**
+ * Electron shell. It prepares the environment — bundled tools, the checkout,
+ * ASP — and opens a window. The app in desktop/app is the interface and the
+ * local backend; add a capability there, not in this file.
+ */
 import { spawn } from "node:child_process";
 import {
   existsSync,
@@ -18,22 +22,15 @@ import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } from "ele
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
-const APP_DIST = path.join(SHELL_DIR, "..", "app", "dist", "index.html");
-const UI_DEV_URL = process.env.MAGI_UI_URL ?? "http://127.0.0.1:5173";
-const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
 
 let mainWindow = null;
-// Child process for a locally started magi-asp. Not a delivery cache: ASP
-// state stays in that process; desktop sqlite is Electron userData; MAGI has
-// its own store.
-let spawnedAsp = null;
 let startingLocal = false;
 let runtimeRootPromise = null;
-let uiWatcher = null;
-let uiReloadTimer = null;
-let uiReloadPromptOpen = false;
+let appWatcher = null;
+let appReloadTimer = null;
+let appReloadPromptOpen = false;
 
 function command(command, args, { cwd, env, description }) {
   return new Promise((resolve, reject) => {
@@ -110,7 +107,7 @@ function packagedTools() {
   return { env, git, node, npm, python, uv };
 }
 
-async function cloneMagiSource(tools, report) {
+async function cloneMagiSource(tools, progress) {
   const destination = path.join(app.getPath("home"), ".magi", "MAGI");
   if (existsSync(destination)) {
     if (!statSync(destination).isDirectory()) {
@@ -122,7 +119,7 @@ async function cloneMagiSource(tools, report) {
     return destination;
   }
 
-  report("clone", "Cloning MAGI source…");
+  progress("Cloning MAGI source…", 0.06);
   const parent = path.dirname(destination);
   mkdirSync(parent, { recursive: true });
   const staging = mkdtempSync(path.join(parent, ".MAGI-"));
@@ -147,35 +144,59 @@ async function cloneMagiSource(tools, report) {
   }
 }
 
-// The operator interface and the app's local logic both come from the
-// checkout; the shell only loads them and forwards calls. Editing either one
-// takes effect without reinstalling the app.
+// The shell loads the app and forwards calls. It does not implement them.
+// Packaged, the backend is the checkout's, so an edit there applies on the
+// next launch. Unpackaged, it is the app next to this shell — a scratch
+// checkout (MAGI_DEV_CHECKOUT) is only the Git tree, not the code under test.
 let localApi = null;
 let localApiError = null;
+// Where the bundled runtime is, when this build has one. The app starts every
+// child process from this: uv for the Python environments, npm for the build.
+let localTools = null;
+// Only a checkout this app owns (packaged, or an explicit scratch checkout) may
+// be rewired; a developer's own working tree must stay untouched.
+let localCheckoutManaged = false;
 
-function gitToolchain() {
-  if (app.isPackaged) {
-    return { binary: resolveGitBinary(), env: packagedTools().env };
-  }
-  return { binary: resolveGitBinary(), env: setupEnvironment({}).env };
+// Unpackaged runs borrow the developer's tools instead.
+function devTools() {
+  return {
+    node: "node",
+    npm: "npm",
+    python: process.platform === "win32" ? "python" : "python3",
+    uv: "uv",
+    git: resolveGitBinary(),
+    env: { ...setupEnvironment({}).env },
+  };
 }
 
-async function loadLocalApp(checkout) {
-  const entry = path.join(checkout, "desktop", "app", "main", "index.mjs");
+function appBackendEntry(runtimeRoot) {
+  if (app.isPackaged) {
+    return path.join(runtimeRoot, "desktop", "app", "main", "index.mjs");
+  }
+  return path.join(SHELL_DIR, "..", "app", "main", "index.mjs");
+}
+
+async function loadLocalApp(runtimeRoot) {
+  const entry = appBackendEntry(runtimeRoot);
   localApi = null;
   localApiError = null;
   if (!existsSync(entry)) {
-    localApiError = new Error(`The app backend is missing from the checkout: ${entry}`);
+    localApiError = new Error(`The app backend is missing: ${entry}`);
     console.error(`[magi-app] ${localApiError.message}`);
     return;
   }
   try {
-    // Cache-bust on mtime so an edited backend is picked up on the next launch.
+    // Cache-bust on mtime so a retry in this process picks up an edited backend.
     const backend = await import(`${pathToFileURL(entry).href}?v=${statSync(entry).mtimeMs}`);
     localApi = backend.createLocalApi({
-      paths: { checkout, home: app.getPath("home"), userData: app.getPath("userData") },
+      paths: {
+        checkout: runtimeRoot,
+        home: app.getPath("home"),
+        userData: app.getPath("userData"),
+      },
       repository: MAGI_REPOSITORY,
-      git: gitToolchain(),
+      managed: localCheckoutManaged,
+      tools: localTools ?? devTools(),
       emit: (event, payload) => sendToWindow(mainWindow, "local:event", { event, payload }),
       openExternal: (url) => shell.openExternal(url),
       copy: (text) => clipboard.writeText(text),
@@ -186,67 +207,31 @@ async function loadLocalApp(checkout) {
   }
 }
 
-async function prepareCheckout(checkout, tools, report) {
-  const asp = path.join(checkout, "magi-asp");
-  const magi = path.join(checkout, "py-magi");
-  const desktopApp = path.join(checkout, "desktop", "app");
-  const requiredFiles = [
-    path.join(asp, "pyproject.toml"),
-    path.join(magi, "pyproject.toml"),
-    path.join(desktopApp, "package-lock.json"),
-  ];
-  for (const required of requiredFiles) {
-    if (!existsSync(required)) {
-      throw new Error(`MAGI checkout is incomplete: ${required} is missing`);
-    }
-  }
 
-  report("asp", "Preparing local magi-asp…");
-  await command(tools.uv, ["sync", "--frozen", "--python", tools.python], {
-    cwd: asp,
-    env: tools.env,
-    description: "Could not prepare magi-asp",
-  });
-  report("magi", "Preparing MAGI…");
-  await command(tools.uv, ["sync", "--frozen", "--extra", "eva", "--python", tools.python], {
-    cwd: magi,
-    env: tools.env,
-    description: "Could not prepare MAGI",
-  });
-  report("app-dependencies", "Installing app dependencies…");
-  await command(tools.node, [tools.npm, "ci"], {
-    cwd: desktopApp,
-    env: tools.env,
-    description: "Could not install the desktop app dependencies",
-  });
-  report("app-build", "Building the app…");
-  await command(tools.node, [tools.npm, "run", "build"], {
-    cwd: desktopApp,
-    env: tools.env,
-    description: "Could not build the desktop app",
-  });
-}
-
-async function resolveRuntimeRoot(report) {
+async function resolveRuntimeRoot(progress) {
   if (!app.isPackaged) {
     const override = process.env.MAGI_DEV_CHECKOUT ?? "";
     if (override === "") {
+      // The developer's own working tree: the app runs from it, but no local
+      // capability may rewire it.
+      localCheckoutManaged = false;
       return REPO_ROOT;
     }
     // Dev shells have no bundled runtime, but dugite still provides Git, so a
-    // scratch checkout keeps the local GitHub capability testable.
+    // scratch checkout keeps the local capabilities testable.
     const checkout = path.resolve(override);
     if (!existsSync(path.join(checkout, ".git"))) {
       throw new Error(`MAGI_DEV_CHECKOUT is not a Git checkout: ${checkout}`);
     }
-    report("clone", `Using the checkout at ${checkout}`);
+    progress(`Using the checkout at ${checkout}`, 0.12);
+    localCheckoutManaged = true;
     return checkout;
   }
   if (runtimeRootPromise === null) {
     runtimeRootPromise = (async () => {
-      const tools = packagedTools();
-      const checkout = await cloneMagiSource(tools, report);
-      await prepareCheckout(checkout, tools, report);
+      localTools = packagedTools();
+      const checkout = await cloneMagiSource(localTools, progress);
+      localCheckoutManaged = true;
       return checkout;
     })().catch((error) => {
       runtimeRootPromise = null;
@@ -256,110 +241,8 @@ async function resolveRuntimeRoot(report) {
   return runtimeRootPromise;
 }
 
-function healthUrl() {
-  return new URL("/health", ASP_ORIGIN).href;
-}
-
-async function waitForUrl(url, timeoutMs = 20_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(400) });
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
-  throw new Error(`magi-asp is unavailable at ${url}`);
-}
-
-async function isAspHealthy() {
-  try {
-    const response = await fetch(healthUrl(), { signal: AbortSignal.timeout(400) });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-function resolveAspPython(aspDir) {
-  const unix = path.join(aspDir, ".venv", "bin", "python");
-  const win = path.join(aspDir, ".venv", "Scripts", "python.exe");
-  if (existsSync(unix)) {
-    return unix;
-  }
-  if (existsSync(win)) {
-    return win;
-  }
-  return process.platform === "win32" ? "python" : "python3";
-}
-
-function spawnLocalAsp(checkout) {
-  // Desktop starts the local magi-asp. ASP spawns MAGI processes from this checkout.
-  const aspDir = path.join(checkout, "magi-asp");
-  const python = resolveAspPython(aspDir);
-  const origin = ASP_ORIGIN;
-  const env = app.isPackaged ? packagedTools().env : process.env;
-  const child = spawn(python, ["main.py"], {
-    cwd: aspDir,
-    env: {
-      ...env,
-      PYTHONUNBUFFERED: "1",
-      MAGI_SOURCE_DIR: checkout,
-      MAGI_ASP_HOST: origin.hostname,
-      MAGI_ASP_PORT: origin.port || "42069",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  child.stderr?.on("data", (chunk) => {
-    const text = String(chunk).trim();
-    if (text) {
-      console.error("[magi-asp]", text);
-    }
-  });
-  return child;
-}
-
-async function startLocalAsp(report) {
-  report("checking", "Checking local magi-asp…");
-  if (await isAspHealthy()) {
-    return resolveRuntimeRoot(report);
-  }
-  const checkout = await resolveRuntimeRoot(report);
-  const aspDir = path.join(checkout, "magi-asp");
-  if (!existsSync(path.join(aspDir, "main.py"))) {
-    throw new Error(`magi-asp was not found at ${aspDir}`);
-  }
-  report("starting", "Starting local magi-asp…");
-  spawnedAsp = spawnLocalAsp(checkout);
-  try {
-    await new Promise((resolve, reject) => {
-      spawnedAsp.once("error", reject);
-      spawnedAsp.once("spawn", resolve);
-    });
-    report("starting", "Waiting for local magi-asp…");
-    await Promise.race([
-      waitForUrl(healthUrl()),
-      new Promise((_, reject) => {
-        spawnedAsp.once("exit", (code, signal) => {
-          reject(new Error(`magi-asp exited (${code ?? signal ?? "unknown"})`));
-        });
-      }),
-    ]);
-  } catch (error) {
-    if (spawnedAsp && !spawnedAsp.killed) {
-      spawnedAsp.kill("SIGTERM");
-    }
-    spawnedAsp = null;
-    throw error;
-  }
-  return checkout;
-}
-
-function reportStartup(win, step, message) {
-  sendToWindow(win, "asp:startup-progress", { step, message });
+function reportStartup(win, message, percent) {
+  sendToWindow(win, "asp:startup-progress", { message, percent });
 }
 
 async function launchLocalOperator(win) {
@@ -368,10 +251,20 @@ async function launchLocalOperator(win) {
   }
   startingLocal = true;
   try {
-    const checkout = await startLocalAsp((step, message) => reportStartup(win, step, message));
-    await loadLocalApp(checkout);
+    const progress = (message, percent) => reportStartup(win, message, percent);
+    progress("Checking local MAGI…", 0.02);
+    const runtimeRoot = await resolveRuntimeRoot(progress);
+    progress("Loading the app…", 0.15);
+    // A retry replaces the backend, so let the previous one stop what it started.
+    localApi?.dispose?.();
+    await loadLocalApp(runtimeRoot);
+    if (localApi === null) {
+      throw localApiError ?? new Error("The desktop app backend is not loaded.");
+    }
+    const { ui } = await localApi.prepare(progress);
+    await localApi.start(progress);
     if (!win.isDestroyed()) {
-      await loadOperatorUi(win, checkout);
+      await loadApp(win, ui);
     }
   } catch (error) {
     if (!win.isDestroyed()) {
@@ -385,30 +278,30 @@ async function launchLocalOperator(win) {
   }
 }
 
-function stopWatchingOperatorUi() {
-  uiWatcher?.close();
-  uiWatcher = null;
-  if (uiReloadTimer !== null) {
-    clearTimeout(uiReloadTimer);
-    uiReloadTimer = null;
+function stopWatchingApp() {
+  appWatcher?.close();
+  appWatcher = null;
+  if (appReloadTimer !== null) {
+    clearTimeout(appReloadTimer);
+    appReloadTimer = null;
   }
 }
 
-function watchOperatorUi(win, indexFile) {
-  stopWatchingOperatorUi();
-  uiWatcher = watch(path.dirname(indexFile), (_event, filename) => {
+function watchApp(win, indexFile) {
+  stopWatchingApp();
+  appWatcher = watch(path.dirname(indexFile), (_event, filename) => {
     if (filename !== null && String(filename) !== path.basename(indexFile)) {
       return;
     }
-    if (uiReloadTimer !== null) {
-      clearTimeout(uiReloadTimer);
+    if (appReloadTimer !== null) {
+      clearTimeout(appReloadTimer);
     }
-    uiReloadTimer = setTimeout(async () => {
-      uiReloadTimer = null;
-      if (uiReloadPromptOpen || win.isDestroyed() || !existsSync(indexFile)) {
+    appReloadTimer = setTimeout(async () => {
+      appReloadTimer = null;
+      if (appReloadPromptOpen || win.isDestroyed() || !existsSync(indexFile)) {
         return;
       }
-      uiReloadPromptOpen = true;
+      appReloadPromptOpen = true;
       try {
         const { response } = await dialog.showMessageBox(win, {
           type: "info",
@@ -423,29 +316,28 @@ function watchOperatorUi(win, indexFile) {
           await win.loadFile(indexFile);
         }
       } finally {
-        uiReloadPromptOpen = false;
+        appReloadPromptOpen = false;
       }
     }, 500);
   });
-  uiWatcher.once("error", stopWatchingOperatorUi);
+  appWatcher.once("error", stopWatchingApp);
 }
 
 async function loadStartup(win) {
-  stopWatchingOperatorUi();
-  await win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
+  stopWatchingApp();
+  await win.loadFile(path.join(SHELL_DIR, "boot", "index.html"));
 }
 
-async function loadOperatorUi(win, checkout) {
-  const builtUi = app.isPackaged
-    ? path.join(checkout, "desktop", "app", "dist", "index.html")
-    : APP_DIST;
-  if (existsSync(builtUi) && !process.env.MAGI_UI_URL) {
-    await win.loadFile(builtUi);
-    watchOperatorUi(win, builtUi);
-  } else {
-    stopWatchingOperatorUi();
-    await win.loadURL(UI_DEV_URL);
+// The app reports its own entry point: a built file to load (and watch), or a
+// dev server URL to point the window at.
+async function loadApp(win, ui) {
+  if (ui.startsWith("http")) {
+    stopWatchingApp();
+    await win.loadURL(ui);
+    return;
   }
+  await win.loadFile(ui);
+  watchApp(win, ui);
 }
 
 function createWindow() {
@@ -476,7 +368,7 @@ function createWindow() {
   });
   win.on("closed", () => {
     if (mainWindow === win) {
-      stopWatchingOperatorUi();
+      stopWatchingApp();
       mainWindow = null;
     }
   });
@@ -489,11 +381,10 @@ ipcMain.handle("local:invoke", async (_event, method, payload) => {
   if (localApi === null) {
     throw localApiError ?? new Error("The desktop app backend is not loaded yet.");
   }
-  const handler = localApi[method];
-  if (typeof handler !== "function") {
+  if (typeof method !== "string" || !Object.hasOwn(localApi, method)) {
     throw new Error(`Unknown app method: ${String(method)}`);
   }
-  return await handler(payload);
+  return await localApi[method](payload);
 });
 
 ipcMain.handle("asp:retry", async () => {
@@ -516,11 +407,9 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  stopWatchingOperatorUi();
-  if (spawnedAsp && !spawnedAsp.killed) {
-    spawnedAsp.kill("SIGTERM");
-  }
-  spawnedAsp = null;
+  stopWatchingApp();
+  // The app owns the processes it started (local ASP, for one).
+  localApi?.dispose?.();
 });
 
 app.on("window-all-closed", () => {

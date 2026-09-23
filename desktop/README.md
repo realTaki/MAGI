@@ -1,23 +1,42 @@
 # Desktop app
 
-The Electron app is a bootstrap shell for a local MAGI installation. It starts
-ASP on `127.0.0.1:42069`; ASP starts MAGI processes. The app itself lives in
-`app/` — operator interface (`app/src/`) plus local backend (`app/main/`) — and
-the shell loads both from the source checkout. Electron user data is separate
-from MAGI and ASP state.
+The Electron shell is a bootstrap for a local MAGI installation: it clones the
+checkout and loads the app from it. The app itself lives in `app/` — operator
+interface (`app/src/`) plus local backend (`app/main/`) — and the backend
+prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
+processes) and reports which interface entry the shell should show. Electron
+user data is separate from MAGI and ASP state.
 
 The app is also the machine-local layer of the system: it owns the checkout and
 the operator's GitHub credentials, and it keeps local state in Electron user
 data. ASP only relays messages — and MAGI keeps its own store — so both may run
 on a remote server while this machine still works and keeps its own data.
 
-On first launch, the packaged shell uses its bundled Git, Python, Node.js,
-npm, and uv tools to clone the complete repository into `~/.magi/MAGI`, prepare
-the ignored Python environments and UI dependencies, build the WebUI, and start
-ASP. The startup page shows the current stage and offers Retry if preparation
-fails. Later launches reuse the same Git working tree; they do not overwrite
-local changes or automatically pull upstream. Preparation currently runs again
-on each packaged launch.
+On first launch the packaged shell clones the complete repository into
+`~/.magi/MAGI` with its bundled Git, then hands the app the bundled Python,
+Node.js, npm and uv. The backend uses them to prepare the ignored Python
+environments and the app dependencies, build the interface and start ASP. The
+startup page shows the current stage and offers Retry if preparation fails.
+Later launches reuse the same Git working tree; they do not overwrite local
+changes or automatically pull upstream. Preparation currently runs again on each
+packaged launch.
+
+## What the shell does
+
+Only five things, none of them product-specific:
+
+1. Clone `~/.magi/MAGI` when it is missing (packaged builds).
+2. Load the app backend from the checkout and give it native pieces: paths,
+   bundled tools, `openExternal`, clipboard, and event forwarding.
+3. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
+   the app, so a new capability never changes the shell.
+4. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
+   then show that entry — a built file (watched for rebuilds) or a dev URL.
+5. Stop the backend on quit (`dispose()`), which tears down what it started.
+
+That leaves one contract: the checkout must contain `app/main/index.mjs`
+exporting `createLocalApi(context)`, with a `prepare`, `start` and `dispose`,
+and whatever else the interface calls.
 
 ## GitHub connection
 

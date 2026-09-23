@@ -19,7 +19,7 @@ child processes use; a source checkout builds that same runtime into
 (cd desktop && npm install && node scripts/prepare-runtime.mjs)
 ```
 
-That runtime (`bin/node`, `bin/uv`, `python/`) is what builds the UI; the pinned
+That runtime (`bin/node`, `bin/uv`, `python/`) is what builds the desktop app; the pinned
 version lives in `desktop/package.json` and CI uses the same Node 24.
 `desktop/shell/main.mjs` is what puts it on a child process's `PATH`.
 
@@ -71,7 +71,7 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `desktop/` | Electron desktop and operator UI |
+| `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
 | `magi-asp/` | ASP session server (`magi_asp` Python package) |
 | `py-magi/agent/` | Agent loop, memory, tools |
 | `py-magi/channels/` | Telegram + ASP channel adapters |

@@ -186,9 +186,9 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 重新构建界面，并用 Git 合并上游更新。`desktop/app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
-真正留在安装包里的只有启动壳：`desktop/shell/` 负责克隆、准备、启动 ASP，然后
-从这份仓库加载整个应用——界面（`desktop/app/src/`）与它的本地后端
-（`desktop/app/main/`），壳只提供一个通用桥把调用转过去。改这两处都**不需要
+真正留在安装包里的只有启动壳：`desktop/shell/` 克隆仓库、从里面加载整个应用
+（界面 `desktop/app/src/` + 本地后端 `desktop/app/main/`），然后只是请这个后端
+自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
 重新打包**；改 `desktop/shell/` 才需要。
 
 当前安装包中的 Electron 壳（`desktop/shell/`）和内置工具版本仍是固定的：虽然本地
