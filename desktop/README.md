@@ -110,7 +110,8 @@ user tokens are short-lived and installed per repository.
 
 | Source in `~/.magi/MAGI` | How the change takes effect |
 | --- | --- |
-| `py-magi/` | Restart the affected MAGI process. |
+| `ts-magi/` | Restart the affected MAGI process. |
+| `py-magi/` | Legacy runtime and first-run migration source; restart only when explicitly running with `MAGI_RUNTIME=python`. |
 | `magi-asp/` | Restart local ASP. |
 | `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |

@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { LLMTool } from "../bus/index.js";
 import type { Bus, ContactRole, McpConnectionType, McpServerConfig, MemoryKind, NoteKind } from "../bus/index.js";
-import { ShellManager } from "./shellManager.js";
+import { ShellManager, shellInvocation } from "./shellManager.js";
 
 export type Tool = LLMTool & { run(args: Record<string, unknown>): Promise<string> };
 
@@ -86,7 +86,8 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
         }
         const timeout = typeof args.timeout === "number" ? Math.max(1, Math.min(600, args.timeout)) : 120;
         try {
-          const { stdout, stderr } = await runCommand("bash", ["-lc", command], { cwd: workspace, timeout: timeout * 1000, maxBuffer: 256 * 1024 });
+          const [executable, ...parameters] = shellInvocation(command);
+          const { stdout, stderr } = await runCommand(executable, parameters, { cwd: workspace, timeout: timeout * 1000, maxBuffer: 256 * 1024 });
           return `exit_code: 0\n${stdout}${stderr}`.slice(0, 8192);
         } catch (error) {
           const failed = error as Error & { code?: number | string; stdout?: string; stderr?: string };

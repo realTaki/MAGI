@@ -81,7 +81,15 @@ def test_spawned_magi_joins_group_on_intranet_invite(tmp_path: Path, monkeypatch
         )
         assert renamed.status_code == 200, renamed.text
         assert renamed.json()["nickname"] == "司空"
-        workspace_db = tmp_path / "home" / ".magi" / "eva-000" / "memories" / "magi.db"
+        workspace_db = (
+            tmp_path
+            / "home"
+            / ".magi"
+            / "ts-magi"
+            / "eva-000"
+            / "memories"
+            / "magi.db"
+        )
         with sqlite3.connect(workspace_db) as connection:
             nickname = connection.execute(
                 "SELECT nickname FROM books_contacts WHERE id = 1"

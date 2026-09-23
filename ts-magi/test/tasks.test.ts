@@ -41,4 +41,5 @@ test("cron matching supports ranges, lists, and steps in UTC", () => {
   expect(cronMatches("*/15 9-17 * * 1-5", date)).toBeTrue();
   expect(cronMatches("0,15 9-17 * * 1-5", date)).toBeFalse();
   expect(cronMatches("30 15 * * 3", date)).toBeTrue();
+  expect(cronMatches("0 8 * * 7", new Date("2026-09-27T08:00:00Z"))).toBeTrue();
 });

@@ -6,6 +6,7 @@ Tests inject a stub so conversation-create does not boot a runtime.
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -43,7 +44,7 @@ class RecordingSpawner:
 
 
 class ProcessSpawner:
-    """ASP-side spawn of ``python -m magi``. Desktop clients must not call this."""
+    """ASP-side spawn of the selected MAGI runtime. Desktop clients must not call this."""
 
     def __init__(self) -> None:
         self._children: list[subprocess.Popen[bytes]] = []
@@ -51,7 +52,7 @@ class ProcessSpawner:
     def spawn(self, *, handle: str, base: str, token: str) -> SpawnedMagi:
         if _spawn_disabled():
             return SpawnedMagi(handle=handle, token=token, pid=None, spawned=False)
-        runtime = os.environ.get("MAGI_RUNTIME", "python").strip().lower()
+        runtime = os.environ.get("MAGI_RUNTIME", "typescript").strip().lower()
         if runtime in {"typescript", "ts", "ts-magi"}:
             executable = _resolve_magi_bun()
             cwd = _ts_magi_dir()
@@ -120,9 +121,32 @@ def _resolve_magi_bun() -> str:
     if configured:
         return configured
     repo = Path(__file__).resolve().parents[2]
-    names = ("bun.exe",) if os.name == "nt" else ("bun",)
-    for name in names:
-        candidate = repo / "desktop" / "runtime" / "bin" / name
+    executable = "bun.exe" if os.name == "nt" else "bun"
+    candidates = [repo / "desktop" / "runtime" / "bin" / executable]
+
+    platform_name = {
+        "darwin": "darwin",
+        "linux": "linux",
+        "win32": "windows",
+    }.get(sys.platform)
+    architecture = {
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+        "amd64": "x64",
+        "x86_64": "x64",
+    }.get(platform.machine().lower())
+    if platform_name is not None and architecture is not None:
+        candidates.append(
+            repo
+            / "desktop"
+            / "node_modules"
+            / "@oven"
+            / f"bun-{platform_name}-{architecture}"
+            / "bin"
+            / executable
+        )
+
+    for candidate in candidates:
         if candidate.exists():
             return str(candidate)
     raise RuntimeError("TypeScript MAGI selected but the MAGI-owned Bun runtime is missing")

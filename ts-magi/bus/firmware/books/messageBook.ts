@@ -21,4 +21,14 @@ export class MessageBook {
   archiveBefore(conversationId: number, id: number): void {
     this.db.prepare("UPDATE books_messages SET archived = 1 WHERE conversation_id = ? AND id <= ?").run(conversationId, id);
   }
+
+  searchConversation(conversationId: number, query: string, limit = 20): Message[] {
+    return this.db.prepare("SELECT * FROM books_messages WHERE conversation_id = ? AND instr(lower(content), lower(?)) > 0 ORDER BY id DESC LIMIT ?")
+      .all(conversationId, query, limit) as Message[];
+  }
+
+  searchContact(contactId: number, query: string, limit = 20): Message[] {
+    return this.db.prepare("SELECT * FROM books_messages WHERE contact_id = ? AND instr(lower(content), lower(?)) > 0 ORDER BY id DESC LIMIT ?")
+      .all(contactId, query, limit) as Message[];
+  }
 }

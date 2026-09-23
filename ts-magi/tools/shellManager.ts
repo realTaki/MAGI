@@ -13,7 +13,7 @@ export class ShellManager {
 
   start(command: string, cwd: string): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
-    const process = Bun.spawn(["bash", "-lc", command], { cwd, stdout: "pipe", stderr: "pipe" });
+    const process = Bun.spawn(shellInvocation(command), { cwd, stdout: "pipe", stderr: "pipe" });
     const state: ShellState = { id, command, process, output: "", cursor: 0, exitCode: null, status: "running" };
     this.shells.set(id, state);
     void this.capture(state, process.stdout);
@@ -79,4 +79,10 @@ export class ShellManager {
       state.output += decoder.decode();
     } finally { reader.releaseLock(); }
   }
+}
+
+export function shellInvocation(command: string): string[] {
+  return process.platform === "win32"
+    ? ["powershell.exe", "-NoProfile", "-Command", command]
+    : ["bash", "-lc", command];
 }

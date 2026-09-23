@@ -10,6 +10,7 @@ import { TaskBook } from "./firmware/books/taskBook.js";
 import { ContactBook } from "./firmware/books/contactBook.js";
 import { ContactNoteBook } from "./firmware/books/contactNoteBook.js";
 import { McpServerBook } from "./firmware/books/mcpServerBook.js";
+import { PromptBook } from "./firmware/books/promptBook.js";
 import { JobBoard } from "./firmware/jobs/jobBoard.js";
 import type { ChatNotify, DeliveryNotify, JobInput, JobType } from "./firmware/jobs/types.js";
 
@@ -26,6 +27,7 @@ export class Bus {
   readonly contacts: ContactBook;
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
+  readonly prompts: PromptBook;
   private readonly memories: Database;
   private readonly logs: Database;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
@@ -111,6 +113,7 @@ export class Bus {
     this.contacts = new ContactBook(this.memories);
     this.contactNotes = new ContactNoteBook(this.memories);
     this.mcpServers = new McpServerBook(this.memories);
+    this.prompts = new PromptBook(this.workspace);
     this.memories.prepare("INSERT OR IGNORE INTO books_contacts (id, name, role) VALUES (0, 'system', 'system')").run();
     this.memories.prepare("INSERT INTO books_contacts (id, name, role) VALUES (1, ?, 'magi') ON CONFLICT(id) DO UPDATE SET name = excluded.name").run(handle);
   }

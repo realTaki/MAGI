@@ -687,7 +687,7 @@ export function createLocalApi(context) {
         PYTHONUNBUFFERED: "1",
         MAGI_SOURCE_DIR: paths.checkout,
         MAGI_BUN: tools.bun,
-        MAGI_RUNTIME: process.env.MAGI_RUNTIME ?? "python",
+        MAGI_RUNTIME: process.env.MAGI_RUNTIME ?? "typescript",
         MAGI_ASP_HOST: ASP_ORIGIN.hostname,
         MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
       },

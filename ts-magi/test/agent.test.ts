@@ -207,17 +207,19 @@ describe("local MAGI agent", () => {
       },
     });
     magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish ts-magi", kind: "long_term" });
+    magi.bus.setSetting("provider.context_window", "100");
     const conversation = magi.bus.conversations.forChannel("cli", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
     magi.start();
     await magi.chat("continue");
 
     expect(requests).toHaveLength(2);
-    expect(requests[0].messages[0].content).toContain("Summarize durable facts");
+    expect(requests[0].messages[0].content).toContain("summarising a portion of a chat");
     expect(requests[1].messages[0].content).toContain("Finish ts-magi");
     expect(requests[1].messages[0].content).toContain("The user is migrating MAGI to TypeScript.");
     expect(requests[1].messages[0].content).toContain("codebase_search");
-    expect(magi.bus.messages.count(conversation.id)).toBe(11);
+    expect(requests[1].messages[0].content).toContain("Your name: @alice.magi");
+    expect(magi.bus.messages.count(conversation.id)).toBe(21);
     await magi.stop();
   });
 });

@@ -42,7 +42,10 @@ export function cronMatches(expression: string, date: Date): boolean {
   const values = [date.getUTCMinutes(), date.getUTCHours(), date.getUTCDate(), date.getUTCMonth() + 1, date.getUTCDay()];
   const minimums = [0, 0, 1, 1, 0];
   const maximums = [59, 23, 31, 12, 7];
-  return fields.every((field, index) => cronFieldMatches(field, values[index], minimums[index], maximums[index]));
+  return fields.every((field, index) => {
+    if (index !== 4) return cronFieldMatches(field, values[index], minimums[index], maximums[index]);
+    return cronFieldMatches(field, values[index], 0, 7) || (values[index] === 0 && cronFieldMatches(field, 7, 0, 7));
+  });
 }
 
 function cronFieldMatches(field: string, value: number, min: number, max: number): boolean {

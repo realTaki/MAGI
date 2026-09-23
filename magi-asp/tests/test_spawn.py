@@ -31,6 +31,7 @@ def test_process_spawner_runs_python_m_magi(monkeypatch) -> None:
         return Proc()
 
     monkeypatch.setattr("server.spawn.subprocess.Popen", fake_popen)
+    monkeypatch.setenv("MAGI_RUNTIME", "python")
     monkeypatch.setattr("server.spawn._spawn_disabled", lambda: False)
     monkeypatch.setattr("server.spawn._resolve_magi_python", lambda: "/venv/bin/python")
     spawner = ProcessSpawner()
