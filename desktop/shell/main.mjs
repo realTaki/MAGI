@@ -343,8 +343,8 @@ async function loadApp(win, ui) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 840,
+    width: 1040,
+    height: 760,
     minWidth: 900,
     minHeight: 600,
     title: "MAGI",

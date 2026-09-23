@@ -897,6 +897,7 @@ body {
   margin-top: 10px;
   color: var(--panel-muted);
   font-size: 14px;
+  line-height: 1.25;
 }
 
 .product-demo__settings .product-demo__field:first-of-type {
@@ -916,6 +917,7 @@ body {
   color: #ececee;
   font: inherit;
   font-size: 15px;
+  line-height: 1.2;
   outline: none;
 }
 
