@@ -89,16 +89,11 @@ inspectable and governable:
 - Operators remain able to inspect the organization, its memory, its tools,
   its resource boundaries, and the authority used to change it.
 
-> **Implementation status:** durable memory, Skills, Society/MAGI modeling,
-> isolated EVA lifecycle management, restricted control-plane boundaries,
-> and **same-MAGIS MAGI↔MAGI collaboration via a persistent actor effect**
-> (two terminal modes — `notify` / `request` — backed by shared
-> `a2a_request_job_board` / `a2a_notify_job_board` job boards, the
-> `message_magi` tool, and a per-turn MAGIS collaboration directory)
-> are the foundation available today. Autonomous cross-MAGI learning,
-> capability assessment, self-directed organizational restructuring,
-> richer policy enforcement, and inter-Society knowledge exchange are
-> active design goals; they are **not all implemented yet**.
+> **Implementation status:** a local desktop, one ASP process, and one Bun
+> process per MAGI are what runs today. Each MAGI keeps its own workspace
+> (memory, skills, tasks, contacts, prompts) and talks to the operator through
+> ASP. A Society tree, an ADAM control plane, and agent-to-agent job boards
+> are design goals. They are **not** in this tree.
 
 ## The MAGI model
 
@@ -108,57 +103,36 @@ The names are deliberate:
 | --- | --- |
 | **MAGI** | The general kind of autonomous, governable agent in this system. |
 | **MAGIS** | A **MAGI Society**: an organization of MAGI. Societies form a tree. |
-| **MAGIC** | Internal table/API name for an individual MAGI. It is not a separate product concept. |
+| **MAGIC** | An old internal name for one MAGI. The current runtime does not have a MAGIC table. |
 | **ADAM** | The leading MAGI of a Society. ADAM provides its control plane and coordinates its MAGI. |
 | **EVA** | A working MAGI role. A Society can create, configure, start, stop, and retire multiple EVAs. |
 
-```text
-Operator
-   │ WebUI
-   ▼
-MAGIS: Engineering
-   │
-   ├── ADAM / MAGI                      control plane and coordinator
-   │      └── durable Society memory, policy, and relationships
-   │
-   ├── EVA / MAGI                       independent runtime + workspace
-   ├── EVA / MAGI                       independent runtime + workspace
-   └── child MAGIS: Research            its own ADAM and MAGI
-
-MAGIS-shared database (intra-Society MAGI↔MAGI):
-   a2a_request_job_board   ─┐
-   a2a_notify_job_board    ─┴─► AgentWorker (target magi_id) persistent actor effect
-                              message_magi {magi_id, mode, text, deadline_seconds}
-```
-
-ADAM is a coordinator, not an unrestricted host administrator. The ASP service
-owns lifecycle operations and starts only scoped local MAGI processes.
+ADAM and EVA name roles a Society would have. The running app does not yet
+model a Society tree or an ADAM control plane. ASP is the local lifecycle
+boundary: it starts MAGI processes and relays their sessions. It does not
+decide what a MAGI should say.
 
 ## What exists today
 
-- **Independent runtimes** — ADAM and every EVA run as separate local
-  processes with their own workspace.
-- **Society administration** — the WebUI manages MAGIS trees and MAGI,
-  including ADAM assignment and EVA provider configuration.
-- **EVA lifecycle control** — the ASP service starts a local MAGI process when
-  the operator creates a bot.
-- **Persistent operational memory** — conversation history, contact knowledge,
-  task state, and searchable stored memory survive across conversations.
-- **Channels and tools** — WebUI is available now; Telegram, MCP servers,
-  Skills, scheduled tasks, and built-in tools extend what a MAGI can do.
-- **Provider independence** — MAGI hold their own provider configuration
-  and API credentials rather than sharing one global model account.
-- **Same-MAGIS A2A collaboration** — MAGI of the same Society collaborate
-  through a **persistent actor effect**: messages land on two job boards
-  in the MAGIS-shared database (`a2a_request_job_board` for one-shot
-  request / one response, `a2a_notify_job_board` for durable one-way
-  notifications) and are claimed directly by the target MAGI's
-  `AgentWorker` — never via HTTP, webhooks, or external signature
-  protocols. The tool contract collapses to
-  `message_magi({magi_id, mode ∈ {notify, request}, text, deadline_seconds})`.
-  Each MAGI's `responsibility` (scope statement) and the rest of its
-  MAGIS's directory are rendered into every system prompt, so the model
-  sees boundaries and specialisations before it picks a collaborator.
+- **Desktop** — an Electron shell clones this repository to `~/.magi/MAGI`,
+  installs `asp/` and `magi/`, builds the operator UI, and starts ASP. The
+  package carries Node.js 24, npm, and Bun. It does not carry a Python runtime.
+- **ASP** — Node 24, `asp/main.ts`, bound to `127.0.0.1:42069`. It stores
+  sessions and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
+  that MAGI; creating a group opens a conversation the operator can invite
+  MAGI into.
+- **One process per MAGI** — Bun runs `magi/magi.ts`. The default workspace is
+  `~/.magi/magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
+  opened when the new path does not exist.
+- **BUS inside each MAGI** — Books for conversations, messages, memory, skills,
+  tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
+  delivery, provider changes, tasks, and MCP server changes.
+- **Operator data stays on the desktop** — chat history is
+  `~/.magi/app/chat.sqlite`. Provider settings and the API key are
+  `~/.magi/app/provider.json`. ASP forwards a provider update and does not
+  keep a new copy of the key.
+- **Other channels** — a MAGI can also talk on the terminal, Telegram, and
+  configured MCP servers. Those are part of the MAGI process, not of ASP.
 
 ## Quick start
 
@@ -183,52 +157,41 @@ Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
 **One MAGI:** `bun run start -- <handle> <base> <token>` from `magi/`. ASP launches this command with MAGI's bundled Bun runtime.
 
 
-## From the first MAGIS to a growing organization
+## From the first launch
 
-1. **Initialize Genesis.** `magi init` provisions the root MAGI
-   Society, **Genesis**, then creates the first MAGI, **`eva-000`**,
-   as Genesis's ADAM.
-2. **Secure the default administrator.** Configure an IM verification channel
-   in Settings; normal local use remains available while the security reminder
-   is open.
-3. **Shape the organization.** In WebUI, create child MAGIS entries and
-   assign their ADAM MAGI.
-4. **Add capability.** Configure an EVA's provider and credentials, then ask
-   its ADAM to start or stop that MAGI through the orchestrator.
-5. **Accumulate intelligence.** Conversations, task outcomes, contacts,
-   memory, and reusable Skills remain part of the Society instead of being
-   discarded when a single request ends.
-6. **Govern autonomy.** As the Society grows, keep lifecycle authority,
-   credentials, workspaces, and operator-visible boundaries explicit rather
-   than collapsing every MAGI into one unrestricted process.
+1. **Open the desktop app.** The shell clones the repository, installs
+   dependencies, builds the UI, and waits until ASP answers on port 42069.
+2. **Meet the first three MAGI.** While none exist, the app creates
+   `eva-000`, `eva-001`, and `eva-002`, and tries to nickname them
+   **MELCHIOR**, **BALTHASAR**, and **CASPER**. A MAGI that never comes online
+   stays unnamed.
+3. **Talk.** The desktop writes the transcript locally, then sends the message
+   through ASP. The MAGI answers on its WebSocket and the desktop stores that
+   too.
+4. **Set a provider.** Settings writes `~/.magi/app/provider.json`. ASP hands
+   the same values to each connected MAGI, which stores them in its own BUS.
+5. **Invite.** A group conversation can add a MAGI that ASP already started.
+   That MAGI joins when it receives `session.invited`.
 
 ## Architecture
 
 ```text
-                        ┌─────────────────────────────┐
-                        │          Operator           │
-                        │            WebUI            │
-                        └──────────────┬──────────────┘
-                                       │
-                        ┌──────────────▼──────────────┐
-                        │          ADAM / MAGI        │
-                        │    Society control plane    │
-                        └──────────────┬──────────────┘
-                                       │ lifecycle request
-                        ┌──────────────▼──────────────┐
-                        │          MAGI ASP           │
-                        │    local process launcher   │
-                        └───────┬──────────────┬───────┘
-                                │              │
-                     ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVA / MAGI   │  │ EVA / MAGI      │
-                     │ local process│  │ local process   │
-                     └──────────────┘  └─────────────────┘
+Operator
+   │
+   ▼
+desktop/          Electron shell + operator UI
+   │  starts Node 24
+   ▼
+asp/              127.0.0.1:42069
+   │  spawns Bun
+   ├── magi  eva-000     ~/.magi/magi/eva-000
+   ├── magi  eva-001     ~/.magi/magi/eva-001
+   └── magi  eva-002     ~/.magi/magi/eva-002
 ```
 
-ASP is the **lifecycle authority, not the Society's reasoning brain**. It
-starts local processes while MAGI retain their own runtime, state, tools, and
-role in the Society. Each MAGI keeps its own local SQLite workspace.
+ASP starts processes and relays session events. It is not the place a MAGI
+reasons. Each MAGI keeps its own SQLite workspace. The desktop keeps the
+operator's transcript and provider key.
 
 ### Desktop UI and ASP
 
@@ -270,9 +233,9 @@ For the implementation-level view, see:
 
 ## Project status
 
-MAGI is experimental and under active construction. The present codebase is a
-working foundation for Society modeling, onboarding, isolated node deployment,
-persistent runtime state, and EVA lifecycle control.
+MAGI is experimental and under active construction. What ships is a local
+desktop, ASP, and one Bun runtime per MAGI. The Society tree and cross-MAGI
+collaboration described above are not implemented in this repository.
 
 The broader vision — autonomous learning, protocol-mediated coordination,
 richer policy enforcement, and increasingly self-organizing governed

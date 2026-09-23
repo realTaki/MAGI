@@ -6,6 +6,8 @@ permalink: /insights/import-organization-review/
 
 # Import 组织与错误分层 Review
 
+> 本文审计的 Python 包已经删除。当前运行时是 `magi/` 和 `asp/`。
+
 > **范围**：`magi/` 下全部 Python 源文件（192 个）。
 > **触发**：`magi/bus/guild/chatNotifyJob.py:203` 函数体内的 `from magi.bus.library.local.conversationBook import ChannelMismatchError`，让人怀疑"代码写到一半突然 import"是项目普遍现象。
 > **结论速读**：A 类（真·模块顶层 mid-file import）仅 4 个文件 5 处，远比直觉少；其余绝大多数"看起来 mid-file"是合法模式。B-2（函数体 lazy import，209 处）绝大部分**不是循环依赖**，而是 import surface 控制。基于此提议把跨模块的 ErrorCode + `ChannelMismatchError` 抽到 `magi/bus/errors.py`，顺手解掉 `chatNotifyJob.py:203` 的 lazy import。

@@ -1,6 +1,6 @@
 ---
 title: Terms
-description: Shared vocabulary and canonical identifier names for MAGI.
+description: Shared vocabulary for the current MAGI desktop, ASP, and runtime.
 permalink: /terms/
 ---
 
@@ -8,73 +8,34 @@ permalink: /terms/
 
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | Modular Agentic Group Intelligence, the product and runtime family. |
-| **MAGIS** | A MAGI Society: an organization containing MAGI runtimes. |
-| **MAGIC** | One concrete MAGI runtime process and its private state. |
-| **ADAM** | A manager-archetype MAGIC that owns the control-plane experience. |
-| **EVA** | A worker-archetype MAGIC that serves an assigned employee or workload. |
-| **BUS** | The sole durable application boundary, implemented by `magi.bus`. |
-| **Bus** | The process-local BUS facade opened by `open_bus(...)`. |
-| **bases** | BUS primitives: Job/Book bases and the database layer (`magi/bus/bases/`). |
-| **firmwares** | Concrete Job Boards, Books, and their schema (`magi/bus/firmwares/`). |
-| **Book** | A BUS API for durable CRUD/query operations that returns DTOs or JSON-safe values. |
-| **Job Board** | A BUS API for durable `publish -> claim -> submit_result` workflows. |
-| **ChatNotifyJob** | Durable agent input from a channel, task, or A2A ingress. |
-| **DeliveryJob** | Durable outbound message for a channel worker. |
-| **MAGI private SQLite** | Per-runtime state database, normally `<workspace>/memories/magi.db`. |
-| **MAGIS database** | Organization-scoped database reached through the configured MAGIS URL. |
-| **A2A** | Internal agent-to-agent transport; it is not an authorization system. |
+| **MAGI** | One governable agent. Also the Bun runtime in `magi/`. |
+| **ASP** | The local session server in `asp/`. It starts MAGI processes and relays events. It does not reason. |
+| **Desktop** | The Electron shell and the operator UI. It owns the checkout, the transcript, and the provider key. |
+| **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `magi/bus/`. |
+| **Book** | Durable records in that MAGI's workspace, such as memory, skills, contacts, and prompts. |
+| **Job** | A durable `publish -> claim -> result` item. Chat, model calls, tool calls, and delivery are Jobs. |
+| **Handle** | A MAGI's address, such as `@eva-000.magi`. |
+| **Workspace** | One MAGI's directory, `~/.magi/magi/<name>` unless an older `~/.magi/ts-magi/<name>` is still the one on disk. |
 
-The Python package `magi.bus` owns Books, Job Boards, database factories, and
-their ORM implementation. Bases (`magi/bus/bases/`) hold the contracts and
-storage engines; firmwares (`magi/bus/firmwares/`) hold the concrete
-Jobs, Books, and their table/column definitions.
-Domain code uses its public contracts and does not open sessions or expose
-ORM rows.
+**MAGIS**, **ADAM**, and **EVA** name a Society and the roles inside it. The
+running code does not yet store a Society tree or an ADAM control plane. ASP
+starts every MAGI the same way: one Bun process, one workspace.
 
-## Canonical ID names
+## Names in the current APIs
 
-One concept, one identifier name — in ORM columns, DTO fields, function
-parameters, API payloads, and documentation alike. These are the only
-supported names.
-
-| Concept | Canonical ID | Notes |
+| Concept | Name | Where |
 | --- | --- | --- |
-| MAGI instance | `magi_id` | — |
-| MAGIS tree | `magis_id` | — |
-| Person / contact | `contact_id` | The `contacts` table PK; also the cookie identity. |
-| Telegram user | `tgid` | — |
-| Telegram chat | `chat_id` | Inside the Telegram channel `tgid == chat_id` for direct chats. |
-| Conversation | `conversation_id` | The `chat_conversations` table PK. Never `session_id` — `session` means a SQLAlchemy session. |
-| Message | `message_id` | — |
-| Job (any Job Board) | `job_id` | The per-Job-table auto-incrementing primary key; a Board supplies its scope. |
-| Tool call | `tool_call_id` | — |
-| Task | `task_id` | — |
-| Task run | `run_id` | Task-scoped only (`task_runs`). Agents have no "run" concept — steering keys off `conversation_id`. |
-| Memory entry | `memory_id` | — |
-| Contact note | `note_id` | — |
-| Action item | `action_item_id` | — |
-| Runtime | `runtime_id` | — |
-| MAGIS role | `role_id` | — |
-| Parent MAGIS | `parent_id` | — |
-| Adam MAGI | `adam_id` | — |
-| Shell session | `bash_id` | — |
-| Connector instance | `instance_id` | — |
-| Plugin | `plugin_id` | — |
-| Hook signoff | `signoff_id` | — |
+| Operator conversation | `conversation_id` | Desktop and `GET/POST /conversations`. |
+| ASP session | `session_id` | Participant routes under `/sessions`. It is the same resource as `conversation_id`. |
+| Relay event | `event_id` | Acknowledged exactly, by each recipient. |
+| MAGI address | `handle` | `@eva-000.magi`. |
+| Model call | `tool_call_id` | On a model tool call inside one MAGI. |
+| Task | `task_id` | Inside that MAGI's task book. |
 
-### Retired names
+`session_id` here is the ASP session. It is not a database session.
 
-Old names survive in git history, pre-migration database dumps, and old
-cookies. They are not valid in current code or documentation.
+## Retired with the Python runtime
 
-| Retired | Canonical | Landed in |
-| --- | --- | --- |
-| `magic_id` | `magi_id` | code rename (spelling artefact) |
-| `uid` | `contact_id` | 7 tables renamed (`chat_conversations`, `chat_messages`, `tasks`, `memory_entries`, `token_usage`, `action_items`, `hook_signoffs`) |
-| `session_id` | `conversation_id` | table `chat_sessions` → `chat_conversations`; `sessionBook.py` → `conversationBook.py` |
-| `tg_chat_id` | `chat_id` | code rename |
-| `event_id` | `job_id` | `chat_notify_jobs` rename; the current `job_id` is the table's auto-incrementing primary key |
-| `run_id` (agent context) | removed | same revision; agents key off `conversation_id` |
-| `telegram_id` | `tgid` | Alembic initial schema (`contacts`); code, API payloads and WebUI renamed with it. Signed-session cookie bumped v3 → v4; proxy header `X-MAGI-Proxy-Telegram-ID` → `X-MAGI-Proxy-Tgid` |
-| `conv_id` | `conversation_id` | code rename (`magi/agent/worker.py` local shorthand) |
+`magi.bus`, `open_bus`, SQLAlchemy models, Alembic revisions, and the old
+FastAPI control plane are not in this repository. A document that cites those
+modules is describing the retired tree, not a file you can open today.

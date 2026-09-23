@@ -1,5 +1,7 @@
 # 开箱即用的 Bootstrap 与认证方案
 
+> 这是尚未实现的旧提案。现在的第一次启动是桌面端克隆仓库并拉起 ASP，见 [关键业务流程](business-flows.md)。这里的 Genesis、`magi init` 和独立 WebUI 控制面不在当前代码里。
+
 ## 状态
 
 提案，尚未实现。

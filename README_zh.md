@@ -64,11 +64,9 @@ MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰�
 - Society 可以共享知识、互相协作，而不把成员简化为无状态 API 调用；
 - 操作者始终能够检查组织、记忆、工具、资源边界，以及改变组织时使用的权限。
 
-> **实现状态：**持久记忆、Skills、MAGIS/MAGI 模型、隔离的 EVA 生命周期管理、
-> 受限控制面、以及同一 MAGIS 内 MAGI 之间的 **A2A 持久 actor effect** 协作
-> （`notify` / `request` 两类单向终态 + MAGIS 协作目录 + `message_magi` 工具）
-> 都已经存在。跨 MAGI 的自主学习、能力评估、自主组织重构、更丰富的策略执行、
-> 以及 Society 间知识交换都是正在推进的设计目标，**目前并非全部已经实现**。
+> **实现状态：**现在跑起来的是本地桌面端、一个 ASP 进程，以及每个 MAGI 一个 Bun
+> 进程。每个 MAGI 有自己的工作区（记忆、Skills、任务、联系人、提示词），通过 ASP
+> 和操作者对话。Society 树、ADAM 控制面、MAGI 之间的任务板是设计目标，**这份代码里还没有**。
 
 ## MAGI 模型
 
@@ -78,47 +76,21 @@ MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰�
 | --- | --- |
 | **MAGI** | 系统中自主、可治理 Agent 的总称。 |
 | **MAGIS** | **MAGI Society**：由 MAGI 组成的组织；Society 可以形成树。 |
-| **MAGIC** | 内部表/API 中单个 MAGI 的名称，不是另一个产品概念。 |
+| **MAGIC** | 过去给单个 MAGI 用的内部名字。当前运行时没有 MAGIC 表。 |
 | **ADAM** | Society 的领导 MAGI，提供控制面并协调其他 MAGI。 |
 | **EVA** | 执行工作的 MAGI 角色；一个 Society 可以创建、配置、启动、停止和退役多个 EVA。 |
 
-```text
-操作者
-   │ WebUI
-   ▼
-MAGIS：Engineering
-   │
-   ├── ADAM / MAGI                     控制面与协调者
-   │      └── Society 的持久记忆、策略与关系
-   │
-   ├── EVA / MAGI                      独立运行时 + 工作区
-   ├── EVA / MAGI                      独立运行时 + 工作区
-   └── 子 MAGIS：Research              自己的 ADAM 与 MAGI
-
-MAGIS 共享数据库（同一 Society 内 MAGI 之间）：
-   a2a_request_job_board   ─┐
-   a2a_notify_job_board    ─┴─► AgentWorker（目标 magi_id）持久 actor effect
-                              message_magi {magi_id, mode, text, deadline_seconds}
-```
-
-ADAM 是协调者，而不是不受限制的宿主机管理员。ASP 服务拥有生命周期操作，
-只启动范围受限的本地 MAGI 进程。
+ADAM 和 EVA 是将来 Society 里的角色名。现在的应用还没有 Society 树，也没有 ADAM
+控制面。ASP 是本机的生命周期边界：它启动 MAGI 进程并转发会话，不决定 MAGI 说什么。
 
 ## 当前已具备的能力
 
-- **独立运行时**：ADAM 与每个 EVA 都是独立本地进程，并有自己的工作区。
-- **组织管理**：WebUI 管理 MAGIS 树与 MAGI，包括 ADAM 指派和 EVA provider 配置。
-- **EVA 生命周期控制**：操作者创建 bot 时，由 ASP 服务启动本地 MAGI 进程。
-- **持久化运行记忆**：对话历史、联系人知识、任务状态和可搜索记忆跨对话保留。
-- **通道与工具**：已有 WebUI；Telegram、MCP server、Skills、定时任务和内置工具扩展 MAGI 的能力。
-- **Provider 独立性**：MAGI 持有各自的 provider 配置和 API 凭证，而非共享一个全局模型账户。
-- **MAGIS 内 A2A 协作**：同一 MAGIS 的 MAGI 之间通过**持久 actor effect** 直接协作：
-  消息落在 MAGIS 共享数据库的两张 job board 上（`a2a_request_job_board`
-  一次 request / 一次 response，`a2a_notify_job_board` 单向持久通知），
-  由目标 MAGI 的 `AgentWorker` 直接消费；不经过 HTTP / webhook / 外部签名协议。
-  工具契约收敛为 `message_magi({magi_id, mode ∈ {notify, request}, text, deadline_seconds})`。
-  每个 MAGI 的 `responsibility`（职责说明）与同 MAGIS 成员目录会随每轮
-  system prompt 渲染给 LLM，让模型在选择协作对象时能直接看到边界与专长。
+- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24、npm 和 Bun，没有 Python。
+- **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。会话和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的会话。
+- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`。默认工作区是 `~/.magi/magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
+- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
+- **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
 
 ## 快速开始
 
@@ -137,43 +109,31 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 **一个 MAGI：** 在 `magi/` 中运行 `bun run start -- <handle> <base> <token>`。
 
 
-## 从第一个 MAGIS 到组织成长
+## 第一次打开
 
-1. **初始化 Genesis**：`magi init` provision 根 MAGI Society
-   （Genesis），再创建第一个 MAGI（**`eva-000`**），并让它担任 Genesis 的 ADAM。
-2. **Onboard 操作者**：配置管理员访问和 Society 要使用的通道。
-3. **塑造组织**：在 WebUI 创建子 MAGIS，并指派其 ADAM MAGI。
-4. **增加能力**：配置 EVA 的 provider 与凭证，然后让 ADAM 通过 orchestrator 启动或停止它。
-5. **积累智能**：对话、任务结果、联系人、记忆和可复用 Skills 留在 Society 中，而非随一次请求丢弃。
-6. **治理自主性**：随着 Society 成长，让生命周期权限、凭证、工作区和操作者可见的边界保持明确，
-   而不是把所有 MAGI 合并进一个不受限制的进程。
+1. **打开桌面应用。** 壳克隆仓库、安装依赖、构建界面，并等到 ASP 在 42069 端口应答。
+2. **见到前三个 MAGI。** 一个都没有时，应用会创建 `eva-000`、`eva-001`、`eva-002`，并尝试把它们叫做 **MELCHIOR**、**BALTHASAR**、**CASPER**。一直没上线的 MAGI 就保持没有昵称。
+3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
+4. **设置模型。** 设置页写入 `~/.magi/app/provider.json`。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
+5. **邀请。** 群会话可以加入一个 ASP 已经启动的 MAGI。对方收到 `session.invited` 后加入。
 
 ## 架构
 
 ```text
-                        ┌─────────────────────────────┐
-                        │            操作者           │
-                        │             WebUI           │
-                        └──────────────┬──────────────┘
-                                       │
-                        ┌──────────────▼──────────────┐
-                        │         ADAM / MAGI         │
-                        │        Society 控制面       │
-                        └──────────────┬──────────────┘
-                                       │ 生命周期请求
-                        ┌──────────────▼──────────────┐
-                        │          MAGI ASP           │
-                        │       本地进程启动器        │
-                        └───────┬──────────────┬───────┘
-                                │              │
-                     ┌──────────▼───┐  ┌──────▼──────────┐
-                     │ EVA / MAGI   │  │ EVA / MAGI      │
-                     │   本地进程   │  │    本地进程     │
-                     └──────────────┘  └─────────────────┘
+操作者
+   │
+   ▼
+desktop/          Electron 壳 + 操作界面
+   │  启动 Node 24
+   ▼
+asp/              127.0.0.1:42069
+   │  拉起 Bun
+   ├── magi  eva-000     ~/.magi/magi/eva-000
+   ├── magi  eva-001     ~/.magi/magi/eva-001
+   └── magi  eva-002     ~/.magi/magi/eva-002
 ```
 
-ASP 是**生命周期权限边界，而不是 Society 的“思考大脑”**。它启动本地进程；
-每个 MAGI 仍保有自己的 Runtime、状态、工具和 Society 角色，并各自维护本地 SQLite 工作区。
+ASP 负责启动进程和转发会话事件，不是 MAGI 思考的地方。每个 MAGI 有自己的 SQLite 工作区。操作者的聊天记录和 provider key 留在桌面端。
 
 ### 桌面 UI 与 ASP
 
@@ -203,13 +163,12 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 - [架构](docs/ARCHITECTURE.md)
 - [关键业务流程](docs/business-flows.md)
 - [术语与 ID 命名规范](docs/terms.md)
-- [asp](asp/README.md)
+- [ASP](asp/README.md)
 - [路线图](docs/ROADMAP.md)
 
 ## 项目状态
 
-MAGI 仍处于实验阶段并在持续构建。现有代码已经提供 Society 建模、onboarding、
-隔离节点部署、持久 Runtime 状态和 EVA 生命周期控制等基础能力。
+MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端、ASP，以及每个 MAGI 一个 Bun 运行时。上文说的 Society 树和 MAGI 之间的协作，这份仓库里还没有。
 
 更大的方向——自主学习、协议驱动协作、更丰富的策略执行，以及逐渐具备自组织能力的
 **可治理智能体集合（governed intelligences）**——是公开的项目愿景。README 会明确区分

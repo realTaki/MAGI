@@ -1,5 +1,7 @@
 # 模块级 mid-file import 排查报告
 
+> 本文审计的 Python 树已经删除。它不是当前 `magi/` 的结构说明。
+
 > 日期：2026-08-13
 > 范围：`magi/` 下全部 Python 源文件（192 个）
 > 触发问题：`magi/bus/guild/chatNotifyJob.py:203-205` 中函数体出现 `from magi.bus.library.local.conversationBook import ChannelMismatchError`，让人怀疑全项目里"代码写到一半突然 import"的情况不少。

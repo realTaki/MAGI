@@ -1,5 +1,7 @@
 # MAGI-BUS 架构设计书
 
+> 这是早期设计基线，不是当前文件地图。正在运行的 BUS 在 `magi/bus/`（TypeScript，Bun）。文中的 Python 模块、`open_bus` 和 SQLAlchemy 模型已经不在仓库里。当前结构见 [Architecture](ARCHITECTURE.md)。
+
 **状态：** v0.1.0 实现基线  
 **参考分支：** `v0.1.0`  
 **当前部署模型：** 一个 MAGI 一个进程  
