@@ -42,7 +42,7 @@ Only five things, none of them product-specific:
 3. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
 4. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
-   then show that entry — a built file (watched for rebuilds) or a dev URL.
+   then show that entry — a built file or a dev URL.
 5. Stop the backend on quit (`dispose()`), which tears down what it started.
 
 That leaves one contract: the checkout must contain `app/main/index.mjs`
@@ -96,6 +96,8 @@ user tokens are short-lived and installed per repository.
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
 running, so a change under `desktop/app/main/` still waits for the next launch.
+The installed shell must be updated once to remove its old file watcher; later
+interface updates use the app's commit notification without a shell release.
 
 This gives each user an editable Git working tree for the running MAGI system.
 A coding agent can modify it and merge upstream changes. Automatic revision

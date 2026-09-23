@@ -661,7 +661,7 @@ export function createLocalApi(context) {
     if (commitWatcher !== null || !managed || (process.env.MAGI_APP_URL ?? "").trim() !== "") {
       return;
     }
-    const watcher = { commit: "", stopped: false, timer: null };
+    const watcher = { commit: "", building: false, stopped: false, timer: null };
     commitWatcher = watcher;
     const poll = async () => {
       const commit = await readCommit();
@@ -669,18 +669,20 @@ export function createLocalApi(context) {
         return;
       }
       if (commit !== "" && commit !== watcher.commit) {
-        if (watcher.commit === "") {
-          watcher.commit = commit;
-        } else {
+        const changed = watcher.commit !== "";
+        watcher.commit = commit;
+        if (changed && !watcher.building) {
+          watcher.building = true;
           try {
             await rebuildInterface();
             if (!watcher.stopped) {
-              watcher.commit = commit;
               emit("app.interface-updated", { commit });
             }
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             console.error(`[magi-app] could not rebuild the interface: ${detail}`);
+          } finally {
+            watcher.building = false;
           }
         }
       }
