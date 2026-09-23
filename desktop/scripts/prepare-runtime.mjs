@@ -61,7 +61,8 @@ function removeDanglingSymlinks(directory) {
     if (!lstatSync(item).isSymbolicLink()) {
       continue;
     }
-    if (!existsSync(item)) {
+    const target = readlinkSync(item);
+    if (path.isAbsolute(target) || !existsSync(item)) {
       unlinkSync(item);
     }
   }
