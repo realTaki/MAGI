@@ -724,7 +724,6 @@ export function ProductDemo() {
   function logOut() {
     setUserMenuOpen(false);
     clearOperator();
-    void window.magiDesktop?.showChooser?.();
   }
 
   function answerOnboard(value: string) {
