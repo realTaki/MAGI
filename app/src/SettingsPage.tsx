@@ -12,7 +12,7 @@ import type { ProviderUsage, SourceStatus } from "./asp";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
-type SettingsSection = "general" | "provider" | "usage" | "about";
+type SettingsSection = "general" | "provider" | "usage" | "runtime" | "about";
 
 // Fixed catalog of model provider and model choices.
 type ProviderChoice = {
@@ -80,6 +80,43 @@ export function SettingsPage() {
   const [shellReleaseLoaded, setShellReleaseLoaded] = useState(false);
   const [shellUpdating, setShellUpdating] = useState(false);
   const [shellUpdateError, setShellUpdateError] = useState("");
+  const [runtimeStatus, setRuntimeStatus] = useState("");
+  const [runtimeMagiOnline, setRuntimeMagiOnline] = useState(0);
+  const [runtimeMessage, setRuntimeMessage] = useState("");
+  const [runtimeBusy, setRuntimeBusy] = useState(false);
+
+  useEffect(() => {
+    if (section !== "runtime") return;
+    let cancelled = false;
+    void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
+      if (!cancelled) {
+        const state = value as { asp?: string; magiOnline?: number };
+        setRuntimeStatus(state?.asp ?? "");
+        setRuntimeMagiOnline(state?.magiOnline ?? 0);
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setRuntimeMessage(error instanceof Error ? error.message : String(error));
+    });
+    return () => { cancelled = true; };
+  }, [section]);
+
+  async function runRuntime(method: string) {
+    const invoke = window.magiDesktop?.invokeLocal;
+    if (!invoke || runtimeBusy) return;
+    setRuntimeBusy(true);
+    setRuntimeMessage(t("appSettings.runtimeWorking"));
+    try {
+      await invoke(method);
+      const state = await invoke("runtime.status") as { asp?: string; magiOnline?: number };
+      setRuntimeStatus(state.asp ?? "");
+      setRuntimeMagiOnline(state.magiOnline ?? 0);
+      setRuntimeMessage(t("appSettings.runtimeDone"));
+    } catch (error) {
+      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRuntimeBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (section !== "usage") {
@@ -238,6 +275,8 @@ export function SettingsPage() {
       ? t("appSettings.navProvider")
       : section === "usage"
         ? t("appSettings.navUsage")
+        : section === "runtime"
+          ? t("appSettings.navRuntime")
         : section === "about"
           ? t("appSettings.navAbout")
           : t("appSettings.navGeneral");
@@ -274,6 +313,12 @@ export function SettingsPage() {
             icon={<UsageIcon />}
             label={t("appSettings.navUsage")}
             onClick={() => setSection("usage")}
+          />
+          <NavButton
+            active={section === "runtime"}
+            icon={<GearIcon />}
+            label={t("appSettings.navRuntime")}
+            onClick={() => setSection("runtime")}
           />
           <NavButton
             active={section === "about"}
@@ -492,6 +537,41 @@ export function SettingsPage() {
                     {t("appSettings.usageRefresh")}
                   </button>
                 </div>
+              </>
+            ) : null}
+
+            {section === "runtime" ? (
+              <>
+                <p className="settings-overlay__lede">{t("appSettings.runtimeHint")}</p>
+                <div className="settings-card">
+                  <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    {(["runtime.stopAsp", "runtime.startAsp", "runtime.rebuildAsp"] as const).map((method) => (
+                      <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
+                        {t(`appSettings.${method.split(".")[1]}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-card">
+                  <div className="settings-card__label">MAGI · {t("appSettings.onlineCount")} {runtimeMagiOnline}</div>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    {(["runtime.stopMagi", "runtime.startMagi", "runtime.rebuildMagi"] as const).map((method) => (
+                      <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
+                        {t(`appSettings.${method.split(".")[1]}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-card">
+                  <div className="settings-card__label">App</div>
+                  <div className="settings-card__actions">
+                    <button type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime("runtime.rebuildApp")}>
+                      {t("appSettings.rebuildApp")}
+                    </button>
+                  </div>
+                </div>
+                <p className="settings-card__status" role="status">{runtimeMessage}</p>
               </>
             ) : null}
 

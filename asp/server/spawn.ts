@@ -62,6 +62,16 @@ function defaultLaunch(
     pid: child.pid,
     kill: () => {
       if (child.exitCode === null && child.signalCode === null) {
+        // `bun run start` can launch another Bun process. A detached process
+        // group lets ASP stop the launcher and its MAGI descendant together.
+        if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
+          try {
+            process.kill(-child.pid, "SIGTERM");
+            return;
+          } catch {
+            // The group may already be gone or group signaling unavailable.
+          }
+        }
         child.kill("SIGTERM");
       }
     },

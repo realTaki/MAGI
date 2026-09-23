@@ -112,7 +112,7 @@ user tokens are short-lived and installed per repository.
 | --- | --- |
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
-| `app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
+| `app/` | Settings → Runtime & build rebuilds the interface on demand; the app then asks whether to reload it. Source changes do not trigger automatic rebuilds. |
 | `app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
 | `shell/*.mjs`, `shell/preload.cjs`, packaged tools and build configuration | Settings → About installs a newer GitHub Release of the shell. The checkout is left as it is. |
