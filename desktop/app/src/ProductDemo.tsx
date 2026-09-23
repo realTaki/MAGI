@@ -1410,6 +1410,7 @@ export function ProductDemo() {
             ) : null}
           </aside>
         ) : null}
+      </div>
 
       <p className="product-demo__caption">
         Live demo — pick a bot, add a routine, or start a new chat.

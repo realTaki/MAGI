@@ -7,7 +7,8 @@ export class AspClient {
   async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>): Promise<void> {
     const url = new URL("/connect", this.base);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(url.href, { headers: { Authorization: `Bearer ${this.token}` } });
+    const Socket = WebSocket as unknown as { new (url: string, options: Bun.WebSocketOptions): WebSocket };
+    const socket = new Socket(url.href, { headers: { Authorization: `Bearer ${this.token}` } });
     this.socket = socket;
     socket.addEventListener("message", (message) => {
       void (async () => {

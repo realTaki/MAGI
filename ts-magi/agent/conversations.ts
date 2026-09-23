@@ -30,7 +30,10 @@ export class Conversation {
         if (!response.tool_calls?.length) {
           const deliveryId = this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
           const delivery = await this.waitFor("DeliveryNotify", deliveryId, 30_000);
-          if (delivery.status === "failed") throw new Error(delivery.error ?? "delivery failed");
+          if (delivery.status === "failed") {
+            chat.submit("agent", jobId, { error: delivery.error ?? "delivery failed" });
+            return;
+          }
           chat.submit("agent", jobId, { output: {} });
           return;
         }

@@ -7,6 +7,8 @@ TypeScript MAGI follows the module names and responsibilities of `py-magi`:
 bun install
 bun test
 MAGI_API_KEY=... bun run start -- @alice.magi
+# or attach to magi-asp, matching py-magi's command arguments:
+MAGI_API_KEY=... bun run start -- @alice.magi http://127.0.0.1:42069 TOKEN
 ```
 
 The command opens a terminal chat. State lives in `~/.magi/alice` by default;
@@ -19,5 +21,6 @@ workers communicate through `ChatNotify`, `CallLLMJob`, `RunToolJob`, and
 `DeliveryNotify`. Agent turns are serial per conversation. Provider and tool
 errors are saved on their Jobs.
 
-This rewrite covers the local agent path. Python's ASP, Telegram, task
-scheduler, memory/contact Books, and context compaction are not yet implemented.
+This rewrite covers the local agent path and ASP session messages. Python's
+Telegram, task scheduler, memory/contact Books, and context compaction are
+not yet implemented.
