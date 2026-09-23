@@ -897,11 +897,6 @@ export function ProductDemo() {
           inert={compact && !menuOpen}
         >
           <div className="product-demo__chrome">
-            <div className="product-demo__traffic" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
             <span className="product-demo__drawer-title">{t("plusMenu.listTitle")}</span>
             <div className="product-demo__chrome-actions">
               <div className="product-demo__plus-wrap" ref={plusWrapRef}>
