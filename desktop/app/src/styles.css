@@ -442,8 +442,22 @@ body {
   border: 0;
   padding: 12px 20px 28px;
   background: var(--header-gradient);
+  -webkit-app-region: no-drag;
+}
+
+.conversation-page__topbar::before,
+.conversation-page__topbar::after {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(50% - 80px);
+  content: "";
   -webkit-app-region: drag;
 }
+
+.conversation-page__topbar::before { left: 0; }
+.conversation-page__topbar::after { right: 0; }
 
 .conversation-page__topbar-left {
   display: flex;
@@ -496,7 +510,47 @@ body {
   padding: 5px 14px 5px 6px;
   box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.9);
   cursor: pointer;
+  transition:
+    gap 0.34s cubic-bezier(0.22, 1.35, 0.36, 1),
+    padding 0.34s cubic-bezier(0.22, 1.35, 0.36, 1),
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.28s ease;
   -webkit-app-region: no-drag;
+}
+
+.conversation-page__name-btn.is-expanded {
+  gap: 13px;
+  padding-right: 11px;
+  box-shadow: 0 12px 30px -16px rgba(0, 0, 0, 0.82);
+}
+
+.conversation-page__name-chevron {
+  display: grid;
+  width: 0;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text-secondary);
+  opacity: 0;
+  transform: translateX(-7px) scale(0.75);
+  transition:
+    width 0.34s cubic-bezier(0.22, 1.35, 0.36, 1),
+    opacity 0.16s ease,
+    transform 0.34s cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+
+.conversation-page__name-btn.is-expanded .conversation-page__name-chevron {
+  width: 16px;
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-page__name-btn,
+  .conversation-page__name-chevron {
+    transition-duration: 0.01ms;
+  }
 }
 
 .conversation-page__name-btn:hover,

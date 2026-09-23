@@ -365,7 +365,7 @@ export function ConversationPage() {
   const [bots, setBots] = useState<ConversationView[]>([]);
   const [activeId, setActiveId] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("settings");
@@ -388,7 +388,7 @@ export function ConversationPage() {
   const plusWrapRef = useRef<HTMLDivElement | null>(null);
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const creatingRef = useRef(false);
-  const widePanelRef = useRef(true);
+  const widePanelRef = useRef(false);
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
   const messages = useMemo(() => {
@@ -580,6 +580,14 @@ export function ConversationPage() {
     setPanelOpen(true);
     setPanelMode("settings");
     setRoutineDraft(null);
+  }
+
+  function toggleSettings() {
+    if (showPanel && panelMode === "settings") {
+      collapseProfile();
+      return;
+    }
+    openSettings();
   }
 
   function openRoutine(routine: Routine | null, index: number | null) {
@@ -797,6 +805,7 @@ export function ConversationPage() {
   function selectBot(id: string) {
     setActiveId(id);
     closeMenu();
+    setPanelOpen(false);
     setRoutineDraft(null);
     setPanelMode("settings");
   }
@@ -1049,18 +1058,34 @@ export function ConversationPage() {
             </div>
             <button
               type="button"
-              className="conversation-page__name-btn"
+              className={`conversation-page__name-btn${showPanel && panelMode === "settings" ? " is-expanded" : ""}`}
               aria-label={
-                active.kind === "group"
-                  ? `Open ${active.name || "conversation"} details`
-                  : `Open ${active.name || "agent"} profile`
+                showPanel && panelMode === "settings"
+                  ? t("conversationSettings.collapse")
+                  : active.kind === "group"
+                    ? `Open ${active.name || "conversation"} details`
+                    : `Open ${active.name || "agent"} profile`
               }
               aria-controls="conversation-page-profile"
               aria-expanded={showPanel && panelMode === "settings"}
-              onClick={openSettings}
+              onClick={toggleSettings}
             >
               <Avatar color={active.color} size={28} />
               <span className="conversation-page__active-name">{active.name}</span>
+              <span className="conversation-page__name-chevron" aria-hidden="true">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m6 3 5 5-5 5" />
+                </svg>
+              </span>
             </button>
           </div>
 
