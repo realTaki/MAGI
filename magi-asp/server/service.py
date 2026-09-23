@@ -123,7 +123,7 @@ class Service:
                 initial_seq = ev_msg.sequence
 
                 if end_after_send:
-                    for ev in self.store.session_events[sess.id]:
+                    for ev in self.store.events_for_session(sess.id):
                         if ev.type == "session.invited":
                             ev.payload["initial_message"] = msg_payload
                             self.store.update_event(ev)
@@ -496,7 +496,7 @@ class Service:
             raise NotFound()
         # Walk the full event log so historical status reconstruction works,
         # then trim to the requested window.
-        all_events = self.store.session_events.get(session_id, [])
+        all_events = self.store.events_for_session(session_id)
         eligible = self._filter_eligible_history(caller, session_id, all_events)
         if after_sequence is not None:
             eligible = [e for e in eligible if e.sequence is not None and e.sequence > after_sequence]
@@ -538,7 +538,7 @@ class Service:
         so they remain eligible if status later changes (e.g. invited→joined
         triggers transcript replay onto the now-joined participant).
         """
-        events = self.store.session_events[session_id]
+        events = self.store.events_for_session(session_id)
         for p in self.store.participants_in(session_id):
             cursor = self.transport.cursor(p.handle, session_id)
             for ev in events:
@@ -625,7 +625,7 @@ class Service:
             if h != handle:
                 continue
             cursor = self.transport.cursor(handle, sid)
-            for ev in self.store.session_events.get(sid, []):
+            for ev in self.store.events_for_session(sid):
                 if ev.sequence is None or ev.sequence <= cursor:
                     continue
                 if self.store.is_acknowledged(handle, ev.event_id):

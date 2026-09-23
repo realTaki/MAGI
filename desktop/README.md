@@ -16,8 +16,12 @@ The app is also the machine-local layer of the system: it owns the checkout and
 the operator's GitHub credentials, and it keeps those files in `~/.magi/app/`.
 ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
-The app has no chat SQLite database today: ASP session events are in memory,
-and each MAGI keeps its message history in its own SQLite workspace.
+The app stores its conversation history in `~/.magi/app/chat.sqlite`. It writes
+events before acknowledging them to ASP, and reloads that history from SQLite
+after a restart. ASP keeps relay events in its own SQLite until each intended
+recipient acknowledges the exact event. Each MAGI keeps only its own incoming
+ChatNotify jobs and conversation state in its workspace; outbound messages go
+through DeliveryNotify jobs.
 The app stores provider credentials in `~/.magi/app/provider.json` (owner-only
 permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.

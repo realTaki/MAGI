@@ -183,17 +183,15 @@ class Transport:
                 dead.append(ws)
         for ws in dead:
             conns.discard(ws)
-        if event.session_id is not None and event.sequence is not None:
+        if not conns:
+            for key in [key for key in self._cursors if key[0] == handle]:
+                del self._cursors[key]
+        elif event.session_id is not None and event.sequence is not None:
             self._cursors[(handle, event.session_id)] = event.sequence
 
     def cursor(self, handle: str, session_id: str) -> int:
         """Last delivered sequence for this agent in this session, or -1 if none."""
         return self._cursors.get((handle, session_id), -1)
-
-    def advance_cursor(self, handle: str, session_id: str, sequence: int) -> None:
-        current = self._cursors.get((handle, session_id), -1)
-        if sequence > current:
-            self._cursors[(handle, session_id)] = sequence
 
     async def close(self) -> None:
         """Cancel grace tasks and close every connection during service shutdown."""

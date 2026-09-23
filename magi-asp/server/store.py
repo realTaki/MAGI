@@ -103,8 +103,6 @@ class Store:
         self.sessions: dict[str, Session] = {}
         # (session_id, handle) -> Participant
         self.participants: dict[tuple[str, str], Participant] = {}
-        # session_id -> ordered list of session.* events
-        self.session_events: dict[str, list[Event]] = {}
         # next per-session sequence counter
         self.session_seq: dict[str, int] = {}
         # (session_id, sender_handle, idempotency_key) -> (message_id, sequence)
@@ -125,7 +123,6 @@ class Store:
         self.agent_by_token.clear()
         self.sessions.clear()
         self.participants.clear()
-        self.session_events.clear()
         self.session_seq.clear()
         self.idempotency.clear()
         self.session_idempotency.clear()
@@ -139,15 +136,9 @@ class Store:
             sess = Session(**json.loads(row["record_json"]))
             self.sessions[sess.id] = sess
             self.session_seq[sess.id] = row["next_sequence"]
-            self.session_events[sess.id] = []
         for row in db.execute("SELECT session_id, record_json FROM asp_participants"):
             participant = Participant(**json.loads(row["record_json"]))
             self.participants[(row["session_id"], participant.handle)] = participant
-        for row in db.execute("SELECT * FROM asp_events ORDER BY session_id, sequence"):
-            self.session_events[row["session_id"]].append(
-                Event(row["type"], row["event_id"], row["created_at"],
-                      json.loads(row["payload_json"]), row["session_id"], row["sequence"])
-            )
         for row in db.execute("SELECT * FROM asp_message_keys"):
             self.idempotency[(row["session_id"], row["sender"], row["key"])] = (
                 row["message_id"], row["sequence"]
@@ -228,18 +219,16 @@ class Store:
                 db.executemany("DELETE FROM asp_events WHERE event_id = ?",
                                [(event_id,) for event_id in removable])
                 removed = set(removable)
-                for event in self.session_events[session_id]:
-                    initial = event.payload.get("initial_message")
+                for row in list(db.execute(
+                    "SELECT event_id, payload_json FROM asp_events WHERE session_id = ? AND type = 'session.invited'",
+                    (session_id,),
+                )):
+                    payload = json.loads(row["payload_json"])
+                    initial = payload.get("initial_message")
                     if isinstance(initial, dict) and initial.get("id") in removed:
-                        del event.payload["initial_message"]
+                        del payload["initial_message"]
                         db.execute("UPDATE asp_events SET payload_json = ? WHERE event_id = ?",
-                                   (json.dumps(event.payload), event.event_id))
-        if removable:
-            removed = set(removable)
-            self.session_events[session_id] = [
-                event for event in self.session_events[session_id]
-                if event.event_id not in removed
-            ]
+                                   (json.dumps(payload), row["event_id"]))
 
     def is_acknowledged(self, handle: str, event_id: str) -> bool:
         db = self._db()
@@ -342,7 +331,6 @@ class Store:
             kind=kind,
         )
         self.sessions[sid] = sess
-        self.session_events[sid] = []
         self.session_seq[sid] = 0
         self._save_session(sess)
         return sess
@@ -408,7 +396,6 @@ class Store:
             session_id=session_id,
             sequence=seq,
         )
-        self.session_events[session_id].append(ev)
         db = self._db()
         if db is not None:
             with db:
@@ -434,12 +421,26 @@ class Store:
     def session_events_after(
         self, session_id: str, after_sequence: int | None, limit: int | None
     ) -> list[Event]:
-        events = self.session_events.get(session_id, [])
+        db = self._db()
+        if db is None:
+            return []
+        query = "SELECT * FROM asp_events WHERE session_id = ?"
+        params: list[Any] = [session_id]
         if after_sequence is not None:
-            events = [e for e in events if e.sequence is not None and e.sequence > after_sequence]
+            query += " AND sequence > ?"
+            params.append(after_sequence)
+        query += " ORDER BY sequence"
         if limit is not None:
-            events = events[:limit]
-        return events
+            query += " LIMIT ?"
+            params.append(limit)
+        return [
+            Event(row["type"], row["event_id"], row["created_at"],
+                  json.loads(row["payload_json"]), row["session_id"], row["sequence"])
+            for row in db.execute(query, params)
+        ]
+
+    def events_for_session(self, session_id: str) -> list[Event]:
+        return self.session_events_after(session_id, None, None)
 
     # ---- Idempotency -----------------------------------------------------
 

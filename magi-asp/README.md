@@ -10,6 +10,13 @@ local-network layer MAGI processes join — and `db/` owns the sqlite file.
 
 HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp/asp.sqlite`. MAGI and the desktop are clients.
 
+ASP persists sessions, participants and relay events in SQLite. Recipients
+acknowledge exact event IDs after saving them locally (`POST
+/sessions/{id}/events/ack` or a WebSocket `session.ack`). A message event is
+deleted only after every intended recipient has acknowledged it. The desktop's
+long-term chat history lives in its own SQLite; ASP does not serve as that
+history store.
+
 magi-asp is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
 
 `POST /conversations` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. `bot` is ASP-side spawn only (the desktop never starts MAGI): ASP assigns `name` `eva-000`, then `eva-001`, …, starts that MAGI (`python -m magi`), and returns `name` on the create response. `group` opens a conversation with the operator only.
