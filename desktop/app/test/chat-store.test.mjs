@@ -10,7 +10,7 @@ test("desktop chat history and pending receipts survive a restart", {
   skip: Number(process.versions.node.split(".")[0]) < 22,
 }, async (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const file = path.join(directory, "app", "chat.sqlite");
   const conversation = { conversation_id: "sess_1", kind: "group", agents: [] };
   const event = {

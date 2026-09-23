@@ -8,7 +8,7 @@ import { importAspHistory } from "../scripts/import-asp-history.mjs";
 
 test("legacy ASP import preserves events without acknowledging them", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-history-import-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const database = path.join(root, "chat.sqlite");
   const fetcher = async (url, options) => {
     const endpoint = new URL(url).pathname;
