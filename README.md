@@ -67,7 +67,7 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 
 ```text
 desktop/     Electron bootstrap shell and editable operator WebUI
-magi-asp/    Python package magi_asp: /sessions, WS /connect, ~/.magi/asp.sqlite
+magi-asp/    ASP server (main.py + server/ + db/): /sessions, WS /connect, ~/.magi/asp.sqlite
 py-magi/     One MAGI runtime per process; workspace sqlite of its own
 ts-magi/     TypeScript BUS playground and its launcher
 ```

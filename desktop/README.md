@@ -7,6 +7,10 @@ prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
 processes) and reports which interface entry the shell should show. Electron
 user data is separate from MAGI and ASP state.
 
+The project directory stays the Electron app directory (`build.directories.app`
+in `package.json`, which electron-builder would otherwise move to `app/` — its
+two-package.json layout), so the packaged entry point stays `shell/main.mjs`.
+
 The app is also the machine-local layer of the system: it owns the checkout and
 the operator's GitHub credentials, and it keeps local state in Electron user
 data. ASP only relays messages — and MAGI keeps its own store — so both may run

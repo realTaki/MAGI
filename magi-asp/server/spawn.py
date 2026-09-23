@@ -104,8 +104,8 @@ def _resolve_magi_python() -> str:
 
 
 def _py_magi_dir() -> Path | None:
-    # magi-asp/magi_asp/asp/spawn.py → repo root is parents[3]
-    repo = Path(__file__).resolve().parents[3]
+    # magi-asp/server/spawn.py → repo root is parents[2]
+    repo = Path(__file__).resolve().parents[2]
     candidate = repo / "py-magi"
     return candidate if candidate.is_dir() else None
 

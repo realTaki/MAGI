@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from magi_asp.asp.spawn import RecordingSpawner
 from main import create_app
+from server.spawn import RecordingSpawner
 
 
 def test_health_creates_the_versioned_local_database(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-from magi_asp.asp.spawn import ProcessSpawner, magi_cli
+from server.spawn import ProcessSpawner, magi_cli
 
 
 def test_magi_cli_starts_the_intranet_runtime() -> None:
@@ -30,9 +30,9 @@ def test_process_spawner_runs_python_m_magi(monkeypatch) -> None:
         seen["cwd"] = kwargs.get("cwd")
         return Proc()
 
-    monkeypatch.setattr("magi_asp.asp.spawn.subprocess.Popen", fake_popen)
-    monkeypatch.setattr("magi_asp.asp.spawn._spawn_disabled", lambda: False)
-    monkeypatch.setattr("magi_asp.asp.spawn._resolve_magi_python", lambda: "/venv/bin/python")
+    monkeypatch.setattr("server.spawn.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("server.spawn._spawn_disabled", lambda: False)
+    monkeypatch.setattr("server.spawn._resolve_magi_python", lambda: "/venv/bin/python")
     spawner = ProcessSpawner()
     spawned = spawner.spawn(
         handle="@eva-000.magi",

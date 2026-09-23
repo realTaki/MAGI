@@ -11,8 +11,8 @@ from pathlib import Path
 import httpx
 import uvicorn
 
-from magi_asp.asp.spawn import ProcessSpawner
 from main import create_app
+from server.spawn import ProcessSpawner
 
 
 def _free_port() -> int:

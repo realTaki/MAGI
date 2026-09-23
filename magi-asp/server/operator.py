@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 
-from localdb.database import LocalDatabase
+from db.database import LocalDatabase
 
 OPERATOR_HANDLE = "user"
 OPERATOR_SETTING_KEY = "operator"

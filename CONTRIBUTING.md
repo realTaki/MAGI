@@ -72,7 +72,7 @@ docs: Update README with new architecture
 | Directory | Purpose |
 |-----------|---------|
 | `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
-| `magi-asp/` | ASP session server (`magi_asp` Python package) |
+| `magi-asp/` | ASP session server (`main.py` + `server/` + `db/`) |
 | `py-magi/agent/` | Agent loop, memory, tools |
 | `py-magi/channels/` | Telegram + ASP channel adapters |
 | `py-magi/tests/` | Unit and integration tests |

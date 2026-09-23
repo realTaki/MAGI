@@ -1,6 +1,12 @@
 # magi-asp
 
-Python package `magi_asp`. Run with `magi-asp` or `python -m magi_asp`.
+Run with `python main.py` (what the desktop app does, from this directory) or the
+`magi-asp` console script.
+
+Layout: `main.py` is the composition root and process entry (`AspServer`,
+`create_app`, `main`), `server/` holds the ASP itself — `app.py` for the HTTP/WS
+routes, `service.py`/`store.py`/`transport.py`/`spawn.py`/`operator.py` for the
+local-network layer MAGI processes join — and `db/` owns the sqlite file.
 
 HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp/asp.sqlite`. MAGI and the desktop are clients.
 
