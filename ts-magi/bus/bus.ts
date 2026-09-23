@@ -20,11 +20,17 @@ export class Bus {
 
   constructor(readonly handle: string, workspace?: string) {
     const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    this.workspace = resolve(workspace ?? join(homedir(), ".magi", localName));
+    this.workspace = resolve(workspace ?? join(homedir(), ".magi", "ts-magi", localName));
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
     this.memories = new Database(join(this.workspace, "memories", "magi.db"), { create: true });
     this.logs = new Database(join(this.workspace, "logs", "magi.db"), { create: true });
+    const settingsColumns = this.memories.query("PRAGMA table_info(books_settings)").all() as Array<{ name: string }>;
+    if (settingsColumns.some((column) => column.name === "id")) {
+      this.logs.close();
+      this.memories.close();
+      throw new Error("this workspace uses py-magi's SQLite schema; choose a separate MAGI_WORKSPACE");
+    }
     for (const db of [this.memories, this.logs]) {
       db.exec("PRAGMA journal_mode = WAL");
       db.exec("PRAGMA busy_timeout = 5000");
@@ -51,6 +57,8 @@ export class Bus {
       );
       CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(type, status, id);
     `);
+    // One MAGI owns this workspace. Recover work interrupted by a process exit.
+    this.logs.exec("UPDATE jobs SET status = 'pending', worker = NULL WHERE status = 'claimed'");
     this.conversations = new ConversationBook(this.memories);
     this.messages = new MessageBook(this.memories);
   }

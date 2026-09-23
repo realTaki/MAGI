@@ -1,4 +1,6 @@
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage, type LLMTool } from "../bus/index.js";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { AGENT_PROMPT } from "./prompt_defaults.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,7 +17,8 @@ export class Conversation {
     try {
       const record = this.bus.conversations.get(this.conversation_id);
       if (!record) throw new Error("conversation does not exist");
-      const system = [AGENT_PROMPT, record.instruction, record.summary ? `[Prior conversation summary]\n${record.summary}` : ""]
+      const agentPrompt = await readFile(join(this.bus.workspace, "prompts/agent/AGENT.md"), "utf8").catch(() => AGENT_PROMPT);
+      const system = [agentPrompt, record.instruction, record.summary ? `[Prior conversation summary]\n${record.summary}` : ""]
         .filter(Boolean).join("\n\n");
       const history = this.bus.messages.list(this.conversation_id, 20).map((message): LLMMessage => ({
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",

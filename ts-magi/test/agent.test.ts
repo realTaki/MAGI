@@ -1,18 +1,52 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Magi } from "../magi.js";
 import type { CallLLMJob, LLMMessage } from "../bus/index.js";
+import { OpenAICompatibleClient } from "../providers/client.js";
 
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "ts-magi-test-")); workspaces.push(path); return path; }
 
 describe("local MAGI agent", () => {
+  test("does not open a Python workspace with incompatible Book tables", async () => {
+    const path = await workspace();
+    await mkdir(join(path, "memories"));
+    const db = new Database(join(path, "memories/magi.db"), { create: true });
+    db.exec("CREATE TABLE books_settings (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT NOT NULL)");
+    db.close();
+    expect(() => new Magi("@alice.magi", { workspace: path })).toThrow("py-magi's SQLite schema");
+    const check = new Database(join(path, "memories/magi.db"), { readonly: true });
+    expect((check.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'books_conversations'").all())).toEqual([]);
+    check.close();
+  });
+
+  test("provider keeps text as text and reads actions only from native tool_calls", async () => {
+    const client = new OpenAICompatibleClient("key", "model", "http://provider.test/v1", async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { messages: unknown[]; tools: unknown[] };
+      expect(request.messages).toEqual([{ role: "user", content: "hello" }]);
+      expect(request.tools).toHaveLength(1);
+      return Response.json({ choices: [{ message: {
+        content: '{"tool":"ignore this plain text"}',
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a.txt"}' } }],
+      } }] });
+    });
+    expect(await client.complete({ messages: [{ role: "user", content: "hello" }], tools: [
+      { name: "read_file", description: "read", input_schema: { type: "object" } },
+    ] })).toEqual({
+      role: "assistant", content: '{"tool":"ignore this plain text"}',
+      tool_calls: [{ tool_call_id: "call_1", name: "read_file", arguments: { path: "a.txt" } }],
+    });
+  });
+
   test("persists a turn and continues native tool calls through BUS", async () => {
     const path = await workspace();
+    await mkdir(join(path, "prompts/agent"), { recursive: true });
+    await writeFile(join(path, "prompts/agent/AGENT.md"), "You are Test MAGI.");
     const delivered: string[] = [];
     const requests: CallLLMJob[] = [];
     const magi = new Magi("@alice.magi", {
@@ -36,6 +70,7 @@ describe("local MAGI agent", () => {
     expect(id).toBeGreaterThan(0);
     expect(await readFile(join(path, "notes/a.txt"), "utf8")).toBe("saved");
     expect(requests).toHaveLength(2);
+    expect(requests[0].messages[0].content).toContain("You are Test MAGI.");
     const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
     const logs = new Database(join(path, "logs/magi.db"), { readonly: true });
     expect((memories.query("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);

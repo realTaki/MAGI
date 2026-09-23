@@ -14,7 +14,7 @@ export class OpenAICompatibleClient implements LLMClient {
     private readonly apiKey: string,
     private readonly model: string,
     private readonly apiBase = "https://api.openai.com/v1",
-    private readonly fetcher: typeof fetch = fetch,
+    private readonly fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
   ) {}
 
   async complete(job: CallLLMJob): Promise<LLMMessage> {

@@ -14,13 +14,41 @@
       </header>
 
       <main id="view-startup" class="view startup">
-        <p class="eyebrow">MAGI</p>
+        <span class="mark" aria-hidden="true">
+          <svg
+            viewBox="0 0 32 32"
+            width="30"
+            height="30"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="miter"
+          >
+            <path d="M6 6 L6 26 L16 12 L26 26 L26 6" />
+          </svg>
+        </span>
+
         <h1>Starting local MAGI</h1>
         <p id="startup-message" class="lede">Preparing MAGI…</p>
-        <div class="progress-track" role="progressbar" aria-label="MAGI startup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-          <div id="startup-progress" class="progress-fill"></div>
+
+        <div class="progress">
+          <div
+            class="progress-track"
+            role="progressbar"
+            aria-label="MAGI startup progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div id="startup-progress" class="progress-fill"></div>
+          </div>
+          <span id="startup-percent" class="progress-percent">0%</span>
         </div>
-        <p id="startup-step" class="status">Preparing local runtime</p>
+
+        <p id="startup-step" class="status">
+          First launch installs dependencies — this can take a few minutes.
+        </p>
         <button type="button" class="retry" id="retry-startup" hidden>Retry</button>
       </main>
     </div>

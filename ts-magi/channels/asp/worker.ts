@@ -4,11 +4,12 @@ import { AspClient, type AspEvent } from "./client.js";
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
   private readonly client: AspClient;
-  private nickname: string | null = null;
+  private nickname: string | null;
 
   constructor(bus: Bus, base: string, token: string) {
     super(bus);
     this.client = new AspClient(bus.handle, base, token);
+    this.nickname = bus.getSetting("asp.nickname");
   }
 
   connect(): Promise<void> { return this.client.connect((event) => this.onEvent(event)); }
@@ -32,7 +33,10 @@ export class AspWorker extends BaseWorker {
     if (event.type === "agent.nickname.read") return { type: "agent.nickname.current", nickname: this.nickname };
     if (event.type === "agent.nickname.update") {
       const updated = typeof event.nickname === "string" && !!event.nickname.trim();
-      if (updated) this.nickname = event.nickname!.trim();
+      if (updated) {
+        this.nickname = event.nickname!.trim();
+        this.bus.setSetting("asp.nickname", this.nickname);
+      }
       return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
     }
     const id = event.session_id;
