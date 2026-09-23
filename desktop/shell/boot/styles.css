@@ -5,7 +5,6 @@
   --blue: #1769aa;
   --blue-hover: #11598f;
   --line: rgba(23, 50, 77, 0.24);
-  --error: #9f2f25;
 }
 
 * { box-sizing: border-box; }
@@ -79,31 +78,21 @@ body {
 }
 
 .error-panel {
+  position: relative;
   width: 100%;
   margin-top: 20px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.86);
 }
 
 .error-panel[hidden] { display: none; }
 
-.error-title {
-  margin: 0 0 10px;
-  color: var(--error);
-  font-size: 13px;
-  font-weight: 650;
-}
-
 .error-text {
   display: block;
   width: 100%;
-  height: 128px;
-  padding: 10px 12px;
+  height: 180px;
+  padding: 14px 16px 56px;
   resize: none;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 10px;
   outline: none;
   background: #fff;
   color: var(--ink);
@@ -117,40 +106,63 @@ body {
 }
 
 .error-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
 }
 
-.button {
-  height: 34px;
-  padding: 0 14px;
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  background: #fff;
   color: var(--ink);
-  font: inherit;
-  font-size: 13px;
   cursor: pointer;
 }
 
-.button:hover,
-.button:focus-visible {
-  border-color: var(--blue);
-  outline: none;
+.icon-button svg {
+  width: 18px;
+  height: 18px;
 }
 
-.button-primary {
+.icon-button .copied-icon,
+.icon-button[data-copied="true"] .copy-icon { display: none; }
+.icon-button[data-copied="true"] .copied-icon { display: block; }
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  border-color: var(--blue);
+  outline: 2px solid rgba(23, 105, 170, 0.24);
+  outline-offset: 2px;
+}
+
+.icon-button-primary {
   border-color: var(--blue);
   background: var(--blue);
   color: #fff;
 }
 
-.button-primary:hover,
-.button-primary:focus-visible {
+.icon-button-primary:hover,
+.icon-button-primary:focus-visible {
   border-color: var(--blue-hover);
   background: var(--blue-hover);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
