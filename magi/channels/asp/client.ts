@@ -56,6 +56,15 @@ export class AspClient {
   join(sessionId: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/join`); }
   send(sessionId: string, content: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/messages`, { content }); }
 
+  async sessionKind(sessionId: string): Promise<string | null> {
+    const response = await fetch(new URL(`/sessions/${encodeURIComponent(sessionId)}`, this.base), {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    if (!response.ok) throw new Error(`ASP session lookup failed: HTTP ${response.status}`);
+    const session = await response.json() as { kind?: unknown };
+    return typeof session.kind === "string" ? session.kind : null;
+  }
+
   private async post(path: string, payload?: Record<string, unknown>): Promise<void> {
     const response = await fetch(new URL(path, this.base), {
       method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
