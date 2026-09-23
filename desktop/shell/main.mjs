@@ -434,16 +434,106 @@ async function pointCheckoutAtFork(checkout, tools, fork, upstream, viewer, repo
   await assignGitIdentity(tools, checkout, viewer);
 }
 
-let pendingSignIn = null;
+// The GitHub connection belongs to this machine, not to ASP or MAGI: it forks
+// the repository into the operator's account and repoints this checkout at the
+// fork. The operator UI drives it over IPC and the result is stored locally;
+// nothing here is part of the startup sequence.
+let localCheckout = null;
+let githubTools = null;
 let deviceFlowPending = false;
-// Kept while a sign-in is outstanding so a reloaded or reopened startup window
-// goes back to the sign-in page instead of sitting on the progress view.
-let signInPrompt = null;
 
-function waitForSignIn() {
-  return new Promise((resolve) => {
-    pendingSignIn = resolve;
-  });
+function githubMetadataFile() {
+  return path.join(app.getPath("userData"), "github.json");
+}
+
+function readGitHubMetadata() {
+  try {
+    const parsed = JSON.parse(readFileSync(githubMetadataFile(), "utf8"));
+    return parsed !== null && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeGitHubMetadata(metadata) {
+  const file = githubMetadataFile();
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(metadata, null, 2)}\n`);
+}
+
+function githubEvent(payload) {
+  sendToWindow(mainWindow, "github:event", payload);
+}
+
+function requireCheckout() {
+  if (localCheckout === null || githubTools === null) {
+    throw new Error("This build has no local checkout to connect.");
+  }
+  return localCheckout;
+}
+
+// A build may point MAGI_REPOSITORY_URL at a mirror that is not on GitHub; the
+// operator UI hides the connection step in that case instead of failing.
+function upstreamSlug() {
+  try {
+    return parseGitHubSlug(MAGI_REPOSITORY);
+  } catch {
+    return null;
+  }
+}
+
+async function currentGitHubState() {
+  const upstream = upstreamSlug();
+  const metadata = readGitHubMetadata();
+  const token = readGitHubToken();
+  const state = {
+    available: localCheckout !== null && upstream !== null,
+    upstream: upstream === null ? "" : `${upstream.owner}/${upstream.name}`,
+    login: typeof metadata.login === "string" ? metadata.login : "",
+    fork: typeof metadata.fork === "string" ? metadata.fork : "",
+    signedIn: token !== null,
+    verified: false,
+    connected: false,
+  };
+  if (token === null) {
+    return state;
+  }
+  const viewer = await githubApi("/user", { token }).catch(() => null);
+  if (viewer === null) {
+    clearGitHubToken();
+    state.signedIn = false;
+    return state;
+  }
+  state.verified = true;
+  state.login = viewer.login;
+  state.connected = state.fork !== "";
+  return state;
+}
+
+// Device flow: the operator approves a one-time code in the browser, and the
+// token lands in ~/.magi/github-token where the checkout's credential helper
+// picks it up.
+async function signInWithGitHub() {
+  if (deviceFlowPending) {
+    throw new Error("A GitHub sign-in is already running.");
+  }
+  deviceFlowPending = true;
+  try {
+    const device = await requestDeviceCode();
+    githubEvent({
+      step: "waiting",
+      userCode: String(device.user_code ?? ""),
+      expiresInMinutes: Math.max(1, Math.round((Number(device.expires_in) || 900) / 60)),
+    });
+    clipboard.writeText(String(device.user_code ?? ""));
+    await shell.openExternal(GITHUB_DEVICE_URL).catch(() => {});
+    const viewer = await acceptGitHubToken(await pollDeviceToken(device));
+    writeGitHubMetadata({ ...readGitHubMetadata(), login: viewer.login });
+    githubEvent({ step: "signed-in", login: viewer.login });
+    return { login: viewer.login };
+  } finally {
+    deviceFlowPending = false;
+  }
 }
 
 async function acceptGitHubToken(token) {
@@ -452,53 +542,27 @@ async function acceptGitHubToken(token) {
     throw new Error("GitHub did not return an account for this token.");
   }
   writeGitHubToken(token);
-  const settle = pendingSignIn;
-  pendingSignIn = null;
-  settle?.({ token, viewer });
   return viewer;
 }
 
-// Runs after the clone: reuses a stored token when it still works, otherwise
-// shows the GitHub sign-in page and waits for the operator to finish there.
-async function connectGitHub(checkout, tools, win, report) {
-  const upstream = parseGitHubSlug(MAGI_REPOSITORY);
-  const status = (payload) => sendToWindow(win, "github:status", payload);
-  let session = null;
-
-  const stored = readGitHubToken();
-  if (stored !== null) {
-    const viewer = await githubApi("/user", { token: stored }).catch(() => null);
-    if (viewer === null) {
-      clearGitHubToken();
-    } else {
-      session = { token: stored, viewer };
-    }
+// Fork when the account has none, then wire the checkout: origin is the fork
+// and upstream stays the repository it was cloned from.
+async function connectLocalCheckout() {
+  const checkout = requireCheckout();
+  const upstream = upstreamSlug();
+  if (upstream === null) {
+    throw new Error(`MAGI_REPOSITORY_URL is not a GitHub repository: ${MAGI_REPOSITORY}`);
   }
-  if (session === null) {
-    signInPrompt = {
-      upstream: `${upstream.owner}/${upstream.name}`,
-      expired: stored !== null,
-    };
-    sendToWindow(win, "github:required", signInPrompt);
-    session = await waitForSignIn();
-    signInPrompt = null;
+  const token = readGitHubToken();
+  if (token === null) {
+    throw new Error("Sign in with GitHub first.");
   }
-
-  report("github", `Signed in to GitHub as @${session.viewer.login}`);
-  status({ step: "signed-in", login: session.viewer.login });
-  try {
-    const fork = await ensureFork(session.token, session.viewer.login, upstream, status);
-    await pointCheckoutAtFork(checkout, tools, fork, upstream, session.viewer, status);
-    report("github", `Using your fork ${fork.full_name}`);
-    status({ step: "done", fork: fork.full_name });
-    return fork;
-  } catch (error) {
-    status({
-      step: "error",
-      message: error instanceof Error ? error.message : "GitHub sign-in failed.",
-    });
-    throw error;
-  }
+  const viewer = await githubApi("/user", { token });
+  const fork = await ensureFork(token, viewer.login, upstream, githubEvent);
+  await pointCheckoutAtFork(checkout, githubTools, fork, upstream, viewer, githubEvent);
+  writeGitHubMetadata({ login: viewer.login, fork: fork.full_name, connectedAt: Date.now() });
+  githubEvent({ step: "connected", login: viewer.login, fork: fork.full_name });
+  return await currentGitHubState();
 }
 
 async function prepareCheckout(checkout, tools, report) {
@@ -542,32 +606,29 @@ async function prepareCheckout(checkout, tools, report) {
   });
 }
 
-async function resolveRuntimeRoot(report, win) {
+async function resolveRuntimeRoot(report) {
   if (!app.isPackaged) {
     const override = process.env.MAGI_DEV_CHECKOUT ?? "";
     if (override === "") {
       return REPO_ROOT;
     }
-    // Dev shells have no bundled runtime, but dugite still provides Git, so the
-    // clone/sign-in path can be exercised against a scratch checkout.
+    // Dev shells have no bundled runtime, but dugite still provides Git, so a
+    // scratch checkout keeps the local GitHub capability testable.
     const checkout = path.resolve(override);
     if (!existsSync(path.join(checkout, ".git"))) {
       throw new Error(`MAGI_DEV_CHECKOUT is not a Git checkout: ${checkout}`);
     }
     report("clone", `Using the checkout at ${checkout}`);
-    await connectGitHub(
-      checkout,
-      { git: resolveGitBinary(), env: setupEnvironment({}).env },
-      win,
-      report,
-    );
+    localCheckout = checkout;
+    githubTools = { git: resolveGitBinary(), env: setupEnvironment({}).env };
     return checkout;
   }
   if (runtimeRootPromise === null) {
     runtimeRootPromise = (async () => {
       const tools = packagedTools();
       const checkout = await cloneMagiSource(tools, report);
-      await connectGitHub(checkout, tools, win, report);
+      localCheckout = checkout;
+      githubTools = tools;
       await prepareCheckout(checkout, tools, report);
       return checkout;
     })().catch((error) => {
@@ -644,12 +705,12 @@ function spawnLocalAsp(checkout) {
   return child;
 }
 
-async function startLocalAsp(report, win) {
+async function startLocalAsp(report) {
   report("checking", "Checking local magi-asp…");
   if (await isAspHealthy()) {
-    return resolveRuntimeRoot(report, win);
+    return resolveRuntimeRoot(report);
   }
-  const checkout = await resolveRuntimeRoot(report, win);
+  const checkout = await resolveRuntimeRoot(report);
   const aspDir = path.join(checkout, "magi-asp");
   if (!existsSync(path.join(aspDir, "main.py"))) {
     throw new Error(`magi-asp was not found at ${aspDir}`);
@@ -690,10 +751,7 @@ async function launchLocalOperator(win) {
   }
   startingLocal = true;
   try {
-    const checkout = await startLocalAsp(
-      (step, message) => reportStartup(win, step, message),
-      win,
-    );
+    const checkout = await startLocalAsp((step, message) => reportStartup(win, step, message));
     if (!win.isDestroyed()) {
       await loadOperatorUi(win, checkout);
     }
@@ -757,9 +815,6 @@ function watchOperatorUi(win, indexFile) {
 async function loadStartup(win) {
   stopWatchingOperatorUi();
   await win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
-  if (signInPrompt !== null) {
-    sendToWindow(win, "github:required", signInPrompt);
-  }
 }
 
 async function loadOperatorUi(win, checkout) {
@@ -810,26 +865,13 @@ function createWindow() {
   return win;
 }
 
-ipcMain.handle("github:sign-in", async () => {
-  if (deviceFlowPending) {
-    throw new Error("A GitHub sign-in is already running.");
-  }
-  deviceFlowPending = true;
-  try {
-    const device = await requestDeviceCode();
-    sendToWindow(mainWindow, "github:status", {
-      step: "waiting",
-      userCode: String(device.user_code ?? ""),
-      expiresInMinutes: Math.max(1, Math.round((Number(device.expires_in) || 900) / 60)),
-    });
-    clipboard.writeText(String(device.user_code ?? ""));
-    await shell.openExternal(GITHUB_DEVICE_URL).catch(() => {});
-    const viewer = await acceptGitHubToken(await pollDeviceToken(device));
-    return { login: viewer.login };
-  } finally {
-    deviceFlowPending = false;
-  }
-});
+// Local capabilities the operator UI drives. They stay out of the startup
+// sequence: the app runs, then the operator connects GitHub when they want to.
+ipcMain.handle("github:state", async () => await currentGitHubState());
+
+ipcMain.handle("github:sign-in", async () => await signInWithGitHub());
+
+ipcMain.handle("github:connect", async () => await connectLocalCheckout());
 
 ipcMain.handle("asp:retry", async () => {
   if (mainWindow !== null) {

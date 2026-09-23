@@ -1,3 +1,4 @@
+import { GitHubConnectOverlay } from "./GitHubConnectOverlay";
 import { I18nProvider } from "./i18n";
 import { ProductDemo } from "./ProductDemo";
 import { SettingsPage } from "./SettingsPage";
@@ -14,6 +15,7 @@ export default function App() {
         <div className="app-route">
           <ProductDemo />
         </div>
+        <GitHubConnectOverlay />
         {onSettings ? <SettingsPage /> : null}
       </ThemeProvider>
     </I18nProvider>

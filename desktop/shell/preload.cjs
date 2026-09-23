@@ -8,9 +8,11 @@ contextBridge.exposeInMainWorld("magiDesktop", {
     ipcRenderer.on("asp:startup-progress", (_event, progress) => listener(progress)),
   onStartupError: (listener) =>
     ipcRenderer.on("asp:startup-error", (_event, message) => listener(message)),
-  onGitHubRequired: (listener) =>
-    ipcRenderer.on("github:required", (_event, info) => listener(info)),
-  onGitHubStatus: (listener) =>
-    ipcRenderer.on("github:status", (_event, status) => listener(status)),
+  // Local-machine capabilities driven by the operator UI. They are absent when
+  // the same UI is opened outside the desktop app, so the UI feature-detects.
+  githubState: () => ipcRenderer.invoke("github:state"),
   startGitHubSignIn: () => ipcRenderer.invoke("github:sign-in"),
+  connectGitHub: () => ipcRenderer.invoke("github:connect"),
+  onGitHubEvent: (listener) =>
+    ipcRenderer.on("github:event", (_event, event) => listener(event)),
 });
