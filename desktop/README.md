@@ -4,18 +4,20 @@ The Electron shell is a bootstrap for a local MAGI installation: it clones the
 checkout and loads the app from it. The app itself lives in `app/` — operator
 interface (`app/src/`) plus local backend (`app/main/`) — and the backend
 prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
-processes) and reports which interface entry the shell should show. Electron
-user data lives in `~/.magi/app/`, separate from MAGI and ASP state. On first
-launch after this path change, the shell copies the previous Electron data there.
+processes) and reports which interface entry the shell should show. The app
+module keeps its own files in `~/.magi/app/`; Electron's Chromium profile stays
+at its default `userData` path.
 
 The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `app/` — its
 two-package.json layout), so the packaged entry point stays `shell/main.mjs`.
 
 The app is also the machine-local layer of the system: it owns the checkout and
-the operator's GitHub credentials, and it keeps local state in Electron user
-data in `~/.magi/app/`. ASP only relays messages — and MAGI keeps its own store — so both may run
+the operator's GitHub credentials, and it keeps those files in `~/.magi/app/`.
+ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
+The app has no chat SQLite database today: ASP session events are in memory,
+and each MAGI keeps its message history in its own SQLite workspace.
 
 On first launch the packaged shell clones the complete repository into
 `~/.magi/MAGI` with its bundled Git, then hands the app the bundled Python,
@@ -61,7 +63,8 @@ the account menu, offered once on first run — and it calls `github.state`,
   so no client secret ships and only the token is per machine.
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
 - The token is stored at `~/.magi/app/github-token` (mode 0600) and the app records
-  the account and fork in `~/.magi/app/github.json`.
+  the account and fork in `~/.magi/app/github.json`. The app module copies any
+  existing GitHub files from Electron `userData` or the legacy token path once.
 - If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
   one. A repository that is already there is used as it is — fork or not — and
   is never overwritten.
