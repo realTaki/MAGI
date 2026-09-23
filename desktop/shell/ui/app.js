@@ -14,12 +14,6 @@ const steps = {
   starting: 6,
 };
 
-for (const button of document.querySelectorAll("[data-window]")) {
-  button.addEventListener("click", () => {
-    window.magiDesktop.windowControl(button.dataset.window);
-  });
-}
-
 function showProgress({ step, message }) {
   const value = steps[step] ?? 0;
   startupMessage.textContent = message;
