@@ -6,7 +6,7 @@ export class ToolsWorker extends BaseWorker {
   readonly worker_name = "tools";
   private readonly tools: Map<string, Tool>;
 
-  constructor(bus: Bus, tools = builtinTools(bus.workspace)) {
+  constructor(bus: Bus, tools = builtinTools(bus)) {
     super(bus);
     this.tools = new Map(tools.map((tool) => [tool.name, tool]));
   }

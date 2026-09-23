@@ -19,4 +19,8 @@ export class ConversationBook {
     this.db.prepare("INSERT OR IGNORE INTO books_conversations (channel, delivery_address) VALUES (?, ?)").run(channel, address);
     return this.db.prepare("SELECT * FROM books_conversations WHERE channel = ? AND delivery_address = ?").get(channel, address) as Conversation;
   }
+
+  updateSummary(id: number, summary: string): void {
+    this.db.prepare("UPDATE books_conversations SET summary = ? WHERE id = ?").run(summary, id);
+  }
 }

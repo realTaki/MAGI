@@ -131,4 +131,31 @@ describe("local MAGI agent", () => {
     expect(configured).toHaveLength(1);
     await magi.stop();
   });
+
+  test("injects active memories and compacts old conversation history", async () => {
+    const path = await workspace();
+    const requests: CallLLMJob[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      client: {
+        async complete(job) {
+          requests.push(job);
+          if (requests.length === 1) return { role: "assistant", content: "The user is migrating MAGI to TypeScript." };
+          return { role: "assistant", content: "Done." };
+        },
+      },
+    });
+    magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish ts-magi", kind: "long_term" });
+    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+    for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
+    magi.start();
+    await magi.chat("continue");
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0].messages[0].content).toContain("Summarize durable facts");
+    expect(requests[1].messages[0].content).toContain("Finish ts-magi");
+    expect(requests[1].messages[0].content).toContain("The user is migrating MAGI to TypeScript.");
+    expect(magi.bus.messages.count(conversation.id)).toBe(11);
+    await magi.stop();
+  });
 });

@@ -678,11 +678,19 @@ export function ConversationPage() {
       -1,
     );
     const isActive = activeIdRef.current === conversationId;
+    const hasReadMarker = Object.prototype.hasOwnProperty.call(
+      readThroughRef.current,
+      conversationId,
+    );
+    if (!hasReadMarker && lastSequence >= 0) {
+      readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
+      saveReadThrough(readThroughRef.current);
+    }
     if (isActive && lastSequence >= 0) {
       readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
       saveReadThrough(readThroughRef.current);
     }
-    const unread = !isActive
+    const unread = hasReadMarker && !isActive
       && latestAgentSequence > (readThroughRef.current[conversationId] ?? -1);
     const preview = latest && "text" in latest ? latest.text : "";
     setBots((current) => current.map((bot) => {
@@ -1141,7 +1149,7 @@ export function ConversationPage() {
                 aria-hidden="true"
               >
                 <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.14.38.36.72.66 1 .3.28.68.42 1.1.4H21v4h-.09a1.7 1.7 0 0 0-1.51.6Z" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1.1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
               </svg>
               {t("account.settings")}
             </button>

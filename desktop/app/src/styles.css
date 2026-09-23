@@ -321,6 +321,7 @@ body {
 
 .conversation-page__bot-row {
   display: flex;
+  flex: none;
   gap: 11px;
   align-items: center;
   width: 100%;

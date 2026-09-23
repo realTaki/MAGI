@@ -4,6 +4,8 @@ import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { ConversationBook } from "./firmware/books/conversationBook.js";
 import { MessageBook } from "./firmware/books/messageBook.js";
+import { MemoryBook } from "./firmware/books/memoryBook.js";
+import { SkillsBook } from "./firmware/books/skillsBook.js";
 import { JobBoard } from "./firmware/jobs/jobBoard.js";
 import type { ChatNotify, DeliveryNotify, JobInput, JobType } from "./firmware/jobs/types.js";
 
@@ -14,6 +16,8 @@ export class Bus {
   readonly workspace: string;
   readonly conversations: ConversationBook;
   readonly messages: MessageBook;
+  readonly memoryBook: MemoryBook;
+  readonly skills: SkillsBook;
   private readonly memories: Database;
   private readonly logs: Database;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
@@ -43,11 +47,19 @@ export class Bus {
       );
       CREATE TABLE IF NOT EXISTS books_messages (
         id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, contact_id INTEGER NOT NULL,
-        content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        archived INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS books_messages_conversation ON books_messages(conversation_id, id);
       CREATE TABLE IF NOT EXISTS books_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS books_memories (
+        id INTEGER PRIMARY KEY, topic TEXT NOT NULL, detail TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'temporary', archived INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
     `);
+    const messageColumns = this.memories.query("PRAGMA table_info(books_messages)").all() as Array<{ name: string }>;
+    if (!messageColumns.some((column) => column.name === "archived")) this.memories.exec("ALTER TABLE books_messages ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
     this.logs.exec(`
       CREATE TABLE IF NOT EXISTS jobs (
         id INTEGER PRIMARY KEY, type TEXT NOT NULL, publisher TEXT NOT NULL,
@@ -61,6 +73,8 @@ export class Bus {
     this.logs.exec("UPDATE jobs SET status = 'pending', worker = NULL WHERE status = 'claimed'");
     this.conversations = new ConversationBook(this.memories);
     this.messages = new MessageBook(this.memories);
+    this.memoryBook = new MemoryBook(this.memories);
+    this.skills = new SkillsBook(this.workspace);
   }
 
   board<K extends JobType>(type: K): JobBoard<K> {
