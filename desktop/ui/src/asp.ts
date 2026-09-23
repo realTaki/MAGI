@@ -14,6 +14,14 @@ export type CreatedConversation = {
   /** ASP-assigned MAGI name (`eva-000`, …). Present on `kind: "bot"`. */
   name?: string;
   spawned?: boolean;
+  topic?: string;
+  description?: string;
+  created_at?: number;
+};
+
+export type AspEvent = {
+  type: string;
+  payload: { sender?: string; content?: unknown };
 };
 
 export type AspBot = {
@@ -45,6 +53,40 @@ async function getOperator(): Promise<Operator | null> {
 
 export function clearOperator(): void {
   operator = null;
+}
+
+export async function listAspConversations(): Promise<CreatedConversation[]> {
+  const creds = await getOperator();
+  if (!creds) return [];
+  const response = await fetch(`${ASP_BASE}/conversations`, {
+    headers: { Authorization: `Bearer ${creds.token}` },
+  });
+  if (!response.ok) throw new Error(`ASP conversations: ${response.status}`);
+  return ((await response.json()) as { conversations: CreatedConversation[] }).conversations;
+}
+
+export async function listAspEvents(conversationId: string): Promise<AspEvent[]> {
+  const creds = await getOperator();
+  if (!creds) return [];
+  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/events`, {
+    headers: { Authorization: `Bearer ${creds.token}` },
+  });
+  if (!response.ok) throw new Error(`ASP events: ${response.status}`);
+  return ((await response.json()) as { events: AspEvent[] }).events;
+}
+
+export async function sendAspMessage(conversationId: string, text: string): Promise<void> {
+  const creds = await getOperator();
+  if (!creds) throw new Error("ASP is unavailable");
+  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${creds.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content: text }),
+  });
+  if (!response.ok) throw new Error(`ASP send: ${response.status}`);
 }
 
 export async function createAspConversation(

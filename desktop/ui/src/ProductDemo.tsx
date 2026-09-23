@@ -1,7 +1,6 @@
 import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  DEMO_BOTS,
   OPERATOR,
   type DemoBot,
   type DemoMessage,
@@ -10,7 +9,7 @@ import {
   type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator, listAspBots, addAspConversationMember, type AspBot } from "./asp";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -94,23 +93,6 @@ type RoutineDraft = {
   runs: DemoRoutineRun[];
 };
 
-function cloneBots(): LiveBot[] {
-  return DEMO_BOTS.map((bot) => ({
-    ...bot,
-    routines: bot.routines.map((routine) => ({
-      ...routine,
-      runs: routine.runs?.map((run) => ({ ...run })),
-    })),
-    title: "",
-    description: "",
-    onboarding: false,
-    answers: [],
-    kind: "dm",
-    screenEnabled: false,
-    members: [],
-  }));
-}
-
 function blankScreen(): DemoScreen {
   return { host: "desktop", title: "Computer is stopped", lines: [] };
 }
@@ -136,7 +118,6 @@ function makeConversation(
     routines: [],
     screen: blankScreen(),
     thread: [],
-    reply: "on it. tell me the job and i’ll get started.",
   };
 }
 
@@ -164,6 +145,19 @@ function membersFromAgents(agents: string[], roster: LiveBot[]): ConversationMem
     const label = labelForHandle(handle, roster);
     return { id: handle, name: label.name, color: label.color };
   });
+}
+
+function fromAspConversation(remote: CreatedConversation): LiveBot {
+  const kind = remote.kind === "group" ? "group" : "dm";
+  const name = remote.name ?? remote.topic ?? (kind === "group" ? "Group" : remote.agents[0] ?? "MAGI");
+  const bot = makeConversation(kind, name, colorForHandle(remote.agents[0] ?? remote.conversation_id));
+  bot.id = remote.conversation_id;
+  bot.remoteId = remote.conversation_id;
+  bot.magiHandle = remote.agents[0];
+  bot.description = remote.description ?? "";
+  bot.members = membersFromAgents(remote.agents, []);
+  bot.time = remote.created_at ? new Date(remote.created_at).toLocaleDateString() : "";
+  return bot;
 }
 
 function defaultTrigger(): Trigger {
@@ -400,8 +394,9 @@ function OnboardThread({
 
 export function ProductDemo() {
   const t = useT();
-  const [bots, setBots] = useState<LiveBot[]>(cloneBots);
-  const [activeId, setActiveId] = useState("inbox");
+  const [bots, setBots] = useState<LiveBot[]>([]);
+  const [activeId, setActiveId] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -446,8 +441,47 @@ export function ProductDemo() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
-  const desktopAllowed = active.kind === "dm";
+  const desktopAllowed = active?.kind === "dm";
   const showPanel = panelOpen;
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAspConversations().then((conversations) => {
+      if (cancelled) return;
+      const restored = conversations.map(fromAspConversation);
+      setBots(restored);
+      setActiveId((current) => current || restored[0]?.id || "");
+    }).catch((error: unknown) => {
+      if (!cancelled) setLoadError(String(error));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!active?.remoteId) return;
+    const conversationId = active.remoteId;
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const events = await listAspEvents(conversationId);
+        if (cancelled) return;
+        const thread: DemoMessage[] = events.filter((event) => event.type === "session.message")
+          .map((event) => ({
+            type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
+            text: typeof event.payload.content === "string" ? event.payload.content : JSON.stringify(event.payload.content),
+          }));
+        const latest = thread.at(-1);
+        setBots((current) => current.map((bot) => bot.id === conversationId
+          ? { ...bot, thread, preview: latest && "text" in latest ? latest.text : "" }
+          : bot));
+      } catch (error) {
+        if (!cancelled) setLoadError(String(error));
+      }
+    }
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 2000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [active?.remoteId]);
 
   useEffect(() => {
     setHasControl(false);
@@ -563,7 +597,10 @@ export function ProductDemo() {
   }, [plusOpen, userMenuOpen]);
 
   if (!active) {
-    return null;
+    return <div className="product-demo" style={{ padding: 32 }}>
+      <p>{loadError || "No MAGI agents yet."}</p>
+      <Button onClick={startNewBot} disabled={creating}>{t("plusMenu.newBot")}</Button>
+    </div>;
   }
 
   function schedule(callback: () => void, delayMs: number) {
@@ -673,8 +710,6 @@ export function ProductDemo() {
     creatingRef.current = true;
     setCreating(true);
     setPlusOpen(false);
-    const color =
-      BOT_COLORS[(bots.length + (action === "group" ? 3 : 0)) % BOT_COLORS.length] ?? "#3EC5A8";
     closeMenu();
     setRoutineDraft(null);
     setPanelMode("settings");
@@ -682,34 +717,26 @@ export function ProductDemo() {
       if (action === "bot") {
         const remote = await createAspConversation("bot");
         if (!remote?.name) {
+          setLoadError("Could not create a MAGI agent. Check that ASP is running.");
           return;
         }
-        const conversation = makeConversation("dm", remote.name, color);
-        conversation.remoteId = remote.conversation_id;
-        conversation.magiHandle = remote.agents[0];
+        setLoadError("");
+        const conversation = fromAspConversation(remote);
         setBots((current) => [conversation, ...current]);
         setActiveId(conversation.id);
         setDraft("");
         return;
       }
-      const conversation = makeConversation("group", t("plusMenu.newGroupName"), color);
+      const remote = await createAspConversation("group");
+      if (!remote) {
+        setLoadError("Could not create a group. Check that ASP is running.");
+        return;
+      }
+      setLoadError("");
+      const conversation = fromAspConversation(remote);
       setBots((current) => [conversation, ...current]);
       setActiveId(conversation.id);
       setDraft("");
-      const remote = await createAspConversation("group");
-      if (!remote) {
-        return;
-      }
-      setBots((current) =>
-        current.map((bot) =>
-          bot.id === conversation.id
-            ? {
-                ...bot,
-                remoteId: remote.conversation_id,
-              }
-            : bot,
-        ),
-      );
     } finally {
       creatingRef.current = false;
       setCreating(false);
@@ -775,26 +802,23 @@ export function ProductDemo() {
     }));
   }
 
-  function send() {
+  async function send() {
     const text = draft.trim();
     if (!text) {
       return;
     }
-    setDraft("");
+    if (!active.remoteId) return;
     if (onboardingOpen) {
       answerOnboard(text);
       return;
     }
-    const botId = active.id;
-    const reply = active.reply;
-    appendMessage(botId, { type: "user", text });
-    schedule(() => appendMessage(botId, { type: "typing" }), 280);
-    schedule(() => {
-      setExtra((current) => {
-        const withoutTyping = (current[botId] ?? []).filter((message) => message.type !== "typing");
-        return { ...current, [botId]: [...withoutTyping, { type: "bot", text: reply }] };
-      });
-    }, 1350);
+    try {
+      await sendAspMessage(active.remoteId, text);
+      setDraft("");
+      setLoadError("");
+    } catch (error) {
+      setLoadError(String(error));
+    }
   }
 
   function enableScreen() {
@@ -1047,6 +1071,7 @@ export function ProductDemo() {
           </div>
 
           <div className="product-demo__thread" ref={scrollRef}>
+            {loadError ? <div role="alert" className="product-demo__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
             ) : null}

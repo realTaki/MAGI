@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import shutil
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -29,14 +30,19 @@ class Bus:
         ``<workspace>/logs/magi.db``. File Books share the workspace root.
         """
         self.handle = handle
+        local_name = handle.removeprefix("@").removesuffix(".magi")
         self.workspace = (
             Path(workspace).resolve()
             if workspace is not None
             else Path.home()
             / ".magi"
-            / (handle[1:] if handle.startswith("@") else handle)
-            / "workspace"
+            / local_name
         )
+        if workspace is None:
+            legacy = Path.home() / ".magi" / f"{handle.removeprefix('@')}" / "workspace"
+            if not self.workspace.exists() and legacy.is_dir():
+                shutil.copytree(legacy, self.workspace)
+            (Path.home() / ".magi" / "projects").mkdir(parents=True, exist_ok=True)
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._memories = self._open_sqlite("memories")
         self._logs = self._open_sqlite("logs")

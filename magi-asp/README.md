@@ -2,7 +2,7 @@
 
 Python package `magi_asp`. Run with `magi-asp` or `python -m magi_asp`.
 
-HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp.sqlite`. MAGI and the desktop are clients.
+HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp/asp.sqlite`. MAGI and the desktop are clients.
 
 magi-asp is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
 
