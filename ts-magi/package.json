@@ -1,30 +1,19 @@
 {
   "name": "ts-magi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
   "scripts": {
-    "build": "npm run build -w @magi/bus && npm run build -w @magi/caller && npm run build -w @magi/provider && npm run build -w @magi/result-reader && npm run build -w @magi/launcher",
-    "generate:migration": "npm run generate:migration -w @magi/bus",
-    "demo": "npm run build && npm run demo -w @magi/launcher",
-    "test": "npm run build && npm run test -w @magi/launcher"
+    "build": "tsc -p tsconfig.json",
+    "start": "bun magi.ts",
+    "test": "npm run build && bun test"
   },
   "engines": {
-    "node": ">=20"
+    "bun": ">=1.2"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "9.6.0",
+    "@types/bun": "1.3.3",
     "@types/node": "24.13.6",
-    "drizzle-kit": "0.31.11",
     "typescript": "7.0.2"
-  },
-  "overrides": {
-    "@esbuild-kit/core-utils": {
-      "esbuild": "0.25.12"
-    }
   }
 }

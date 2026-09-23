@@ -310,15 +310,11 @@ export function createLocalApi(context) {
     );
   }
 
-  // Forks upstream into the signed-in account unless that fork already exists.
+  // Forks upstream into the signed-in account, unless a repository with that
+  // name is already there — an existing one is used as it is, fork or not.
   async function ensureFork(token, login, upstream) {
     const owned = await githubApi(`/repos/${login}/${upstream.name}`, { token }).catch(() => null);
     if (owned !== null) {
-      if (owned.fork !== true) {
-        throw new Error(
-          `${login}/${upstream.name} already exists and is not a fork of ${upstream.owner}/${upstream.name}. Rename or delete it, then retry.`,
-        );
-      }
       emit("github.forked", { fork: owned.full_name, created: false });
       return owned;
     }

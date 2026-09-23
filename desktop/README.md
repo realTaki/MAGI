@@ -61,9 +61,9 @@ the account menu, offered once on first run — and it calls `github.state`,
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
 - The token is stored at `~/.magi/github-token` (mode 0600) and the app records
   the account and fork in `<userData>/github.json`.
-- If the account has no `MAGI` fork, `POST /repos/<upstream>/forks` creates one.
-  An existing repository with the same name that is not a fork is reported as an
-  error rather than overwritten.
+- If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
+  one. A repository that is already there is used as it is — fork or not — and
+  is never overwritten.
 - `origin` becomes `https://github.com/<account>/MAGI.git` and `upstream` stays
   the clone source. A repository-local `credential.helper` reads the token file,
   so the token never lands in `.git/config`; `user.name` and `user.email` are
