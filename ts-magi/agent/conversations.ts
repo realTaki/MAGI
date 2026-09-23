@@ -28,7 +28,9 @@ export class Conversation {
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
         const response = llm.output.message;
         if (!response.tool_calls?.length) {
-          this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
+          const deliveryId = this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
+          const delivery = await this.waitFor("DeliveryNotify", deliveryId, 30_000);
+          if (delivery.status === "failed") throw new Error(delivery.error ?? "delivery failed");
           chat.submit("agent", jobId, { output: {} });
           return;
         }
@@ -47,12 +49,13 @@ export class Conversation {
       throw new Error("agent exceeded 20 model steps");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.bus.publishDelivery({ conversation_id: this.conversation_id, text: message });
+      const deliveryId = this.bus.publishDelivery({ conversation_id: this.conversation_id, text: message });
+      try { await this.waitFor("DeliveryNotify", deliveryId, 30_000); } catch { /* keep original failure */ }
       chat.submit("agent", jobId, { error: message });
     }
   }
 
-  private async waitFor<K extends "CallLLMJob" | "RunToolJob">(type: K, id: number, timeoutMs: number) {
+  private async waitFor<K extends "CallLLMJob" | "RunToolJob" | "DeliveryNotify">(type: K, id: number, timeoutMs: number) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const result = this.bus.board(type).result(id);

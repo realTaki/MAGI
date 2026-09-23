@@ -81,11 +81,6 @@ export default {
   conversationSettings: {
     title: "プロフィール",
     collapse: "プロフィールを隠す",
-    screen: "画面",
-    enable: "有効にする",
-    disable: "無効にする",
-    open: "開く",
-    screenCaption: "{name} の画面",
     members: "メンバー",
     membersEmpty: "まだメンバーがいません。あとから bot を招待できます。",
     membersInvite: "招待",

@@ -81,11 +81,6 @@ export default {
   conversationSettings: {
     title: "资料",
     collapse: "收起资料",
-    screen: "屏幕",
-    enable: "启用",
-    disable: "停用",
-    open: "打开",
-    screenCaption: "{name} 的屏幕",
     members: "成员",
     membersEmpty: "还没有成员。稍后邀请 bot。",
     membersInvite: "邀请",

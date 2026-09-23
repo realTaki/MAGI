@@ -8,6 +8,7 @@ import type { LLMClient } from "./providers/client.js";
 import { ToolsWorker } from "./tools/worker.js";
 import type { Tool } from "./tools/registry.js";
 import { CliWorker } from "./channels/cli/worker.js";
+import { AspWorker } from "./channels/asp/worker.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -17,15 +18,17 @@ export class Magi {
   readonly providers: ProvidersWorker;
   readonly tools: ToolsWorker;
   readonly cli: CliWorker;
+  readonly asp: AspWorker | null;
   private running = false;
   private loop: Promise<void> | null = null;
 
-  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void } = {}) {
+  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string } } = {}) {
     this.bus = new Bus(handle, options.workspace);
     this.tools = new ToolsWorker(this.bus, options.tools);
     this.agent = new AgentWorker(this.bus, () => this.tools.catalog());
     this.providers = new ProvidersWorker(this.bus, options.client);
     this.cli = new CliWorker(this.bus, options.deliver);
+    this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
   }
 
   start(): void {
@@ -37,7 +40,7 @@ export class Magi {
   private async runLoop(): Promise<void> {
     while (this.running) {
       let worked = false;
-      for (const worker of [this.agent, this.tools, this.providers, this.cli]) {
+      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp].filter((item) => item !== null)) {
         try { worked = await worker.poll() || worked; }
         catch (error) { console.error(`${worker.worker_name}:`, error); }
       }
@@ -56,18 +59,31 @@ export class Magi {
   }
 
   async stop(): Promise<void> {
+    await this.agent.drain();
     this.running = false;
     await this.loop;
-    await this.agent.drain();
+    this.asp?.close();
     this.bus.close();
   }
 }
 
 async function main(): Promise<void> {
   const handle = process.argv[2];
-  if (!handle) throw new Error("usage: npm run start -- @handle.magi");
-  const magi = new Magi(handle, { workspace: process.env.MAGI_WORKSPACE });
+  if (!handle) throw new Error("usage: bun run start -- @handle.magi [asp-base asp-token]");
+  const [base, token] = process.argv.slice(3);
+  if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
+  const magi = new Magi(handle, { workspace: process.env.MAGI_WORKSPACE, asp: base && token ? { base, token } : undefined });
   magi.start();
+  if (magi.asp) {
+    try {
+      await magi.asp.connect();
+      await new Promise<void>((resolve) => {
+        process.once("SIGINT", resolve);
+        process.once("SIGTERM", resolve);
+      });
+    } finally { await magi.stop(); }
+    return;
+  }
   const input = createInterface({ input: stdin, output: stdout });
   try {
     while (true) {

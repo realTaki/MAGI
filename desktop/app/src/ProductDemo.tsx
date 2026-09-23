@@ -386,7 +386,6 @@ export function ProductDemo() {
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const creatingRef = useRef(false);
   const widePanelRef = useRef(true);
-  const booting = bootPct > 0;
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
   const messages = useMemo(() => {
@@ -405,7 +404,6 @@ export function ProductDemo() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
-  const desktopAllowed = active?.kind === "dm";
   const showPanel = panelOpen;
 
   useEffect(() => {
@@ -448,26 +446,10 @@ export function ProductDemo() {
   }, [active?.remoteId]);
 
   useEffect(() => {
-    setHasControl(false);
-    setTakeover(false);
-    setBootPct(0);
     setMemberPickerOpen(false);
     setAvailableBots([]);
     setAddingHandle(null);
   }, [activeId]);
-
-  useEffect(() => {
-    if (desktopAllowed) {
-      return;
-    }
-    setHasControl(false);
-    setTakeover(false);
-    setBootPct(0);
-    if (panelMode === "routine") {
-      return;
-    }
-    setPanelMode("settings");
-  }, [activeId, desktopAllowed, panelMode]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -475,14 +457,6 @@ export function ProductDemo() {
       el.scrollTop = el.scrollHeight;
     }
   }, [active?.id, messages.length, active?.answers.length]);
-
-  useEffect(() => {
-    return () => {
-      for (const timer of timersRef.current) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 860px)");
@@ -520,20 +494,6 @@ export function ProductDemo() {
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!takeover && !booting) {
-      return;
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setTakeover(false);
-        setBootPct(0);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [takeover, booting]);
-
-  useEffect(() => {
     if (!plusOpen && !userMenuOpen) {
       return;
     }
@@ -565,14 +525,6 @@ export function ProductDemo() {
       <p>{loadError || "No MAGI agents yet."}</p>
       <Button onClick={startNewBot} disabled={creating}>{t("plusMenu.newBot")}</Button>
     </div>;
-  }
-
-  function schedule(callback: () => void, delayMs: number) {
-    const timer = window.setTimeout(() => {
-      timersRef.current = timersRef.current.filter((pending) => pending !== timer);
-      callback();
-    }, delayMs);
-    timersRef.current.push(timer);
   }
 
   function closeMenu() {
@@ -746,41 +698,6 @@ export function ProductDemo() {
     patchActive({ answers: [...active.answers, value] });
   }
 
-  function closeOverlay() {
-    for (const timer of timersRef.current.splice(0)) {
-      window.clearTimeout(timer);
-    }
-    setTakeover(false);
-    setBootPct(0);
-  }
-
-  function releaseControl() {
-    setHasControl(false);
-    closeOverlay();
-  }
-
-  function takeControl() {
-    if (!desktopAllowed || !active.screenEnabled || booting) {
-      return;
-    }
-    if (hasControl) {
-      setTakeover(true);
-      return;
-    }
-    for (const timer of timersRef.current.splice(0)) {
-      window.clearTimeout(timer);
-    }
-    setBootPct(8);
-    schedule(() => setBootPct(46), 450);
-    schedule(() => setBootPct(82), 1100);
-    schedule(() => setBootPct(100), 1750);
-    schedule(() => {
-      setBootPct(0);
-      setHasControl(true);
-      setTakeover(true);
-    }, 2300);
-  }
-
   function appendMessage(botId: string, message: DemoMessage) {
     setExtra((current) => ({
       ...current,
@@ -805,18 +722,6 @@ export function ProductDemo() {
     } catch (error) {
       setLoadError(String(error));
     }
-  }
-
-  function enableScreen() {
-    if (!desktopAllowed) {
-      return;
-    }
-    patchActive({ screenEnabled: true });
-  }
-
-  function disableScreen() {
-    patchActive({ screenEnabled: false });
-    releaseControl();
   }
 
   async function refreshAvailableBots() {
@@ -1194,50 +1099,7 @@ export function ProductDemo() {
                   </>
                 )}
 
-                {desktopAllowed ? (
-                  <div className="product-demo__slot">
-                    <div className="product-demo__slot-head">
-                      <span className="product-demo__panel-label">
-                        {t("conversationSettings.screen")}
-                      </span>
-                      <button
-                        type="button"
-                        className="product-demo__chip"
-                        onClick={active.screenEnabled ? disableScreen : enableScreen}
-                      >
-                        {active.screenEnabled
-                          ? t("conversationSettings.disable")
-                          : t("conversationSettings.enable")}
-                      </button>
-                    </div>
-                    {active.screenEnabled ? (
-                      <button
-                        type="button"
-                        className="product-demo__preview is-on"
-                        onClick={takeControl}
-                      >
-                        <span className="product-demo__preview-open">
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                          >
-                            <path d="M8 16L4 20M4 20h6M4 20V14M16 8l4-4M20 4h-6M20 4v6" />
-                          </svg>
-                          {t("conversationSettings.open")}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="product-demo__preview is-off" />
-                    )}
-                    <div className="product-demo__preview-caption">
-                      {t("conversationSettings.screenCaption").replace("{name}", active.name)}
-                    </div>
-                  </div>
-                ) : (
+                {active.kind === "group" ? (
                   <div className="product-demo__slot">
                     <div className="product-demo__slot-head">
                       <span className="product-demo__panel-label">
@@ -1304,7 +1166,7 @@ export function ProductDemo() {
                       </div>
                     ) : null}
                   </div>
-                )}
+                ) : null}
 
                 <div className="product-demo__slot">
                   <div className="product-demo__panel-label">
@@ -1549,48 +1411,8 @@ export function ProductDemo() {
           </aside>
         ) : null}
 
-        {desktopAllowed && (booting || takeover) ? (
-          <div className="product-demo__stage">
-            {booting ? (
-              <div className="product-demo__boot">
-                <div className="product-demo__boot-title">Booting up {active.name}’s computer</div>
-                <div className="product-demo__boot-track">
-                  <div style={{ width: `${bootPct}%` }} />
-                </div>
-                <div className="product-demo__boot-step">{BOOT_STEPS[bootPct] ?? ""}</div>
-              </div>
-            ) : (
-              <div className="product-demo__takeover">
-                <div className="product-demo__takeover-bar">
-                  <div className="product-demo__takeover-who">
-                    <Avatar color={active.color} size={32} />
-                    <span>{active.name}’s computer</span>
-                    <span className="product-demo__takeover-pill">You have control</span>
-                  </div>
-                  <div className="product-demo__takeover-actions">
-                    <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
-                      Release
-                    </Button>
-                    <button
-                      type="button"
-                      className="product-demo__takeover-close"
-                      onClick={closeOverlay}
-                      aria-label="Close computer"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-                <div className="product-demo__takeover-screen">
-                  <ComputerDesktop screen={active.screen} large />
-                </div>
-              </div>
-            )}
-          </div>
-        ) : null}
-      </div>
       <p className="product-demo__caption">
-        Live demo — pick a bot, open its computer, add a routine, or start a new chat.
+        Live demo — pick a bot, add a routine, or start a new chat.
       </p>
     </div>
   );

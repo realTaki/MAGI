@@ -81,11 +81,6 @@ export default {
   conversationSettings: {
     title: "Profile",
     collapse: "Hide profile",
-    screen: "Screen",
-    enable: "Enable",
-    disable: "Disable",
-    open: "Open",
-    screenCaption: "{name}’s screen",
     members: "Members",
     membersEmpty: "No members yet. Invite a bot later.",
     membersInvite: "Invite",

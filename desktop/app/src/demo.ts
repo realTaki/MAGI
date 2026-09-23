@@ -21,12 +21,6 @@ export type DemoRoutine = {
   runs?: DemoRoutineRun[];
 };
 
-export type DemoScreen = {
-  host: string;
-  title: string;
-  lines: string[];
-};
-
 export type DemoBot = {
   id: string;
   name: string;
@@ -34,7 +28,6 @@ export type DemoBot = {
   time: string;
   preview: string;
   routines: DemoRoutine[];
-  screen: DemoScreen;
   thread: DemoMessage[];
 };
 
