@@ -8,6 +8,7 @@ script both land here. Routes live in :mod:`server`, the sqlite file in
 from __future__ import annotations
 
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -89,11 +90,25 @@ class AspServer:
         app.state.service = self
         app.state.localdb = self.database
         app.state.asp = self.asp
+        restore = asyncio.create_task(self._restore_managed_magi())
         try:
             yield
         finally:
+            restore.cancel()
+            try:
+                await restore
+            except asyncio.CancelledError:
+                pass
             await self.asp.close()
             self.database.close()
+
+    async def _restore_managed_magi(self) -> None:
+        # Give a surviving MAGI time to reconnect after an ASP crash. A clean
+        # shutdown terminated its children, so those still offline are respawned.
+        await asyncio.sleep(5)
+        for agent in self.asp.store.agents.values():
+            if agent.managed and not self.asp.transport.is_online(agent.handle):
+                self.spawner.spawn(handle=agent.handle, base=self.asp.base_url, token=agent.token)
 
 
 def create_app(

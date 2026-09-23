@@ -42,6 +42,7 @@ class Agent:
     nickname: str | None = None
     inbound_policy: InboundPolicy = "open"
     allowlist: set[str] = field(default_factory=set)
+    managed: bool = False
 
 
 @dataclass
@@ -276,7 +277,7 @@ class Store:
         return None if handle is None else self.agents.get(handle)
 
     def register_agent(
-        self, handle: str, token: str, *, name: str | None = None
+        self, handle: str, token: str, *, name: str | None = None, managed: bool = False
     ) -> Agent:
         """Add or refresh one agent. Used for the desktop operator and spawned MAGI."""
         existing = self.agents.get(handle)
@@ -288,10 +289,12 @@ class Store:
                 self.agent_by_token[token] = handle
             if name is not None:
                 existing.name = name
+            if managed:
+                existing.managed = True
             self._save_agent(existing)
             return existing
         self._ensure_unique_token(token)
-        agent = Agent(handle=handle, token=token, name=name)
+        agent = Agent(handle=handle, token=token, name=name, managed=managed)
         self.agents[handle] = agent
         self.agent_by_token[token] = handle
         self._save_agent(agent)

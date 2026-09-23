@@ -1,6 +1,7 @@
 """ASP keeps relay events until every intended recipient confirms them."""
 
 from pathlib import Path
+import time
 
 from fastapi.testclient import TestClient
 
@@ -54,3 +55,22 @@ def test_relay_survives_restart_and_requires_exact_recipient_acks(tmp_path: Path
         assert client.post(ack, json={"event_ids": [first["event_id"]]}, headers=second).status_code == 200
         remaining = client.get(f"/sessions/{session_id}/events", headers=operator).json()["events"]
         assert all(event["type"] != "session.message" for event in remaining)
+
+
+def test_managed_magi_is_restored_after_asp_restart(tmp_path: Path) -> None:
+    database = tmp_path / "asp.sqlite"
+    with TestClient(create_app(database_path=database, magi_spawner=RecordingSpawner())) as first:
+        token = first.get("/operator").json()["token"]
+        response = first.post(
+            "/conversations", json={"kind": "bot"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 201
+        handle = response.json()["agents"][0]
+
+    spawner = RecordingSpawner()
+    with TestClient(create_app(database_path=database, magi_spawner=spawner)):
+        deadline = time.monotonic() + 7
+        while not spawner.calls and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert [call["handle"] for call in spawner.calls] == [handle]

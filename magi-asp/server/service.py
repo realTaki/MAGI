@@ -164,7 +164,7 @@ class Service:
             magi_name = self.store.next_magi_name()
             handle = self.store.magi_handle(magi_name)
             magi_token = secrets.token_urlsafe(24)
-            self.store.register_agent(handle, magi_token, name=magi_name)
+            self.store.register_agent(handle, magi_token, name=magi_name, managed=True)
             spawned = spawner.spawn(handle=handle, base=base_url, token=magi_token)
             invite = [handle]
         result = await self.create_session(

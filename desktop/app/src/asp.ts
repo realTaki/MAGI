@@ -82,8 +82,9 @@ export async function listAspEvents(conversationId: string, afterSequence?: numb
 }
 
 export async function ackAspEvents(conversationId: string, events: AspEvent[]): Promise<void> {
+  if (events.length === 0) return;
   const creds = await getOperator();
-  if (!creds || events.length === 0) return;
+  if (!creds) throw new Error("ASP is unavailable");
   const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/events/ack`, {
     method: "POST",
     headers: {
