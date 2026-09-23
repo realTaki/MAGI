@@ -11,7 +11,8 @@
     "build": "npm run build --prefix app && node scripts/prepare-runtime.mjs && electron-builder",
     "build:app": "npm run build --prefix app",
     "build:desktop": "node scripts/prepare-runtime.mjs && electron-builder",
-    "lint": "npm run lint --prefix app"
+    "lint": "npm run lint --prefix app",
+    "test": "npm test --prefix app"
   },
   "build": {
     "appId": "ai.magi.app",

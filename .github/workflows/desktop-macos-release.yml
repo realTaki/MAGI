@@ -54,6 +54,9 @@ jobs:
           fi
           npm version "$version" --no-git-tag-version --allow-same-version
 
+      - name: Test desktop app
+        run: npm test
+
       - name: Build desktop app
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}

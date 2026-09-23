@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
-    "lint:i18n": "node scripts/i18n-lint.cjs"
+    "lint:i18n": "node scripts/i18n-lint.cjs",
+    "test": "node --test test/"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",

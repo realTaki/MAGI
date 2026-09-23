@@ -248,6 +248,7 @@ export function createLocalApi(context) {
         return fallbackType;
       }
       const bytes = Buffer.from(await response.arrayBuffer());
+      mkdirSync(path.dirname(avatarFile()), { recursive: true });
       writeFileSync(avatarFile(), bytes);
       const type = response.headers.get("content-type") ?? "";
       return type.startsWith("image/") ? type : "image/png";
