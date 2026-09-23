@@ -1,11 +1,15 @@
 import { BaseWorker, type Bus, type LLMTool } from "../bus/index.js";
 import { Conversation } from "./conversations.js";
+import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
 export class AgentWorker extends BaseWorker {
   readonly worker_name = "agent";
   private readonly queues = new Map<number, Promise<void>>();
 
-  constructor(bus: Bus, private readonly tools: () => LLMTool[]) { super(bus); }
+  constructor(bus: Bus, private readonly tools: () => LLMTool[]) {
+    super(bus);
+    for (const [key, value] of PROMPT_DEFAULTS) bus.prompts.register(key, value);
+  }
 
   async poll(): Promise<boolean> {
     const job = this.bus.board("ChatNotify").claim(this.worker_name);

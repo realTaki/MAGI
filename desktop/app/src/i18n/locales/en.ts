@@ -33,6 +33,8 @@ export default {
   account: {
     menuAria: "Account menu",
     settings: "Settings",
+    unread: "Unread messages",
+    moreUnread: "More unread messages",
     logOut: "Log out",
   },
   github: {

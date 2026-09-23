@@ -68,12 +68,12 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ```text
 desktop/     Electron bootstrap shell and editable operator WebUI
 magi-asp/    ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
-py-magi/     One MAGI runtime per process; workspace sqlite of its own
-ts-magi/     TypeScript MAGI agent runtime, BUS, workers, and channels
+ts-magi/     Canonical Bun MAGI runtime: BUS, workers, tools, and channels
+py-magi/     Legacy Python runtime and migration source
 ```
 
-The projects are siblings. Python production code lives at the
-`py-magi/` project root (`from bus import Bus`, `from startup.cli import main`).
+The projects are siblings. The running MAGI is `ts-magi/`. `py-magi/` remains
+the Python runtime (`from bus import Bus`, `from startup.cli import main`).
 
 ## Toward governed collective intelligence
 
@@ -181,7 +181,7 @@ machine-local layer: connecting the checkout to the operator's GitHub account
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
 `eva-000` and starts that MAGI.
 
-**One MAGI:** `python -m magi <handle> <base> <token>` (or the `magi` console script). py-magi is a single MAGI process.
+**One MAGI:** `bun run start -- <handle> <base> <token>` from `ts-magi/`. ASP launches this command with MAGI's bundled Bun runtime. Set `MAGI_RUNTIME=python` only to run the legacy Python implementation.
 
 
 ## From the first MAGIS to a growing organization

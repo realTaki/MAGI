@@ -82,6 +82,8 @@ type ConversationView = ConversationSummary & {
   remoteId?: string;
   magiHandle?: string;
   savedName: string;
+  lastSequence: number;
+  unread: boolean;
 };
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
@@ -92,6 +94,25 @@ type RoutineDraft = {
   triggers: Trigger[];
   runs: RoutineRun[];
 };
+
+const READ_THROUGH_KEY = "magi.conversations.read-through.v1";
+
+function storedReadThrough(): Record<string, number> {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(READ_THROUGH_KEY) ?? "{}");
+    return value && typeof value === "object" ? value as Record<string, number> : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveReadThrough(value: Record<string, number>): void {
+  try {
+    window.localStorage.setItem(READ_THROUGH_KEY, JSON.stringify(value));
+  } catch {
+    // Unread state is an enhancement; a blocked localStorage must not break chat.
+  }
+}
 
 function makeConversation(
   kind: ConversationKind,
@@ -111,6 +132,8 @@ function makeConversation(
     kind,
     members: [],
     savedName: name,
+    lastSequence: -1,
+    unread: false,
     routines: [],
     thread: [],
   };
@@ -387,8 +410,12 @@ export function ConversationPage() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const plusWrapRef = useRef<HTMLDivElement | null>(null);
   const userWrapRef = useRef<HTMLDivElement | null>(null);
+  const botListRef = useRef<HTMLDivElement | null>(null);
+  const activeIdRef = useRef(activeId);
+  const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
   const widePanelRef = useRef(false);
+  const [nextUnreadBelowId, setNextUnreadBelowId] = useState("");
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
   const messages = useMemo(() => {
@@ -421,11 +448,6 @@ export function ConversationPage() {
         const remote = await listAspConversations();
         if (cancelled) return;
         await saveConversations(remote);
-        // Capture every conversation while an older ASP is still running;
-        // only the selected one needs to be rendered immediately.
-        for (const row of remote) {
-          void syncAspEvents(row.conversation_id).catch(() => {});
-        }
         const known = new Map(local.map((row) => [row.conversation_id, row]));
         for (const row of remote) known.set(row.conversation_id, row);
         setBots((current) => [...known.values()].map((row) => {
@@ -442,35 +464,57 @@ export function ConversationPage() {
   }, []);
 
   useEffect(() => {
-    if (!active?.remoteId) return;
-    const conversationId = active.remoteId;
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  const remoteIdsKey = useMemo(
+    () => bots.flatMap((bot) => bot.remoteId ? [bot.remoteId] : []).sort().join("\n"),
+    [bots],
+  );
+
+  useEffect(() => {
+    const conversationIds = remoteIdsKey ? remoteIdsKey.split("\n") : [];
+    if (conversationIds.length === 0) return;
     let cancelled = false;
-    function render(events: AspEvent[]) {
-      const thread: ConversationMessage[] = events.filter((event) => event.type === "session.message")
-        .map((event) => ({
-          type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
-          text: typeof event.payload.content === "string" ? event.payload.content : JSON.stringify(event.payload.content),
-        }));
-      const latest = thread.at(-1);
-      setBots((current) => current.map((bot) => bot.id === conversationId
-        ? { ...bot, thread, preview: latest && "text" in latest ? latest.text : "" }
-        : bot));
+    async function refreshConversation(conversationId: string) {
+      const local = await storedEvents(conversationId);
+      if (!cancelled) applyConversationEvents(conversationId, local);
+      const events = await syncAspEvents(conversationId);
+      if (!cancelled) applyConversationEvents(conversationId, events);
     }
-    async function refresh() {
-      try {
-        const local = await storedEvents(conversationId);
-        if (!cancelled) render(local);
-        const events = await syncAspEvents(conversationId);
-        if (cancelled) return;
-        render(events);
-      } catch (error) {
-        if (!cancelled) setLoadError(String(error));
-      }
+    async function refreshAll() {
+      const results = await Promise.allSettled(conversationIds.map(refreshConversation));
+      const failure = results.find((result) => result.status === "rejected");
+      if (!cancelled && failure?.status === "rejected") setLoadError(String(failure.reason));
     }
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 2000);
+    void refreshAll();
+    const timer = window.setInterval(() => { void refreshAll(); }, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [active?.remoteId]);
+  }, [remoteIdsKey]);
+
+  useEffect(() => {
+    if (active) markConversationRead(active.id, active.lastSequence);
+  }, [active?.id, active?.lastSequence]);
+
+  useEffect(() => {
+    const list = botListRef.current;
+    if (!list) return;
+    const botList = list;
+    function update() {
+      const bounds = botList.getBoundingClientRect();
+      const hidden = [...botList.querySelectorAll<HTMLElement>("[data-unread='true']")]
+        .find((row) => row.getBoundingClientRect().bottom > bounds.bottom + 1);
+      setNextUnreadBelowId(hidden?.dataset.botId ?? "");
+    }
+    const frame = window.requestAnimationFrame(update);
+    botList.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      botList.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [filtered]);
 
   useEffect(() => {
     setMemberPickerOpen(false);
@@ -605,6 +649,57 @@ export function ConversationPage() {
 
   function patchActive(patch: Partial<ConversationView>) {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
+  }
+
+  function markConversationRead(conversationId: string, through: number) {
+    if (through >= 0 && through > (readThroughRef.current[conversationId] ?? -1)) {
+      readThroughRef.current = { ...readThroughRef.current, [conversationId]: through };
+      saveReadThrough(readThroughRef.current);
+    }
+    setBots((current) => current.map((bot) =>
+      bot.id === conversationId && bot.unread ? { ...bot, unread: false } : bot,
+    ));
+  }
+
+  function applyConversationEvents(conversationId: string, events: AspEvent[]) {
+    const messageEvents = events.filter((event) => event.type === "session.message");
+    const thread: ConversationMessage[] = messageEvents.map((event) => ({
+      type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
+      text: typeof event.payload.content === "string"
+        ? event.payload.content
+        : JSON.stringify(event.payload.content),
+    }));
+    const latest = thread.at(-1);
+    const lastSequence = events.reduce((highest, event) => Math.max(highest, event.sequence), -1);
+    const latestAgentSequence = messageEvents.reduce(
+      (highest, event) => event.payload.sender === OPERATOR.handle
+        ? highest
+        : Math.max(highest, event.sequence),
+      -1,
+    );
+    const isActive = activeIdRef.current === conversationId;
+    const hasReadMarker = Object.prototype.hasOwnProperty.call(
+      readThroughRef.current,
+      conversationId,
+    );
+    if (!hasReadMarker && lastSequence >= 0) {
+      readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
+      saveReadThrough(readThroughRef.current);
+    }
+    if (isActive && lastSequence >= 0) {
+      readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
+      saveReadThrough(readThroughRef.current);
+    }
+    const unread = hasReadMarker && !isActive
+      && latestAgentSequence > (readThroughRef.current[conversationId] ?? -1);
+    const preview = latest && "text" in latest ? latest.text : "";
+    setBots((current) => current.map((bot) => {
+      if (bot.id !== conversationId) return bot;
+      if (bot.lastSequence === lastSequence && bot.preview === preview && bot.unread === unread) {
+        return bot;
+      }
+      return { ...bot, thread, preview, lastSequence, unread };
+    }));
   }
 
   async function saveNickname() {
@@ -803,11 +898,22 @@ export function ConversationPage() {
   }
 
   function selectBot(id: string) {
+    const selected = bots.find((bot) => bot.id === id);
+    markConversationRead(id, selected?.lastSequence ?? -1);
     setActiveId(id);
     closeMenu();
     setPanelOpen(false);
     setRoutineDraft(null);
     setPanelMode("settings");
+  }
+
+  function openNextUnreadBelow() {
+    if (!nextUnreadBelowId) return;
+    const row = botListRef.current?.querySelector<HTMLElement>(
+      `[data-bot-id="${CSS.escape(nextUnreadBelowId)}"]`,
+    );
+    row?.scrollIntoView({ behavior: "smooth", block: "center" });
+    selectBot(nextUnreadBelowId);
   }
 
   function patchTrigger(index: number, patch: Partial<Trigger>) {
@@ -963,27 +1069,44 @@ export function ConversationPage() {
               />
             </label>
           ) : null}
-          <div className="conversation-page__bot-list">
-            {filtered.map((bot) => {
+          <div className="conversation-page__bot-list-wrap">
+            <div className="conversation-page__bot-list" ref={botListRef}>
+              {filtered.map((bot) => {
               const isActive = bot.id === active.id;
               return (
                 <button
                   key={bot.id}
                   type="button"
                   className={`conversation-page__bot-row${isActive ? " is-active" : ""}`}
+                  data-bot-id={bot.id}
+                  data-unread={bot.unread ? "true" : "false"}
                   onClick={() => selectBot(bot.id)}
                 >
                   <Avatar color={bot.color} size={34} />
                   <span className="conversation-page__bot-copy">
                     <span className="conversation-page__bot-meta">
                       <span className="conversation-page__bot-name">{bot.name}</span>
-                      <span className="conversation-page__bot-time">{bot.time}</span>
+                      <span className="conversation-page__bot-trailing">
+                        {bot.unread ? <span className="conversation-page__unread-dot" aria-label={t("account.unread")} /> : null}
+                        <span className="conversation-page__bot-time">{bot.time}</span>
+                      </span>
                     </span>
                     <span className="conversation-page__bot-preview">{previewForConversation(bot, extra)}</span>
                   </span>
                 </button>
               );
-            })}
+              })}
+            </div>
+            {nextUnreadBelowId ? (
+              <button
+                type="button"
+                className="conversation-page__more-unread"
+                onClick={openNextUnreadBelow}
+              >
+                <span aria-hidden="true">↓</span>
+                {t("account.moreUnread")}
+              </button>
+            ) : null}
           </div>
           <div className="conversation-page__user" ref={userWrapRef}>
             <button
@@ -997,6 +1120,7 @@ export function ConversationPage() {
                 setUserMenuOpen((open) => !open);
               }}
               onMouseDown={(event) => event.stopPropagation()}
+              title={account.name || account.login || OPERATOR.name}
             >
               <span className="conversation-page__user-badge">
                 {account.avatar ? (
@@ -1007,13 +1131,30 @@ export function ConversationPage() {
                   OPERATOR.initials
                 )}
               </span>
-              <span>{account.name || account.login || OPERATOR.name}</span>
+            </button>
+            <button
+              type="button"
+              className="conversation-page__settings-btn"
+              onClick={openAppSettings}
+            >
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1.1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+              </svg>
+              {t("account.settings")}
             </button>
             {userMenuOpen ? (
               <div className="conversation-page__user-menu" role="menu">
-                <button type="button" role="menuitem" onClick={openAppSettings}>
-                  {t("account.settings")}
-                </button>
                 <button type="button" role="menuitem" onClick={logOut}>
                   {t("account.logOut")}
                 </button>

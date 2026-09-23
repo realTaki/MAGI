@@ -1,10 +1,35 @@
-export type AspEvent = { type?: string; session_id?: string; payload?: Record<string, unknown>; request_id?: string; nickname?: string };
+export type AspEvent = {
+  type?: string; event_id?: string; session_id?: string; payload?: Record<string, unknown>;
+  request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string;
+};
 
 export class AspClient {
   private socket: WebSocket | null = null;
+  private stopped = false;
+  private listener: Promise<void> | null = null;
   constructor(readonly handle: string, readonly base: string, private readonly token: string) {}
 
   async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>): Promise<void> {
+    if (this.listener) return;
+    this.stopped = false;
+    let markReady: (() => void) | null = null;
+    const ready = new Promise<void>((resolve) => { markReady = resolve; });
+    this.listener = this.listen(onEvent, () => markReady?.());
+    await ready;
+  }
+
+  private async listen(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void): Promise<void> {
+    while (!this.stopped) {
+      try {
+        await this.listenOnce(onEvent, ready);
+      } catch (error) {
+        if (!this.stopped) console.error("ASP connection:", error);
+      }
+      if (!this.stopped) await Bun.sleep(1_000);
+    }
+  }
+
+  private async listenOnce(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void): Promise<void> {
     const url = new URL("/connect", this.base);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const Socket = WebSocket as unknown as { new (url: string, options: Bun.WebSocketOptions): WebSocket };
@@ -18,12 +43,15 @@ export class AspClient {
       })().catch((error) => console.error("ASP event:", error));
     });
     await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("ASP connection failed")), { once: true });
+      let opened = false;
+      socket.addEventListener("open", () => { opened = true; ready(); }, { once: true });
+      socket.addEventListener("close", () => resolve(), { once: true });
+      socket.addEventListener("error", () => { if (!opened) reject(new Error("ASP connection failed")); }, { once: true });
     });
+    if (this.socket === socket) this.socket = null;
   }
 
-  close(): void { this.socket?.close(); this.socket = null; }
+  close(): void { this.stopped = true; this.socket?.close(); this.socket = null; this.listener = null; }
 
   join(sessionId: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/join`); }
   send(sessionId: string, content: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/messages`, { content }); }

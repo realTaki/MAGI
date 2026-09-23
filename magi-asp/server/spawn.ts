@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { arch } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -80,9 +81,14 @@ export class ProcessSpawner implements MagiSpawner {
     if (spawnDisabled()) {
       return { ...request, pid: null, spawned: false };
     }
+    const typescript = usesTypeScriptRuntime();
+    const command = typescript
+      ? tsMagiCli(resolveMagiBun(), request.handle, request.base, request.token)
+      : magiCli(resolveMagiPython(), request.handle, request.base, request.token);
+    const cwd = typescript ? (tsMagiDir() ?? undefined) : (pyMagiDir() ?? undefined);
     try {
-      const child = this.launch(magiCli(resolveMagiPython(), request.handle, request.base, request.token), {
-        cwd: pyMagiDir() ?? undefined,
+      const child = this.launch(command, {
+        cwd,
         env: { ...process.env, PYTHONUNBUFFERED: "1" },
       });
       this.#children.push(child);
@@ -106,6 +112,10 @@ export function magiCli(python: string, handle: string, base: string, token: str
   return [python, "-m", "magi", handle, base, token];
 }
 
+export function tsMagiCli(bun: string, handle: string, base: string, token: string): string[] {
+  return [bun, "run", "start", "--", handle, base, token];
+}
+
 export function defaultSpawner(): MagiSpawner {
   return new ProcessSpawner();
 }
@@ -117,6 +127,11 @@ export function spawnToWire(spawned: SpawnedMagi): Record<string, unknown> {
 function spawnDisabled(): boolean {
   const flag = (process.env.MAGI_SPAWN ?? "1").trim().toLowerCase();
   return flag === "0" || flag === "false" || flag === "no" || flag === "off";
+}
+
+function usesTypeScriptRuntime(): boolean {
+  const runtime = (process.env.MAGI_RUNTIME ?? "typescript").trim().toLowerCase();
+  return runtime === "typescript" || runtime === "ts" || runtime === "ts-magi";
 }
 
 function resolveMagiPython(): string {
@@ -138,8 +153,45 @@ function resolveMagiPython(): string {
   return process.platform === "win32" ? "python" : "python3";
 }
 
+function repoRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
 function pyMagiDir(): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidate = path.resolve(here, "..", "..", "py-magi");
+  const candidate = path.join(repoRoot(), "py-magi");
   return existsSync(candidate) ? candidate : null;
+}
+
+function tsMagiDir(): string | null {
+  const candidate = path.join(repoRoot(), "ts-magi");
+  return existsSync(candidate) ? candidate : null;
+}
+
+function resolveMagiBun(): string {
+  const configured = process.env.MAGI_BUN;
+  if (configured) {
+    return configured;
+  }
+  const executable = process.platform === "win32" ? "bun.exe" : "bun";
+  const candidates = [path.join(repoRoot(), "desktop", "runtime", "bin", executable)];
+  const platformName = process.platform === "win32" ? "windows" : process.platform;
+  const machine = arch() === "arm64" ? "aarch64" : arch() === "x64" ? "x64" : "";
+  if (machine !== "") {
+    candidates.push(
+      path.join(
+        repoRoot(),
+        "desktop",
+        "node_modules",
+        "@oven",
+        `bun-${platformName}-${machine}`,
+        "bin",
+        executable,
+      ),
+    );
+  }
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found === undefined) {
+    throw new Error("TypeScript MAGI selected but the MAGI-owned Bun runtime is missing");
+  }
+  return found;
 }

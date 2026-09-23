@@ -33,6 +33,8 @@ export default {
   account: {
     menuAria: "账号菜单",
     settings: "设置",
+    unread: "有未读消息",
+    moreUnread: "更多未读消息",
     logOut: "退出登录",
   },
   github: {
