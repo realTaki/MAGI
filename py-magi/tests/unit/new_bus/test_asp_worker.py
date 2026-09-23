@@ -5,7 +5,15 @@ import asyncio
 import pytest
 
 import channels.asp.worker as asp_worker
-from bus import Bus, ChatNotify, DeliveryNotify, JobStatus
+from bus import (
+    Bus,
+    ChangeProviderNotify,
+    ChangeProviderNotifyResult,
+    ChatNotify,
+    DeliveryNotify,
+    JobStatus,
+    ListSettingsJob,
+)
 from channels.asp.worker import AspWorker
 
 _ASP_SETTINGS = {"handle": "@unit.magi", "base": "http://test", "token": "token"}
@@ -110,3 +118,44 @@ async def test_asp_worker_joins_intranet_invite_and_ignores_others(
             }
         )
         assert client.joined == ["group-1"]
+
+
+@pytest.mark.asyncio
+async def test_asp_worker_applies_provider_settings(tmp_path, monkeypatch) -> None:
+    """ASP hands the provider settings down; the channel publishes the notify."""
+    client = FakeAspClient()
+    monkeypatch.setattr(asp_worker, "AspClient", lambda **_kwargs: client)
+    with Bus("@unit.magi", workspace=tmp_path / "workspace") as bus:
+        assert bus.attach(AspWorker, settings=_ASP_SETTINGS)
+        worker = bus.workers["asp"]
+
+        async def ack_like_the_provider_worker() -> None:
+            for _ in range(60):
+                job = await worker.claim(ChangeProviderNotify)
+                if job is not None:
+                    worker.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
+                    return
+                await asyncio.sleep(0.05)
+
+        ack = asyncio.create_task(ack_like_the_provider_worker())
+        reply = await worker._on_event(
+            {
+                "type": "agent.provider.update",
+                "request_id": "req-1",
+                "provider": "claude",
+                "model": "claude-opus-5",
+                "api_key": "sk-test",
+            }
+        )
+        await ack
+
+        assert reply == {
+            "type": "agent.provider.updated",
+            "request_id": "req-1",
+            "ok": True,
+        }
+        listed = await worker.ask(ListSettingsJob(publisher="test"))
+        assert listed is not None
+        assert listed.settings["provider.name"] == "claude"
+        assert listed.settings["provider.model"] == "claude-opus-5"
+        assert listed.settings["provider.api_key"] == "sk-test"

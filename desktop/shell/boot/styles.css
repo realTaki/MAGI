@@ -85,37 +85,6 @@ body::after {
   padding: 64px 30px 88px;
 }
 
-.mark {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  margin-bottom: 20px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.42);
-  box-shadow: 0 6px 18px rgba(16, 48, 79, 0.14);
-  color: #cf9522;
-}
-
-.mark svg { display: block; }
-
-h1 {
-  margin: 0 0 10px;
-  font-size: 26px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.lede {
-  margin: 0 0 26px;
-  color: var(--ink-soft);
-  font-size: 14.5px;
-  line-height: 1.55;
-}
-
-.lede.is-error { color: var(--error); }
-
 .progress {
   display: flex;
   align-items: center;

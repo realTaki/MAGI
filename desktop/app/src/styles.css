@@ -1484,6 +1484,39 @@ body {
 
 .settings-card__pill,
 .settings-card__select,
+.settings-card__input {
+  width: min(240px, 62%);
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--settings-pill-border);
+  border-radius: 10px;
+  background: var(--settings-pill-bg);
+  color: var(--settings-ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.settings-card__input:focus-visible {
+  border-color: #3ec5a8;
+}
+
+.settings-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.settings-card__status {
+  color: var(--settings-muted);
+  font-size: 13px;
+}
+
+.settings-card__status.is-error {
+  color: #d9508a;
+}
+
 .settings-card__value {
   flex: none;
 }

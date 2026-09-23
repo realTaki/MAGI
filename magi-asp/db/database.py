@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from .versions import apply_migrations
 
@@ -43,3 +45,31 @@ class LocalDatabase:
             return
         self.connection.close()
         self.connection = None
+
+    def get_setting(self, key: str) -> Any | None:
+        """Read one ASP-owned setting; ``None`` when it was never written."""
+        connection = self._connection()
+        row = connection.execute(
+            "SELECT value_json FROM asp_settings WHERE key = ?", (key,)
+        ).fetchone()
+        return None if row is None else json.loads(row["value_json"])
+
+    def set_setting(self, key: str, value: Any) -> None:
+        """Write one ASP-owned setting (JSON), replacing any previous value."""
+        connection = self._connection()
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO asp_settings (key, value_json, updated_at)
+                VALUES (?, ?, unixepoch() * 1000)
+                ON CONFLICT(key) DO UPDATE SET
+                    value_json = excluded.value_json,
+                    updated_at = excluded.updated_at
+                """,
+                (key, json.dumps(value)),
+            )
+
+    def _connection(self) -> sqlite3.Connection:
+        if self.connection is None:
+            raise RuntimeError("LocalDatabase is not open")
+        return self.connection

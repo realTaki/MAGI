@@ -18,8 +18,10 @@ from fastapi import WebSocket
 
 from .store import Event, Store
 
-
 GRACE_SECONDS = 30
+# A control message (nickname, provider settings) waits this long for the MAGI
+# to confirm it applied the change.
+CONTROL_TIMEOUT_SECONDS = 5
 
 
 class Transport:
@@ -33,6 +35,10 @@ class Transport:
         self._cursors: dict[tuple[str, str], int] = {}
         self._disconnect_timers: dict[str, asyncio.Task] = {}
         self._nickname_requests: dict[str, tuple[str, asyncio.Future[bool]]] = {}
+        self._provider_requests: dict[str, tuple[str, asyncio.Future[bool]]] = {}
+        # Where the operator's provider settings come from, so a MAGI that
+        # (re)connects receives them without waiting for the next save.
+        self._provider_source: Callable[[], dict[str, Any] | None] | None = None
         # Called when an agent's grace window expires while still offline. The
         # service layer uses this to fire session.left and update statuses.
         self._on_grace_expired = on_grace_expired
@@ -56,6 +62,9 @@ class Transport:
         was_empty = handle not in self._connections or not self._connections[handle]
         self._connections.setdefault(handle, set()).add(ws)
         await ws.send_text(json.dumps({"type": "agent.nickname.read"}))
+        config = self._provider_config()
+        if config is not None:
+            await ws.send_text(json.dumps({"type": "agent.provider.update", **config}))
 
         # Cancel any pending grace timer.
         timer = self._disconnect_timers.pop(handle, None)
@@ -92,36 +101,83 @@ class Transport:
     def is_online(self, handle: str) -> bool:
         return bool(self._connections.get(handle))
 
+    def set_provider_source(self, source: Callable[[], dict[str, Any] | None]) -> None:
+        """Register where the current provider settings live."""
+        self._provider_source = source
+
+    def _provider_config(self) -> dict[str, Any] | None:
+        if self._provider_source is None:
+            return None
+        config = self._provider_source()
+        if isinstance(config, dict) and any(config.values()):
+            return config
+        return None
+
     async def update_nickname(self, handle: str, nickname: str) -> bool:
+        return await self._control_request(
+            handle,
+            {"type": "agent.nickname.update", "nickname": nickname},
+            self._nickname_requests,
+        )
+
+    async def update_provider(
+        self,
+        handle: str,
+        *,
+        provider: str | None,
+        model: str | None,
+        api_key: str | None,
+    ) -> bool:
+        """Hand one MAGI the operator's provider settings and await its ack."""
+        return await self._control_request(
+            handle,
+            {
+                "type": "agent.provider.update",
+                "provider": provider,
+                "model": model,
+                "api_key": api_key,
+            },
+            self._provider_requests,
+        )
+
+    async def _control_request(
+        self,
+        handle: str,
+        payload: dict[str, Any],
+        pending_requests: dict[str, tuple[str, asyncio.Future[bool]]],
+    ) -> bool:
         connections = self._connections.get(handle)
         if not connections:
             raise ConnectionError("MAGI is offline")
         request_id = uuid4().hex
         response: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        self._nickname_requests[request_id] = (handle, response)
+        pending_requests[request_id] = (handle, response)
         try:
-            await next(iter(connections)).send_text(json.dumps({
-                "type": "agent.nickname.update",
-                "request_id": request_id,
-                "nickname": nickname,
-            }))
-            return await asyncio.wait_for(response, timeout=5)
+            await next(iter(connections)).send_text(
+                json.dumps({**payload, "request_id": request_id})
+            )
+            return await asyncio.wait_for(response, timeout=CONTROL_TIMEOUT_SECONDS)
         finally:
-            self._nickname_requests.pop(request_id, None)
+            pending_requests.pop(request_id, None)
 
     def receive_control(self, handle: str, message: dict[str, Any]) -> None:
-        if message.get("type") == "agent.nickname.current":
+        kind = message.get("type")
+        if kind == "agent.nickname.current":
             agent = self.store.get_agent(handle)
             nickname = message.get("nickname")
             if agent is not None and (nickname is None or isinstance(nickname, str)):
                 agent.nickname = nickname
             return
-        if message.get("type") != "agent.nickname.updated":
+        if kind == "agent.nickname.updated":
+            pending_requests = self._nickname_requests
+        elif kind == "agent.provider.updated":
+            pending_requests = self._provider_requests
+        else:
             return
         request_id = message.get("request_id")
         if not isinstance(request_id, str):
             return
-        pending = self._nickname_requests.get(request_id)
+        pending = pending_requests.get(request_id)
         if pending is not None and pending[0] == handle and not pending[1].done():
             pending[1].set_result(message.get("ok") is True)
 

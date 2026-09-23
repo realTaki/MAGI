@@ -205,3 +205,55 @@ export async function addAspConversationMember(
     return null;
   }
 }
+
+export type ProviderSettings = {
+  provider: string | null;
+  model: string | null;
+  api_key: string | null;
+};
+
+/** What the save returns: the stored settings plus which MAGI took them. */
+export type ProviderSettingsSaved = ProviderSettings & {
+  synced: string[];
+  failed: { handle: string; detail: string }[];
+};
+
+export async function getProviderSettings(): Promise<ProviderSettings | null> {
+  const creds = await getOperator();
+  if (!creds) {
+    return null;
+  }
+  try {
+    const response = await fetch(`${ASP_BASE}/settings/provider`, {
+      headers: { Authorization: `Bearer ${creds.token}` },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as ProviderSettings;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProviderSettings(
+  input: ProviderSettings,
+): Promise<ProviderSettingsSaved> {
+  const creds = await getOperator();
+  if (!creds) throw new Error("ASP is unavailable");
+  const response = await fetch(`${ASP_BASE}/settings/provider`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${creds.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    const result = (await response.json()) as { detail?: string };
+    throw new Error(result.detail || `Save failed: ${response.status}`);
+  }
+  return (await response.json()) as ProviderSettingsSaved;
+}

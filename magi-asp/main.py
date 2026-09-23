@@ -51,6 +51,7 @@ class AspServer:
         self.spawner = magi_spawner if magi_spawner is not None else default_spawner()
         self.asp = create_operator(
             asp_seed or {},
+            storage=self.database,
             spawner=self.spawner,
             base_url=asp_base or _intranet_base_url(),
         )

@@ -9,14 +9,15 @@ from contextlib import suppress
 from typing import Any
 
 from bus import (
+    MAGI_CONTACT_ID,
     BaseWorker,
     Bus,
+    ChangeProviderNotify,
     ChatNotify,
     DeliveryNotify,
     DeliveryNotifyResult,
     GetContactJob,
     JobStatus,
-    MAGI_CONTACT_ID,
     UpdateContactJob,
     go,
 )
@@ -108,6 +109,22 @@ class AspWorker(BaseWorker):
                 "request_id": event.get("request_id"),
                 "ok": updated,
             }
+        if kind == "agent.provider.update":
+            # ASP owns the operator's provider settings; publishing this notify
+            # persists them and hands the change to the provider worker.
+            changed = await self.ask(
+                ChangeProviderNotify(
+                    publisher=self.worker_name,
+                    provider=_setting_text(event.get("provider")),
+                    api_key=_setting_text(event.get("api_key")),
+                    model=_setting_text(event.get("model")),
+                )
+            ) is not None
+            return {
+                "type": "agent.provider.updated",
+                "request_id": event.get("request_id"),
+                "ok": changed,
+            }
         session_id = event.get("session_id")
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         if not isinstance(session_id, str):
@@ -172,6 +189,11 @@ class AspWorker(BaseWorker):
             return
         with suppress(Exception):
             await self._client.send(session_id, text)
+
+
+def _setting_text(value: object) -> str | None:
+    """A provider setting from ASP: text, or None to leave it unchanged."""
+    return value if isinstance(value, str) and value != "" else None
 
 
 def _content_text(content: object) -> str:
