@@ -4,6 +4,7 @@ import { AspClient, type AspEvent } from "./client.js";
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
   private readonly client: AspClient;
+  private readonly sessionKinds = new Map<string, Promise<string | null>>();
   private nickname: string | null;
 
   constructor(bus: Bus, base: string, token: string) {
@@ -58,11 +59,31 @@ export class AspWorker extends BaseWorker {
     if (event.type === "session.invited" && payload.invitee === this.bus.handle) {
       await this.client.join(id);
       const initial = payload.initial_message;
-      if (typeof initial === "object" && initial !== null) this.ingest(id, initial as Record<string, unknown>);
+      if (typeof initial === "object" && initial !== null) {
+        const message = initial as Record<string, unknown>;
+        if (await this.shouldIngest(id, message)) this.ingest(id, message);
+      }
     } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
-      this.ingest(id, payload);
+      if (await this.shouldIngest(id, payload)) this.ingest(id, payload);
     }
     if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
+  }
+
+  private async shouldIngest(sessionId: string, payload: Record<string, unknown>): Promise<boolean> {
+    if (payload.sender === this.bus.handle) return false;
+    let kind = this.sessionKinds.get(sessionId);
+    if (!kind) {
+      kind = this.client.sessionKind(sessionId);
+      this.sessionKinds.set(sessionId, kind);
+    }
+    try {
+      // A group is a human-facing conversation, not a chain of agent-to-agent prompts.
+      // Other MAGIs' replies are visible in ASP but must never start another LLM turn.
+      return (await kind) !== "group" || payload.sender === "user";
+    } catch (error) {
+      this.sessionKinds.delete(sessionId);
+      throw error;
+    }
   }
 
   private ingest(sessionId: string, payload: Record<string, unknown>): void {
