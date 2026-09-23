@@ -18,9 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from db import LocalDatabase, default_database_path
-from server.app import create_operator
+from server.app import create_asp_runtime
 from server.operator import load_or_create_operator
-from server.spawn import MagiSpawner, default_spawner
+from server.spawn import MagiSpawner
 
 
 def _intranet_base_url() -> str:
@@ -49,11 +49,10 @@ class AspServer:
         self.database = LocalDatabase(database_path or default_database_path())
         self.operator_handle = "user"
         self.operator_token = ""
-        self.spawner = magi_spawner if magi_spawner is not None else default_spawner()
-        self.asp = create_operator(
+        self.asp = create_asp_runtime(
             asp_seed or {},
             storage=self.database,
-            spawner=self.spawner,
+            spawner=magi_spawner,
             base_url=asp_base or _intranet_base_url(),
         )
         self.app = FastAPI(title="MAGI ASP", version="0.1.0", lifespan=self._lifespan)
@@ -108,7 +107,7 @@ class AspServer:
         await asyncio.sleep(5)
         for agent in self.asp.store.agents.values():
             if agent.managed and not self.asp.transport.is_online(agent.handle):
-                self.spawner.spawn(handle=agent.handle, base=self.asp.base_url, token=agent.token)
+                self.asp.spawner.spawn(handle=agent.handle, base=self.asp.base_url, token=agent.token)
 
 
 def create_app(

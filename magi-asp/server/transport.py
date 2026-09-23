@@ -49,9 +49,11 @@ class Transport:
         self,
         on_went_offline: Callable[[str], Awaitable[None]],
         on_back_online: Callable[[str], Awaitable[None]],
+        on_grace_expired: Callable[[str], Awaitable[None]],
     ) -> None:
         self._on_went_offline = on_went_offline
         self._on_back_online = on_back_online
+        self._on_grace_expired = on_grace_expired
 
     # ---- Connection lifecycle -------------------------------------------
 

@@ -3,12 +3,18 @@
 Run with `python main.py` (what the desktop app does, from this directory) or the
 `magi-asp` console script.
 
-Layout: `main.py` is the composition root and process entry (`AspServer`,
-`create_app`, `main`), `server/` holds the ASP itself — `app.py` for the HTTP/WS
-routes, `service.py`/`store.py`/`transport.py`/`spawn.py`/`operator.py` for the
-local-network layer MAGI processes join — and `db/` owns the sqlite file.
+Layout: `main.py` is the composition root and process entry. `server/app.py`
+assembles two API routers: `operator_api.py` for desktop-only conversation,
+roster and settings commands, and `session_api.py` for the shared session HTTP
+and MAGI WebSocket protocol. `operator_service.py` projects desktop views and
+starts managed MAGI; `service.py` owns session state and event delivery.
+`store.py`/`transport.py` persist relay state and manage live connections;
+`db/` owns the SQLite file.
 
-HTTP `/conversations` (operator plus-button), `/sessions` (MAGI wire), and WebSocket `/connect`. SQLite is `~/.magi/asp/asp.sqlite`. MAGI and the desktop are clients.
+Desktop-only HTTP `/conversations`, `/bots`, and `/settings/provider` require
+the operator Bearer token. Shared HTTP `/sessions` accepts participant Bearer
+tokens from desktop or MAGI; WebSocket `/connect` is MAGI's live channel.
+SQLite is `~/.magi/asp/asp.sqlite`.
 
 ASP persists sessions, participants and relay events in SQLite. Recipients
 acknowledge exact event IDs after saving them locally (`POST

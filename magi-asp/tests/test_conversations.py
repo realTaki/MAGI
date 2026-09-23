@@ -64,6 +64,24 @@ def test_new_bot_spawns_magi_and_opens_a_dm(tmp_path: Path) -> None:
         assert listed[0]["agents"] == body["agents"]
 
 
+def test_magi_credentials_cannot_use_operator_api(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        operator_token = client.get("/operator").json()["token"]
+        operator_headers = {"Authorization": f"Bearer {operator_token}"}
+        created = client.post(
+            "/conversations", json={"kind": "bot"}, headers=operator_headers
+        ).json()
+        magi_headers = {"Authorization": f"Bearer {created['magi']['token']}"}
+        assert client.get("/conversations", headers=magi_headers).status_code == 403
+        assert client.get("/bots", headers=magi_headers).status_code == 403
+        assert client.post(
+            "/conversations", json={"kind": "group"}, headers=magi_headers
+        ).status_code == 403
+        assert client.get(
+            f"/sessions/{created['conversation_id']}", headers=magi_headers
+        ).status_code == 200
+
+
 def test_new_group_opens_immediately_without_spawn(tmp_path: Path) -> None:
     spawner = RecordingSpawner()
     with _client(tmp_path, spawner) as client:
