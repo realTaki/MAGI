@@ -1,0 +1,129 @@
+name: macOS 客户端 release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: shell
+
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            shell/package-lock.json
+            app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix ../app
+
+      - name: Set version from tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag must look like v1.2.3 or v1.2.3-beta.1" >&2
+            exit 1
+          fi
+          npm version "$version" --no-git-tag-version --allow-same-version
+
+      - name: Test app
+        run: npm test --prefix ../app
+
+      - name: Build shell
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          build_args=()
+
+          # A packaged Electron app must be signed after its contents change.
+          # Without a Developer ID certificate, use an ad-hoc signature for
+          # local development builds so macOS does not see a stale signature.
+          if [[ -z "$CSC_LINK" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            build_args+=(
+              --config.mac.identity=-
+              --config.mac.hardenedRuntime=false
+            )
+          fi
+          npm run build --prefix ../app
+          node scripts/prepare-runtime.mjs
+          npx electron-builder \
+            --mac dmg \
+            --${{ matrix.arch }} \
+            --publish never \
+            --config.artifactName='${productName}-${version}-${arch}.${ext}' \
+            "${build_args[@]}"
+          app_dir="release/mac-${{ matrix.arch }}"
+          if [[ "${{ matrix.arch }}" == x64 ]]; then
+            app_dir=release/mac
+          fi
+          codesign --verify --deep --strict "$app_dir/MAGI.app"
+
+      - name: Upload packaged app
+        uses: actions/upload-artifact@v6
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            shell/release/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish macOS release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download macOS apps
+        uses: actions/download-artifact@v7
+        with:
+          pattern: macos-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "MAGI $GITHUB_REF_NAME" \
+              || true
+          fi
+          gh release upload "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false

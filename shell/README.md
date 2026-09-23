@@ -23,7 +23,7 @@ recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and conversation state in its workspace; outbound messages go
 through DeliveryNotify jobs.
 An old running ASP kept events only in memory. Before stopping it for this
-upgrade, run the bundled Node.js with `desktop/app/scripts/import-asp-history.mjs` from the MAGI
+upgrade, run the bundled Node.js with `app/scripts/import-asp-history.mjs` from the MAGI
 checkout. This copies its available conversations and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
@@ -41,7 +41,7 @@ and Bun. The backend uses them to install asp and magi dependencies,
 build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
-`~/.magi/MAGI/desktop/shell/boot/`; the packaged copy is only the first-clone
+`~/.magi/MAGI/shell/boot/`; the packaged copy is only the first-clone
 and damaged-checkout fallback. The packaged shell does not carry `app/dist` —
 the checkout builds and supplies the product interface.
 Once ASP answers, the backend makes sure the society is not empty: while no MAGI
@@ -112,13 +112,13 @@ user tokens are short-lived and installed per repository.
 | --- | --- |
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
-| `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
-| `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
-| `desktop/shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
-| `desktop/shell/*.mjs`, `desktop/shell/preload.cjs`, packaged tools and build configuration | Settings → About installs a newer GitHub Release of the shell. The checkout is left as it is. |
+| `app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
+| `app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
+| `shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
+| `shell/*.mjs`, `shell/preload.cjs`, packaged tools and build configuration | Settings → About installs a newer GitHub Release of the shell. The checkout is left as it is. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
-running, so a change under `desktop/app/main/` still waits for the next launch.
+running, so a change under `app/main/` still waits for the next launch.
 The installed shell must be updated once to remove its old file watcher; later
 interface updates use the app's commit notification without a shell release.
 

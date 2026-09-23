@@ -10,7 +10,7 @@ test("startup prefers the checkout boot page only when every asset is present", 
   const root = mkdtempSync(path.join(tmpdir(), "magi-startup-entry-"));
   const checkout = path.join(root, "checkout");
   const fallback = path.join(root, "fallback", "index.html");
-  const boot = path.join(checkout, "desktop", "shell", "boot");
+  const boot = path.join(checkout, "shell", "boot");
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
   mkdirSync(path.join(checkout, ".git"), { recursive: true });
@@ -28,7 +28,7 @@ test("startup falls back when the project directory is not a Git checkout", (t) 
   const root = mkdtempSync(path.join(tmpdir(), "magi-startup-fallback-"));
   const checkout = path.join(root, "checkout");
   const fallback = path.join(root, "fallback", "index.html");
-  const boot = path.join(checkout, "desktop", "shell", "boot");
+  const boot = path.join(checkout, "shell", "boot");
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
   mkdirSync(boot, { recursive: true });

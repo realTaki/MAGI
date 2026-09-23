@@ -1,0 +1,116 @@
+name: Windows 客户端 release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: shell
+        # The version check below is bash. windows-latest defaults to PowerShell.
+        shell: bash
+
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            shell/package-lock.json
+            app/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix ../app
+
+      - name: Set version from tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag must look like v1.2.3 or v1.2.3-beta.1" >&2
+            exit 1
+          fi
+          npm version "$version" --no-git-tag-version --allow-same-version
+
+      - name: Test app
+        run: npm test --prefix ../app
+
+      - name: Build shell
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          # WIN_CSC_LINK is a base64 .pfx, separate from the Apple CSC_LINK secret.
+          # With neither set, electron-builder still produces an unsigned installer.
+          if [[ -z "${WIN_CSC_LINK:-}" ]]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
+          fi
+          npm run build --prefix ../app
+          node scripts/prepare-runtime.mjs
+          for required in \
+            runtime/bin/node.exe \
+            runtime/bin/bun.exe \
+            runtime/npm/node_modules/npm/bin/npm-cli.js
+          do
+            if [[ ! -f "$required" ]]; then
+              echo "Bundled runtime is missing $required" >&2
+              exit 1
+            fi
+          done
+          npx electron-builder \
+            --win nsis \
+            --x64 \
+            --publish never \
+            --config.artifactName='${productName}-${version}-${arch}.${ext}'
+
+      - name: Upload packaged app
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: shell/release/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish Windows release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows apps
+        uses: actions/download-artifact@v7
+        with:
+          pattern: windows-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "MAGI $GITHUB_REF_NAME" \
+              || true
+          fi
+          gh release upload "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false

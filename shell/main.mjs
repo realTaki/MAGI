@@ -1,6 +1,6 @@
 /**
  * Electron shell. It prepares the environment — bundled tools, the checkout,
- * ASP — and opens a window. The app in desktop/app is the interface and the
+ * ASP — and opens a window. The app in app/ is the interface and the
  * local backend; add a capability there, not in this file.
  */
 import { spawn } from "node:child_process";
@@ -37,7 +37,7 @@ import { resolveStartupEntry } from "./startup-entry.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
+const REPO_ROOT = path.resolve(SHELL_DIR, "..");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
 
@@ -215,12 +215,12 @@ let localCheckoutManaged = false;
 
 // Unpackaged runs use the source build's MAGI-owned runtime.
 function devTools() {
-  return toolsForRuntime(path.join(SHELL_DIR, "..", "runtime"));
+  return toolsForRuntime(path.join(SHELL_DIR, "runtime"));
 }
 
 function appBackendEntry(runtimeRoot) {
   if (app.isPackaged) {
-    return path.join(runtimeRoot, "desktop", "app", "main", "index.mjs");
+    return path.join(runtimeRoot, "app", "main", "index.mjs");
   }
   return path.join(SHELL_DIR, "..", "app", "main", "index.mjs");
 }

@@ -11,10 +11,10 @@ to a system-installed Node.js or Bun.
 Preferred runtime order:
 
 1. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
-   source build this is `desktop/runtime/bin/node`; in the installed macOS app
+   source build this is `shell/runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
 2. For `magi`, use the project-designated or packaged Bun binary. In a
-   prepared source build this is `desktop/runtime/bin/bun`; in the installed
+   prepared source build this is `shell/runtime/bin/bun`; in the installed
    macOS app it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/bun`.
 3. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
    runtime. Do not replace them with globally installed tools merely because
@@ -27,10 +27,10 @@ paths needed for that command and must not be persisted.
 Examples:
 
 ```bash
-desktop/runtime/bin/node --test asp/test/*.test.ts
-/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test desktop/app/test/*.test.mjs
+shell/runtime/bin/node --test asp/test/*.test.ts
+/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test app/test/*.test.mjs
 cd magi
-../desktop/runtime/bin/bun run test
+../shell/runtime/bin/bun run test
 ```
 
 Do not install Bun globally or substitute Node.js for Bun-only APIs such as

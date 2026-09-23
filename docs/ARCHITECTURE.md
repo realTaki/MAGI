@@ -11,8 +11,8 @@ ASP relays sessions and starts MAGI. Each MAGI is its own Bun process with its
 own BUS.
 
 ```text
-desktop/shell          Electron. Clones the repo, opens the window.
-desktop/app            Operator UI and the local backend that starts ASP.
+shell/                 Electron. Clones the repo, opens the window.
+app/                   Operator UI and the local backend that starts ASP.
 asp/                   Node 24. HTTP and WebSocket on 127.0.0.1:42069.
 magi/                  Bun. One process per MAGI. BUS, workers, tools.
 ```

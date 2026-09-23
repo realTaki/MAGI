@@ -675,7 +675,7 @@ export function createLocalApi(context) {
     }
     const bundled = path.join(
       paths.checkout,
-      "desktop",
+      "shell",
       "runtime",
       "bin",
       process.platform === "win32" ? "node.exe" : "node",
@@ -711,7 +711,7 @@ export function createLocalApi(context) {
     if (devUrl !== "") {
       return devUrl;
     }
-    const built = path.join(paths.checkout, "desktop", "app", "dist", "index.html");
+    const built = path.join(paths.checkout, "app", "dist", "index.html");
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
@@ -731,7 +731,7 @@ export function createLocalApi(context) {
 
   /** Rebuild the interface from the checkout — what a new commit makes visible. */
   async function rebuildInterface() {
-    const appDir = path.join(paths.checkout, "desktop", "app");
+    const appDir = path.join(paths.checkout, "app");
     const build = (description) =>
       command(tools.node, [tools.npm, "run", "build"], {
         cwd: appDir,
@@ -811,7 +811,7 @@ export function createLocalApi(context) {
    */
   async function prepare(progress) {
     const aspDir = path.join(paths.checkout, "asp");
-    const appDir = path.join(paths.checkout, "desktop", "app");
+    const appDir = path.join(paths.checkout, "app");
     const magiDir = path.join(paths.checkout, "magi");
     const required = [
       path.join(aspDir, "package-lock.json"),

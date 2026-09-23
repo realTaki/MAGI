@@ -139,8 +139,8 @@ function resolveMagiBun(): string {
   }
   const executable = process.platform === "win32" ? "bun.exe" : "bun";
   const candidates = [
-    path.join(repoRoot(), "desktop", "runtime", "bin", executable),
-    path.join(repoRoot(), "desktop", "node_modules", "bun", "bin", "bun.exe"),
+    path.join(repoRoot(), "shell", "runtime", "bin", executable),
+    path.join(repoRoot(), "shell", "node_modules", "bun", "bin", "bun.exe"),
   ];
   const platformName = process.platform === "win32" ? "windows" : process.platform;
   const machine = arch() === "arm64" ? "aarch64" : arch() === "x64" ? "x64" : "";
@@ -148,7 +148,7 @@ function resolveMagiBun(): string {
     candidates.push(
       path.join(
         repoRoot(),
-        "desktop",
+        "shell",
         "node_modules",
         "@oven",
         `bun-${platformName}-${machine}`,

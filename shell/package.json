@@ -1,10 +1,10 @@
 {
-  "name": "@magi/desktop",
+  "name": "@magi/shell",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "shell/main.mjs",
-  "description": "MAGI Electron shell. It prepares the environment and loads the desktop app.",
+  "main": "main.mjs",
+  "description": "MAGI Electron shell. It prepares the environment and loads the app.",
   "allowScripts": {
     "bun": true,
     "dugite": true,
@@ -13,19 +13,18 @@
   },
   "scripts": {
     "dev": "electron .",
-    "dev:app": "npm run dev --prefix app",
-    "build": "node scripts/prepare-runtime.mjs && electron-builder",
-    "build:app": "npm run build --prefix app",
-    "build:desktop": "node scripts/prepare-runtime.mjs && electron-builder",
-    "lint": "npm run lint --prefix app",
-    "test": "npm test --prefix app"
+    "build": "node scripts/prepare-runtime.mjs && electron-builder"
   },
   "build": {
     "appId": "ai.magi.app",
     "productName": "MAGI",
     "executableName": "MAGI",
     "files": [
-      "shell/**",
+      "main.mjs",
+      "preload.cjs",
+      "startup-entry.mjs",
+      "release.mjs",
+      "boot/**",
       "package.json"
     ],
     "asarUnpack": [
