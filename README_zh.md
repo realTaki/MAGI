@@ -129,8 +129,10 @@ ADAM 是协调者，而不是不受限制的宿主机管理员。ASP 服务拥�
 | 桌面客户端 | [`desktop/`](desktop/) | 打开 Electron App；它启动本地 ASP，由 ASP 启动 MAGI。 |
 
 **桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/MAGI`，准备本地依赖并构建
-WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。以后启动会保留这份
-Git 工作树，不自动覆盖本地修改或拉取远端更新。
+WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。如果社会里一个 MAGI
+都还没有，本地后端会先把前三个建出来——**MELCHIOR**、**BALTHASAR**、**CASPER**
+（ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
+或拉取远端更新。
 
 **一个 MAGI：** `python -m magi <handle> <base> <token>`。
 

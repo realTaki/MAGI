@@ -27,6 +27,10 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import path from "node:path";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
+// A brand-new society should not be an empty room. ASP names MAGI eva-000,
+// eva-001, … as they are created; these are the nicknames of the first three.
+const DEFAULT_MAGIS = ["MELCHIOR", "BALTHASAR", "CASPER"];
+const MAGI_ONLINE_TIMEOUT_MS = 30_000;
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const GITHUB_DEVICE_URL = `${GITHUB_WEB}/login/device`;
@@ -571,10 +575,99 @@ export function createLocalApi(context) {
     return { ui: uiEntry() };
   }
 
+  async function aspJson(endpoint, { token, method = "GET", body, timeoutMs = 20_000 } = {}) {
+    const response = await fetch(new URL(endpoint, ASP_ORIGIN), {
+      method,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await response.text();
+    let data = null;
+    if (text !== "") {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { detail: text.slice(0, 300) };
+      }
+    }
+    if (!response.ok) {
+      const error = new Error(
+        `ASP ${method} ${endpoint} failed (${response.status}): ${data?.detail ?? response.statusText}`,
+      );
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
+  /** A freshly spawned MAGI answers on its socket only after it has booted. */
+  async function nameWhenOnline(handle, nickname, token) {
+    const deadline = Date.now() + MAGI_ONLINE_TIMEOUT_MS;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      try {
+        await aspJson(`/bots/${encodeURIComponent(handle)}/nickname`, {
+          token,
+          method: "PATCH",
+          body: { nickname },
+        });
+        return true;
+      } catch (error) {
+        // 503/504 mean "not connected yet"; anything else is a real answer.
+        if (error?.status !== 503 && error?.status !== 504) {
+          throw error;
+        }
+        lastError = error;
+        await delay(1_000);
+      }
+    }
+    throw new Error(`Could not name ${handle} ${nickname}: ${lastError?.message ?? "timed out"}`);
+  }
+
+  /**
+   * Seeds the three MAGI the operator meets first, but only while the society is
+   * still empty. Best effort on purpose: an unnamed MAGI is a cosmetic problem,
+   * failing startup over it would not be.
+   */
+  async function ensureDefaultMagis(progress) {
+    const { token } = await aspJson("/operator");
+    const listed = (await aspJson("/bots", { token }))?.bots ?? [];
+    if (listed.length > 0) {
+      return;
+    }
+    progress?.("Creating default MAGIs…", 0.98);
+    const created = [];
+    for (const nickname of DEFAULT_MAGIS) {
+      const conversation = await aspJson("/conversations", {
+        token,
+        method: "POST",
+        body: { kind: "bot" },
+      });
+      const handle = conversation?.agents?.[0];
+      if (typeof handle === "string" && handle !== "") {
+        created.push({ handle, nickname });
+      }
+    }
+    await Promise.all(
+      created.map(({ handle, nickname }) =>
+        nameWhenOnline(handle, nickname, token).catch((error) => {
+          console.error(
+            `[magi-asp] ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }),
+      ),
+    );
+  }
+
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
     progress?.("Checking local magi-asp…", 0.9);
     if (await isAspHealthy()) {
+      await ensureDefaultMagis(progress);
       return { origin: ASP_ORIGIN.href };
     }
     const aspDir = path.join(paths.checkout, "magi-asp");
@@ -601,6 +694,7 @@ export function createLocalApi(context) {
       dispose();
       throw error;
     }
+    await ensureDefaultMagis(progress);
     return { origin: ASP_ORIGIN.href };
   }
 

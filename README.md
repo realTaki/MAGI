@@ -173,7 +173,9 @@ no root `deploy/` tree.
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
-the preparation stages before opening the WebUI. The app is also the
+the preparation stages before opening the WebUI, and while the society is still
+empty the backend seeds the first three MAGIs — **MELCHIOR**, **BALTHASAR**,
+**CASPER**. The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns

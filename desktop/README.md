@@ -17,6 +17,10 @@ On first launch the packaged shell clones the complete repository into
 Node.js, npm and uv. The backend uses them to prepare the ignored Python
 environments and the app dependencies, build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
+Once ASP answers, the backend makes sure the society is not empty: while no MAGI
+exists it creates the first three (ASP names them `eva-000`, `eva-001`, …) and
+nicknames them **MELCHIOR**, **BALTHASAR** and **CASPER**. Naming is best effort
+— a MAGI that never comes online stays unnamed rather than failing startup.
 Later launches reuse the same Git working tree; they do not overwrite local
 changes or automatically pull upstream. Preparation currently runs again on each
 packaged launch.
