@@ -10,7 +10,7 @@ import {
 } from "./demo";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
-import { localGitHubAvailable, openGitHubConnect } from "./github-connect";
+import { localAppAvailable, openGitHubConnect } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -1045,7 +1045,7 @@ export function ProductDemo() {
             </button>
             {userMenuOpen ? (
               <div className="product-demo__user-menu" role="menu">
-                {localGitHubAvailable() ? (
+                {localAppAvailable() ? (
                   <button
                     type="button"
                     role="menuitem"

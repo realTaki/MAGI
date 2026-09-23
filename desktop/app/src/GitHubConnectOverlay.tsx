@@ -2,18 +2,24 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   closeGitHubConnect,
-  getGitHubBridge,
+  connectGitHub,
+  githubState,
   isGitHubConnectOpen,
-  localGitHubAvailable,
+  localAppAvailable,
+  onGitHubEvent,
   openGitHubConnect,
+  signInWithGitHub,
   subscribeGitHubConnect,
-  type GitHubEvent,
   type GitHubState,
 } from "./github-connect";
 import { useT } from "./i18n";
 import { useTheme } from "./theme";
 
 const DEVICE_URL = "https://github.com/login/device";
+
+function describe(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 /**
  * Connect the local checkout to the operator's GitHub account: sign in with the
@@ -26,18 +32,17 @@ export function GitHubConnectOverlay() {
   const { resolved } = useTheme();
   const open = useSyncExternalStore(subscribeGitHubConnect, isGitHubConnectOpen);
   const [state, setState] = useState<GitHubState | null>(null);
-  const [step, setStep] = useState<GitHubEvent["step"] | null>(null);
+  const [step, setStep] = useState<string | null>(null);
   const [userCode, setUserCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!localGitHubAvailable()) {
+    if (!localAppAvailable()) {
       return;
     }
     let cancelled = false;
-    void getGitHubBridge()
-      .githubState()
+    void githubState()
       .then((next) => {
         if (!cancelled) {
           setState(next);
@@ -45,7 +50,7 @@ export function GitHubConnectOverlay() {
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(describe(cause));
         }
       });
     return () => {
@@ -61,42 +66,41 @@ export function GitHubConnectOverlay() {
   }, [state]);
 
   useEffect(() => {
-    if (!localGitHubAvailable()) {
+    if (!localAppAvailable()) {
       return;
     }
-    getGitHubBridge().onGitHubEvent((event) => {
+    onGitHubEvent((message) => {
       setError("");
-      setStep(event.step);
-      if (event.step === "waiting") {
-        setUserCode(event.userCode ?? "");
+      setStep(message.event);
+      if (message.event === "github.waiting") {
+        setUserCode(String(message.payload.userCode ?? ""));
       }
-      if (event.step === "connected") {
+      if (message.event === "github.connected") {
         setUserCode("");
       }
     });
   }, []);
 
   const run = useCallback(async () => {
-    const api = getGitHubBridge();
     setBusy(true);
     setError("");
     try {
       if (!state?.signedIn) {
         setStep(null);
-        await api.startGitHubSignIn();
-        setState(await api.githubState());
+        await signInWithGitHub();
+        setState(await githubState());
       }
       setStep(null);
-      setState(await api.connectGitHub());
+      setState(await connectGitHub());
     } catch (cause) {
       setStep(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(describe(cause));
     } finally {
       setBusy(false);
     }
   }, [state?.signedIn]);
 
-  if (!open || !localGitHubAvailable()) {
+  if (!open || !localAppAvailable()) {
     return null;
   }
 
@@ -104,15 +108,15 @@ export function GitHubConnectOverlay() {
   const signedIn = state?.signedIn ?? false;
   const connected = state?.connected ?? false;
   const progress =
-    step === "waiting"
+    step === "github.waiting"
       ? t("github.waiting")
-      : step === "signed-in"
+      : step === "github.signed-in"
         ? t("github.signedIn")
-        : step === "forking"
+        : step === "github.forking"
           ? t("github.forking")
-          : step === "forked"
+          : step === "github.forked"
             ? t("github.forked")
-            : step === "remote"
+            : step === "github.remote"
               ? t("github.connecting")
               : "";
 

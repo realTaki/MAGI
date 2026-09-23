@@ -1,9 +1,10 @@
 # Desktop app
 
 The Electron app is a bootstrap shell for a local MAGI installation. It starts
-ASP on `127.0.0.1:42069`; ASP starts MAGI processes. The operator WebUI lives
-in `ui/` and is loaded from the local source checkout. Electron user data is
-separate from MAGI and ASP state.
+ASP on `127.0.0.1:42069`; ASP starts MAGI processes. The app itself lives in
+`app/` — operator interface (`app/src/`) plus local backend (`app/main/`) — and
+the shell loads both from the source checkout. Electron user data is separate
+from MAGI and ASP state.
 
 The app is also the machine-local layer of the system: it owns the checkout and
 the operator's GitHub credentials, and it keeps local state in Electron user
@@ -22,9 +23,10 @@ on each packaged launch.
 
 Connecting the checkout to the operator's GitHub account is a capability of this
 machine, not part of the startup sequence and not an ASP concern. The app starts
-without it; the operator triggers it from the WebUI — **Connect GitHub** in the
-account menu, offered once on first run — and the WebUI drives it through the
-preload bridge (`github:state`, `github:sign-in`, `github:connect`).
+without it; the operator triggers it from the interface — **Connect GitHub** in
+the account menu, offered once on first run — and it calls `github.state`,
+`github.signIn` and `github.connect` on the app backend
+(`app/main/index.mjs`), which the shell reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
@@ -39,9 +41,9 @@ preload bridge (`github:state`, `github:sign-in`, `github:connect`).
   the clone source. A repository-local `credential.helper` reads the token file,
   so the token never lands in `.git/config`; `user.name` and `user.email` are
   filled from the GitHub profile when the checkout has no identity yet.
-- The WebUI feature-detects the bridge, so the same UI opened in a browser —
-  or against a remote ASP — simply hides the step. `MAGI_DEV_CHECKOUT` exposes
-  the capability against a scratch checkout in an unpackaged shell, so
+- The interface feature-detects the bridge, so the same app opened in a
+  browser — or against a remote ASP — simply hides the step.
+  `MAGI_DEV_CHECKOUT` points an unpackaged shell at a scratch checkout, so
   `npm run dev` never rewrites the developer's own remotes.
 
 Registering a replacement app is a one-time step for whoever ships the build —
@@ -57,7 +59,8 @@ user tokens are short-lived and installed per repository.
 | --- | --- |
 | `py-magi/` | Restart the affected MAGI process. |
 | `magi-asp/` | Restart local ASP. |
-| `desktop/ui/` | Rebuild the UI. The shell notices a change to `dist/index.html` and asks whether to reload. |
+| `desktop/app/src/` | Rebuild the interface. The shell notices a change to `dist/index.html` and asks whether to reload. |
+| `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `desktop/shell/`, packaged tools and build configuration | Rebuild and reinstall the Electron app. The running shell is loaded from the installed app, not the checkout. |
 
 This gives each user an editable Git working tree for the running MAGI system.

@@ -182,9 +182,14 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Python、Node.js 工具。首次启动
 会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `py-magi/`、`magi-asp/`、
-`desktop/ui/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建 WebUI，并用 Git 合并上游更新。`desktop/ui/dist/index.html` 变化后，
+`desktop/app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
+重新构建界面，并用 Git 合并上游更新。`desktop/app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
+
+真正留在安装包里的只有启动壳：`desktop/shell/` 负责克隆、准备、启动 ASP，然后
+从这份仓库加载整个应用——界面（`desktop/app/src/`）与它的本地后端
+（`desktop/app/main/`），壳只提供一个通用桥把调用转过去。改这两处都**不需要
+重新打包**；改 `desktop/shell/` 才需要。
 
 当前安装包中的 Electron 壳（`desktop/shell/`）和内置工具版本仍是固定的：虽然本地
 仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启

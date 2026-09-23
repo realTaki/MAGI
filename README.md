@@ -240,17 +240,20 @@ directly. The WebUI is built and loaded from the local checkout.
 The packaged app supplies an Electron bootstrap shell and private Git,
 Python, and Node.js tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
-`py-magi/`, `magi-asp/`, and `desktop/ui/` sources. Local changes are not
+`py-magi/`, `magi-asp/`, and `desktop/app/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
-checkout, rebuild the WebUI, and merge future upstream changes using Git.
-Once the operator connects GitHub from the WebUI, `origin` is their fork and
+checkout, rebuild the interface, and merge future upstream changes using Git.
+Once the operator connects GitHub from the interface, `origin` is their fork and
 `upstream` stays the repository the app cloned, so pushes land in their own
 account.
-When `desktop/ui/dist/index.html` changes, the app asks before reloading.
+When `desktop/app/dist/index.html` changes, the app asks before reloading.
 
-The running Electron shell (`desktop/shell/`) and bundled tool versions remain
-part of the installed app; editing their copies in the checkout does not change
-the running shell. Code changes in MAGI or ASP also need the affected process
+Only the bootstrap stays in the installed package: `desktop/shell/` clones,
+prepares, starts ASP and then loads the app from the checkout — both its
+interface (`desktop/app/src/`) and its local backend (`desktop/app/main/`),
+which the shell reaches through one generic bridge. Editing either one takes
+effect without a new package; editing `desktop/shell/` still does not change the
+running shell. Code changes in MAGI or ASP also need the affected process
 to restart. The editable checkout is the foundation for RSI, **not** an
 autonomous self-update system yet: MAGI does not currently validate, activate,
 restart, or roll back its own code revisions as one managed operation.
