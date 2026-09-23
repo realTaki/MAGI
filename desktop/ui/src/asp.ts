@@ -1,6 +1,6 @@
 /** Operator client for magi-asp. The UI only requests; ASP spawns MAGI. */
 
-const ASP_BASE = import.meta.env.VITE_MAGI_ASP_URL ?? "http://127.0.0.1:42069";
+const ASP_BASE = "http://127.0.0.1:42069";
 
 export type Operator = {
   handle: string;
