@@ -88,6 +88,13 @@ export default {
     usageHint: "MAGI 在你的电脑上运行。没有云端账单。",
     aboutSummary: "本机操作端。Bot 和群的名称、简介在各自会话里改。",
     aboutVersion: "版本",
+    aboutBranch: "分支",
+    aboutCommit: "提交",
+    aboutForkPoint: "与 AgenticSociety 的分叉",
+    aboutDetached: "分离头指针",
+    aboutNoCheckout: "没有本地仓库",
+    aboutRemoteAhead: "AgenticSociety 远程有新的提交。",
+    aboutRemoteUnchecked: "暂时无法检查 AgenticSociety 的更新。",
   },
   conversationSettings: {
     title: "资料",

@@ -19,6 +19,8 @@
  *   github.connect           — fork when the account has none, then point the
  *                              checkout at it.
  *   provider.settings/save   — keep the key in app data and sync through ASP.
+ *   source.status            — branch, commit, and how this checkout sits
+ *                              against the AgenticSociety remote.
  *
  * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
@@ -1017,6 +1019,103 @@ export function createLocalApi(context) {
     asp = null;
   }
 
+  function isAgentic(url) {
+    try {
+      return /agenticsociety/i.test(parseGitHubSlug(url).owner);
+    } catch {
+      return false;
+    }
+  }
+
+  async function listedRemotes() {
+    try {
+      const text = await command(git.binary, ["remote", "-v"], {
+        ...options,
+        description: "Could not list Git remotes",
+      });
+      const found = new Map();
+      for (const line of text.split("\n")) {
+        const match = /^(\S+)\s+(\S+)\s+\(fetch\)$/.exec(line.trim());
+        if (match) found.set(match[1], match[2]);
+      }
+      return [...found.entries()].map(([name, url]) => ({ name, url }));
+    } catch {
+      return [];
+    }
+  }
+
+  // The checkout's origin may be the operator's fork. The comparison the About
+  // page shows is against AgenticSociety, preferring a remote that already
+  // points there and otherwise the repository this build was given.
+  async function agenticUrl() {
+    const remotes = await listedRemotes();
+    const matched = remotes.find((remote) => isAgentic(remote.url));
+    if (matched) return matched.url;
+    return isAgentic(repository) ? repository : "";
+  }
+
+  async function gitText(args, description, env = tools.env) {
+    return (
+      await command(git.binary, args, {
+        cwd: paths.checkout,
+        env,
+        description,
+      })
+    ).trim();
+  }
+
+  async function sourceStatus() {
+    const checkout = paths.checkout;
+    const blank = {
+      available: false,
+      branch: "",
+      commit: "",
+      forkPoint: "",
+      remote: "",
+      remoteAhead: false,
+      remoteChecked: false,
+    };
+    if (typeof checkout !== "string" || checkout === "" || !existsSync(path.join(checkout, ".git"))) {
+      return blank;
+    }
+    let branch = "";
+    let commit = "";
+    try {
+      branch = await gitText(["rev-parse", "--abbrev-ref", "HEAD"], "Could not read the current branch");
+      commit = await gitText(["rev-parse", "HEAD"], "Could not read the current commit");
+    } catch {
+      return blank;
+    }
+    const remote = await agenticUrl();
+    const local = { ...blank, available: true, branch, commit, remote };
+    if (remote === "") return local;
+    const probeEnv = { ...tools.env, GIT_TERMINAL_PROMPT: "0" };
+    try {
+      const head = await gitText(
+        ["-c", "protocol.file.allow=always", "ls-remote", "--symref", remote, "HEAD"],
+        "Could not read the AgenticSociety default branch",
+        probeEnv,
+      );
+      const branchName = /^ref:\s+refs\/heads\/(\S+)\s+HEAD$/m.exec(head)?.[1] ?? "main";
+      await command(
+        git.binary,
+        ["-c", "protocol.file.allow=always", "fetch", "--quiet", remote, `refs/heads/${branchName}`],
+        { cwd: checkout, env: probeEnv, description: "Could not fetch AgenticSociety" },
+      );
+      const forkPoint = await gitText(
+        ["merge-base", "HEAD", "FETCH_HEAD"],
+        "Could not find where this checkout diverged from AgenticSociety",
+      );
+      const ahead = await gitText(
+        ["rev-list", "--count", "HEAD..FETCH_HEAD"],
+        "Could not compare this checkout with AgenticSociety",
+      );
+      return { ...local, forkPoint, remoteAhead: ahead !== "0", remoteChecked: true };
+    } catch {
+      return local;
+    }
+  }
+
   return {
     prepare,
     start,
@@ -1026,6 +1125,7 @@ export function createLocalApi(context) {
     "github.connect": connect,
     "provider.settings": () => readProvider() ?? normalizeProvider(null),
     "provider.save": saveProvider,
+    "source.status": sourceStatus,
     "chat.listConversations": async () => (await chatStore()).listConversations(),
     "chat.saveConversations": async (rows) => (await chatStore()).saveConversations(rows),
     "chat.listEvents": async (id) => (await chatStore()).listEvents(id),

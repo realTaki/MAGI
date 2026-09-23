@@ -88,6 +88,13 @@ export default {
     usageHint: "MAGI runs on this computer. There is no cloud billing.",
     aboutSummary: "Local operator app. Edit a bot or group’s name and description in its conversation.",
     aboutVersion: "Version",
+    aboutBranch: "Branch",
+    aboutCommit: "Commit",
+    aboutForkPoint: "Fork from AgenticSociety",
+    aboutDetached: "Detached",
+    aboutNoCheckout: "No local checkout",
+    aboutRemoteAhead: "AgenticSociety has new commits.",
+    aboutRemoteUnchecked: "Could not check AgenticSociety for updates.",
   },
   conversationSettings: {
     title: "Profile",

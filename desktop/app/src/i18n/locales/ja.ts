@@ -88,6 +88,13 @@ export default {
     usageHint: "MAGI はこのコンピューター上で動きます。クラウド課金はありません。",
     aboutSummary: "ローカル操作アプリ。bot やグループの名前・説明はその会話の中で編集します。",
     aboutVersion: "バージョン",
+    aboutBranch: "ブランチ",
+    aboutCommit: "コミット",
+    aboutForkPoint: "AgenticSociety との分岐",
+    aboutDetached: "切り離し",
+    aboutNoCheckout: "ローカルのチェックアウトなし",
+    aboutRemoteAhead: "AgenticSociety に新しいコミットがあります。",
+    aboutRemoteUnchecked: "AgenticSociety の更新を確認できませんでした。",
   },
   conversationSettings: {
     title: "プロフィール",

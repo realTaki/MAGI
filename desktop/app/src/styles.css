@@ -1629,6 +1629,22 @@ body {
   font-size: 13px;
 }
 
+.settings-card__code {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--settings-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.settings-card__notice {
+  margin: 0 0 14px;
+  color: #1a9b82;
+  font-size: 13px;
+}
+
 .github-connect__window {
   grid-template-columns: minmax(0, 1fr);
   width: min(520px, calc(100vw - 40px));

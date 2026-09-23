@@ -291,6 +291,24 @@ export type ProviderSettingsSaved = ProviderSettings & {
   failed: { handle: string; detail: string }[];
 };
 
+export type SourceStatus = {
+  available: boolean;
+  branch: string;
+  commit: string;
+  /** Commit where this checkout diverged from AgenticSociety. Empty when unknown. */
+  forkPoint: string;
+  remote: string;
+  /** AgenticSociety has commits that are not in this checkout. */
+  remoteAhead: boolean;
+  /** False when the remote could not be read; local fields may still be set. */
+  remoteChecked: boolean;
+};
+
+export async function getSourceStatus(): Promise<SourceStatus | null> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  return invoke ? ((await invoke("source.status")) as SourceStatus) : null;
+}
+
 export async function getProviderSettings(): Promise<ProviderSettings | null> {
   const invoke = window.magiDesktop?.invokeLocal;
   return invoke ? (await invoke("provider.settings")) as ProviderSettings : null;

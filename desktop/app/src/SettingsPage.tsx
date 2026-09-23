@@ -6,7 +6,8 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
-import { clearOperator, getProviderSettings, saveProviderSettings } from "./asp";
+import { clearOperator, getProviderSettings, getSourceStatus, saveProviderSettings } from "./asp";
+import type { SourceStatus } from "./asp";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
@@ -77,6 +78,8 @@ export function SettingsPage() {
   const [savingProvider, setSavingProvider] = useState(false);
   const [providerStatus, setProviderStatus] = useState("");
   const [providerStatusIsError, setProviderStatusIsError] = useState(false);
+  const [source, setSource] = useState<SourceStatus | null>(null);
+  const [sourceLoaded, setSourceLoaded] = useState(false);
 
   useEffect(() => {
     if (section !== "provider") {
@@ -90,6 +93,24 @@ export function SettingsPage() {
       setProvider(settings.provider ?? "");
       setModel(settings.model ?? "");
       setApiKey(settings.api_key ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== "about") {
+      return;
+    }
+    let cancelled = false;
+    setSourceLoaded(false);
+    void getSourceStatus().then((status) => {
+      if (cancelled) {
+        return;
+      }
+      setSource(status);
+      setSourceLoaded(true);
     });
     return () => {
       cancelled = true;
@@ -386,6 +407,9 @@ export function SettingsPage() {
             {section === "about" ? (
               <>
                 <p className="settings-overlay__lede">{t("appSettings.aboutSummary")}</p>
+                {source?.remoteAhead ? (
+                  <p className="settings-card__notice">{t("appSettings.aboutRemoteAhead")}</p>
+                ) : null}
                 <div className="settings-card">
                   <label className="settings-card__row">
                     <span>{t("common.appName")}</span>
@@ -393,7 +417,42 @@ export function SettingsPage() {
                       {t("appSettings.aboutVersion")} {APP_VERSION}
                     </span>
                   </label>
+                  {source === null && sourceLoaded ? null : (
+                    <>
+                      <label className="settings-card__row">
+                        <span>{t("appSettings.aboutBranch")}</span>
+                        <span className="settings-card__value">
+                          {source?.available
+                            ? source.branch === "HEAD"
+                              ? t("appSettings.aboutDetached")
+                              : source.branch
+                            : sourceLoaded
+                              ? t("appSettings.aboutNoCheckout")
+                              : "…"}
+                        </span>
+                      </label>
+                      <label className="settings-card__row">
+                        <span>{t("appSettings.aboutCommit")}</span>
+                        <span className="settings-card__code" title={source?.commit || undefined}>
+                          {source?.commit ? source.commit.slice(0, 12) : sourceLoaded ? "—" : "…"}
+                        </span>
+                      </label>
+                      <label className="settings-card__row">
+                        <span>{t("appSettings.aboutForkPoint")}</span>
+                        <span className="settings-card__code" title={source?.forkPoint || undefined}>
+                          {source?.forkPoint
+                            ? source.forkPoint.slice(0, 12)
+                            : sourceLoaded
+                              ? "—"
+                              : "…"}
+                        </span>
+                      </label>
+                    </>
+                  )}
                 </div>
+                {source?.available && sourceLoaded && !source.remoteChecked ? (
+                  <p className="settings-overlay__lede">{t("appSettings.aboutRemoteUnchecked")}</p>
+                ) : null}
               </>
             ) : null}
           </div>
