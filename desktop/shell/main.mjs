@@ -1,4 +1,4 @@
-/** Electron is a frameless shell: launch chooser, then the local operator UI. */
+/** Electron desktop shell: native macOS controls and a local operator UI. */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, watch } from "node:fs";
 import path from "node:path";
@@ -393,7 +393,9 @@ function createWindow() {
     minHeight: 600,
     title: "MAGI",
     show: false,
-    frame: false,
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" }
+      : { frame: false }),
     autoHideMenuBar: true,
     webPreferences: {
       sandbox: true,
@@ -422,23 +424,6 @@ ipcMain.handle("asp:retry", async () => {
   if (mainWindow !== null) {
     await loadStartup(mainWindow);
     void launchLocalOperator(mainWindow);
-  }
-});
-
-ipcMain.handle("window:control", (_event, action) => {
-  if (mainWindow === null) {
-    return;
-  }
-  if (action === "close") {
-    mainWindow.close();
-    return;
-  }
-  if (action === "minimize") {
-    mainWindow.minimize();
-    return;
-  }
-  if (action === "fullscreen") {
-    mainWindow.setFullScreen(!mainWindow.isFullScreen());
   }
 });
 
