@@ -10,7 +10,7 @@ import { OpenAICompatibleClient } from "../providers/client.js";
 
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
-async function workspace() { const path = await mkdtemp(join(tmpdir(), "ts-magi-test-")); workspaces.push(path); return path; }
+async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-test-")); workspaces.push(path); return path; }
 
 describe("local MAGI agent", () => {
   test("does not open a Python workspace with incompatible Book tables", async () => {
@@ -237,7 +237,7 @@ describe("local MAGI agent", () => {
         },
       },
     });
-    magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish ts-magi", kind: "long_term" });
+    magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish magi", kind: "long_term" });
     magi.bus.setSetting("provider.context_window", "100");
     const conversation = magi.bus.conversations.forChannel("cli", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
@@ -246,7 +246,7 @@ describe("local MAGI agent", () => {
 
     expect(requests).toHaveLength(2);
     expect(requests[0].messages[0].content).toContain("summarising a portion of a chat");
-    expect(requests[1].messages[0].content).toContain("Finish ts-magi");
+    expect(requests[1].messages[0].content).toContain("Finish magi");
     expect(requests[1].messages[0].content).toContain("The user is migrating MAGI to TypeScript.");
     expect(requests[1].messages[0].content).toContain("codebase_search");
     expect(requests[1].messages[0].content).toContain("Your name: @alice.magi");

@@ -194,7 +194,7 @@ async function respond(router: Router, request: IncomingMessage, response: Serve
       sendJson(response, error.status, { detail: error.message }, cors);
       return;
     }
-    console.error("[magi-asp]", error instanceof Error ? error.message : String(error));
+    console.error("[asp]", error instanceof Error ? error.message : String(error));
     sendJson(response, 500, { detail: "internal error" }, cors);
   }
 }

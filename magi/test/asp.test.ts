@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Magi } from "../magi.js";
 
 test("ASP invite enters ChatNotify and reply is delivered to the session", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-asp-"));
+  const workspace = await mkdtemp(join(tmpdir(), "asp-"));
   const requests: Array<{ path: string; body: unknown }> = [];
   const replies: unknown[] = [];
   let socket: Bun.ServerWebSocket<unknown> | null = null;

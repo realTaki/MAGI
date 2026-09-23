@@ -14,7 +14,7 @@ function app(root) {
       checkout: path.join(root, "checkout"),
     },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: process.env, python: "python" },
+    tools: { git: "git", env: process.env },
     emit: () => {},
     openExternal: async () => {},
     copy: () => {},

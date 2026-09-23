@@ -134,7 +134,7 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
-**一个 MAGI：** 在 `ts-magi/` 中运行 `bun run start -- <handle> <base> <token>`。
+**一个 MAGI：** 在 `magi/` 中运行 `bun run start -- <handle> <base> <token>`。
 
 
 ## 从第一个 MAGIS 到组织成长
@@ -183,7 +183,7 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 ### 本地源码与 RSI 方向
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、Bun 工具。首次启动
-会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `ts-magi/`、`magi-asp/`、
+会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `magi/`、`asp/`、
 `desktop/app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
 重新构建界面，并用 Git 合并上游更新。`desktop/app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
@@ -203,7 +203,7 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 - [架构](docs/ARCHITECTURE.md)
 - [关键业务流程](docs/business-flows.md)
 - [术语与 ID 命名规范](docs/terms.md)
-- [magi-asp](magi-asp/README.md)
+- [asp](asp/README.md)
 - [路线图](docs/ROADMAP.md)
 
 ## 项目状态

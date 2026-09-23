@@ -7,7 +7,7 @@ import { builtinTools } from "../tools/registry.js";
 import { ShellManager } from "../tools/shellManager.js";
 
 test("background bash exposes incremental output and can be killed", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-shell-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-shell-"));
   const magi = new Magi("@shell.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   const shells = new ShellManager();
   const tools = new Map(builtinTools(magi.bus, shells).map((tool) => [tool.name, tool]));
@@ -34,7 +34,7 @@ test("background bash exposes incremental output and can be killed", async () =>
 });
 
 test("shell manager shutdown terminates all owned processes", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-shell-stop-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-shell-stop-"));
   const shells = new ShellManager();
   try {
     shells.start("sleep 30", workspace);

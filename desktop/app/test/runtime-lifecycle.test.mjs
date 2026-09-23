@@ -10,8 +10,8 @@ import { createLocalApi } from "../main/index.mjs";
 test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
   const checkout = path.join(root, "checkout");
-  mkdirSync(path.join(checkout, "magi-asp"), { recursive: true });
-  writeFileSync(path.join(checkout, "magi-asp", "main.ts"), "");
+  mkdirSync(path.join(checkout, "asp"), { recursive: true });
+  writeFileSync(path.join(checkout, "asp", "main.ts"), "");
 
   const originalFetch = globalThis.fetch;
   let healthy = false;
@@ -55,7 +55,7 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: process.env, python: "python" },
+    tools: { git: "git", env: process.env },
     emit: () => {},
     openExternal: async () => {},
     copy: () => {},

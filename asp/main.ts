@@ -19,7 +19,7 @@ function main(): void {
     void app.close().then(
       () => process.exit(0),
       (error: unknown) => {
-        console.error("[magi-asp]", error instanceof Error ? error.message : String(error));
+        console.error("[asp]", error instanceof Error ? error.message : String(error));
         process.exit(1);
       },
     );
@@ -28,10 +28,10 @@ function main(): void {
   process.on("SIGTERM", shutdown);
   void app.listen(host, port).then(
     () => {
-      console.error(`[magi-asp] listening on ${app.origin}`);
+      console.error(`[asp] listening on ${app.origin}`);
     },
     (error: unknown) => {
-      console.error("[magi-asp]", error instanceof Error ? error.message : String(error));
+      console.error("[asp]", error instanceof Error ? error.message : String(error));
       process.exit(1);
     },
   );

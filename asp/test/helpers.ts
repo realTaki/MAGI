@@ -7,7 +7,7 @@ import { createApp, type AspApp, type CreateAppOptions } from "../server/app.ts"
 import { RecordingSpawner } from "../server/spawn.ts";
 
 export function tempRoot(t: { after: (fn: () => void) => void }): string {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-asp-"));
+  const root = mkdtempSync(path.join(tmpdir(), "asp-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }

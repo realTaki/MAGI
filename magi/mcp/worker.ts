@@ -60,7 +60,7 @@ export class McpWorker extends BaseWorker {
 }
 
 export async function connectMcpServer(config: McpServerConfig, workspace: string): Promise<McpConnection> {
-  const client = new Client({ name: "ts-magi", version: "0.2.0" });
+  const client = new Client({ name: "magi", version: "0.2.0" });
   const headers = config.headers ?? {};
   const transport = config.connection_type === "stdio"
     ? new StdioClientTransport({ command: config.command ?? "", args: config.args ?? [], cwd: workspace, env: { ...cleanEnvironment(), ...(config.env ?? {}) } })

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Magi } from "../magi.js";
 
 test("Telegram text reaches Agent and its reply is delivered", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-tg-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-tg-"));
   let delivered: Record<string, unknown> | null = null;
   const server = Bun.serve({
     port: 0,

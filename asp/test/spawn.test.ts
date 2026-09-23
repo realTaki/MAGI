@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ProcessSpawner, tsMagiCli } from "../server/spawn.ts";
+import { ProcessSpawner, magiCli } from "../server/spawn.ts";
 
 test("process spawner runs the typescript magi by default", () => {
   const seen: { cmd?: string[]; cwd?: string; terminated?: boolean } = {};
@@ -28,9 +28,9 @@ test("process spawner runs the typescript magi by default", () => {
     assert.equal(spawned.pid, 100);
     assert.deepEqual(
       seen.cmd,
-      tsMagiCli("/runtime/bin/bun", "@eva-001.magi", "http://127.0.0.1:42069", "tok"),
+      magiCli("/runtime/bin/bun", "@eva-001.magi", "http://127.0.0.1:42069", "tok"),
     );
-    assert.equal(seen.cwd?.endsWith(`${process.platform === "win32" ? "\\" : "/"}ts-magi`), true);
+    assert.equal(seen.cwd?.endsWith(`${process.platform === "win32" ? "\\" : "/"}magi`), true);
     spawner.close();
     assert.equal(seen.terminated, true);
   } finally {

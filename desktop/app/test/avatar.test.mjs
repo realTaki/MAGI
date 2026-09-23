@@ -63,7 +63,7 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, legacyMe
   const api = createLocalApi({
     paths,
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: process.env, python: "python" },
+    tools: { git: "git", env: process.env },
     emit: () => {},
     openExternal: async () => {},
     copy: () => {},

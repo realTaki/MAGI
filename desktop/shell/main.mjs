@@ -310,7 +310,7 @@ async function launchLocalOperator(win) {
     if (!win.isDestroyed()) {
       win.webContents.send(
         "asp:startup-error",
-        error instanceof Error ? error.message : "Could not start local magi-asp.",
+        error instanceof Error ? error.message : "Could not start local ASP.",
       );
     }
   } finally {

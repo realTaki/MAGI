@@ -7,7 +7,7 @@ permalink: /architecture/
 # MAGI Architecture
 
 > Historical reference for the former Python runtime. The current TypeScript
-> runtime is described in [ts-magi/README.md](../ts-magi/README.md) and the
+> runtime is described in [magi/README.md](../magi/README.md) and the
 > [MAGI-BUS design](MAGI-BUS%20架构设计书.md).
 
 The former Python MAGI runtime was organised around one durable boundary — **BUS**

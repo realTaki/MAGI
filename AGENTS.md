@@ -13,7 +13,7 @@ Preferred runtime order:
 1. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
    source build this is `desktop/runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
-2. For `ts-magi`, use the project-designated or packaged Bun binary. In a
+2. For `magi`, use the project-designated or packaged Bun binary. In a
    prepared source build this is `desktop/runtime/bin/bun`; in the installed
    macOS app it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/bun`.
 3. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
@@ -27,9 +27,9 @@ paths needed for that command and must not be persisted.
 Examples:
 
 ```bash
-desktop/runtime/bin/node --test magi-asp/test/*.test.ts
+desktop/runtime/bin/node --test asp/test/*.test.ts
 /Applications/MAGI.app/Contents/Resources/runtime/bin/node --test desktop/app/test/*.test.mjs
-cd ts-magi
+cd magi
 ../desktop/runtime/bin/bun run test
 ```
 

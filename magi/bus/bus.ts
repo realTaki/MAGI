@@ -36,7 +36,11 @@ export class Bus {
 
   constructor(readonly handle: string, workspace?: string, migrationSource?: string | null) {
     const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    this.workspace = resolve(workspace ?? join(homedir(), ".magi", "ts-magi", localName));
+    const current = join(homedir(), ".magi", "magi", localName);
+    const previous = join(homedir(), ".magi", "ts-magi", localName);
+    this.workspace = resolve(
+      workspace ?? (existsSync(current) || !existsSync(previous) ? current : previous),
+    );
     const pythonWorkspace = migrationSource === undefined ? (workspace === undefined ? join(homedir(), ".magi", localName) : null) : migrationSource;
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });

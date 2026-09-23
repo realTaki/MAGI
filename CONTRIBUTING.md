@@ -10,9 +10,9 @@ cd MAGI
 cd desktop
 npm ci
 npm ci --prefix app
-cd ../magi-asp
+cd ../asp
 npm ci
-cd ../ts-magi
+cd ../magi
 bun install --frozen-lockfile
 ```
 
@@ -48,10 +48,10 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 
 Then:
 
-- **TypeScript** for `ts-magi/`, `magi-asp/`, and the operator app (`desktop/app/`)
+- **TypeScript** for `magi/`, `asp/`, and the operator app (`desktop/app/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
-- `bun run test` in `ts-magi/`, `npm test` in `magi-asp/`, and
+- `bun run test` in `magi/`, `npm test` in `asp/`, and
   `npm test` in `desktop/app/` should pass before pushing
 
 ## Commit style
@@ -76,8 +76,8 @@ docs: Update README with new architecture
 | Directory | Purpose |
 |-----------|---------|
 | `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
-| `magi-asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
-| `ts-magi/` | BUS, agent, providers, tools, channels, and tests |
+| `asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
+| `magi/` | BUS, agent, providers, tools, channels, and tests |
 | `docs/` | Design docs + roadmap |
 
 ## Questions?

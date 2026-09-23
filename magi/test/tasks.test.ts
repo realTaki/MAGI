@@ -10,7 +10,7 @@ const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
 
 test("schedule tool persists a task and manual trigger enters the agent", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-task-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-"));
   workspaces.push(workspace);
   const prompts: string[] = [];
   const delivered: string[] = [];

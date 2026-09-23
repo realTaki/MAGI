@@ -663,7 +663,7 @@ export function createLocalApi(context) {
       }
       await delay(200);
     }
-    throw new Error(`magi-asp is unavailable at ${healthUrl()}`);
+    throw new Error(`ASP is unavailable at ${healthUrl()}`);
   }
 
   function aspNode() {
@@ -684,7 +684,7 @@ export function createLocalApi(context) {
   }
 
   function spawnAsp() {
-    const aspDir = path.join(paths.checkout, "magi-asp");
+    const aspDir = path.join(paths.checkout, "asp");
     const child = spawnProcess(aspNode(), ["main.ts"], {
       cwd: aspDir,
       env: {
@@ -699,7 +699,7 @@ export function createLocalApi(context) {
     child.stderr?.on("data", (chunk) => {
       const text = String(chunk).trim();
       if (text) {
-        console.error("[magi-asp]", text);
+        console.error("[asp]", text);
       }
     });
     return child;
@@ -810,13 +810,13 @@ export function createLocalApi(context) {
    * is prepared: a developer's own tree is already theirs to prepare.
    */
   async function prepare(progress) {
-    const aspDir = path.join(paths.checkout, "magi-asp");
+    const aspDir = path.join(paths.checkout, "asp");
     const appDir = path.join(paths.checkout, "desktop", "app");
-    const tsMagiDir = path.join(paths.checkout, "ts-magi");
+    const magiDir = path.join(paths.checkout, "magi");
     const required = [
       path.join(aspDir, "package-lock.json"),
       path.join(appDir, "package-lock.json"),
-      path.join(tsMagiDir, "bun.lock"),
+      path.join(magiDir, "bun.lock"),
     ];
     for (const file of required) {
       if (!existsSync(file)) {
@@ -825,17 +825,17 @@ export function createLocalApi(context) {
     }
 
     if (managed) {
-      progress?.("Preparing local magi-asp…", 0.2);
+      progress?.("Preparing local ASP…", 0.2);
       await command(tools.node, [tools.npm, "ci"], {
         cwd: aspDir,
         env: tools.env,
-        description: "Could not prepare magi-asp",
+        description: "Could not prepare ASP",
       });
-      progress?.("Preparing TypeScript MAGI…", 0.4);
+      progress?.("Preparing MAGI…", 0.4);
       await command(tools.bun, ["install", "--frozen-lockfile"], {
-        cwd: tsMagiDir,
+        cwd: magiDir,
         env: tools.env,
-        description: "Could not prepare TypeScript MAGI",
+        description: "Could not prepare MAGI",
       });
       progress?.("Installing app dependencies…", 0.6);
       await command(tools.node, [tools.npm, "ci"], {
@@ -1015,7 +1015,7 @@ export function createLocalApi(context) {
       created.map(({ handle, nickname }) =>
         nameWhenOnline(handle, nickname, token).catch((error) => {
           console.error(
-            `[magi-asp] ${error instanceof Error ? error.message : String(error)}`,
+            `[asp] ${error instanceof Error ? error.message : String(error)}`,
           );
         }),
       ),
@@ -1034,29 +1034,29 @@ export function createLocalApi(context) {
 
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
-    progress?.("Checking local magi-asp…", 0.9);
+    progress?.("Checking local ASP…", 0.9);
     if (await isAspHealthy()) {
       await ensureDefaultMagis(progress);
       await activateProviderSync();
       return { origin: ASP_ORIGIN.href };
     }
-    const aspDir = path.join(paths.checkout, "magi-asp");
+    const aspDir = path.join(paths.checkout, "asp");
     if (!existsSync(path.join(aspDir, "main.ts"))) {
-      throw new Error(`magi-asp was not found at ${aspDir}`);
+      throw new Error(`ASP was not found at ${aspDir}`);
     }
-    progress?.("Starting local magi-asp…", 0.94);
+    progress?.("Starting local ASP…", 0.94);
     asp = spawnAsp();
     try {
       await new Promise((resolve, reject) => {
         asp.once("error", reject);
         asp.once("spawn", resolve);
       });
-      progress?.("Waiting for local magi-asp…", 0.97);
+      progress?.("Waiting for local ASP…", 0.97);
       await Promise.race([
         waitForAsp(),
         new Promise((_, reject) => {
           asp.once("exit", (code, signal) => {
-            reject(new Error(`magi-asp exited (${code ?? signal ?? "unknown"})`));
+            reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
           });
         }),
       ]);

@@ -1,4 +1,4 @@
-# magi-asp
+# asp
 
 Run with `node main.ts` from this directory (what the desktop app does). Node 24
 runs the TypeScript directly. `npm test` runs the suite.
@@ -22,7 +22,7 @@ deleted only after every intended recipient has acknowledged it. The desktop's
 long-term chat history lives in its own SQLite; ASP does not serve as that
 history store.
 
-magi-asp is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
+ASP is **intranet by default**: it binds `127.0.0.1:42069`. Spawned MAGI attach with a Bearer for this origin. When a MAGI receives `session.invited`, it joins immediately — no public-network approval and no config wizard.
 
 `POST /conversations` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. `bot` is ASP-side spawn only (the desktop never starts MAGI): ASP assigns `name` `eva-000`, then `eva-001`, …, starts that MAGI with the bundled Bun TypeScript runtime, and returns `name` on the create response. `group` opens a conversation with the operator only.
 

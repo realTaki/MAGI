@@ -37,7 +37,7 @@ the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
 `~/.magi/MAGI` with its bundled Git, then hands the app bundled Node.js, npm,
-and Bun. The backend uses them to install magi-asp and ts-magi dependencies,
+and Bun. The backend uses them to install asp and magi dependencies,
 build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
@@ -110,8 +110,8 @@ user tokens are short-lived and installed per repository.
 
 | Source in `~/.magi/MAGI` | How the change takes effect |
 | --- | --- |
-| `ts-magi/` | Restart the affected MAGI process. |
-| `magi-asp/` | Restart local ASP. |
+| `magi/` | Restart the affected MAGI process. |
+| `asp/` | Restart local ASP. |
 | `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `desktop/shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |

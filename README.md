@@ -67,11 +67,11 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 
 ```text
 desktop/     Electron bootstrap shell and editable operator WebUI
-magi-asp/    ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
-ts-magi/     Canonical Bun MAGI runtime: BUS, workers, tools, and channels
+asp/         ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
+magi/        MAGI runtime: BUS, workers, tools, and channels
 ```
 
-The projects are siblings. Each running MAGI uses `ts-magi/`; its BUS mediates
+The projects are siblings. Each running MAGI uses `magi/`; its BUS mediates
 all Worker state and communication.
 
 ## Toward governed collective intelligence
@@ -180,7 +180,7 @@ machine-local layer: connecting the checkout to the operator's GitHub account
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
 `eva-000` and starts that MAGI.
 
-**One MAGI:** `bun run start -- <handle> <base> <token>` from `ts-magi/`. ASP launches this command with MAGI's bundled Bun runtime.
+**One MAGI:** `bun run start -- <handle> <base> <token>` from `magi/`. ASP launches this command with MAGI's bundled Bun runtime.
 
 
 ## From the first MAGIS to a growing organization
@@ -241,7 +241,7 @@ directly. The WebUI is built and loaded from the local checkout.
 The packaged app supplies an Electron bootstrap shell and private Git,
 Node.js, and Bun tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
-`ts-magi/`, `magi-asp/`, and `desktop/app/` sources. Local changes are not
+`magi/`, `asp/`, and `desktop/app/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.
 Once the operator connects GitHub from the interface, `origin` is their fork and
@@ -265,7 +265,7 @@ For the implementation-level view, see:
 - [Architecture](docs/ARCHITECTURE.md)
 - [Business flows](docs/business-flows.md)
 - [Terms and canonical ID names](docs/terms.md)
-- [magi-asp](magi-asp/README.md)
+- [ASP](asp/README.md)
 - [Roadmap](docs/ROADMAP.md)
 
 ## Project status

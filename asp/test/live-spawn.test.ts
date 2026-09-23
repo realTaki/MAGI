@@ -64,7 +64,7 @@ test("ASP spawns a TypeScript MAGI that connects, persists nickname, and joins a
 
     const renamed = await request(app, "PATCH", `/bots/${encodeURIComponent(handle)}/nickname`, { token, body: { nickname: "司空" } });
     assert.equal(renamed.status, 200);
-    const workspaceDb = path.join(root, "home", ".magi", "ts-magi", "eva-000", "memories", "magi.db");
+    const workspaceDb = path.join(root, "home", ".magi", "magi", "eva-000", "memories", "magi.db");
     const workspace = new DatabaseSync(workspaceDb, { readOnly: true });
     try {
       assert.equal((workspace.prepare("SELECT nickname FROM books_contacts WHERE id = 1").get() as { nickname: string }).nickname, "司空");

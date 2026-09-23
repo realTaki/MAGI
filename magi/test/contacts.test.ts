@@ -6,7 +6,7 @@ import { Magi } from "../magi.js";
 import { builtinTools } from "../tools/registry.js";
 
 test("contact tools persist, search, update, and delete notes", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-contact-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-contact-"));
   const magi = new Magi("@contacts.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
   try {
@@ -37,7 +37,7 @@ test("contact tools persist, search, update, and delete notes", async () => {
 });
 
 test("reserved system and MAGI contacts are seeded", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-contact-seed-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-contact-seed-"));
   const magi = new Magi("@seed.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
     expect(magi.bus.contacts.get(0)).toMatchObject({ name: "system", role: "system" });

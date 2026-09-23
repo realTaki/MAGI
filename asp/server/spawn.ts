@@ -81,8 +81,8 @@ export class ProcessSpawner implements MagiSpawner {
     if (spawnDisabled()) {
       return { ...request, pid: null, spawned: false };
     }
-    const command = tsMagiCli(resolveMagiBun(), request.handle, request.base, request.token);
-    const cwd = tsMagiDir() ?? undefined;
+    const command = magiCli(resolveMagiBun(), request.handle, request.base, request.token);
+    const cwd = magiDir() ?? undefined;
     try {
       const child = this.launch(command, {
         cwd,
@@ -106,7 +106,7 @@ export class ProcessSpawner implements MagiSpawner {
   }
 }
 
-export function tsMagiCli(bun: string, handle: string, base: string, token: string): string[] {
+export function magiCli(bun: string, handle: string, base: string, token: string): string[] {
   return [bun, "run", "start", "--", handle, base, token];
 }
 
@@ -127,8 +127,8 @@ function repoRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
-function tsMagiDir(): string | null {
-  const candidate = path.join(repoRoot(), "ts-magi");
+function magiDir(): string | null {
+  const candidate = path.join(repoRoot(), "magi");
   return existsSync(candidate) ? candidate : null;
 }
 
@@ -159,7 +159,7 @@ function resolveMagiBun(): string {
   }
   const found = candidates.find((candidate) => existsSync(candidate));
   if (found === undefined) {
-    throw new Error("TypeScript MAGI selected but the MAGI-owned Bun runtime is missing");
+    throw new Error("MAGI's bundled Bun runtime is missing");
   }
   return found;
 }

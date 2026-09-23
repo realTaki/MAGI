@@ -6,7 +6,7 @@ import { Magi } from "../magi.js";
 import { builtinTools } from "../tools/registry.js";
 
 test("message search includes archived history and send_message uses delivery jobs", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-tools-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-tools-"));
   const delivered: string[] = [];
   const magi = new Magi("@tools.magi", { workspace, deliver: (text) => delivered.push(text), client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   const conversation = magi.bus.conversations.forChannel("cli", "terminal");

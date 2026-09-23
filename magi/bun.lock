@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "ts-magi",
+      "name": "magi",
       "dependencies": {
         "@modelcontextprotocol/client": "2.1.0",
       },

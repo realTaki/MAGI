@@ -62,7 +62,7 @@ test("about reports the running commit and where it forked from AgenticSociety",
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: gitEnv, python: "python" },
+    tools: { git: "git", env: gitEnv },
     emit: () => {},
     openExternal: async () => {},
     copy: () => {},
@@ -101,7 +101,7 @@ test("about stays local when the checkout is not a Git repository", async (t) =>
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: gitEnv, python: "python" },
+    tools: { git: "git", env: gitEnv },
     emit: () => {},
     openExternal: async () => {},
     copy: () => {},

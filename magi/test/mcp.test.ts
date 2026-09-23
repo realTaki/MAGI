@@ -7,7 +7,7 @@ import type { McpConnector } from "../mcp/worker.js";
 import { builtinTools } from "../tools/registry.js";
 
 test("MCP worker owns configuration, connections, and dynamic tools", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-mcp-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-mcp-"));
   const closed: string[] = [];
   const modelCatalogs: string[][] = [];
   const connector: McpConnector = async (server) => ({
@@ -50,7 +50,7 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
 });
 
 test("failed MCP connection does not persist an unusable server", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "ts-magi-mcp-fail-"));
+  const workspace = await mkdtemp(join(tmpdir(), "magi-mcp-fail-"));
   const magi = new Magi("@mcp-fail.magi", {
     workspace, mcpConnector: async () => { throw new Error("connect refused"); },
     client: { async complete() { return { role: "assistant", content: "unused" }; } },
