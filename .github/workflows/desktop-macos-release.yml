@@ -31,7 +31,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22.23.1
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             desktop/package-lock.json
@@ -77,20 +77,23 @@ jobs:
           npm run build:ui
           node scripts/prepare-runtime.mjs
           npx electron-builder \
-            --mac dmg zip \
+            --mac dmg \
             --${{ matrix.arch }} \
             --publish never \
             --config.artifactName='${productName}-${version}-${arch}.${ext}' \
             "${build_args[@]}"
-          codesign --verify --deep --strict "release/mac-${{ matrix.arch }}/MAGI.app"
+          app_dir="release/mac-${{ matrix.arch }}"
+          if [[ "${{ matrix.arch }}" == x64 ]]; then
+            app_dir=release/mac
+          fi
+          codesign --verify --deep --strict "$app_dir/MAGI.app"
 
       - name: Upload packaged app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-${{ matrix.arch }}
           path: |
             desktop/release/*.dmg
-            desktop/release/*.zip
           if-no-files-found: error
 
   release:
