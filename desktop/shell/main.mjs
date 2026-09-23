@@ -239,9 +239,7 @@ async function requestDeviceCode() {
   const data = await response.json().catch(() => null);
   if (!response.ok || typeof data?.device_code !== "string") {
     const detail = data?.error_description ?? data?.error ?? response.statusText;
-    throw new Error(
-      `GitHub did not return a sign-in code (${detail}). Check that MAGI_GITHUB_CLIENT_ID names an OAuth app with device flow enabled.`,
-    );
+    throw new Error(`GitHub did not return a sign-in code (${detail}).`);
   }
   return data;
 }
@@ -438,7 +436,6 @@ async function pointCheckoutAtFork(checkout, tools, fork, upstream, viewer, repo
 
 let pendingSignIn = null;
 let deviceFlowPending = false;
-let deviceVerificationUri = GITHUB_DEVICE_URL;
 // Kept while a sign-in is outstanding so a reloaded or reopened startup window
 // goes back to the sign-in page instead of sitting on the progress view.
 let signInPrompt = null;
@@ -479,7 +476,6 @@ async function connectGitHub(checkout, tools, win, report) {
   }
   if (session === null) {
     signInPrompt = {
-      clientId: GITHUB_CLIENT_ID !== "",
       upstream: `${upstream.owner}/${upstream.name}`,
       expired: stored !== null,
     };
@@ -814,47 +810,25 @@ function createWindow() {
   return win;
 }
 
-ipcMain.handle("github:start-device", async () => {
-  if (GITHUB_CLIENT_ID === "") {
-    throw new Error(
-      "This MAGI build has no GitHub OAuth client ID configured. Use a personal access token instead.",
-    );
-  }
+ipcMain.handle("github:sign-in", async () => {
   if (deviceFlowPending) {
     throw new Error("A GitHub sign-in is already running.");
   }
   deviceFlowPending = true;
   try {
     const device = await requestDeviceCode();
-    if (typeof device.verification_uri === "string" && device.verification_uri !== "") {
-      deviceVerificationUri = device.verification_uri;
-    }
     sendToWindow(mainWindow, "github:status", {
       step: "waiting",
       userCode: String(device.user_code ?? ""),
-      verificationUri: deviceVerificationUri,
       expiresInMinutes: Math.max(1, Math.round((Number(device.expires_in) || 900) / 60)),
     });
     clipboard.writeText(String(device.user_code ?? ""));
-    await shell.openExternal(deviceVerificationUri).catch(() => {});
+    await shell.openExternal(GITHUB_DEVICE_URL).catch(() => {});
     const viewer = await acceptGitHubToken(await pollDeviceToken(device));
     return { login: viewer.login };
   } finally {
     deviceFlowPending = false;
   }
-});
-
-ipcMain.handle("github:submit-token", async (_event, token) => {
-  const submitted = typeof token === "string" ? token.trim() : "";
-  if (submitted === "") {
-    throw new Error("Paste a GitHub personal access token first.");
-  }
-  const viewer = await acceptGitHubToken(submitted);
-  return { login: viewer.login };
-});
-
-ipcMain.handle("github:open-verification", async () => {
-  await shell.openExternal(deviceVerificationUri).catch(() => {});
 });
 
 ipcMain.handle("asp:retry", async () => {

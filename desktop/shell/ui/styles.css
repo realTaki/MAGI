@@ -231,46 +231,9 @@ h1 {
   letter-spacing: 0.14em;
 }
 
-.token {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.token label {
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.token input {
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--panel-2);
-  color: inherit;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 14px;
-}
-
-.token input:focus-visible {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.hint a {
+.device-link {
   color: var(--accent);
+  font-size: 13.5px;
 }
 
 code {

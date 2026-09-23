@@ -47,29 +47,13 @@
         <section class="device" id="github-device-panel" hidden>
           <p class="device-label">Your one-time code</p>
           <code class="device-code" id="github-user-code">····-····</code>
-          <button type="button" class="back" id="github-open">Open github.com/login/device</button>
-        </section>
-
-        <section class="token" id="github-token-panel" hidden>
-          <label for="github-token-input">Personal access token</label>
-          <input
-            id="github-token-input"
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="ghp_…"
-          />
-          <p class="hint">
-            Needs <code>repo</code> and <code>read:user</code> scopes.
-            <a
-              id="github-token-link"
-              href="https://github.com/settings/tokens/new?scopes=repo,read:user&amp;description=MAGI"
-              target="_blank"
-              rel="noreferrer"
-              >Create a token</a
-            >
-          </p>
-          <button type="button" class="back" id="github-token-submit">Use this token</button>
+          <a
+            class="device-link"
+            href="https://github.com/login/device"
+            target="_blank"
+            rel="noreferrer"
+            >github.com/login/device</a
+          >
         </section>
 
         <p id="github-status" class="status"></p>

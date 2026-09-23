@@ -33,9 +33,7 @@ The sign-in page drives the OAuth device flow of the MAGI GitHub OAuth app
 (`Ov23li74Up8NcM5yCb61`), whose public client ID ships with every build — device
 flow needs no client secret, so operators authorize with their own account and
 only the resulting token is per machine. `MAGI_GITHUB_CLIENT_ID` points a
-rebranded build at its own app instead; when the device flow fails, the same
-page offers a personal access token with `repo` and `read:user` scopes so
-sign-in is never a dead end.
+rebranded build at its own app instead.
 
 Registering a replacement app is a one-time step for whoever ships the build —
 Settings → Developer settings → OAuth apps → **New OAuth App** — and it needs a
