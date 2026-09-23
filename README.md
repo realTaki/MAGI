@@ -6,14 +6,11 @@
 
 [中文 README](README_zh.md)
 
-> **MAGI is a runtime for persistent, modular, governable agent societies.**
+> **MAGI is a runtime for persistent, modular, governable agents.**
 >
-> A MAGIS is a **MAGI Society** — a persistent organization of independent MAGI.
-> Each MAGI has its own runtime, workspace, memory, tools, provider credentials,
-> and role in the Society.
-> They coordinate through the Society, execute through independently managed
-> MAGI runtimes, retain what they learn, and grow into a durable collective
-> intelligence without giving up boundaries, accountability, or operator control.
+> Each MAGI has its own runtime, workspace, memory, tools, and provider
+> credentials. ASP starts that process and relays its sessions. The operator
+> can inspect the workspace and the boundary around it.
 
 MAGI is built for the question beyond “how do I delegate this task?”:
 
@@ -24,20 +21,19 @@ observable, bounded, and governable?**
 ## Why MAGI?
 
 Most multi-agent systems assemble a temporary team around a workflow: assign a
-research task, collect a result, then tear the team down. MAGI treats the
-**organization itself** as the primary unit.
+research task, collect a result, then tear the team down. A MAGI stays. Its
+workspace, memory, and skills remain after the task.
 
-| Task-oriented multi-agent orchestration | MAGI Society runtime |
+| Task-oriented multi-agent orchestration | A MAGI |
 | --- | --- |
-| Agents are steps in a workflow | MAGI are persistent members of an organization |
-| Collaboration ends with a task | Context, memory, skills, and relationships persist |
-| One process commonly hosts many agents | Every MAGI has an independent runtime and workspace |
-| A controller defines the execution path | The Society coordinates agents while infrastructure enforces lifecycle and boundaries |
-| Scale means adding concurrent calls | Scale means adding capable MAGI and connected Societies |
+| Agents are steps in a workflow | A MAGI persists across tasks |
+| Collaboration ends with a task | Context, memory, skills, and contacts persist |
+| One process commonly hosts many agents | Every MAGI has its own runtime and workspace |
+| A controller defines the execution path | The MAGI decides inside its own process. ASP starts it and relays sessions |
+| Scale means adding concurrent calls | Scale means adding MAGI |
 
-MAGI does not replace workflow engines. It provides a substrate for long-lived
-agent organizations that can operate, learn, reorganize, and eventually
-coordinate more of their own work.
+A workflow engine can still sit beside MAGI. MAGI is the runtime a long-lived
+agent runs on.
 
 ## Design philosophy
 
@@ -77,41 +73,30 @@ all Worker state and communication.
 
 ## Toward governed collective intelligence
 
-A MAGIS should become better because it has existed — while remaining
-inspectable and governable:
+A MAGI should become better because it has existed, and the operator should
+still be able to inspect it:
 
-- MAGI learn from the outcomes, failures, and observations of their work.
-- Useful procedures become reusable Skills rather than disappearing into an
-  individual conversation.
-- ADAM can recognize capability gaps, organize specialized EVAs, and reshape
-  the Society as its work changes.
-- Societies can share knowledge and collaborate without reducing every member
-  to a stateless API call.
-- Operators remain able to inspect the organization, its memory, its tools,
-  its resource boundaries, and the authority used to change it.
+- A MAGI learns from the outcomes, failures, and observations of its work.
+- Useful procedures become reusable Skills rather than disappearing into one
+  conversation.
+- The operator can inspect its memory, its tools, its resource boundaries, and
+  the authority used to change it.
+- Several MAGI can join one operator conversation. Each keeps its own workspace.
 
 > **Implementation status:** a local desktop, one ASP process, and one Bun
 > process per MAGI are what runs today. Each MAGI keeps its own workspace
 > (memory, skills, tasks, contacts, prompts) and talks to the operator through
-> ASP. A Society tree, an ADAM control plane, and agent-to-agent job boards
-> are design goals. They are **not** in this tree.
+> ASP.
 
 ## The MAGI model
 
-The names are deliberate:
-
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | The general kind of autonomous, governable agent in this system. |
-| **MAGIS** | A **MAGI Society**: an organization of MAGI. Societies form a tree. |
-| **MAGIC** | An old internal name for one MAGI. The current runtime does not have a MAGIC table. |
-| **ADAM** | The leading MAGI of a Society. ADAM provides its control plane and coordinates its MAGI. |
-| **EVA** | A working MAGI role. A Society can create, configure, start, stop, and retire multiple EVAs. |
+| **MAGI** | One autonomous, governable agent. Also the Bun runtime in `magi/`. |
+| **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
-ADAM and EVA name roles a Society would have. The running app does not yet
-model a Society tree or an ADAM control plane. ASP is the local lifecycle
-boundary: it starts MAGI processes and relays their sessions. It does not
-decide what a MAGI should say.
+ASP is the local lifecycle boundary. It starts MAGI processes and relays their
+sessions. It does not decide what a MAGI should say.
 
 ## What exists today
 
@@ -147,9 +132,9 @@ no root `deploy/` tree.
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
-the preparation stages before opening the WebUI, and while the society is still
-empty the backend seeds the first three MAGIs — **MELCHIOR**, **BALTHASAR**,
-**CASPER**. The app is also the
+the preparation stages before opening the WebUI. When no MAGI exists yet, the
+backend seeds the first three, **MELCHIOR**, **BALTHASAR**, and **CASPER**.
+The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
@@ -237,8 +222,7 @@ For the implementation-level view, see:
 ## Project status
 
 MAGI is experimental and under active construction. What ships is a local
-desktop, ASP, and one Bun runtime per MAGI. The Society tree and cross-MAGI
-collaboration described above are not implemented in this repository.
+desktop, ASP, and one Bun runtime per MAGI.
 
 The broader vision — autonomous learning, protocol-mediated coordination,
 richer policy enforcement, and increasingly self-organizing governed

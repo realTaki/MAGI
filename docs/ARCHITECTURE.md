@@ -86,11 +86,7 @@ Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over
 the operator's files.
 
-## What this tree does not contain
-
-There is no Society database, no ADAM control-plane service, and no
-agent-to-agent job board. Those names remain in the product vocabulary. They
-are not modules in `magi/` or `asp/`.
+## Older notes
 
 Older notes that map the retired Python package live in git history. The
 design book [`MAGI-BUS 架构设计书.md`](MAGI-BUS%20架构设计书.md) records an
