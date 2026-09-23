@@ -90,7 +90,7 @@ user tokens are short-lived and installed per repository.
 | --- | --- |
 | `py-magi/` | Restart the affected MAGI process. |
 | `magi-asp/` | Restart local ASP. |
-| `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the shell notices `dist/index.html` and asks whether to reload. |
+| `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `desktop/shell/`, packaged tools and build configuration | Rebuild and reinstall the Electron app. The running shell is loaded from the installed app, not the checkout. |
 

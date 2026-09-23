@@ -11,13 +11,12 @@ import {
   renameSync,
   rmSync,
   statSync,
-  watch,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import dugite from "dugite";
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, clipboard, ipcMain, shell } from "electron";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -28,9 +27,6 @@ const MAGI_REPOSITORY =
 let mainWindow = null;
 let startingLocal = false;
 let runtimeRootPromise = null;
-let appWatcher = null;
-let appReloadTimer = null;
-let appReloadPromptOpen = false;
 
 function command(command, args, { cwd, env, description }) {
   return new Promise((resolve, reject) => {
@@ -278,66 +274,17 @@ async function launchLocalOperator(win) {
   }
 }
 
-function stopWatchingApp() {
-  appWatcher?.close();
-  appWatcher = null;
-  if (appReloadTimer !== null) {
-    clearTimeout(appReloadTimer);
-    appReloadTimer = null;
-  }
-}
-
-function watchApp(win, indexFile) {
-  stopWatchingApp();
-  appWatcher = watch(path.dirname(indexFile), (_event, filename) => {
-    if (filename !== null && String(filename) !== path.basename(indexFile)) {
-      return;
-    }
-    if (appReloadTimer !== null) {
-      clearTimeout(appReloadTimer);
-    }
-    appReloadTimer = setTimeout(async () => {
-      appReloadTimer = null;
-      if (appReloadPromptOpen || win.isDestroyed() || !existsSync(indexFile)) {
-        return;
-      }
-      appReloadPromptOpen = true;
-      try {
-        const { response } = await dialog.showMessageBox(win, {
-          type: "info",
-          title: "MAGI interface updated",
-          message: "A new local MAGI interface is ready.",
-          detail: "Reload now to use the newly built interface?",
-          buttons: ["Reload", "Later"],
-          defaultId: 0,
-          cancelId: 1,
-        });
-        if (response === 0 && !win.isDestroyed()) {
-          await win.loadFile(indexFile);
-        }
-      } finally {
-        appReloadPromptOpen = false;
-      }
-    }, 500);
-  });
-  appWatcher.once("error", stopWatchingApp);
-}
-
 async function loadStartup(win) {
-  stopWatchingApp();
   await win.loadFile(path.join(SHELL_DIR, "boot", "index.html"));
 }
 
-// The app reports its own entry point: a built file to load (and watch), or a
-// dev server URL to point the window at.
+// The app reports its own entry point: a built file or a dev server URL.
 async function loadApp(win, ui) {
   if (ui.startsWith("http")) {
-    stopWatchingApp();
     await win.loadURL(ui);
     return;
   }
   await win.loadFile(ui);
-  watchApp(win, ui);
 }
 
 function createWindow() {
@@ -368,7 +315,6 @@ function createWindow() {
   });
   win.on("closed", () => {
     if (mainWindow === win) {
-      stopWatchingApp();
       mainWindow = null;
     }
   });
@@ -407,7 +353,6 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  stopWatchingApp();
   // The app owns the processes it started (local ASP, for one).
   localApi?.dispose?.();
 });

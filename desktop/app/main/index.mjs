@@ -654,15 +654,14 @@ export function createLocalApi(context) {
 
   /**
    * The commit is the unit this app reacts to: a pull (or a local commit) in the
-   * checkout rebuilds the interface, and the shell then offers to load it. Files
-   * are ignored on purpose, and nothing here stops ASP or the MAGI processes —
-   * loading the new interface is a desktop-side change.
+   * checkout rebuilds the interface, then tells the interface to offer a reload.
+   * Files are ignored on purpose. A page reload leaves ASP and MAGI running.
    */
   function watchCheckout() {
     if (commitWatcher !== null || !managed || (process.env.MAGI_APP_URL ?? "").trim() !== "") {
       return;
     }
-    const watcher = { commit: "", building: false, stopped: false, timer: null };
+    const watcher = { commit: "", stopped: false, timer: null };
     commitWatcher = watcher;
     const poll = async () => {
       const commit = await readCommit();
@@ -670,17 +669,18 @@ export function createLocalApi(context) {
         return;
       }
       if (commit !== "" && commit !== watcher.commit) {
-        const changed = watcher.commit !== "";
-        watcher.commit = commit;
-        if (changed && !watcher.building) {
-          watcher.building = true;
+        if (watcher.commit === "") {
+          watcher.commit = commit;
+        } else {
           try {
             await rebuildInterface();
+            if (!watcher.stopped) {
+              watcher.commit = commit;
+              emit("app.interface-updated", { commit });
+            }
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             console.error(`[magi-app] could not rebuild the interface: ${detail}`);
-          } finally {
-            watcher.building = false;
           }
         }
       }
