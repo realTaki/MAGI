@@ -69,6 +69,7 @@ function packagedTools() {
     process.platform === "win32"
       ? [path.join(runtime, "python", "python.exe")]
       : [
+          path.join(runtime, "python", "bin", "python3.12"),
           path.join(runtime, "python", "bin", "python3"),
           path.join(runtime, "python", "bin", "python"),
         ];
