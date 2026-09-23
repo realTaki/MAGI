@@ -255,8 +255,7 @@ data/
 magi.db
 magi.db-*
 
-# Agents
-AGENTS.md
+# Agents memory and state directories — local-only, not tracked in Git.
 .codebuddy/
 .codex/
 .agents/
