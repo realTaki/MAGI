@@ -7,6 +7,7 @@ import { Magi } from "../magi.js";
 test("ASP invite enters ChatNotify and reply is delivered to the session", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "ts-magi-asp-"));
   const requests: Array<{ path: string; body: unknown }> = [];
+  const replies: unknown[] = [];
   let socket: Bun.ServerWebSocket<unknown> | null = null;
   const server = Bun.serve({
     port: 0,
@@ -19,7 +20,7 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
         return Response.json({});
       })();
     },
-    websocket: { open(ws) { socket = ws; }, message() {} },
+    websocket: { open(ws) { socket = ws; }, message(_ws, message) { replies.push(JSON.parse(String(message))); } },
   });
   const magi = new Magi("@alice.magi", {
     workspace,
@@ -31,14 +32,15 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
     await magi.asp!.connect();
     expect(socket).not.toBeNull();
     socket!.send(JSON.stringify({
-      type: "session.invited", session_id: "s1",
+      type: "session.invited", event_id: "event-1", session_id: "s1",
       payload: { invitee: "@alice.magi", initial_message: { content: "hello" } },
     }));
-    for (let i = 0; i < 200 && requests.length < 2; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && (requests.length < 2 || replies.length < 1); i++) await Bun.sleep(10);
     expect(requests).toEqual([
       { path: "/sessions/s1/join", body: null },
       { path: "/sessions/s1/messages", body: { content: "hello back" } },
     ]);
+    expect(replies).toEqual([{ type: "session.ack", session_id: "s1", event_id: "event-1" }]);
     const conversation = magi.bus.conversations.forChannel("asp", "s1");
     expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["hello", "hello back"]);
   } finally {

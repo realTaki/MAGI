@@ -99,4 +99,36 @@ describe("local MAGI agent", () => {
     await magi.stop();
     expect(delivered).toEqual(["bad credentials"]);
   });
+
+  test("provider changes are verified before settings become active", async () => {
+    const path = await workspace();
+    const configured: Array<Record<string, unknown>> = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      client: {
+        async complete() { return { role: "assistant", content: "unused" }; },
+        async verify(settings) {
+          if (settings.api_key === "bad-secret") throw new Error("invalid key bad-secret");
+        },
+        configure(settings) { configured.push(settings); },
+      },
+    });
+    magi.start();
+    const board = magi.bus.board("ChangeProviderNotify");
+    const badId = board.publish({ provider: "openai", model: "gpt-test", api_key: "bad-secret" }, "test");
+    let failed = null;
+    for (let i = 0; i < 100 && !failed; i++) { failed = board.result(badId); await Bun.sleep(10); }
+    expect(failed).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
+    expect(magi.bus.getSetting("provider.api_key")).toBeNull();
+
+    const goodId = board.publish({ provider: "openai", model: "gpt-test", api_key: "good-secret" }, "test");
+    let completed = null;
+    for (let i = 0; i < 100 && !completed; i++) { completed = board.result(goodId); await Bun.sleep(10); }
+    expect(completed).toMatchObject({ status: "completed" });
+    expect(magi.bus.getSetting("provider.name")).toBe("openai");
+    expect(magi.bus.getSetting("provider.model")).toBe("gpt-test");
+    expect(magi.bus.getSetting("provider.api_key")).toBe("good-secret");
+    expect(configured).toHaveLength(1);
+    await magi.stop();
+  });
 });
