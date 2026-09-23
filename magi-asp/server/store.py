@@ -201,7 +201,16 @@ class Store:
         db = self._db()
         if db is None:
             return
+        sequence = min(sequence, self.session_seq[session_id] - 1)
+        if sequence < 0:
+            return
         with db:
+            db.execute(
+                """INSERT INTO asp_delivery_acks VALUES (?, ?, ?)
+                   ON CONFLICT(session_id, handle) DO UPDATE SET
+                   sequence = max(sequence, excluded.sequence)""",
+                (session_id, handle, sequence),
+            )
             db.execute(
                 """UPDATE asp_message_recipients SET acked = 1
                    WHERE handle = ? AND event_id IN (
@@ -227,6 +236,16 @@ class Store:
                 event for event in self.session_events[session_id]
                 if event.event_id not in removed
             ]
+
+    def ack_cursor(self, handle: str, session_id: str) -> int:
+        db = self._db()
+        if db is None:
+            return -1
+        row = db.execute(
+            "SELECT sequence FROM asp_delivery_acks WHERE session_id = ? AND handle = ?",
+            (session_id, handle),
+        ).fetchone()
+        return -1 if row is None else int(row["sequence"])
 
     # ---- Agents ----------------------------------------------------------
 

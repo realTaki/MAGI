@@ -53,6 +53,12 @@ def _version_2(connection: sqlite3.Connection) -> None:
             PRIMARY KEY (event_id, handle),
             FOREIGN KEY (event_id) REFERENCES asp_events(event_id) ON DELETE CASCADE
         );
+        CREATE TABLE asp_delivery_acks (
+            session_id TEXT NOT NULL,
+            handle TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            PRIMARY KEY (session_id, handle)
+        );
         CREATE TABLE asp_message_keys (
             session_id TEXT NOT NULL,
             sender TEXT NOT NULL,

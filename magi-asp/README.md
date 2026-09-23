@@ -19,14 +19,13 @@ Group profile **邀请** uses:
 - `GET /bots` — MAGI this operator can add
 - `POST /conversations/{conversation_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt
 
-Provider settings (the model service every MAGI runs on) live in `asp_settings`
-and are edited from the desktop app:
+The desktop app owns provider settings and the API key in `~/.magi/app/provider.json`.
+ASP only forwards a complete update to MAGI; it never saves a new copy:
 
-- `GET /settings/provider` — `{ provider, model, api_key }`; operator only.
-- `PUT /settings/provider` — stores the change, then hands
-  `agent.provider.update` to each connected MAGI and reports `synced` / `failed`.
-  An omitted field keeps its value, an empty string clears it. A MAGI that
-  connects later gets the same message right after joining, so settings saved
-  while it was offline still land.
+- `PUT /settings/provider` — transiently hands `agent.provider.update` to
+  connected MAGI and reports `synced` / `failed`. The app retries when a MAGI
+  comes online.
+- `GET` and `DELETE /settings/provider/legacy` let the app copy an older
+  `asp_settings.provider` value into its own file before removing that value.
 - The MAGI side answers with `agent.provider.updated` after publishing the change
   into its own bus (persisted settings + live provider reconfiguration).

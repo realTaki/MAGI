@@ -65,7 +65,7 @@ export default {
     navUsage: "Usage",
     navAbout: "About",
     navProvider: "Provider",
-    providerHint: "The model provider every MAGI runs on. Saving hands it to local ASP, which passes it on to each MAGI — including ones that connect later.",
+    providerHint: "This app saves the model provider for every MAGI and sends it through ASP. Newly connected MAGI receive it too.",
     providerName: "Provider",
     providerNamePlaceholder: "claude, openai, …",
     providerModel: "Model",

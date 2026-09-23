@@ -65,7 +65,7 @@ export default {
     navUsage: "使用量",
     navAbout: "情報",
     navProvider: "プロバイダ",
-    providerHint: "すべての MAGI が使うモデルプロバイダ。保存するとローカル ASP が受け取り、各 MAGI に配ります（後から接続した MAGI にも再送）。",
+    providerHint: "このアプリがすべての MAGI のモデル設定を保存し、ASP 経由で配ります。後から接続した MAGI にも再送します。",
     providerName: "プロバイダ",
     providerNamePlaceholder: "claude、openai…",
     providerModel: "モデル",

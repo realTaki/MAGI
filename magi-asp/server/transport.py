@@ -75,6 +75,8 @@ class Transport:
         conns.discard(ws)
         if conns:
             return
+        for key in [key for key in self._cursors if key[0] == handle]:
+            del self._cursors[key]
         # Last connection dropped — start grace window.
         if self._on_went_offline is not None:
             await self._on_went_offline(handle)
@@ -186,7 +188,8 @@ class Transport:
 
     def cursor(self, handle: str, session_id: str) -> int:
         """Last delivered sequence for this agent in this session, or -1 if none."""
-        return self._cursors.get((handle, session_id), -1)
+        return max(self._cursors.get((handle, session_id), -1),
+                   self.store.ack_cursor(handle, session_id))
 
     def advance_cursor(self, handle: str, session_id: str, sequence: int) -> None:
         current = self._cursors.get((handle, session_id), -1)
