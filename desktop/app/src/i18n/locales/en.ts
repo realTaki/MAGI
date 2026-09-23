@@ -34,7 +34,6 @@ export default {
     menuAria: "Account menu",
     settings: "Settings",
     logOut: "Log out",
-    github: "Connect GitHub",
   },
   github: {
     title: "Connect GitHub",

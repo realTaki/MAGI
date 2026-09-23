@@ -136,6 +136,8 @@ body {
 }
 
 .product-demo__sidebar-close {
+  position: relative;
+  z-index: 21;
   display: none;
   font-size: 15px;
 }
@@ -149,7 +151,7 @@ body {
 
 .product-demo__plus-wrap {
   position: relative;
-  z-index: 8;
+  z-index: 21;
   -webkit-app-region: no-drag;
 }
 
@@ -408,6 +410,8 @@ body {
 }
 
 .product-demo__menu-btn {
+  position: relative;
+  z-index: 21;
   display: none;
   width: 32px;
   height: 28px;
@@ -437,6 +441,8 @@ body {
 }
 
 .product-demo__name-btn {
+  position: relative;
+  z-index: 21;
   border: 0;
   background: transparent;
   padding: 0;
@@ -660,6 +666,8 @@ body {
 }
 
 .product-demo__panel-collapse {
+  position: relative;
+  z-index: 21;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -671,6 +679,7 @@ body {
   letter-spacing: 0.14em;
   line-height: 1;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__panel-collapse:hover,
@@ -1288,6 +1297,18 @@ body {
 .product-demo {
   padding-top: 0;
   height: 100%;
+}
+
+/* One strip across the whole window. The column headers do not line up, so
+   drag cannot be left to whichever header happens to sit at the top. */
+.product-demo__drag {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 60px;
+  -webkit-app-region: drag;
 }
 .product-demo__frame {
   height: 100%;

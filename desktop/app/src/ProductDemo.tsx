@@ -9,12 +9,7 @@ import {
 } from "./demo";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, sendAspMessage, updateAspNickname, addAspConversationMember, storedConversations, saveConversations, storedEvents, syncAspEvents, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
-import {
-  initialsFromLogin,
-  localAppAvailable,
-  openGitHubConnect,
-  useGitHubAccount,
-} from "./github-connect";
+import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -834,6 +829,7 @@ export function ProductDemo() {
 
   return (
     <div className="product-demo">
+      <div className="product-demo__drag" aria-hidden="true" />
       <div className={`product-demo__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
           id="product-demo-bots"
@@ -948,18 +944,6 @@ export function ProductDemo() {
             </button>
             {userMenuOpen ? (
               <div className="product-demo__user-menu" role="menu">
-                {localAppAvailable() ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      openGitHubConnect();
-                    }}
-                  >
-                    {t("account.github")}
-                  </button>
-                ) : null}
                 <button type="button" role="menuitem" onClick={openAppSettings}>
                   {t("account.settings")}
                 </button>
