@@ -8,5 +8,4 @@ contextBridge.exposeInMainWorld("magiDesktop", {
     ipcRenderer.on("asp:startup-progress", (_event, progress) => listener(progress)),
   onStartupError: (listener) =>
     ipcRenderer.on("asp:startup-error", (_event, message) => listener(message)),
-  windowControl: (action) => ipcRenderer.invoke("window:control", action),
 });
