@@ -21,7 +21,58 @@ def _version_1(connection: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS: tuple[Migration, ...] = (_version_1,)
+def _version_2(connection: sqlite3.Connection) -> None:
+    """Durable relay state and per-recipient message acknowledgements."""
+    connection.executescript(
+        """
+        CREATE TABLE asp_agents (handle TEXT PRIMARY KEY, record_json TEXT NOT NULL);
+        CREATE TABLE asp_sessions (
+            id TEXT PRIMARY KEY,
+            record_json TEXT NOT NULL,
+            next_sequence INTEGER NOT NULL
+        );
+        CREATE TABLE asp_participants (
+            session_id TEXT NOT NULL,
+            handle TEXT NOT NULL,
+            record_json TEXT NOT NULL,
+            PRIMARY KEY (session_id, handle)
+        );
+        CREATE TABLE asp_events (
+            session_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            event_id TEXT NOT NULL UNIQUE,
+            type TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY (session_id, sequence)
+        );
+        CREATE TABLE asp_message_recipients (
+            event_id TEXT NOT NULL,
+            handle TEXT NOT NULL,
+            acked INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (event_id, handle),
+            FOREIGN KEY (event_id) REFERENCES asp_events(event_id) ON DELETE CASCADE
+        );
+        CREATE TABLE asp_message_keys (
+            session_id TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            key TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            PRIMARY KEY (session_id, sender, key)
+        );
+        CREATE TABLE asp_session_keys (
+            creator TEXT NOT NULL,
+            key TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            sequence INTEGER,
+            PRIMARY KEY (creator, key)
+        );
+        """
+    )
+
+
+MIGRATIONS: tuple[Migration, ...] = (_version_1, _version_2)
 
 
 def apply_migrations(connection: sqlite3.Connection) -> None:

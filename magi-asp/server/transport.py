@@ -36,9 +36,6 @@ class Transport:
         self._disconnect_timers: dict[str, asyncio.Task] = {}
         self._nickname_requests: dict[str, tuple[str, asyncio.Future[bool]]] = {}
         self._provider_requests: dict[str, tuple[str, asyncio.Future[bool]]] = {}
-        # Where the operator's provider settings come from, so a MAGI that
-        # (re)connects receives them without waiting for the next save.
-        self._provider_source: Callable[[], dict[str, Any] | None] | None = None
         # Called when an agent's grace window expires while still offline. The
         # service layer uses this to fire session.left and update statuses.
         self._on_grace_expired = on_grace_expired
@@ -62,9 +59,6 @@ class Transport:
         was_empty = handle not in self._connections or not self._connections[handle]
         self._connections.setdefault(handle, set()).add(ws)
         await ws.send_text(json.dumps({"type": "agent.nickname.read"}))
-        config = self._provider_config()
-        if config is not None:
-            await ws.send_text(json.dumps({"type": "agent.provider.update", **config}))
 
         # Cancel any pending grace timer.
         timer = self._disconnect_timers.pop(handle, None)
@@ -100,18 +94,6 @@ class Transport:
 
     def is_online(self, handle: str) -> bool:
         return bool(self._connections.get(handle))
-
-    def set_provider_source(self, source: Callable[[], dict[str, Any] | None]) -> None:
-        """Register where the current provider settings live."""
-        self._provider_source = source
-
-    def _provider_config(self) -> dict[str, Any] | None:
-        if self._provider_source is None:
-            return None
-        config = self._provider_source()
-        if isinstance(config, dict) and any(config.values()):
-            return config
-        return None
 
     async def update_nickname(self, handle: str, nickname: str) -> bool:
         return await self._control_request(

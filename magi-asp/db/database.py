@@ -69,6 +69,11 @@ class LocalDatabase:
                 (key, json.dumps(value)),
             )
 
+    def delete_setting(self, key: str) -> None:
+        connection = self._connection()
+        with connection:
+            connection.execute("DELETE FROM asp_settings WHERE key = ?", (key,))
+
     def _connection(self) -> sqlite3.Connection:
         if self.connection is None:
             raise RuntimeError("LocalDatabase is not open")

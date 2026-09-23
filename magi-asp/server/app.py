@@ -21,7 +21,7 @@ from .spawn import MagiSpawner, default_spawner
 from .store import Store
 from .transport import Transport
 
-# ASP-owned setting: the provider configuration every MAGI should run with.
+# Legacy key retained only until the app has copied and removed old settings.
 PROVIDER_SETTING_KEY = "provider"
 
 
@@ -102,14 +102,12 @@ class UpdateNicknameBody(BaseModel):
 
 
 class ProviderSettingsBody(BaseModel):
-    """Provider settings for every MAGI.
-
-    ``None`` leaves a field as it is; an empty string clears it.
-    """
+    """A complete, transient provider update from the app."""
 
     provider: str | None = None
     model: str | None = None
     api_key: str | None = None
+    handles: list[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +144,6 @@ def create_operator(
     store = Store()
     store.seed_agents(seed)
     transport = Transport(store)
-    # A MAGI that connects (or reconnects) gets the provider settings right away,
-    # so nothing saved while it was offline is lost.
-    transport.set_provider_source(lambda: storage.get_setting(PROVIDER_SETTING_KEY))
     service = Service(store, transport)
     magi_spawner = spawner if spawner is not None else default_spawner()
 
@@ -202,51 +197,51 @@ def create_operator(
         agent.nickname = nickname
         return {"handle": handle, "nickname": nickname}
 
-    # ---- Provider settings (operator-configures-everyone) ----------------
+    # ---- Provider delivery; the app owns the saved configuration ----------
 
-    def provider_settings() -> dict[str, Any]:
-        stored = storage.get_setting(PROVIDER_SETTING_KEY)
-        settings = stored if isinstance(stored, dict) else {}
-        return {
-            "provider": settings.get("provider") or None,
-            "model": settings.get("model") or None,
-            "api_key": settings.get("api_key") or None,
-        }
-
-    async def sync_provider(settings: dict[str, Any]) -> tuple[list[str], list[dict[str, str]]]:
+    async def sync_provider(
+        settings: dict[str, Any], handles: list[str] | None
+    ) -> tuple[list[str], list[dict[str, str]]]:
         synced: list[str] = []
         failed: list[dict[str, str]] = []
-        for handle in list(store.agents):
+        for handle in dict.fromkeys(handles if handles is not None else store.agents):
             if handle == "user":
+                continue
+            if store.get_agent(handle) is None:
                 continue
             try:
                 if await transport.update_provider(handle, **settings):
                     synced.append(handle)
             except ConnectionError:
-                # Offline MAGI are handed these settings when they reconnect.
+                # The app retries when this MAGI comes online.
                 continue
             except TimeoutError:
                 failed.append({"handle": handle, "detail": "MAGI did not confirm"})
         return synced, failed
 
-    @router.get("/settings/provider")
-    async def get_provider_settings(request: Request):
+    @router.get("/settings/provider/legacy")
+    async def get_legacy_provider_settings(request: Request):
         if auth_handle(request) != "user":
             raise HTTPException(status_code=403, detail="operator only")
-        return provider_settings()
+        return storage.get_setting(PROVIDER_SETTING_KEY)
+
+    @router.delete("/settings/provider/legacy")
+    async def delete_legacy_provider_settings(request: Request):
+        if auth_handle(request) != "user":
+            raise HTTPException(status_code=403, detail="operator only")
+        storage.delete_setting(PROVIDER_SETTING_KEY)
+        return {"ok": True}
 
     @router.put("/settings/provider")
     async def put_provider_settings(body: ProviderSettingsBody, request: Request):
         if auth_handle(request) != "user":
             raise HTTPException(status_code=403, detail="operator only")
-        settings = provider_settings()
-        for field in ("provider", "model", "api_key"):
-            value = getattr(body, field)
-            if value is not None:
-                settings[field] = value.strip()
-        storage.set_setting(PROVIDER_SETTING_KEY, settings)
-        synced, failed = await sync_provider(settings)
-        return {**provider_settings(), "synced": synced, "failed": failed}
+        settings = {
+            field: (getattr(body, field) or "").strip() or None
+            for field in ("provider", "model", "api_key")
+        }
+        synced, failed = await sync_provider(settings, body.handles)
+        return {**settings, "synced": synced, "failed": failed}
 
     @router.get("/conversations/{conversation_id}")
     async def get_conversation(conversation_id: str, request: Request):
