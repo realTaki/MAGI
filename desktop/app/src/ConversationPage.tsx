@@ -499,18 +499,19 @@ export function ConversationPage() {
   useEffect(() => {
     const list = botListRef.current;
     if (!list) return;
+    const botList = list;
     function update() {
-      const bounds = list.getBoundingClientRect();
-      const hidden = [...list.querySelectorAll<HTMLElement>("[data-unread='true']")]
+      const bounds = botList.getBoundingClientRect();
+      const hidden = [...botList.querySelectorAll<HTMLElement>("[data-unread='true']")]
         .find((row) => row.getBoundingClientRect().bottom > bounds.bottom + 1);
       setNextUnreadBelowId(hidden?.dataset.botId ?? "");
     }
     const frame = window.requestAnimationFrame(update);
-    list.addEventListener("scroll", update, { passive: true });
+    botList.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     return () => {
       window.cancelAnimationFrame(frame);
-      list.removeEventListener("scroll", update);
+      botList.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
   }, [filtered]);
