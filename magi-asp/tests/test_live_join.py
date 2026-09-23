@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -71,6 +72,23 @@ def test_spawned_magi_joins_group_on_intranet_invite(tmp_path: Path, monkeypatch
             return any(row["handle"] == handle and row["online"] for row in rows)
 
         _wait(magi_online)
+
+        renamed = httpx.patch(
+            f"{base}/bots/{handle}/nickname",
+            json={"nickname": "司空"},
+            headers=headers,
+            timeout=8.0,
+        )
+        assert renamed.status_code == 200, renamed.text
+        assert renamed.json()["nickname"] == "司空"
+        workspace_db = tmp_path / "home" / ".magi" / "eva-000" / "memories" / "magi.db"
+        with sqlite3.connect(workspace_db) as connection:
+            nickname = connection.execute(
+                "SELECT nickname FROM books_contacts WHERE id = 1"
+            ).fetchone()[0]
+        assert nickname == "司空"
+        listed = httpx.get(f"{base}/bots", headers=headers, timeout=2.0).json()["bots"]
+        assert listed[0]["name"] == "司空"
 
         group = httpx.post(
             f"{base}/conversations",

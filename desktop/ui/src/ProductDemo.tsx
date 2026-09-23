@@ -1193,10 +1193,10 @@ export function ProductDemo() {
                 ) : (
                   <>
                     <label className="product-demo__field">
-                      Name
+                      Nickname
                       <input
                         value={active.name}
-                        placeholder="Name this agent"
+                        placeholder="Give this MAGI a nickname"
                         onChange={(event) => patchActive({ name: event.target.value })}
                         onBlur={() => { void saveNickname(); }}
                       />

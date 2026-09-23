@@ -93,6 +93,10 @@ class AddMemberBody(BaseModel):
     handle: str
 
 
+class UpdateNicknameBody(BaseModel):
+    nickname: str
+
+
 # ---------------------------------------------------------------------------
 # Router factory
 # ---------------------------------------------------------------------------
@@ -157,6 +161,27 @@ def create_operator(
     async def get_conversations(request: Request):
         caller = auth_handle(request)
         return {"conversations": service.list_conversations(caller)}
+
+    @router.patch("/bots/{handle}/nickname")
+    async def patch_bot_nickname(handle: str, body: UpdateNicknameBody, request: Request):
+        if auth_handle(request) != "user":
+            raise HTTPException(status_code=403, detail="operator only")
+        agent = store.get_agent(handle)
+        if agent is None or handle == "user":
+            raise HTTPException(status_code=404, detail="MAGI not found")
+        nickname = body.nickname.strip()
+        if not nickname or len(nickname) > 80 or any(char in nickname for char in "\r\n"):
+            raise HTTPException(status_code=400, detail="nickname must be one line and 1–80 characters")
+        try:
+            updated = await transport.update_nickname(handle, nickname)
+        except ConnectionError:
+            raise HTTPException(status_code=503, detail="MAGI is offline")
+        except TimeoutError:
+            raise HTTPException(status_code=504, detail="MAGI did not confirm nickname")
+        if not updated:
+            raise HTTPException(status_code=502, detail="MAGI could not update nickname")
+        agent.nickname = nickname
+        return {"handle": handle, "nickname": nickname}
 
     @router.get("/conversations/{conversation_id}")
     async def get_conversation(conversation_id: str, request: Request):
@@ -364,8 +389,9 @@ def create_operator(
         await transport.connect(agent.handle, ws)
         try:
             while True:
-                # Drain any inbound messages (operator does not interpret them).
-                await ws.receive_text()
+                message = json.loads(await ws.receive_text())
+                if isinstance(message, dict):
+                    transport.receive_control(agent.handle, message)
         except WebSocketDisconnect:
             pass
         except Exception:

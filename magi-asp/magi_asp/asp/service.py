@@ -205,8 +205,8 @@ class Service:
                 view["description"] = sess.description
         if view.get("kind") == "bot" and len(agents) == 1:
             agent = self.store.get_agent(agents[0])
-            if agent is not None and agent.name:
-                view["name"] = agent.name
+            if agent is not None:
+                view["name"] = agent.nickname or agent.name or agents[0]
         return view
 
     def list_conversations(self, caller: str) -> list[dict[str, Any]]:
@@ -238,9 +238,10 @@ class Service:
             if handle == caller:
                 continue
             agent = self.store.get_agent(handle)
+            name = (agent.nickname or agent.name) if agent is not None else None
             row: dict[str, Any] = {
                 "handle": handle,
-                "name": (agent.name if agent is not None and agent.name else handle),
+                "name": name or handle,
                 "online": self.transport.is_online(handle),
             }
             if conversation_id is not None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any, Awaitable, Callable
+from uuid import uuid4
 
 from fastapi import WebSocket
 
@@ -31,6 +32,7 @@ class Transport:
         self._connections: dict[str, set[WebSocket]] = {}
         self._cursors: dict[tuple[str, str], int] = {}
         self._disconnect_timers: dict[str, asyncio.Task] = {}
+        self._nickname_requests: dict[str, tuple[str, asyncio.Future[bool]]] = {}
         # Called when an agent's grace window expires while still offline. The
         # service layer uses this to fire session.left and update statuses.
         self._on_grace_expired = on_grace_expired
@@ -53,6 +55,7 @@ class Transport:
     async def connect(self, handle: str, ws: WebSocket) -> None:
         was_empty = handle not in self._connections or not self._connections[handle]
         self._connections.setdefault(handle, set()).add(ws)
+        await ws.send_text(json.dumps({"type": "agent.nickname.read"}))
 
         # Cancel any pending grace timer.
         timer = self._disconnect_timers.pop(handle, None)
@@ -88,6 +91,39 @@ class Transport:
 
     def is_online(self, handle: str) -> bool:
         return bool(self._connections.get(handle))
+
+    async def update_nickname(self, handle: str, nickname: str) -> bool:
+        connections = self._connections.get(handle)
+        if not connections:
+            raise ConnectionError("MAGI is offline")
+        request_id = uuid4().hex
+        response: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        self._nickname_requests[request_id] = (handle, response)
+        try:
+            await next(iter(connections)).send_text(json.dumps({
+                "type": "agent.nickname.update",
+                "request_id": request_id,
+                "nickname": nickname,
+            }))
+            return await asyncio.wait_for(response, timeout=5)
+        finally:
+            self._nickname_requests.pop(request_id, None)
+
+    def receive_control(self, handle: str, message: dict[str, Any]) -> None:
+        if message.get("type") == "agent.nickname.current":
+            agent = self.store.get_agent(handle)
+            nickname = message.get("nickname")
+            if agent is not None and (nickname is None or isinstance(nickname, str)):
+                agent.nickname = nickname
+            return
+        if message.get("type") != "agent.nickname.updated":
+            return
+        request_id = message.get("request_id")
+        if not isinstance(request_id, str):
+            return
+        pending = self._nickname_requests.get(request_id)
+        if pending is not None and pending[0] == handle and not pending[1].done():
+            pending[1].set_result(message.get("ok") is True)
 
     # ---- Delivery --------------------------------------------------------
 

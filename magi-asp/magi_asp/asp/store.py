@@ -41,6 +41,7 @@ class Agent:
     handle: str
     token: str
     name: str | None = None
+    nickname: str | None = None
     inbound_policy: InboundPolicy = "open"
     allowlist: set[str] = field(default_factory=set)
 
