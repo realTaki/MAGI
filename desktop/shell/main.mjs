@@ -12,7 +12,7 @@ const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
 const UI_DIST = path.join(SHELL_DIR, "..", "ui", "dist", "index.html");
 const UI_DEV_URL = process.env.MAGI_UI_URL ?? "http://127.0.0.1:5173";
-const ASP_URL = process.env.MAGI_ASP_URL ?? "http://127.0.0.1:42069";
+const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
 
@@ -96,7 +96,7 @@ function packagedTools() {
   return { env, git, node, npm, python, uv };
 }
 
-async function cloneMagiSource(tools) {
+async function cloneMagiSource(tools, report) {
   const destination = path.join(app.getPath("home"), ".magi", "MAGI");
   if (existsSync(destination)) {
     if (!statSync(destination).isDirectory()) {
@@ -108,6 +108,7 @@ async function cloneMagiSource(tools) {
     return destination;
   }
 
+  report("clone", "Cloning MAGI source…");
   const parent = path.dirname(destination);
   mkdirSync(parent, { recursive: true });
   const staging = mkdtempSync(path.join(parent, ".MAGI-"));
@@ -132,7 +133,7 @@ async function cloneMagiSource(tools) {
   }
 }
 
-async function prepareCheckout(checkout, tools) {
+async function prepareCheckout(checkout, tools, report) {
   const asp = path.join(checkout, "magi-asp");
   const magi = path.join(checkout, "py-magi");
   const ui = path.join(checkout, "desktop", "ui");
@@ -147,21 +148,25 @@ async function prepareCheckout(checkout, tools) {
     }
   }
 
+  report("asp", "Preparing local magi-asp…");
   await command(tools.uv, ["sync", "--frozen", "--python", tools.python], {
     cwd: asp,
     env: tools.env,
     description: "Could not prepare magi-asp",
   });
+  report("magi", "Preparing MAGI…");
   await command(tools.uv, ["sync", "--frozen", "--extra", "eva", "--python", tools.python], {
     cwd: magi,
     env: tools.env,
     description: "Could not prepare MAGI",
   });
+  report("ui-dependencies", "Installing MAGI interface dependencies…");
   await command(tools.node, [tools.npm, "ci"], {
     cwd: ui,
     env: tools.env,
     description: "Could not install the MAGI UI dependencies",
   });
+  report("ui-build", "Building MAGI interface…");
   await command(tools.node, [tools.npm, "run", "build"], {
     cwd: ui,
     env: tools.env,
@@ -169,15 +174,15 @@ async function prepareCheckout(checkout, tools) {
   });
 }
 
-async function resolveRuntimeRoot() {
+async function resolveRuntimeRoot(report) {
   if (!app.isPackaged) {
     return REPO_ROOT;
   }
   if (runtimeRootPromise === null) {
     runtimeRootPromise = (async () => {
       const tools = packagedTools();
-      const checkout = await cloneMagiSource(tools);
-      await prepareCheckout(checkout, tools);
+      const checkout = await cloneMagiSource(tools, report);
+      await prepareCheckout(checkout, tools, report);
       return checkout;
     })().catch((error) => {
       runtimeRootPromise = null;
@@ -188,7 +193,7 @@ async function resolveRuntimeRoot() {
 }
 
 function healthUrl() {
-  return new URL("/health", ASP_URL).href;
+  return new URL("/health", ASP_ORIGIN).href;
 }
 
 async function waitForUrl(url, timeoutMs = 20_000) {
@@ -228,11 +233,10 @@ function resolveAspPython(aspDir) {
 }
 
 function spawnLocalAsp(checkout) {
-  // Desktop starts magi-asp only. MAGI processes are spawned by ASP on that
-  // host — the client must not start MAGI locally (ASP/MAGI may be remote).
+  // Desktop starts the local magi-asp. ASP spawns MAGI processes from this checkout.
   const aspDir = path.join(checkout, "magi-asp");
   const python = resolveAspPython(aspDir);
-  const origin = new URL(ASP_URL);
+  const origin = ASP_ORIGIN;
   const env = app.isPackaged ? packagedTools().env : process.env;
   const child = spawn(python, ["main.py"], {
     cwd: aspDir,
@@ -254,21 +258,24 @@ function spawnLocalAsp(checkout) {
   return child;
 }
 
-async function startLocalAsp() {
+async function startLocalAsp(report) {
+  report("checking", "Checking local magi-asp…");
   if (await isAspHealthy()) {
-    return resolveRuntimeRoot();
+    return resolveRuntimeRoot(report);
   }
-  const checkout = await resolveRuntimeRoot();
+  const checkout = await resolveRuntimeRoot(report);
   const aspDir = path.join(checkout, "magi-asp");
   if (!existsSync(path.join(aspDir, "main.py"))) {
     throw new Error(`magi-asp was not found at ${aspDir}`);
   }
+  report("starting", "Starting local magi-asp…");
   spawnedAsp = spawnLocalAsp(checkout);
   try {
     await new Promise((resolve, reject) => {
       spawnedAsp.once("error", reject);
       spawnedAsp.once("spawn", resolve);
     });
+    report("starting", "Waiting for local magi-asp…");
     await Promise.race([
       waitForUrl(healthUrl()),
       new Promise((_, reject) => {
@@ -285,6 +292,34 @@ async function startLocalAsp() {
     throw error;
   }
   return checkout;
+}
+
+function reportStartup(win, step, message) {
+  if (!win.isDestroyed()) {
+    win.webContents.send("asp:startup-progress", { step, message });
+  }
+}
+
+async function launchLocalOperator(win) {
+  if (startingLocal) {
+    return;
+  }
+  startingLocal = true;
+  try {
+    const checkout = await startLocalAsp((step, message) => reportStartup(win, step, message));
+    if (!win.isDestroyed()) {
+      await loadOperatorUi(win, checkout);
+    }
+  } catch (error) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(
+        "asp:startup-error",
+        error instanceof Error ? error.message : "Could not start local magi-asp.",
+      );
+    }
+  } finally {
+    startingLocal = false;
+  }
 }
 
 function stopWatchingOperatorUi() {
@@ -332,9 +367,9 @@ function watchOperatorUi(win, indexFile) {
   uiWatcher.once("error", stopWatchingOperatorUi);
 }
 
-function loadChooser(win) {
+async function loadStartup(win) {
   stopWatchingOperatorUi();
-  void win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
+  await win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
 }
 
 async function loadOperatorUi(win, checkout) {
@@ -380,31 +415,14 @@ function createWindow() {
       mainWindow = null;
     }
   });
-  void loadChooser(win);
   return win;
 }
 
-ipcMain.handle("asp:start-local", async () => {
-  if (startingLocal) {
-    throw new Error("magi-asp is already starting");
+ipcMain.handle("asp:retry", async () => {
+  if (mainWindow !== null) {
+    await loadStartup(mainWindow);
+    void launchLocalOperator(mainWindow);
   }
-  startingLocal = true;
-  try {
-    const checkout = await startLocalAsp();
-    if (mainWindow === null) {
-      throw new Error("MAGI window is gone");
-    }
-    await loadOperatorUi(mainWindow, checkout);
-  } finally {
-    startingLocal = false;
-  }
-});
-
-ipcMain.handle("app:show-chooser", async () => {
-  if (mainWindow === null) {
-    throw new Error("MAGI window is gone");
-  }
-  loadChooser(mainWindow);
 });
 
 ipcMain.handle("window:control", (_event, action) => {
@@ -427,9 +445,11 @@ ipcMain.handle("window:control", (_event, action) => {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   mainWindow = createWindow();
+  void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
+      void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
     }
   });
 });
