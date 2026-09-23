@@ -9,6 +9,7 @@ import { ToolsWorker } from "./tools/worker.js";
 import type { Tool } from "./tools/registry.js";
 import { CliWorker } from "./channels/cli/worker.js";
 import { AspWorker } from "./channels/asp/worker.js";
+import { TelegramWorker } from "./channels/telegram/worker.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -19,28 +20,32 @@ export class Magi {
   readonly tools: ToolsWorker;
   readonly cli: CliWorker;
   readonly asp: AspWorker | null;
+  readonly telegram: TelegramWorker | null;
   private running = false;
   private loop: Promise<void> | null = null;
 
-  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string } } = {}) {
+  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string } } = {}) {
     this.bus = new Bus(handle, options.workspace);
     this.tools = new ToolsWorker(this.bus, options.tools);
     this.agent = new AgentWorker(this.bus, () => this.tools.catalog());
     this.providers = new ProvidersWorker(this.bus, options.client);
     this.cli = new CliWorker(this.bus, options.deliver);
     this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
+    const telegramToken = options.telegram?.token ?? this.bus.getSetting("telegram.bot_token") ?? process.env.MAGI_TELEGRAM_BOT_TOKEN;
+    this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
   }
 
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.telegram?.start();
     this.loop = this.runLoop();
   }
 
   private async runLoop(): Promise<void> {
     while (this.running) {
       let worked = false;
-      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp].filter((item) => item !== null)) {
+      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram].filter((item) => item !== null)) {
         try { worked = await worker.poll() || worked; }
         catch (error) { console.error(`${worker.worker_name}:`, error); }
       }
@@ -63,6 +68,7 @@ export class Magi {
     this.running = false;
     await this.loop;
     this.asp?.close();
+    await this.telegram?.stop();
     this.bus.close();
   }
 }

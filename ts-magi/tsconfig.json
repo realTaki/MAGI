@@ -8,8 +8,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "skipLibCheck": true
-    ,"types": ["bun", "node"]
+    "skipLibCheck": true,
+    "types": ["bun", "node"]
   },
   "include": ["magi.ts", "bus/**/*.ts", "agent/**/*.ts", "providers/**/*.ts", "tools/**/*.ts", "channels/**/*.ts", "test/**/*.ts"]
 }

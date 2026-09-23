@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "bun magi.ts",
-    "test": "npm run build && bun test test/agent.test.ts"
+    "test": "bun run build && bun test test/agent.test.ts test/asp.test.ts test/telegram.test.ts"
   },
   "engines": {
     "bun": ">=1.2"
