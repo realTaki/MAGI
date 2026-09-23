@@ -9,15 +9,19 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   renameSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import dugite from "dugite";
-import { app, BrowserWindow, Menu, clipboard, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
+
+import { resolveStartupEntry } from "./startup-entry.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -31,11 +35,16 @@ const MAGI_REPOSITORY =
 // metadata can be migrated after an upgrade.
 const LEGACY_ELECTRON_USER_DATA = app.getPath("userData");
 const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
+const MAGI_CHECKOUT_ROOT = path.join(MAGI_DATA_ROOT, "MAGI");
 const MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
 const ELECTRON_USER_DATA = path.join(MAGI_APP_DATA, "electron");
 const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
 const ELECTRON_LOGS = path.join(MAGI_APP_DATA, "logs");
 const ELECTRON_CRASH_DUMPS = path.join(MAGI_APP_DATA, "crash-dumps");
+const WINDOW_STATE_FILE = path.join(MAGI_APP_DATA, "window-state.json");
+const DEFAULT_WINDOW_SIZE = { width: 1040, height: 760 };
+const MINIMUM_WINDOW_SIZE = { width: 720, height: 560 };
+const WINDOW_EDGE_MARGIN = 24;
 
 for (const directory of [
   ELECTRON_USER_DATA,
@@ -151,7 +160,7 @@ function packagedTools() {
 }
 
 async function cloneMagiSource(tools, progress) {
-  const destination = path.join(app.getPath("home"), ".magi", "MAGI");
+  const destination = MAGI_CHECKOUT_ROOT;
   if (existsSync(destination)) {
     if (!statSync(destination).isDirectory()) {
       throw new Error(`MAGI source path is not a directory: ${destination}`);
@@ -328,8 +337,18 @@ async function launchLocalOperator(win) {
   }
 }
 
+function startupEntry() {
+  const checkout = app.isPackaged
+    ? MAGI_CHECKOUT_ROOT
+    : path.resolve(process.env.MAGI_DEV_CHECKOUT || REPO_ROOT);
+  return resolveStartupEntry({
+    checkout,
+    fallback: path.join(SHELL_DIR, "boot", "index.html"),
+  });
+}
+
 async function loadStartup(win) {
-  await win.loadFile(path.join(SHELL_DIR, "boot", "index.html"));
+  await win.loadFile(startupEntry());
 }
 
 // The app reports its own entry point: a built file or a dev server URL.
@@ -341,12 +360,90 @@ async function loadApp(win, ui) {
   await win.loadFile(ui);
 }
 
+function savedWindowState() {
+  try {
+    const state = JSON.parse(readFileSync(WINDOW_STATE_FILE, "utf8"));
+    const bounds = state?.bounds;
+    if (
+      !bounds ||
+      ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) ||
+      bounds.width <= 0 ||
+      bounds.height <= 0
+    ) {
+      return null;
+    }
+    return {
+      bounds: {
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height),
+      },
+      maximized: state.maximized === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function fitBoundsToWorkArea(bounds, workArea) {
+  const availableWidth = Math.max(1, workArea.width - WINDOW_EDGE_MARGIN * 2);
+  const availableHeight = Math.max(1, workArea.height - WINDOW_EDGE_MARGIN * 2);
+  const width = Math.min(Math.max(bounds.width, MINIMUM_WINDOW_SIZE.width), availableWidth);
+  const height = Math.min(Math.max(bounds.height, MINIMUM_WINDOW_SIZE.height), availableHeight);
+  const minX = workArea.x + WINDOW_EDGE_MARGIN;
+  const minY = workArea.y + WINDOW_EDGE_MARGIN;
+  const maxX = workArea.x + workArea.width - WINDOW_EDGE_MARGIN - width;
+  const maxY = workArea.y + workArea.height - WINDOW_EDGE_MARGIN - height;
+  return {
+    x: Math.min(Math.max(bounds.x, minX), maxX),
+    y: Math.min(Math.max(bounds.y, minY), maxY),
+    width,
+    height,
+  };
+}
+
+function initialWindowState() {
+  const saved = savedWindowState();
+  const display = saved
+    ? screen.getDisplayMatching(saved.bounds)
+    : screen.getPrimaryDisplay();
+  const idealBounds = saved?.bounds ?? {
+    x: display.workArea.x + Math.round((display.workArea.width - DEFAULT_WINDOW_SIZE.width) / 2),
+    y: display.workArea.y + Math.round((display.workArea.height - DEFAULT_WINDOW_SIZE.height) / 2),
+    ...DEFAULT_WINDOW_SIZE,
+  };
+  return {
+    bounds: fitBoundsToWorkArea(idealBounds, display.workArea),
+    maximized: saved?.maximized ?? false,
+  };
+}
+
+function writeWindowState(win) {
+  if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) {
+    return;
+  }
+  const temporary = `${WINDOW_STATE_FILE}.tmp`;
+  try {
+    writeFileSync(
+      temporary,
+      `${JSON.stringify({
+        bounds: win.getNormalBounds(),
+        maximized: win.isMaximized(),
+      })}\n`,
+    );
+    renameSync(temporary, WINDOW_STATE_FILE);
+  } catch {
+    rmSync(temporary, { force: true });
+  }
+}
+
 function createWindow() {
+  const initial = initialWindowState();
   const win = new BrowserWindow({
-    width: 1040,
-    height: 760,
-    minWidth: 900,
-    minHeight: 600,
+    ...initial.bounds,
+    minWidth: Math.min(MINIMUM_WINDOW_SIZE.width, initial.bounds.width),
+    minHeight: Math.min(MINIMUM_WINDOW_SIZE.height, initial.bounds.height),
     title: "MAGI",
     show: false,
     ...(process.platform === "darwin"
@@ -362,12 +459,29 @@ function createWindow() {
   });
   win.setMenuBarVisibility(false);
   win.removeMenu();
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (initial.maximized) {
+      win.maximize();
+    }
+    win.show();
+  });
+  let saveWindowStateTimer = null;
+  const scheduleWindowStateSave = () => {
+    clearTimeout(saveWindowStateTimer);
+    saveWindowStateTimer = setTimeout(() => writeWindowState(win), 250);
+  };
+  win.on("move", scheduleWindowStateSave);
+  win.on("resize", scheduleWindowStateSave);
+  win.on("close", () => {
+    clearTimeout(saveWindowStateTimer);
+    writeWindowState(win);
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
   });
   win.on("closed", () => {
+    clearTimeout(saveWindowStateTimer);
     if (mainWindow === win) {
       mainWindow = null;
     }

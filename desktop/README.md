@@ -40,6 +40,10 @@ On first launch the packaged shell clones the complete repository into
 Node.js, npm and uv. The backend uses them to prepare the ignored Python
 environments and the app dependencies, build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
+Once the checkout exists, that page is loaded from
+`~/.magi/MAGI/desktop/shell/boot/`; the packaged copy is only the first-clone
+and damaged-checkout fallback. The packaged shell does not carry `app/dist` —
+the checkout builds and supplies the product interface.
 Once ASP answers, the backend makes sure the society is not empty: while no MAGI
 exists it creates the first three (ASP names them `eva-000`, `eva-001`, …) and
 nicknames them **MELCHIOR**, **BALTHASAR** and **CASPER**. Naming is best effort
@@ -50,16 +54,18 @@ packaged launch.
 
 ## What the shell does
 
-Only five things, none of them product-specific:
+Only six things, none of them product-specific:
 
 1. Clone `~/.magi/MAGI` when it is missing (packaged builds).
-2. Load the app backend from the checkout and give it native pieces: paths,
+2. Load the checkout's startup page when available, falling back to the small
+   packaged bootstrap page on first install or an incomplete checkout.
+3. Load the app backend from the checkout and give it native pieces: paths,
    bundled tools, `openExternal`, clipboard, and event forwarding.
-3. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
+4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
-4. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
+5. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
    then show that entry — a built file or a dev URL.
-5. Stop the backend on quit (`dispose()`), which tears down what it started.
+6. Stop the backend on quit (`dispose()`), which tears down what it started.
 
 That leaves one contract: the checkout must contain `app/main/index.mjs`
 exporting `createLocalApi(context)`, with a `prepare`, `start` and `dispose`,
@@ -108,7 +114,8 @@ user tokens are short-lived and installed per repository.
 | `magi-asp/` | Restart local ASP. |
 | `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
-| `desktop/shell/`, packaged tools and build configuration | Rebuild and reinstall the Electron app. The running shell is loaded from the installed app, not the checkout. |
+| `desktop/shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
+| `desktop/shell/*.mjs`, `desktop/shell/preload.cjs`, packaged tools and build configuration | Rebuild and reinstall the Electron app. Executable shell code is loaded from the installed app, not the checkout. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
 running, so a change under `desktop/app/main/` still waits for the next launch.

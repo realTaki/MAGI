@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "electron .",
     "dev:app": "npm run dev --prefix app",
-    "build": "npm run build --prefix app && node scripts/prepare-runtime.mjs && electron-builder",
+    "build": "node scripts/prepare-runtime.mjs && electron-builder",
     "build:app": "npm run build --prefix app",
     "build:desktop": "node scripts/prepare-runtime.mjs && electron-builder",
     "lint": "npm run lint --prefix app",
@@ -20,8 +20,6 @@
     "executableName": "MAGI",
     "files": [
       "shell/**",
-      "app/dist/**",
-      "schema.sql",
       "package.json"
     ],
     "asarUnpack": [
