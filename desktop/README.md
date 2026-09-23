@@ -22,10 +22,15 @@ after a restart. ASP keeps relay events in its own SQLite until each intended
 recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and conversation state in its workspace; outbound messages go
 through DeliveryNotify jobs.
-When upgrading from an ASP that kept events only in memory, reload the updated
-app interface while that ASP is still running: the app copies all available
-conversation events into its SQLite before the old ASP is stopped. Events from
-an already stopped in-memory ASP cannot be recovered.
+An old running ASP kept events only in memory. Before stopping it for this
+upgrade, run `python3 desktop/app/scripts/import-asp-history.py` from the MAGI
+checkout. This copies its available conversations and events into the desktop
+SQLite without acknowledging or deleting them. The running shell loads the new
+app backend only on its next launch, so it cannot perform this first import
+automatically. Events from an already stopped in-memory ASP cannot be recovered.
+The import preserves the desktop transcript; the old ASP's in-memory session
+routing is unavailable after that ASP stops, so those older threads cannot send
+new messages until a new conversation is created.
 The app stores provider credentials in `~/.magi/app/provider.json` (owner-only
 permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.

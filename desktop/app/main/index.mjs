@@ -191,7 +191,7 @@ export function createLocalApi(context) {
   let chatStorePromise = null;
   let providerTimer = null;
   let providerRelayReady = false;
-  const providerDelivered = new Set();
+  const providerAttempted = new Set();
 
   // A developer's own working tree is not this app's to rewire; only a checkout
   // the shell created (or one it was pointed at explicitly) counts.
@@ -848,12 +848,13 @@ export function createLocalApi(context) {
   async function saveProvider(input) {
     const settings = normalizeProvider(input);
     writeProvider(settings);
-    providerDelivered.clear();
+    providerAttempted.clear();
     try {
       const { token } = await aspJson("/operator");
       await ensureProviderRelay(token);
       const result = await syncProvider(settings, null, token);
-      for (const handle of result.synced ?? []) providerDelivered.add(handle);
+      for (const handle of result.synced ?? []) providerAttempted.add(handle);
+      for (const item of result.failed ?? []) providerAttempted.add(item.handle);
       return result;
     } catch (error) {
       throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -868,13 +869,14 @@ export function createLocalApi(context) {
         if (settings !== null) {
           const bots = (await aspJson("/bots", { token }))?.bots ?? [];
           const online = new Set(bots.filter((bot) => bot.online).map((bot) => bot.handle));
-          for (const handle of providerDelivered) {
-            if (!online.has(handle)) providerDelivered.delete(handle);
+          for (const handle of providerAttempted) {
+            if (!online.has(handle)) providerAttempted.delete(handle);
           }
-          const pending = [...online].filter((handle) => !providerDelivered.has(handle));
+          const pending = [...online].filter((handle) => !providerAttempted.has(handle));
           if (pending.length > 0) {
             const result = await syncProvider(settings, pending, token);
-            for (const handle of result.synced ?? []) providerDelivered.add(handle);
+            for (const handle of result.synced ?? []) providerAttempted.add(handle);
+            for (const item of result.failed ?? []) providerAttempted.add(item.handle);
           }
         }
       } catch (error) {

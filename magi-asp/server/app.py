@@ -217,6 +217,8 @@ def create_operator(
             try:
                 if await transport.update_provider(handle, **settings):
                     synced.append(handle)
+                else:
+                    failed.append({"handle": handle, "detail": "MAGI rejected provider configuration"})
             except ConnectionError:
                 # The app retries when this MAGI comes online.
                 continue

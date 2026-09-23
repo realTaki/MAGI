@@ -59,3 +59,24 @@ def test_app_can_migrate_and_delete_legacy_provider(tmp_path: Path) -> None:
         }
         assert client.delete("/settings/provider/legacy", headers=headers).json() == {"ok": True}
         assert client.get("/settings/provider/legacy", headers=headers).json() is None
+
+
+def test_rejected_provider_is_reported_to_the_app(tmp_path: Path) -> None:
+    with TestClient(create_app(
+        database_path=tmp_path / "asp.sqlite",
+        asp_seed={"@eva-000.magi": "magi-token"},
+        magi_spawner=RecordingSpawner(),
+    )) as client:
+        async def rejected(_handle: str, **_settings: object) -> bool:
+            return False
+
+        client.app.state.asp.transport.update_provider = rejected
+        result = client.put(
+            "/settings/provider",
+            headers=operator_headers(client),
+            json={"provider": "openai", "model": "gpt-5.6", "api_key": "bad-key"},
+        ).json()
+        assert result["synced"] == []
+        assert result["failed"] == [{
+            "handle": "@eva-000.magi", "detail": "MAGI rejected provider configuration"
+        }]
