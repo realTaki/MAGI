@@ -847,18 +847,26 @@ export function createLocalApi(context) {
 
   async function saveProvider(input) {
     const settings = normalizeProvider(input);
+    const previous = readProvider();
     writeProvider(settings);
     providerAttempted.clear();
+    let result;
     try {
       const { token } = await aspJson("/operator");
       await ensureProviderRelay(token);
-      const result = await syncProvider(settings, null, token);
-      for (const handle of result.synced ?? []) providerAttempted.add(handle);
-      for (const item of result.failed ?? []) providerAttempted.add(item.handle);
-      return result;
+      result = await syncProvider(settings, null, token);
     } catch (error) {
       throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+    if ((result.synced ?? []).length === 0 && (result.failed ?? []).length > 0 &&
+        result.failed.every((item) => item.detail === "MAGI rejected provider configuration")) {
+      if (previous === null) rmSync(providerPath, { force: true });
+      else writeProvider(previous);
+      throw new Error("MAGI rejected the provider configuration; the previous settings were kept");
+    }
+    for (const handle of result.synced ?? []) providerAttempted.add(handle);
+    for (const item of result.failed ?? []) providerAttempted.add(item.handle);
+    return result;
   }
 
   function watchProviderRecipients(token) {

@@ -71,6 +71,30 @@ test("the app does not send the key to an older ASP that still persists it", asy
   backend.dispose();
 });
 
+test("a provider rejection keeps the app's previous key", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-reject-"));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/settings/provider/legacy") return Response.json(null);
+    if (endpoint === "/settings/provider") {
+      const input = JSON.parse(options.body);
+      return Response.json(input.api_key === "bad-key"
+        ? { ...input, synced: [], failed: [{ handle: "@eva-000.magi", detail: "MAGI rejected provider configuration" }] }
+        : { ...input, synced: ["@eva-000.magi"], failed: [] });
+    }
+    throw new Error(`unexpected request: ${url}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+
+  const backend = app(root);
+  await backend["provider.save"]({ provider: "openai", model: "gpt", api_key: "good-key" });
+  await assert.rejects(backend["provider.save"]({ provider: "openai", model: "gpt", api_key: "bad-key" }), /previous settings were kept/);
+  assert.equal(backend["provider.settings"]().api_key, "good-key");
+  backend.dispose();
+});
+
 test("the app copies a legacy ASP key before deleting that copy", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-migrate-"));
   const originalFetch = globalThis.fetch;
