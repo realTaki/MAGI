@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -12,6 +13,7 @@ import httpx
 import websockets
 
 OnEvent = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
+logger = logging.getLogger("channels.asp.client")
 
 
 class AspClient:
@@ -33,19 +35,28 @@ class AspClient:
         return urlunparse((scheme, parsed.netloc, "/connect", "", "", ""))
 
     async def listen(self, on_event: OnEvent, *, ready: asyncio.Event | None = None) -> None:
-        async with httpx.AsyncClient(
-            base_url=self.base, headers=self._headers, timeout=30.0
-        ) as http:
-            self._http = http
-            async with websockets.connect(
-                self._ws_url(), additional_headers=self._headers
-            ) as ws:
-                if ready is not None:
-                    ready.set()
-                async for raw in ws:
-                    reply = await on_event(json.loads(raw))
-                    if reply is not None:
-                        await ws.send(json.dumps(reply))
+        while True:
+            try:
+                async with httpx.AsyncClient(
+                    base_url=self.base, headers=self._headers, timeout=30.0
+                ) as http:
+                    self._http = http
+                    async with websockets.connect(
+                        self._ws_url(), additional_headers=self._headers
+                    ) as ws:
+                        if ready is not None:
+                            ready.set()
+                        async for raw in ws:
+                            reply = await on_event(json.loads(raw))
+                            if reply is not None:
+                                await ws.send(json.dumps(reply))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- retry transient ASP outages
+                logger.warning("ASP connection lost: %s", exc)
+            finally:
+                self._http = None
+            await asyncio.sleep(1)
 
     async def join(self, session_id: str) -> None:
         await self._post(f"/sessions/{session_id}/join")

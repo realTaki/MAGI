@@ -22,6 +22,10 @@ after a restart. ASP keeps relay events in its own SQLite until each intended
 recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and conversation state in its workspace; outbound messages go
 through DeliveryNotify jobs.
+When upgrading from an ASP that kept events only in memory, reload the updated
+app interface while that ASP is still running: the app copies all available
+conversation events into its SQLite before the old ASP is stopped. Events from
+an already stopped in-memory ASP cannot be recovered.
 The app stores provider credentials in `~/.magi/app/provider.json` (owner-only
 permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.

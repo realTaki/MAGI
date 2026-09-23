@@ -8,7 +8,7 @@ import {
   type DemoRoutineRun,
 } from "./demo";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, ackAspEvents, storedConversations, saveConversations, storedEvents, saveEvents, lastStoredSequence, pendingAcks, markAcknowledged, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, sendAspMessage, updateAspNickname, addAspConversationMember, storedConversations, saveConversations, storedEvents, syncAspEvents, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
 import {
   initialsFromLogin,
   localAppAvailable,
@@ -424,6 +424,11 @@ export function ProductDemo() {
         const remote = await listAspConversations();
         if (cancelled) return;
         await saveConversations(remote);
+        // Capture every conversation while an older ASP is still running;
+        // only the selected one needs to be rendered immediately.
+        for (const row of remote) {
+          void syncAspEvents(row.conversation_id).catch(() => {});
+        }
         const known = new Map(local.map((row) => [row.conversation_id, row]));
         for (const row of remote) known.set(row.conversation_id, row);
         setBots((current) => [...known.values()].map((row) => {
@@ -458,20 +463,9 @@ export function ProductDemo() {
       try {
         const local = await storedEvents(conversationId);
         if (!cancelled) render(local);
-        const after = await lastStoredSequence(conversationId);
-        const incoming = await listAspEvents(conversationId, after);
+        const events = await syncAspEvents(conversationId);
         if (cancelled) return;
-        const savedThrough = await saveEvents(conversationId, incoming);
-        if (savedThrough !== null) {
-          render(await storedEvents(conversationId));
-          const pending = await pendingAcks(conversationId);
-          if (pending.length > 0) {
-            await ackAspEvents(conversationId, pending);
-            await markAcknowledged(conversationId, pending.at(-1)!.sequence);
-          }
-        } else {
-          render(incoming);
-        }
+        render(events);
       } catch (error) {
         if (!cancelled) setLoadError(String(error));
       }

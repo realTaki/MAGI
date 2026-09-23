@@ -88,6 +88,7 @@ def _version_3(connection: sqlite3.Connection) -> None:
             PRIMARY KEY (event_id, handle),
             FOREIGN KEY (event_id) REFERENCES asp_events(event_id) ON DELETE CASCADE
         );
+        DROP TABLE IF EXISTS asp_delivery_acks;
         """
     )
 

@@ -129,6 +129,23 @@ export async function markAcknowledged(id: string, sequence: number): Promise<vo
   await localChat("chat.markAcknowledged", { id, sequence });
 }
 
+/** Save ASP's available events before acknowledging any of them. */
+export async function syncAspEvents(id: string): Promise<AspEvent[]> {
+  const incoming = await listAspEvents(id, await lastStoredSequence(id));
+  const savedThrough = await saveEvents(id, incoming);
+  if (savedThrough === null) return incoming;
+  const pending = await pendingAcks(id);
+  if (pending.length > 0) {
+    try {
+      await ackAspEvents(id, pending);
+      await markAcknowledged(id, pending.at(-1)!.sequence);
+    } catch {
+      // The local copy is durable; retry the receipt when ASP is available.
+    }
+  }
+  return await storedEvents(id);
+}
+
 export async function sendAspMessage(conversationId: string, text: string): Promise<void> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");

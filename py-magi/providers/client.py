@@ -100,6 +100,34 @@ class LiteLLMClient:
         info = litellm.get_model_info(model=f"{host.prefix}/{self.model or host.default_model}")
         return info.get("max_input_tokens")
 
+    async def verify(
+        self,
+        *,
+        provider_name: str | None,
+        api_key: str | None,
+        model: str | None,
+    ) -> None:
+        """Try the candidate route without changing the active client."""
+        name = provider_name.strip().lower() if provider_name is not None else None
+        host = self.host if name is None else _BY_ID.get(_ALIASES.get(name, name))
+        key = self.api_key if api_key is None else api_key
+        selected_model = self.model if model is None else model
+        if host is None:
+            raise ValueError("unknown LLM provider")
+        if not key:
+            raise ValueError("API key is empty")
+        params: dict[str, Any] = {
+            "model": f"{host.prefix}/{selected_model or host.default_model}",
+            "messages": [{"role": "user", "content": "Reply OK."}],
+            "max_tokens": 32,
+            "api_key": key,
+            "timeout": 20.0,
+            "drop_params": True,
+        }
+        if host.api_base:
+            params["api_base"] = host.api_base
+        await litellm.acompletion(**params)
+
     async def complete(self, job: CallLLMJob) -> CallLLMResult:
         host = self.host
         if host is None:

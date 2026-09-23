@@ -110,8 +110,8 @@ class AspWorker(BaseWorker):
                 "ok": updated,
             }
         if kind == "agent.provider.update":
-            # ASP owns the operator's provider settings; publishing this notify
-            # persists them and hands the change to the provider worker.
+            # The app owns provider settings; ASP forwards a candidate for the
+            # provider worker to verify before MAGI accepts it.
             changed = await self.ask(
                 ChangeProviderNotify(
                     publisher=self.worker_name,

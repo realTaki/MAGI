@@ -1,8 +1,8 @@
 """Provider worker: deliver every provider outcome through ``CallLLMJob``.
 
 The client is constructed empty and updated from Settings on attach, then
-from :class:`ChangeProviderNotify` in place. Neither path validates a
-provider, API key, or model.
+from :class:`ChangeProviderNotify` in place. A change is probed against the
+selected model before it replaces the active configuration.
 
 Every failure on a claimed :class:`CallLLMJob` -- malformed configuration,
 missing optional dependency, cancellation, or provider error -- becomes
@@ -62,11 +62,25 @@ class ProvidersWorker(BaseWorker):
         return False
 
     async def _on_change(self, job: ChangeProviderNotify) -> None:
-        await self._configure(
-            provider_name=job.provider,
-            api_key=job.api_key,
-            model=job.model,
-        )
+        try:
+            await self._client.verify(
+                provider_name=job.provider,
+                api_key=job.api_key,
+                model=job.model,
+            )
+            await self._configure(
+                provider_name=job.provider,
+                api_key=job.api_key,
+                model=job.model,
+            )
+        except Exception as exc:  # noqa: BLE001 -- validation belongs on this Job
+            key = job.api_key or ""
+            error = str(exc).replace(key, "[redacted]") if key else str(exc)
+            self.submit(
+                ChangeProviderNotify,
+                ChangeProviderNotifyResult(id=job.id, status=JobStatus.FAILED, error=error),
+            )
+            return
         self.submit(ChangeProviderNotify, ChangeProviderNotifyResult(id=job.id))
 
     async def _configure(
@@ -77,7 +91,10 @@ class ProvidersWorker(BaseWorker):
         model: str | None,
     ) -> None:
         self._client.configure(provider_name=provider_name, api_key=api_key, model=model)
-        window = self._client.context_window()
+        try:
+            window = self._client.context_window()
+        except Exception:  # model metadata can lag a working provider route
+            window = None
         if window is not None:
             await self.ask(
                 SetSettingJob(
