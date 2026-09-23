@@ -5,51 +5,7 @@
   "type": "module",
   "main": "shell/main.mjs",
   "description": "MAGI Electron shell. It prepares the environment and loads the desktop app.",
-  "scripts": {
-    "dev": "electron .",
-    "dev:app": "npm run dev --prefix app",
-    "build": "npm run build --prefix app && node scripts/prepare-runtime.mjs && electron-builder",
-    "build:app": "npm run build --prefix app",
-    "build:desktop": "node scripts/prepare-runtime.mjs && electron-builder",
-    "lint": "npm run lint --prefix app"
-  },
-  "build": {
-    "appId": "ai.magi.app",
-    "productName": "MAGI",
-    "executableName": "MAGI",
-    "files": [
-      "shell/**",
-      "app/dist/**",
-      "schema.sql",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/dugite/git/**"
-    ],
-    "extraResources": [
-      {
-        "from": "runtime",
-        "to": "runtime",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "linux": {
-      "target": ["AppImage"]
-    }
-  },
   "dependencies": {
     "dugite": "^3.2.3"
-  },
-  "devDependencies": {
-    "@types/node": "^24.13.6",
-    "electron": "^44.4.4",
-    "electron-builder": "^26.15.3",
-    "node": "^24.21.0",
-    "typescript": "^7.0.2"
   }
 }
