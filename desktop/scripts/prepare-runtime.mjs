@@ -68,6 +68,15 @@ function removeDanglingSymlinks(directory) {
   }
 }
 
+function bundledBunSource() {
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const architecture = process.arch === "arm64" ? "aarch64" : process.arch;
+  const executable = process.platform === "win32" ? "bun.exe" : "bun";
+  const candidate = path.join(DESKTOP_ROOT, "node_modules", "@oven", `bun-${platform}-${architecture}`, "bin", executable);
+  if (!existsSync(candidate)) throw new Error(`bun does not support this build platform: ${platform}-${architecture}`);
+  return candidate;
+}
+
 const uv = process.env.MAGI_UV_BIN || executableOnPath("uv");
 const temporary = mkdtempSync(path.join(os.tmpdir(), "magi-python-"));
 try {
@@ -103,6 +112,7 @@ try {
     ),
     path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "node.exe" : "node"),
   );
+  cpSync(bundledBunSource(), path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "bun.exe" : "bun"));
 
   const npmArguments = [
     "install",

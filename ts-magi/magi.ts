@@ -10,6 +10,8 @@ import type { Tool } from "./tools/registry.js";
 import { CliWorker } from "./channels/cli/worker.js";
 import { AspWorker } from "./channels/asp/worker.js";
 import { TelegramWorker } from "./channels/telegram/worker.js";
+import { TaskWorker } from "./channels/tasks/worker.js";
+import { McpWorker, type McpConnector } from "./mcp/worker.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -21,11 +23,13 @@ export class Magi {
   readonly cli: CliWorker;
   readonly asp: AspWorker | null;
   readonly telegram: TelegramWorker | null;
+  readonly tasks: TaskWorker;
+  readonly mcp: McpWorker;
   private running = false;
   private loop: Promise<void> | null = null;
 
-  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string } } = {}) {
-    this.bus = new Bus(handle, options.workspace);
+  constructor(handle: string, options: { workspace?: string; migrationSource?: string | null; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string }; mcpConnector?: McpConnector } = {}) {
+    this.bus = new Bus(handle, options.workspace, options.migrationSource);
     this.tools = new ToolsWorker(this.bus, options.tools);
     this.agent = new AgentWorker(this.bus, () => this.tools.catalog());
     this.providers = new ProvidersWorker(this.bus, options.client);
@@ -33,19 +37,22 @@ export class Magi {
     this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
     const telegramToken = options.telegram?.token ?? this.bus.getSetting("telegram.bot_token") ?? process.env.MAGI_TELEGRAM_BOT_TOKEN;
     this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
+    this.tasks = new TaskWorker(this.bus);
+    this.mcp = new McpWorker(this.bus, this.tools, options.mcpConnector);
   }
 
   start(): void {
     if (this.running) return;
     this.running = true;
     this.telegram?.start();
+    void this.mcp.start();
     this.loop = this.runLoop();
   }
 
   private async runLoop(): Promise<void> {
     while (this.running) {
       let worked = false;
-      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram].filter((item) => item !== null)) {
+      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram, this.tasks, this.mcp].filter((item) => item !== null)) {
         try { worked = await worker.poll() || worked; }
         catch (error) { console.error(`${worker.worker_name}:`, error); }
       }
@@ -69,6 +76,8 @@ export class Magi {
     await this.loop;
     this.asp?.close();
     await this.telegram?.stop();
+    await this.mcp.stop();
+    await this.tools.stop();
     this.bus.close();
   }
 }

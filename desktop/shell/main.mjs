@@ -126,6 +126,7 @@ function packagedTools() {
     "bin",
     process.platform === "win32" ? "uv.exe" : "uv",
   );
+  const bun = path.join(runtime, "bin", process.platform === "win32" ? "bun.exe" : "bun");
   const pythonCandidates =
     process.platform === "win32"
       ? [path.join(runtime, "python", "python.exe")]
@@ -135,8 +136,8 @@ function packagedTools() {
           path.join(runtime, "python", "bin", "python"),
         ];
   const python = pythonCandidates.find(existsSync);
-  if (!python || !existsSync(node) || !existsSync(npm) || !existsSync(uv)) {
-    throw new Error("MAGI.app is missing its bundled Python or Node.js runtime");
+  if (!python || !existsSync(node) || !existsSync(npm) || !existsSync(uv) || !existsSync(bun)) {
+    throw new Error("MAGI.app is missing its bundled Python, Node.js, uv, or Bun runtime");
   }
 
   const git = resolveGitBinary();
@@ -156,7 +157,7 @@ function packagedTools() {
     UV_CACHE_DIR: path.join(MAGI_DATA_ROOT, "cache", "uv"),
     UV_NO_MANAGED_PYTHON: "1",
   };
-  return { env, git, node, npm, python, uv };
+  return { env, git, node, npm, python, uv, bun };
 }
 
 async function cloneMagiSource(tools, progress) {
@@ -216,6 +217,7 @@ let localCheckoutManaged = false;
 // Unpackaged runs borrow the developer's tools instead.
 function devTools() {
   return {
+    bun: "bun",
     node: "node",
     npm: "npm",
     python: process.platform === "win32" ? "python" : "python3",

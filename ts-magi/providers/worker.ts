@@ -12,6 +12,8 @@ export class ProvidersWorker extends BaseWorker {
       bus.getSetting("provider.api_key") ?? process.env.MAGI_API_KEY ?? "",
       bus.getSetting("provider.model") ?? process.env.MAGI_MODEL ?? "gpt-4.1-mini",
       bus.getSetting("provider.api_base") ?? process.env.MAGI_API_BASE ?? "https://api.openai.com/v1",
+      fetch,
+      bus.getSetting("provider.name") ?? "openai",
     );
   }
 
@@ -64,6 +66,8 @@ function providerBase(provider?: string): string | null {
     case undefined:
     case "": return null;
     case "openai": return "https://api.openai.com/v1";
+    case "claude":
+    case "anthropic": return "https://api.anthropic.com/v1";
     case "xai": return "https://api.x.ai/v1";
     case "deepseek": return "https://api.deepseek.com/v1";
     case "gemini": return "https://generativelanguage.googleapis.com/v1beta/openai";

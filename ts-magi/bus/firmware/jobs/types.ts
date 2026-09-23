@@ -5,6 +5,7 @@ export type LLMMessage = {
   tool_calls?: LLMToolCall[];
   tool_call_id?: string;
   is_error?: boolean;
+  thinking_blocks?: Array<{ type: string; thinking: string; signature: string }>;
 };
 export type LLMTool = { name: string; description: string; input_schema: Record<string, unknown> };
 
@@ -21,6 +22,8 @@ export type RunToolJob = { call: LLMToolCall };
 export type RunToolResult = { content: string };
 export type DeliveryNotify = { conversation_id: number; text: string; channel?: string; address?: string };
 export type ChangeProviderNotify = { provider?: string; api_key?: string; model?: string };
+export type RunTaskNotify = { task_id: number; manual?: boolean };
+export type ChangeMcpServerNotify = { action: "add" | "update" | "delete"; name: string; server?: import("../books/mcpServerBook.js").McpServerConfig };
 
 export type JobInput = {
   ChatNotify: ChatNotify;
@@ -28,6 +31,8 @@ export type JobInput = {
   RunToolJob: RunToolJob;
   DeliveryNotify: DeliveryNotify;
   ChangeProviderNotify: ChangeProviderNotify;
+  RunTaskNotify: RunTaskNotify;
+  ChangeMcpServerNotify: ChangeMcpServerNotify;
 };
 export type JobOutput = {
   ChatNotify: Record<string, never>;
@@ -35,6 +40,8 @@ export type JobOutput = {
   RunToolJob: RunToolResult;
   DeliveryNotify: Record<string, never>;
   ChangeProviderNotify: Record<string, never>;
+  RunTaskNotify: Record<string, never>;
+  ChangeMcpServerNotify: Record<string, never>;
 };
 export type JobType = keyof JobInput;
 export type JobStatus = "pending" | "claimed" | "completed" | "failed";

@@ -5,6 +5,8 @@ export type Conversation = {
   channel: string;
   delivery_address: string;
   instruction: string;
+  topic: string;
+  info: string;
   summary: string;
 };
 

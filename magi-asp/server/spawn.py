@@ -51,11 +51,18 @@ class ProcessSpawner:
     def spawn(self, *, handle: str, base: str, token: str) -> SpawnedMagi:
         if _spawn_disabled():
             return SpawnedMagi(handle=handle, token=token, pid=None, spawned=False)
-        python = _resolve_magi_python()
-        cwd = _py_magi_dir()
+        runtime = os.environ.get("MAGI_RUNTIME", "python").strip().lower()
+        if runtime in {"typescript", "ts", "ts-magi"}:
+            executable = _resolve_magi_bun()
+            cwd = _ts_magi_dir()
+            command = ts_magi_cli(executable, handle, base, token)
+        else:
+            executable = _resolve_magi_python()
+            cwd = _py_magi_dir()
+            command = magi_cli(executable, handle, base, token)
         try:
             child = subprocess.Popen(
-                magi_cli(python, handle, base, token),
+                command,
                 cwd=str(cwd) if cwd is not None else None,
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 stdout=subprocess.DEVNULL,
@@ -77,6 +84,11 @@ class ProcessSpawner:
 def magi_cli(python: str, handle: str, base: str, token: str) -> list[str]:
     """One MAGI: ``python -m magi <handle> <base> <token>``."""
     return [python, "-m", "magi", handle, base, token]
+
+
+def ts_magi_cli(bun: str, handle: str, base: str, token: str) -> list[str]:
+    """One TypeScript MAGI using the project-owned Bun runtime."""
+    return [bun, "run", "start", "--", handle, base, token]
 
 
 def default_spawner() -> MagiSpawner:
@@ -103,10 +115,29 @@ def _resolve_magi_python() -> str:
     return sys.executable
 
 
+def _resolve_magi_bun() -> str:
+    configured = os.environ.get("MAGI_BUN")
+    if configured:
+        return configured
+    repo = Path(__file__).resolve().parents[2]
+    names = ("bun.exe",) if os.name == "nt" else ("bun",)
+    for name in names:
+        candidate = repo / "desktop" / "runtime" / "bin" / name
+        if candidate.exists():
+            return str(candidate)
+    raise RuntimeError("TypeScript MAGI selected but the MAGI-owned Bun runtime is missing")
+
+
 def _py_magi_dir() -> Path | None:
     # magi-asp/server/spawn.py → repo root is parents[2]
     repo = Path(__file__).resolve().parents[2]
     candidate = repo / "py-magi"
+    return candidate if candidate.is_dir() else None
+
+
+def _ts_magi_dir() -> Path | None:
+    repo = Path(__file__).resolve().parents[2]
+    candidate = repo / "ts-magi"
     return candidate if candidate.is_dir() else None
 
 

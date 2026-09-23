@@ -9,7 +9,7 @@ export class AspWorker extends BaseWorker {
   constructor(bus: Bus, base: string, token: string) {
     super(bus);
     this.client = new AspClient(bus.handle, base, token);
-    this.nickname = bus.getSetting("asp.nickname");
+    this.nickname = bus.contacts.get(1)?.nickname ?? null;
   }
 
   connect(): Promise<void> { return this.client.connect((event) => this.onEvent(event)); }
@@ -35,7 +35,7 @@ export class AspWorker extends BaseWorker {
       const updated = typeof event.nickname === "string" && !!event.nickname.trim();
       if (updated) {
         this.nickname = event.nickname!.trim();
-        this.bus.setSetting("asp.nickname", this.nickname);
+        this.bus.contacts.update(1, { nickname: this.nickname });
       }
       return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
     }

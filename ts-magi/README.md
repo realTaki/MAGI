@@ -30,11 +30,18 @@ endpoint. The Python provider picker and LiteLLM routes are not ported.
 `MAGI_TELEGRAM_BOT_TOKEN` to poll Telegram and deliver text replies there.
 Edit `<workspace>/prompts/agent/AGENT.md` to override the default agent prompt.
 
-BUS owns SQLite Books and durable Jobs through Bun SQLite. Agent, provider, tools, and channel
-workers communicate through `ChatNotify`, `CallLLMJob`, `RunToolJob`, and
+BUS owns SQLite Books and durable Jobs through Bun SQLite. Agent, provider,
+tools, task, and channel workers communicate through `ChatNotify`,
+`CallLLMJob`, `RunToolJob`, `RunTaskNotify`, `ChangeProviderNotify`, and
 `DeliveryNotify`. Agent turns are serial per conversation. Provider and tool
-errors are saved on their Jobs.
+errors are saved on their Jobs. Provider changes are verified before becoming
+active, ASP reconnects and acknowledges durable session events, long histories
+are compacted, and active memories and workspace Skills are injected into the
+agent context.
 
-This rewrite covers the local agent path, ASP sessions, and Telegram text
-messages. Python's task scheduler, memory/contact Books, background shell
-processes, and context compaction are not yet implemented.
+This rewrite covers the local agent path, ASP sessions, Telegram text messages,
+memory tools, Skills, context compaction, and recurring or manually triggered
+tasks. Python's contact Books, background shell process manager, MCP tools, and
+the full multi-provider protocol set are not yet implemented. The desktop and
+ASP launch path still selects `py-magi` until those compatibility gaps and a
+packaged Bun runtime are complete.
