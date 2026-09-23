@@ -103,7 +103,7 @@ jobs:
 
     steps:
       - name: Download packaged apps
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           pattern: macos-*
           path: release-assets
