@@ -9,7 +9,12 @@ import {
 } from "./demo";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
-import { localAppAvailable, openGitHubConnect } from "./github-connect";
+import {
+  initialsFromLogin,
+  localAppAvailable,
+  openGitHubConnect,
+  useGitHubLogin,
+} from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -375,6 +380,7 @@ export function ProductDemo() {
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const githubLogin = useGitHubLogin();
   const [creating, setCreating] = useState(false);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
@@ -905,8 +911,10 @@ export function ProductDemo() {
               }}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              <span className="product-demo__user-badge">{OPERATOR.initials}</span>
-              <span>{OPERATOR.name}</span>
+              <span className="product-demo__user-badge">
+                {githubLogin ? initialsFromLogin(githubLogin) : OPERATOR.initials}
+              </span>
+              <span>{githubLogin || OPERATOR.name}</span>
             </button>
             {userMenuOpen ? (
               <div className="product-demo__user-menu" role="menu">

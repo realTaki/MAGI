@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { OPERATOR } from "./demo";
+import { initialsFromLogin, useGitHubLogin } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
@@ -41,6 +42,7 @@ export function SettingsPage() {
   const { localePreference, setLocalePreference } = useI18n();
   const { preference: themePreference, setPreference: setThemePreference, resolved } =
     useTheme();
+  const githubLogin = useGitHubLogin();
   const [section, setSection] = useState<SettingsSection>("general");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -180,10 +182,10 @@ export function SettingsPage() {
                   <div className="settings-card__label">{t("appSettings.account")}</div>
                   <div className="settings-card__account">
                     <span className="settings-card__avatar" aria-hidden="true">
-                      {OPERATOR.initials}
+                      {githubLogin ? initialsFromLogin(githubLogin) : OPERATOR.initials}
                     </span>
                     <span className="settings-card__identity">
-                      <span className="settings-card__name">{OPERATOR.name}</span>
+                      <span className="settings-card__name">{githubLogin || OPERATOR.name}</span>
                       <span className="settings-card__role">{t("appSettings.accountRole")}</span>
                     </span>
                     <button type="button" className="settings-card__pill" onClick={logOut}>
@@ -194,20 +196,39 @@ export function SettingsPage() {
 
                 <div className="settings-card">
                   <div className="settings-card__label">{t("appSettings.appearance")}</div>
-                  <label className="settings-card__row">
+                  <div className="settings-card__row">
                     <span>{t("appSettings.theme")}</span>
-                    <select
-                      className="settings-card__select"
-                      value={themePreference}
-                      onChange={(event) =>
-                        setThemePreference(event.target.value as ThemePreference)
-                      }
+                    <div
+                      className="theme-options"
+                      role="radiogroup"
+                      aria-label={t("appSettings.theme")}
                     >
-                      <option value="system">{t("appSettings.themeSystem")}</option>
-                      <option value="light">{t("appSettings.themeLight")}</option>
-                      <option value="dark">{t("appSettings.themeDark")}</option>
-                    </select>
-                  </label>
+                      <ThemeOption
+                        value="system"
+                        label={t("appSettings.themeSystem")}
+                        active={themePreference === "system"}
+                        onSelect={setThemePreference}
+                      >
+                        <SystemThemeIcon />
+                      </ThemeOption>
+                      <ThemeOption
+                        value="light"
+                        label={t("appSettings.themeLight")}
+                        active={themePreference === "light"}
+                        onSelect={setThemePreference}
+                      >
+                        <LightThemeIcon />
+                      </ThemeOption>
+                      <ThemeOption
+                        value="dark"
+                        label={t("appSettings.themeDark")}
+                        active={themePreference === "dark"}
+                        onSelect={setThemePreference}
+                      >
+                        <DarkThemeIcon />
+                      </ThemeOption>
+                    </div>
+                  </div>
                   <label className="settings-card__row">
                     <span>{t("appSettings.language")}</span>
                     <select
@@ -359,6 +380,69 @@ function GearIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1.1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </svg>
+  );
+}
+
+/** One icon button of the theme picker; the label is for screen readers only. */
+function ThemeOption({
+  value,
+  label,
+  active,
+  onSelect,
+  children,
+}: {
+  value: ThemePreference;
+  label: string;
+  active: boolean;
+  onSelect: (value: ThemePreference) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      title={label}
+      className={`theme-option${active ? " is-active" : ""}`}
+      onClick={() => onSelect(value)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SystemThemeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function LightThemeIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    >
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" />
+    </svg>
+  );
+}
+
+function DarkThemeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M20.3 14.6A8.6 8.6 0 0 1 9.4 3.7a8.6 8.6 0 1 0 10.9 10.9Z" strokeLinejoin="round" />
     </svg>
   );
 }

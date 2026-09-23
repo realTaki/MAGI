@@ -1565,6 +1565,41 @@ body {
   border-top: 1px solid var(--settings-bg);
 }
 
+/* Theme picker: three icons (system / light / dark), no visible text. */
+.theme-options {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--settings-pill-border);
+  border-radius: 999px;
+  background: var(--settings-pill-bg);
+}
+
+.theme-option {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--settings-muted);
+  cursor: pointer;
+}
+
+.theme-option:hover,
+.theme-option:focus-visible {
+  background: var(--settings-hover);
+  color: var(--settings-ink);
+  outline: none;
+}
+
+.theme-option.is-active,
+.theme-option.is-active:hover {
+  background: #3ec5a8;
+  color: #06231d;
+}
+
 .settings-card__select {
   max-width: 180px;
   height: 32px;

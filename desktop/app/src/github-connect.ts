@@ -8,6 +8,8 @@
  * is why every caller feature-detects with :func:`localAppAvailable`.
  */
 
+import { useEffect, useState } from "react";
+
 export type GitHubState = {
   /** False when this build has no local checkout, or the upstream is not on GitHub. */
   available: boolean;
@@ -108,4 +110,50 @@ export function subscribeGitHubConnect(listener: () => void): () => void {
 
 export function isGitHubConnectOpen(): boolean {
   return open;
+}
+
+/** Avatar letters for a GitHub login: ``realTaki`` → ``RE``, ``taki-wang`` → ``TW``. */
+export function initialsFromLogin(login: string): string {
+  const parts = login.split(/[-_.\s]+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "";
+  }
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/**
+ * The GitHub account this machine is signed in with — what the interface shows
+ * as "the account". Empty until a sign-in succeeded (or outside the desktop
+ * app); callers keep their own local name in that case.
+ */
+export function useGitHubLogin(): string {
+  const [login, setLogin] = useState("");
+  useEffect(() => {
+    if (!localAppAvailable()) {
+      return;
+    }
+    let cancelled = false;
+    const read = () => {
+      void githubState()
+        .then((state) => {
+          if (!cancelled) {
+            setLogin(state.login);
+          }
+        })
+        .catch(() => {});
+    };
+    read();
+    onGitHubEvent((message) => {
+      if (message.event === "github.signed-in" || message.event === "github.connected") {
+        read();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return login;
 }
