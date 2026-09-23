@@ -69,8 +69,8 @@ and whatever else the interface calls.
 
 Connecting the checkout to the operator's GitHub account is a capability of this
 machine, not part of the startup sequence and not an ASP concern. The app starts
-without it; the operator triggers it from the interface — **Connect GitHub** in
-the account menu, offered once on first run — and it calls `github.state`,
+without it; the connection is offered once on first run, and the signed-in
+account is shown in Settings. It calls `github.state`,
 `github.signIn` and `github.connect` on the app backend
 (`app/main/index.mjs`), which the shell reaches through its generic bridge.
 

@@ -34,7 +34,6 @@ export default {
     menuAria: "账号菜单",
     settings: "设置",
     logOut: "退出登录",
-    github: "连接 GitHub",
   },
   github: {
     title: "连接 GitHub",

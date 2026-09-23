@@ -34,7 +34,6 @@ export default {
     menuAria: "アカウントメニュー",
     settings: "設定",
     logOut: "ログアウト",
-    github: "GitHub を接続",
   },
   github: {
     title: "GitHub を接続",
