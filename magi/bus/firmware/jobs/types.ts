@@ -21,7 +21,7 @@ export type CallLLMResult = { message: LLMMessage };
 export type RunToolJob = { call: LLMToolCall };
 export type RunToolResult = { content: string };
 export type DeliveryNotify = { conversation_id: number; text: string; channel?: string; address?: string };
-export type ChangeProviderNotify = { provider?: string; api_key?: string; model?: string };
+export type ChangeProviderNotify = { provider?: string; api_key?: string; model?: string; api_base?: string };
 export type RunTaskNotify = { task_id: number; manual?: boolean };
 export type ChangeMcpServerNotify = { action: "add" | "update" | "delete"; name: string; server?: import("../books/mcpServerBook.js").McpServerConfig };
 

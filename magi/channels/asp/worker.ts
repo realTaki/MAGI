@@ -43,7 +43,7 @@ export class AspWorker extends BaseWorker {
     if (event.type === "agent.provider.update") {
       const board = this.bus.board("ChangeProviderNotify");
       const jobId = board.publish({
-        provider: text(event.provider), api_key: text(event.api_key), model: text(event.model),
+        provider: text(event.provider), api_key: text(event.api_key), model: text(event.model), api_base: text(event.api_base),
       }, this.worker_name);
       const deadline = Date.now() + 30_000;
       while (Date.now() < deadline) {

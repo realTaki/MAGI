@@ -42,7 +42,7 @@ export class ProvidersWorker extends BaseWorker {
       provider: settings.provider,
       api_key: settings.api_key,
       model: settings.model,
-      api_base: providerBase(settings.provider) ?? undefined,
+      api_base: settings.api_base,
     };
     try {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
@@ -58,22 +58,5 @@ export class ProvidersWorker extends BaseWorker {
       const redacted = settings.api_key ? raw.replaceAll(settings.api_key, "[redacted]") : raw;
       board.submit(this.worker_name, id, { error: redacted });
     }
-  }
-}
-
-function providerBase(provider?: string): string | null {
-  switch (provider?.trim().toLowerCase()) {
-    case undefined:
-    case "": return null;
-    case "openai": return "https://api.openai.com/v1";
-    case "claude":
-    case "anthropic": return "https://api.anthropic.com/v1";
-    case "xai": return "https://api.x.ai/v1";
-    case "deepseek": return "https://api.deepseek.com/v1";
-    case "gemini": return "https://generativelanguage.googleapis.com/v1beta/openai";
-    case "minimax":
-    case "minimax-cn": return "https://api.minimaxi.com/v1";
-    case "minimax-global": return "https://api.minimax.io/v1";
-    default: throw new Error(`provider ${provider} is not supported by the TypeScript runtime`);
   }
 }
