@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from agent.worker import AgentWorker
-from magi.launcher import WORKERS
 from channels.tasks import TaskWorker
+from magi import WORKERS
 
 
 def test_agent_worker_is_attached_by_the_runtime_composition() -> None:

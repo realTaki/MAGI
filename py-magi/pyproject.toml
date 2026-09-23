@@ -80,7 +80,6 @@ include = [
     "agent*",
     "bus*",
     "channels*",
-    "magi*",
     "mcp*",
     "old_bus*",
     "proactive*",
@@ -91,7 +90,9 @@ include = [
 exclude = ["tests*", "tests.*", "magi.egg-info*"]
 
 [tool.setuptools]
-py-modules = ["runtime_worker"]
+# ``magi.py`` is the runtime composition root: the ``magi`` console script and
+# ``python -m magi`` both land on it.
+py-modules = ["magi", "runtime_worker"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md", "*/SKILL.md"]

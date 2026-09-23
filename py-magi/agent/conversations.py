@@ -20,6 +20,7 @@ from bus import (
     ChatNotifyResult,
     DeliveryNotify,
     GetConversationJob,
+    GetContactJob,
     GetPromptJob,
     GetSettingJob,
     JobStatus,
@@ -85,6 +86,7 @@ class Conversation:
     # SYSTEM message layout: AGENT.md → skills → memories → conversation metadata.
     # Base personality prompt from AGENT.md.
     agent_md: str = field(init=False, default="")
+    self_name: str = field(init=False, default="")
     # Names and one-line descriptions of currently available skills.
     skills: list[Skill] = field(init=False, default_factory=list)
     # Header for the SYSTEM skills section; body listing is name + description only.
@@ -151,6 +153,14 @@ class Conversation:
             self._finish(job, error, error=error)
             return
         self.agent_md = await self._prompt("agent/AGENT") or "You are a helpful assistant."
+        identity = await self._worker.ask(
+            GetContactJob(
+                publisher=self._worker.worker_name,
+                contact_id=MAGI_CONTACT_ID,
+            )
+        )
+        contact = None if identity is None else identity.contact
+        self.self_name = (contact.nickname or contact.name) if contact is not None else ""
         listed = await self._worker.ask(ListSkillsJob(publisher=self._worker.worker_name))
         self.skills = [] if listed is None or not listed.skills else list(listed.skills)
         self.skills_block = (await self._prompt("agent/skills_block") or "").strip()
@@ -379,6 +389,8 @@ class Conversation:
     def _system_message(self) -> LLMMessage:
         """Render the declared SYSTEM sections in their field order."""
         sections = [self.agent_md]
+        if self.self_name:
+            sections.append(f"## Identity\nYour name: {self.self_name}")
         if self.skills:
             listing = "\n".join(f"- {skill.name}: {skill.description}" for skill in self.skills)
             header = self.skills_block or "## Available skills"

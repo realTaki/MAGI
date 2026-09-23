@@ -1,4 +1,4 @@
-"""MAGI process launcher.
+"""One MAGI. Start with ``python -m magi`` (or the ``magi`` console script).
 
 Edit :data:`WORKERS` to change which workers a MAGI process starts.
 """
@@ -48,3 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         bus.stop()
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
