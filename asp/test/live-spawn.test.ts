@@ -10,7 +10,7 @@ import { ProcessSpawner } from "../server/spawn.ts";
 import { isRecord, request, tempRoot } from "./helpers.ts";
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const bun = path.join(repository, "desktop", "runtime", "bin", process.platform === "win32" ? "bun.exe" : "bun");
+const bun = path.join(repository, "shell", "runtime", "bin", process.platform === "win32" ? "bun.exe" : "bun");
 
 async function freePort(): Promise<number> {
   const server = createServer();

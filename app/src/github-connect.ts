@@ -1,7 +1,7 @@
 /**
  * GitHub connection — one method of this app's local backend.
  *
- * The backend lives in ``desktop/app/main/`` and is loaded by the Electron
+ * The backend lives in ``app/main/`` and is loaded by the Electron
  * shell from the checkout, so this file (like the rest of the app) evolves with
  * the source tree. Calls travel through the shell's generic bridge; when the
  * same interface is opened outside the desktop app the bridge is absent, which

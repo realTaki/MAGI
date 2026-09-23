@@ -19,7 +19,7 @@ Fixes #
 ## Checklist
 
 - [ ] Code follows existing patterns in the project
-- [ ] Tests pass (`magi`, `asp`, and `desktop/app` test suites)
+- [ ] Tests pass (`magi`, `asp`, and `app` test suites)
 - [ ] No unrelated changes mixed in
 - [ ] Commit messages follow Conventional Commits
 

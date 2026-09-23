@@ -4,7 +4,7 @@ import path from "node:path";
 const STARTUP_ASSETS = ["index.html", "styles.css", "app.js"];
 
 export function resolveStartupEntry({ checkout, fallback }) {
-  const projectBoot = path.join(checkout, "desktop", "shell", "boot");
+  const projectBoot = path.join(checkout, "shell", "boot");
   if (
     existsSync(path.join(checkout, ".git")) &&
     STARTUP_ASSETS.every((file) => existsSync(path.join(projectBoot, file)))

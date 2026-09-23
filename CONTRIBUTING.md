@@ -7,9 +7,9 @@ Thanks for your interest in MAGI! This guide helps you get started.
 ```bash
 git clone https://github.com/realTaki/MAGI.git
 cd MAGI
-cd desktop
+cd shell
 npm ci
-npm ci --prefix app
+npm ci --prefix ../app
 cd ../asp
 npm ci
 cd ../magi
@@ -19,15 +19,15 @@ bun install --frozen-lockfile
 MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
 separate install on the machine. A packaged install ships the runtime MAGI's
 child processes use; a source checkout builds that same runtime into
-`desktop/runtime/`:
+`shell/runtime/`:
 
 ```bash
-(cd desktop && npm install && node scripts/prepare-runtime.mjs)
+(cd shell && npm install && node scripts/prepare-runtime.mjs)
 ```
 
-That runtime (`bin/node`, `bin/bun`) is what builds and runs the desktop app;
-the pinned versions live in `desktop/package.json` and CI uses Node 24.
-`desktop/shell/main.mjs` is what puts it on a child process's `PATH`.
+That runtime (`bin/node`, `bin/bun`) is what builds and runs the app;
+the pinned versions live in `shell/package.json` and CI uses Node 24.
+`shell/main.mjs` is what puts it on a child process's `PATH`.
 
 ## Where to start
 
@@ -48,11 +48,11 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 
 Then:
 
-- **TypeScript** for `magi/`, `asp/`, and the operator app (`desktop/app/`)
+- **TypeScript** for `magi/`, `asp/`, and the operator app (`app/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
 - `bun run test` in `magi/`, `npm test` in `asp/`, and
-  `npm test` in `desktop/app/` should pass before pushing
+  `npm test` in `app/` should pass before pushing
 
 ## Commit style
 
@@ -75,7 +75,8 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
+| `shell/` | Electron shell: window, bundled Node, npm, and Bun |
+| `app/` | Operator interface and local backend |
 | `asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
 | `magi/` | BUS, agent, providers, tools, channels, and tests |
 | `docs/` | Design docs + roadmap |

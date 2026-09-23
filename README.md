@@ -66,7 +66,8 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ## Repository layout
 
 ```text
-desktop/     Electron bootstrap shell and editable operator WebUI
+shell/       Electron shell: window, checkout, and bundled Node, npm, and Bun
+app/         Operator UI and the local backend that starts ASP
 asp/         ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
 magi/        MAGI runtime: BUS, workers, tools, and channels
 ```
@@ -141,7 +142,7 @@ no root `deploy/` tree.
 
 | Situation | Where | What you run |
 | --- | --- | --- |
-| Desktop client | [`desktop/`](desktop/) | Open the Electron app. It starts local ASP; ASP starts MAGI. |
+| Shell | [`shell/`](shell/) | Open the Electron app. It starts local ASP; ASP starts MAGI. |
 
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
@@ -179,7 +180,9 @@ Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
 Operator
    │
    ▼
-desktop/          Electron shell + operator UI
+shell/            Electron window
+   │  loads
+app/              operator UI and local backend
    │  starts Node 24
    ▼
 asp/              127.0.0.1:42069
@@ -204,24 +207,24 @@ directly. The WebUI is built and loaded from the local checkout.
 The packaged app supplies an Electron bootstrap shell and private Git,
 Node.js, and Bun tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
-`magi/`, `asp/`, and `desktop/app/` sources. Local changes are not
+`magi/`, `asp/`, and `app/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.
 Once the operator connects GitHub from the interface, `origin` is their fork and
 `upstream` stays the repository the app cloned, so pushes land in their own
 account.
-When `desktop/app/dist/index.html` changes, the app asks before reloading.
+When `app/dist/index.html` changes, the app asks before reloading.
 
-Only the bootstrap stays in the installed package: `desktop/shell/` clones the
-checkout, loads the app from it — interface (`desktop/app/src/`) and local
-backend (`desktop/app/main/`) — and then simply asks that backend to prepare the
+Only the bootstrap stays in the installed package: `shell/` clones the
+checkout, loads the app from it — interface (`app/src/`) and local
+backend (`app/main/`) — and then simply asks that backend to prepare the
 checkout, start ASP and name the interface entry, through one generic bridge.
-Editing the app takes effect without a new package; editing `desktop/shell/`
+Editing the app takes effect without a new package; editing `shell/`
 still does not change the running shell. Code changes in MAGI or ASP also need the affected process
 to restart. The editable checkout is the foundation for RSI, **not** an
 autonomous self-update system yet: MAGI does not currently validate, activate,
 restart, or roll back its own code revisions as one managed operation.
-See [desktop details](desktop/README.md).
+See [shell details](shell/README.md).
 
 For the implementation-level view, see:
 

@@ -98,7 +98,7 @@ ADAM 和 EVA 是将来 Society 里的角色名。现在的应用还没有 Societ
 
 | 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 桌面客户端 | [`desktop/`](desktop/) | 打开 Electron App；它启动本地 ASP，由 ASP 启动 MAGI。 |
+| 壳 | [`shell/`](shell/) | 打开 Electron App；它启动本地 ASP，由 ASP 启动 MAGI。 |
 
 **桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/MAGI`，准备本地依赖并构建
 WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。如果社会里一个 MAGI
@@ -123,7 +123,9 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 操作者
    │
    ▼
-desktop/          Electron 壳 + 操作界面
+shell/            Electron 窗口
+   │  加载
+app/              操作界面和本地后端
    │  启动 Node 24
    ▼
 asp/              127.0.0.1:42069
@@ -144,19 +146,19 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、Bun 工具。首次启动
 会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `magi/`、`asp/`、
-`desktop/app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建界面，并用 Git 合并上游更新。`desktop/app/dist/index.html` 变化后，
+`app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
+重新构建界面，并用 Git 合并上游更新。`app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
-真正留在安装包里的只有启动壳：`desktop/shell/` 克隆仓库、从里面加载整个应用
-（界面 `desktop/app/src/` + 本地后端 `desktop/app/main/`），然后只是请这个后端
+真正留在安装包里的只有启动壳：`shell/` 克隆仓库、从里面加载整个应用
+（界面 `app/src/` + 本地后端 `app/main/`），然后只是请这个后端
 自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
-重新打包**；改 `desktop/shell/` 才需要。
+重新打包**；改 `shell/` 才需要。
 
-当前安装包中的 Electron 壳（`desktop/shell/`）和内置工具版本仍是固定的：虽然本地
+当前安装包中的 Electron 壳（`shell/`）和内置工具版本仍是固定的：虽然本地
 仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启
 对应进程才能生效。本地可编辑源码是 RSI 的基础；MAGI 尚未实现对自身代码修订的
-自动验证、切换、重启和回滚。详见[桌面端说明](desktop/README.md)。
+自动验证、切换、重启和回滚。详见[壳的说明](shell/README.md)。
 
 深入实现请阅读：
 

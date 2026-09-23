@@ -95,6 +95,26 @@ export async function openChatStore(file) {
       markAcknowledged.run(conversationId, sequence);
     },
     close() {
+      // Windows keeps the directory locked while a prepared statement or the
+      // WAL file is still open, so a test cannot remove its temp folder.
+      try {
+        db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      } catch {
+        // The connection is already shutting down.
+      }
+      for (const statement of [
+        saveConversation,
+        saveEvent,
+        readConversations,
+        readEvents,
+        readLastSequence,
+        readPendingAcks,
+        markAcknowledged,
+      ]) {
+        if (typeof statement.finalize === "function") {
+          statement.finalize();
+        }
+      }
       db.close();
     },
   };

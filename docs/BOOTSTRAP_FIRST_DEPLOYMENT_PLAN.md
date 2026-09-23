@@ -47,7 +47,7 @@ MAGI 的私有状态和凭据留在其本地 Bus；LLM/API key 没有默认值�
 ```bash
 git clone <repo>
 cd MAGI
-# Desktop client: run Electron under desktop/. No deploy scripts.
+# Desktop client: run Electron under shell/. No deploy scripts.
 ```
 
 `install.sh` 应完成：
