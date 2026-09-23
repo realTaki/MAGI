@@ -5,6 +5,7 @@
  */
 import { spawn } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -23,6 +24,50 @@ const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
+
+// Keep every MAGI-owned Electron path beneath ~/.magi so removing that one
+// directory also removes Chromium storage, caches, logs, and crash dumps.
+// Capture the former default first so existing theme/locale and legacy account
+// metadata can be migrated after an upgrade.
+const LEGACY_ELECTRON_USER_DATA = app.getPath("userData");
+const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
+const MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
+const ELECTRON_USER_DATA = path.join(MAGI_APP_DATA, "electron");
+const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
+const ELECTRON_LOGS = path.join(MAGI_APP_DATA, "logs");
+const ELECTRON_CRASH_DUMPS = path.join(MAGI_APP_DATA, "crash-dumps");
+
+for (const directory of [
+  ELECTRON_USER_DATA,
+  ELECTRON_CACHE,
+  ELECTRON_LOGS,
+  ELECTRON_CRASH_DUMPS,
+]) {
+  mkdirSync(directory, { recursive: true });
+}
+
+// Theme and locale are the only localStorage values the interface owns. Move
+// their LevelDB directory before Chromium opens the new profile.
+const legacyLocalStorage = path.join(LEGACY_ELECTRON_USER_DATA, "Local Storage");
+const localStorage = path.join(ELECTRON_USER_DATA, "Local Storage");
+if (
+  LEGACY_ELECTRON_USER_DATA !== ELECTRON_USER_DATA &&
+  existsSync(legacyLocalStorage) &&
+  !existsSync(localStorage)
+) {
+  try {
+    renameSync(legacyLocalStorage, localStorage);
+  } catch {
+    cpSync(legacyLocalStorage, localStorage, { recursive: true });
+    rmSync(legacyLocalStorage, { recursive: true, force: true });
+  }
+}
+
+app.setPath("userData", ELECTRON_USER_DATA);
+app.setPath("sessionData", ELECTRON_USER_DATA);
+app.setPath("cache", ELECTRON_CACHE);
+app.setPath("crashDumps", ELECTRON_CRASH_DUMPS);
+app.setAppLogsPath(ELECTRON_LOGS);
 
 let mainWindow = null;
 let startingLocal = false;
@@ -98,6 +143,8 @@ function packagedTools() {
     ].join(path.delimiter),
     NODE: node,
     npm_node_execpath: node,
+    npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),
+    UV_CACHE_DIR: path.join(MAGI_DATA_ROOT, "cache", "uv"),
     UV_NO_MANAGED_PYTHON: "1",
   };
   return { env, git, node, npm, python, uv };
@@ -193,6 +240,7 @@ async function loadLocalApp(runtimeRoot) {
         checkout: runtimeRoot,
         home: app.getPath("home"),
         userData: app.getPath("userData"),
+        legacyUserData: LEGACY_ELECTRON_USER_DATA,
       },
       repository: MAGI_REPOSITORY,
       managed: localCheckoutManaged,

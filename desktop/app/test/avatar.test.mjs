@@ -75,6 +75,8 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, legacyMe
     requests,
     avatarFile: () => path.join(paths.home, ".magi", "app", "github-avatar"),
     tokenFile: () => path.join(paths.home, ".magi", "app", "github-token"),
+    legacyTokenFile: () => path.join(paths.home, ".magi", "github-token"),
+    legacyMetadataFile: () => path.join(paths.userData, "github.json"),
     metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "app", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
     dispose: () => {
@@ -111,6 +113,7 @@ test("state reports the GitHub account and caches the picture", async (t) => {
   });
   assert.ok(existsSync(github.avatarFile()), "the picture lands in this machine's state");
   assert.ok(existsSync(github.tokenFile()), "legacy token is copied into app state");
+  assert.equal(existsSync(github.legacyTokenFile()), false, "legacy token is removed after migration");
 });
 
 test("existing Electron account metadata is copied into app state", (t) => {
@@ -118,6 +121,11 @@ test("existing Electron account metadata is copied into app state", (t) => {
   const github = backend({ legacyMetadata: old });
   t.after(github.dispose);
   assert.deepEqual(github.metadata(), old);
+  assert.equal(
+    existsSync(github.legacyMetadataFile()),
+    false,
+    "legacy metadata is removed after migration",
+  );
 });
 
 test("an invalid migrated token stays removed", async (t) => {

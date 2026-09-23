@@ -213,16 +213,26 @@ export function createLocalApi(context) {
     chatStorePromise ??= openChatStore(path.join(appData, "chat.sqlite"));
     return chatStorePromise;
   }
-  // The app owns these files. Copy older locations once, without changing
-  // Electron's Chromium profile or overwriting state already in appData.
+  // Move app-owned files out of old Electron profiles and legacy locations.
+  // A source is removed only after a readable destination exists.
   function migrateAppFile(name, legacy = []) {
     const destination = path.join(appData, name);
+    const sources = [
+      ...(paths.legacyUserData ? [path.join(paths.legacyUserData, name)] : []),
+      path.join(paths.userData, name),
+      ...legacy,
+    ].filter((source) => source !== destination);
     if (!existsSync(destination)) {
-      for (const source of [path.join(paths.userData, name), ...legacy]) {
-        if (source !== destination && existsSync(source)) {
+      for (const source of sources) {
+        if (existsSync(source)) {
           copyFileSync(source, destination);
           break;
         }
+      }
+    }
+    if (existsSync(destination)) {
+      for (const source of sources) {
+        rmSync(source, { force: true });
       }
     }
     return destination;
