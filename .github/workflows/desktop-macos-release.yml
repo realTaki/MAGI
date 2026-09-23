@@ -62,10 +62,17 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Unconfigured Actions secrets become empty environment variables.
-          # electron-builder treats an empty CSC_LINK as the current directory.
+          build_args=()
+
+          # A packaged Electron app must be signed after its contents change.
+          # Without a Developer ID certificate, use an ad-hoc signature for
+          # local development builds so macOS does not see a stale signature.
           if [[ -z "$CSC_LINK" ]]; then
-            unset CSC_LINK CSC_KEY_PASSWORD
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            build_args+=(
+              --config.mac.identity=-
+              --config.mac.hardenedRuntime=false
+            )
           fi
           npm run build:ui
           node scripts/prepare-runtime.mjs
@@ -73,7 +80,9 @@ jobs:
             --mac dmg zip \
             --${{ matrix.arch }} \
             --publish never \
-            --config.artifactName='${productName}-${version}-${arch}.${ext}'
+            --config.artifactName='${productName}-${version}-${arch}.${ext}' \
+            "${build_args[@]}"
+          codesign --verify --deep --strict "release/mac-${{ matrix.arch }}/MAGI.app"
 
       - name: Upload packaged app
         uses: actions/upload-artifact@v4
