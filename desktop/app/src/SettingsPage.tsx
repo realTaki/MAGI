@@ -13,7 +13,7 @@ import type { ThemePreference } from "./theme";
 
 type SettingsSection = "general" | "provider" | "usage" | "about";
 
-// Fixed catalog. Same pairs as py-magi/providers/client.py HOSTS.
+// Fixed catalog of model provider and model choices.
 type ProviderChoice = {
   id: string;
   models: readonly string[];

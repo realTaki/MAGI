@@ -37,9 +37,6 @@ jobs:
             desktop/package-lock.json
             desktop/app/package-lock.json
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
-
       - name: Install dependencies
         run: |
           npm ci
@@ -121,9 +118,6 @@ jobs:
             desktop/package-lock.json
             desktop/app/package-lock.json
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v9.0.0
-
       - name: Install dependencies
         run: |
           npm ci
@@ -154,9 +148,8 @@ jobs:
           npm run build:app
           node scripts/prepare-runtime.mjs
           for required in \
-            runtime/python/python.exe \
             runtime/bin/node.exe \
-            runtime/bin/uv.exe \
+            runtime/bin/bun.exe \
             runtime/npm/node_modules/npm/bin/npm-cli.js
           do
             if [[ ! -f "$required" ]]; then

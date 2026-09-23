@@ -1,20 +1,23 @@
 ---
 title: Architecture
-description: The authoritative architecture for the MAGI runtime.
+description: Historical architecture reference for the former Python MAGI runtime.
 permalink: /architecture/
 ---
 
 # MAGI Architecture
 
-The current MAGI runtime is organised around one durable boundary — **BUS**
+> Historical reference for the former Python runtime. The current TypeScript
+> runtime is described in [ts-magi/README.md](../ts-magi/README.md) and the
+> [MAGI-BUS design](MAGI-BUS%20架构设计书.md).
+
+The former Python MAGI runtime was organised around one durable boundary — **BUS**
 (`magi.bus`) — that owns Books (typed CRUD), Job Boards (publish → claim →
 submit_result), and the file-backed prompt/skill shelves. Inside that
 boundary the package is split in two: **bases** (`magi/bus/bases/`) hold
 the Job/Book contracts and the database integration (engines, `Base`,
 `FileShelf`) without any table or column definitions; **firmwares**
 (`magi/bus/firmwares/`) hold the concrete Jobs, Books, and their
-schema/Alembic revisions. This document is
-the authoritative architecture for the current runtime: canonical naming,
+schema/Alembic revisions. This document records that implementation's naming,
 dependency rules, runtime shape, composition root, durable invariants, and
 how each domain package attaches to BUS.
 
@@ -46,7 +49,7 @@ successor of the previous **new BUS** work; `magi.new_bus` is the next
 not a retired compatibility package. It currently has its own `Bus`,
 `BusForWorker`, Dock/Slot lifecycle, storage backends, and Firmware contract; its
 design baseline lives in
-[`magi/new_bus/MAGI-BUS 架构设计书.md`](../py-magi/magi/new_bus/MAGI-BUS%20架构设计书.md).
+[`MAGI-BUS 架构设计书.md`](MAGI-BUS%20架构设计书.md).
 The production runtime described below is still composed through
 `magi.bus.bootstrap.open_bus(...)` until that migration is explicitly wired
 through the startup composition root.

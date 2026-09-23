@@ -691,7 +691,6 @@ export function createLocalApi(context) {
         ...tools.env,
         MAGI_SOURCE_DIR: paths.checkout,
         ...(typeof tools.bun === "string" && tools.bun !== "" ? { MAGI_BUN: tools.bun } : {}),
-        MAGI_RUNTIME: process.env.MAGI_RUNTIME ?? "typescript",
         MAGI_ASP_HOST: ASP_ORIGIN.hostname,
         MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
       },
@@ -812,12 +811,10 @@ export function createLocalApi(context) {
    */
   async function prepare(progress) {
     const aspDir = path.join(paths.checkout, "magi-asp");
-    const magiDir = path.join(paths.checkout, "py-magi");
     const appDir = path.join(paths.checkout, "desktop", "app");
     const tsMagiDir = path.join(paths.checkout, "ts-magi");
     const required = [
       path.join(aspDir, "package-lock.json"),
-      path.join(magiDir, "pyproject.toml"),
       path.join(appDir, "package-lock.json"),
       path.join(tsMagiDir, "bun.lock"),
     ];
@@ -834,18 +831,13 @@ export function createLocalApi(context) {
         env: tools.env,
         description: "Could not prepare magi-asp",
       });
-      progress?.("Preparing MAGI…", 0.4);
-      await command(
-        tools.uv,
-        ["sync", "--frozen", "--extra", "eva", "--python", tools.python],
-        { cwd: magiDir, env: tools.env, description: "Could not prepare MAGI" },
-      );
-      progress?.("Installing app dependencies…", 0.6);
+      progress?.("Preparing TypeScript MAGI…", 0.4);
       await command(tools.bun, ["install", "--frozen-lockfile"], {
         cwd: tsMagiDir,
         env: tools.env,
         description: "Could not prepare TypeScript MAGI",
       });
+      progress?.("Installing app dependencies…", 0.6);
       await command(tools.node, [tools.npm, "ci"], {
         cwd: appDir,
         env: tools.env,

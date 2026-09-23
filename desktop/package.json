@@ -5,6 +5,12 @@
   "type": "module",
   "main": "shell/main.mjs",
   "description": "MAGI Electron shell. It prepares the environment and loads the desktop app.",
+  "allowScripts": {
+    "bun": true,
+    "dugite": true,
+    "electron-winstaller": true,
+    "node": true
+  },
   "scripts": {
     "dev": "electron .",
     "dev:app": "npm run dev --prefix app",

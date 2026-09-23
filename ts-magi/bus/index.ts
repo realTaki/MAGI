@@ -8,4 +8,5 @@ export type { Task } from "./firmware/books/taskBook.js";
 export type { Contact, ContactRole } from "./firmware/books/contactBook.js";
 export type { ContactNote, NoteKind } from "./firmware/books/contactNoteBook.js";
 export type { McpConnectionType, McpServerConfig } from "./firmware/books/mcpServerBook.js";
-export type { ChatNotify, CallLLMJob, CallLLMResult, ChangeProviderNotify, DeliveryNotify, Job, JobResult, LLMMessage, LLMTool, LLMToolCall, RunTaskNotify, RunToolJob, RunToolResult } from "./firmware/jobs/types.js";
+export type { ExecutableTool } from "./firmware/books/toolBook.js";
+export type { ChatNotify, CallLLMJob, CallLLMResult, ChangeMcpServerNotify, ChangeProviderNotify, DeliveryNotify, Job, JobResult, LLMMessage, LLMTool, LLMToolCall, RunTaskNotify, RunToolJob, RunToolResult } from "./firmware/jobs/types.js";

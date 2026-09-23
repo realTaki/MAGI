@@ -19,7 +19,7 @@ Fixes #
 ## Checklist
 
 - [ ] Code follows existing patterns in the project
-- [ ] Tests pass (`cd py-magi && ruff check . && pytest tests/`)
+- [ ] Tests pass (`ts-magi`, `magi-asp`, and `desktop/app` test suites)
 - [ ] No unrelated changes mixed in
 - [ ] Commit messages follow Conventional Commits
 

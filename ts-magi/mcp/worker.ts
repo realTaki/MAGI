@@ -1,10 +1,8 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { BaseWorker, type Bus, type McpServerConfig } from "../bus/index.js";
-import type { Tool } from "../tools/registry.js";
-import type { ToolsWorker } from "../tools/worker.js";
+import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig } from "../bus/index.js";
 
-export type McpConnection = { tools: Tool[]; close(): Promise<void> };
+export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
 export type McpConnector = (config: McpServerConfig, workspace: string) => Promise<McpConnection>;
 
 export class McpWorker extends BaseWorker {
@@ -12,7 +10,7 @@ export class McpWorker extends BaseWorker {
   private readonly connections = new Map<string, McpConnection>();
   private started = false;
 
-  constructor(bus: Bus, private readonly toolsWorker: ToolsWorker, private readonly connector: McpConnector = connectMcpServer) { super(bus); }
+  constructor(bus: Bus, private readonly connector: McpConnector = connectMcpServer) { super(bus); }
 
   async start(): Promise<void> {
     if (this.started) return;
@@ -57,7 +55,7 @@ export class McpWorker extends BaseWorker {
   }
 
   private inject(): void {
-    this.toolsWorker.replaceSource("mcp", [...this.connections.values()].flatMap((connection) => connection.tools));
+    this.bus.tools.replaceSource("mcp", [...this.connections.values()].flatMap((connection) => connection.tools));
   }
 }
 
@@ -72,7 +70,7 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
   try {
     await deadline(client.connect(transport), (config.connect_timeout ?? 10) * 1_000, "MCP connection timed out");
     const listed = await deadline(client.listTools(), (config.connect_timeout ?? 10) * 1_000, "MCP tools/list timed out");
-    const tools: Tool[] = listed.tools.map((tool) => ({
+    const tools: ExecutableTool[] = listed.tools.map((tool) => ({
       name: `${config.name}__${tool.name}`,
       description: tool.description || "(no description provided by MCP server)",
       input_schema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,

@@ -104,6 +104,37 @@ describe("local MAGI agent", () => {
     });
   });
 
+  test("a slow provider does not stall the tools worker", async () => {
+    const path = await workspace();
+    let entered!: () => void;
+    let finish!: (message: LLMMessage) => void;
+    const providerEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const providerDone = new Promise<LLMMessage>((resolve) => { finish = resolve; });
+    const magi = new Magi("@concurrent.magi", {
+      workspace: path,
+      deliver: () => {},
+      tools: [{ name: "echo", description: "echo", input_schema: { type: "object" }, async run(args) { return JSON.stringify(args); } }],
+      client: { async complete() { entered(); return providerDone; } },
+    });
+    magi.start();
+    const chat = magi.chat("wait for the model");
+    try {
+      await providerEntered;
+      const board = magi.bus.board("RunToolJob");
+      const id = board.publish({ call: { tool_call_id: "independent", name: "echo", arguments: { ready: true } } }, "test");
+      let result = board.result(id);
+      for (let attempt = 0; attempt < 100 && !result; attempt++) {
+        await Bun.sleep(10);
+        result = board.result(id);
+      }
+      expect(result).toMatchObject({ status: "completed", output: { content: '{"ready":true}' } });
+    } finally {
+      finish({ role: "assistant", content: "done" });
+      await chat;
+      await magi.stop();
+    }
+  });
+
   test("persists a turn and continues native tool calls through BUS", async () => {
     const path = await workspace();
     await mkdir(join(path, "prompts/agent"), { recursive: true });

@@ -7,6 +7,9 @@ permalink: /business-flows/
 
 # MAGI 关键业务流程
 
+> 历史参考：本文描述旧版 Python runtime 的业务流程。当前 TypeScript runtime
+> 请参阅 [ts-magi/README.md](../ts-magi/README.md)。
+
 > 本文档记录核心业务逻辑的**行为不变式**和关键守卫条件。
 > 改动这些模块时必须保持以下行为不变，否则会导致生产问题。
 >

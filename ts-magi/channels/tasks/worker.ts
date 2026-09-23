@@ -1,5 +1,4 @@
-import { BaseWorker } from "../../bus/index.js";
-import type { Task } from "../../bus/firmware/books/taskBook.js";
+import { BaseWorker, type Task } from "../../bus/index.js";
 
 export class TaskWorker extends BaseWorker {
   readonly worker_name = "task";

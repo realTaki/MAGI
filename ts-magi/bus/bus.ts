@@ -11,6 +11,7 @@ import { ContactBook } from "./firmware/books/contactBook.js";
 import { ContactNoteBook } from "./firmware/books/contactNoteBook.js";
 import { McpServerBook } from "./firmware/books/mcpServerBook.js";
 import { PromptBook } from "./firmware/books/promptBook.js";
+import { ToolBook } from "./firmware/books/toolBook.js";
 import { JobBoard } from "./firmware/jobs/jobBoard.js";
 import type { ChatNotify, DeliveryNotify, JobInput, JobType } from "./firmware/jobs/types.js";
 
@@ -28,6 +29,7 @@ export class Bus {
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
   readonly prompts: PromptBook;
+  readonly tools = new ToolBook();
   private readonly memories: Database;
   private readonly logs: Database;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();

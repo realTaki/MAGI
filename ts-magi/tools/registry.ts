@@ -2,11 +2,10 @@ import { readdir, readFile, rename, writeFile, mkdtemp, mkdir, realpath, rmdir }
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import type { LLMTool } from "../bus/index.js";
-import type { Bus, ContactRole, McpConnectionType, McpServerConfig, MemoryKind, NoteKind } from "../bus/index.js";
+import type { Bus, ChangeMcpServerNotify, ContactRole, ExecutableTool, McpConnectionType, McpServerConfig, MemoryKind, NoteKind } from "../bus/index.js";
 import { ShellManager, shellInvocation } from "./shellManager.js";
 
-export type Tool = LLMTool & { run(args: Record<string, unknown>): Promise<string> };
+export type Tool = ExecutableTool;
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   const value = args[key];
@@ -403,7 +402,7 @@ function publicMcpServer(server: McpServerConfig): Omit<McpServerConfig, "env" |
   return visible;
 }
 
-async function publishMcpChange(bus: Bus, input: import("../bus/firmware/jobs/types.js").ChangeMcpServerNotify): Promise<void> {
+async function publishMcpChange(bus: Bus, input: ChangeMcpServerNotify): Promise<void> {
   const board = bus.board("ChangeMcpServerNotify");
   const id = board.publish(input, "tools");
   const deadline = Date.now() + 30_000;

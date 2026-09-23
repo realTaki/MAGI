@@ -7,7 +7,13 @@ Thanks for your interest in MAGI! This guide helps you get started.
 ```bash
 git clone https://github.com/realTaki/MAGI.git
 cd MAGI
-uv sync --group dev
+cd desktop
+npm ci
+npm ci --prefix app
+cd ../magi-asp
+npm ci
+cd ../ts-magi
+bun install --frozen-lockfile
 ```
 
 MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
@@ -19,8 +25,8 @@ child processes use; a source checkout builds that same runtime into
 (cd desktop && npm install && node scripts/prepare-runtime.mjs)
 ```
 
-That runtime (`bin/node`, `bin/uv`, `python/`) is what builds the desktop app; the pinned
-version lives in `desktop/package.json` and CI uses the same Node 24.
+That runtime (`bin/node`, `bin/bun`) is what builds and runs the desktop app;
+the pinned versions live in `desktop/package.json` and CI uses Node 24.
 `desktop/shell/main.mjs` is what puts it on a child process's `PATH`.
 
 ## Where to start
@@ -42,12 +48,11 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 
 Then:
 
-- **Python 3.12+** with `ruff` for linting
-- **TypeScript** for `magi-asp/` and the operator app (`desktop/app/`)
+- **TypeScript** for `ts-magi/`, `magi-asp/`, and the operator app (`desktop/app/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
-  - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`) in `py-magi/`
-- `cd py-magi && ruff check . && pytest tests/` should pass before pushing
+- `bun run test` in `ts-magi/`, `npm test` in `magi-asp/`, and
+  `npm test` in `desktop/app/` should pass before pushing
 
 ## Commit style
 
@@ -72,9 +77,7 @@ docs: Update README with new architecture
 |-----------|---------|
 | `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
 | `magi-asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
-| `py-magi/agent/` | Agent loop, memory, tools |
-| `py-magi/channels/` | Telegram + ASP channel adapters |
-| `py-magi/tests/` | Unit and integration tests |
+| `ts-magi/` | BUS, agent, providers, tools, channels, and tests |
 | `docs/` | Design docs + roadmap |
 
 ## Questions?

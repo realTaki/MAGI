@@ -1,4 +1,4 @@
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage, type LLMTool } from "../bus/index.js";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage } from "../bus/index.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
@@ -7,7 +7,6 @@ export class Conversation {
   constructor(
     private readonly bus: Bus,
     readonly conversation_id: number,
-    private readonly tools: () => LLMTool[],
   ) {}
 
   async run(jobId: number): Promise<void> {
@@ -33,7 +32,7 @@ export class Conversation {
       }));
       const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}` }, ...history];
       for (let step = 0; step < 20; step++) {
-        const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.tools() }, "agent");
+        const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
         const response = llm.output.message;

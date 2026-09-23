@@ -5,22 +5,12 @@ import { ShellManager } from "./shellManager.js";
 
 export class ToolsWorker extends BaseWorker {
   readonly worker_name = "tools";
-  private readonly tools: Map<string, Tool>;
   private readonly shells = new ShellManager();
-  private readonly sources = new Map<string, string[]>();
   private readonly pending = new Set<Promise<void>>();
 
   constructor(bus: Bus, tools?: Tool[]) {
     super(bus);
-    this.tools = new Map((tools ?? builtinTools(bus, this.shells)).map((tool) => [tool.name, tool]));
-  }
-
-  catalog() { return [...this.tools.values()].map(({ name, description, input_schema }) => ({ name, description, input_schema })); }
-
-  replaceSource(source: string, tools: Tool[]): void {
-    for (const name of this.sources.get(source) ?? []) this.tools.delete(name);
-    for (const tool of tools) this.tools.set(tool.name, tool);
-    this.sources.set(source, tools.map((tool) => tool.name));
+    bus.tools.replaceSource("builtin", tools ?? builtinTools(bus, this.shells));
   }
 
   async poll(): Promise<boolean> {
@@ -36,7 +26,7 @@ export class ToolsWorker extends BaseWorker {
   private async run(id: number, name: string, args: Record<string, unknown>): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
-      const tool = this.tools.get(name);
+      const tool = this.bus.tools.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });
     } catch (error) {

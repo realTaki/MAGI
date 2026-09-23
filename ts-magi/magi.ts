@@ -26,19 +26,19 @@ export class Magi {
   readonly tasks: TaskWorker;
   readonly mcp: McpWorker;
   private running = false;
-  private loop: Promise<void> | null = null;
+  private loops: Promise<void>[] = [];
 
   constructor(handle: string, options: { workspace?: string; migrationSource?: string | null; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string }; mcpConnector?: McpConnector } = {}) {
     this.bus = new Bus(handle, options.workspace, options.migrationSource);
     this.tools = new ToolsWorker(this.bus, options.tools);
-    this.agent = new AgentWorker(this.bus, () => this.tools.catalog());
+    this.agent = new AgentWorker(this.bus);
     this.providers = new ProvidersWorker(this.bus, options.client);
     this.cli = new CliWorker(this.bus, options.deliver);
     this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
     const telegramToken = options.telegram?.token ?? this.bus.getSetting("telegram.bot_token") ?? process.env.MAGI_TELEGRAM_BOT_TOKEN;
     this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
     this.tasks = new TaskWorker(this.bus);
-    this.mcp = new McpWorker(this.bus, this.tools, options.mcpConnector);
+    this.mcp = new McpWorker(this.bus, options.mcpConnector);
   }
 
   start(): void {
@@ -46,16 +46,16 @@ export class Magi {
     this.running = true;
     this.telegram?.start();
     void this.mcp.start();
-    this.loop = this.runLoop();
+    this.loops = [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram, this.tasks, this.mcp]
+      .filter((worker) => worker !== null)
+      .map((worker) => this.runWorkerLoop(worker));
   }
 
-  private async runLoop(): Promise<void> {
+  private async runWorkerLoop(worker: { worker_name: string; poll(): Promise<boolean> }): Promise<void> {
     while (this.running) {
       let worked = false;
-      for (const worker of [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram, this.tasks, this.mcp].filter((item) => item !== null)) {
-        try { worked = await worker.poll() || worked; }
-        catch (error) { console.error(`${worker.worker_name}:`, error); }
-      }
+      try { worked = await worker.poll(); }
+      catch (error) { console.error(`${worker.worker_name}:`, error); }
       if (!worked) await sleep(20);
     }
   }
@@ -73,7 +73,8 @@ export class Magi {
   async stop(): Promise<void> {
     await this.agent.drain();
     this.running = false;
-    await this.loop;
+    await Promise.all(this.loops);
+    this.loops = [];
     this.asp?.close();
     await this.telegram?.stop();
     await this.mcp.stop();

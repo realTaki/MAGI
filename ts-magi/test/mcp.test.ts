@@ -9,13 +9,14 @@ import { builtinTools } from "../tools/registry.js";
 test("MCP worker owns configuration, connections, and dynamic tools", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "ts-magi-mcp-"));
   const closed: string[] = [];
+  const modelCatalogs: string[][] = [];
   const connector: McpConnector = async (server) => ({
     tools: [{ name: `${server.name}__echo`, description: "echo", input_schema: { type: "object" }, async run(args) { return JSON.stringify(args); } }],
     async close() { closed.push(server.name); },
   });
   const magi = new Magi("@mcp.magi", {
-    workspace, mcpConnector: connector,
-    client: { async complete() { return { role: "assistant", content: "unused" }; } },
+    workspace, mcpConnector: connector, deliver: () => {},
+    client: { async complete(job) { modelCatalogs.push(job.tools.map((tool) => tool.name)); return { role: "assistant", content: "done" }; } },
   });
   const manage = builtinTools(magi.bus).find((tool) => tool.name === "mcp_server")!;
   try {
@@ -27,7 +28,9 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
     expect(created.status).toBe("created");
     expect(created.server.env).toBeUndefined();
     expect(magi.bus.mcpServers.get("demo")?.env).toEqual({ SECRET: "hidden" });
-    expect(magi.tools.catalog().map((tool) => tool.name)).toContain("demo__echo");
+    expect(magi.bus.tools.catalog().map((tool) => tool.name)).toContain("demo__echo");
+    await magi.chat("use the available tools");
+    expect(modelCatalogs.at(-1)).toContain("demo__echo");
 
     const runs = magi.bus.board("RunToolJob");
     const runId = runs.publish({ call: { tool_call_id: "call-1", name: "demo__echo", arguments: { value: 42 } } }, "test");
@@ -37,7 +40,7 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
 
     await manage.run({ action: "update", name: "demo", enabled: false });
     expect(closed).toEqual(["demo"]);
-    expect(magi.tools.catalog().map((tool) => tool.name)).not.toContain("demo__echo");
+    expect(magi.bus.tools.catalog().map((tool) => tool.name)).not.toContain("demo__echo");
     await manage.run({ action: "delete", name: "demo" });
     expect(magi.bus.mcpServers.get("demo")).toBeNull();
   } finally {

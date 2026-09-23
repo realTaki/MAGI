@@ -1,4 +1,4 @@
-import { BaseWorker, type Bus, type LLMTool } from "../bus/index.js";
+import { BaseWorker, type Bus } from "../bus/index.js";
 import { Conversation } from "./conversations.js";
 import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
@@ -6,7 +6,7 @@ export class AgentWorker extends BaseWorker {
   readonly worker_name = "agent";
   private readonly queues = new Map<number, Promise<void>>();
 
-  constructor(bus: Bus, private readonly tools: () => LLMTool[]) {
+  constructor(bus: Bus) {
     super(bus);
     for (const [key, value] of PROMPT_DEFAULTS) bus.prompts.register(key, value);
   }
@@ -20,7 +20,7 @@ export class AgentWorker extends BaseWorker {
       return true;
     }
     const previous = this.queues.get(id) ?? Promise.resolve();
-    const next = previous.then(() => new Conversation(this.bus, id, this.tools).run(job.id));
+    const next = previous.then(() => new Conversation(this.bus, id).run(job.id));
     this.queues.set(id, next);
     void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id); });
     return true;

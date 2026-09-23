@@ -118,26 +118,15 @@ function sendToWindow(win, channel, payload) {
 }
 
 function packagedTools() {
-  const runtime = path.join(process.resourcesPath, "runtime");
+  return toolsForRuntime(path.join(process.resourcesPath, "runtime"));
+}
+
+function toolsForRuntime(runtime) {
   const node = path.join(runtime, "bin", process.platform === "win32" ? "node.exe" : "node");
   const npm = path.join(runtime, "npm", "node_modules", "npm", "bin", "npm-cli.js");
-  const uv = path.join(
-    runtime,
-    "bin",
-    process.platform === "win32" ? "uv.exe" : "uv",
-  );
   const bun = path.join(runtime, "bin", process.platform === "win32" ? "bun.exe" : "bun");
-  const pythonCandidates =
-    process.platform === "win32"
-      ? [path.join(runtime, "python", "python.exe")]
-      : [
-          path.join(runtime, "python", "bin", "python3.12"),
-          path.join(runtime, "python", "bin", "python3"),
-          path.join(runtime, "python", "bin", "python"),
-        ];
-  const python = pythonCandidates.find(existsSync);
-  if (!python || !existsSync(node) || !existsSync(npm) || !existsSync(uv) || !existsSync(bun)) {
-    throw new Error("MAGI.app is missing its bundled Python, Node.js, uv, or Bun runtime");
+  if (!existsSync(node) || !existsSync(npm) || !existsSync(bun)) {
+    throw new Error("MAGI.app is missing its bundled Node.js, npm, or Bun runtime");
   }
 
   const git = resolveGitBinary();
@@ -154,10 +143,8 @@ function packagedTools() {
     NODE: node,
     npm_node_execpath: node,
     npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),
-    UV_CACHE_DIR: path.join(MAGI_DATA_ROOT, "cache", "uv"),
-    UV_NO_MANAGED_PYTHON: "1",
   };
-  return { env, git, node, npm, python, uv, bun };
+  return { env, git, node, npm, bun };
 }
 
 async function cloneMagiSource(tools, progress) {
@@ -208,23 +195,15 @@ let localApiError = null;
 // the stable shell, rather than a client reload, owns final process cleanup.
 const localApiInstances = new Set();
 // Where the bundled runtime is, when this build has one. The app starts every
-// child process from this: uv for the Python environments, npm for the build.
+// child process from this: npm and Bun for the TypeScript components.
 let localTools = null;
 // Only a checkout this app owns (packaged, or an explicit scratch checkout) may
 // be rewired; a developer's own working tree must stay untouched.
 let localCheckoutManaged = false;
 
-// Unpackaged runs borrow the developer's tools instead.
+// Unpackaged runs use the source build's MAGI-owned runtime.
 function devTools() {
-  return {
-    bun: "bun",
-    node: "node",
-    npm: "npm",
-    python: process.platform === "win32" ? "python" : "python3",
-    uv: "uv",
-    git: resolveGitBinary(),
-    env: { ...setupEnvironment({}).env },
-  };
+  return toolsForRuntime(path.join(SHELL_DIR, "..", "runtime"));
 }
 
 function appBackendEntry(runtimeRoot) {
@@ -277,8 +256,8 @@ async function resolveRuntimeRoot(progress) {
       localCheckoutManaged = false;
       return REPO_ROOT;
     }
-    // Dev shells have no bundled runtime, but dugite still provides Git, so a
-    // scratch checkout keeps the local capabilities testable.
+    // A scratch checkout keeps local capabilities testable with the source
+    // build's runtime.
     const checkout = path.resolve(override);
     if (!existsSync(path.join(checkout, ".git"))) {
       throw new Error(`MAGI_DEV_CHECKOUT is not a Git checkout: ${checkout}`);

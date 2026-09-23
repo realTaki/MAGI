@@ -1,7 +1,7 @@
 # MAGI — 模块化、可治理的智能体集合（Modular Agentic Governed Intelligences）
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
+[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#项目状态)
 
 [English README](README.md)
@@ -134,7 +134,7 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
-**一个 MAGI：** `python -m magi <handle> <base> <token>`。
+**一个 MAGI：** 在 `ts-magi/` 中运行 `bun run start -- <handle> <base> <token>`。
 
 
 ## 从第一个 MAGIS 到组织成长
@@ -182,8 +182,8 @@ Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 
 
 ### 本地源码与 RSI 方向
 
-安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Python、Node.js 工具。首次启动
-会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `py-magi/`、`magi-asp/`、
+安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、Bun 工具。首次启动
+会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `ts-magi/`、`magi-asp/`、
 `desktop/app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
 重新构建界面，并用 Git 合并上游更新。`desktop/app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。

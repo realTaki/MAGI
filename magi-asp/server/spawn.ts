@@ -81,18 +81,16 @@ export class ProcessSpawner implements MagiSpawner {
     if (spawnDisabled()) {
       return { ...request, pid: null, spawned: false };
     }
-    const typescript = usesTypeScriptRuntime();
-    const command = typescript
-      ? tsMagiCli(resolveMagiBun(), request.handle, request.base, request.token)
-      : magiCli(resolveMagiPython(), request.handle, request.base, request.token);
-    const cwd = typescript ? (tsMagiDir() ?? undefined) : (pyMagiDir() ?? undefined);
+    const command = tsMagiCli(resolveMagiBun(), request.handle, request.base, request.token);
+    const cwd = tsMagiDir() ?? undefined;
     try {
       const child = this.launch(command, {
         cwd,
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        env: { ...process.env },
       });
+      if (child.pid === undefined) return { ...request, pid: null, spawned: false };
       this.#children.push(child);
-      return { ...request, pid: child.pid ?? null, spawned: true };
+      return { ...request, pid: child.pid, spawned: true };
     } catch {
       return { ...request, pid: null, spawned: false };
     }
@@ -106,10 +104,6 @@ export class ProcessSpawner implements MagiSpawner {
     }
     this.#children.length = 0;
   }
-}
-
-export function magiCli(python: string, handle: string, base: string, token: string): string[] {
-  return [python, "-m", "magi", handle, base, token];
 }
 
 export function tsMagiCli(bun: string, handle: string, base: string, token: string): string[] {
@@ -129,37 +123,8 @@ function spawnDisabled(): boolean {
   return flag === "0" || flag === "false" || flag === "no" || flag === "off";
 }
 
-function usesTypeScriptRuntime(): boolean {
-  const runtime = (process.env.MAGI_RUNTIME ?? "typescript").trim().toLowerCase();
-  return runtime === "typescript" || runtime === "ts" || runtime === "ts-magi";
-}
-
-function resolveMagiPython(): string {
-  const configured = process.env.MAGI_PYTHON;
-  if (configured) {
-    return configured;
-  }
-  const root = pyMagiDir();
-  if (root !== null) {
-    const unix = path.join(root, ".venv", "bin", "python");
-    const win = path.join(root, ".venv", "Scripts", "python.exe");
-    if (existsSync(unix)) {
-      return unix;
-    }
-    if (existsSync(win)) {
-      return win;
-    }
-  }
-  return process.platform === "win32" ? "python" : "python3";
-}
-
 function repoRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-}
-
-function pyMagiDir(): string | null {
-  const candidate = path.join(repoRoot(), "py-magi");
-  return existsSync(candidate) ? candidate : null;
 }
 
 function tsMagiDir(): string | null {
@@ -173,7 +138,10 @@ function resolveMagiBun(): string {
     return configured;
   }
   const executable = process.platform === "win32" ? "bun.exe" : "bun";
-  const candidates = [path.join(repoRoot(), "desktop", "runtime", "bin", executable)];
+  const candidates = [
+    path.join(repoRoot(), "desktop", "runtime", "bin", executable),
+    path.join(repoRoot(), "desktop", "node_modules", "bun", "bin", "bun.exe"),
+  ];
   const platformName = process.platform === "win32" ? "windows" : process.platform;
   const machine = arch() === "arm64" ? "aarch64" : arch() === "x64" ? "x64" : "";
   if (machine !== "") {

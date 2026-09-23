@@ -1,7 +1,7 @@
 # MAGI — Modular Agentic Governed Intelligences
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://python.org)
+[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
 
 [中文 README](README_zh.md)
@@ -69,11 +69,10 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 desktop/     Electron bootstrap shell and editable operator WebUI
 magi-asp/    ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
 ts-magi/     Canonical Bun MAGI runtime: BUS, workers, tools, and channels
-py-magi/     Legacy Python runtime and migration source
 ```
 
-The projects are siblings. The running MAGI is `ts-magi/`. `py-magi/` remains
-the Python runtime (`from bus import Bus`, `from startup.cli import main`).
+The projects are siblings. Each running MAGI uses `ts-magi/`; its BUS mediates
+all Worker state and communication.
 
 ## Toward governed collective intelligence
 
@@ -181,7 +180,7 @@ machine-local layer: connecting the checkout to the operator's GitHub account
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
 `eva-000` and starts that MAGI.
 
-**One MAGI:** `bun run start -- <handle> <base> <token>` from `ts-magi/`. ASP launches this command with MAGI's bundled Bun runtime. Set `MAGI_RUNTIME=python` only to run the legacy Python implementation.
+**One MAGI:** `bun run start -- <handle> <base> <token>` from `ts-magi/`. ASP launches this command with MAGI's bundled Bun runtime.
 
 
 ## From the first MAGIS to a growing organization
@@ -240,9 +239,9 @@ directly. The WebUI is built and loaded from the local checkout.
 ### Local source and the path to RSI
 
 The packaged app supplies an Electron bootstrap shell and private Git,
-Python, and Node.js tools. On first launch it clones the complete repository
+Node.js, and Bun tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
-`py-magi/`, `magi-asp/`, and `desktop/app/` sources. Local changes are not
+`ts-magi/`, `magi-asp/`, and `desktop/app/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.
 Once the operator connects GitHub from the interface, `origin` is their fork and

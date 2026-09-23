@@ -23,7 +23,7 @@ recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and conversation state in its workspace; outbound messages go
 through DeliveryNotify jobs.
 An old running ASP kept events only in memory. Before stopping it for this
-upgrade, run `python3 desktop/app/scripts/import-asp-history.py` from the MAGI
+upgrade, run the bundled Node.js with `desktop/app/scripts/import-asp-history.mjs` from the MAGI
 checkout. This copies its available conversations and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
@@ -36,9 +36,9 @@ permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/MAGI` with its bundled Git, then hands the app the bundled Python,
-Node.js, npm and uv. The backend uses them to install magi-asp, prepare the
-MAGI Python environment and the app dependencies, build the interface and start ASP. The
+`~/.magi/MAGI` with its bundled Git, then hands the app bundled Node.js, npm,
+and Bun. The backend uses them to install magi-asp and ts-magi dependencies,
+build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
 `~/.magi/MAGI/desktop/shell/boot/`; the packaged copy is only the first-clone
@@ -111,7 +111,6 @@ user tokens are short-lived and installed per repository.
 | Source in `~/.magi/MAGI` | How the change takes effect |
 | --- | --- |
 | `ts-magi/` | Restart the affected MAGI process. |
-| `py-magi/` | Legacy runtime and first-run migration source; restart only when explicitly running with `MAGI_RUNTIME=python`. |
 | `magi-asp/` | Restart local ASP. |
 | `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
