@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("magiDesktop", {
   retryStartup: () => ipcRenderer.invoke("asp:retry"),
   copyText: (text) => ipcRenderer.invoke("shell:copy-text", text),
+  shellRelease: () => ipcRenderer.invoke("shell:release"),
+  installShellRelease: () => ipcRenderer.invoke("shell:install-release"),
   onStartupProgress: (listener) =>
     ipcRenderer.on("asp:startup-progress", (_event, progress) => listener(progress)),
   onStartupError: (listener) =>
