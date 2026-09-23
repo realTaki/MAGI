@@ -235,8 +235,9 @@ async function requestDeviceCode() {
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || typeof data?.device_code !== "string") {
+    const detail = data?.error_description ?? data?.error ?? response.statusText;
     throw new Error(
-      data?.error_description ?? data?.error ?? "GitHub did not return a sign-in code.",
+      `GitHub did not return a sign-in code (${detail}). Check that MAGI_GITHUB_CLIENT_ID names an OAuth app with device flow enabled.`,
     );
   }
   return data;
@@ -435,6 +436,9 @@ async function pointCheckoutAtFork(checkout, tools, fork, upstream, viewer, repo
 let pendingSignIn = null;
 let deviceFlowPending = false;
 let deviceVerificationUri = GITHUB_DEVICE_URL;
+// Kept while a sign-in is outstanding so a reloaded or reopened startup window
+// goes back to the sign-in page instead of sitting on the progress view.
+let signInPrompt = null;
 
 function waitForSignIn() {
   return new Promise((resolve) => {
@@ -471,12 +475,14 @@ async function connectGitHub(checkout, tools, win, report) {
     }
   }
   if (session === null) {
-    sendToWindow(win, "github:required", {
+    signInPrompt = {
       clientId: GITHUB_CLIENT_ID !== "",
       upstream: `${upstream.owner}/${upstream.name}`,
       expired: stored !== null,
-    });
+    };
+    sendToWindow(win, "github:required", signInPrompt);
     session = await waitForSignIn();
+    signInPrompt = null;
   }
 
   report("github", `Signed in to GitHub as @${session.viewer.login}`);
@@ -752,6 +758,9 @@ function watchOperatorUi(win, indexFile) {
 async function loadStartup(win) {
   stopWatchingOperatorUi();
   await win.loadFile(path.join(SHELL_DIR, "ui", "index.html"));
+  if (signInPrompt !== null) {
+    sendToWindow(win, "github:required", signInPrompt);
+  }
 }
 
 async function loadOperatorUi(win, checkout) {
@@ -825,7 +834,8 @@ ipcMain.handle("github:start-device", async () => {
     });
     clipboard.writeText(String(device.user_code ?? ""));
     await shell.openExternal(deviceVerificationUri).catch(() => {});
-    return await acceptGitHubToken(await pollDeviceToken(device));
+    const viewer = await acceptGitHubToken(await pollDeviceToken(device));
+    return { login: viewer.login };
   } finally {
     deviceFlowPending = false;
   }
@@ -836,7 +846,8 @@ ipcMain.handle("github:submit-token", async (_event, token) => {
   if (submitted === "") {
     throw new Error("Paste a GitHub personal access token first.");
   }
-  return await acceptGitHubToken(submitted);
+  const viewer = await acceptGitHubToken(submitted);
+  return { login: viewer.login };
 });
 
 ipcMain.handle("github:open-verification", async () => {

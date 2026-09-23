@@ -46,10 +46,10 @@
     "dugite": "^3.2.3"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "electron": "^43.5.1",
+    "@types/node": "^24.13.6",
+    "electron": "^44.4.4",
     "electron-builder": "^26.15.3",
     "node": "^24.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2"
   }
 }

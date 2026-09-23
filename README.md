@@ -171,7 +171,9 @@ no root `deploy/` tree.
 | Desktop client | [`desktop/`](desktop/) | Open the Electron app. It starts local ASP; ASP starts MAGI. |
 
 **Desktop:** on first launch, the app clones the complete repository into
-`~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
+`~/.magi/MAGI`, asks the operator to sign in with GitHub (forking the repository
+into their account when they have no fork and pointing the checkout's `origin` at
+it), prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
 the preparation stages before opening the WebUI. Creating a bot is
 `POST /conversations { "kind": "bot" }` — ASP assigns `eva-000` and starts that
@@ -241,6 +243,8 @@ to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
 `py-magi/`, `magi-asp/`, and `desktop/ui/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the WebUI, and merge future upstream changes using Git.
+After sign-in, `origin` is the operator's GitHub fork and `upstream` stays the
+repository the app cloned, so pushes land in their own account.
 When `desktop/ui/dist/index.html` changes, the app asks before reloading.
 
 The running Electron shell (`desktop/shell/`) and bundled tool versions remain

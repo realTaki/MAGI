@@ -60,9 +60,12 @@ function setGitHubBusy(busy) {
   githubTokenSubmit.disabled = busy;
 }
 
+// The device flow can be unavailable (app not configured for it, network
+// blocked), so a failure also opens the token route instead of dead-ending.
 function reportGitHubError(error) {
   setGitHubStatus(error instanceof Error ? error.message : String(error), true);
   setGitHubBusy(false);
+  githubTokenPanel.hidden = false;
   githubRetry.hidden = false;
 }
 
@@ -171,6 +174,7 @@ window.magiDesktop.onGitHubStatus((status) => {
     case "error":
       setGitHubStatus(status.message, true);
       setGitHubBusy(false);
+      githubTokenPanel.hidden = false;
       githubRetry.hidden = false;
       break;
     default:
