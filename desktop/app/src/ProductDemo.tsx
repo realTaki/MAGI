@@ -1048,6 +1048,21 @@ export function ProductDemo() {
                 </svg>
               </button>
             </div>
+            <button
+              type="button"
+              className="product-demo__name-btn"
+              aria-label={
+                active.kind === "group"
+                  ? `Open ${active.name || "conversation"} details`
+                  : `Open ${active.name || "agent"} profile`
+              }
+              aria-controls="product-demo-profile"
+              aria-expanded={showPanel && panelMode === "settings"}
+              onClick={openSettings}
+            >
+              <Avatar color={active.color} size={28} />
+              <span className="product-demo__active-name">{active.name}</span>
+            </button>
           </div>
 
           <div className="product-demo__thread" ref={scrollRef}>
@@ -1090,7 +1105,7 @@ export function ProductDemo() {
         </main>
 
         {showPanel ? (
-          <aside className="product-demo__panel">
+          <aside id="product-demo-profile" className="product-demo__panel">
             {panelMode !== "routine" ? (
               <div className="product-demo__panel-head">
                 <span>{t("conversationSettings.title")}</span>
