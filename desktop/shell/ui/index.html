@@ -23,11 +23,57 @@
         <p class="eyebrow">MAGI</p>
         <h1>Starting local MAGI</h1>
         <p id="startup-message" class="lede">Preparing MAGI…</p>
-        <div class="progress-track" role="progressbar" aria-label="MAGI startup progress" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+        <div class="progress-track" role="progressbar" aria-label="MAGI startup progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0">
           <div id="startup-progress" class="progress-fill"></div>
         </div>
         <p id="startup-step" class="status">Preparing local runtime</p>
         <button type="button" class="retry" id="retry-startup" hidden>Retry</button>
+      </main>
+
+      <main id="view-github" class="view github" hidden>
+        <p class="eyebrow">GitHub</p>
+        <h1>Sign in with GitHub</h1>
+        <p class="lede">
+          MAGI keeps your working copy in your own GitHub account. Signing in forks
+          <strong id="github-upstream">the MAGI repository</strong> when you do not have one yet, then
+          points <code>~/.magi/MAGI</code> at your fork.
+        </p>
+
+        <button type="button" class="choice choice--primary" id="github-device" hidden>
+          <strong>Continue with GitHub</strong>
+          <span>Opens github.com in your browser. Enter the code MAGI shows here.</span>
+        </button>
+
+        <section class="device" id="github-device-panel" hidden>
+          <p class="device-label">Your one-time code</p>
+          <code class="device-code" id="github-user-code">····-····</code>
+          <button type="button" class="back" id="github-open">Open github.com/login/device</button>
+        </section>
+
+        <section class="token" id="github-token-panel" hidden>
+          <label for="github-token-input">Personal access token</label>
+          <input
+            id="github-token-input"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="ghp_…"
+          />
+          <p class="hint">
+            Needs <code>repo</code> and <code>read:user</code> scopes.
+            <a
+              id="github-token-link"
+              href="https://github.com/settings/tokens/new?scopes=repo,read:user&amp;description=MAGI"
+              target="_blank"
+              rel="noreferrer"
+              >Create a token</a
+            >
+          </p>
+          <button type="button" class="back" id="github-token-submit">Use this token</button>
+        </section>
+
+        <p id="github-status" class="status"></p>
+        <button type="button" class="retry" id="github-retry" hidden>Try again</button>
       </main>
     </div>
     <script src="./app.js"></script>

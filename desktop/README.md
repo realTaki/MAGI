@@ -13,6 +13,28 @@ fails. Later launches reuse the same Git working tree; they do not overwrite
 local changes or automatically pull upstream. Preparation currently runs again
 on each packaged launch.
 
+## GitHub sign-in
+
+After the clone, the shell signs the operator in to GitHub so the working copy
+lives in their own account:
+
+- The token is stored at `~/.magi/github-token` (mode 0600). Later launches reuse
+  it and only ask again when GitHub rejects it.
+- If the account has no `MAGI` fork, `POST /repos/<upstream>/forks` creates one.
+  An existing repository with the same name that is not a fork is reported as an
+  error rather than overwritten.
+- `origin` becomes `https://github.com/<account>/MAGI.git` and `upstream` stays
+  the clone source, so the checkout pushes to the fork and still tracks the
+  original. A repository-local `credential.helper` reads the token file, so the
+  token never lands in `.git/config`; `user.name` and `user.email` are filled
+  from the GitHub profile when the checkout has no identity yet.
+
+The sign-in page drives the OAuth device flow when `MAGI_GITHUB_CLIENT_ID` names
+an OAuth app (device flow needs no client secret); otherwise it asks for a
+personal access token with `repo` and `read:user` scopes. Unpackaged shells skip
+all of this unless `MAGI_DEV_CHECKOUT` points at a scratch checkout, so
+`npm run dev` never rewrites the developer's own remotes.
+
 ## What local edits affect
 
 | Source in `~/.magi/MAGI` | How the change takes effect |

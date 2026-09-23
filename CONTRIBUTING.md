@@ -10,6 +10,19 @@ cd MAGI
 uv sync --group dev
 ```
 
+MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
+separate install on the machine. A packaged install ships the runtime MAGI's
+child processes use; a source checkout builds that same runtime into
+`desktop/runtime/`:
+
+```bash
+(cd desktop && npm install && node scripts/prepare-runtime.mjs)
+```
+
+That runtime (`bin/node`, `bin/uv`, `python/`) is what builds the UI; the pinned
+version lives in `desktop/package.json` and CI uses the same Node 24.
+`desktop/shell/main.mjs` is what puts it on a child process's `PATH`.
+
 ## Where to start
 
 - **Good first issues** — tagged `good first issue` in Issues

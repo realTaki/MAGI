@@ -193,3 +193,95 @@ h1 {
 .retry:focus-visible {
   background: #1a1a1d;
 }
+
+.retry:disabled,
+.choice:disabled,
+.back:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.github .choice {
+  margin-bottom: 18px;
+}
+
+.device {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-2);
+}
+
+.device-label {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.device-code {
+  display: block;
+  margin-bottom: 14px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.token {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.token label {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.token input {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--panel-2);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+}
+
+.token input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hint a {
+  color: var(--accent);
+}
+
+code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #1c1c20;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.lede strong {
+  color: var(--copy);
+  font-weight: 600;
+}
