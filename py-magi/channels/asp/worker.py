@@ -147,7 +147,12 @@ class AspWorker(BaseWorker):
             elif kind == "session.message" and payload.get("sender") != self.handle:
                 await self.call(self._ingest, session_id, payload)
         except Exception as exc:  # noqa: BLE001 -- one ASP event cannot stop the channel
-            await self._tell(session_id, f"[asp error]\n{exc}")
+            logger.exception("could not ingest ASP event %s: %s", event.get("event_id"), exc)
+            return None
+        sequence = event.get("sequence")
+        if isinstance(sequence, int):
+            return {"type": "session.ack", "session_id": session_id, "sequence": sequence}
+        return None
 
     def _ingest(self, session_id: str, payload: dict[str, Any]) -> None:
         text = _content_text(payload.get("content"))
@@ -183,13 +188,6 @@ class AspWorker(BaseWorker):
 
     async def _submit_delivery(self, result: DeliveryNotifyResult) -> None:
         self.submit(DeliveryNotify, result)
-
-    async def _tell(self, session_id: str, text: str) -> None:
-        if self._client is None:
-            return
-        with suppress(Exception):
-            await self._client.send(session_id, text)
-
 
 def _setting_text(value: object) -> str | None:
     """A provider setting from ASP: text, or None to leave it unchanged."""
