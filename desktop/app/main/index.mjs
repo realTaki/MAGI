@@ -13,7 +13,8 @@
  *   prepare(progress)        — get this checkout ready and report the interface
  *                              entry point (a file path or a URL).
  *   start(progress)          — bring up local ASP, the service this app talks to.
- *   dispose()                — stop what this instance started.
+ *   dispose()                — release reloadable backend resources only.
+ *   shutdown()               — stop ASP when the desktop itself exits.
  *   github.state             — account, fork and whether the checkout is wired.
  *   github.signIn            — OAuth device flow; stores the token for Git to use.
  *   github.connect           — fork when the account has none, then point the
@@ -185,6 +186,7 @@ function parseGitHubSlug(url) {
 
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, managed = false } = context;
+  const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
   let asp = null;
@@ -621,7 +623,7 @@ export function createLocalApi(context) {
 
   function spawnAsp() {
     const aspDir = path.join(paths.checkout, "magi-asp");
-    const child = spawn(resolveAspPython(aspDir), ["main.py"], {
+    const child = spawnProcess(resolveAspPython(aspDir), ["main.py"], {
       cwd: aspDir,
       env: {
         ...tools.env,
@@ -1013,6 +1015,13 @@ export function createLocalApi(context) {
     }
     if (providerTimer !== null) clearTimeout(providerTimer);
     providerTimer = null;
+  }
+
+  // Renderer/backend reloads and runtime shutdown are deliberately separate.
+  // A cache-busted backend instance can be retired while the ASP process (and
+  // therefore its MAGI children) keeps serving the newly loaded interface.
+  function shutdown() {
+    dispose();
     if (asp && !asp.killed) {
       asp.kill("SIGTERM");
     }
@@ -1120,6 +1129,7 @@ export function createLocalApi(context) {
     prepare,
     start,
     dispose,
+    shutdown,
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,

@@ -371,6 +371,7 @@ export function ProductDemo() {
   const [panelMode, setPanelMode] = useState<PanelMode>("settings");
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [extra, setExtra] = useState<ExtraMessages>({});
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
@@ -383,6 +384,7 @@ export function ProductDemo() {
   const [addingHandle, setAddingHandle] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const plusWrapRef = useRef<HTMLDivElement | null>(null);
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const creatingRef = useRef(false);
@@ -544,6 +546,12 @@ export function ProductDemo() {
       window.removeEventListener("keydown", onKey);
     };
   }, [plusOpen, userMenuOpen]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
 
   if (!active) {
     return <div className="product-demo" style={{ padding: 32 }}>
@@ -840,10 +848,33 @@ export function ProductDemo() {
           <div className="product-demo__chrome">
             <span className="product-demo__drawer-title">{t("plusMenu.listTitle")}</span>
             <div className="product-demo__chrome-actions">
+              <button
+                type="button"
+                className="product-demo__chrome-icon"
+                aria-label="Search"
+                aria-expanded={searchOpen}
+                aria-controls="product-demo-search"
+                onClick={() => setSearchOpen((open) => !open)}
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="20" y1="20" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
               <div className="product-demo__plus-wrap" ref={plusWrapRef}>
                 <button
                   type="button"
-                  className="product-demo__new"
+                  className="product-demo__chrome-icon"
                   aria-label={t("plusMenu.aria")}
                   aria-haspopup="menu"
                   aria-expanded={plusOpen}
@@ -854,7 +885,19 @@ export function ProductDemo() {
                   }}
                   onMouseDown={(event) => event.stopPropagation()}
                 >
-                  +
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
                 </button>
                 {plusOpen ? (
                   <div className="product-demo__plus-menu" role="menu">
@@ -887,15 +930,31 @@ export function ProductDemo() {
               </button>
             </div>
           </div>
-          <label className="product-demo__search">
-            <span aria-hidden="true">⌕</span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search"
-            />
-          </label>
+          {searchOpen ? (
+            <label id="product-demo-search" className="product-demo__search">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="20" y1="20" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search"
+              />
+            </label>
+          ) : null}
           <div className="product-demo__bot-list">
             {filtered.map((bot) => {
               const isActive = bot.id === active.id;
@@ -969,47 +1028,23 @@ export function ProductDemo() {
             <div className="product-demo__topbar-left">
               <button
                 type="button"
-                className="product-demo__pill-icon"
-                aria-label="Search"
+                ref={menuButtonRef}
+                className="product-demo__menu-btn"
+                aria-label="Show bots"
                 aria-expanded={menuOpen}
                 aria-controls="product-demo-bots"
                 onClick={() => setMenuOpen(true)}
               >
                 <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="11" cy="11" r="7" />
-                  <line x1="20" y1="20" x2="16.65" y2="16.65" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="product-demo__pill-icon"
-                aria-label="New bot or group"
-                onClick={() => {
-                  setMenuOpen(true);
-                  setPlusOpen(true);
-                }}
-                disabled={creating}
-              >
-                <svg
-                  width="16"
-                  height="16"
+                  width="18"
+                  height="18"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.6"
                   strokeLinecap="round"
                 >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <path d="M4 7h16M4 12h16M4 17h16" />
                 </svg>
               </button>
             </div>

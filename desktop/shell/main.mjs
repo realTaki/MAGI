@@ -146,6 +146,10 @@ async function cloneMagiSource(tools, progress) {
 // checkout (MAGI_DEV_CHECKOUT) is only the Git tree, not the code under test.
 let localApi = null;
 let localApiError = null;
+// Cache-busted app backends are reloadable, but an older instance may still
+// own the ASP child it started. Retain each instance until desktop shutdown so
+// the stable shell, rather than a client reload, owns final process cleanup.
+const localApiInstances = new Set();
 // Where the bundled runtime is, when this build has one. The app starts every
 // child process from this: uv for the Python environments, npm for the build.
 let localTools = null;
@@ -197,6 +201,7 @@ async function loadLocalApp(runtimeRoot) {
       openExternal: (url) => shell.openExternal(url),
       copy: (text) => clipboard.writeText(text),
     });
+    localApiInstances.add(localApi);
   } catch (error) {
     localApiError = error instanceof Error ? error : new Error(String(error));
     console.error(`[magi-app] could not load the local backend: ${localApiError.message}`);
@@ -251,7 +256,8 @@ async function launchLocalOperator(win) {
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
     progress("Loading the app…", 0.15);
-    // A retry replaces the backend, so let the previous one stop what it started.
+    // A retry replaces only reloadable backend resources. ASP and its MAGI
+    // children have an independent lifecycle and must survive client reloads.
     localApi?.dispose?.();
     await loadLocalApp(runtimeRoot);
     if (localApi === null) {
@@ -360,8 +366,12 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  // The app owns the processes it started (local ASP, for one).
-  localApi?.dispose?.();
+  // The desktop owns the processes started by every cache-busted backend
+  // instance. Only a real application quit, never a client reload, stops them.
+  for (const api of localApiInstances) {
+    api.shutdown?.();
+  }
+  localApiInstances.clear();
 });
 
 app.on("window-all-closed", () => {
