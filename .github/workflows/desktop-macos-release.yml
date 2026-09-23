@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             desktop/package-lock.json
-            desktop/ui/package-lock.json
+            desktop/app/package-lock.json
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v9.0.0
@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          npm ci --prefix ui
+          npm ci --prefix app
 
       - name: Set version from tag
         run: |
@@ -74,7 +74,7 @@ jobs:
               --config.mac.hardenedRuntime=false
             )
           fi
-          npm run build:ui
+          npm run build:app
           node scripts/prepare-runtime.mjs
           npx electron-builder \
             --mac dmg \

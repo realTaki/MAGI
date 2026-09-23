@@ -8,11 +8,10 @@ contextBridge.exposeInMainWorld("magiDesktop", {
     ipcRenderer.on("asp:startup-progress", (_event, progress) => listener(progress)),
   onStartupError: (listener) =>
     ipcRenderer.on("asp:startup-error", (_event, message) => listener(message)),
-  // Local-machine capabilities driven by the operator UI. They are absent when
-  // the same UI is opened outside the desktop app, so the UI feature-detects.
-  githubState: () => ipcRenderer.invoke("github:state"),
-  startGitHubSignIn: () => ipcRenderer.invoke("github:sign-in"),
-  connectGitHub: () => ipcRenderer.invoke("github:connect"),
-  onGitHubEvent: (listener) =>
-    ipcRenderer.on("github:event", (_event, event) => listener(event)),
+  // Everything after bootstrap belongs to the app, which the shell loads from
+  // the checkout: the bridge only forwards calls, so a new capability needs no
+  // change here or in the shell. Absent when the app runs outside the shell.
+  invokeLocal: (method, payload) => ipcRenderer.invoke("local:invoke", method, payload),
+  onLocalEvent: (listener) =>
+    ipcRenderer.on("local:event", (_event, message) => listener(message)),
 });

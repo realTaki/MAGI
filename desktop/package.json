@@ -7,11 +7,11 @@
   "description": "MAGI Electron desktop: operator UI and local sqlite.",
   "scripts": {
     "dev": "electron .",
-    "dev:ui": "npm run dev --prefix ui",
-    "build": "npm run build --prefix ui && node scripts/prepare-runtime.mjs && electron-builder",
-    "build:ui": "npm run build --prefix ui",
+    "dev:app": "npm run dev --prefix app",
+    "build": "npm run build --prefix app && node scripts/prepare-runtime.mjs && electron-builder",
+    "build:app": "npm run build --prefix app",
     "build:desktop": "node scripts/prepare-runtime.mjs && electron-builder",
-    "lint": "npm run lint --prefix ui"
+    "lint": "npm run lint --prefix app"
   },
   "build": {
     "appId": "ai.magi.app",
@@ -19,7 +19,7 @@
     "executableName": "MAGI",
     "files": [
       "shell/**",
-      "ui/dist/**",
+      "app/dist/**",
       "schema.sql",
       "package.json"
     ],

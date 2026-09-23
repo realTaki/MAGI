@@ -9,8 +9,8 @@ const steps = {
   clone: 1,
   asp: 2,
   magi: 3,
-  "ui-dependencies": 4,
-  "ui-build": 5,
+  "app-dependencies": 4,
+  "app-build": 5,
   starting: 6,
 };
 

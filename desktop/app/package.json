@@ -1,9 +1,9 @@
 {
-  "name": "@magi/ui",
+  "name": "@magi/app",
   "version": "0.1.3",
   "private": true,
   "type": "module",
-  "description": "MAGI desktop operator UI.",
+  "description": "MAGI desktop app: operator interface and local backend.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
