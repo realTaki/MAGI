@@ -34,7 +34,7 @@ from old_bus.firmwares.jobs.changeProviderConfigJob import (
     PROVIDER_NAME_KEY,
 )
 from old_bus.provision import provision_node_storage
-from providers.base import LLMProvider, LLMStreamEvent
+from providers.base import LLMProvider
 from providers.errors import LLMError, LLMNotConfiguredError
 from providers.worker import ProvidersWorker
 
@@ -111,34 +111,6 @@ class FakeProvider(LLMProvider):
             "usage": {"input_tokens": 10, "output_tokens": 5},
             "stop_reason": "end_turn",
         }
-
-    async def stream(
-        self,
-        *,
-        system: str | None,
-        messages: list[dict],
-        max_tokens: int,
-        tools: list[dict] | None = None,
-    ) -> Any:
-        _ = system, max_tokens, tools
-        # Default-stream shape (matches ``LLMProvider.stream`` base impl):
-        # one ``text.delta`` per chunk of reply, then a single
-        # ``usage.updated`` terminal.
-        last_content = self._last_user_text(messages)
-        text = self.reply or f"echo:{last_content}"
-        yield LLMStreamEvent("text.delta", {"text": text})
-        yield LLMStreamEvent(
-            "usage.updated",
-            {
-                "text": text,
-                "thinking": None,
-                "tool_uses": [],
-                "raw_blocks": [],
-                "model": self.default_model(),
-                "usage": {"input_tokens": 10, "output_tokens": 5},
-                "stop_reason": "end_turn",
-            },
-        )
 
     @staticmethod
     def _last_user_text(messages: list[dict]) -> str:
@@ -225,7 +197,7 @@ async def _wait_for_result(
 
 
 def _enqueue_simple(bus: Bus, *, content: str = "hello") -> int:
-    """Publish a minimal chat job (no tools, no streaming)."""
+    """Publish a minimal chat job (no tools)."""
     return bus.llm_job_board.publish(
         CallLLMJob(
             messages=[{"role": "user", "content": content}],
@@ -643,38 +615,5 @@ async def test_worker_publishes_provider_options_to_settings_book(bus: Bus):
             ("openai", "gpt-5.6-terra"),
             ("openai", "gpt-5.6-luna"),
         } <= pairs
-    finally:
-        await stop_provider_worker()
-
-
-# ---------------------------------------------------------------------------
-# Stream mode round-trip
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_streaming_job_publishes_deltas_and_terminal(bus: Bus):
-    """A streaming job publishes text deltas to StreamHub and yields a final result."""
-    fake = FakeProvider(reply="hello there")
-    _install_fake(bus, fake)
-    _seed_provider_config(bus)
-    await start_provider_worker(bus)
-    try:
-        job_id = bus.llm_job_board.publish(
-            CallLLMJob(
-                messages=[{"role": "user", "content": "hi"}],
-                max_tokens=16,
-                streaming=True,
-            )
-        )
-        result = await _wait_for_result(bus, job_id)
-        assert result is not None and result.status == JobStatus.COMPLETED
-        assert result.response["text"] == "hello there"
-        # ``stream_key`` is non-empty in streaming mode — the consumer
-        # can pull incremental deltas from ``bus.stream_hub.get(key)``.
-        assert result.stream_key, "streaming result should carry a stream_key"
-        # The StreamHub pipe exists and was closed after the worker drained it.
-        pipe = bus.stream_hub.get(result.stream_key)
-        assert pipe is None, "stream hub pipe should be cleaned up after drain"
     finally:
         await stop_provider_worker()

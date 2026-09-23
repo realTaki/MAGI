@@ -64,8 +64,7 @@ class CallLLMJob(BaseJob):
     """One backend-neutral text-and-tools completion request.
 
     Provider selection, credentials, and SDK-specific options remain private
-    Settings/adapter concerns. Streaming remains absent until BUS has a durable
-    stream contract.
+    Settings/adapter concerns. LLM streaming is not supported.
     """
 
     messages: list[LLMMessage]
