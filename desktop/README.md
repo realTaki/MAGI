@@ -115,7 +115,7 @@ user tokens are short-lived and installed per repository.
 | `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the app then asks whether to reload it. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `desktop/shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
-| `desktop/shell/*.mjs`, `desktop/shell/preload.cjs`, packaged tools and build configuration | Rebuild and reinstall the Electron app. Executable shell code is loaded from the installed app, not the checkout. |
+| `desktop/shell/*.mjs`, `desktop/shell/preload.cjs`, packaged tools and build configuration | Settings → About installs a newer GitHub Release of the shell. The checkout is left as it is. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
 running, so a change under `desktop/app/main/` still waits for the next launch.

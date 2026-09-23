@@ -5,6 +5,7 @@ import { OPERATOR } from "./conversation-model";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
+import type { ShellRelease } from "./magi-desktop";
 import type { LocalePreference } from "./i18n";
 import { clearOperator, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
 import type { ProviderUsage, SourceStatus } from "./asp";
@@ -75,6 +76,10 @@ export function SettingsPage() {
   const [providerUsageLoading, setProviderUsageLoading] = useState(false);
   const [source, setSource] = useState<SourceStatus | null>(null);
   const [sourceLoaded, setSourceLoaded] = useState(false);
+  const [shellRelease, setShellRelease] = useState<ShellRelease | null>(null);
+  const [shellReleaseLoaded, setShellReleaseLoaded] = useState(false);
+  const [shellUpdating, setShellUpdating] = useState(false);
+  const [shellUpdateError, setShellUpdateError] = useState("");
 
   useEffect(() => {
     if (section !== "usage") {
@@ -125,10 +130,44 @@ export function SettingsPage() {
       setSource(status);
       setSourceLoaded(true);
     });
+    const readRelease = window.magiDesktop?.shellRelease;
+    if (readRelease === undefined) {
+      setShellRelease(null);
+      setShellReleaseLoaded(true);
+    } else {
+      setShellReleaseLoaded(false);
+      void readRelease()
+        .then((release) => {
+          if (!cancelled) {
+            setShellRelease(release);
+            setShellReleaseLoaded(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setShellRelease(null);
+            setShellReleaseLoaded(true);
+          }
+        });
+    }
     return () => {
       cancelled = true;
     };
   }, [section]);
+
+  function installShell() {
+    const install = window.magiDesktop?.installShellRelease;
+    if (install === undefined || shellUpdating) {
+      return;
+    }
+    setShellUpdating(true);
+    setShellUpdateError("");
+    void install()
+      .catch((error: unknown) => {
+        setShellUpdateError(error instanceof Error ? error.message : t("appSettings.aboutShellFailed"));
+        setShellUpdating(false);
+      });
+  }
 
   function chooseProvider(next: string) {
     setProvider(next);
@@ -459,6 +498,60 @@ export function SettingsPage() {
             {section === "about" ? (
               <>
                 <p className="settings-overlay__lede">{t("appSettings.aboutSummary")}</p>
+                {window.magiDesktop?.shellRelease ? (
+                  <div className="settings-card">
+                    <label className="settings-card__row">
+                      <span>{t("appSettings.aboutShellInstalled")}</span>
+                      <span className="settings-card__value">
+                        {shellRelease?.currentVersion || (shellReleaseLoaded ? "—" : "…")}
+                      </span>
+                    </label>
+                    <label className="settings-card__row">
+                      <span>{t("appSettings.aboutShellLatest")}</span>
+                      {shellRelease?.releaseUrl && shellRelease.latestTag ? (
+                        <a
+                          className="settings-card__link"
+                          href={shellRelease.releaseUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {shellRelease.latestTag}
+                        </a>
+                      ) : (
+                        <span className="settings-card__value">
+                          {shellRelease?.latestTag || (shellReleaseLoaded ? "—" : "…")}
+                        </span>
+                      )}
+                    </label>
+                    <div className="settings-card__actions">
+                      <button
+                        type="button"
+                        className="settings-card__pill"
+                        disabled={!shellRelease?.updateAvailable || !shellRelease.packaged || shellUpdating}
+                        onClick={installShell}
+                      >
+                        {shellUpdating ? t("appSettings.aboutShellUpdating") : t("appSettings.aboutShellUpdate")}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {shellRelease ? (
+                  <p className="settings-overlay__lede">
+                    {shellUpdateError !== ""
+                      ? shellUpdateError
+                      : shellRelease.reason === "no-asset"
+                        ? t("appSettings.aboutShellNoAsset")
+                        : shellRelease.reason === "no-release"
+                          ? t("appSettings.aboutShellMissing")
+                          : shellRelease.reason === "unavailable"
+                            ? shellRelease.error || t("appSettings.aboutShellFailed")
+                            : !shellRelease.packaged
+                              ? t("appSettings.aboutShellDev")
+                              : shellRelease.updateAvailable
+                                ? t("appSettings.aboutShellAvailable").replace("{version}", shellRelease.latestTag)
+                                : t("appSettings.aboutShellCurrent")}
+                  </p>
+                ) : null}
                 {source?.remoteAhead ? (
                   <p className="settings-card__notice">{t("appSettings.aboutRemoteAhead")}</p>
                 ) : null}
