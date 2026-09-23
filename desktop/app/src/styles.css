@@ -1619,6 +1619,11 @@ body {
   cursor: pointer;
 }
 
+.settings-card__select.settings-card__choice {
+  width: min(280px, 70%);
+  max-width: none;
+}
+
 .settings-card__value {
   color: var(--settings-muted);
   font-size: 13px;

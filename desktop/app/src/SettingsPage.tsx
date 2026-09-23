@@ -14,28 +14,55 @@ type SettingsSection = "general" | "provider" | "usage" | "about";
 
 const APP_VERSION = "0.1.3";
 
-// Suggestions only: each MAGI's provider client (py-magi/providers/client.py)
-// owns the real list and accepts any route name it knows.
-const PROVIDER_NAMES = [
-  "claude",
-  "openai",
-  "gemini",
-  "xai",
-  "deepseek",
-  "mistral",
-  "minimax-cn",
-  "minimax-global",
+// Fixed catalog. Same pairs as py-magi/providers/client.py HOSTS.
+type ProviderChoice = {
+  id: string;
+  models: readonly string[];
+  defaultModel: string;
+};
+
+const PROVIDERS: readonly ProviderChoice[] = [
+  {
+    id: "claude",
+    models: ["claude-opus-5", "claude-fable-5", "claude-sonnet-5"],
+    defaultModel: "claude-opus-5",
+  },
+  {
+    id: "openai",
+    models: ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    defaultModel: "gpt-5.6",
+  },
+  {
+    id: "gemini",
+    models: ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-pro-latest"],
+    defaultModel: "gemini-3.7-flash",
+  },
+  { id: "xai", models: ["grok-4.6", "grok-4.20"], defaultModel: "grok-4.6" },
+  {
+    id: "deepseek",
+    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
+    defaultModel: "deepseek-v4-pro",
+  },
+  {
+    id: "mistral",
+    models: ["mistral-large-latest", "mistral-medium-latest"],
+    defaultModel: "mistral-large-latest",
+  },
+  {
+    id: "minimax-cn",
+    models: ["MiniMax-M3", "MiniMax-M2.5"],
+    defaultModel: "MiniMax-M3",
+  },
+  {
+    id: "minimax-global",
+    models: ["MiniMax-M3", "MiniMax-M2.5"],
+    defaultModel: "MiniMax-M3",
+  },
 ];
 
-const PROVIDER_MODELS = [
-  "claude-opus-5",
-  "gpt-5.6",
-  "gemini-3.7-flash",
-  "grok-4.6",
-  "deepseek-v4-pro",
-  "mistral-large-latest",
-  "MiniMax-M3",
-];
+function providerChoice(id: string): ProviderChoice | undefined {
+  return PROVIDERS.find((item) => item.id === id);
+}
 
 export function SettingsPage() {
   const t = useT();
@@ -68,6 +95,20 @@ export function SettingsPage() {
       cancelled = true;
     };
   }, [section]);
+
+  function chooseProvider(next: string) {
+    setProvider(next);
+    const entry = providerChoice(next);
+    if (entry === undefined) {
+      setModel("");
+      return;
+    }
+    setModel(entry.models.includes(model) ? model : entry.defaultModel);
+  }
+
+  const selected = providerChoice(provider);
+  const modelChoices = selected?.models ?? [];
+  const selectionKnown = selected !== undefined && modelChoices.includes(model);
 
   async function saveProvider() {
     setSavingProvider(true);
@@ -263,23 +304,40 @@ export function SettingsPage() {
                 <div className="settings-card">
                   <label className="settings-card__row">
                     <span>{t("appSettings.providerName")}</span>
-                    <input
-                      className="settings-card__input"
-                      list="magi-provider-names"
+                    <select
+                      className="settings-card__select settings-card__choice"
                       value={provider}
-                      placeholder={t("appSettings.providerNamePlaceholder")}
-                      onChange={(event) => setProvider(event.target.value)}
-                    />
+                      onChange={(event) => chooseProvider(event.target.value)}
+                    >
+                      <option value="">{t("appSettings.providerChoose")}</option>
+                      {PROVIDERS.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.id}
+                        </option>
+                      ))}
+                      {provider !== "" && selected === undefined ? (
+                        <option value={provider}>{provider}</option>
+                      ) : null}
+                    </select>
                   </label>
                   <label className="settings-card__row">
                     <span>{t("appSettings.providerModel")}</span>
-                    <input
-                      className="settings-card__input"
-                      list="magi-provider-models"
+                    <select
+                      className="settings-card__select settings-card__choice"
                       value={model}
-                      placeholder={t("appSettings.providerModelPlaceholder")}
+                      disabled={selected === undefined}
                       onChange={(event) => setModel(event.target.value)}
-                    />
+                    >
+                      <option value="">{t("appSettings.providerChoose")}</option>
+                      {modelChoices.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                      {model !== "" && !modelChoices.includes(model) ? (
+                        <option value={model}>{model}</option>
+                      ) : null}
+                    </select>
                   </label>
                   <label className="settings-card__row">
                     <span>{t("appSettings.providerApiKey")}</span>
@@ -293,22 +351,11 @@ export function SettingsPage() {
                     />
                   </label>
                 </div>
-                <datalist id="magi-provider-names">
-                  {PROVIDER_NAMES.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-                <datalist id="magi-provider-models">
-                  {PROVIDER_MODELS.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-
                 <div className="settings-card__actions">
                   <button
                     type="button"
                     className="settings-card__pill"
-                    disabled={savingProvider}
+                    disabled={savingProvider || !selectionKnown}
                     onClick={() => void saveProvider()}
                   >
                     {savingProvider ? t("common.loading") : t("appSettings.providerSave")}
