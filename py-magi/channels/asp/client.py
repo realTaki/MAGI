@@ -11,7 +11,7 @@ from urllib.parse import urlparse, urlunparse
 import httpx
 import websockets
 
-OnEvent = Callable[[dict[str, Any]], Awaitable[None]]
+OnEvent = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 
 
 class AspClient:
@@ -43,7 +43,9 @@ class AspClient:
                 if ready is not None:
                     ready.set()
                 async for raw in ws:
-                    await on_event(json.loads(raw))
+                    reply = await on_event(json.loads(raw))
+                    if reply is not None:
+                        await ws.send(json.dumps(reply))
 
     async def join(self, session_id: str) -> None:
         await self._post(f"/sessions/{session_id}/join")

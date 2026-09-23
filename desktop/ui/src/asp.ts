@@ -89,6 +89,23 @@ export async function sendAspMessage(conversationId: string, text: string): Prom
   if (!response.ok) throw new Error(`ASP send: ${response.status}`);
 }
 
+export async function updateAspNickname(handle: string, nickname: string): Promise<void> {
+  const creds = await getOperator();
+  if (!creds) throw new Error("ASP is unavailable");
+  const response = await fetch(`${ASP_BASE}/bots/${encodeURIComponent(handle)}/nickname`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${creds.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ nickname }),
+  });
+  if (!response.ok) {
+    const result = await response.json() as { detail?: string };
+    throw new Error(result.detail || `Rename failed: ${response.status}`);
+  }
+}
+
 export async function createAspConversation(
   kind: "bot" | "group",
 ): Promise<CreatedConversation | null> {

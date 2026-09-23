@@ -14,7 +14,10 @@ from bus import (
     ChatNotify,
     DeliveryNotify,
     DeliveryNotifyResult,
+    GetContactJob,
     JobStatus,
+    MAGI_CONTACT_ID,
+    UpdateContactJob,
     go,
 )
 
@@ -75,8 +78,36 @@ class AspWorker(BaseWorker):
         go(self._deliver(job))
         return True
 
-    async def _on_event(self, event: dict[str, Any]) -> None:
+    async def _on_event(self, event: dict[str, Any]) -> dict[str, Any] | None:
         kind = event.get("type")
+        if kind == "agent.nickname.read":
+            result = await self.ask(
+                GetContactJob(publisher=self.worker_name, contact_id=MAGI_CONTACT_ID)
+            )
+            return {
+                "type": "agent.nickname.current",
+                "nickname": (
+                    result.contact.nickname
+                    if result is not None and result.contact is not None
+                    else None
+                ),
+            }
+        if kind == "agent.nickname.update":
+            nickname = event.get("nickname")
+            updated = False
+            if isinstance(nickname, str) and nickname.strip():
+                updated = await self.ask(
+                    UpdateContactJob(
+                        publisher=self.worker_name,
+                        contact_id=MAGI_CONTACT_ID,
+                        nickname=nickname.strip(),
+                    )
+                ) is not None
+            return {
+                "type": "agent.nickname.updated",
+                "request_id": event.get("request_id"),
+                "ok": updated,
+            }
         session_id = event.get("session_id")
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         if not isinstance(session_id, str):

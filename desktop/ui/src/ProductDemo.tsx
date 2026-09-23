@@ -9,7 +9,7 @@ import {
   type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
@@ -82,6 +82,7 @@ type LiveBot = DemoBot & {
   members: ConversationMember[];
   remoteId?: string;
   magiHandle?: string;
+  savedName: string;
 };
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
@@ -115,6 +116,7 @@ function makeConversation(
     kind,
     screenEnabled: false,
     members: [],
+    savedName: name,
     routines: [],
     screen: blankScreen(),
     thread: [],
@@ -155,6 +157,7 @@ function fromAspConversation(remote: CreatedConversation): LiveBot {
   bot.remoteId = remote.conversation_id;
   bot.magiHandle = remote.agents[0];
   bot.description = remote.description ?? "";
+  bot.savedName = name;
   bot.members = membersFromAgents(remote.agents, []);
   bot.time = remote.created_at ? new Date(remote.created_at).toLocaleDateString() : "";
   return bot;
@@ -648,6 +651,28 @@ export function ProductDemo() {
 
   function patchActive(patch: Partial<LiveBot>) {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
+  }
+
+  async function saveNickname() {
+    if (!active.magiHandle || active.name === active.savedName) return;
+    const nickname = active.name.trim();
+    if (!nickname) {
+      patchActive({ name: active.savedName });
+      return;
+    }
+    try {
+      await updateAspNickname(active.magiHandle, nickname);
+      const handle = active.magiHandle;
+      setBots((current) => current.map((bot) => ({
+        ...bot,
+        ...(bot.magiHandle === handle ? { name: nickname, savedName: nickname } : {}),
+        members: bot.members.map((member) => member.id === handle ? { ...member, name: nickname } : member),
+      })));
+      setLoadError("");
+    } catch (error) {
+      patchActive({ name: active.savedName });
+      setLoadError(String(error));
+    }
   }
 
   function changeRoutine(patch: Partial<RoutineDraft>) {
@@ -1173,6 +1198,7 @@ export function ProductDemo() {
                         value={active.name}
                         placeholder="Name this agent"
                         onChange={(event) => patchActive({ name: event.target.value })}
+                        onBlur={() => { void saveNickname(); }}
                       />
                     </label>
                     <label className="product-demo__field">
