@@ -18,7 +18,7 @@ export function readThemePreference(): ThemePreference {
   } catch {
     // Private-mode browsers.
   }
-  return "light";
+  return "system";
 }
 
 export function resolveTheme(preference: ThemePreference): "light" | "dark" {

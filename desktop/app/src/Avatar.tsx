@@ -10,7 +10,7 @@ export function Avatar({
   return (
     <span
       aria-hidden="true"
-      className={`demo-avatar${className ? ` ${className}` : ""}`}
+      className={`agent-avatar${className ? ` ${className}` : ""}`}
       style={{
         width: size,
         height: size,

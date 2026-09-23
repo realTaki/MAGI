@@ -1,4 +1,4 @@
-export type DemoMessage =
+export type ConversationMessage =
   | { type: "time"; text: string }
   | { type: "meta"; text: string }
   | { type: "user"; text: string }
@@ -6,29 +6,29 @@ export type DemoMessage =
   | { type: "typing" }
   | { type: "card"; lines: { k: string; v: string }[] };
 
-export type DemoRoutineRun = {
+export type RoutineRun = {
   mark: string;
   color: string;
   text: string;
   time: string;
 };
 
-export type DemoRoutine = {
+export type Routine = {
   name: string;
   when: string;
   instruction?: string;
   active?: boolean;
-  runs?: DemoRoutineRun[];
+  runs?: RoutineRun[];
 };
 
-export type DemoBot = {
+export type ConversationSummary = {
   id: string;
   name: string;
   color: string;
   time: string;
   preview: string;
-  routines: DemoRoutine[];
-  thread: DemoMessage[];
+  routines: Routine[];
+  thread: ConversationMessage[];
 };
 
 export const OPERATOR = { name: "Operator", initials: "OP", handle: "user" };

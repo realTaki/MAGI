@@ -2,11 +2,11 @@ import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   OPERATOR,
-  type DemoBot,
-  type DemoMessage,
-  type DemoRoutine,
-  type DemoRoutineRun,
-} from "./demo";
+  type ConversationSummary,
+  type ConversationMessage,
+  type Routine,
+  type RoutineRun,
+} from "./conversation-model";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, sendAspMessage, updateAspNickname, addAspConversationMember, storedConversations, saveConversations, storedEvents, syncAspEvents, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
@@ -68,11 +68,11 @@ const ONBOARD = [
   },
 ];
 
-type ExtraMessages = Record<string, DemoMessage[]>;
+type ExtraMessages = Record<string, ConversationMessage[]>;
 type PanelMode = "settings" | "routine";
 type ConversationKind = "dm" | "group";
 type ConversationMember = { id: string; name: string; color: string };
-type LiveBot = DemoBot & {
+type LiveBot = ConversationSummary & {
   title: string;
   description: string;
   onboarding: boolean;
@@ -90,7 +90,7 @@ type RoutineDraft = {
   instruction: string;
   active: boolean;
   triggers: Trigger[];
-  runs: DemoRoutineRun[];
+  runs: RoutineRun[];
 };
 
 function makeConversation(
@@ -231,33 +231,33 @@ function previewForBot(bot: LiveBot, extra: ExtraMessages) {
   return bot.preview;
 }
 
-function Thread({ messages }: { messages: DemoMessage[] }) {
+function Thread({ messages }: { messages: ConversationMessage[] }) {
   return (
     <>
       {messages.map((message, index) => {
         if (message.type === "time") {
           return (
-            <div key={`time-${index}`} className="product-demo__time">
+            <div key={`time-${index}`} className="conversation-page__time">
               {message.text}
             </div>
           );
         }
         if (message.type === "meta") {
           return (
-            <div key={`meta-${index}`} className="product-demo__meta">
+            <div key={`meta-${index}`} className="conversation-page__meta">
               {message.text}
             </div>
           );
         }
         if (message.type === "card") {
           return (
-            <div key={`card-${index}`} className="product-demo__message product-demo__message--bot">
-              <div className="product-demo__card">
+            <div key={`card-${index}`} className="conversation-page__message conversation-page__message--bot">
+              <div className="conversation-page__card">
                 {message.lines.map((line) => (
-                  <div key={`${line.k}-${line.v}`} className="product-demo__card-line">
-                    <span className="product-demo__card-check">✓</span>
+                  <div key={`${line.k}-${line.v}`} className="conversation-page__card-line">
+                    <span className="conversation-page__card-check">✓</span>
                     <strong>{line.k}</strong>
-                    <span className="product-demo__card-arrow">→</span>
+                    <span className="conversation-page__card-arrow">→</span>
                     <span>{line.v}</span>
                   </div>
                 ))}
@@ -269,18 +269,18 @@ function Thread({ messages }: { messages: DemoMessage[] }) {
           return (
             <div
               key={`typing-${index}`}
-              className="product-demo__message product-demo__message--bot"
+              className="conversation-page__message conversation-page__message--bot"
             >
-              <div className="product-demo__bubble product-demo__bubble--typing">working…</div>
+              <div className="conversation-page__bubble conversation-page__bubble--typing">working…</div>
             </div>
           );
         }
         return (
           <div
             key={`${message.type}-${index}`}
-            className={`product-demo__message product-demo__message--${message.type}`}
+            className={`conversation-page__message conversation-page__message--${message.type}`}
           >
-            <div className={`product-demo__bubble product-demo__bubble--${message.type}`}>
+            <div className={`conversation-page__bubble conversation-page__bubble--${message.type}`}>
               {message.text}
             </div>
           </div>
@@ -299,9 +299,9 @@ function OnboardThread({
 }) {
   return (
     <>
-      <div className="product-demo__time">Today</div>
-      <div className="product-demo__message product-demo__message--bot">
-        <div className="product-demo__bubble product-demo__bubble--bot">
+      <div className="conversation-page__time">Today</div>
+      <div className="conversation-page__message conversation-page__message--bot">
+        <div className="conversation-page__bubble conversation-page__bubble--bot">
           Hey Avery — good to meet you.
         </div>
       </div>
@@ -311,16 +311,16 @@ function OnboardThread({
           const letter = String.fromCharCode(65 + Math.max(0, step.opts.indexOf(answer)));
           return (
             <div key={step.q}>
-              <div className="product-demo__choice product-demo__choice--done">
-                <div className="product-demo__choice-q">{step.q}</div>
-                <div className="product-demo__choice-picked">
-                  <span className="product-demo__choice-letter">{letter}</span>
+              <div className="conversation-page__choice conversation-page__choice--done">
+                <div className="conversation-page__choice-q">{step.q}</div>
+                <div className="conversation-page__choice-picked">
+                  <span className="conversation-page__choice-letter">{letter}</span>
                   <span>{answer}</span>
-                  <span className="product-demo__choice-check">✓</span>
+                  <span className="conversation-page__choice-check">✓</span>
                 </div>
               </div>
-              <div className="product-demo__message product-demo__message--bot">
-                <div className="product-demo__bubble product-demo__bubble--bot">
+              <div className="conversation-page__message conversation-page__message--bot">
+                <div className="conversation-page__bubble conversation-page__bubble--bot">
                   {step.ack(answer)}
                 </div>
               </div>
@@ -331,26 +331,26 @@ function OnboardThread({
           return null;
         }
         return (
-          <div key={step.q} className="product-demo__choice">
-            <div className="product-demo__choice-q">{step.q}</div>
-            <div className="product-demo__choice-sub">{step.sub}</div>
-            <div className="product-demo__choice-opts">
+          <div key={step.q} className="conversation-page__choice">
+            <div className="conversation-page__choice-q">{step.q}</div>
+            <div className="conversation-page__choice-sub">{step.sub}</div>
+            <div className="conversation-page__choice-opts">
               {step.opts.map((opt, optIndex) => (
                 <button key={opt} type="button" onClick={() => onAnswer(opt)}>
-                  <span className="product-demo__choice-letter">
+                  <span className="conversation-page__choice-letter">
                     {String.fromCharCode(65 + optIndex)}
                   </span>
                   <span>{opt}</span>
                 </button>
               ))}
             </div>
-            <div className="product-demo__choice-own">Type your own answer</div>
+            <div className="conversation-page__choice-own">Type your own answer</div>
           </div>
         );
       })}
       {answers.length === ONBOARD.length ? (
-        <div className="product-demo__message product-demo__message--bot">
-          <div className="product-demo__bubble product-demo__bubble--bot">
+        <div className="conversation-page__message conversation-page__message--bot">
+          <div className="conversation-page__bubble conversation-page__bubble--bot">
             That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before
             anything leaves the building.
           </div>
@@ -360,7 +360,7 @@ function OnboardThread({
   );
 }
 
-export function ProductDemo() {
+export function ConversationPage() {
   const t = useT();
   const [bots, setBots] = useState<LiveBot[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -446,7 +446,7 @@ export function ProductDemo() {
     const conversationId = active.remoteId;
     let cancelled = false;
     function render(events: AspEvent[]) {
-      const thread: DemoMessage[] = events.filter((event) => event.type === "session.message")
+      const thread: ConversationMessage[] = events.filter((event) => event.type === "session.message")
         .map((event) => ({
           type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
           text: typeof event.payload.content === "string" ? event.payload.content : JSON.stringify(event.payload.content),
@@ -554,7 +554,7 @@ export function ProductDemo() {
   }, [searchOpen]);
 
   if (!active) {
-    return <div className="product-demo" style={{ padding: 32 }}>
+    return <div className="conversation-page" style={{ padding: 32 }}>
       <p>{loadError || "No MAGI agents yet."}</p>
       <Button onClick={startNewBot} disabled={creating}>{t("plusMenu.newBot")}</Button>
     </div>;
@@ -582,7 +582,7 @@ export function ProductDemo() {
     setRoutineDraft(null);
   }
 
-  function openRoutine(routine: DemoRoutine | null, index: number | null) {
+  function openRoutine(routine: Routine | null, index: number | null) {
     setPanelOpen(true);
     setPanelMode("routine");
     setRoutineDraft({
@@ -627,7 +627,7 @@ export function ProductDemo() {
 
   function persistRoutine(draftState: RoutineDraft) {
     const index = draftState.index ?? active.routines.length;
-    const next: DemoRoutine = {
+    const next: Routine = {
       name: draftState.name.trim() || "Untitled routine",
       when: whenLabel(draftState.triggers),
       instruction: draftState.instruction,
@@ -731,7 +731,7 @@ export function ProductDemo() {
     patchActive({ answers: [...active.answers, value] });
   }
 
-  function appendMessage(botId: string, message: DemoMessage) {
+  function appendMessage(botId: string, message: ConversationMessage) {
     setExtra((current) => ({
       ...current,
       [botId]: [...(current[botId] ?? []), message],
@@ -813,7 +813,7 @@ export function ProductDemo() {
     if (!routineDraft?.name.trim()) {
       return;
     }
-    const completedRun: DemoRoutineRun = {
+    const completedRun: RoutineRun = {
       mark: "●",
       color: "#4ECB71",
       text: "Completed",
@@ -836,24 +836,24 @@ export function ProductDemo() {
   }
 
   return (
-    <div className="product-demo">
-      <div className="product-demo__drag" aria-hidden="true" />
-      <div className={`product-demo__frame${showPanel ? "" : " is-collapsed"}`}>
+    <div className="conversation-page">
+      <div className="conversation-page__drag" aria-hidden="true" />
+      <div className={`conversation-page__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
-          id="product-demo-bots"
-          className={`product-demo__sidebar${menuOpen ? " is-open" : ""}`}
+          id="conversation-page-bots"
+          className={`conversation-page__sidebar${menuOpen ? " is-open" : ""}`}
           aria-hidden={compact && !menuOpen}
           inert={compact && !menuOpen}
         >
-          <div className="product-demo__chrome">
-            <span className="product-demo__drawer-title">{t("plusMenu.listTitle")}</span>
-            <div className="product-demo__chrome-actions">
+          <div className="conversation-page__chrome">
+            <span className="conversation-page__drawer-title">{t("plusMenu.listTitle")}</span>
+            <div className="conversation-page__chrome-actions">
               <button
                 type="button"
-                className="product-demo__chrome-icon"
+                className="conversation-page__chrome-icon"
                 aria-label="Search"
                 aria-expanded={searchOpen}
-                aria-controls="product-demo-search"
+                aria-controls="conversation-page-search"
                 onClick={() => setSearchOpen((open) => !open)}
               >
                 <svg
@@ -871,10 +871,10 @@ export function ProductDemo() {
                   <line x1="20" y1="20" x2="16.65" y2="16.65" />
                 </svg>
               </button>
-              <div className="product-demo__plus-wrap" ref={plusWrapRef}>
+              <div className="conversation-page__plus-wrap" ref={plusWrapRef}>
                 <button
                   type="button"
-                  className="product-demo__chrome-icon"
+                  className="conversation-page__chrome-icon"
                   aria-label={t("plusMenu.aria")}
                   aria-haspopup="menu"
                   aria-expanded={plusOpen}
@@ -900,7 +900,7 @@ export function ProductDemo() {
                   </svg>
                 </button>
                 {plusOpen ? (
-                  <div className="product-demo__plus-menu" role="menu">
+                  <div className="conversation-page__plus-menu" role="menu">
                     <button
                       type="button"
                       role="menuitem"
@@ -922,7 +922,7 @@ export function ProductDemo() {
               </div>
               <button
                 type="button"
-                className="product-demo__sidebar-close"
+                className="conversation-page__sidebar-close"
                 aria-label="Hide bots"
                 onClick={closeMenu}
               >
@@ -931,7 +931,7 @@ export function ProductDemo() {
             </div>
           </div>
           {searchOpen ? (
-            <label id="product-demo-search" className="product-demo__search">
+            <label id="conversation-page-search" className="conversation-page__search">
               <svg
                 width="16"
                 height="16"
@@ -955,32 +955,32 @@ export function ProductDemo() {
               />
             </label>
           ) : null}
-          <div className="product-demo__bot-list">
+          <div className="conversation-page__bot-list">
             {filtered.map((bot) => {
               const isActive = bot.id === active.id;
               return (
                 <button
                   key={bot.id}
                   type="button"
-                  className={`product-demo__bot-row${isActive ? " is-active" : ""}`}
+                  className={`conversation-page__bot-row${isActive ? " is-active" : ""}`}
                   onClick={() => selectBot(bot.id)}
                 >
                   <Avatar color={bot.color} size={34} />
-                  <span className="product-demo__bot-copy">
-                    <span className="product-demo__bot-meta">
-                      <span className="product-demo__bot-name">{bot.name}</span>
-                      <span className="product-demo__bot-time">{bot.time}</span>
+                  <span className="conversation-page__bot-copy">
+                    <span className="conversation-page__bot-meta">
+                      <span className="conversation-page__bot-name">{bot.name}</span>
+                      <span className="conversation-page__bot-time">{bot.time}</span>
                     </span>
-                    <span className="product-demo__bot-preview">{previewForBot(bot, extra)}</span>
+                    <span className="conversation-page__bot-preview">{previewForBot(bot, extra)}</span>
                   </span>
                 </button>
               );
             })}
           </div>
-          <div className="product-demo__user" ref={userWrapRef}>
+          <div className="conversation-page__user" ref={userWrapRef}>
             <button
               type="button"
-              className="product-demo__user-btn"
+              className="conversation-page__user-btn"
               aria-label={t("account.menuAria")}
               aria-haspopup="menu"
               aria-expanded={userMenuOpen}
@@ -990,7 +990,7 @@ export function ProductDemo() {
               }}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              <span className="product-demo__user-badge">
+              <span className="conversation-page__user-badge">
                 {account.avatar ? (
                   <img src={account.avatar} alt="" />
                 ) : account.login ? (
@@ -1002,7 +1002,7 @@ export function ProductDemo() {
               <span>{account.name || account.login || OPERATOR.name}</span>
             </button>
             {userMenuOpen ? (
-              <div className="product-demo__user-menu" role="menu">
+              <div className="conversation-page__user-menu" role="menu">
                 <button type="button" role="menuitem" onClick={openAppSettings}>
                   {t("account.settings")}
                 </button>
@@ -1017,22 +1017,22 @@ export function ProductDemo() {
         {menuOpen ? (
           <button
             type="button"
-            className="product-demo__scrim"
+            className="conversation-page__scrim"
             aria-label="Hide bots"
             onClick={closeMenu}
           />
         ) : null}
 
-        <main className="product-demo__main">
-          <div className="product-demo__topbar">
-            <div className="product-demo__topbar-left">
+        <main className="conversation-page__main">
+          <div className="conversation-page__topbar">
+            <div className="conversation-page__topbar-left">
               <button
                 type="button"
                 ref={menuButtonRef}
-                className="product-demo__menu-btn"
+                className="conversation-page__menu-btn"
                 aria-label="Show bots"
                 aria-expanded={menuOpen}
-                aria-controls="product-demo-bots"
+                aria-controls="conversation-page-bots"
                 onClick={() => setMenuOpen(true)}
               >
                 <svg
@@ -1050,28 +1050,28 @@ export function ProductDemo() {
             </div>
             <button
               type="button"
-              className="product-demo__name-btn"
+              className="conversation-page__name-btn"
               aria-label={
                 active.kind === "group"
                   ? `Open ${active.name || "conversation"} details`
                   : `Open ${active.name || "agent"} profile`
               }
-              aria-controls="product-demo-profile"
+              aria-controls="conversation-page-profile"
               aria-expanded={showPanel && panelMode === "settings"}
               onClick={openSettings}
             >
               <Avatar color={active.color} size={28} />
-              <span className="product-demo__active-name">{active.name}</span>
+              <span className="conversation-page__active-name">{active.name}</span>
             </button>
           </div>
 
-          <div className="product-demo__thread" ref={scrollRef}>
-            {loadError ? <div role="alert" className="product-demo__empty-thread">{loadError}</div> : null}
+          <div className="conversation-page__thread" ref={scrollRef}>
+            {loadError ? <div role="alert" className="conversation-page__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
-              <div className="product-demo__empty-thread">
+              <div className="conversation-page__empty-thread">
                 {active.kind === "group" ? t("plusMenu.groupEmpty") : t("plusMenu.botEmpty")}
               </div>
             ) : (
@@ -1079,9 +1079,9 @@ export function ProductDemo() {
             )}
           </div>
 
-          <div className="product-demo__composer">
-            <div className="product-demo__input-shell">
-              <span className="product-demo__composer-plus" aria-hidden="true">
+          <div className="conversation-page__composer">
+            <div className="conversation-page__input-shell">
+              <span className="conversation-page__composer-plus" aria-hidden="true">
                 +
               </span>
               <input
@@ -1097,7 +1097,7 @@ export function ProductDemo() {
                 placeholder={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
                 aria-label={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
               />
-              <button type="button" className="product-demo__send" onClick={send} aria-label="Send">
+              <button type="button" className="conversation-page__send" onClick={send} aria-label="Send">
                 ↑
               </button>
             </div>
@@ -1105,13 +1105,13 @@ export function ProductDemo() {
         </main>
 
         {showPanel ? (
-          <aside id="product-demo-profile" className="product-demo__panel">
+          <aside id="conversation-page-profile" className="conversation-page__panel">
             {panelMode !== "routine" ? (
-              <div className="product-demo__panel-head">
+              <div className="conversation-page__panel-head">
                 <span>{t("conversationSettings.title")}</span>
                 <button
                   type="button"
-                  className="product-demo__panel-collapse"
+                  className="conversation-page__panel-collapse"
                   aria-label={t("conversationSettings.collapse")}
                   title={t("conversationSettings.collapse")}
                   onClick={collapseProfile}
@@ -1122,13 +1122,13 @@ export function ProductDemo() {
             ) : null}
 
             {panelMode === "settings" ? (
-              <div className="product-demo__settings">
-                <div className="product-demo__settings-avatar">
+              <div className="conversation-page__settings">
+                <div className="conversation-page__settings-avatar">
                   <Avatar color={active.color} size={64} />
                 </div>
                 {active.kind === "group" ? (
                   <>
-                    <label className="product-demo__field">
+                    <label className="conversation-page__field">
                       Topic
                       <input
                         value={active.name}
@@ -1143,7 +1143,7 @@ export function ProductDemo() {
                         }}
                       />
                     </label>
-                    <label className="product-demo__field">
+                    <label className="conversation-page__field">
                       Description
                       <textarea
                         rows={4}
@@ -1162,7 +1162,7 @@ export function ProductDemo() {
                   </>
                 ) : (
                   <>
-                    <label className="product-demo__field">
+                    <label className="conversation-page__field">
                       Nickname
                       <input
                         value={active.name}
@@ -1171,7 +1171,7 @@ export function ProductDemo() {
                         onBlur={() => { void saveNickname(); }}
                       />
                     </label>
-                    <label className="product-demo__field">
+                    <label className="conversation-page__field">
                       Title
                       <input
                         value={active.title}
@@ -1179,7 +1179,7 @@ export function ProductDemo() {
                         onChange={(event) => patchActive({ title: event.target.value })}
                       />
                     </label>
-                    <label className="product-demo__field">
+                    <label className="conversation-page__field">
                       Description
                       <textarea
                         rows={4}
@@ -1192,14 +1192,14 @@ export function ProductDemo() {
                 )}
 
                 {active.kind === "group" ? (
-                  <div className="product-demo__slot">
-                    <div className="product-demo__slot-head">
-                      <span className="product-demo__panel-label">
+                  <div className="conversation-page__slot">
+                    <div className="conversation-page__slot-head">
+                      <span className="conversation-page__panel-label">
                         {t("conversationSettings.members")}
                       </span>
                       <button
                         type="button"
-                        className="product-demo__chip"
+                        className="conversation-page__chip"
                         aria-expanded={memberPickerOpen}
                         onClick={toggleMemberPicker}
                       >
@@ -1207,13 +1207,13 @@ export function ProductDemo() {
                       </button>
                     </div>
                     {active.members.length === 0 ? (
-                      <p className="product-demo__members-empty">
+                      <p className="conversation-page__members-empty">
                         {t("conversationSettings.membersEmpty")}
                       </p>
                     ) : (
-                      <ul className="product-demo__members">
+                      <ul className="conversation-page__members">
                         {active.members.map((member) => (
-                          <li key={member.id} className="product-demo__member">
+                          <li key={member.id} className="conversation-page__member">
                             <Avatar color={member.color} size={32} />
                             <span>{member.name}</span>
                           </li>
@@ -1221,11 +1221,11 @@ export function ProductDemo() {
                       </ul>
                     )}
                     {memberPickerOpen ? (
-                      <div className="product-demo__bot-picker" role="listbox">
+                      <div className="conversation-page__bot-picker" role="listbox">
                         {loadingBots ? (
-                          <p className="product-demo__members-empty">{t("common.loading")}</p>
+                          <p className="conversation-page__members-empty">{t("common.loading")}</p>
                         ) : availableBots.filter((bot) => !bot.in_conversation).length === 0 ? (
-                          <p className="product-demo__members-empty">
+                          <p className="conversation-page__members-empty">
                             {t("conversationSettings.membersNoneAvailable")}
                           </p>
                         ) : (
@@ -1238,14 +1238,14 @@ export function ProductDemo() {
                                 <button
                                   key={bot.handle}
                                   type="button"
-                                  className="product-demo__bot-pick"
+                                  className="conversation-page__bot-pick"
                                   disabled={addingHandle === bot.handle}
                                   onClick={() => void inviteBot(bot.handle)}
                                 >
                                   <Avatar color={label.color} size={28} />
-                                  <span className="product-demo__bot-pick-copy">
+                                  <span className="conversation-page__bot-pick-copy">
                                     <span>{name}</span>
-                                    <span className="product-demo__bot-pick-status">
+                                    <span className="conversation-page__bot-pick-status">
                                       {bot.online
                                         ? t("conversationSettings.membersOnline")
                                         : t("conversationSettings.membersOffline")}
@@ -1260,16 +1260,16 @@ export function ProductDemo() {
                   </div>
                 ) : null}
 
-                <div className="product-demo__slot">
-                  <div className="product-demo__panel-label">
+                <div className="conversation-page__slot">
+                  <div className="conversation-page__panel-label">
                     {t("conversationSettings.routines")}
                   </div>
                   {active.routines.length === 0 ? (
-                    <div className="product-demo__empty-routines">
+                    <div className="conversation-page__empty-routines">
                       <p>{t("conversationSettings.routinesEmpty")}</p>
                       <button
                         type="button"
-                        className="product-demo__ghost-btn"
+                        className="conversation-page__ghost-btn"
                         onClick={() => openRoutine(null, null)}
                       >
                         {t("conversationSettings.routineCreate")}
@@ -1281,17 +1281,17 @@ export function ProductDemo() {
                         <button
                           key={`${routine.name}-${index}`}
                           type="button"
-                          className="product-demo__routine"
+                          className="conversation-page__routine"
                           onClick={() => openRoutine(routine, index)}
                         >
-                          <span className="product-demo__routine-icon">◷</span>
-                          <span className="product-demo__routine-name">{routine.name}</span>
-                          <span className="product-demo__routine-when">{routine.when}</span>
+                          <span className="conversation-page__routine-icon">◷</span>
+                          <span className="conversation-page__routine-name">{routine.name}</span>
+                          <span className="conversation-page__routine-when">{routine.when}</span>
                         </button>
                       ))}
                       <button
                         type="button"
-                        className="product-demo__quiet"
+                        className="conversation-page__quiet"
                         onClick={() => openRoutine(null, null)}
                       >
                         {t("conversationSettings.routineNew")}
@@ -1303,15 +1303,15 @@ export function ProductDemo() {
             ) : null}
 
             {panelMode === "routine" && routineDraft ? (
-              <div className="product-demo__routine-editor">
-                <div className="product-demo__routine-nav">
+              <div className="conversation-page__routine-editor">
+                <div className="conversation-page__routine-nav">
                   <button type="button" onClick={saveRoutine} aria-label="Back to profile">
                     ‹
                   </button>
                   <span>Routine</span>
                   <button
                     type="button"
-                    className="product-demo__panel-collapse"
+                    className="conversation-page__panel-collapse"
                     aria-label={t("conversationSettings.collapse")}
                     title={t("conversationSettings.collapse")}
                     onClick={collapseProfile}
@@ -1319,29 +1319,29 @@ export function ProductDemo() {
                     {">>"}
                   </button>
                 </div>
-                <div className="product-demo__routine-toolbar">
+                <div className="conversation-page__routine-toolbar">
                   <button
                     type="button"
-                    className={`product-demo__switch${routineDraft.active ? " is-on" : ""}`}
+                    className={`conversation-page__switch${routineDraft.active ? " is-on" : ""}`}
                     aria-pressed={routineDraft.active}
                     onClick={() => changeRoutine({ active: !routineDraft.active })}
                   >
                     <span />
                   </button>
                   <span>{routineDraft.active ? "Active" : "Paused"}</span>
-                  <button type="button" className="product-demo__ghost-btn" onClick={deleteRoutine}>
+                  <button type="button" className="conversation-page__ghost-btn" onClick={deleteRoutine}>
                     Delete
                   </button>
                   <button
                     type="button"
-                    className="product-demo__ghost-btn"
+                    className="conversation-page__ghost-btn"
                     disabled={!routineDraft.name.trim()}
                     onClick={testRun}
                   >
                     Test run
                   </button>
                 </div>
-                <label className="product-demo__field">
+                <label className="conversation-page__field">
                   Name
                   <input
                     value={routineDraft.name}
@@ -1349,7 +1349,7 @@ export function ProductDemo() {
                     onChange={(event) => changeRoutine({ name: event.target.value })}
                   />
                 </label>
-                <label className="product-demo__field">
+                <label className="conversation-page__field">
                   Instruction
                   <textarea
                     rows={4}
@@ -1358,18 +1358,18 @@ export function ProductDemo() {
                     onChange={(event) => changeRoutine({ instruction: event.target.value })}
                   />
                 </label>
-                <div className="product-demo__field">
+                <div className="conversation-page__field">
                   When to run
                   {routineDraft.triggers.length === 0 ? (
                     <button
                       type="button"
-                      className="product-demo__add-schedule"
+                      className="conversation-page__add-schedule"
                       onClick={() => changeRoutine({ triggers: [defaultTrigger()] })}
                     >
                       + Add schedule
                     </button>
                   ) : (
-                    <div className="product-demo__triggers">
+                    <div className="conversation-page__triggers">
                       {routineDraft.triggers.map((trigger, index) => {
                         const { lead, detail } = describeTrigger(trigger);
                         const timed = [
@@ -1379,8 +1379,8 @@ export function ProductDemo() {
                           "Every month",
                         ].includes(trigger.freq);
                         return (
-                          <div key={`${trigger.freq}-${index}`} className="product-demo__trigger">
-                            <div className="product-demo__trigger-head">
+                          <div key={`${trigger.freq}-${index}`} className="conversation-page__trigger">
+                            <div className="conversation-page__trigger-head">
                               <span>
                                 {lead} {detail}
                               </span>
@@ -1398,7 +1398,7 @@ export function ProductDemo() {
                                 ✕
                               </button>
                             </div>
-                            <div className="product-demo__trigger-row">
+                            <div className="conversation-page__trigger-row">
                               <select
                                 value={trigger.freq}
                                 onChange={(event) =>
@@ -1472,7 +1472,7 @@ export function ProductDemo() {
                       })}
                       <button
                         type="button"
-                        className="product-demo__quiet"
+                        className="conversation-page__quiet"
                         onClick={() =>
                           changeRoutine({ triggers: [...routineDraft.triggers, defaultTrigger()] })
                         }
@@ -1482,12 +1482,12 @@ export function ProductDemo() {
                     </div>
                   )}
                 </div>
-                <div className="product-demo__field">
+                <div className="conversation-page__field">
                   Run history
                   {routineDraft.runs.length === 0 ? (
-                    <p className="product-demo__muted">No runs yet</p>
+                    <p className="conversation-page__muted">No runs yet</p>
                   ) : (
-                    <ul className="product-demo__runs">
+                    <ul className="conversation-page__runs">
                       {routineDraft.runs.map((run, index) => (
                         <li key={`${run.text}-${index}`}>
                           <span style={{ color: run.color }}>{run.mark}</span>
@@ -1504,9 +1504,6 @@ export function ProductDemo() {
         ) : null}
       </div>
 
-      <p className="product-demo__caption">
-        Live demo — pick a bot, add a routine, or start a new chat.
-      </p>
     </div>
   );
 }
