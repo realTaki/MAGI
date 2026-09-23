@@ -29,9 +29,20 @@ lives in their own account:
   token never lands in `.git/config`; `user.name` and `user.email` are filled
   from the GitHub profile when the checkout has no identity yet.
 
-The sign-in page drives the OAuth device flow when `MAGI_GITHUB_CLIENT_ID` names
-an OAuth app (device flow needs no client secret); otherwise it asks for a
-personal access token with `repo` and `read:user` scopes. Unpackaged shells skip
+The sign-in page drives the OAuth device flow of the MAGI GitHub OAuth app
+(`Ov23li74Up8NcM5yCb61`), whose public client ID ships with every build — device
+flow needs no client secret, so operators authorize with their own account and
+only the resulting token is per machine. `MAGI_GITHUB_CLIENT_ID` points a
+rebranded build at its own app instead; when the device flow fails, the same
+page offers a personal access token with `repo` and `read:user` scopes so
+sign-in is never a dead end.
+
+Registering a replacement app is a one-time step for whoever ships the build —
+Settings → Developer settings → OAuth apps → **New OAuth App** — and it needs a
+name, any public homepage and callback URL, **Enable Device Flow** ticked, and
+*Expire user access tokens* cleared: the shell keeps one long-lived token per
+machine instead of refreshing it. A GitHub App is a worse fit here because its
+user tokens are short-lived and installed per repository. Unpackaged shells skip
 all of this unless `MAGI_DEV_CHECKOUT` points at a scratch checkout, so
 `npm run dev` never rewrites the developer's own remotes.
 

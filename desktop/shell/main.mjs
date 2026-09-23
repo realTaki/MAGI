@@ -26,10 +26,13 @@ const UI_DEV_URL = process.env.MAGI_UI_URL ?? "http://127.0.0.1:5173";
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
-// Public client ID of the MAGI GitHub OAuth app. Device flow needs no client
-// secret, so a packaged shell may ship it; without one the sign-in page falls
-// back to a personal access token.
-const GITHUB_CLIENT_ID = process.env.MAGI_GITHUB_CLIENT_ID ?? "";
+// Public client ID of the MAGI GitHub OAuth app (device flow enabled, "expire
+// user access tokens" off). Device flow needs no client secret, so every build
+// ships the same ID and operators authorize with their own account. Rebranded
+// builds point MAGI_GITHUB_CLIENT_ID at their own app.
+const MAGI_GITHUB_CLIENT_ID = "Ov23li74Up8NcM5yCb61";
+const GITHUB_CLIENT_ID =
+  process.env.MAGI_GITHUB_CLIENT_ID?.trim() || MAGI_GITHUB_CLIENT_ID;
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const GITHUB_DEVICE_URL = `${GITHUB_WEB}/login/device`;

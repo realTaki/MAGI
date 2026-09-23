@@ -12,12 +12,10 @@
  *
  * Strategy
  * --------
- * - Parse each locale file with ``@babel/parser``'s TypeScript
- *   support via the bundled ``typescript`` compiler (the package is
- *   already a devDependency). The script only relies on the AST
- *   shape, so we never import the locale module at runtime.
- * - Walk the top-level object literal and collect every dotted path
- *   (e.g. ``common.stop``) into a set.
+ * - Read each locale file as text. They are plain ``export default { … }``
+ *   data (literals only), so keys are scanned out directly — no TypeScript
+ *   compiler API, whose JS surface left the ``typescript`` entry point in 7.x.
+ * - Collect every leaf dotted path (e.g. ``common.stop``) into a set.
  * - Diff the sets per file. Any key present in one locale but
  *   absent in another is reported. Exit non-zero if there is any
  *   asymmetry so this can wire into ``npm run lint``.
@@ -37,56 +35,78 @@ function listLocaleFiles() {
     .filter((f) => f.endsWith(".ts") && REQUIRED_LOCALES.includes(f));
 }
 
+const IDENT_START = /[A-Za-z_$]/;
+const IDENT_PART = /[\w$]/;
+
+/** Index just past the string literal that starts at *start*. */
+function skipString(sourceText, start) {
+  const quote = sourceText[start];
+  let i = start + 1;
+  while (i < sourceText.length) {
+    if (sourceText[i] === "\\") i += 2;
+    else if (sourceText[i] === quote) return i + 1;
+    else i += 1;
+  }
+  return i;
+}
+
 /**
- * Walk a TypeScript object literal expression and collect dotted
- * keys. Only handles plain object literals (which is exactly the
- * shape of every locale file: ``export default { ... }``).
+ * Collect dotted keys from an object literal written as text. Every
+ * locale file is ``export default { … }`` with string values, so the
+ * scan only has to know strings, comments, braces and ``key:`` pairs;
+ * nested objects keep the parent key as a prefix, as before.
  */
 function collectKeys(sourceText) {
-  const ts = require("typescript");
-  const sourceFile = ts.createSourceFile(
-    "locale.ts",
-    sourceText,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TS,
-  );
-  let exportDefault;
-  for (const stmt of sourceFile.statements) {
-    if (
-      stmt.kind === ts.SyntaxKind.ExportAssignment &&
-      stmt.expression.kind === ts.SyntaxKind.ObjectLiteralExpression
-    ) {
-      exportDefault = stmt.expression;
-      break;
-    }
-  }
-  if (!exportDefault) {
-    throw new Error("could not locate `export default { ... }`");
-  }
-
   const keys = new Set();
-  function walk(node, prefix) {
-    if (!node || !node.properties) return;
-    for (const prop of node.properties) {
-      // Shorthand: { foo } — won't appear in our locales but guard anyway.
-      if (prop.kind === ts.SyntaxKind.ShorthandPropertyAssignment) continue;
-      if (prop.kind !== ts.SyntaxKind.PropertyAssignment) continue;
-      const name = prop.name;
-      const key =
-        name.kind === ts.SyntaxKind.Identifier ? name.text : String(name.text);
-      const fullKey = prefix ? `${prefix}.${key}` : key;
-      if (
-        prop.initializer &&
-        prop.initializer.kind === ts.SyntaxKind.ObjectLiteralExpression
-      ) {
-        walk(prop.initializer, fullKey);
-      } else {
-        keys.add(fullKey);
+  const path = [];
+  let key = null;
+
+  const closeKey = () => {
+    if (key !== null) {
+      keys.add([...path, key].join("."));
+      key = null;
+    }
+  };
+
+  let i = 0;
+  while (i < sourceText.length) {
+    const ch = sourceText[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      i = skipString(sourceText, i);
+      closeKey();
+    } else if (ch === "/" && sourceText[i + 1] === "/") {
+      const newline = sourceText.indexOf("\n", i);
+      i = newline === -1 ? sourceText.length : newline + 1;
+    } else if (ch === "/" && sourceText[i + 1] === "*") {
+      const end = sourceText.indexOf("*/", i + 2);
+      i = end === -1 ? sourceText.length : end + 2;
+    } else if (ch === "{") {
+      if (key !== null) {
+        path.push(key);
+        key = null;
       }
+      i += 1;
+    } else if (ch === "}") {
+      path.pop();
+      key = null;
+      i += 1;
+    } else if (IDENT_START.test(ch)) {
+      let end = i + 1;
+      while (end < sourceText.length && IDENT_PART.test(sourceText[end])) end += 1;
+      let after = end;
+      while (after < sourceText.length && /\s/.test(sourceText[after])) after += 1;
+      if (sourceText[after] === ":") {
+        key = sourceText.slice(i, end);
+        i = after + 1;
+      } else {
+        closeKey();
+        i = end;
+      }
+    } else {
+      if (ch === ",") closeKey();
+      i += 1;
     }
   }
-  walk(exportDefault, "");
   return keys;
 }
 

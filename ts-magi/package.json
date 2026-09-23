@@ -17,10 +17,10 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.10.0",
-    "drizzle-kit": "^0.31.10",
-    "typescript": "^5.7.0"
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "24.13.6",
+    "drizzle-kit": "0.31.11",
+    "typescript": "7.0.2"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
