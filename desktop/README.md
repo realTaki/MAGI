@@ -37,8 +37,8 @@ the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
 `~/.magi/MAGI` with its bundled Git, then hands the app the bundled Python,
-Node.js, npm and uv. The backend uses them to prepare the ignored Python
-environments and the app dependencies, build the interface and start ASP. The
+Node.js, npm and uv. The backend uses them to install magi-asp, prepare the
+MAGI Python environment and the app dependencies, build the interface and start ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
 `~/.magi/MAGI/desktop/shell/boot/`; the packaged copy is only the first-clone

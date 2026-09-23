@@ -1,14 +1,13 @@
 # magi-asp
 
-Run with `python main.py` (what the desktop app does, from this directory) or the
-`magi-asp` console script.
+Run with `node main.ts` from this directory (what the desktop app does). Node 24
+runs the TypeScript directly. `npm test` runs the suite.
 
-Layout: `main.py` is the composition root and process entry. `server/app.py`
-assembles two API routers: `operator_api.py` for desktop-only conversation,
-roster and settings commands, and `session_api.py` for the shared session HTTP
-and MAGI WebSocket protocol. `operator_service.py` projects desktop views and
-starts managed MAGI; `service.py` owns session state and event delivery.
-`store.py`/`transport.py` persist relay state and manage live connections;
+Layout: `main.ts` is the composition root and process entry. `server/app.ts`
+assembles the desktop operator routes and the shared session HTTP and MAGI
+WebSocket protocol. `operator-service.ts` projects desktop views and starts
+managed MAGI; `service.ts` owns session state and event delivery.
+`store.ts` / `transport.ts` persist relay state and manage live connections;
 `db/` owns the SQLite file.
 
 Desktop-only HTTP `/conversations`, `/bots`, and `/settings/provider` require

@@ -12,7 +12,6 @@ Preferred runtime order:
 
 1. Use the component-local Python virtual environment when it exists:
    - `py-magi/.venv/bin/python`
-   - `magi-asp/.venv/bin/python`
 2. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
    source build this is `desktop/runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
@@ -32,7 +31,7 @@ Examples:
 
 ```bash
 py-magi/.venv/bin/python -m pytest py-magi/tests
-magi-asp/.venv/bin/python -m pytest magi-asp/tests
+desktop/runtime/bin/node --test magi-asp/test/*.test.ts
 /Applications/MAGI.app/Contents/Resources/runtime/bin/node --test desktop/app/test/*.test.mjs
 ```
 

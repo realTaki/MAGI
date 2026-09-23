@@ -1,0 +1,19 @@
+{
+  "name": "magi-asp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MAGI ASP server — sessions and live event delivery.",
+  "scripts": {
+    "start": "node main.ts",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.2"
+  }
+}

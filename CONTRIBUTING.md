@@ -43,11 +43,10 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 Then:
 
 - **Python 3.12+** with `ruff` for linting
-- **TypeScript** + **React** for the operator app
+- **TypeScript** for `magi-asp/` and the operator app (`desktop/app/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
-  - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`)
-  - FastAPI dependency injection pattern
+  - SQLAlchemy 2.0 style (`mapped_column`, `Mapped[]`) in `py-magi/`
 - `cd py-magi && ruff check . && pytest tests/` should pass before pushing
 
 ## Commit style
@@ -72,7 +71,7 @@ docs: Update README with new architecture
 | Directory | Purpose |
 |-----------|---------|
 | `desktop/` | Electron shell (`desktop/shell/`) and the app (`desktop/app/`: interface and local backend) |
-| `magi-asp/` | ASP session server (`main.py` + `server/` + `db/`) |
+| `magi-asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
 | `py-magi/agent/` | Agent loop, memory, tools |
 | `py-magi/channels/` | Telegram + ASP channel adapters |
 | `py-magi/tests/` | Unit and integration tests |

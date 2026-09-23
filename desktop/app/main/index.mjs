@@ -666,25 +666,29 @@ export function createLocalApi(context) {
     throw new Error(`magi-asp is unavailable at ${healthUrl()}`);
   }
 
-  function resolveAspPython(aspDir) {
-    const unix = path.join(aspDir, ".venv", "bin", "python");
-    const win = path.join(aspDir, ".venv", "Scripts", "python.exe");
-    if (existsSync(unix)) {
-      return unix;
+  function aspNode() {
+    // Packaged builds pass the bundled Node 24 binary. An unpackaged shell
+    // borrows whatever `node` is on PATH, which may be too old to run the
+    // TypeScript server, so prefer the checkout's prepared runtime.
+    if (typeof tools.node === "string" && tools.node !== "node" && existsSync(tools.node)) {
+      return tools.node;
     }
-    if (existsSync(win)) {
-      return win;
-    }
-    return tools.python;
+    const bundled = path.join(
+      paths.checkout,
+      "desktop",
+      "runtime",
+      "bin",
+      process.platform === "win32" ? "node.exe" : "node",
+    );
+    return existsSync(bundled) ? bundled : tools.node;
   }
 
   function spawnAsp() {
     const aspDir = path.join(paths.checkout, "magi-asp");
-    const child = spawnProcess(resolveAspPython(aspDir), ["main.py"], {
+    const child = spawnProcess(aspNode(), ["main.ts"], {
       cwd: aspDir,
       env: {
         ...tools.env,
-        PYTHONUNBUFFERED: "1",
         MAGI_SOURCE_DIR: paths.checkout,
         MAGI_ASP_HOST: ASP_ORIGIN.hostname,
         MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
@@ -809,7 +813,7 @@ export function createLocalApi(context) {
     const magiDir = path.join(paths.checkout, "py-magi");
     const appDir = path.join(paths.checkout, "desktop", "app");
     const required = [
-      path.join(aspDir, "pyproject.toml"),
+      path.join(aspDir, "package-lock.json"),
       path.join(magiDir, "pyproject.toml"),
       path.join(appDir, "package-lock.json"),
     ];
@@ -821,7 +825,7 @@ export function createLocalApi(context) {
 
     if (managed) {
       progress?.("Preparing local magi-asp…", 0.2);
-      await command(tools.uv, ["sync", "--frozen", "--python", tools.python], {
+      await command(tools.node, [tools.npm, "ci"], {
         cwd: aspDir,
         env: tools.env,
         description: "Could not prepare magi-asp",
@@ -1036,7 +1040,7 @@ export function createLocalApi(context) {
       return { origin: ASP_ORIGIN.href };
     }
     const aspDir = path.join(paths.checkout, "magi-asp");
-    if (!existsSync(path.join(aspDir, "main.py"))) {
+    if (!existsSync(path.join(aspDir, "main.ts"))) {
       throw new Error(`magi-asp was not found at ${aspDir}`);
     }
     progress?.("Starting local magi-asp…", 0.94);
