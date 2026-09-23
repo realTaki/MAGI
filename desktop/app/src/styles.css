@@ -366,6 +366,7 @@ body {
   gap: 16px;
   border-bottom: 1px solid var(--panel-line);
   padding: 16px 20px;
+  -webkit-app-region: drag;
 }
 
 .product-demo__topbar-left {
@@ -385,6 +386,7 @@ body {
   background: #1b1b1e;
   color: #a8a8ad;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__menu-btn:hover,
@@ -408,6 +410,7 @@ body {
   background: transparent;
   padding: 0;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .product-demo__name-btn:hover .product-demo__active-name,
