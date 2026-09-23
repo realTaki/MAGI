@@ -985,28 +985,48 @@ export function ProductDemo() {
             <div className="product-demo__topbar-left">
               <button
                 type="button"
-                ref={menuButtonRef}
-                className="product-demo__menu-btn"
-                aria-label="Show bots"
+                className="product-demo__pill-icon"
+                aria-label="Search"
                 aria-expanded={menuOpen}
                 aria-controls="product-demo-bots"
                 onClick={() => setMenuOpen(true)}
               >
                 <svg
-                  width="18"
-                  height="18"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="20" y1="20" x2="16.65" y2="16.65" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="product-demo__pill-icon"
+                aria-label="New bot or group"
+                onClick={() => {
+                  setMenuOpen(true);
+                  setPlusOpen(true);
+                }}
+                disabled={creating}
+              >
+                <svg
+                  width="16"
+                  height="16"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.6"
                   strokeLinecap="round"
                 >
-                  <path d="M4 7h16M4 12h16M4 17h16" />
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-              </button>
-              <button type="button" className="product-demo__name-btn" onClick={openSettings}>
-                <Avatar color={active.color} size={28} />
-                <span className="product-demo__active-name">{active.name}</span>
               </button>
             </div>
           </div>

@@ -1,20 +1,17 @@
-/* Startup screen: a slow sky. Blue above, warm light at the horizon, a gold
-   progress bar — the window has no frame, so the page itself is the chrome. */
-
 :root {
-  --ink: #10304f;
-  --ink-soft: #2f5b84;
-  --sky-top: #123a6b;
-  --sky-mid: #4f9bd4;
-  --sky-low: #a8d8f0;
-  --haze: #f7dfae;
-  --gold: #f0b842;
-  --error: #8f2f22;
+  --sky: #87ceeb;
+  --ink: #17324d;
+  --ink-soft: #42637f;
+  --blue: #1769aa;
+  --blue-hover: #11598f;
+  --line: rgba(23, 50, 77, 0.24);
+  --error: #9f2f25;
 }
 
 * { box-sizing: border-box; }
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
 }
@@ -26,63 +23,21 @@ body {
   overflow: hidden;
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  background:
-    radial-gradient(130% 75% at 78% 104%, rgba(255, 214, 140, 0.9), transparent 62%),
-    linear-gradient(
-      180deg,
-      var(--sky-top) 0%,
-      #2568a8 26%,
-      var(--sky-mid) 52%,
-      var(--sky-low) 76%,
-      var(--haze) 100%
-    );
-  background-attachment: fixed;
-  /* The whole page drags the window; the one control opts out below. */
+  background: var(--sky);
+  /* The plain background remains available for moving the frameless window. */
   -webkit-app-region: drag;
 }
 
-/* Cloud band, drifting one way and back. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 10% -30% auto -30%;
-  height: 46%;
-  background:
-    radial-gradient(36% 58% at 18% 42%, rgba(255, 255, 255, 0.55), transparent 70%),
-    radial-gradient(28% 48% at 47% 64%, rgba(255, 255, 255, 0.4), transparent 72%),
-    radial-gradient(32% 54% at 74% 40%, rgba(255, 255, 255, 0.5), transparent 70%);
-  filter: blur(7px);
-  pointer-events: none;
-  animation: drift 140s ease-in-out infinite alternate;
-}
-
-/* Sun bloom up to the right, plus a soft wash along the bottom. */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(24% 24% at 82% 14%, rgba(255, 240, 205, 0.6), transparent 70%),
-    radial-gradient(120% 80% at 50% 118%, rgba(255, 255, 255, 0.22), transparent 62%);
-  pointer-events: none;
-}
-
-@keyframes drift {
-  from { transform: translateX(-3%); }
-  to { transform: translateX(3%); }
-}
-
 .view {
-  position: relative;
-  z-index: 1;
+  -webkit-app-region: no-drag;
   display: flex;
   flex: 1;
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
-  width: min(430px, 100%);
+  width: min(520px, 100%);
   margin: 0 auto;
-  padding: 64px 30px 88px;
+  padding: 48px 32px;
 }
 
 .progress {
@@ -93,43 +48,25 @@ body::after {
 }
 
 .progress-track {
-  position: relative;
   flex: 1;
-  height: 7px;
+  height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.42);
-  box-shadow: inset 0 1px 2px rgba(16, 48, 79, 0.18);
+  background: rgba(255, 255, 255, 0.56);
 }
 
 .progress-fill {
-  position: relative;
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #ffe9b0, var(--gold) 55%, #d99a2b);
-  box-shadow: 0 0 14px rgba(240, 184, 66, 0.55);
-  transition: width 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-/* uv sync / npm ci take a while: keep the bar visibly alive between steps. */
-.progress-fill::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-  transform: translateX(-100%);
-  animation: sheen 2s ease-in-out infinite;
-}
-
-@keyframes sheen {
-  to { transform: translateX(100%); }
+  background: var(--blue);
+  transition: width 220ms ease;
 }
 
 .progress-percent {
   min-width: 3.2em;
   color: var(--ink-soft);
-  font-size: 12.5px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -138,33 +75,84 @@ body::after {
   min-height: 1.4em;
   margin: 14px 0 0;
   color: var(--ink-soft);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
-.status.is-error { color: var(--error); }
+.error-panel {
+  width: 100%;
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+}
 
-.retry {
-  -webkit-app-region: no-drag;
+.error-panel[hidden] { display: none; }
+
+.error-title {
+  margin: 0 0 10px;
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.error-text {
+  display: block;
+  width: 100%;
+  height: 128px;
+  padding: 10px 12px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: text;
+}
+
+.error-text:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(23, 105, 170, 0.16);
+}
+
+.error-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.button {
   height: 34px;
-  margin-top: 22px;
-  padding: 0 16px;
-  border: 1px solid rgba(16, 48, 79, 0.32);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.35);
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
 
-.retry:hover,
-.retry:focus-visible {
-  border-color: #d99a2b;
-  background: rgba(255, 236, 190, 0.6);
+.button:hover,
+.button:focus-visible {
+  border-color: var(--blue);
+  outline: none;
+}
+
+.button-primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.button-primary:hover,
+.button-primary:focus-visible {
+  border-color: var(--blue-hover);
+  background: var(--blue-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body::before { animation: none; }
   .progress-fill { transition: none; }
-  .progress-fill::after { animation: none; }
 }

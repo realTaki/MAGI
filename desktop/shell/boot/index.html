@@ -23,7 +23,21 @@
       </div>
 
       <p id="startup-step" class="status" role="status" aria-live="polite">Starting…</p>
-      <button type="button" class="retry" id="retry-startup" hidden>Retry</button>
+
+      <section id="startup-error-panel" class="error-panel" role="alert" hidden>
+        <h2 class="error-title">Startup failed</h2>
+        <textarea
+          id="startup-error"
+          class="error-text"
+          aria-label="Startup error details"
+          readonly
+          spellcheck="false"
+        ></textarea>
+        <div class="error-actions">
+          <button type="button" class="button" id="copy-startup-error">Copy error</button>
+          <button type="button" class="button button-primary" id="retry-startup">Retry</button>
+        </div>
+      </section>
     </main>
     <script src="./app.js"></script>
   </body>

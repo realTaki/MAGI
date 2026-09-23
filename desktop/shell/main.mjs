@@ -340,6 +340,13 @@ ipcMain.handle("asp:retry", async () => {
   }
 });
 
+ipcMain.handle("shell:copy-text", (_event, text) => {
+  if (typeof text !== "string") {
+    throw new TypeError("Clipboard content must be a string.");
+  }
+  clipboard.writeText(text);
+});
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   mainWindow = createWindow();

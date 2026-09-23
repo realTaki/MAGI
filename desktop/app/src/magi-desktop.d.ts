@@ -15,6 +15,7 @@ declare global {
   interface Window {
     magiDesktop?: {
       retryStartup?: () => Promise<void>;
+      copyText?: (text: string) => Promise<void>;
       onStartupProgress?: (
         listener: (progress: { step: string; message: string }) => void,
       ) => void;

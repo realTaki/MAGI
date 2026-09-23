@@ -376,6 +376,37 @@ body {
   gap: 10px;
 }
 
+.product-demo__pill-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--panel-line-2);
+  border-radius: 999px;
+  background: #16161a;
+  color: #d6d6da;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.product-demo__pill-icon:hover,
+.product-demo__pill-icon:focus-visible {
+  background: #1d1d22;
+  border-color: #2e2e33;
+  color: #f1f1f3;
+  outline: none;
+}
+
+.product-demo__pill-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .product-demo__menu-btn {
   display: none;
   width: 32px;
@@ -1224,9 +1255,6 @@ body {
   .product-demo__sidebar.is-open {
     visibility: visible;
     transform: none;
-  }
-  .product-demo__traffic {
-    display: none;
   }
   .product-demo__drawer-title,
   .product-demo__sidebar-close {
