@@ -117,6 +117,9 @@ jobs:
             gh release upload "$GITHUB_REF_NAME" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft=false
           else
             gh release create "$GITHUB_REF_NAME" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
