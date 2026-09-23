@@ -23,28 +23,15 @@
         </button>
       </header>
 
-      <main id="view-chooser" class="view">
+      <main id="view-startup" class="view startup">
         <p class="eyebrow">MAGI</p>
-        <h1>How do you want to begin?</h1>
-        <p class="lede">Start magi-asp on this machine, or connect to one that is already running.</p>
-        <div class="choices">
-          <button type="button" class="choice" id="connect-existing">
-            <strong>Connect to an existing magi-asp</strong>
-            <span>Use an ASP that is already running.</span>
-          </button>
-          <button type="button" class="choice choice--primary" id="start-local">
-            <strong>Start locally</strong>
-            <span>Launch magi-asp on this machine.</span>
-          </button>
+        <h1>Starting local MAGI</h1>
+        <p id="startup-message" class="lede">Preparing MAGI…</p>
+        <div class="progress-track" role="progressbar" aria-label="MAGI startup progress" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+          <div id="startup-progress" class="progress-fill"></div>
         </div>
-        <p id="status" class="status" role="status"></p>
-      </main>
-
-      <main id="view-coming-soon" class="view" hidden>
-        <p class="eyebrow">MAGI</p>
-        <h1>Coming soon</h1>
-        <p id="coming-soon-copy" class="lede">Connecting to an existing magi-asp is not available yet.</p>
-        <button type="button" class="back" id="back">Back</button>
+        <p id="startup-step" class="status">Preparing local runtime</p>
+        <button type="button" class="retry" id="retry-startup" hidden>Retry</button>
       </main>
     </div>
     <script src="./app.js"></script>
