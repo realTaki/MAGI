@@ -6,7 +6,6 @@ import {
   type DemoMessage,
   type DemoRoutine,
   type DemoRoutineRun,
-  type DemoScreen,
 } from "./demo";
 import { Avatar } from "./Avatar";
 import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
@@ -79,7 +78,6 @@ type LiveBot = DemoBot & {
   onboarding: boolean;
   answers: string[];
   kind: ConversationKind;
-  screenEnabled: boolean;
   members: ConversationMember[];
   remoteId?: string;
   magiHandle?: string;
@@ -94,10 +92,6 @@ type RoutineDraft = {
   triggers: Trigger[];
   runs: DemoRoutineRun[];
 };
-
-function blankScreen(): DemoScreen {
-  return { host: "desktop", title: "Computer is stopped", lines: [] };
-}
 
 function makeConversation(
   kind: ConversationKind,
@@ -115,11 +109,9 @@ function makeConversation(
     onboarding: false,
     answers: [],
     kind,
-    screenEnabled: false,
     members: [],
     savedName: name,
     routines: [],
-    screen: blankScreen(),
     thread: [],
   };
 }
@@ -237,34 +229,6 @@ function previewForBot(bot: LiveBot, extra: ExtraMessages) {
     return bot.answers.at(-1) ?? bot.preview;
   }
   return bot.preview;
-}
-
-const BOOT_STEPS: Record<number, string> = {
-  8: "Allocating a machine",
-  46: "Restoring the session",
-  82: "Opening the browser",
-  100: "Handing you the screen",
-};
-
-function ComputerDesktop({ screen, large = false }: { screen: DemoScreen; large?: boolean }) {
-  return (
-    <div className={`product-demo__desktop${large ? " is-large" : ""}`}>
-      <div className="product-demo__window">
-        <div className="product-demo__window-bar">
-          <span />
-          <span />
-          <span />
-          <div className="product-demo__window-url">{screen.host}</div>
-        </div>
-        <div className="product-demo__window-body">
-          <div className="product-demo__window-title">{screen.title}</div>
-          {screen.lines.map((line) => (
-            <div key={line}>{line}</div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function Thread({ messages }: { messages: DemoMessage[] }) {
@@ -405,9 +369,6 @@ export function ProductDemo() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const [panelMode, setPanelMode] = useState<PanelMode>("settings");
-  const [hasControl, setHasControl] = useState(false);
-  const [takeover, setTakeover] = useState(false);
-  const [bootPct, setBootPct] = useState(0);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState<ExtraMessages>({});
@@ -420,7 +381,6 @@ export function ProductDemo() {
   const [loadingBots, setLoadingBots] = useState(false);
   const [addingHandle, setAddingHandle] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const timersRef = useRef<number[]>([]);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const plusWrapRef = useRef<HTMLDivElement | null>(null);
   const userWrapRef = useRef<HTMLDivElement | null>(null);
