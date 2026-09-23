@@ -44,7 +44,7 @@ coordinate more of their own work.
 MAGI is designed for a future in which **intelligence becomes cheaper and more
 abundant**, while **coordination, trust, security, and governance remain hard**.
 
-That leads to three principles:
+That leads to four principles:
 
 - **Do not hard-code around temporary model limitations.** Token cost, context
   size, and reasoning quality will change quickly; the architecture should not
@@ -55,6 +55,10 @@ That leads to three principles:
 - **Keep governance mandatory.** Identity, permissions, isolation, observability,
   resource boundaries, and accountability become more important as agents gain
   more autonomy.
+- **Make the running system editable.** The desktop app runs MAGI, ASP, and the
+  WebUI from a local Git checkout. This gives each installation a source tree
+  that can evolve independently as MAGI moves toward recursive self-improvement
+  (RSI).
 
 The long-term goal is to build the infrastructure in which autonomous
 intelligences can collaborate freely **within explicit, inspectable constraints**.
@@ -62,7 +66,7 @@ intelligences can collaborate freely **within explicit, inspectable constraints*
 ## Repository layout
 
 ```text
-desktop/     Electron desktop: operator UI and ~/.magi-desktop sqlite
+desktop/     Electron bootstrap shell and editable operator WebUI
 magi-asp/    Python package magi_asp: /sessions, WS /connect, ~/.magi/asp.sqlite
 py-magi/     One MAGI runtime per process; workspace sqlite of its own
 ts-magi/     TypeScript BUS playground and its launcher
@@ -164,9 +168,14 @@ no root `deploy/` tree.
 
 | Situation | Where | What you run |
 | --- | --- | --- |
-| Desktop client | [`desktop/`](desktop/) | Electron. No deploy scripts. The UI talks to magi-asp; ASP starts MAGI. |
+| Desktop client | [`desktop/`](desktop/) | Open the Electron app. It starts local ASP; ASP starts MAGI. |
 
-**Desktop:** open the Electron app under `desktop/`. **Start locally** launches magi-asp on [http://127.0.0.1:42069](http://127.0.0.1:42069). Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns `eva-000` and starts that MAGI.
+**Desktop:** on first launch, the app clones the complete repository into
+`~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
+on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
+the preparation stages before opening the WebUI. Creating a bot is
+`POST /conversations { "kind": "bot" }` — ASP assigns `eva-000` and starts that
+MAGI.
 
 **One MAGI:** `python -m magi <handle> <base> <token>` (or the `magi` console script). py-magi is a single MAGI process.
 
@@ -220,9 +229,27 @@ role in the Society. Each MAGI keeps its own local SQLite workspace.
 
 ### Desktop UI and ASP
 
-The Electron desktop UI is an operator client. It starts or connects to the
-local ASP service; ASP owns HTTP, WebSocket `/connect`, and MAGI process
-creation. The desktop does not start MAGI directly.
+The Electron app starts a local ASP service. ASP owns HTTP, WebSocket
+`/connect`, and MAGI process creation; the desktop does not start MAGI
+directly. The WebUI is built and loaded from the local checkout.
+
+### Local source and the path to RSI
+
+The packaged app supplies an Electron bootstrap shell and private Git,
+Python, and Node.js tools. On first launch it clones the complete repository
+to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
+`py-magi/`, `magi-asp/`, and `desktop/ui/` sources. Local changes are not
+overwritten or pulled automatically. A user or coding agent can edit the
+checkout, rebuild the WebUI, and merge future upstream changes using Git.
+When `desktop/ui/dist/index.html` changes, the app asks before reloading.
+
+The running Electron shell (`desktop/shell/`) and bundled tool versions remain
+part of the installed app; editing their copies in the checkout does not change
+the running shell. Code changes in MAGI or ASP also need the affected process
+to restart. The editable checkout is the foundation for RSI, **not** an
+autonomous self-update system yet: MAGI does not currently validate, activate,
+restart, or roll back its own code revisions as one managed operation.
+See [desktop details](desktop/README.md).
 
 For the implementation-level view, see:
 

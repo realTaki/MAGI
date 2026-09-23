@@ -45,6 +45,18 @@ Identifiers below follow the canonical names in
 |---|---|---|
 | `GET /ws/console` WebSocket stream | **Open** | Declared as pending in `magi/channels/api/app.py`. Frame payload shape undecided — see Open question 2. `StreamHub` already carries ephemeral SSE notifications, so the console is a new consumer, not a new source of truth. |
 
+## Recursive self-improvement
+
+The desktop app already runs MAGI, ASP, and the WebUI from an editable local
+Git checkout. The installed Electron shell and its bundled tools are updated
+with the app package. Editing the checkout alone does not safely activate a new
+running revision.
+
+| Item | Status | Notes |
+|---|---|---|
+| Managed code revision activation | **Later** | Trigger: MAGI is allowed to change its own running code. Validate a candidate revision, restart the affected MAGI or ASP process, check readiness, and retain a known working revision for recovery. |
+| Local and upstream merge flow | **Later** | Trigger: a locally modified checkout must take a new upstream release. Preserve local commits and let a coding agent resolve merge conflicts before activation. |
+
 ## Persona and memory
 
 | Item | Status | Notes |

@@ -39,7 +39,7 @@ MAGI 不取代工作流引擎。它提供的是一层基础设施，让长期存
 MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰裕，但协调、信任、安全与治理
 仍然是困难的问题。**
 
-因此，MAGI 遵循三个原则：
+因此，MAGI 遵循四个原则：
 
 - **不要围绕短期模型缺陷硬编码架构。** Token 成本、Context Window 和推理能力都会快速变化，
   系统不应该依赖这些资源永远稀缺。
@@ -47,6 +47,8 @@ MAGI 面向这样一个未来设计：**智能会越来越便宜、越来越丰�
   Agent 如何发现、通信和委托，而不是规定每一步应该如何思考。
 - **治理必须始终存在。** 身份、权限、隔离、可观察性、资源边界与问责，会随着 Agent
   自主性增强而变得更加重要。
+- **让运行中的系统有可编辑的源码。** 桌面端从本地 Git 仓库运行 MAGI、ASP 与 WebUI，
+  让每个安装实例都能独立演化，为递归自我改进（RSI）打下基础。
 
 长期目标是构建一种基础设施，让自主智能体能够
 **在明确、可检查的约束内自由协作**。
@@ -124,7 +126,11 @@ ADAM 是协调者，而不是不受限制的宿主机管理员。ASP 服务拥�
 
 | 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 桌面客户端 | [`desktop/`](desktop/) | Electron。没有部署脚本。UI 只请求 magi-asp；由 ASP 启动 MAGI。 |
+| 桌面客户端 | [`desktop/`](desktop/) | 打开 Electron App；它启动本地 ASP，由 ASP 启动 MAGI。 |
+
+**桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/MAGI`，准备本地依赖并构建
+WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。以后启动会保留这份
+Git 工作树，不自动覆盖本地修改或拉取远端更新。
 
 **一个 MAGI：** `python -m magi <handle> <base> <token>`。
 
@@ -169,8 +175,21 @@ ASP 是**生命周期权限边界，而不是 Society 的“思考大脑”**。
 
 ### 桌面 UI 与 ASP
 
-Electron 桌面 UI 是操作者客户端。它启动或连接本地 ASP；ASP 负责 HTTP、WebSocket
-`/connect` 与 MAGI 进程创建。桌面端不直接启动 MAGI。
+Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 进程
+创建。桌面端不直接启动 MAGI。WebUI 从本地仓库构建并加载。
+
+### 本地源码与 RSI 方向
+
+安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Python、Node.js 工具。首次启动
+会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `py-magi/`、`magi-asp/`、
+`desktop/ui/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
+重新构建 WebUI，并用 Git 合并上游更新。`desktop/ui/dist/index.html` 变化后，
+桌面端会询问是否重新加载，不会擅自刷新界面。
+
+当前安装包中的 Electron 壳（`desktop/shell/`）和内置工具版本仍是固定的：虽然本地
+仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启
+对应进程才能生效。本地可编辑源码是 RSI 的基础；MAGI 尚未实现对自身代码修订的
+自动验证、切换、重启和回滚。详见[桌面端说明](desktop/README.md)。
 
 深入实现请阅读：
 
