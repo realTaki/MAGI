@@ -5,7 +5,8 @@ checkout and loads the app from it. The app itself lives in `app/` — operator
 interface (`app/src/`) plus local backend (`app/main/`) — and the backend
 prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
 processes) and reports which interface entry the shell should show. Electron
-user data is separate from MAGI and ASP state.
+user data lives in `~/.magi/app/`, separate from MAGI and ASP state. On first
+launch after this path change, the shell copies the previous Electron data there.
 
 The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `app/` — its
@@ -13,7 +14,7 @@ two-package.json layout), so the packaged entry point stays `shell/main.mjs`.
 
 The app is also the machine-local layer of the system: it owns the checkout and
 the operator's GitHub credentials, and it keeps local state in Electron user
-data. ASP only relays messages — and MAGI keeps its own store — so both may run
+data in `~/.magi/app/`. ASP only relays messages — and MAGI keeps its own store — so both may run
 on a remote server while this machine still works and keeps its own data.
 
 On first launch the packaged shell clones the complete repository into
@@ -59,8 +60,8 @@ the account menu, offered once on first run — and it calls `github.state`,
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
   so no client secret ships and only the token is per machine.
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
-- The token is stored at `~/.magi/github-token` (mode 0600) and the app records
-  the account and fork in `<userData>/github.json`.
+- The token is stored at `~/.magi/app/github-token` (mode 0600) and the app records
+  the account and fork in `~/.magi/app/github.json`.
 - If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
   one. A repository that is already there is used as it is — fork or not — and
   is never overwritten.
@@ -86,9 +87,12 @@ user tokens are short-lived and installed per repository.
 | --- | --- |
 | `py-magi/` | Restart the affected MAGI process. |
 | `magi-asp/` | Restart local ASP. |
-| `desktop/app/src/` | Rebuild the interface. The shell notices a change to `dist/index.html` and asks whether to reload. |
+| `desktop/app/` | A new commit (a pull, or a commit in the checkout) rebuilds the interface; the shell notices `dist/index.html` and asks whether to reload. |
 | `desktop/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `desktop/shell/`, packaged tools and build configuration | Rebuild and reinstall the Electron app. The running shell is loaded from the installed app, not the checkout. |
+
+Loading the interface only replaces the interface: ASP and the MAGI processes keep
+running, so a change under `desktop/app/main/` still waits for the next launch.
 
 This gives each user an editable Git working tree for the running MAGI system.
 A coding agent can modify it and merge upstream changes. Automatic revision

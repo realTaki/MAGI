@@ -20,7 +20,7 @@ const PNG = Buffer.from(
 const AVATAR_URL = "https://avatars.githubusercontent.com/u/42?v=4";
 
 /** A backend on throwaway paths, with GitHub replaced by a local fake. */
-function backend({ viewer = {}, avatarStatus = 200 } = {}) {
+function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, legacyMetadata = null } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "magi-app-test-"));
   const paths = {
     home: path.join(root, "home"),
@@ -30,6 +30,10 @@ function backend({ viewer = {}, avatarStatus = 200 } = {}) {
   mkdirSync(path.join(paths.home, ".magi"), { recursive: true });
   mkdirSync(paths.checkout, { recursive: true });
   writeFileSync(path.join(paths.home, ".magi", "github-token"), "ghp_test\n");
+  if (legacyMetadata !== null) {
+    mkdirSync(paths.userData, { recursive: true });
+    writeFileSync(path.join(paths.userData, "github.json"), JSON.stringify(legacyMetadata));
+  }
 
   const originalFetch = globalThis.fetch;
   const requests = [];
@@ -44,7 +48,7 @@ function backend({ viewer = {}, avatarStatus = 200 } = {}) {
           avatar_url: AVATAR_URL,
           ...viewer,
         }),
-        { status: 200, headers: { "content-type": "application/json" } },
+        { status: viewerStatus, headers: { "content-type": "application/json" } },
       );
     }
     if (String(url) === AVATAR_URL) {
@@ -69,8 +73,9 @@ function backend({ viewer = {}, avatarStatus = 200 } = {}) {
   return {
     api,
     requests,
-    avatarFile: () => path.join(paths.userData, "github-avatar"),
-    metadata: () => JSON.parse(readFileSync(path.join(paths.userData, "github.json"), "utf8")),
+    avatarFile: () => path.join(paths.home, ".magi", "app", "github-avatar"),
+    tokenFile: () => path.join(paths.home, ".magi", "app", "github-token"),
+    metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "app", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
     dispose: () => {
       globalThis.fetch = originalFetch;
@@ -84,27 +89,45 @@ test("state reports the GitHub account and caches the picture", async (t) => {
   t.after(github.dispose);
 
   const state = await github.api["github.state"]();
+  assert.equal(state.avatar, `data:image/png;base64,${PNG.toString("base64")}`);
   assert.deepEqual(
-    { ...state, avatar: state.avatar.slice(0, 22) },
+    { ...state, avatar: "checked above" },
     {
       available: true,
       upstream: "AgenticSocietyLab/MAGI",
       login: "realTaki",
       name: "Taki Wang",
-      avatar: "data:image/png;base64,i",
+      avatar: "checked above",
       fork: "",
       signedIn: true,
       verified: true,
       connected: false,
     },
   );
-  assert.equal(state.avatar, `data:image/png;base64,${PNG.toString("base64")}`);
   assert.deepEqual(github.metadata(), {
     login: "realTaki",
     name: "Taki Wang",
     avatarType: "image/png",
   });
   assert.ok(existsSync(github.avatarFile()), "the picture lands in this machine's state");
+  assert.ok(existsSync(github.tokenFile()), "legacy token is copied into app state");
+});
+
+test("existing Electron account metadata is copied into app state", (t) => {
+  const old = { login: "old-user", fork: "old-user/MAGI" };
+  const github = backend({ legacyMetadata: old });
+  t.after(github.dispose);
+  assert.deepEqual(github.metadata(), old);
+});
+
+test("an invalid migrated token stays removed", async (t) => {
+  const github = backend({ viewerStatus: 401 });
+  t.after(github.dispose);
+
+  assert.equal((await github.api["github.state"]()).signedIn, false);
+  assert.equal(existsSync(github.tokenFile()), false);
+  assert.equal((await github.api["github.state"]()).signedIn, false);
+  assert.equal(github.requests.filter((url) => url.startsWith("https://api.github.com/user")).length, 1);
 });
 
 test("a later read reuses the cached picture instead of downloading it again", async (t) => {

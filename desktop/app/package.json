@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "node scripts/i18n-lint.cjs",
     "lint:i18n": "node scripts/i18n-lint.cjs",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",

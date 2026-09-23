@@ -23,7 +23,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
@@ -44,6 +44,8 @@ const GITHUB_CLIENT_ID =
   (process.env.MAGI_GITHUB_CLIENT_ID ?? "").trim() || MAGI_GITHUB_CLIENT_ID;
 const GITHUB_TIMEOUT_MS = 20_000;
 const FORK_TIMEOUT_MS = 60_000;
+// How often the checkout's commit is checked for the interface to rebuild.
+const COMMIT_POLL_MS = 5_000;
 const AVATAR_TIMEOUT_MS = 8_000;
 
 function delay(ms) {
@@ -182,6 +184,7 @@ export function createLocalApi(context) {
   const options = { cwd: paths.checkout, env: tools.env };
   let asp = null;
   let deviceFlowPending = false;
+  let commitWatcher = null;
 
   // A developer's own working tree is not this app's to rewire; only a checkout
   // the shell created (or one it was pointed at explicitly) counts.
@@ -193,9 +196,29 @@ export function createLocalApi(context) {
     }
   }
 
-  const tokenFile = () => path.join(paths.home, ".magi", "github-token");
-  const metadataFile = () => path.join(paths.userData, "github.json");
-  const avatarFile = () => path.join(paths.userData, "github-avatar");
+  const appData = path.join(paths.home, ".magi", "app");
+  mkdirSync(appData, { recursive: true });
+  // The app owns these files. Copy older locations once, without changing
+  // Electron's Chromium profile or overwriting state already in appData.
+  function migrateAppFile(name, legacy = []) {
+    const destination = path.join(appData, name);
+    if (!existsSync(destination)) {
+      for (const source of [path.join(paths.userData, name), ...legacy]) {
+        if (source !== destination && existsSync(source)) {
+          copyFileSync(source, destination);
+          break;
+        }
+      }
+    }
+    return destination;
+  }
+  const tokenPath = migrateAppFile("github-token", [path.join(paths.home, ".magi", "github-token")]);
+  const metadataPath = migrateAppFile("github.json");
+  const avatarPath = migrateAppFile("github-avatar");
+  if (existsSync(tokenPath)) chmodSync(tokenPath, 0o600);
+  const tokenFile = () => tokenPath;
+  const metadataFile = () => metadataPath;
+  const avatarFile = () => avatarPath;
   // Metadata written before the picture was cached gets one download attempt per
   // account and run, so a blocked network cannot slow every state read.
   const avatarAttempted = new Set();
@@ -589,6 +612,94 @@ export function createLocalApi(context) {
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
+  /** The checkout's current commit, empty when Git cannot answer. */
+  async function readCommit() {
+    try {
+      return (
+        await command(git.binary, ["rev-parse", "HEAD"], {
+          ...options,
+          description: "Could not read the checkout commit",
+        })
+      ).trim();
+    } catch {
+      return "";
+    }
+  }
+
+  /** Rebuild the interface from the checkout — what a new commit makes visible. */
+  async function rebuildInterface() {
+    const appDir = path.join(paths.checkout, "desktop", "app");
+    const build = (description) =>
+      command(tools.node, [tools.npm, "run", "build"], {
+        cwd: appDir,
+        env: tools.env,
+        description,
+      });
+    try {
+      await build("Could not rebuild the interface");
+    } catch (error) {
+      // A pulled commit can bring a new lockfile: install once, then try again.
+      try {
+        await command(tools.node, [tools.npm, "ci"], {
+          cwd: appDir,
+          env: tools.env,
+          description: "Could not install the app dependencies",
+        });
+        await build("Could not rebuild the interface");
+      } catch {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * The commit is the unit this app reacts to: a pull (or a local commit) in the
+   * checkout rebuilds the interface, and the shell then offers to load it. Files
+   * are ignored on purpose, and nothing here stops ASP or the MAGI processes —
+   * loading the new interface is a desktop-side change.
+   */
+  function watchCheckout() {
+    if (commitWatcher !== null || !managed || (process.env.MAGI_APP_URL ?? "").trim() !== "") {
+      return;
+    }
+    const watcher = { commit: "", building: false, stopped: false, timer: null };
+    commitWatcher = watcher;
+    const poll = async () => {
+      const commit = await readCommit();
+      if (watcher.stopped) {
+        return;
+      }
+      if (commit !== "" && commit !== watcher.commit) {
+        const changed = watcher.commit !== "";
+        watcher.commit = commit;
+        if (changed && !watcher.building) {
+          watcher.building = true;
+          try {
+            await rebuildInterface();
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            console.error(`[magi-app] could not rebuild the interface: ${detail}`);
+          } finally {
+            watcher.building = false;
+          }
+        }
+      }
+      if (!watcher.stopped) {
+        watcher.timer = setTimeout(() => void poll(), COMMIT_POLL_MS);
+      }
+    };
+    void poll();
+  }
+
+  function stopWatchingCheckout() {
+    if (commitWatcher === null) {
+      return;
+    }
+    commitWatcher.stopped = true;
+    clearTimeout(commitWatcher.timer);
+    commitWatcher = null;
+  }
+
   /**
    * Everything this checkout needs before it can run. Only a managed checkout
    * is prepared: a developer's own tree is already theirs to prepare.
@@ -636,6 +747,7 @@ export function createLocalApi(context) {
     }
 
     progress?.("Prepared.", 0.85);
+    watchCheckout();
     return { ui: uiEntry() };
   }
 
@@ -763,6 +875,7 @@ export function createLocalApi(context) {
   }
 
   function dispose() {
+    stopWatchingCheckout();
     if (asp && !asp.killed) {
       asp.kill("SIGTERM");
     }
