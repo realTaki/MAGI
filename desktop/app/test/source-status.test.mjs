@@ -31,10 +31,13 @@ test("about reports the running commit and where it forked from AgenticSociety",
   git(origin, ["add", "README"]);
   git(origin, ["commit", "-m", "base"]);
   const forkPoint = git(origin, ["rev-parse", "HEAD"]);
+  git(origin, ["tag", "v0.0.7-experiment", forkPoint]);
 
   git(root, ["clone", "--quiet", origin, checkout]);
+  git(checkout, ["remote", "set-url", "origin", "https://github.com/realTaki/MAGI.git"]);
   writeFileSync(path.join(origin, "README"), "remote\n");
   git(origin, ["commit", "-am", "remote"]);
+  const latestCommit = git(origin, ["rev-parse", "HEAD"]);
 
   writeFileSync(path.join(checkout, "local"), "ours\n");
   git(checkout, ["add", "local"]);
@@ -47,6 +50,13 @@ test("about reports the running commit and where it forked from AgenticSociety",
     "--local",
     `url.${origin}.insteadOf`,
     "https://github.com/AgenticSocietyLab/MAGI.git",
+  ]);
+  git(checkout, [
+    "config",
+    "--local",
+    "--add",
+    `url.${origin}.insteadOf`,
+    "https://github.com/realTaki/MAGI.git",
   ]);
 
   const api = createLocalApi({
@@ -63,7 +73,20 @@ test("about reports the running commit and where it forked from AgenticSociety",
   assert.equal(status.available, true);
   assert.equal(status.branch, "main");
   assert.equal(status.commit, commit);
+  assert.equal(status.latestCommit, latestCommit);
+  assert.equal(status.tag, "v0.0.7-experiment");
+  assert.equal(status.repository, "realTaki/MAGI");
+  assert.equal(status.upstreamRepository, "AgenticSocietyLab/MAGI");
+  assert.equal(status.commitUrl, `https://github.com/realTaki/MAGI/commit/${latestCommit}`);
+  assert.equal(
+    status.tagUrl,
+    "https://github.com/AgenticSocietyLab/MAGI/releases/tag/v0.0.7-experiment",
+  );
   assert.equal(status.forkPoint, forkPoint);
+  assert.equal(
+    status.forkPointUrl,
+    `https://github.com/AgenticSocietyLab/MAGI/commit/${forkPoint}`,
+  );
   assert.equal(status.remoteAhead, true);
   assert.equal(status.remoteChecked, true);
   assert.equal(status.remote, "https://github.com/AgenticSocietyLab/MAGI.git");

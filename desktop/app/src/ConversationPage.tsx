@@ -837,7 +837,6 @@ export function ConversationPage() {
 
   return (
     <div className="conversation-page">
-      <div className="conversation-page__drag" aria-hidden="true" />
       <div className={`conversation-page__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
           id="conversation-page-bots"

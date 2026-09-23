@@ -496,19 +496,23 @@ export function SettingsPage() {
                       </label>
                       <label className="settings-card__row">
                         <span>{t("appSettings.aboutCommit")}</span>
-                        {source?.commitUrl && source.commit ? (
+                        {source?.commitUrl && source.latestCommit ? (
                           <a
                             className="settings-card__link settings-card__code"
                             href={source.commitUrl}
                             target="_blank"
                             rel="noreferrer"
-                            title={source.commit}
+                            title={source.latestCommit}
                           >
-                            {source.commit.slice(0, 12)}
+                            {source.latestCommit.slice(0, 12)}
                           </a>
                         ) : (
-                          <span className="settings-card__code" title={source?.commit || undefined}>
-                            {source?.commit ? source.commit.slice(0, 12) : sourceLoaded ? "—" : "…"}
+                          <span className="settings-card__code" title={source?.latestCommit || undefined}>
+                            {source?.latestCommit
+                              ? source.latestCommit.slice(0, 12)
+                              : sourceLoaded
+                                ? "—"
+                                : "…"}
                           </span>
                         )}
                       </label>

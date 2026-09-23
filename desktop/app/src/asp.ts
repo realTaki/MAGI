@@ -302,13 +302,17 @@ export type ProviderUsage = {
 export type SourceStatus = {
   available: boolean;
   branch: string;
+  /** Commit currently running from the local checkout. */
   commit: string;
+  /** Latest commit reported by the checkout's origin branch. */
+  latestCommit: string;
   /** Nearest release tag reachable from this checkout. */
   tag: string;
   /** GitHub owner/name for the checkout's origin, normally the operator's fork. */
   repository: string;
   /** GitHub owner/name used for the AgenticSociety comparison. */
   upstreamRepository: string;
+  /** GitHub URL for latestCommit. */
   commitUrl: string;
   tagUrl: string;
   /** Commit where this checkout diverged from AgenticSociety. Empty when unknown. */

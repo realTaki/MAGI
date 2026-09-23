@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -120,5 +120,38 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
   await backend.start();
   assert.equal(existsSync(path.join(root, ".magi", "app", "provider.json")), true);
   assert.ok(requests.includes("DELETE /settings/provider/legacy"));
+  backend.dispose();
+});
+
+test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-usage-"));
+  const appData = path.join(root, ".magi", "app");
+  mkdirSync(appData, { recursive: true });
+  writeFileSync(
+    path.join(appData, "provider.json"),
+    JSON.stringify({ provider: "deepseek", model: "deepseek-v4-pro", api_key: "local-key" }),
+  );
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    assert.equal(String(url), "https://api.deepseek.com/user/balance");
+    assert.equal(options.headers.Authorization, "Bearer local-key");
+    return Response.json({
+      is_available: true,
+      balance_infos: [{ currency: "USD", total_balance: "12.34" }],
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const backend = app(root);
+  assert.deepEqual(await backend["provider.usage"](), {
+    provider: "deepseek",
+    status: "available",
+    available: true,
+    balances: [{ currency: "USD", total: "12.34" }],
+    message: "",
+  });
   backend.dispose();
 });

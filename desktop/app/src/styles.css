@@ -707,6 +707,7 @@ body {
   margin-bottom: 16px;
   color: var(--panel-muted);
   font-size: 13.5px;
+  -webkit-app-region: drag;
 }
 
 .conversation-page__panel-actions {
@@ -1361,17 +1362,6 @@ body {
   height: 100%;
 }
 
-/* One strip across the whole window. The column headers do not line up, so
-   drag cannot be left to whichever header happens to sit at the top. */
-.conversation-page__drag {
-  position: fixed;
-  z-index: 20;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 60px;
-  -webkit-app-region: drag;
-}
 .conversation-page__frame {
   height: 100%;
   border-radius: 0;

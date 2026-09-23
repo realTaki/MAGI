@@ -1113,8 +1113,9 @@ export function createLocalApi(context) {
   // The checkout's origin may be the operator's fork. The comparison the About
   // page shows is against AgenticSociety, preferring a remote that already
   // points there and otherwise the repository this build was given.
-  async function agenticUrl(remotes = await listedRemotes()) {
-    const matched = remotes.find((remote) => isAgentic(remote.url));
+  async function agenticUrl(remotes) {
+    const availableRemotes = remotes ?? (await listedRemotes());
+    const matched = availableRemotes.find((remote) => isAgentic(remote.url));
     if (matched) return matched.url;
     return isAgentic(repository) ? repository : "";
   }
@@ -1144,6 +1145,7 @@ export function createLocalApi(context) {
       available: false,
       branch: "",
       commit: "",
+      latestCommit: "",
       tag: "",
       repository: "",
       upstreamRepository: "",
@@ -1176,21 +1178,43 @@ export function createLocalApi(context) {
       // A development checkout may not have a release tag yet.
     }
     const remotes = await listedRemotes();
-    const originUrl = remotes.find((entry) => entry.name === "origin")?.url ?? "";
+    let originUrl = remotes.find((entry) => entry.name === "origin")?.url ?? "";
+    try {
+      originUrl = await gitText(
+        ["config", "--get", "remote.origin.url"],
+        "Could not read the checkout origin",
+      );
+    } catch {
+      // Fall back to the URL reported by `git remote -v`.
+    }
     const checkoutRepository = githubRepository(originUrl) || githubRepository(repository);
     const remote = await agenticUrl(remotes);
     const upstreamRepository = githubRepository(remote);
+    let latestCommit = commit;
+    if (originUrl && branch && branch !== "HEAD") {
+      try {
+        const originHead = await gitText(
+          ["ls-remote", originUrl, `refs/heads/${branch}`],
+          "Could not read the fork branch's latest commit",
+          { ...tools.env, GIT_TERMINAL_PROMPT: "0" },
+        );
+        latestCommit = /^(\S+)/.exec(originHead)?.[1] ?? commit;
+      } catch {
+        // Keep the local commit as a useful fallback while offline.
+      }
+    }
     const local = {
       ...blank,
       available: true,
       branch,
       commit,
+      latestCommit,
       tag,
       repository: checkoutRepository,
       upstreamRepository,
       commitUrl:
-        checkoutRepository && commit
-          ? `https://github.com/${checkoutRepository}/commit/${commit}`
+        checkoutRepository && latestCommit
+          ? `https://github.com/${checkoutRepository}/commit/${latestCommit}`
           : "",
       tagUrl:
         upstreamRepository && tag
