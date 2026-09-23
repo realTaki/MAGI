@@ -197,30 +197,6 @@ body {
   cursor: wait;
 }
 
-.product-demo__traffic {
-  display: flex;
-  gap: 7px;
-}
-
-.product-demo__traffic span {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border-radius: 999px;
-}
-
-.product-demo__traffic span:nth-child(1) {
-  background: #ff5f57;
-}
-
-.product-demo__traffic span:nth-child(2) {
-  background: #febc2e;
-}
-
-.product-demo__traffic span:nth-child(3) {
-  background: #28c840;
-}
-
 .product-demo__search {
   display: flex;
   align-items: center;
