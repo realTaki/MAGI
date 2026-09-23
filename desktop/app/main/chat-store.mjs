@@ -19,6 +19,10 @@ export async function openChatStore(file) {
       record_json TEXT NOT NULL,
       PRIMARY KEY (conversation_id, sequence)
     );
+    CREATE TABLE IF NOT EXISTS acknowledgements (
+      conversation_id TEXT PRIMARY KEY,
+      through_sequence INTEGER NOT NULL
+    );
   `);
   const saveConversation = db.prepare(
     "INSERT INTO conversations VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET record_json = excluded.record_json",
@@ -31,6 +35,18 @@ export async function openChatStore(file) {
   const readLastSequence = db.prepare(
     "SELECT max(sequence) AS sequence FROM events WHERE conversation_id = ?",
   );
+  const readPendingAcks = db.prepare(`
+    SELECT e.record_json FROM events e
+    WHERE e.conversation_id = ? AND e.sequence > COALESCE((
+      SELECT through_sequence FROM acknowledgements WHERE conversation_id = e.conversation_id
+    ), -1)
+    ORDER BY e.sequence LIMIT 500
+  `);
+  const markAcknowledged = db.prepare(`
+    INSERT INTO acknowledgements VALUES (?, ?)
+    ON CONFLICT(conversation_id) DO UPDATE SET
+      through_sequence = max(through_sequence, excluded.through_sequence)
+  `);
 
   function transaction(write) {
     db.exec("BEGIN IMMEDIATE");
@@ -71,6 +87,12 @@ export async function openChatStore(file) {
     },
     lastSequence(conversationId) {
       return readLastSequence.get(conversationId)?.sequence ?? -1;
+    },
+    pendingAcks(conversationId) {
+      return readPendingAcks.all(conversationId).map((row) => JSON.parse(row.record_json));
+    },
+    markAcknowledged(conversationId, sequence) {
+      markAcknowledged.run(conversationId, sequence);
     },
     close() {
       db.close();

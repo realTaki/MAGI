@@ -504,11 +504,10 @@ class Service:
             eligible = eligible[:limit]
         return [e.to_wire() for e in eligible]
 
-    def acknowledge(self, caller: str, session_id: str, sequence: int) -> None:
+    def acknowledge(self, caller: str, session_id: str, event_ids: list[str]) -> None:
         if self.store.get_session(session_id) is None or self.store.get_participant(session_id, caller) is None:
             raise NotFound()
-        self.store.acknowledge(caller, session_id, sequence)
-        self.transport.advance_cursor(caller, session_id, sequence)
+        self.store.acknowledge(caller, session_id, event_ids)
 
     # ---- Helpers --------------------------------------------------------
 
@@ -544,6 +543,8 @@ class Service:
             cursor = self.transport.cursor(p.handle, session_id)
             for ev in events:
                 if ev.sequence is None or ev.sequence <= cursor:
+                    continue
+                if self.store.is_acknowledged(p.handle, ev.event_id):
                     continue
                 if self._eligible_now(p, ev):
                     await self.transport.deliver(p.handle, ev)
@@ -626,6 +627,8 @@ class Service:
             cursor = self.transport.cursor(handle, sid)
             for ev in self.store.session_events.get(sid, []):
                 if ev.sequence is None or ev.sequence <= cursor:
+                    continue
+                if self.store.is_acknowledged(handle, ev.event_id):
                     continue
                 if self._eligible_now(p, ev):
                     await self.transport.deliver(handle, ev)

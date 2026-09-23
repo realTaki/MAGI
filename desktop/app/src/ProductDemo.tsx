@@ -8,7 +8,7 @@ import {
   type DemoRoutineRun,
 } from "./demo";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, type AspBot, type CreatedConversation } from "./asp";
+import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, listAspEvents, sendAspMessage, updateAspNickname, addAspConversationMember, ackAspEvents, storedConversations, saveConversations, storedEvents, saveEvents, lastStoredSequence, pendingAcks, markAcknowledged, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
 import {
   initialsFromLogin,
   localAppAvailable,
@@ -414,14 +414,28 @@ export function ProductDemo() {
 
   useEffect(() => {
     let cancelled = false;
-    void listAspConversations().then((conversations) => {
-      if (cancelled) return;
-      const restored = conversations.map(fromAspConversation);
-      setBots(restored);
-      setActiveId((current) => current || restored[0]?.id || "");
-    }).catch((error: unknown) => {
-      if (!cancelled) setLoadError(String(error));
-    });
+    void (async () => {
+      try {
+        const local = await storedConversations();
+        if (cancelled) return;
+        const restored = local.map(fromAspConversation);
+        setBots(restored);
+        setActiveId((current) => current || restored[0]?.id || "");
+        const remote = await listAspConversations();
+        if (cancelled) return;
+        await saveConversations(remote);
+        const known = new Map(local.map((row) => [row.conversation_id, row]));
+        for (const row of remote) known.set(row.conversation_id, row);
+        setBots((current) => [...known.values()].map((row) => {
+          const next = fromAspConversation(row);
+          const previous = current.find((bot) => bot.id === next.id);
+          return previous ? { ...next, thread: previous.thread } : next;
+        }));
+        setActiveId((current) => current || remote[0]?.conversation_id || "");
+      } catch (error) {
+        if (!cancelled) setLoadError(String(error));
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -429,19 +443,35 @@ export function ProductDemo() {
     if (!active?.remoteId) return;
     const conversationId = active.remoteId;
     let cancelled = false;
+    function render(events: AspEvent[]) {
+      const thread: DemoMessage[] = events.filter((event) => event.type === "session.message")
+        .map((event) => ({
+          type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
+          text: typeof event.payload.content === "string" ? event.payload.content : JSON.stringify(event.payload.content),
+        }));
+      const latest = thread.at(-1);
+      setBots((current) => current.map((bot) => bot.id === conversationId
+        ? { ...bot, thread, preview: latest && "text" in latest ? latest.text : "" }
+        : bot));
+    }
     async function refresh() {
       try {
-        const events = await listAspEvents(conversationId);
+        const local = await storedEvents(conversationId);
+        if (!cancelled) render(local);
+        const after = await lastStoredSequence(conversationId);
+        const incoming = await listAspEvents(conversationId, after);
         if (cancelled) return;
-        const thread: DemoMessage[] = events.filter((event) => event.type === "session.message")
-          .map((event) => ({
-            type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
-            text: typeof event.payload.content === "string" ? event.payload.content : JSON.stringify(event.payload.content),
-          }));
-        const latest = thread.at(-1);
-        setBots((current) => current.map((bot) => bot.id === conversationId
-          ? { ...bot, thread, preview: latest && "text" in latest ? latest.text : "" }
-          : bot));
+        const savedThrough = await saveEvents(conversationId, incoming);
+        if (savedThrough !== null) {
+          render(await storedEvents(conversationId));
+          const pending = await pendingAcks(conversationId);
+          if (pending.length > 0) {
+            await ackAspEvents(conversationId, pending);
+            await markAcknowledged(conversationId, pending.at(-1)!.sequence);
+          }
+        } else {
+          render(incoming);
+        }
       } catch (error) {
         if (!cancelled) setLoadError(String(error));
       }

@@ -78,7 +78,21 @@ def _version_2(connection: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS: tuple[Migration, ...] = (_version_1, _version_2)
+def _version_3(connection: sqlite3.Connection) -> None:
+    """Record exact event receipts, including lifecycle events."""
+    connection.executescript(
+        """
+        CREATE TABLE asp_event_acks (
+            event_id TEXT NOT NULL,
+            handle TEXT NOT NULL,
+            PRIMARY KEY (event_id, handle),
+            FOREIGN KEY (event_id) REFERENCES asp_events(event_id) ON DELETE CASCADE
+        );
+        """
+    )
+
+
+MIGRATIONS: tuple[Migration, ...] = (_version_1, _version_2, _version_3)
 
 
 def apply_migrations(connection: sqlite3.Connection) -> None:

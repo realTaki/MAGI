@@ -188,8 +188,7 @@ class Transport:
 
     def cursor(self, handle: str, session_id: str) -> int:
         """Last delivered sequence for this agent in this session, or -1 if none."""
-        return max(self._cursors.get((handle, session_id), -1),
-                   self.store.ack_cursor(handle, session_id))
+        return self._cursors.get((handle, session_id), -1)
 
     def advance_cursor(self, handle: str, session_id: str, sequence: int) -> None:
         current = self._cursors.get((handle, session_id), -1)

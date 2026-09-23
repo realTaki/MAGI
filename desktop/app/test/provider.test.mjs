@@ -30,6 +30,9 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
     if (new URL(url).pathname === "/operator") {
       return Response.json({ token: "operator-token" });
     }
+    if (new URL(url).pathname === "/settings/provider/legacy") {
+      return Response.json(null);
+    }
     if (new URL(url).pathname === "/settings/provider") {
       return Response.json({ ...JSON.parse(options.body), synced: ["@eva-000.magi"], failed: [] });
     }
@@ -40,13 +43,32 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   const first = app(root);
   const saved = await first["provider.save"]({ provider: "claude", model: "opus", api_key: "sk-local" });
   assert.deepEqual(saved.synced, ["@eva-000.magi"]);
-  assert.equal(requests[1].method, "PUT");
-  assert.equal(requests[1].path, "/settings/provider");
+  assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
   const providerFile = path.join(root, ".magi", "app", "provider.json");
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).api_key, "sk-local");
   if (process.platform !== "win32") assert.equal(statSync(providerFile).mode & 0o777, 0o600);
   assert.equal(app(root)["provider.settings"]().api_key, "sk-local");
   first.dispose();
+});
+
+test("the app does not send the key to an older ASP that still persists it", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-old-asp-"));
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    requests.push(`${options.method ?? "GET"} ${endpoint}`);
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/settings/provider/legacy") return Response.json({ detail: "not found" }, { status: 404 });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+
+  const backend = app(root);
+  await assert.rejects(backend["provider.save"]({ api_key: "sk-local" }), /Saved in the app, but MAGI sync failed/);
+  assert.equal(backend["provider.settings"]().api_key, "sk-local");
+  assert.equal(requests.includes("PUT /settings/provider"), false);
+  backend.dispose();
 });
 
 test("the app copies a legacy ASP key before deleting that copy", async (t) => {

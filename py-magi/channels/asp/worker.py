@@ -149,9 +149,9 @@ class AspWorker(BaseWorker):
         except Exception as exc:  # noqa: BLE001 -- one ASP event cannot stop the channel
             logger.exception("could not ingest ASP event %s: %s", event.get("event_id"), exc)
             return None
-        sequence = event.get("sequence")
-        if isinstance(sequence, int):
-            return {"type": "session.ack", "session_id": session_id, "sequence": sequence}
+        event_id = event.get("event_id")
+        if isinstance(event_id, str):
+            return {"type": "session.ack", "session_id": session_id, "event_id": event_id}
         return None
 
     def _ingest(self, session_id: str, payload: dict[str, Any]) -> None:

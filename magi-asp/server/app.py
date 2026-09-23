@@ -80,7 +80,7 @@ class SendMessageBody(BaseModel):
 
 
 class AcknowledgeEventsBody(BaseModel):
-    sequence: int = Field(ge=0)
+    event_ids: list[str] = Field(max_length=500)
 
 
 class ReopenBody(BaseModel):
@@ -443,7 +443,7 @@ def create_operator(
     async def post_event_ack(session_id: str, body: AcknowledgeEventsBody, request: Request):
         caller = auth_handle(request)
         try:
-            service.acknowledge(caller, session_id, body.sequence)
+            service.acknowledge(caller, session_id, body.event_ids)
         except NotFound:
             raise HTTPException(status_code=404, detail="not found")
         return {"ok": True}
@@ -467,10 +467,10 @@ def create_operator(
                 if isinstance(message, dict):
                     if message.get("type") == "session.ack":
                         session_id = message.get("session_id")
-                        sequence = message.get("sequence")
-                        if isinstance(session_id, str) and isinstance(sequence, int):
+                        event_id = message.get("event_id")
+                        if isinstance(session_id, str) and isinstance(event_id, str):
                             try:
-                                service.acknowledge(agent.handle, session_id, sequence)
+                                service.acknowledge(agent.handle, session_id, [event_id])
                             except NotFound:
                                 pass
                     else:

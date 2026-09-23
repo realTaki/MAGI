@@ -18,6 +18,7 @@
  *   github.signIn            — OAuth device flow; stores the token for Git to use.
  *   github.connect           — fork when the account has none, then point the
  *                              checkout at it.
+ *   provider.settings/save   — keep the key in app data and sync through ASP.
  *
  * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
@@ -189,6 +190,7 @@ export function createLocalApi(context) {
   let commitWatcher = null;
   let chatStorePromise = null;
   let providerTimer = null;
+  let providerRelayReady = false;
   const providerDelivered = new Set();
 
   // A developer's own working tree is not this app's to rewire; only a checkout
@@ -828,6 +830,12 @@ export function createLocalApi(context) {
     await aspJson("/settings/provider/legacy", { token, method: "DELETE" });
   }
 
+  async function ensureProviderRelay(token) {
+    if (providerRelayReady) return;
+    await migrateLegacyProvider(token);
+    providerRelayReady = true;
+  }
+
   async function syncProvider(settings, handles, token) {
     return await aspJson("/settings/provider", {
       token,
@@ -841,10 +849,15 @@ export function createLocalApi(context) {
     const settings = normalizeProvider(input);
     writeProvider(settings);
     providerDelivered.clear();
-    const { token } = await aspJson("/operator");
-    const result = await syncProvider(settings, null, token);
-    for (const handle of result.synced ?? []) providerDelivered.add(handle);
-    return result;
+    try {
+      const { token } = await aspJson("/operator");
+      await ensureProviderRelay(token);
+      const result = await syncProvider(settings, null, token);
+      for (const handle of result.synced ?? []) providerDelivered.add(handle);
+      return result;
+    } catch (error) {
+      throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   function watchProviderRecipients(token) {
@@ -936,11 +949,11 @@ export function createLocalApi(context) {
   async function activateProviderSync() {
     const { token } = await aspJson("/operator");
     try {
-      await migrateLegacyProvider(token);
+      await ensureProviderRelay(token);
+      watchProviderRecipients(token);
     } catch (error) {
       console.error(`[magi-app] provider migration: ${error instanceof Error ? error.message : String(error)}`);
     }
-    watchProviderRecipients(token);
   }
 
   /** Brings local ASP up unless something already answers on its port. */
@@ -1008,5 +1021,8 @@ export function createLocalApi(context) {
     "chat.listEvents": async (id) => (await chatStore()).listEvents(id),
     "chat.saveEvents": async ({ id, events }) => (await chatStore()).saveEvents(id, events),
     "chat.lastSequence": async (id) => (await chatStore()).lastSequence(id),
+    "chat.pendingAcks": async (id) => (await chatStore()).pendingAcks(id),
+    "chat.markAcknowledged": async ({ id, sequence }) =>
+      (await chatStore()).markAcknowledged(id, sequence),
   };
 }

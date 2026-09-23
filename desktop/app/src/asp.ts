@@ -21,6 +21,8 @@ export type CreatedConversation = {
 
 export type AspEvent = {
   type: string;
+  sequence: number;
+  event_id: string;
   payload: { sender?: string; content?: unknown };
 };
 
@@ -65,14 +67,65 @@ export async function listAspConversations(): Promise<CreatedConversation[]> {
   return ((await response.json()) as { conversations: CreatedConversation[] }).conversations;
 }
 
-export async function listAspEvents(conversationId: string): Promise<AspEvent[]> {
+export async function listAspEvents(conversationId: string, afterSequence?: number): Promise<AspEvent[]> {
   const creds = await getOperator();
   if (!creds) return [];
-  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/events`, {
+  const url = new URL(`${ASP_BASE}/sessions/${conversationId}/events`);
+  if (afterSequence !== undefined && afterSequence >= 0) {
+    url.searchParams.set("after_sequence", String(afterSequence));
+  }
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${creds.token}` },
   });
   if (!response.ok) throw new Error(`ASP events: ${response.status}`);
   return ((await response.json()) as { events: AspEvent[] }).events;
+}
+
+export async function ackAspEvents(conversationId: string, events: AspEvent[]): Promise<void> {
+  const creds = await getOperator();
+  if (!creds || events.length === 0) return;
+  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/events/ack`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${creds.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ event_ids: events.map((event) => event.event_id) }),
+  });
+  if (!response.ok) throw new Error(`ASP acknowledge: ${response.status}`);
+}
+
+async function localChat<T>(method: string, payload?: unknown): Promise<T | null> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  return invoke ? (await invoke(method, payload)) as T : null;
+}
+
+export async function storedConversations(): Promise<CreatedConversation[]> {
+  return await localChat<CreatedConversation[]>("chat.listConversations") ?? [];
+}
+
+export async function saveConversations(rows: CreatedConversation[]): Promise<void> {
+  await localChat("chat.saveConversations", rows);
+}
+
+export async function storedEvents(id: string): Promise<AspEvent[]> {
+  return await localChat<AspEvent[]>("chat.listEvents", id) ?? [];
+}
+
+export async function lastStoredSequence(id: string): Promise<number> {
+  return await localChat<number>("chat.lastSequence", id) ?? -1;
+}
+
+export async function saveEvents(id: string, events: AspEvent[]): Promise<number | null> {
+  return await localChat<number>("chat.saveEvents", { id, events });
+}
+
+export async function pendingAcks(id: string): Promise<AspEvent[]> {
+  return await localChat<AspEvent[]>("chat.pendingAcks", id) ?? [];
+}
+
+export async function markAcknowledged(id: string, sequence: number): Promise<void> {
+  await localChat("chat.markAcknowledged", { id, sequence });
 }
 
 export async function sendAspMessage(conversationId: string, text: string): Promise<void> {
@@ -126,7 +179,9 @@ export async function createAspConversation(
     if (!response.ok) {
       return null;
     }
-    return (await response.json()) as CreatedConversation;
+    const conversation = (await response.json()) as CreatedConversation;
+    await saveConversations([conversation]);
+    return conversation;
   } catch {
     return null;
   }

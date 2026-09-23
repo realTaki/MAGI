@@ -194,31 +194,28 @@ class Store:
                 db.execute("UPDATE asp_events SET payload_json = ? WHERE event_id = ?",
                            (json.dumps(event.payload), event.event_id))
 
-    def acknowledge(self, handle: str, session_id: str, sequence: int) -> None:
-        """Forget message events only after every intended recipient confirms."""
+    def acknowledge(self, handle: str, session_id: str, event_ids: list[str]) -> None:
+        """Confirm exact events; never infer receipt from a later sequence."""
         if self.get_participant(session_id, handle) is None:
             raise KeyError(session_id)
         db = self._db()
         if db is None:
             return
-        sequence = min(sequence, self.session_seq[session_id] - 1)
-        if sequence < 0:
-            return
         with db:
-            db.execute(
-                """INSERT INTO asp_delivery_acks VALUES (?, ?, ?)
-                   ON CONFLICT(session_id, handle) DO UPDATE SET
-                   sequence = max(sequence, excluded.sequence)""",
-                (session_id, handle, sequence),
-            )
-            db.execute(
-                """UPDATE asp_message_recipients SET acked = 1
-                   WHERE handle = ? AND event_id IN (
-                       SELECT event_id FROM asp_events
-                       WHERE session_id = ? AND sequence <= ? AND type = 'session.message'
-                   )""",
-                (handle, session_id, sequence),
-            )
+            for event_id in event_ids:
+                row = db.execute(
+                    "SELECT type FROM asp_events WHERE event_id = ? AND session_id = ?",
+                    (event_id, session_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                db.execute("INSERT OR IGNORE INTO asp_event_acks VALUES (?, ?)",
+                           (event_id, handle))
+                if row["type"] == "session.message":
+                    db.execute(
+                        "UPDATE asp_message_recipients SET acked = 1 WHERE event_id = ? AND handle = ?",
+                        (event_id, handle),
+                    )
             removable = [row[0] for row in db.execute(
                 """SELECT e.event_id FROM asp_events e
                    WHERE e.session_id = ? AND e.type = 'session.message'
@@ -230,6 +227,13 @@ class Store:
             if removable:
                 db.executemany("DELETE FROM asp_events WHERE event_id = ?",
                                [(event_id,) for event_id in removable])
+                removed = set(removable)
+                for event in self.session_events[session_id]:
+                    initial = event.payload.get("initial_message")
+                    if isinstance(initial, dict) and initial.get("id") in removed:
+                        del event.payload["initial_message"]
+                        db.execute("UPDATE asp_events SET payload_json = ? WHERE event_id = ?",
+                                   (json.dumps(event.payload), event.event_id))
         if removable:
             removed = set(removable)
             self.session_events[session_id] = [
@@ -237,15 +241,15 @@ class Store:
                 if event.event_id not in removed
             ]
 
-    def ack_cursor(self, handle: str, session_id: str) -> int:
+    def is_acknowledged(self, handle: str, event_id: str) -> bool:
         db = self._db()
         if db is None:
-            return -1
+            return False
         row = db.execute(
-            "SELECT sequence FROM asp_delivery_acks WHERE session_id = ? AND handle = ?",
-            (session_id, handle),
+            "SELECT 1 FROM asp_event_acks WHERE event_id = ? AND handle = ?",
+            (event_id, handle),
         ).fetchone()
-        return -1 if row is None else int(row["sequence"])
+        return row is not None
 
     # ---- Agents ----------------------------------------------------------
 
