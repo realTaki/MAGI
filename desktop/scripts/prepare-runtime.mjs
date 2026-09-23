@@ -51,6 +51,23 @@ function makeSymlinksRelative(directory, original, copied) {
   }
 }
 
+function removeDanglingSymlinks(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const item = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      removeDanglingSymlinks(item);
+      continue;
+    }
+    if (!lstatSync(item).isSymbolicLink()) {
+      continue;
+    }
+    const target = readlinkSync(item);
+    if (path.isAbsolute(target) || !existsSync(item)) {
+      unlinkSync(item);
+    }
+  }
+}
+
 const uv = process.env.MAGI_UV_BIN || executableOnPath("uv");
 const temporary = mkdtempSync(path.join(os.tmpdir(), "magi-python-"));
 try {
@@ -74,6 +91,7 @@ try {
     recursive: true,
   });
   makeSymlinksRelative(copiedPython, originalPython, copiedPython);
+  removeDanglingSymlinks(copiedPython);
   cpSync(uv, path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "uv.exe" : "uv"));
   cpSync(
     path.join(
