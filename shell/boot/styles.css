@@ -24,7 +24,15 @@ body {
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--sky);
-  /* The plain background remains available for moving the frameless window. */
+}
+
+.startup-drag {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 80px;
   -webkit-app-region: drag;
 }
 
