@@ -33,7 +33,6 @@ export function SettingsPage() {
   function logOut() {
     clearOperator();
     openConversationsRoute();
-    void window.magiDesktop?.showChooser?.();
   }
 
   const heading =
