@@ -13,6 +13,22 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
+function BackIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m15 4-8 8 8 8" />
+    </svg>
+  );
+}
+
+function CollapseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m4 4 8 8-8 8M11 4l8 8-8 8" />
+    </svg>
+  );
+}
+
 const AGENT_COLORS = ["#3EC5A8", "#F5A03C", "#6A6BF5", "#9B5CF6", "#3B82F6", "#F2622A", "#D9508A"];
 const FREQS = [
   "Every hour",
@@ -971,8 +987,8 @@ export function ConversationPage() {
                 onClick={() => setSearchOpen((open) => !open)}
               >
                 <svg
-                  width="20"
-                  height="20"
+                  width="18"
+                  height="18"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -1000,8 +1016,8 @@ export function ConversationPage() {
                   onMouseDown={(event) => event.stopPropagation()}
                 >
                   <svg
-                    width="20"
-                    height="20"
+                    width="18"
+                    height="18"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1211,7 +1227,7 @@ export function ConversationPage() {
               aria-expanded={showPanel && panelMode === "settings"}
               onClick={toggleSettings}
             >
-              <Avatar color={active.color} size={28} />
+              <Avatar color={active.color} size={24} />
               <span className="conversation-page__active-name">{active.name}</span>
               <span className="conversation-page__name-chevron" aria-hidden="true">
                 <svg
@@ -1273,6 +1289,15 @@ export function ConversationPage() {
           <aside id="conversation-page-profile" className="conversation-page__panel">
             {panelMode !== "routine" ? (
               <div className="conversation-page__panel-head">
+                <button
+                  type="button"
+                  className="conversation-page__panel-back"
+                  aria-label={t("common.back")}
+                  title={t("common.back")}
+                  onClick={collapseProfile}
+                >
+                  <BackIcon />
+                </button>
                 <span>{t("conversationSettings.title")}</span>
                 <button
                   type="button"
@@ -1281,7 +1306,7 @@ export function ConversationPage() {
                   title={t("conversationSettings.collapse")}
                   onClick={collapseProfile}
                 >
-                  {">>"}
+                  <CollapseIcon />
                 </button>
               </div>
             ) : null}
@@ -1294,7 +1319,7 @@ export function ConversationPage() {
                 {active.kind === "group" ? (
                   <>
                     <label className="conversation-page__field">
-                      Topic
+                      <span className="conversation-page__field-label">Topic</span>
                       <input
                         value={active.name}
                         placeholder={t("plusMenu.newGroupName")}
@@ -1309,7 +1334,7 @@ export function ConversationPage() {
                       />
                     </label>
                     <label className="conversation-page__field">
-                      Description
+                      <span className="conversation-page__field-label">Description</span>
                       <textarea
                         rows={4}
                         value={active.description}
@@ -1328,7 +1353,7 @@ export function ConversationPage() {
                 ) : (
                   <>
                     <label className="conversation-page__field">
-                      Nickname
+                      <span className="conversation-page__field-label">Nickname</span>
                       <input
                         value={active.name}
                         placeholder="Give this MAGI a nickname"
@@ -1337,7 +1362,7 @@ export function ConversationPage() {
                       />
                     </label>
                     <label className="conversation-page__field">
-                      Title
+                      <span className="conversation-page__field-label">Title</span>
                       <input
                         value={active.title}
                         placeholder="Describe what this agent does"
@@ -1345,7 +1370,7 @@ export function ConversationPage() {
                       />
                     </label>
                     <label className="conversation-page__field">
-                      Description
+                      <span className="conversation-page__field-label">Description</span>
                       <textarea
                         rows={4}
                         value={active.description}
@@ -1481,7 +1506,7 @@ export function ConversationPage() {
                     title={t("conversationSettings.collapse")}
                     onClick={collapseProfile}
                   >
-                    {">>"}
+                    <CollapseIcon />
                   </button>
                 </div>
                 <div className="conversation-page__routine-toolbar">
