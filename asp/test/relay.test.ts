@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { RecordingSpawner } from "../server/spawn.ts";
 import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
 
 test("relay survives restart and requires exact recipient acks", async (t) => {
@@ -10,7 +9,6 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
   const options = {
     databasePath,
     aspSeed: { "@second.magi": "second-token" },
-    magiSpawner: new RecordingSpawner(),
   };
   let sessionId = "";
   let firstEventId = "";
@@ -96,7 +94,7 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
   });
 });
 
-test("managed magi is restored after asp restart", async (t) => {
+test("a registered magi outlives an asp restart", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   let handle = "";
   await withApp({ databasePath }, async (app) => {
@@ -105,20 +103,20 @@ test("managed magi is restored after asp restart", async (t) => {
     assert.equal(response.status, 201);
     const agents = record(response.data).agents;
     if (!Array.isArray(agents) || typeof agents[0] !== "string") {
-      throw new Error("expected a spawned handle");
+      throw new Error("expected a registered handle");
     }
     handle = agents[0];
   });
-  const spawner = new RecordingSpawner();
-  await withApp({ databasePath, magiSpawner: spawner }, async () => {
-    const deadline = Date.now() + 7_000;
-    while (spawner.calls.length === 0 && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    assert.deepEqual(
-      spawner.calls.map((call) => call.handle),
-      [handle],
-    );
+  // Restarting ASP must not lose the agent: the desktop app is what runs it,
+  // and it finds the same record (and token) when it reconciles.
+  await withApp({ databasePath }, async (app) => {
+    const token = operatorToken(await request(app, "GET", "/operator"));
+    const roster = recordList(
+      record((await request(app, "GET", "/agents", { token })).data).agents,
+    ).filter((agent) => agent.managed === true);
+    assert.deepEqual(roster.map((agent) => agent.handle), [handle]);
+    assert.equal(roster[0]?.managed, true);
+    assert.equal(typeof roster[0]?.token, "string");
   });
 });
 
@@ -134,6 +132,13 @@ function record(value: unknown): Record<string, unknown> {
     throw new Error("expected an object");
   }
   return value;
+}
+
+function recordList(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    throw new Error("expected a list");
+  }
+  return value.map((item) => record(item));
 }
 
 function eventsOf(response: { data: unknown }): Record<string, unknown>[] {

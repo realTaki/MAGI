@@ -137,23 +137,46 @@ export type GitHubAccount = {
 
 const EMPTY_ACCOUNT: GitHubAccount = { login: "", name: "", avatar: "" };
 
+// Opening a settings overlay remounts this hook; the last read is kept so the
+// picture does not blink through the fallback while the new one arrives.
+let cachedAccount: GitHubAccount = EMPTY_ACCOUNT;
+let accountRead: Promise<GitHubAccount> | null = null;
+
+/**
+ * Read the account from the local backend, one round-trip at a time: mounts
+ * that happen together share the answer, and the last one is kept for the next
+ * mount to paint with.
+ */
+export function readGitHubAccount(): Promise<GitHubAccount> {
+  accountRead ??= githubState()
+    .then((state) => {
+      cachedAccount = { login: state.login, name: state.name, avatar: state.avatar };
+      return cachedAccount;
+    })
+    .finally(() => {
+      accountRead = null;
+    });
+  return accountRead;
+}
+
 /**
  * The GitHub account this machine is signed in with — what the interface shows
- * as "the operator". Empty until a sign-in succeeded (or outside the desktop
- * app); callers keep their own local name in that case.
+ * as "the operator". The last known value paints immediately; empty until a
+ * sign-in succeeded (or outside the desktop app); callers keep their own local
+ * name in that case.
  */
 export function useGitHubAccount(): GitHubAccount {
-  const [account, setAccount] = useState<GitHubAccount>(EMPTY_ACCOUNT);
+  const [account, setAccount] = useState<GitHubAccount>(cachedAccount);
   useEffect(() => {
     if (!localAppAvailable()) {
       return;
     }
     let cancelled = false;
     const read = () => {
-      void githubState()
-        .then((state) => {
+      void readGitHubAccount()
+        .then((next) => {
           if (!cancelled) {
-            setAccount({ login: state.login, name: state.name, avatar: state.avatar });
+            setAccount(next);
           }
         })
         .catch(() => {});

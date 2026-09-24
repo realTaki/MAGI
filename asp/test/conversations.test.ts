@@ -24,9 +24,8 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
     assert.equal(typeof magi.token, "string");
     // ASP registers the agent; starting it belongs to the desktop app.
     assert.equal("spawned" in body, false);
-    const roster = record((await request(app, "GET", "/agents", { token })).data).agents;
-    assert.ok(Array.isArray(roster));
-    assert.deepEqual(roster, [
+    const roster = recordList((await request(app, "GET", "/agents", { token })).data).agents;
+    assert.deepEqual(roster.filter((agent) => agent.managed === true), [
       {
         handle: "@eva-000.magi",
         token: magi.token,
@@ -79,7 +78,12 @@ test("new group opens immediately with no MAGI", async (t) => {
     assert.deepEqual(body.agents, []);
     assert.equal("name" in body, false);
     assert.equal("magi" in body, false);
-    assert.deepEqual(record((await request(app, "GET", "/agents", { token })).data).agents, []);
+    assert.deepEqual(
+      recordList((await request(app, "GET", "/agents", { token })).data).agents.filter(
+        (agent) => agent.managed === true,
+      ),
+      [],
+    );
     const patched = await request(app, "PATCH", `/conversations/${String(body.conversation_id)}`, {
       token,
       body: { topic: "offsite", description: "week of the 14th" },

@@ -13,7 +13,6 @@ export type CreatedConversation = {
   agents: string[];
   /** ASP-assigned MAGI name (`eva-000`, …). Present on `kind: "bot"`. */
   name?: string;
-  spawned?: boolean;
   topic?: string;
   description?: string;
   created_at?: number;

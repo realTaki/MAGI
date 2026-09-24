@@ -65,11 +65,15 @@ export function SettingsPage() {
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
-      await invoke(method);
+      const result = await invoke(method) as { failed?: unknown[] } | null;
       const state = await invoke("runtime.status") as { asp?: string; magiOnline?: number };
       setRuntimeStatus(state.asp ?? "");
       setRuntimeMagiOnline(state.magiOnline ?? 0);
-      setRuntimeMessage(t("appSettings.runtimeDone"));
+      setRuntimeMessage(
+        Array.isArray(result?.failed) && result.failed.length > 0
+          ? t("appSettings.runtimePartial")
+          : t("appSettings.runtimeDone"),
+      );
     } catch (error) {
       setRuntimeMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -523,7 +527,7 @@ export function SettingsPage() {
                 <div className="settings-card">
                   <div className="settings-card__label">MAGI · {t("appSettings.onlineCount")} {runtimeMagiOnline}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
-                    {(["runtime.stopMagi", "runtime.startMagi", "runtime.rebuildMagi"] as const).map((method) => (
+                    {(["runtime.stopMagi", "runtime.startMagi", "runtime.rebuildMagi", "runtime.mergeMagi"] as const).map((method) => (
                       <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
                         {t(`appSettings.${method.split(".")[1]}`)}
                       </button>

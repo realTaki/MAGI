@@ -99,7 +99,7 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   api.dispose();
 });
 
-test("runtime controls stop MAGI through the operator bridge and report online count", async (t) => {
+test("runtime controls own MAGI locally and report online count", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-controls-"));
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -109,7 +109,7 @@ test("runtime controls stop MAGI through the operator bridge and report online c
     if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
     if (endpoint === "/bots") return Response.json({ bots: [{ online: true }, { online: false }] });
-    if (endpoint === "/runtime/magi/stop") return Response.json({ stopped: true });
+    if (endpoint === "/agents") return Response.json({ agents: [] });
     throw new Error(`unexpected request: ${endpoint}`);
   };
   t.after(() => {
@@ -123,7 +123,10 @@ test("runtime controls stop MAGI through the operator bridge and report online c
     emit: () => {}, openExternal: async () => {}, copy: () => {}, managed: true,
   });
   assert.deepEqual(await api["runtime.status"](), { asp: "ready", owned: false, magiOnline: 1 });
-  assert.deepEqual(await api["runtime.stopMagi"](), { stopped: true });
-  assert.ok(calls.includes("POST /runtime/magi/stop"));
+  // Starting and stopping MAGI is this backend's job, not ASP's API.
+  assert.deepEqual(await api["runtime.stopMagi"](), { stopped: 0 });
+  assert.deepEqual(await api["runtime.startMagi"](), { started: 0 });
+  assert.equal(calls.includes("POST /runtime/magi/stop"), false);
+  assert.ok(calls.includes("GET /agents"));
   api.dispose();
 });
