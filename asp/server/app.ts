@@ -8,7 +8,6 @@ import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireCo
 import { loadOrCreateOperator } from "./operator.ts";
 import { OperatorService } from "./operator-service.ts";
 import { Conflict, NotAllowed, NotFound, SessionService } from "./service.ts";
-import { defaultSpawner, type MagiSpawner } from "./spawn.ts";
 import { type AgentSeed, Store } from "./store.ts";
 import { ConnectionError, TimeoutError, Transport } from "./transport.ts";
 
@@ -19,7 +18,6 @@ export type AspSeed = Record<string, string | AgentSeed>;
 export type CreateAppOptions = {
   databasePath?: string;
   aspSeed?: AspSeed;
-  magiSpawner?: MagiSpawner;
   aspBase?: string;
   requestShutdown?: () => void;
 };
@@ -34,7 +32,6 @@ export class AspApp {
   readonly store: Store;
   readonly transport: Transport;
   readonly sessions: SessionService;
-  readonly spawner: MagiSpawner;
   readonly baseUrl: string;
   readonly operator: OperatorService;
   readonly requestShutdown?: () => void;
@@ -42,8 +39,6 @@ export class AspApp {
   operatorHandle = "user";
   operatorToken = "";
   #running: RunningServer | null = null;
-  #restore: NodeJS.Timeout | null = null;
-  #managedStopped = false;
   #seed: AspSeed;
 
   constructor(options: CreateAppOptions = {}) {
@@ -51,16 +46,9 @@ export class AspApp {
     this.store = new Store(this.database);
     this.transport = new Transport(this.store);
     this.sessions = new SessionService(this.store, this.transport);
-    this.spawner = options.magiSpawner ?? defaultSpawner();
     this.baseUrl = options.aspBase ?? intranetBaseUrl();
     this.requestShutdown = options.requestShutdown;
-    this.operator = new OperatorService(
-      this.sessions,
-      this.store,
-      this.transport,
-      this.spawner,
-      this.baseUrl,
-    );
+    this.operator = new OperatorService(this.sessions, this.store, this.transport);
     this.#seed = options.aspSeed ?? {};
   }
 
@@ -75,54 +63,15 @@ export class AspApp {
     registerRoutes(router, this);
     this.#running = await listen(router, (request, socket) => this.#accept(request, socket), host, port);
     this.origin = this.#running.origin;
-    this.#restore = setTimeout(() => {
-      if (this.#managedStopped) return;
-      for (const agent of this.store.agents.values()) {
-        if (agent.managed && !this.transport.isOnline(agent.handle)) {
-          this.spawner.spawn({ handle: agent.handle, base: this.baseUrl, token: agent.token });
-        }
-      }
-    }, 5_000);
   }
 
   async close(): Promise<void> {
-    if (this.#restore !== null) {
-      clearTimeout(this.#restore);
-      this.#restore = null;
-    }
-    this.spawner.close();
     await this.transport.close();
     if (this.#running !== null) {
       await this.#running.close();
       this.#running = null;
     }
     this.database.close();
-  }
-
-  async stopManagedMagis(): Promise<void> {
-    this.#managedStopped = true;
-    if (this.#restore !== null) clearTimeout(this.#restore);
-    this.#restore = null;
-    this.spawner.close();
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const online = [...this.store.agents.values()].some(
-        (agent) => agent.managed && this.transport.isOnline(agent.handle),
-      );
-      if (!online) return;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    throw new HttpError(409, "Some MAGI remain online; stop their old processes before rebuilding.");
-  }
-
-  startManagedMagis(): number {
-    this.#managedStopped = false;
-    let started = 0;
-    for (const agent of this.store.agents.values()) {
-      if (agent.managed && !this.transport.isOnline(agent.handle)) {
-        if (this.spawner.spawn({ handle: agent.handle, base: this.baseUrl, token: agent.token }).spawned) started++;
-      }
-    }
-    return started;
   }
 
   async #accept(request: IncomingMessage, socket: WebSocket): Promise<void> {
@@ -191,15 +140,6 @@ function registerRoutes(router: Router, app: AspApp): void {
   router.add("GET", "/operator", () => ({
     body: { handle: app.operatorHandle, token: app.operatorToken },
   }));
-  router.add("POST", "/runtime/magi/stop", async (context) => {
-    operatorOnly(context.headers);
-    await app.stopManagedMagis();
-    return { body: { stopped: true } };
-  });
-  router.add("POST", "/runtime/magi/start", (context) => {
-    operatorOnly(context.headers);
-    return { body: { started: app.startManagedMagis() } };
-  });
   router.add("POST", "/runtime/asp/stop", (context) => {
     operatorOnly(context.headers);
     if (!app.requestShutdown) throw new HttpError(501, "ASP shutdown is unavailable in this runtime");
@@ -266,6 +206,10 @@ function registerRoutes(router: Router, app: AspApp): void {
     } catch (error) {
       hideSessionError(error);
     }
+  });
+  router.add("GET", "/agents", (context) => {
+    operatorOnly(context.headers);
+    return { body: { agents: app.operator.listAgents() } };
   });
   router.add("GET", "/bots", (context) => {
     const caller = operatorOnly(context.headers);

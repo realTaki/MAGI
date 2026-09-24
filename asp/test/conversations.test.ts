@@ -2,16 +2,14 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { RecordingSpawner } from "../server/spawn.ts";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.ts";
 
 function databasePath(root: string): string {
   return path.join(root, "asp.sqlite");
 }
 
-test("new bot spawns magi and opens a dm", async (t) => {
-  const spawner = new RecordingSpawner();
-  await withApp({ databasePath: databasePath(tempRoot(t)), magiSpawner: spawner }, async (app) => {
+test("new bot registers a magi and hands its runner the credential", async (t) => {
+  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
     const created = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
     assert.equal(created.status, 201);
@@ -23,10 +21,21 @@ test("new bot spawns magi and opens a dm", async (t) => {
     const magi = record(body.magi);
     assert.equal(magi.name, "eva-000");
     assert.equal(magi.handle, "@eva-000.magi");
-    assert.equal(body.spawned, true);
-    assert.equal(spawner.calls.length, 1);
-    assert.equal(spawner.calls[0]?.handle, "@eva-000.magi");
-    assert.equal(spawner.calls[0]?.base, "http://asp.test");
+    assert.equal(typeof magi.token, "string");
+    // ASP registers the agent; starting it belongs to the desktop app.
+    assert.equal("spawned" in body, false);
+    const roster = record((await request(app, "GET", "/agents", { token })).data).agents;
+    assert.ok(Array.isArray(roster));
+    assert.deepEqual(roster, [
+      {
+        handle: "@eva-000.magi",
+        token: magi.token,
+        name: "eva-000",
+        nickname: null,
+        managed: true,
+        online: false,
+      },
+    ]);
     const listed = record(await request(app, "GET", "/conversations", { token }).then((response) => response.data));
     const conversations = listed.conversations;
     assert.ok(Array.isArray(conversations));
@@ -47,6 +56,8 @@ test("magi credentials cannot use the operator api", async (t) => {
     }
     assert.equal((await request(app, "GET", "/conversations", { token: magiToken })).status, 403);
     assert.equal((await request(app, "GET", "/bots", { token: magiToken })).status, 403);
+    assert.equal((await request(app, "GET", "/agents", { token: magiToken })).status, 403);
+    assert.equal((await request(app, "GET", "/agents")).status, 401);
     assert.equal(
       (await request(app, "POST", "/conversations", { token: magiToken, body: { kind: "group" } })).status,
       403,
@@ -58,9 +69,8 @@ test("magi credentials cannot use the operator api", async (t) => {
   });
 });
 
-test("new group opens immediately without spawn", async (t) => {
-  const spawner = new RecordingSpawner();
-  await withApp({ databasePath: databasePath(tempRoot(t)), magiSpawner: spawner }, async (app) => {
+test("new group opens immediately with no MAGI", async (t) => {
+  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
     const created = await request(app, "POST", "/conversations", { token, body: { kind: "group" } });
     assert.equal(created.status, 201);
@@ -68,7 +78,8 @@ test("new group opens immediately without spawn", async (t) => {
     assert.equal(body.kind, "group");
     assert.deepEqual(body.agents, []);
     assert.equal("name" in body, false);
-    assert.deepEqual(spawner.calls, []);
+    assert.equal("magi" in body, false);
+    assert.deepEqual(record((await request(app, "GET", "/agents", { token })).data).agents, []);
     const patched = await request(app, "PATCH", `/conversations/${String(body.conversation_id)}`, {
       token,
       body: { topic: "offsite", description: "week of the 14th" },
