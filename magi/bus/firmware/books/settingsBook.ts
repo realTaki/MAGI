@@ -1,20 +1,23 @@
-import type { Database } from "bun:sqlite";
+import { eq } from "drizzle-orm";
+import type { BooksDb } from "../database.js";
+import { settings } from "../schema.js";
 
 /** One key/value pair of a workspace's settings. */
-export type Setting = { key: string; value: string };
+export type Setting = typeof settings.$inferSelect;
 
 /** A workspace's settings: provider credentials, channel offsets, migration markers. */
 export class SettingsBook {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: BooksDb) {}
 
   get(key: string): string | null {
-    const row = this.db.prepare("SELECT value FROM books_settings WHERE key = ?").get(key) as { value: string } | undefined;
-    return row?.value ?? null;
+    return this.db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
   }
   set(key: string, value: string): void {
-    this.db.prepare("INSERT INTO books_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+    this.db.insert(settings).values({ key, value })
+      .onConflictDoUpdate({ target: settings.key, set: { value } })
+      .run();
   }
   all(): Setting[] {
-    return this.db.prepare("SELECT key, value FROM books_settings ORDER BY key").all() as Setting[];
+    return this.db.select().from(settings).orderBy(settings.key).all();
   }
 }

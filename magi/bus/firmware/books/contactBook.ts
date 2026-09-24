@@ -1,25 +1,27 @@
-import type { Database } from "bun:sqlite";
+import { eq, sql } from "drizzle-orm";
+import type { BooksDb } from "../database.js";
+import { contacts } from "../schema.js";
 
-export type ContactRole = "system" | "authorized" | "stranger" | "magi" | "third_party_agent";
-export type Contact = { id: number; name: string; nickname: string | null; role: ContactRole; last_seen_at: string };
+export type Contact = typeof contacts.$inferSelect;
+export type ContactRole = Contact["role"];
 
 export class ContactBook {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: BooksDb) {}
 
   get(id: number): Contact | null {
-    return (this.db.prepare("SELECT * FROM books_contacts WHERE id = ?").get(id) as Contact | undefined) ?? null;
+    return this.db.select().from(contacts).where(eq(contacts.id, id)).get() ?? null;
   }
 
   list(): Contact[] {
-    return this.db.prepare("SELECT * FROM books_contacts ORDER BY id").all() as Contact[];
+    return this.db.select().from(contacts).orderBy(contacts.id).all();
   }
 
   create(input: { name: string; nickname?: string; role?: ContactRole }): Contact {
     if (!input.name.trim()) throw new Error("contact name is required");
     try {
-      const result = this.db.prepare("INSERT INTO books_contacts (name, nickname, role) VALUES (?, ?, ?)")
-        .run(input.name.trim(), input.nickname?.trim() || null, input.role ?? "stranger");
-      return this.get(Number(result.lastInsertRowid))!;
+      return this.db.insert(contacts)
+        .values({ name: input.name.trim(), nickname: input.nickname?.trim() || null, role: input.role ?? "stranger" })
+        .returning().get();
     } catch (error) {
       if (String(error).includes("UNIQUE")) throw new Error(`contact ${input.name.trim()} already exists`);
       throw error;
@@ -29,8 +31,14 @@ export class ContactBook {
   update(id: number, input: { name?: string; nickname?: string | null; role?: ContactRole }): Contact {
     const current = this.get(id);
     if (!current) throw new Error(`contact ${id} not found`);
-    this.db.prepare("UPDATE books_contacts SET name = ?, nickname = ?, role = ?, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .run(input.name?.trim() || current.name, input.nickname === undefined ? current.nickname : input.nickname?.trim() || null, input.role ?? current.role, id);
-    return this.get(id)!;
+    return this.db.update(contacts)
+      .set({
+        name: input.name?.trim() || current.name,
+        nickname: input.nickname === undefined ? current.nickname : input.nickname?.trim() || null,
+        role: input.role ?? current.role,
+        last_seen_at: sql`(CURRENT_TIMESTAMP)`,
+      })
+      .where(eq(contacts.id, id))
+      .returning().get();
   }
 }

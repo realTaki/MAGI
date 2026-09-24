@@ -1,28 +1,24 @@
-import type { Database } from "bun:sqlite";
+import { and, eq } from "drizzle-orm";
+import type { BooksDb } from "../database.js";
+import { conversations } from "../schema.js";
 
-export type Conversation = {
-  id: number;
-  channel: string;
-  delivery_address: string;
-  instruction: string;
-  topic: string;
-  info: string;
-  summary: string;
-};
+export type Conversation = typeof conversations.$inferSelect;
 
 export class ConversationBook {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: BooksDb) {}
 
   get(id: number): Conversation | null {
-    return (this.db.prepare("SELECT * FROM books_conversations WHERE id = ?").get(id) as Conversation | undefined) ?? null;
+    return this.db.select().from(conversations).where(eq(conversations.id, id)).get() ?? null;
   }
 
   forChannel(channel: string, address: string): Conversation {
-    this.db.prepare("INSERT OR IGNORE INTO books_conversations (channel, delivery_address) VALUES (?, ?)").run(channel, address);
-    return this.db.prepare("SELECT * FROM books_conversations WHERE channel = ? AND delivery_address = ?").get(channel, address) as Conversation;
+    this.db.insert(conversations).values({ channel, delivery_address: address }).onConflictDoNothing().run();
+    return this.db.select().from(conversations)
+      .where(and(eq(conversations.channel, channel), eq(conversations.delivery_address, address)))
+      .get()!;
   }
 
   updateSummary(id: number, summary: string): void {
-    this.db.prepare("UPDATE books_conversations SET summary = ? WHERE id = ?").run(summary, id);
+    this.db.update(conversations).set({ summary }).where(eq(conversations.id, id)).run();
   }
 }

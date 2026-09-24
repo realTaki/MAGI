@@ -40,7 +40,11 @@ Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
 
 BUS owns SQLite Books, durable Jobs, and the live tool catalog through Bun
-SQLite and in-memory state. Workers poll independently and communicate through
+SQLite and in-memory state. Table fields are declared once, in
+`bus/firmware/schema.ts` (the job queue in `bus/firmware/jobs/schema.ts`);
+`bun run db:generate` turns a schema edit into the SQL under `drizzle/`, which
+the runtime applies on boot, and Books query through Drizzle rather than
+hand-written SQL. Workers poll independently and communicate through
 BUS using `ChatNotify`,
 `CallLLMJob`, `RunToolJob`, `RunTaskNotify`, `ChangeProviderNotify`, and
 `DeliveryNotify`. Agent turns are serial per conversation. Provider and tool

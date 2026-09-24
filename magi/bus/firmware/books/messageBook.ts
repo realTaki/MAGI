@@ -1,34 +1,53 @@
-import type { Database } from "bun:sqlite";
+import { and, count, desc, eq, lte, sql } from "drizzle-orm";
+import type { BooksDb } from "../database.js";
+import { messages } from "../schema.js";
 
-export type Message = { id: number; conversation_id: number; contact_id: number; content: string; created_at: string; archived: number };
+export type Message = typeof messages.$inferSelect;
+
+/** Case-insensitive substring match, the same ``instr`` test the agent tools describe. */
+const matches = (query: string) => sql`instr(lower(${messages.content}), lower(${query})) > 0`;
 
 export class MessageBook {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: BooksDb) {}
 
   add(conversationId: number, contactId: number, content: string): void {
-    this.db.prepare("INSERT INTO books_messages (conversation_id, contact_id, content) VALUES (?, ?, ?)").run(conversationId, contactId, content);
+    this.db.insert(messages).values({ conversation_id: conversationId, contact_id: contactId, content }).run();
   }
 
   list(conversationId: number, lastN = 20): Message[] {
-    return (this.db.prepare("SELECT * FROM (SELECT * FROM books_messages WHERE conversation_id = ? AND archived = 0 ORDER BY id DESC LIMIT ?) ORDER BY id")
-      .all(conversationId, lastN) as Message[]);
+    return this.db.select().from(messages)
+      .where(and(eq(messages.conversation_id, conversationId), eq(messages.archived, false)))
+      .orderBy(desc(messages.id))
+      .limit(lastN)
+      .all()
+      .reverse();
   }
 
   count(conversationId: number): number {
-    return (this.db.prepare("SELECT COUNT(*) AS count FROM books_messages WHERE conversation_id = ? AND archived = 0").get(conversationId) as { count: number }).count;
+    return this.db.select({ count: count() }).from(messages)
+      .where(and(eq(messages.conversation_id, conversationId), eq(messages.archived, false)))
+      .get()?.count ?? 0;
   }
 
   archiveBefore(conversationId: number, id: number): void {
-    this.db.prepare("UPDATE books_messages SET archived = 1 WHERE conversation_id = ? AND id <= ?").run(conversationId, id);
+    this.db.update(messages).set({ archived: true })
+      .where(and(eq(messages.conversation_id, conversationId), lte(messages.id, id)))
+      .run();
   }
 
   searchConversation(conversationId: number, query: string, limit = 20): Message[] {
-    return this.db.prepare("SELECT * FROM books_messages WHERE conversation_id = ? AND instr(lower(content), lower(?)) > 0 ORDER BY id DESC LIMIT ?")
-      .all(conversationId, query, limit) as Message[];
+    return this.db.select().from(messages)
+      .where(and(eq(messages.conversation_id, conversationId), matches(query)))
+      .orderBy(desc(messages.id))
+      .limit(limit)
+      .all();
   }
 
   searchContact(contactId: number, query: string, limit = 20): Message[] {
-    return this.db.prepare("SELECT * FROM books_messages WHERE contact_id = ? AND instr(lower(content), lower(?)) > 0 ORDER BY id DESC LIMIT ?")
-      .all(contactId, query, limit) as Message[];
+    return this.db.select().from(messages)
+      .where(and(eq(messages.contact_id, contactId), matches(query)))
+      .orderBy(desc(messages.id))
+      .limit(limit)
+      .all();
   }
 }

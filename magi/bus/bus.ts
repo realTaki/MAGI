@@ -1,7 +1,11 @@
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { eq } from "drizzle-orm";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { booksDatabase, jobsDatabase, migrateBooks, migrateJobs, type BooksDb, type JobsDb } from "./firmware/database.js";
+import { contacts } from "./firmware/schema.js";
+import { jobs } from "./firmware/jobs/schema.js";
 import { ConversationBook } from "./firmware/books/conversationBook.js";
 import { MessageBook } from "./firmware/books/messageBook.js";
 import { MemoryBook } from "./firmware/books/memoryBook.js";
@@ -32,8 +36,8 @@ export class Bus {
   readonly prompts: PromptBook;
   readonly settings: SettingsBook;
   readonly tools = new ToolBook();
-  private readonly memories: Database;
-  private readonly logs: Database;
+  private readonly db: BooksDb;
+  private readonly logs: JobsDb;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
 
   constructor(readonly handle: string, workspace?: string, migrationSource?: string | null) {
@@ -54,86 +58,41 @@ export class Bus {
       : migrationSource;
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
-    this.memories = new Database(join(this.workspace, "memories", "magi.db"), { create: true });
-    this.logs = new Database(join(this.workspace, "logs", "magi.db"), { create: true });
-    const settingsColumns = this.memories.query("PRAGMA table_info(books_settings)").all() as Array<{ name: string }>;
+    const memories = new Database(join(this.workspace, "memories", "magi.db"), { create: true });
+    const logs = new Database(join(this.workspace, "logs", "magi.db"), { create: true });
+    const settingsColumns = memories.query("PRAGMA table_info(books_settings)").all() as Array<{ name: string }>;
     if (settingsColumns.some((column) => column.name === "id")) {
-      this.logs.close();
-      this.memories.close();
+      logs.close();
+      memories.close();
       throw new Error("this workspace uses py-magi's SQLite schema; choose a separate workspace");
     }
-    for (const db of [this.memories, this.logs]) {
-      db.exec("PRAGMA journal_mode = WAL");
-      db.exec("PRAGMA busy_timeout = 5000");
+    for (const client of [memories, logs]) {
+      client.exec("PRAGMA journal_mode = WAL");
+      client.exec("PRAGMA busy_timeout = 5000");
     }
-    this.memories.exec(`
-      CREATE TABLE IF NOT EXISTS books_conversations (
-        id INTEGER PRIMARY KEY, channel TEXT NOT NULL, delivery_address TEXT NOT NULL,
-        instruction TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT '', info TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
-        UNIQUE(channel, delivery_address)
-      );
-      CREATE TABLE IF NOT EXISTS books_messages (
-        id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL, contact_id INTEGER NOT NULL,
-        content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        archived INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS books_messages_conversation ON books_messages(conversation_id, id);
-      CREATE TABLE IF NOT EXISTS books_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS books_memories (
-        id INTEGER PRIMARY KEY, topic TEXT NOT NULL, detail TEXT NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'temporary', archived INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS books_tasks (
-        id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, prompt TEXT NOT NULL,
-        source TEXT NOT NULL DEFAULT 'user', enabled INTEGER NOT NULL DEFAULT 1,
-        cron TEXT NOT NULL, conversation_id INTEGER NOT NULL,
-        last_fired_minute TEXT
-      );
-      CREATE TABLE IF NOT EXISTS books_contacts (
-        id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, nickname TEXT,
-        role TEXT NOT NULL DEFAULT 'stranger', last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS books_contact_notes (
-        id INTEGER PRIMARY KEY, contact_id INTEGER NOT NULL REFERENCES books_contacts(id) ON DELETE CASCADE,
-        note TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'permanent', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS books_mcp_servers (
-        name TEXT PRIMARY KEY, connection_type TEXT NOT NULL, command TEXT, args TEXT NOT NULL DEFAULT '[]', url TEXT,
-        env TEXT NOT NULL DEFAULT '{}', headers TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1,
-        connect_timeout REAL, execute_timeout REAL, sse_read_timeout REAL
-      );
-    `);
-    const messageColumns = this.memories.query("PRAGMA table_info(books_messages)").all() as Array<{ name: string }>;
-    if (!messageColumns.some((column) => column.name === "archived")) this.memories.exec("ALTER TABLE books_messages ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
-    const conversationColumns = this.memories.query("PRAGMA table_info(books_conversations)").all() as Array<{ name: string }>;
-    if (!conversationColumns.some((column) => column.name === "topic")) this.memories.exec("ALTER TABLE books_conversations ADD COLUMN topic TEXT NOT NULL DEFAULT ''");
-    if (!conversationColumns.some((column) => column.name === "info")) this.memories.exec("ALTER TABLE books_conversations ADD COLUMN info TEXT NOT NULL DEFAULT ''");
-    this.logs.exec(`
-      CREATE TABLE IF NOT EXISTS jobs (
-        id INTEGER PRIMARY KEY, type TEXT NOT NULL, publisher TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending', worker TEXT, input TEXT NOT NULL,
-        output TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(type, status, id);
-    `);
+    // Schema history lives in ``drizzle/`` next to this package, one folder per database.
+    this.db = booksDatabase(memories);
+    migrateBooks(this.db);
+    this.logs = jobsDatabase(logs);
+    migrateJobs(this.logs);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
-    this.logs.exec("UPDATE jobs SET status = 'pending', worker = NULL WHERE status = 'claimed'");
+    this.logs.update(jobs).set({ status: "pending", worker: null }).where(eq(jobs.status, "claimed")).run();
     // The migration below reads and marks settings, so this one is built first.
-    this.settings = new SettingsBook(this.memories);
+    this.settings = new SettingsBook(this.db);
     if (pythonWorkspace) this.migratePythonWorkspace(pythonWorkspace);
-    this.conversations = new ConversationBook(this.memories);
-    this.messages = new MessageBook(this.memories);
-    this.memoryBook = new MemoryBook(this.memories);
+    this.conversations = new ConversationBook(this.db);
+    this.messages = new MessageBook(this.db);
+    this.memoryBook = new MemoryBook(this.db);
     this.skills = new SkillsBook(this.workspace);
-    this.tasks = new TaskBook(this.memories);
-    this.contacts = new ContactBook(this.memories);
-    this.contactNotes = new ContactNoteBook(this.memories);
-    this.mcpServers = new McpServerBook(this.memories);
+    this.tasks = new TaskBook(this.db);
+    this.contacts = new ContactBook(this.db);
+    this.contactNotes = new ContactNoteBook(this.db);
+    this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
-    this.memories.prepare("INSERT OR IGNORE INTO books_contacts (id, name, role) VALUES (0, 'system', 'system')").run();
-    this.memories.prepare("INSERT INTO books_contacts (id, name, role) VALUES (1, ?, 'magi') ON CONFLICT(id) DO UPDATE SET name = excluded.name").run(handle);
+    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system" }).onConflictDoNothing().run();
+    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: handle, role: "magi" })
+      .onConflictDoUpdate({ target: contacts.id, set: { name: handle } })
+      .run();
   }
 
   board<K extends JobType>(type: K): JobBoard<K> {
@@ -166,8 +125,8 @@ export class Bus {
   }
 
   close(): void {
-    this.logs.close();
-    this.memories.close();
+    this.logs.$client.close();
+    this.db.$client.close();
   }
 
   private migratePythonWorkspace(sourceWorkspace: string): void {
@@ -178,21 +137,21 @@ export class Bus {
     try {
       const tables = new Set((source.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name));
       if (!tables.has("books_settings")) return;
-      this.memories.transaction(() => {
+      this.db.$client.transaction(() => {
         for (const row of source.query("SELECT id, channel, delivery_address, instruction, topic, info, summary FROM books_conversations").all() as Array<Record<string, unknown>>) {
-          this.memories.prepare("INSERT OR IGNORE INTO books_conversations (id, channel, delivery_address, instruction, topic, info, summary) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          this.db.$client.prepare("INSERT OR IGNORE INTO books_conversations (id, channel, delivery_address, instruction, topic, info, summary) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .run(...[row.id, row.channel, row.delivery_address, row.instruction ?? "", row.topic ?? "", row.info ?? "", row.summary ?? ""].map(sqlValue));
         }
         for (const row of source.query("SELECT id, conversation_id, contact_id, content, timestamp, archived FROM books_messages").all() as Array<Record<string, unknown>>) {
-          this.memories.prepare("INSERT OR IGNORE INTO books_messages (id, conversation_id, contact_id, content, created_at, archived) VALUES (?, ?, ?, ?, ?, ?)")
+          this.db.$client.prepare("INSERT OR IGNORE INTO books_messages (id, conversation_id, contact_id, content, created_at, archived) VALUES (?, ?, ?, ?, ?, ?)")
             .run(...[row.id, row.conversation_id, row.contact_id, row.content, row.timestamp, row.archived ? 1 : 0].map(sqlValue));
         }
-        copyRows(source, this.memories, "books_contacts", ["id", "name", "nickname", "role", "last_seen_at"]);
-        copyRows(source, this.memories, "books_contact_notes", ["id", "contact_id", "note", "kind", "created_at"]);
-        copyRows(source, this.memories, "books_memories", ["id", "topic", "detail", "kind", "archived", "created_at"]);
-        for (const { key, value } of new SettingsBook(source).all()) this.settings.set(key, value);
+        copyRows(source, this.db.$client, "books_contacts", ["id", "name", "nickname", "role", "last_seen_at"]);
+        copyRows(source, this.db.$client, "books_contact_notes", ["id", "contact_id", "note", "kind", "created_at"]);
+        copyRows(source, this.db.$client, "books_memories", ["id", "topic", "detail", "kind", "archived", "created_at"]);
+        for (const { key, value } of new SettingsBook(booksDatabase(source)).all()) this.settings.set(key, value);
         for (const row of source.query("SELECT id, name, prompt, source, enabled, cron, conversation_id FROM books_tasks").all() as Array<Record<string, unknown>>) {
-          this.memories.prepare("INSERT OR IGNORE INTO books_tasks (id, name, prompt, source, enabled, cron, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          this.db.$client.prepare("INSERT OR IGNORE INTO books_tasks (id, name, prompt, source, enabled, cron, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .run(...[row.id, row.name, row.prompt, row.source, row.enabled ? 1 : 0, row.cron, row.conversation_id].map(sqlValue));
         }
         this.settings.set("migration.py_magi", new Date().toISOString());

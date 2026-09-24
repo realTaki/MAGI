@@ -1,41 +1,58 @@
-import type { Database } from "bun:sqlite";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import type { JobsDb } from "../database.js";
+import { jobs } from "./schema.js";
 import type { Job, JobInput, JobOutput, JobResult, JobType } from "./types.js";
 
-type Row = { id: number; type: JobType; input: string; status: Job<"ChatNotify">["status"]; worker: string | null; output: string | null; error: string | null };
-
 export class JobBoard<K extends JobType> {
-  constructor(private readonly db: Database, readonly type: K) {}
+  constructor(private readonly db: JobsDb, readonly type: K) {}
 
   publish(input: JobInput[K], publisher: string): number {
-    const result = this.db.prepare("INSERT INTO jobs (type, publisher, input) VALUES (?, ?, ?)")
-      .run(this.type, publisher, JSON.stringify(input));
-    return Number(result.lastInsertRowid);
+    return this.db.insert(jobs)
+      .values({ type: this.type, publisher, input: JSON.stringify(input) })
+      .returning({ id: jobs.id })
+      .get().id;
   }
 
   claim(worker: string, predicate?: (input: JobInput[K]) => boolean): Job<K> | null {
-    return this.db.transaction(() => {
-      const rows = this.db.prepare("SELECT id, type, input, status, worker, output, error FROM jobs WHERE type = ? AND status = 'pending' ORDER BY id LIMIT 100")
-        .all(this.type) as Row[];
+    return this.db.transaction((tx) => {
+      const rows = tx.select({ id: jobs.id, input: jobs.input }).from(jobs)
+        .where(and(eq(jobs.type, this.type), eq(jobs.status, "pending")))
+        .orderBy(jobs.id)
+        .limit(100)
+        .all();
       for (const row of rows) {
         const input = JSON.parse(row.input) as JobInput[K];
         if (predicate && !predicate(input)) continue;
-        const changed = this.db.prepare("UPDATE jobs SET status = 'claimed', worker = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'")
-          .run(worker, row.id);
-        if (changed.changes === 1) return { id: row.id, type: this.type, input, status: "claimed" as const, worker };
+        // bun:sqlite reports no row count, so claim by asking for the row back.
+        const claimed = tx.update(jobs)
+          .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
+          .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))
+          .returning({ id: jobs.id })
+          .get();
+        if (claimed) return { id: row.id, type: this.type, input, status: "claimed" as const, worker };
       }
       return null;
-    }).immediate();
+    }, { behavior: "immediate" });
   }
 
   submit(worker: string, id: number, outcome: { output?: JobOutput[K]; error?: string }): boolean {
-    const changed = this.db.prepare("UPDATE jobs SET status = ?, output = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND type = ? AND status = 'claimed' AND worker = ?")
-      .run(outcome.error === undefined ? "completed" : "failed", outcome.output === undefined ? null : JSON.stringify(outcome.output), outcome.error ?? null, id, this.type, worker);
-    return changed.changes === 1;
+    const completed = this.db.update(jobs)
+      .set({
+        status: outcome.error === undefined ? "completed" : "failed",
+        output: outcome.output === undefined ? null : JSON.stringify(outcome.output),
+        error: outcome.error ?? null,
+        updated_at: sql`(CURRENT_TIMESTAMP)`,
+      })
+      .where(and(eq(jobs.id, id), eq(jobs.type, this.type), eq(jobs.status, "claimed"), eq(jobs.worker, worker)))
+      .returning({ id: jobs.id })
+      .get();
+    return completed !== undefined;
   }
 
   result(id: number): JobResult<K> | null {
-    const row = this.db.prepare("SELECT id, type, input, status, worker, output, error FROM jobs WHERE id = ? AND type = ? AND status IN ('completed', 'failed')")
-      .get(id, this.type) as Row | undefined;
+    const row = this.db.select({ id: jobs.id, status: jobs.status, output: jobs.output, error: jobs.error }).from(jobs)
+      .where(and(eq(jobs.id, id), eq(jobs.type, this.type), inArray(jobs.status, ["completed", "failed"])))
+      .get();
     if (!row) return null;
     return {
       id: row.id,

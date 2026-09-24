@@ -84,7 +84,10 @@ call each other. They publish Jobs and claim Jobs.
 Books in `magi/bus/firmware/books/` hold conversations, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
 catalog. SQLite files are `memories/magi.db` and `logs/magi.db` inside the
-workspace. Bun owns that SQLite.
+workspace. Bun owns that SQLite. Fields are declared in
+`magi/bus/firmware/schema.ts` (job queue: `magi/bus/firmware/jobs/schema.ts`);
+`bun run db:generate` writes the SQL migrations under `magi/drizzle/`, which the
+runtime applies on boot.
 
 Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over

@@ -367,8 +367,8 @@ function optionalBoundedInteger(value: unknown, fallback: number, key: string, m
 function mcpServerFromArgs(name: string, args: Record<string, unknown>, current: McpServerConfig | null): McpServerConfig {
   const connectionType = (args.connection_type ?? current?.connection_type) as McpConnectionType | undefined;
   if (connectionType !== "stdio" && connectionType !== "sse" && connectionType !== "streamable_http") throw new Error("connection_type must be stdio, sse, or streamable_http");
-  const command = typeof args.command === "string" ? args.command.trim() : current?.command;
-  const url = typeof args.url === "string" ? args.url.trim() : current?.url;
+  const command = typeof args.command === "string" ? args.command.trim() : current?.command ?? null;
+  const url = typeof args.url === "string" ? args.url.trim() : current?.url ?? null;
   if (connectionType === "stdio" && !command) throw new Error("stdio servers require command");
   if (connectionType !== "stdio" && !url) throw new Error(`${connectionType} servers require url`);
   return { name, connection_type: connectionType, command, url,
@@ -376,9 +376,9 @@ function mcpServerFromArgs(name: string, args: Record<string, unknown>, current:
     env: args.env === undefined ? current?.env ?? {} : stringRecord(args.env, "env"),
     headers: args.headers === undefined ? current?.headers ?? {} : stringRecord(args.headers, "headers"),
     enabled: typeof args.enabled === "boolean" ? args.enabled : current?.enabled ?? true,
-    connect_timeout: optionalPositiveNumber(args.connect_timeout, current?.connect_timeout),
-    execute_timeout: optionalPositiveNumber(args.execute_timeout, current?.execute_timeout),
-    sse_read_timeout: optionalPositiveNumber(args.sse_read_timeout, current?.sse_read_timeout) };
+    connect_timeout: optionalPositiveNumber(args.connect_timeout, current?.connect_timeout ?? undefined) ?? null,
+    execute_timeout: optionalPositiveNumber(args.execute_timeout, current?.execute_timeout ?? undefined) ?? null,
+    sse_read_timeout: optionalPositiveNumber(args.sse_read_timeout, current?.sse_read_timeout ?? undefined) ?? null };
 }
 
 function stringArray(value: unknown, key: string): string[] {
