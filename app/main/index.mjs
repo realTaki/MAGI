@@ -27,7 +27,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
@@ -1247,7 +1247,12 @@ export function createLocalApi(context) {
       const bots = (await aspJson("/bots", { token }))?.bots ?? [];
       magiOnline = bots.filter((bot) => bot.online).length;
     }
-    return { asp: health, owned: Boolean(asp && !asp.killed), magiOnline };
+    return {
+      asp: health,
+      owned: Boolean(asp && !asp.killed),
+      magiOnline,
+      canInstallShellUpdate: shellUpdate?.packaged === true,
+    };
   }
 
   async function rebuildAsp() {
@@ -1267,6 +1272,48 @@ export function createLocalApi(context) {
       await rebuildInterface();
       emit("app.interface-updated", {});
       return { ui: uiEntry() };
+    });
+  }
+
+  function installerExtension() {
+    return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
+  }
+
+  /** Build from the App worktree without touching the live shell or services. */
+  async function buildInstallerFiles() {
+    const shellDir = path.join(appCheckout, "shell");
+    if (!existsSync(path.join(shellDir, "package-lock.json"))) {
+      throw new Error(`MAGI shell was not found at ${shellDir}`);
+    }
+    await command(tools.node, [tools.npm, "ci"], {
+      cwd: shellDir,
+      env: tools.env,
+      description: "Could not install shell packaging dependencies",
+    });
+    await command(tools.node, [tools.npm, "run", "build"], {
+      cwd: shellDir,
+      env: tools.env,
+      description: "Could not build the local installer",
+    });
+    const output = path.join(shellDir, "release");
+    const extension = installerExtension();
+    const candidates = readdirSync(output).filter((name) => name.endsWith(extension) && !name.includes(".blockmap"));
+    const name = candidates.find((candidate) => candidate.includes(`-${process.arch}${extension}`)) ?? candidates[0];
+    if (name === undefined) throw new Error(`The build did not create a ${extension} installer in ${output}`);
+    return { output, installer: path.join(output, name) };
+  }
+
+  async function buildInstaller() {
+    return await runtimeAction(buildInstallerFiles);
+  }
+
+  async function buildAndInstallInstaller() {
+    return await runtimeAction(async () => {
+      if (shellUpdate?.packaged !== true) {
+        throw new Error("Install the new client from a packaged MAGI app.");
+      }
+      const built = await buildInstallerFiles();
+      return { ...built, ...(await shellUpdate.install(built.installer)) };
     });
   }
 
@@ -1460,6 +1507,8 @@ export function createLocalApi(context) {
     "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
     "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
     "runtime.rebuildApp": rebuildApp,
+    "runtime.buildInstaller": buildInstaller,
+    "runtime.buildAndInstallInstaller": buildAndInstallInstaller,
     "shell.updateStatus": shellUpdateStatus,
     "shell.installUpdate": installShellUpdate,
     "github.state": currentState,

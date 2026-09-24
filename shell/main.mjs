@@ -122,6 +122,7 @@ function toolsForRuntime(runtime) {
       gitEnvironment.PATH ?? "",
     ].join(path.delimiter),
     NODE: node,
+    npm_execpath: npm,
     npm_node_execpath: node,
     npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),
   };

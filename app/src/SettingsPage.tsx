@@ -51,6 +51,7 @@ export function SettingsPage() {
   const [shellUpdating, setShellUpdating] = useState(false);
   const [shellUpdateError, setShellUpdateError] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState("");
+  const [canInstallShellUpdate, setCanInstallShellUpdate] = useState(false);
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [runtimeBusy, setRuntimeBusy] = useState(false);
 
@@ -59,8 +60,9 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string };
+        const state = value as { asp?: string; canInstallShellUpdate?: boolean };
         setRuntimeStatus(state?.asp ?? "");
+        setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
       }
     }).catch((error: unknown) => {
       if (!cancelled) setRuntimeMessage(error instanceof Error ? error.message : String(error));
@@ -74,10 +76,15 @@ export function SettingsPage() {
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
-      await invoke(method);
-      const state = await invoke("runtime.status") as { asp?: string };
+      const result = await invoke(method) as { output?: unknown } | undefined;
+      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
       setRuntimeStatus(state.asp ?? "");
-      setRuntimeMessage(t("appSettings.runtimeDone"));
+      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
+      setRuntimeMessage(
+        typeof result?.output === "string"
+          ? t("appSettings.installerBuilt").replace("{path}", result.output)
+          : t("appSettings.runtimeDone"),
+      );
     } catch (error) {
       setRuntimeMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -533,6 +540,18 @@ export function SettingsPage() {
                   <div className="settings-card__actions">
                     <button type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime("runtime.rebuildApp")}>
                       {t("appSettings.rebuildApp")}
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-card">
+                  <div className="settings-card__label">{t("appSettings.installer")}</div>
+                  <p className="settings-overlay__lede">{t("appSettings.installerHint")}</p>
+                  <div className="settings-card__actions">
+                    <button type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime("runtime.buildInstaller")}>
+                      {t("appSettings.buildInstaller")}
+                    </button>
+                    <button type="button" className="settings-card__pill" disabled={runtimeBusy || !canInstallShellUpdate} onClick={() => void runRuntime("runtime.buildAndInstallInstaller")}>
+                      {t("appSettings.buildAndUpgradeInstaller")}
                     </button>
                   </div>
                 </div>

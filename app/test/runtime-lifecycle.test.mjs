@@ -180,7 +180,9 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
     tools: { git: "unused", env: process.env },
     emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
-  assert.deepEqual(await api["runtime.status"](), { asp: "ready", owned: false, magiOnline: 1 });
+  assert.deepEqual(await api["runtime.status"](), {
+    asp: "ready", owned: false, magiOnline: 1, canInstallShellUpdate: false,
+  });
   assert.deepEqual(await api["magi.info"]({ handle: "@eva-000.magi" }), {
     handle: "@eva-000.magi",
     online: true,
@@ -192,6 +194,8 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   assert.deepEqual(await api["magi.stop"]({ handle: "@eva-000.magi" }), { handle: "@eva-000.magi", stopped: false });
   await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
   await assert.rejects(api["magi.start"]({}), /handle is required/);
+  await assert.rejects(api["runtime.buildInstaller"](), /not managed/);
+  await assert.rejects(api["runtime.buildAndInstallInstaller"](), /not managed/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
   api.dispose();
