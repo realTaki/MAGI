@@ -9,7 +9,8 @@
 > **MAGI is a multi-agent runtime built toward recursive self-improvement.**
 >
 > Each MAGI has its own runtime, workspace, memory, tools, and provider
-> credentials. ASP starts that process and relays its sessions. The operator
+> credentials. The desktop app runs that process from its own branch and relays
+> its sessions through ASP. The operator
 > can inspect the workspace and the boundary around it. Together, MAGI can
 > work on the software that runs them: propose changes, evaluate the results,
 > and build on improvements over successive cycles.
@@ -35,7 +36,7 @@ workspace, memory, and skills remain after the task.
 | Agents are steps in a workflow | A MAGI persists across tasks |
 | Collaboration ends with a task | Context, memory, skills, and contacts persist |
 | One process commonly hosts many agents | Every MAGI has its own runtime and workspace |
-| A controller defines the execution path | The MAGI decides inside its own process. ASP starts it and relays sessions |
+| A controller defines the execution path | The MAGI decides inside its own process. The app starts it; ASP relays sessions |
 | Scale means adding concurrent calls | Scale means adding MAGI |
 
 A workflow engine can still sit beside MAGI. MAGI is the runtime a long-lived
@@ -107,8 +108,9 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 | **MAGI** | One autonomous, governable agent. Also the Bun runtime in `magi/`. |
 | **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
-ASP is the local lifecycle boundary. It starts MAGI processes and relays their
-sessions. It does not decide what a MAGI should say.
+The desktop app is the local lifecycle boundary: it owns each MAGI's branch,
+checkout and process. ASP relays their sessions; it does not decide what a MAGI
+should say, and it never starts a process.
 
 ## What exists today
 
@@ -139,7 +141,7 @@ no root `deploy/` tree.
 
 | Situation | Where | What you run |
 | --- | --- | --- |
-| Shell | [`shell/`](shell/) | Open the Electron app. It starts local ASP; ASP starts MAGI. |
+| Shell | [`shell/`](shell/) | Open the Electron app. It starts local ASP and runs every MAGI. |
 
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
@@ -150,9 +152,10 @@ The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
-`eva-000` and starts that MAGI.
+`eva-000`; the app then checks out branch `magi/eva-000` at
+`~/.magi/eva-000/MAGI` and runs that MAGI from there.
 
-**One MAGI:** `bun run start -- <handle> <base> <token>` from `magi/`. ASP launches this command with MAGI's bundled Bun runtime.
+**One MAGI:** `bun run start -- <handle> <base> <token>` in that MAGI's own checkout. The app launches this command with the bundled Bun runtime.
 
 
 ## From the first launch
@@ -168,7 +171,7 @@ Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
    too.
 4. **Set a provider.** Settings writes `~/.magi/app/provider.json`. ASP hands
    the same values to each connected MAGI, which stores them in its own BUS.
-5. **Invite.** A group conversation can add a MAGI that ASP already started.
+5. **Invite.** A group conversation can add a MAGI the app already started.
    That MAGI joins when it receives `session.invited`.
 
 ## Architecture
@@ -182,15 +185,17 @@ shell/            Electron window
 app/              operator UI and local backend
    │  starts Node 24
    ▼
-asp/              127.0.0.1:42069
-   │  spawns Bun
-   ├── magi  eva-000     ~/.magi/eva-000
-   ├── magi  eva-001     ~/.magi/eva-001
-   └── magi  eva-002     ~/.magi/eva-002
+asp/              127.0.0.1:42069   sessions and relay, never a process
+   ▲
+app/              also runs Bun: one process per MAGI, each on its own branch
+   ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
+   ├── magi  eva-001   branch magi/eva-001   ~/.magi/eva-001/MAGI
+   └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI
 ```
 
-ASP starts processes and relays session events. It is not the place a MAGI
-reasons. Each MAGI keeps its own SQLite workspace. The desktop keeps the
+The app starts every process; ASP relays session events and is not the place a
+MAGI reasons. Each MAGI keeps its own SQLite workspace next to its checkout, so
+a `main` someone broke cannot take a running MAGI down. The desktop keeps the
 operator's transcript and provider key.
 
 For collaboration between MAGI, **ASP is the central session channel**: it
@@ -201,9 +206,9 @@ state and work, without requiring them to depend directly on each other.
 
 ### Desktop UI and ASP
 
-The Electron app starts a local ASP service. ASP owns HTTP, WebSocket
-`/connect`, and MAGI process creation; the desktop does not start MAGI
-directly. The WebUI is built and loaded from the local checkout.
+The Electron app starts a local ASP service and every local MAGI process. ASP
+owns HTTP and the WebSocket `/connect`; it never starts a process itself. The
+WebUI is built and loaded from the local checkout.
 
 ### Local source and the path to RSI
 

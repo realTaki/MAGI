@@ -1,7 +1,7 @@
 /**
- * Electron shell. It prepares the environment — bundled tools, the checkout,
- * ASP — and opens a window. The app in app/ is the interface and the
- * local backend; add a capability there, not in this file.
+ * Electron shell. It prepares what the app needs in order to exist — bundled
+ * tools and the checkout — and opens a window. The app in app/ owns the local
+ * backend and everything it starts; add a capability there, not in this file.
  */
 import { spawn } from "node:child_process";
 import {
@@ -203,7 +203,7 @@ async function cloneMagiSource(tools, progress) {
 let localApi = null;
 let localApiError = null;
 // Cache-busted app backends are reloadable, but an older instance may still
-// own the ASP child it started. Retain each instance until desktop shutdown so
+// own the children it started. Retain each instance until desktop shutdown so
 // the stable shell, rather than a client reload, owns final process cleanup.
 const localApiInstances = new Set();
 // Where the bundled runtime is, when this build has one. The app starts every
@@ -293,7 +293,7 @@ async function resolveRuntimeRoot(progress) {
 }
 
 function reportStartup(win, message, percent) {
-  sendToWindow(win, "asp:startup-progress", { message, percent });
+  sendToWindow(win, "startup:progress", { message, percent });
 }
 
 async function launchLocalOperator(win) {
@@ -306,8 +306,8 @@ async function launchLocalOperator(win) {
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
     progress("Loading the app…", 0.15);
-    // A retry replaces only reloadable backend resources. ASP and its MAGI
-    // children have an independent lifecycle and must survive client reloads.
+    // A retry replaces only reloadable backend resources. The services the app
+    // started have an independent lifecycle and must survive client reloads.
     localApi?.dispose?.();
     await loadLocalApp(runtimeRoot);
     if (localApi === null) {
@@ -321,8 +321,8 @@ async function launchLocalOperator(win) {
   } catch (error) {
     if (!win.isDestroyed()) {
       win.webContents.send(
-        "asp:startup-error",
-        error instanceof Error ? error.message : "Could not start local ASP.",
+        "startup:error",
+        error instanceof Error ? error.message : "Could not start the local app.",
       );
     }
   } finally {
@@ -494,7 +494,7 @@ ipcMain.handle("local:invoke", async (_event, method, payload) => {
   return await localApi[method](payload);
 });
 
-ipcMain.handle("asp:retry", async () => {
+ipcMain.handle("startup:retry", async () => {
   if (mainWindow !== null) {
     await loadStartup(mainWindow);
     void launchLocalOperator(mainWindow);

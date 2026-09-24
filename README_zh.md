@@ -9,7 +9,7 @@
 > **MAGI 是以递归自我改进（RSI）为目标的多智能体运行时。**
 >
 > 每个 MAGI 都有自己的运行时、工作区、记忆、工具和模型提供方凭证。
-> ASP 启动这个进程，并转发它的会话。操作者可以检查它的工作区和边界。
+> 桌面 App 从它自己的分支运行这个进程，并通过 ASP 转发它的会话。操作者可以检查它的工作区和边界。
 > 多个 MAGI 可以共同探索如何改进运行自己的软件：提出修改、验证结果，
 > 再利用有效的改进进入下一轮。
 
@@ -32,7 +32,7 @@ MAGI 关注的核心问题是：
 | Agent 是工作流中的步骤 | MAGI 跨任务持续存在 |
 | 协作随任务结束 | 上下文、记忆、技能和联系人会保留 |
 | 多个 Agent 往往共用一个进程 | 每个 MAGI 都有独立运行时和工作区 |
-| Controller 预先规定执行路径 | MAGI 在自己的进程里决定。ASP 负责启动和转发会话 |
+| Controller 预先规定执行路径 | MAGI 在自己的进程里决定。App 负责启动，ASP 负责转发会话 |
 | 扩展意味着增加并发调用 | 扩展意味着增加 MAGI |
 
 工作流引擎仍然可以留在旁边。MAGI 是这些长期存在的智能体自己的运行时。
@@ -81,13 +81,13 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 | **MAGI** | 一个自主、可治理的智能体，也是 `magi/` 里的 Bun 运行时。 |
 | **EVA** | 句柄的命名规范。ASP 依次分配 `eva-000`、`eva-001`。地址是 `@eva-000.magi`。 |
 
-ASP 是本机的生命周期边界。它启动 MAGI 进程并转发会话，不决定 MAGI 说什么。
+桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发会话，不决定 MAGI 说什么，也不启动任何进程。
 
 ## 当前已具备的能力
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24、npm 和 Bun，没有 Python。
-- **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。会话和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的会话。
-- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。会话和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的会话。
+- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`，来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -98,7 +98,7 @@ ASP 是本机的生命周期边界。它启动 MAGI 进程并转发会话，不�
 
 | 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 壳 | [`shell/`](shell/) | 打开 Electron App；它启动本地 ASP，由 ASP 启动 MAGI。 |
+| 壳 | [`shell/`](shell/) | 打开 Electron App；它启动本地 ASP，并运行每条 MAGI。 |
 
 **桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/MAGI`，准备本地依赖并构建
 WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。如果还没有任何
@@ -115,7 +115,7 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 2. **见到前三个 MAGI。** 一个都没有时，应用会创建 `eva-000`、`eva-001`、`eva-002`，并尝试把它们叫做 **MELCHIOR**、**BALTHASAR**、**CASPER**。一直没上线的 MAGI 就保持没有昵称。
 3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
 4. **设置模型。** 设置页写入 `~/.magi/app/provider.json`。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
-5. **邀请。** 群会话可以加入一个 ASP 已经启动的 MAGI。对方收到 `session.invited` 后加入。
+5. **邀请。** 群会话可以加入一个 App 已经启动的 MAGI。对方收到 `session.invited` 后加入。
 
 ## 架构
 
@@ -128,14 +128,15 @@ shell/            Electron 窗口
 app/              操作界面和本地后端
    │  启动 Node 24
    ▼
-asp/              127.0.0.1:42069
-   │  拉起 Bun
-   ├── magi  eva-000     ~/.magi/eva-000
-   ├── magi  eva-001     ~/.magi/eva-001
-   └── magi  eva-002     ~/.magi/eva-002
+asp/              127.0.0.1:42069   只做会话与转发，从不拉起进程
+   ▲
+app/              也运行 Bun：每条 MAGI 一个进程，各在自己的分支上
+   ├── magi  eva-000   分支 magi/eva-000   ~/.magi/eva-000/MAGI
+   ├── magi  eva-001   分支 magi/eva-001   ~/.magi/eva-001/MAGI
+   └── magi  eva-002   分支 magi/eva-002   ~/.magi/eva-002/MAGI
 ```
 
-ASP 负责启动进程和转发会话事件，不是 MAGI 思考的地方。每个 MAGI 有自己的 SQLite 工作区。操作者的聊天记录和 provider key 留在桌面端。
+App 负责启动进程，ASP 负责转发会话事件，后者不是 MAGI 思考的地方。每个 MAGI 在自己的检出旁边有自己的 SQLite 工作区，main 被改坏也不会连累正在运行的 MAGI。操作者的聊天记录和 provider key 留在桌面端。
 
 **MAGI 之间通过 ASP 的会话通信**：ASP 管理参与者，并将事件转发给目标智能体。
 **单个 MAGI 内部则以 BUS 为中心**：Books 和 Jobs 集中持久化状态、协调各组件的工作，
@@ -143,8 +144,8 @@ ASP 负责启动进程和转发会话事件，不是 MAGI 思考的地方。每�
 
 ### 桌面 UI 与 ASP
 
-Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 进程
-创建。桌面端不直接启动 MAGI。WebUI 从本地仓库构建并加载。
+Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负责 HTTP、WebSocket `/connect`，自己从不
+启动进程。桌面端直接运行 MAGI。WebUI 从本地仓库构建并加载。
 
 ### 本地源码与 RSI 方向
 

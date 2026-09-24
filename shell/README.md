@@ -3,8 +3,9 @@
 The Electron shell is a bootstrap for a local MAGI installation: it clones the
 checkout and loads the app from it. The app itself lives in `app/` — operator
 interface (`app/src/`) plus local backend (`app/main/`) — and the backend
-prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
-processes) and reports which interface entry the shell should show. The app
+prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
+from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
+reports which interface entry the shell should show. The app
 module keeps its own files in `~/.magi/app/`; Electron's own profile moves under
 the same tree (`~/.magi/app/electron`, with the Chromium cache, logs and crash
 dumps beside it), so removing `~/.magi` removes everything MAGI-owned.
