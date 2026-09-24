@@ -31,7 +31,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSyn
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
-import { createMagiRuntime } from "./magi-runtime.mjs";
+import { agentBranch, createMagiRuntime } from "./magi-runtime.mjs";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
@@ -53,8 +53,6 @@ const GITHUB_TIMEOUT_MS = 20_000;
 const FORK_TIMEOUT_MS = 60_000;
 const AVATAR_TIMEOUT_MS = 8_000;
 const PROVIDER_POLL_MS = 5_000;
-// How often the app checks that every managed MAGI of this machine is running.
-const MAGI_POLL_MS = 5_000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -197,7 +195,6 @@ export function createLocalApi(context) {
   let chatStorePromise = null;
   let providerTimer = null;
   let providerRelayReady = false;
-  let magiTimer = null;
   const providerAttempted = new Set();
   // ASP keeps the roll of agents; this backend owns their source trees and
   // processes (see magi-runtime.mjs). A developer's own checkout is never
@@ -719,7 +716,6 @@ export function createLocalApi(context) {
       cwd: aspDir,
       env: {
         ...tools.env,
-        ...(typeof tools.bun === "string" && tools.bun !== "" ? { MAGI_BUN: tools.bun } : {}),
         MAGI_ASP_HOST: ASP_ORIGIN.hostname,
         MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
       },
@@ -981,9 +977,8 @@ export function createLocalApi(context) {
         created.push({ handle, nickname });
       }
     }
-    // This backend runs them, not ASP: start them now instead of waiting for
-    // the next supervision tick.
-    await reconcileMagi();
+    // This backend runs them, not ASP: start the new ones right away.
+    await startManagedMagi();
     await Promise.all(
       created.map(({ handle, nickname }) =>
         nameWhenOnline(handle, nickname, token).catch((error) => {
@@ -1011,9 +1006,9 @@ export function createLocalApi(context) {
     const health = await aspHealth();
     if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);
     if (health === "ready") {
-      // The society is this machine's to run: supervise it before anything
-      // waits for a MAGI to answer.
-      superviseMagi();
+      // The society comes up once here; after that it is the operator's to
+      // start and stop from each MAGI's profile.
+      await startManagedMagi();
       await ensureDefaultMagis(progress);
       await activateProviderSync();
       return { origin: ASP_ORIGIN.href };
@@ -1042,7 +1037,7 @@ export function createLocalApi(context) {
       dispose();
       throw error;
     }
-    superviseMagi();
+    await startManagedMagi();
     await ensureDefaultMagis(progress);
     await activateProviderSync();
     return { origin: ASP_ORIGIN.href };
@@ -1055,9 +1050,6 @@ export function createLocalApi(context) {
     }
     if (providerTimer !== null) clearTimeout(providerTimer);
     providerTimer = null;
-    // Supervision stops with this instance; the MAGI themselves keep running.
-    if (magiTimer !== null) clearTimeout(magiTimer);
-    magiTimer = null;
   }
 
   // Renderer/backend reloads and runtime shutdown are deliberately separate.
@@ -1065,7 +1057,7 @@ export function createLocalApi(context) {
   // therefore its MAGI children) keeps serving the newly loaded interface.
   function shutdown() {
     dispose();
-    magiRuntime.stop();
+    magiRuntime.stopAll();
     if (asp && !asp.killed) {
       asp.kill("SIGTERM");
     }
@@ -1095,36 +1087,66 @@ export function createLocalApi(context) {
     );
   }
 
-  /** Start every managed MAGI that is not online and not already ours. */
-  async function reconcileMagi() {
+  async function magiAgent(payload) {
+    const handle = typeof payload?.handle === "string" ? payload.handle : "";
+    if (handle === "") throw new Error("A MAGI handle is required.");
+    const agent = (await magiRoster()).find((row) => row.handle === handle);
+    if (agent === undefined) throw new Error(`Unknown MAGI: ${handle}`);
+    return agent;
+  }
+
+  /**
+   * The society of this machine comes up once, when the app brings ASP up.
+   * Afterwards nothing restarts behind the operator's back: the left panel
+   * shows who is offline, and a MAGI's profile starts what it needs.
+   */
+  async function startManagedMagi() {
     try {
-      if ((await aspHealth()) !== "ready") return;
-      await magiRuntime.start(await magiRoster());
+      if ((await aspHealth()) !== "ready") return { started: [], failed: [] };
+      return await magiRuntime.startAll(await magiRoster());
     } catch (error) {
       console.error(
-        `[magi] supervision: ${error instanceof Error ? error.message : String(error)}`,
+        `[magi] could not start the society: ${error instanceof Error ? error.message : String(error)}`,
       );
+      return { started: [], failed: [] };
     }
   }
 
-  function superviseMagi() {
-    if (magiTimer !== null) return;
-    const poll = async () => {
-      await reconcileMagi();
-      if (magiTimer !== null) magiTimer = setTimeout(() => void poll(), MAGI_POLL_MS);
+  /** What a MAGI's profile shows: whether it is up, and where it runs from. */
+  async function magiInfo(payload) {
+    const agent = await magiAgent(payload);
+    const { token } = await aspJson("/operator");
+    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
+    const row = agents.find((entry) => entry.handle === agent.handle);
+    return {
+      handle: agent.handle,
+      online: row?.online === true,
+      running: magiRuntime.running().includes(agent.handle),
+      branch: managed ? agentBranch(agent.handle) : "",
+      source: magiRuntime.sourceOf(agent.handle),
     };
-    magiTimer = setTimeout(() => void poll(), 0);
   }
 
-  async function magiStart() {
-    magiRuntime.resume();
-    const { started } = await magiRuntime.start(await magiRoster(), { retry: false });
-    return { started };
+  async function magiStart(payload) {
+    return await magiRuntime.start(await magiAgent(payload));
   }
 
-  async function magiStop() {
-    const { stopped } = magiRuntime.stop();
-    return { stopped };
+  async function magiStop(payload) {
+    const agent = await magiAgent(payload);
+    return { handle: agent.handle, stopped: magiRuntime.stop(agent.handle) };
+  }
+
+  async function magiRestart(payload) {
+    return await magiRuntime.restart(await magiAgent(payload));
+  }
+
+  async function magiRebuild(payload) {
+    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding this MAGI.");
+    return await magiRuntime.rebuild(await magiAgent(payload));
+  }
+
+  async function magiMerge(payload) {
+    return await magiRuntime.merge(await magiAgent(payload));
   }
 
   async function stopOwnedAsp() {
@@ -1166,18 +1188,6 @@ export function createLocalApi(context) {
       await start();
       return await runtimeStatus();
     });
-  }
-
-  async function rebuildMagi() {
-    return runtimeAction(async () => {
-      if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding MAGI.");
-      return await magiRuntime.rebuild(await magiRoster());
-    });
-  }
-
-  /** Fast-forward every MAGI branch onto the checkout's current branch. */
-  async function mergeMagi() {
-    return runtimeAction(async () => await magiRuntime.merge(await magiRoster()));
   }
 
   async function rebuildApp() {
@@ -1371,10 +1381,12 @@ export function createLocalApi(context) {
     "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
     "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.rebuildAsp": rebuildAsp,
-    "runtime.stopMagi": () => runtimeAction(magiStop),
-    "runtime.startMagi": () => runtimeAction(magiStart),
-    "runtime.rebuildMagi": rebuildMagi,
-    "runtime.mergeMagi": mergeMagi,
+    "magi.info": magiInfo,
+    "magi.start": (payload) => runtimeAction(() => magiStart(payload)),
+    "magi.stop": (payload) => runtimeAction(() => magiStop(payload)),
+    "magi.restart": (payload) => runtimeAction(() => magiRestart(payload)),
+    "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
+    "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
     "runtime.rebuildApp": rebuildApp,
     "github.state": currentState,
     "github.signIn": signIn,

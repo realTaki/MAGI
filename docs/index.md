@@ -16,7 +16,7 @@ home: true
 
 <section class="section">
   <h2>From persistent agents to self-improvement</h2>
-  <p class="section-intro">Each MAGI has its own runtime and workspace. ASP starts the process and relays sessions. The source is locally editable; autonomous validation and adoption of changes remain a research goal.</p>
+  <p class="section-intro">Each MAGI has its own runtime, branch and workspace. The desktop app starts the process; ASP relays sessions. The source is locally editable; autonomous validation and adoption of changes remain a research goal.</p>
   <div class="card-grid">
     <a class="card" href="{{ '/architecture/' | relative_url }}">
       <h3>Architecture</h3>

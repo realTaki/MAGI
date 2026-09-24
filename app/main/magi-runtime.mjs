@@ -8,6 +8,10 @@
  * agent is started from it. A `main` someone broke therefore cannot take a
  * running MAGI down with it, and an agent can evolve its own branch.
  *
+ * Nothing is retried behind the operator's back: a MAGI that stopped stays
+ * stopped until it is started again (the left panel shows who is offline, and
+ * every MAGI's profile carries its own start/stop/rebuild controls).
+ *
  * A checkout this app does not own (`managed: false`, i.e. a developer's tree)
  * is never rewired: MAGI then run from the shared `<checkout>/magi` exactly as
  * before.
@@ -18,8 +22,6 @@ import path from "node:path";
 
 /** Branch per MAGI: `magi/eva-000`. */
 export const AGENT_BRANCH_PREFIX = "magi/";
-/** How long a MAGI that just exited is left alone before it is started again. */
-const RESPAWN_COOLDOWN_MS = 30_000;
 
 export function agentName(handle) {
   return String(handle ?? "").replace(/^@/, "").replace(/\.magi$/, "");
@@ -55,13 +57,10 @@ export function createMagiRuntime({
   run,
   spawnProcess,
   useWorktrees = true,
-  now = () => Date.now(),
   log = () => {},
 }) {
   const children = new Map(); // handle -> { child, root }
-  const cooldown = new Map(); // handle -> when its process last exited
   const sources = new Map(); // handle -> prepared checkout root
-  let paused = false;
 
   function bunBinary() {
     const candidates = [
@@ -120,6 +119,14 @@ export function createMagiRuntime({
     return root;
   }
 
+  /** Where this MAGI runs from, without preparing anything. */
+  function sourceOf(handle) {
+    const ready = sources.get(handle);
+    if (ready !== undefined) return ready;
+    if (!useWorktrees) return path.join(checkout, "magi");
+    return agentSource(home, handle);
+  }
+
   function isRunning(handle) {
     const entry = children.get(handle);
     if (entry === undefined) return false;
@@ -127,13 +134,79 @@ export function createMagiRuntime({
     return child.exitCode == null && child.signalCode == null;
   }
 
-  function forget(handle) {
-    children.delete(handle);
-    cooldown.set(handle, now());
+  function usable(agent) {
+    return (
+      agent !== null &&
+      typeof agent === "object" &&
+      typeof agent.handle === "string" &&
+      agent.handle !== "" &&
+      typeof agent.token === "string" &&
+      agent.token !== ""
+    );
   }
 
-  /** Stop the process of one MAGI; returns whether a signal was sent. */
-  function stopOne(handle) {
+  function require(agent) {
+    if (!usable(agent)) throw new Error("A MAGI needs both its handle and its token.");
+    return agent;
+  }
+
+  /** The root this MAGI should run from, falling back to the shared checkout. */
+  async function rootFor(handle) {
+    if (!useWorktrees) return checkout;
+    try {
+      return await ensureSource(handle);
+    } catch (error) {
+      log(`[magi] ${handle}: ${describe(error)}; running it from ${checkout} instead`);
+      return checkout;
+    }
+  }
+
+  function launch(handle, token, root) {
+    const command = magiCli(bunBinary(), handle, base, token);
+    const child = spawnProcess(command[0], command.slice(1), {
+      cwd: path.join(root, "magi"),
+      env: tools.env,
+      stdio: ["ignore", "ignore", "pipe"],
+      detached: true,
+      windowsHide: true,
+    });
+    child.on?.("error", () => children.delete(handle));
+    child.on?.("exit", () => children.delete(handle));
+    child.stderr?.on("data", (chunk) => {
+      const text = String(chunk).trim();
+      if (text !== "") log(`[magi ${agentName(handle)}] ${text}`);
+    });
+    children.set(handle, { child, root });
+    return child;
+  }
+
+  /** Start one MAGI. Starting one that already runs does nothing. */
+  async function start(agent) {
+    const { handle, token } = require(agent);
+    if (isRunning(handle)) return { handle, started: false };
+    const root = await rootFor(handle);
+    launch(handle, token, root);
+    return { handle, started: true };
+  }
+
+  /** Start every agent of a roster; used once when the app brings ASP up. */
+  async function startAll(agents) {
+    const started = [];
+    const failed = [];
+    for (const agent of agents ?? []) {
+      if (!usable(agent)) continue;
+      try {
+        if ((await start(agent)).started) started.push(agent.handle);
+      } catch (error) {
+        failed.push({ handle: agent.handle, detail: describe(error) });
+        log(`[magi] ${agent.handle}: ${describe(error)}`);
+      }
+    }
+    return { started, failed };
+  }
+
+  /** Stop one MAGI. Returns false when it was not running. */
+  function stop(handle) {
     const entry = children.get(handle);
     if (entry === undefined) return false;
     children.delete(handle);
@@ -153,113 +226,37 @@ export function createMagiRuntime({
     return true;
   }
 
-  /** Start one MAGI, unless it already runs or just exited on its own. */
-  async function startOne(handle, token) {
-    if (isRunning(handle)) return false;
-    const last = cooldown.get(handle);
-    if (last !== undefined && now() - last < RESPAWN_COOLDOWN_MS) return false;
-    let root = checkout;
-    if (useWorktrees) {
-      try {
-        root = await ensureSource(handle);
-      } catch (error) {
-        log(`[magi] ${handle}: ${describe(error)}; running it from ${checkout} instead`);
-        root = checkout;
-      }
-    }
-    const command = magiCli(bunBinary(), handle, base, token);
-    const child = spawnProcess(command[0], command.slice(1), {
-      cwd: path.join(root, "magi"),
-      env: tools.env,
-      stdio: ["ignore", "ignore", "pipe"],
-      detached: true,
-      windowsHide: true,
-    });
-    child.on?.("error", () => forget(handle));
-    child.stderr?.on("data", (chunk) => {
-      const text = String(chunk).trim();
-      if (text !== "") log(`[magi ${agentName(handle)}] ${text}`);
-    });
-    child.on?.("exit", () => forget(handle));
-    children.set(handle, { child, root });
-    return true;
-  }
-
-  function usable(agent) {
-    return (
-      agent !== null &&
-      typeof agent === "object" &&
-      typeof agent.handle === "string" &&
-      agent.handle !== "" &&
-      typeof agent.token === "string" &&
-      agent.token !== ""
-    );
-  }
-
-  /** Start every agent of the roster that is not running yet. */
-  async function start(agents, { retry = true } = {}) {
-    let started = 0;
-    for (const agent of agents ?? []) {
-      if (paused) break;
-      if (!usable(agent)) continue;
-      if (!retry) cooldown.delete(agent.handle);
-      try {
-        if (await startOne(agent.handle, agent.token)) started += 1;
-      } catch (error) {
-        log(`[magi] ${agent.handle}: ${describe(error)}`);
-      }
-    }
-    return { started };
-  }
-
-  function pause() {
-    paused = true;
-  }
-
-  function resume() {
-    paused = false;
-  }
-
-  /** Stop supervising and stop every MAGI this backend started. */
-  function stop() {
-    paused = true;
+  /** Stop every MAGI this backend started (desktop shutdown). */
+  function stopAll() {
     const handles = [...children.keys()];
-    for (const handle of handles) {
-      stopOne(handle);
-      cooldown.delete(handle);
-    }
+    for (const handle of handles) stop(handle);
     return { stopped: handles.length };
   }
 
-  /** Install and build on each MAGI's own checkout, then start it again. */
-  async function rebuild(agents) {
-    resume();
-    let rebuilt = 0;
-    const failed = [];
-    for (const agent of agents ?? []) {
-      if (!usable(agent)) continue;
-      try {
-        stopOne(agent.handle);
-        cooldown.delete(agent.handle);
-        let root = checkout;
-        if (useWorktrees) root = await ensureSource(agent.handle);
-        const cwd = path.join(root, "magi");
-        await run(bunBinary(), ["install", "--frozen-lockfile"], {
-          cwd,
-          env: tools.env,
-          description: `Could not install MAGI dependencies in ${cwd}`,
-        });
-        await run(bunBinary(), ["run", "build"], {
-          cwd,
-          env: tools.env,
-          description: `Could not build MAGI in ${cwd}`,
-        });
-        if (await startOne(agent.handle, agent.token)) rebuilt += 1;
-      } catch (error) {
-        failed.push({ handle: agent.handle, detail: describe(error) });
-      }
-    }
-    return { rebuilt, failed };
+  async function restart(agent) {
+    const { handle } = require(agent);
+    stop(handle);
+    return await start(agent);
+  }
+
+  /** Install and build on this MAGI's own checkout, then start it again. */
+  async function rebuild(agent) {
+    const { handle, token } = require(agent);
+    stop(handle);
+    const root = await rootFor(handle);
+    const cwd = path.join(root, "magi");
+    await run(bunBinary(), ["install", "--frozen-lockfile"], {
+      cwd,
+      env: tools.env,
+      description: `Could not install MAGI dependencies in ${cwd}`,
+    });
+    await run(bunBinary(), ["run", "build"], {
+      cwd,
+      env: tools.env,
+      description: `Could not build MAGI in ${cwd}`,
+    });
+    const started = await start({ handle, token });
+    return { handle, rebuilt: true, started: started.started };
   }
 
   /** The ref a MAGI branch is brought up to date with. */
@@ -272,65 +269,46 @@ export function createMagiRuntime({
   }
 
   /**
-   * Merge the checkout's current branch into every MAGI branch. A branch that
+   * Merge the checkout's current branch into this MAGI's branch. A branch that
    * actually moved is restarted so the MAGI runs the merged source; a conflict
    * is aborted and reported instead of leaving a half-merged worktree behind.
    */
-  async function merge(agents) {
-    const merged = [];
-    const failed = [];
+  async function merge(agent) {
+    const { handle, token } = require(agent);
     if (!useWorktrees) {
       throw new Error("This checkout is not managed by the app, so its MAGI share it and there is nothing to merge.");
     }
+    const root = await ensureSource(handle);
     const from = await checkoutRef();
-    for (const agent of agents ?? []) {
-      if (!usable(agent)) continue;
-      let root;
+    let moved = false;
+    try {
+      const output = await git(
+        ["merge", "--no-edit", from],
+        `Could not merge ${from} into ${agentBranch(handle)}`,
+        root,
+      );
+      moved = !/already up to date/i.test(output);
+    } catch {
       try {
-        root = await ensureSource(agent.handle);
-      } catch (error) {
-        failed.push({ handle: agent.handle, detail: describe(error) });
-        continue;
+        await git(["merge", "--abort"], "Could not abort a conflicted merge", root);
+      } catch {
+        // Nothing to abort: the merge never started.
       }
-      let moved = false;
-      try {
-        const output = await git(
-          ["merge", "--no-edit", from],
-          `Could not merge ${from} into ${agentBranch(agent.handle)}`,
-          root,
-        );
-        moved = !/already up to date/i.test(output);
-      } catch (error) {
-        try {
-          await git(["merge", "--abort"], "Could not abort a conflicted merge", root);
-        } catch {
-          // Nothing to abort: the merge never started.
-        }
-        failed.push({ handle: agent.handle, detail: describe(error) });
-        continue;
-      }
-      merged.push(agent.handle);
-      if (moved) {
-        stopOne(agent.handle);
-        cooldown.delete(agent.handle);
-        try {
-          await startOne(agent.handle, agent.token);
-        } catch (error) {
-          log(`[magi] ${agent.handle}: ${describe(error)}`);
-        }
-      }
+      throw new Error(`${agentBranch(handle)} could not merge ${from}; the merge was aborted.`);
     }
-    return { merged, failed, from };
+    if (moved) await restart({ handle, token });
+    return { handle, merged: moved, from };
   }
 
   return {
     ensureSource,
+    sourceOf,
     running: () => [...children.keys()].filter(isRunning),
-    paused: () => paused,
     start,
-    pause,
-    resume,
+    startAll,
     stop,
+    stopAll,
+    restart,
     rebuild,
     merge,
   };

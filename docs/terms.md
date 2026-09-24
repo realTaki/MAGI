@@ -9,16 +9,19 @@ permalink: /terms/
 | Term | Meaning |
 | --- | --- |
 | **MAGI** | Modular Agentic Genesis Intelligences, the project name. A MAGI is one governable agent and its Bun runtime in `magi/`; the plural in the full name refers to the independent agents working together. |
-| **ASP** | The local session server in `asp/`. It starts MAGI processes and relays events. It does not reason. |
+| **ASP** | The local session server in `asp/`. It registers agents and relays events; it never starts a process. It does not reason. |
 | **Desktop** | The Electron shell and the operator UI. It owns the checkout, the transcript, and the provider key. |
 | **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `magi/bus/`. |
 | **Book** | Durable records in that MAGI's workspace, such as memory, skills, contacts, and prompts. |
 | **Job** | A durable `publish -> claim -> result` item. Chat, model calls, tool calls, and delivery are Jobs. |
 | **Handle** | A MAGI's address, such as `@eva-000.magi`. |
 | **EVA** | The handle naming pattern. ASP assigns `eva-000`, then `eva-001`. The address is `@eva-000.magi`. |
-| **Workspace** | One MAGI's directory, `~/.magi/<name>` unless an older `~/.magi/ts-magi/<name>` is still the one on disk. |
+| **Workspace** | One MAGI's directory, `~/.magi/<name>` unless an older `~/.magi/ts-magi/<name>` is still the one on disk. Its own source checkout lives in `~/.magi/<name>/MAGI`. |
+| **Agent branch** | `magi/<name>` — the branch a MAGI runs from. The desktop app creates it with a Git worktree and merges the checkout branch into it on demand. |
 
-ASP starts every MAGI the same way: one Bun process, one workspace.
+The desktop app runs every MAGI the same way: one Bun process, one branch
+(`magi/<name>`), one workspace (`~/.magi/<name>`, with that branch's checkout in
+its `MAGI/` subdirectory).
 
 ## Names in the current APIs
 

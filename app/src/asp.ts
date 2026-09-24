@@ -1,4 +1,4 @@
-/** Operator client for asp. The UI only requests; ASP spawns MAGI. */
+/** Operator client for asp. The UI only requests; the app runs MAGI. */
 
 const ASP_BASE = "http://127.0.0.1:42069";
 
