@@ -5,8 +5,9 @@ checkout and loads the app from it. The app itself lives in `app/` — operator
 interface (`app/src/`) plus local backend (`app/main/`) — and the backend
 prepares the checkout, starts local ASP on `127.0.0.1:42069` (ASP starts MAGI
 processes) and reports which interface entry the shell should show. The app
-module keeps its own files in `~/.magi/app/`; Electron's Chromium profile stays
-at its default `userData` path.
+module keeps its own files in `~/.magi/app/`; Electron's own profile moves under
+the same tree (`~/.magi/app/electron`, with the Chromium cache, logs and crash
+dumps beside it), so removing `~/.magi` removes everything MAGI-owned.
 
 The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `app/` — its

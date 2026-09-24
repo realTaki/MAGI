@@ -309,15 +309,16 @@ body {
   padding: 0 8px 8px;
 }
 
-.conversation-page__bot-list::-webkit-scrollbar,
-.conversation-page__thread::-webkit-scrollbar {
-  width: 6px;
+/* Both scroll with the wheel; neither shows a bar. */
+.conversation-page__bot-list,
+.conversation-page__thread {
+  scrollbar-width: none;
 }
 
-.conversation-page__bot-list::-webkit-scrollbar-thumb,
-.conversation-page__thread::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--scroll-thumb);
+.conversation-page__bot-list::-webkit-scrollbar,
+.conversation-page__thread::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .conversation-page__bot-row {
@@ -705,6 +706,7 @@ body {
   flex: 1;
   flex-direction: column;
   gap: 5px;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 80px 16px 16px;
 }
@@ -726,6 +728,7 @@ body {
 
 .conversation-page__message {
   display: flex;
+  min-width: 0;
 }
 
 .conversation-page__message--user {
@@ -738,6 +741,9 @@ body {
 
 .conversation-page__bubble {
   max-width: 85%;
+  min-width: 0;
+  /* Pasted keys, URLs and JSON have nothing to break at. */
+  overflow-wrap: anywhere;
   border-radius: 17px;
   padding: 8px 12px;
   font-size: 14px;
@@ -773,6 +779,7 @@ body {
   display: flex;
   gap: 9px;
   align-items: baseline;
+  overflow-wrap: anywhere;
   color: var(--panel-copy);
   font-size: 14px;
 }

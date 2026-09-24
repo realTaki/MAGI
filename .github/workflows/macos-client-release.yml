@@ -41,6 +41,8 @@ jobs:
         run: |
           npm ci
           npm ci --prefix ../app
+          # The app's provider catalog is read from the checkout's MAGI deps.
+          ./node_modules/.bin/bun install --frozen-lockfile --cwd ../magi
 
       - name: Set version from tag
         run: |
