@@ -40,7 +40,6 @@ export function SettingsPage() {
   const [shellUpdating, setShellUpdating] = useState(false);
   const [shellUpdateError, setShellUpdateError] = useState("");
   const [runtimeStatus, setRuntimeStatus] = useState("");
-  const [runtimeMagiOnline, setRuntimeMagiOnline] = useState(0);
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [runtimeBusy, setRuntimeBusy] = useState(false);
 
@@ -49,9 +48,8 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string; magiOnline?: number };
+        const state = value as { asp?: string };
         setRuntimeStatus(state?.asp ?? "");
-        setRuntimeMagiOnline(state?.magiOnline ?? 0);
       }
     }).catch((error: unknown) => {
       if (!cancelled) setRuntimeMessage(error instanceof Error ? error.message : String(error));
@@ -65,15 +63,10 @@ export function SettingsPage() {
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
-      const result = await invoke(method) as { failed?: unknown[] } | null;
-      const state = await invoke("runtime.status") as { asp?: string; magiOnline?: number };
+      await invoke(method);
+      const state = await invoke("runtime.status") as { asp?: string };
       setRuntimeStatus(state.asp ?? "");
-      setRuntimeMagiOnline(state.magiOnline ?? 0);
-      setRuntimeMessage(
-        Array.isArray(result?.failed) && result.failed.length > 0
-          ? t("appSettings.runtimePartial")
-          : t("appSettings.runtimeDone"),
-      );
+      setRuntimeMessage(t("appSettings.runtimeDone"));
     } catch (error) {
       setRuntimeMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -518,16 +511,6 @@ export function SettingsPage() {
                   <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
                     {(["runtime.stopAsp", "runtime.startAsp", "runtime.rebuildAsp"] as const).map((method) => (
-                      <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
-                        {t(`appSettings.${method.split(".")[1]}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">MAGI · {t("appSettings.onlineCount")} {runtimeMagiOnline}</div>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    {(["runtime.stopMagi", "runtime.startMagi", "runtime.rebuildMagi", "runtime.mergeMagi"] as const).map((method) => (
                       <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
                         {t(`appSettings.${method.split(".")[1]}`)}
                       </button>

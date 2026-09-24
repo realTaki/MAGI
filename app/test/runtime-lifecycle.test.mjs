@@ -99,7 +99,7 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   api.dispose();
 });
 
-test("runtime controls own MAGI locally and report online count", async (t) => {
+test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-controls-"));
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -108,24 +108,40 @@ test("runtime controls own MAGI locally and report online count", async (t) => {
     calls.push(`${options.method ?? "GET"} ${endpoint}`);
     if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
-    if (endpoint === "/bots") return Response.json({ bots: [{ online: true }, { online: false }] });
-    if (endpoint === "/agents") return Response.json({ agents: [] });
+    if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }, { handle: "@eva-001.magi", online: false }] });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
+          { handle: "@eva-001.magi", token: "tok-1", name: "eva-001", managed: true, online: false },
+        ],
+      });
+    }
     throw new Error(`unexpected request: ${endpoint}`);
   };
   t.after(() => {
     globalThis.fetch = originalFetch;
     rmSync(root, { recursive: true, force: true });
   });
+  // An unmanaged checkout: this test is about the bridge, not about worktrees.
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout: root },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "unused", env: process.env },
-    emit: () => {}, openExternal: async () => {}, copy: () => {}, managed: true,
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
   assert.deepEqual(await api["runtime.status"](), { asp: "ready", owned: false, magiOnline: 1 });
+  assert.deepEqual(await api["magi.info"]({ handle: "@eva-000.magi" }), {
+    handle: "@eva-000.magi",
+    online: true,
+    running: false,
+    branch: "",
+    source: path.join(root, "magi"),
+  });
   // Starting and stopping MAGI is this backend's job, not ASP's API.
-  assert.deepEqual(await api["runtime.stopMagi"](), { stopped: 0 });
-  assert.deepEqual(await api["runtime.startMagi"](), { started: 0 });
+  assert.deepEqual(await api["magi.stop"]({ handle: "@eva-000.magi" }), { handle: "@eva-000.magi", stopped: false });
+  await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
+  await assert.rejects(api["magi.start"]({}), /handle is required/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
   api.dispose();

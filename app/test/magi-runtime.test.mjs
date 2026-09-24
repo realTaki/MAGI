@@ -12,6 +12,7 @@ import { agentBranch, agentSource, createMagiRuntime } from "../main/magi-runtim
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const agent = { handle: "@eva-000.magi", token: "tok" };
 
 async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
@@ -58,43 +59,58 @@ function recorder() {
   return { run, spawnProcess, bun, spawns };
 }
 
+function runtimeWith(checkout, home, recorded, log = () => {}) {
+  return createMagiRuntime({
+    checkout,
+    home,
+    base: "http://127.0.0.1:42069",
+    tools: { git: "git", env: process.env, bun: "bun" },
+    run: recorded.run,
+    spawnProcess: recorded.spawnProcess,
+    useWorktrees: true,
+    log,
+  });
+}
+
 test("every MAGI gets its own branch checked out inside its workspace", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-source-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const checkout = await makeCheckout(root);
   const home = path.join(root, "home");
-  const { run, spawnProcess, bun, spawns } = recorder();
-  const runtime = createMagiRuntime({
-    checkout,
-    home,
-    base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
-    run,
-    spawnProcess,
-    useWorktrees: true,
-  });
+  const recorded = recorder();
+  const runtime = runtimeWith(checkout, home, recorded);
 
-  const { started } = await runtime.start([{ handle: "@eva-000.magi", token: "tok" }], { retry: false });
-  assert.equal(started, 1);
+  assert.deepEqual(await runtime.startAll([agent]), { started: [agent.handle], failed: [] });
 
-  const source = agentSource(home, "@eva-000.magi");
+  const source = agentSource(home, agent.handle);
   assert.equal(source, path.join(home, ".magi", "eva-000", "MAGI"));
   assert.equal(existsSync(path.join(source, ".git")), true, "the worktree has its own .git pointer");
-  assert.equal((await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), agentBranch("@eva-000.magi"));
+  assert.equal((await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), agentBranch(agent.handle));
   assert.equal((await git(checkout, ["branch", "--list", "magi/eva-000"])).trim().length > 0, true);
 
   // Dependencies belong to that checkout, and the process runs from it.
-  assert.deepEqual(bun, [{ args: ["install", "--frozen-lockfile"], cwd: path.join(source, "magi") }]);
-  assert.equal(spawns.length, 1);
-  assert.deepEqual(spawns[0].args, ["run", "start", "--", "@eva-000.magi", "http://127.0.0.1:42069", "tok"]);
-  assert.equal(spawns[0].options.cwd, path.join(source, "magi"));
+  assert.deepEqual(recorded.bun, [{ args: ["install", "--frozen-lockfile"], cwd: path.join(source, "magi") }]);
+  assert.equal(recorded.spawns.length, 1);
+  assert.deepEqual(recorded.spawns[0].args, ["run", "start", "--", agent.handle, "http://127.0.0.1:42069", "tok"]);
+  assert.equal(recorded.spawns[0].options.cwd, path.join(source, "magi"));
 
-  // Starting an agent that already runs changes nothing.
-  assert.deepEqual(await runtime.start([{ handle: "@eva-000.magi", token: "tok" }]), { started: 0 });
-  assert.equal(spawns.length, 1);
-  assert.deepEqual(runtime.running(), ["@eva-000.magi"]);
-  assert.deepEqual(runtime.stop(), { stopped: 1 });
-  assert.equal(spawns[0].child.signalCode, "SIGTERM");
+  // Starting a MAGI that already runs changes nothing, and nothing restarts it
+  // on its own.
+  assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: false });
+  assert.equal(recorded.spawns.length, 1);
+  assert.deepEqual(runtime.running(), [agent.handle]);
+  assert.deepEqual(await runtime.restart(agent), { handle: agent.handle, started: true });
+  assert.equal(recorded.spawns.length, 2);
+  assert.deepEqual(runtime.stopAll(), { stopped: 1 });
+  assert.deepEqual(runtime.running(), []);
+
+  // A MAGI that exits on its own is not resurrected behind the operator's back.
+  assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
+  assert.equal(recorded.spawns.length, 3);
+  recorded.spawns[2].child.emit("exit");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(recorded.spawns.length, 3, "a MAGI that exited stays down");
+  assert.deepEqual(runtime.running(), []);
 });
 
 test("a checkout that cannot be branched falls back to the shared sources", async (t) => {
@@ -102,7 +118,7 @@ test("a checkout that cannot be branched falls back to the shared sources", asyn
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const checkout = await makeCheckout(root);
   const logs = [];
-  const { spawnProcess, spawns } = recorder();
+  const recorded = recorder();
   const runtime = createMagiRuntime({
     checkout,
     home: path.join(root, "home"),
@@ -112,93 +128,49 @@ test("a checkout that cannot be branched falls back to the shared sources", asyn
       if (path.basename(binary).startsWith("bun")) return "";
       throw new Error("git is unavailable");
     },
-    spawnProcess,
+    spawnProcess: recorded.spawnProcess,
     useWorktrees: true,
     log: (line) => logs.push(line),
   });
 
-  assert.deepEqual(await runtime.start([{ handle: "@eva-001.magi", token: "tok" }], { retry: false }), { started: 1 });
-  assert.equal(spawns[0].options.cwd, path.join(checkout, "magi"));
-  assert.equal(existsSync(agentSource(path.join(root, "home"), "@eva-001.magi")), false);
+  assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
+  assert.equal(recorded.spawns[0].options.cwd, path.join(checkout, "magi"));
+  assert.equal(existsSync(agentSource(path.join(root, "home"), agent.handle)), false);
   assert.equal(logs.some((line) => line.includes("running it from")), true);
 });
 
-test("a stopped society stays stopped until it is asked to start", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-paused-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
-  const { run, spawnProcess, spawns } = recorder();
-  const runtime = createMagiRuntime({
-    checkout,
-    home: path.join(root, "home"),
-    base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
-    run,
-    spawnProcess,
-    useWorktrees: true,
-  });
-  const roster = [{ handle: "@eva-000.magi", token: "tok" }];
-
-  runtime.stop();
-  assert.deepEqual(await runtime.start(roster), { started: 0 }, "supervision respects a stop");
-  assert.deepEqual(await runtime.start(roster, { retry: false }), { started: 0 });
-  runtime.resume();
-  assert.deepEqual(await runtime.start(roster), { started: 1 });
-  assert.equal(spawns.length, 1);
-});
-
-test("merging the checkout branch advances an agent branch and restarts it", async (t) => {
+test("merging the checkout branch advances a MAGI branch and restarts it", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-merge-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const checkout = await makeCheckout(root);
-  const { run, spawnProcess, spawns } = recorder();
-  const runtime = createMagiRuntime({
-    checkout,
-    home: path.join(root, "home"),
-    base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
-    run,
-    spawnProcess,
-    useWorktrees: true,
-  });
-  const roster = [{ handle: "@eva-000.magi", token: "tok" }];
-  await runtime.start(roster, { retry: false });
-  const source = agentSource(path.join(root, "home"), "@eva-000.magi");
+  const recorded = recorder();
+  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  await runtime.start(agent);
+  const source = agentSource(path.join(root, "home"), agent.handle);
 
   const branch = (await git(checkout, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
   writeFileSync(path.join(checkout, "README.md"), "two\n");
   await git(checkout, ["add", "."]);
   await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "two"]);
 
-  const merged = await runtime.merge(roster);
-  assert.deepEqual(merged.merged, ["@eva-000.magi"]);
-  assert.deepEqual(merged.failed, []);
-  assert.equal(merged.from, branch);
+  const merged = await runtime.merge(agent);
+  assert.deepEqual(merged, { handle: agent.handle, merged: true, from: branch });
   assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "two\n");
-  assert.equal(spawns.length, 2, "an agent that moved is restarted on the merged source");
+  assert.equal(recorded.spawns.length, 2, "a MAGI that moved is restarted on the merged source");
 
   // Nothing new to merge: no second restart.
-  assert.deepEqual((await runtime.merge(roster)).merged, ["@eva-000.magi"]);
-  assert.equal(spawns.length, 2);
+  assert.deepEqual(await runtime.merge(agent), { handle: agent.handle, merged: false, from: branch });
+  assert.equal(recorded.spawns.length, 2);
 });
 
 test("a conflicting merge is aborted and reported", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-conflict-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const checkout = await makeCheckout(root);
-  const { run, spawnProcess } = recorder();
-  const runtime = createMagiRuntime({
-    checkout,
-    home: path.join(root, "home"),
-    base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
-    run,
-    spawnProcess,
-    useWorktrees: true,
-  });
-  const roster = [{ handle: "@eva-000.magi", token: "tok" }];
-  await runtime.start(roster, { retry: false });
-  const source = agentSource(path.join(root, "home"), "@eva-000.magi");
+  const recorded = recorder();
+  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  await runtime.start(agent);
+  const source = agentSource(path.join(root, "home"), agent.handle);
 
   // The agent evolves its own branch, the checkout moves the same file.
   writeFileSync(path.join(source, "README.md"), "agent\n");
@@ -207,12 +179,29 @@ test("a conflicting merge is aborted and reported", async (t) => {
   await git(checkout, ["add", "."]);
   await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "main"]);
 
-  const merged = await runtime.merge(roster);
-  assert.deepEqual(merged.merged, []);
-  assert.equal(merged.failed.length, 1);
-  assert.equal(merged.failed[0].handle, "@eva-000.magi");
+  await assert.rejects(runtime.merge(agent), /could not merge .* was aborted/);
   assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "agent\n");
   assert.equal((await git(source, ["status", "--porcelain"])).trim(), "", "no half-finished merge is left behind");
+});
+
+test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-rebuild-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const checkout = await makeCheckout(root);
+  const recorded = recorder();
+  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  await runtime.start(agent);
+  const source = path.join(agentSource(path.join(root, "home"), agent.handle), "magi");
+
+  assert.deepEqual(await runtime.rebuild(agent), { handle: agent.handle, rebuilt: true, started: true });
+  // The first install belongs to the first start; the rebuild installs again
+  // and then builds, all inside that MAGI's own checkout.
+  assert.deepEqual(
+    recorded.bun.map((call) => (call.args[0] === "install" ? "install" : call.args[1])),
+    ["install", "install", "build"],
+  );
+  assert.equal(recorded.bun.every((call) => call.cwd === source), true);
+  assert.equal(recorded.spawns.length, 2);
 });
 
 test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
@@ -264,10 +253,10 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
       }),
     useWorktrees: true,
   });
-  t.after(() => runtime.stop());
+  t.after(() => runtime.stopAll());
 
-  assert.deepEqual(await runtime.start([{ handle: "@eva-000.magi", token: "tok" }], { retry: false }), { started: 1 });
-  const source = agentSource(home, "@eva-000.magi");
+  assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
+  const source = agentSource(home, agent.handle);
   assert.equal(existsSync(path.join(source, "magi", "node_modules")), true);
   const workspace = path.join(home, ".magi", "eva-000", "memories", "magi.db");
   const deadline = Date.now() + 30_000;

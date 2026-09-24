@@ -93,6 +93,71 @@ type ConversationView = ConversationSummary & {
   lastSequence: number;
   unread: boolean;
 };
+type AgentRuntime = {
+  handle: string;
+  online: boolean;
+  running: boolean;
+  branch: string;
+  source: string;
+};
+type RuntimeIconName = "start" | "stop" | "restart" | "rebuild" | "merge";
+
+/**
+ * The runtime controls are icon-only: start and stop are the same slot, and the
+ * glyph says what a click does. The label stays as the tooltip and the
+ * accessible name.
+ */
+function RuntimeIcon({ name }: { name: RuntimeIconName }) {
+  const stroke = {
+    width: 16,
+    height: 16,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  if (name === "start") {
+    return (
+      <svg {...stroke} fill="currentColor" stroke="none">
+        <path d="M8.6 5.6 18.4 12 8.6 18.4Z" />
+      </svg>
+    );
+  }
+  if (name === "stop") {
+    return (
+      <svg {...stroke} fill="currentColor" stroke="none">
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+      </svg>
+    );
+  }
+  if (name === "restart") {
+    return (
+      <svg {...stroke}>
+        <path d="M20 12a8 8 0 1 1-2.35-5.65" />
+        <path d="M20 4.8v4.6h-4.6" />
+      </svg>
+    );
+  }
+  if (name === "rebuild") {
+    return (
+      <svg {...stroke}>
+        <path d="M14.6 6.2a1 1 0 0 0 0 1.5l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a6 6 0 0 1 7.9-7.9Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...stroke}>
+      <circle cx="6.5" cy="6" r="2.4" />
+      <circle cx="6.5" cy="18" r="2.4" />
+      <circle cx="17.5" cy="12" r="2.4" />
+      <path d="M6.5 8.4v7.2" />
+      <path d="M8.9 18c4 0 5.3-2.6 6-5.1" />
+    </svg>
+  );
+}
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
   index: number | null;
@@ -413,6 +478,11 @@ export function ConversationPage() {
   const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
   const [loadingBots, setLoadingBots] = useState(false);
   const [addingHandle, setAddingHandle] = useState<string | null>(null);
+  // Which agents answer right now: offline ones are greyed out like IM contacts.
+  const [agentStatus, setAgentStatus] = useState<Record<string, boolean>>({});
+  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime | null>(null);
+  const [runtimeBusy, setRuntimeBusy] = useState(false);
+  const [runtimeNote, setRuntimeNote] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -442,6 +512,18 @@ export function ConversationPage() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
+  // Start and stop share one slot: the icon shows what the click will do.
+  const agentUp = Boolean(agentRuntime?.online || agentRuntime?.running);
+  const runtimeActions: Array<{ method: string; label: string; icon: RuntimeIconName }> = [
+    {
+      method: agentUp ? "magi.stop" : "magi.start",
+      label: agentUp ? "runtimeStop" : "runtimeStart",
+      icon: agentUp ? "stop" : "start",
+    },
+    { method: "magi.restart", label: "runtimeRestart", icon: "restart" },
+    { method: "magi.rebuild", label: "runtimeRebuild", icon: "rebuild" },
+    { method: "magi.merge", label: "runtimeMerge", icon: "merge" },
+  ];
   const showPanel = panelOpen;
 
   useEffect(() => {
@@ -490,8 +572,17 @@ export function ConversationPage() {
       const events = await syncAspEvents(conversationId);
       if (!cancelled) applyConversationEvents(conversationId, events);
     }
+    async function refreshAgentStatus() {
+      const listed = await listAspBots();
+      // An empty answer means "ASP did not say", not "everyone went offline".
+      if (cancelled || listed.length === 0) return;
+      setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+    }
     async function refreshAll() {
-      const results = await Promise.allSettled(conversationIds.map(refreshConversation));
+      const results = await Promise.allSettled([
+        ...conversationIds.map(refreshConversation),
+        refreshAgentStatus(),
+      ]);
       const failure = results.find((result) => result.status === "rejected");
       if (!cancelled && failure?.status === "rejected") setLoadError(String(failure.reason));
     }
@@ -605,6 +696,21 @@ export function ConversationPage() {
     }
   }, [searchOpen]);
 
+  // A MAGI's process is that MAGI's business: load its state when the profile opens.
+  useEffect(() => {
+    const handle = active?.kind === "group" ? "" : active?.magiHandle ?? "";
+    setRuntimeNote("");
+    if (!showPanel || panelMode !== "settings" || handle === "") {
+      setAgentRuntime(null);
+      return;
+    }
+    let cancelled = false;
+    void loadAgentRuntime(handle).then((info) => {
+      if (!cancelled) setAgentRuntime(info);
+    });
+    return () => { cancelled = true; };
+  }, [showPanel, panelMode, active?.id, active?.magiHandle, active?.kind]);
+
   if (!active) {
     return <div className="conversation-page" style={{ padding: 32 }}>
       <p>{loadError || "No MAGI agents yet."}</p>
@@ -657,6 +763,70 @@ export function ConversationPage() {
 
   function patchActive(patch: Partial<ConversationView>) {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
+  }
+
+  /** Known and offline: the row greys out, like an IM contact who is away. */
+  function isAgentOffline(conversation: ConversationView): boolean {
+    if (conversation.kind === "group") {
+      const handles = conversation.members.map((member) => member.id);
+      return handles.length > 0 && handles.every((handle) => agentStatus[handle] === false);
+    }
+    const handle = conversation.magiHandle;
+    if (handle === undefined || handle === "") return false;
+    return agentStatus[handle] === false;
+  }
+
+  function localInvoke(): ((method: string, payload?: unknown) => Promise<unknown>) | undefined {
+    return window.magiDesktop?.invokeLocal;
+  }
+
+  async function loadAgentRuntime(handle: string): Promise<AgentRuntime | null> {
+    const invoke = localInvoke();
+    if (!invoke || handle === "") return null;
+    try {
+      return (await invoke("magi.info", { handle })) as AgentRuntime;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A MAGI needs a moment to boot; show it as soon as it answers. */
+  async function waitForAgentOnline(handle: string): Promise<void> {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const info = await loadAgentRuntime(handle);
+      setAgentRuntime(info);
+      if (info?.online) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  async function refreshAgentStatus(): Promise<void> {
+    const listed = await listAspBots();
+    if (listed.length === 0) return;
+    setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+  }
+
+  /** Start, stop, restart, rebuild or merge this one MAGI, from its profile. */
+  async function runAgentRuntime(method: string) {
+    const invoke = localInvoke();
+    const handle = active?.magiHandle ?? "";
+    if (!invoke || handle === "" || runtimeBusy) return;
+    setRuntimeBusy(true);
+    setRuntimeNote(t("conversationSettings.runtimeWorking"));
+    try {
+      const result = (await invoke(method, { handle })) as { started?: boolean; rebuilt?: boolean } | null;
+      if (result?.started === true || result?.rebuilt === true) {
+        await waitForAgentOnline(handle);
+      } else {
+        setAgentRuntime(await loadAgentRuntime(handle));
+      }
+      await refreshAgentStatus();
+      setRuntimeNote(t("conversationSettings.runtimeDone"));
+    } catch (error) {
+      setRuntimeNote(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRuntimeBusy(false);
+    }
   }
 
   function markConversationRead(conversationId: string, through: number) {
@@ -1085,7 +1255,7 @@ export function ConversationPage() {
                 <button
                   key={bot.id}
                   type="button"
-                  className={`conversation-page__bot-row${isActive ? " is-active" : ""}`}
+                  className={`conversation-page__bot-row${isActive ? " is-active" : ""}${isAgentOffline(bot) ? " is-offline" : ""}`}
                   data-bot-id={bot.id}
                   data-unread={bot.unread ? "true" : "false"}
                   onClick={() => selectBot(bot.id)}
@@ -1297,7 +1467,7 @@ export function ConversationPage() {
 
             {panelMode === "settings" ? (
               <div className="conversation-page__settings">
-                <div className="conversation-page__settings-avatar">
+                <div className={`conversation-page__settings-avatar${agentRuntime && !agentRuntime.online ? " is-offline" : ""}`}>
                   <Avatar color={active.color} size={64} />
                 </div>
                 {active.kind === "group" ? (
@@ -1364,6 +1534,48 @@ export function ConversationPage() {
                     </label>
                   </>
                 )}
+
+                {active.kind !== "group" && active.magiHandle ? (
+                  <div className="conversation-page__slot">
+                    <div className="conversation-page__slot-head">
+                      <span className="conversation-page__panel-label">
+                        {t("conversationSettings.runtime")}
+                      </span>
+                      <span
+                        className={`conversation-page__runtime-state${agentRuntime?.online ? " is-online" : ""}`}
+                        role="status"
+                      >
+                        {agentRuntime?.online
+                          ? t("conversationSettings.online")
+                          : t("conversationSettings.offline")}
+                      </span>
+                    </div>
+                    <div className="conversation-page__runtime-actions">
+                      {runtimeActions.map(({ method, label, icon }) => (
+                        <button
+                          key={method}
+                          type="button"
+                          className="conversation-page__runtime-action"
+                          aria-label={t(`conversationSettings.${label}`)}
+                          title={t(`conversationSettings.${label}`)}
+                          disabled={runtimeBusy}
+                          onClick={() => void runAgentRuntime(method)}
+                        >
+                          <RuntimeIcon name={icon} />
+                        </button>
+                      ))}
+                    </div>
+                    {agentRuntime?.source ? (
+                      <p className="conversation-page__runtime-note">
+                        {agentRuntime.branch ? `${agentRuntime.branch} · ` : ""}
+                        {agentRuntime.source}
+                      </p>
+                    ) : null}
+                    {runtimeNote ? (
+                      <p className="conversation-page__runtime-note" role="status">{runtimeNote}</p>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {active.kind === "group" ? (
                   <div className="conversation-page__slot">

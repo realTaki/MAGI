@@ -1066,6 +1066,13 @@ export function createLocalApi(context) {
 
   async function runtimeAction(action) {
     requireManaged();
+    return await magiAction(action);
+  }
+
+  // Starting a MAGI is this backend's job even for a developer's own checkout:
+  // only the operations that rewrite the checkout (rebuild, merge) need the app
+  // to own it.
+  async function magiAction(action) {
     if (runtimeBusy) throw new Error("Another runtime operation is still running.");
     runtimeBusy = true;
     try {
@@ -1382,9 +1389,9 @@ export function createLocalApi(context) {
     "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.rebuildAsp": rebuildAsp,
     "magi.info": magiInfo,
-    "magi.start": (payload) => runtimeAction(() => magiStart(payload)),
-    "magi.stop": (payload) => runtimeAction(() => magiStop(payload)),
-    "magi.restart": (payload) => runtimeAction(() => magiRestart(payload)),
+    "magi.start": (payload) => magiAction(() => magiStart(payload)),
+    "magi.stop": (payload) => magiAction(() => magiStop(payload)),
+    "magi.restart": (payload) => magiAction(() => magiRestart(payload)),
     "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
     "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
     "runtime.rebuildApp": rebuildApp,

@@ -341,6 +341,17 @@ body {
   background: var(--surface-active);
 }
 
+/* An offline MAGI keeps its row, but greys out like an away contact. */
+.conversation-page__bot-row.is-offline .agent-avatar,
+.conversation-page__settings-avatar.is-offline .agent-avatar {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.conversation-page__bot-row.is-offline .conversation-page__bot-copy {
+  opacity: 0.65;
+}
+
 .conversation-page__bot-copy {
   display: flex;
   min-width: 0;
@@ -933,6 +944,53 @@ body {
 .conversation-page__chip:hover,
 .conversation-page__chip:focus-visible {
   background: var(--surface-hover);
+}
+
+.conversation-page__runtime-state {
+  color: var(--panel-muted);
+  font-size: 12.5px;
+}
+
+.conversation-page__runtime-state.is-online {
+  color: #3ec5a8;
+}
+
+.conversation-page__runtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Icon-only runtime controls: one slot for start/stop, three for the rest. */
+.conversation-page__runtime-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--panel-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.conversation-page__runtime-action:hover:not(:disabled),
+.conversation-page__runtime-action:focus-visible:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.conversation-page__runtime-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.conversation-page__runtime-note {
+  margin: 8px 0 0;
+  color: var(--panel-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .conversation-page__members {
