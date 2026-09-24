@@ -41,14 +41,31 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
 
   const first = app(root);
-  const saved = await first["provider.save"]({ provider: "claude", model: "opus", api_key: "sk-local" });
+  const saved = await first["provider.save"]({ provider: "custom", model: "opus", api_key: "sk-local", base_url: "https://example.com/v1" });
   assert.deepEqual(saved.synced, ["@eva-000.magi"]);
   assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
+  assert.equal(JSON.parse(requests.find((request) => request.method === "PUT" && request.path === "/settings/provider").body).base_url, "https://example.com/v1");
   const providerFile = path.join(root, ".magi", "app", "provider.json");
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).api_key, "sk-local");
+  assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).base_url, "https://example.com/v1");
   if (process.platform !== "win32") assert.equal(statSync(providerFile).mode & 0o777, 0o600);
   assert.equal(app(root)["provider.settings"]().api_key, "sk-local");
   first.dispose();
+});
+
+test("the app reads the curated provider catalog from pi-ai", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-catalog-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const checkout = path.resolve(import.meta.dirname, "../..");
+  const backend = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
+  });
+  const catalog = await backend["provider.catalog"]();
+  assert.deepEqual(Object.keys(catalog), ["openai", "anthropic", "minimax", "deepseek"]);
+  for (const models of Object.values(catalog)) assert.ok(models.length > 0);
+  backend.dispose();
 });
 
 test("the app does not send the key to an older ASP that still persists it", async (t) => {

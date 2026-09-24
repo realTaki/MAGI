@@ -324,6 +324,7 @@ function registerRoutes(router: Router, app: AspApp): void {
       provider: optionalString(body, "provider"),
       model: optionalString(body, "model"),
       api_key: optionalString(body, "api_key"),
+      base_url: optionalString(body, "base_url"),
     };
     const handles = providerHandles(body.handles);
     const synced: string[] = [];

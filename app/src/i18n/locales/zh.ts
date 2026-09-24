@@ -82,6 +82,8 @@ export default {
     providerName: "服务",
     providerChoose: "请选择",
     providerModel: "模型",
+    providerCustom: "自定义",
+    providerBaseUrl: "接口 URL",
     providerApiKey: "API Key",
     providerApiKeyPlaceholder: "只存在本机",
     providerSave: "保存并同步",

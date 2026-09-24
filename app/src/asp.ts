@@ -283,6 +283,7 @@ export type ProviderSettings = {
   provider: string | null;
   model: string | null;
   api_key: string | null;
+  base_url: string | null;
 };
 
 /** What the app saved locally, plus which MAGI confirmed the broadcast. */
@@ -333,6 +334,11 @@ export async function getSourceStatus(): Promise<SourceStatus | null> {
 export async function getProviderSettings(): Promise<ProviderSettings | null> {
   const invoke = window.magiDesktop?.invokeLocal;
   return invoke ? (await invoke("provider.settings")) as ProviderSettings : null;
+}
+
+export async function getProviderCatalog(): Promise<Record<string, { id: string; name: string }[]>> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  return invoke ? (await invoke("provider.catalog")) as Record<string, { id: string; name: string }[]> : {};
 }
 
 export async function getProviderUsage(): Promise<ProviderUsage> {

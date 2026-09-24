@@ -87,7 +87,7 @@ ADAM 和 EVA 是将来 Society 里的角色名。现在的应用还没有 Societ
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24、npm 和 Bun，没有 Python。
 - **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。会话和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的会话。
-- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`。默认工作区是 `~/.magi/magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -130,9 +130,9 @@ app/              操作界面和本地后端
    ▼
 asp/              127.0.0.1:42069
    │  拉起 Bun
-   ├── magi  eva-000     ~/.magi/magi/eva-000
-   ├── magi  eva-001     ~/.magi/magi/eva-001
-   └── magi  eva-002     ~/.magi/magi/eva-002
+   ├── magi  eva-000     ~/.magi/eva-000
+   ├── magi  eva-001     ~/.magi/eva-001
+   └── magi  eva-002     ~/.magi/eva-002
 ```
 
 ASP 负责启动进程和转发会话事件，不是 MAGI 思考的地方。每个 MAGI 有自己的 SQLite 工作区。操作者的聊天记录和 provider key 留在桌面端。

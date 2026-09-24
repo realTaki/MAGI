@@ -21,11 +21,14 @@ MAGI_API_KEY=... bun run start -- @alice.magi http://127.0.0.1:42069 TOKEN
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
 it listens for session events and sends replies through ASP. State lives in
-`~/.magi/magi/alice` by default. An existing `~/.magi/ts-magi/alice` workspace is still opened;
+`~/.magi/alice` by default. An existing `~/.magi/ts-magi/alice` workspace is still opened;
 set `MAGI_WORKSPACE` to use another directory. `MAGI_MODEL` defaults to
-`gpt-4.1-mini`. `MAGI_API_BASE` selects an OpenAI-compatible `/chat/completions`
-endpoint. The desktop provider picker routes are supported directly without
-the Python LiteLLM dependency.
+`gpt-4.1-mini`. Provider models and protocols are handled by `@earendil-works/pi-ai`;
+the desktop app offers OpenAI, Anthropic, MiniMax, DeepSeek, and a custom
+OpenAI-compatible HTTPS endpoint (HTTP is allowed for localhost). For a custom
+endpoint, set the provider to `custom` and supply a base URL, model ID, and API
+key in the desktop settings. The Python LiteLLM dependency is not used.
+`MAGI_PROVIDER=custom MAGI_API_BASE=...` selects a custom endpoint for CLI use.
 `/exit` stops terminal chat; Ctrl-C stops ASP mode. Set
 `MAGI_TELEGRAM_BOT_TOKEN` to poll Telegram and deliver text replies there.
 Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or

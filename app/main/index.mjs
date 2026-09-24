@@ -29,6 +29,7 @@
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
@@ -284,11 +285,19 @@ export function createLocalApi(context) {
 
   function normalizeProvider(settings) {
     return Object.fromEntries(
-      ["provider", "model", "api_key"].map((field) => [
+      ["provider", "model", "api_key", "base_url"].map((field) => [
         field,
         typeof settings?.[field] === "string" ? settings[field].trim() || null : null,
       ]),
     );
+  }
+
+  async function providerCatalog() {
+    const entry = path.join(paths.checkout, "magi", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js");
+    const { getBuiltinModels } = await import(pathToFileURL(entry).href);
+    return Object.fromEntries(["openai", "anthropic", "minimax", "deepseek"].map((provider) => [
+      provider, getBuiltinModels(provider).map((model) => ({ id: model.id, name: model.name })),
+    ]));
   }
 
   function readProvider() {
@@ -1307,6 +1316,7 @@ export function createLocalApi(context) {
     "github.signIn": signIn,
     "github.connect": connect,
     "provider.settings": () => readProvider() ?? normalizeProvider(null),
+    "provider.catalog": providerCatalog,
     "provider.usage": providerUsage,
     "provider.save": saveProvider,
     "source.status": sourceStatus,

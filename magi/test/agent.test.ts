@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Magi } from "../magi.js";
 import type { CallLLMJob, LLMMessage } from "../bus/index.js";
-import { OpenAICompatibleClient } from "../providers/client.js";
+import { PiAiClient } from "../providers/client.js";
 
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
@@ -62,46 +62,61 @@ describe("local MAGI agent", () => {
     } finally { await magi.stop(); }
   });
 
-  test("provider keeps text as text and reads actions only from native tool_calls", async () => {
-    const client = new OpenAICompatibleClient("key", "model", "http://provider.test/v1", async (_url, init) => {
-      const request = JSON.parse(String(init?.body)) as { messages: unknown[]; tools: unknown[] };
-      expect(request.messages).toEqual([{ role: "user", content: "hello" }]);
-      expect(request.tools).toHaveLength(1);
-      return Response.json({ choices: [{ message: {
-        content: '{"tool":"ignore this plain text"}',
-        tool_calls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: '{"path":"a.txt"}' } }],
-      } }] });
-    });
-    expect(await client.complete({ messages: [{ role: "user", content: "hello" }], tools: [
+  test("pi-ai handles a custom OpenAI-compatible endpoint and native tool calls", async () => {
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const client = new PiAiClient({
+      provider: "custom", model: "local-model", api_key: "key", base_url: "http://localhost:8888/v1",
+    }, (async (input, init) => {
+      requests.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      const chunks = requests.length === 1 ? [
+        { id: "chatcmpl-1", object: "chat.completion.chunk", created: 1, model: "local-model",
+          choices: [{ index: 0, delta: { role: "assistant", content: '{"tool":"plain text"}' }, finish_reason: null }] },
+        { id: "chatcmpl-1", object: "chat.completion.chunk", created: 1, model: "local-model",
+          choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_1", type: "function",
+            function: { name: "read_file", arguments: '{"path":"a.txt"}' } }] }, finish_reason: null }] },
+        { id: "chatcmpl-1", object: "chat.completion.chunk", created: 1, model: "local-model",
+          choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+      ] : [
+        { id: "chatcmpl-2", object: "chat.completion.chunk", created: 2, model: "local-model",
+          choices: [{ index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null }] },
+        { id: "chatcmpl-2", object: "chat.completion.chunk", created: 2, model: "local-model",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      ];
+      return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+        { headers: { "Content-Type": "text/event-stream" } });
+    }) as typeof fetch);
+    const message = await client.complete({ messages: [{ role: "user", content: "hello" }], tools: [
       { name: "read_file", description: "read", input_schema: { type: "object" } },
-    ] })).toEqual({
-      role: "assistant", content: '{"tool":"ignore this plain text"}',
-      tool_calls: [{ tool_call_id: "call_1", name: "read_file", arguments: { path: "a.txt" } }],
-    });
+    ] });
+    expect(requests[0].url).toContain("localhost:8888/v1/chat/completions");
+    expect((requests[0].body.tools as unknown[])).toHaveLength(1);
+    expect(message.content).toBe('{"tool":"plain text"}');
+    expect(message.tool_calls).toEqual([{ tool_call_id: "call_1", name: "read_file", arguments: { path: "a.txt" } }]);
+    expect(message.provider_state).toBeDefined();
+    const followUp = await client.complete({ messages: [
+      { role: "user", content: "hello" }, message,
+      { role: "tool", tool_call_id: "call_1", tool_name: "read_file", content: "file contents" },
+    ], tools: [] });
+    expect(followUp.content).toBe("done");
+    expect((requests[1].body.messages as Array<{ role: string }>).map((item) => item.role)).toEqual(["user", "assistant", "tool"]);
   });
 
-  test("provider translates Anthropic messages and native tool calls", async () => {
-    const client = new OpenAICompatibleClient("key", "claude-test", "https://api.anthropic.test/v1", async (url, init) => {
-      expect(url).toBe("https://api.anthropic.test/v1/messages");
-      expect(new Headers(init?.headers).get("x-api-key")).toBe("key");
-      const request = JSON.parse(String(init?.body)) as { system: string; messages: unknown[]; tools: unknown[] };
-      expect(request.system).toBe("system prompt");
-      expect(request.messages).toEqual([{ role: "user", content: "hello" }]);
-      expect(request.tools).toHaveLength(1);
-      return Response.json({ content: [
-        { type: "thinking", thinking: "inspect", signature: "signed" },
-        { type: "text", text: "working" },
-        { type: "tool_use", id: "tool-1", name: "read_file", input: { path: "a.txt" } },
-      ] });
-    }, "claude");
-    expect(await client.complete({
-      messages: [{ role: "system", content: "system prompt" }, { role: "user", content: "hello" }],
-      tools: [{ name: "read_file", description: "read", input_schema: { type: "object" } }],
-    })).toEqual({
-      role: "assistant", content: "working",
-      tool_calls: [{ tool_call_id: "tool-1", name: "read_file", arguments: { path: "a.txt" } }],
-      thinking_blocks: [{ type: "thinking", thinking: "inspect", signature: "signed" }],
-    });
+  test("pi-ai uses its built-in DeepSeek endpoint and model metadata", async () => {
+    let endpoint = "";
+    let authorization = "";
+    const client = new PiAiClient({ provider: "deepseek", model: "deepseek-v4-pro", api_key: "sk-test" },
+      (async (input, init) => {
+        endpoint = String(input);
+        authorization = new Headers(init?.headers).get("authorization") ?? "";
+        const chunk = { id: "chatcmpl-1", object: "chat.completion.chunk", created: 1, model: "deepseek-v4-pro",
+          choices: [{ index: 0, delta: { role: "assistant", content: "OK" }, finish_reason: "stop" }] };
+        return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+          { headers: { "Content-Type": "text/event-stream" } });
+      }) as typeof fetch);
+    const message = await client.complete({ messages: [{ role: "user", content: "hello" }], tools: [] });
+    expect(endpoint).toBe("https://api.deepseek.com/chat/completions");
+    expect(authorization).toBe("Bearer sk-test");
+    expect(message.content).toBe("OK");
   });
 
   test("a slow provider does not stall the tools worker", async () => {
@@ -213,12 +228,13 @@ describe("local MAGI agent", () => {
     expect(failed).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
     expect(magi.bus.getSetting("provider.api_key")).toBeNull();
 
-    const goodId = board.publish({ provider: "openai", model: "gpt-test", api_key: "good-secret" }, "test");
+    const goodId = board.publish({ provider: "custom", model: "gpt-test", api_key: "good-secret", base_url: "https://example.com/v1" }, "test");
     let completed = null;
     for (let i = 0; i < 100 && !completed; i++) { completed = board.result(goodId); await Bun.sleep(10); }
     expect(completed).toMatchObject({ status: "completed" });
-    expect(magi.bus.getSetting("provider.name")).toBe("openai");
+    expect(magi.bus.getSetting("provider.name")).toBe("custom");
     expect(magi.bus.getSetting("provider.model")).toBe("gpt-test");
+    expect(magi.bus.getSetting("provider.base_url")).toBe("https://example.com/v1");
     expect(magi.bus.getSetting("provider.api_key")).toBe("good-secret");
     expect(configured).toHaveLength(1);
     await magi.stop();

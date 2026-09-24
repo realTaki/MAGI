@@ -15,7 +15,7 @@ permalink: /terms/
 | **Book** | Durable records in that MAGI's workspace, such as memory, skills, contacts, and prompts. |
 | **Job** | A durable `publish -> claim -> result` item. Chat, model calls, tool calls, and delivery are Jobs. |
 | **Handle** | A MAGI's address, such as `@eva-000.magi`. |
-| **Workspace** | One MAGI's directory, `~/.magi/magi/<name>` unless an older `~/.magi/ts-magi/<name>` is still the one on disk. |
+| **Workspace** | One MAGI's directory, `~/.magi/<name>` unless an older `~/.magi/ts-magi/<name>` is still the one on disk. |
 
 **MAGIS**, **ADAM**, and **EVA** name a Society and the roles inside it. The
 running code does not yet store a Society tree or an ADAM control plane. ASP

@@ -36,12 +36,20 @@ export class Bus {
 
   constructor(readonly handle: string, workspace?: string, migrationSource?: string | null) {
     const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    const current = join(homedir(), ".magi", "magi", localName);
+    // A MAGI workspace is a sibling of app/, asp/, and the MAGI checkout.
+    // Do not put it under ".magi/magi": macOS normally has a case-insensitive
+    // filesystem, so that path aliases the ".magi/MAGI" source checkout.
+    const current = join(homedir(), ".magi", localName);
     const previous = join(homedir(), ".magi", "ts-magi", localName);
     this.workspace = resolve(
       workspace ?? (existsSync(current) || !existsSync(previous) ? current : previous),
     );
-    const pythonWorkspace = migrationSource === undefined ? (workspace === undefined ? join(homedir(), ".magi", localName) : null) : migrationSource;
+    // When using the current location it is already this TypeScript workspace,
+    // not a Python source to import from. Only the legacy ts-magi fallback
+    // imports from the former root-level Python workspace.
+    const pythonWorkspace = migrationSource === undefined
+      ? (workspace === undefined && this.workspace !== resolve(current) ? current : null)
+      : migrationSource;
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
     this.memories = new Database(join(this.workspace, "memories", "magi.db"), { create: true });

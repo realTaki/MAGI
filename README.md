@@ -123,7 +123,7 @@ decide what a MAGI should say.
   that MAGI; creating a group opens a conversation the operator can invite
   MAGI into.
 - **One process per MAGI** — Bun runs `magi/magi.ts`. The default workspace is
-  `~/.magi/magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
+  `~/.magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
   opened when the new path does not exist.
 - **BUS inside each MAGI** — Books for conversations, messages, memory, skills,
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
@@ -187,9 +187,9 @@ app/              operator UI and local backend
    ▼
 asp/              127.0.0.1:42069
    │  spawns Bun
-   ├── magi  eva-000     ~/.magi/magi/eva-000
-   ├── magi  eva-001     ~/.magi/magi/eva-001
-   └── magi  eva-002     ~/.magi/magi/eva-002
+   ├── magi  eva-000     ~/.magi/eva-000
+   ├── magi  eva-001     ~/.magi/eva-001
+   └── magi  eva-002     ~/.magi/eva-002
 ```
 
 ASP starts processes and relays session events. It is not the place a MAGI

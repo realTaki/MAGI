@@ -101,7 +101,7 @@ export class Transport {
 
   updateProvider(
     handle: string,
-    settings: { provider: string | null; model: string | null; api_key: string | null },
+    settings: { provider: string | null; model: string | null; api_key: string | null; base_url: string | null },
   ): Promise<boolean> {
     return this.#controlRequest(
       handle,

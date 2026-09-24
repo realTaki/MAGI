@@ -1,6 +1,6 @@
 export type AspEvent = {
   type?: string; event_id?: string; session_id?: string; payload?: Record<string, unknown>;
-  request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string;
+  request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string; base_url?: string;
 };
 
 export class AspClient {

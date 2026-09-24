@@ -52,7 +52,7 @@ export class Conversation {
         for (const pending of calls) {
           const result = await this.waitFor("RunToolJob", pending.jobId, 120_000);
           messages.push({
-            role: "tool", tool_call_id: pending.call.tool_call_id,
+            role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name,
             content: result.status === "failed" ? result.error ?? "tool failed" : result.output?.content ?? "",
             is_error: result.status === "failed",
           });

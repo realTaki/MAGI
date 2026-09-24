@@ -82,6 +82,8 @@ export default {
     providerName: "Provider",
     providerChoose: "Choose",
     providerModel: "Model",
+    providerCustom: "Custom",
+    providerBaseUrl: "Base URL",
     providerApiKey: "API key",
     providerApiKeyPlaceholder: "Kept on this machine",
     providerSave: "Save and sync",

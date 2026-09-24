@@ -29,10 +29,10 @@ repository to `~/.magi/MAGI`. Later launches keep that checkout.
 | `~/.magi/app/chat.sqlite` | desktop | The operator's transcript. |
 | `~/.magi/app/provider.json` | desktop | Provider, model, and API key. |
 | `~/.magi/asp/asp.sqlite` | ASP | Sessions, participants, and relay events. |
-| `~/.magi/magi/<name>` | that MAGI | Workspace. Books and Job history. |
+| `~/.magi/<name>` | that MAGI | Workspace. Books and Job history. |
 
 An older workspace at `~/.magi/ts-magi/<name>` is still opened when
-`~/.magi/magi/<name>` does not exist yet.
+`~/.magi/<name>` does not exist yet.
 
 ## ASP
 

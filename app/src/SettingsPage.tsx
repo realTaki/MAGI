@@ -7,57 +7,14 @@ import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { ShellRelease } from "./magi-desktop";
 import type { LocalePreference } from "./i18n";
-import { clearOperator, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
+import { clearOperator, getProviderCatalog, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
 import type { ProviderUsage, SourceStatus } from "./asp";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
 type SettingsSection = "general" | "provider" | "usage" | "runtime" | "about";
 
-// Fixed catalog of model provider and model choices.
-type ProviderChoice = {
-  id: string;
-  models: readonly string[];
-  defaultModel: string;
-};
-
-const PROVIDERS: readonly ProviderChoice[] = [
-  {
-    id: "claude",
-    models: ["claude-opus-5", "claude-fable-5", "claude-sonnet-5"],
-    defaultModel: "claude-opus-5",
-  },
-  {
-    id: "openai",
-    models: ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-    defaultModel: "gpt-5.6",
-  },
-  {
-    id: "gemini",
-    models: ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-pro-latest"],
-    defaultModel: "gemini-3.7-flash",
-  },
-  { id: "xai", models: ["grok-4.6", "grok-4.20"], defaultModel: "grok-4.6" },
-  {
-    id: "deepseek",
-    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
-    defaultModel: "deepseek-v4-pro",
-  },
-  {
-    id: "minimax-cn",
-    models: ["MiniMax-M3", "MiniMax-M2.5"],
-    defaultModel: "MiniMax-M3",
-  },
-  {
-    id: "minimax-global",
-    models: ["MiniMax-M3", "MiniMax-M2.5"],
-    defaultModel: "MiniMax-M3",
-  },
-];
-
-function providerChoice(id: string): ProviderChoice | undefined {
-  return PROVIDERS.find((item) => item.id === id);
-}
+const PROVIDERS = ["openai", "anthropic", "minimax", "deepseek", "custom"] as const;
 
 export function SettingsPage() {
   const t = useT();
@@ -69,6 +26,8 @@ export function SettingsPage() {
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [catalog, setCatalog] = useState<Record<string, { id: string; name: string }[]>>({});
   const [savingProvider, setSavingProvider] = useState(false);
   const [providerStatus, setProviderStatus] = useState("");
   const [providerStatusIsError, setProviderStatusIsError] = useState(false);
@@ -141,13 +100,15 @@ export function SettingsPage() {
       return;
     }
     let cancelled = false;
+    void getProviderCatalog().then((value) => { if (!cancelled) setCatalog(value); }).catch(() => {});
     void getProviderSettings().then((settings) => {
       if (cancelled || settings === null) {
         return;
       }
-      setProvider(settings.provider ?? "");
+      setProvider(settings.provider === "claude" ? "anthropic" : settings.provider === "minimax-global" ? "minimax" : settings.provider ?? "");
       setModel(settings.model ?? "");
       setApiKey(settings.api_key ?? "");
+      setBaseUrl(settings.base_url ?? "");
     });
     return () => {
       cancelled = true;
@@ -208,17 +169,11 @@ export function SettingsPage() {
 
   function chooseProvider(next: string) {
     setProvider(next);
-    const entry = providerChoice(next);
-    if (entry === undefined) {
-      setModel("");
-      return;
-    }
-    setModel(entry.models.includes(model) ? model : entry.defaultModel);
+    if (next !== "custom") setModel(catalog[next]?.some((entry) => entry.id === model) ? model : "");
   }
 
-  const selected = providerChoice(provider);
-  const modelChoices = selected?.models ?? [];
-  const selectionKnown = selected !== undefined && modelChoices.includes(model);
+  const modelChoices = catalog[provider] ?? [];
+  const selectionKnown = !!provider && !!model.trim() && (provider !== "custom" || !!baseUrl.trim());
 
   async function saveProvider() {
     setSavingProvider(true);
@@ -229,10 +184,12 @@ export function SettingsPage() {
         provider,
         model,
         api_key: apiKey,
+        base_url: provider === "custom" ? baseUrl : null,
       });
       setProvider(saved.provider ?? "");
       setModel(saved.model ?? "");
       setApiKey(saved.api_key ?? "");
+      setBaseUrl(saved.base_url ?? "");
       const parts = [`${t("appSettings.providerSynced")} ${saved.synced.length}`];
       if (saved.failed.length > 0) {
         parts.push(`${t("appSettings.providerFailed")} ${saved.failed.length}`);
@@ -437,35 +394,45 @@ export function SettingsPage() {
                       onChange={(event) => chooseProvider(event.target.value)}
                     >
                       <option value="">{t("appSettings.providerChoose")}</option>
-                      {PROVIDERS.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.id}
+                      {PROVIDERS.map((name) => (
+                        <option key={name} value={name}>
+                          {name === "custom" ? t("appSettings.providerCustom") : name === "anthropic" ? "Anthropic" : name === "minimax" ? "MiniMax" : name === "deepseek" ? "DeepSeek" : "OpenAI"}
                         </option>
                       ))}
-                      {provider !== "" && selected === undefined ? (
+                      {provider !== "" && !PROVIDERS.some((name) => name === provider) ? (
                         <option value={provider}>{provider}</option>
                       ) : null}
                     </select>
                   </label>
                   <label className="settings-card__row">
                     <span>{t("appSettings.providerModel")}</span>
-                    <select
+                    {provider === "custom" || modelChoices.length === 0 ? <input
+                      className="settings-card__input"
+                      value={model}
+                      onChange={(event) => setModel(event.target.value)}
+                      placeholder={t("appSettings.providerModel")}
+                    /> : <select
                       className="settings-card__select settings-card__choice"
                       value={model}
-                      disabled={selected === undefined}
+                      disabled={!provider}
                       onChange={(event) => setModel(event.target.value)}
                     >
                       <option value="">{t("appSettings.providerChoose")}</option>
-                      {modelChoices.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
+                      {modelChoices.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.name}
                         </option>
                       ))}
-                      {model !== "" && !modelChoices.includes(model) ? (
+                      {model !== "" && !modelChoices.some((entry) => entry.id === model) ? (
                         <option value={model}>{model}</option>
                       ) : null}
-                    </select>
+                    </select>}
                   </label>
+                  {provider === "custom" ? <label className="settings-card__row">
+                    <span>{t("appSettings.providerBaseUrl")}</span>
+                    <input className="settings-card__input" type="url" value={baseUrl}
+                      placeholder="https://example.com/v1" onChange={(event) => setBaseUrl(event.target.value)} />
+                  </label> : null}
                   <label className="settings-card__row">
                     <span>{t("appSettings.providerApiKey")}</span>
                     <input

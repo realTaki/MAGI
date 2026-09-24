@@ -82,6 +82,8 @@ export default {
     providerName: "プロバイダ",
     providerChoose: "選択してください",
     providerModel: "モデル",
+    providerCustom: "カスタム",
+    providerBaseUrl: "ベース URL",
     providerApiKey: "API キー",
     providerApiKeyPlaceholder: "このマシンにのみ保存",
     providerSave: "保存して同期",

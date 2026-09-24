@@ -1,3 +1,6 @@
+import { createProvider, type Api, type AssistantMessage, type Context, type Message, type Model, type MutableModels, type Tool } from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { CallLLMJob, LLMMessage, LLMToolCall } from "../bus/index.js";
 
 export interface LLMClient {
@@ -6,121 +9,98 @@ export interface LLMClient {
   configure?(settings: ProviderSettings): void;
 }
 
-export type ProviderSettings = { provider?: string; api_key?: string; model?: string; api_base?: string };
+export type ProviderSettings = { provider?: string; api_key?: string; model?: string; base_url?: string };
 
-type ResponseMessage = {
-  content?: string | null;
-  tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }>;
-};
+function providerId(value: string): string {
+  if (value === "claude") return "anthropic";
+  if (value === "minimax-global") return "minimax";
+  return value;
+}
 
-export class OpenAICompatibleClient implements LLMClient {
-  constructor(
-    private apiKey: string,
-    private model: string,
-    private apiBase = "https://api.openai.com/v1",
-    private readonly fetcher: (url: string, init?: RequestInit) => Promise<Response> = fetch,
-    private provider = "openai",
-  ) {}
-
-  configure(settings: ProviderSettings): void {
-    if (settings.api_key !== undefined) this.apiKey = settings.api_key;
-    if (settings.model !== undefined) this.model = settings.model;
-    if (settings.api_base !== undefined) this.apiBase = settings.api_base;
-    if (settings.provider !== undefined) this.provider = settings.provider;
+function resolveModel(models: MutableModels, settings: ProviderSettings): Model<Api> {
+  const provider = providerId(settings.provider?.trim() || "openai");
+  const id = settings.model?.trim();
+  if (!id) throw new Error("provider.model is missing");
+  if (provider === "custom") {
+    const baseUrl = settings.base_url?.trim();
+    if (!baseUrl) throw new Error("provider.base_url is missing");
+    const url = new URL(baseUrl);
+    if (url.username || url.password || url.search || url.hash) throw new Error("custom provider URL must not contain credentials, query, or fragment");
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) {
+      throw new Error("custom provider URL must use HTTPS (or HTTP on localhost)");
+    }
+    const model: Model<"openai-completions"> = {
+      id, name: id, api: "openai-completions", provider: "custom", baseUrl: url.toString().replace(/\/$/, ""),
+      reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128_000, maxTokens: 8_192,
+    };
+    models.setProvider(createProvider({
+      id: "custom", name: "Custom", baseUrl: model.baseUrl,
+      auth: { apiKey: { name: "Custom API key", async resolve() { return { auth: {} }; } } },
+      models: [model], api: openAICompletionsApi(),
+    }));
+    return model;
   }
+  const model = models.getModel(provider, id);
+  if (!model) throw new Error(`pi-ai has no model ${provider}/${id}`);
+  return model;
+}
+
+function toContext(job: CallLLMJob, model: Model<Api>): Context {
+  const messages: Message[] = job.messages.map((message): Message => {
+    const timestamp = Date.now();
+    if (message.role === "system") return { role: "system", content: message.content, timestamp };
+    if (message.role === "user") return { role: "user", content: message.content, timestamp };
+    if (message.role === "tool") return {
+      role: "toolResult", toolCallId: message.tool_call_id ?? "", toolName: message.tool_name ?? "tool",
+      content: [{ type: "text", text: message.content }], isError: message.is_error ?? false, timestamp,
+    };
+    if (message.provider_state) return message.provider_state as unknown as AssistantMessage;
+    return {
+      role: "assistant", api: model.api, provider: model.provider, model: model.id,
+      content: [
+        ...(message.thinking_blocks ?? []).map((part) => ({ type: "thinking" as const, thinking: part.thinking, thinkingSignature: part.signature })),
+        ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
+        ...(message.tool_calls ?? []).map((call) => ({ type: "toolCall" as const, id: call.tool_call_id, name: call.name, arguments: call.arguments as import("@earendil-works/pi-ai").JsonObject })),
+      ],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: message.tool_calls?.length ? "toolUse" : "stop", timestamp,
+    };
+  });
+  const tools: Tool[] = job.tools.map((tool) => ({ name: tool.name, description: tool.description, parameters: tool.input_schema as Tool["parameters"] }));
+  return { messages, tools };
+}
+
+export class PiAiClient implements LLMClient {
+  private readonly models: MutableModels = builtinModels();
+  constructor(private settings: ProviderSettings, private readonly fetcher: typeof fetch = fetch) {}
+
+  configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings }; }
 
   async verify(settings: ProviderSettings): Promise<void> {
-    const candidate = new OpenAICompatibleClient(
-      settings.api_key ?? this.apiKey,
-      settings.model ?? this.model,
-      settings.api_base ?? this.apiBase,
-      this.fetcher,
-      settings.provider ?? this.provider,
-    );
-    await candidate.request([{ role: "user", content: "Reply OK." }], [], 32);
+    await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256);
   }
 
-  async complete(job: CallLLMJob): Promise<LLMMessage> {
-    if (!this.apiKey) throw new Error("provider.api_key is missing");
-    return this.request(job.messages, job.tools);
-  }
+  complete(job: CallLLMJob): Promise<LLMMessage> { return this.request(job, this.settings); }
 
-  private async request(messagesInput: LLMMessage[], tools: CallLLMJob["tools"], maxTokens?: number): Promise<LLMMessage> {
-    if (!this.apiKey) throw new Error("provider.api_key is missing");
-    if (this.provider === "claude" || this.provider === "anthropic") return this.requestAnthropic(messagesInput, tools, maxTokens);
-    const messages = messagesInput.map((message) => {
-      if (message.role === "tool") return {
-        role: "tool", tool_call_id: message.tool_call_id,
-        content: message.is_error ? `Tool failed:\n${message.content}` : message.content,
-      };
-      if (message.role === "assistant" && message.tool_calls?.length) return {
-        role: "assistant", content: message.content,
-        tool_calls: message.tool_calls.map((call) => ({
-          id: call.tool_call_id, type: "function",
-          function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-        })),
-      };
-      return { role: message.role, content: message.content };
+  private async request(job: CallLLMJob, settings: ProviderSettings, maxTokens?: number): Promise<LLMMessage> {
+    if (!settings.api_key) throw new Error("provider.api_key is missing");
+    const model = resolveModel(this.models, settings);
+    const response = await this.models.completeSimple(model, toContext(job, model), {
+      apiKey: settings.api_key, fetch: this.fetcher, maxTokens, timeoutMs: 120_000,
     });
-    const response = await this.fetcher(`${this.apiBase.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, max_tokens: maxTokens, tools: tools.length ? tools.map((tool) => ({
-        type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema },
-      })) : undefined }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!response.ok) throw new Error(`provider HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const body = await response.json() as { choices?: Array<{ message?: ResponseMessage }> };
-    const raw = body.choices?.[0]?.message;
-    if (!raw) throw new Error("provider returned no assistant message");
-    if (raw.content !== null && raw.content !== undefined && typeof raw.content !== "string") throw new Error("provider returned non-text content");
-    const calls: LLMToolCall[] = [];
-    for (const call of raw.tool_calls ?? []) {
-      if (!call.id || call.type !== "function" || !call.function?.name) throw new Error("provider returned invalid tool call");
-      const parsed: unknown = JSON.parse(call.function.arguments || "{}");
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("provider returned non-object tool arguments");
-      calls.push({ tool_call_id: call.id, name: call.function.name, arguments: parsed as Record<string, unknown> });
+    if (["error", "aborted", "length", "deferred"].includes(response.stopReason)) {
+      throw new Error(response.errorMessage ?? `provider stopped: ${response.stopReason}`);
     }
-    return { role: "assistant", content: raw.content ?? "", tool_calls: calls.length ? calls : undefined };
-  }
-
-  private async requestAnthropic(messagesInput: LLMMessage[], tools: CallLLMJob["tools"], maxTokens?: number): Promise<LLMMessage> {
-    const system = messagesInput.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
-    const messages = messagesInput.filter((message) => message.role !== "system").map((message) => {
-      if (message.role === "tool") return {
-        role: "user", content: [{ type: "tool_result", tool_use_id: message.tool_call_id, content: message.content, is_error: message.is_error ?? false }],
-      };
-      if (message.role === "assistant") {
-        const content: Array<Record<string, unknown>> = [];
-        for (const block of message.thinking_blocks ?? []) content.push({ type: block.type, thinking: block.thinking, signature: block.signature });
-        if (message.content) content.push({ type: "text", text: message.content });
-        for (const call of message.tool_calls ?? []) content.push({ type: "tool_use", id: call.tool_call_id, name: call.name, input: call.arguments });
-        return { role: "assistant", content };
-      }
-      return { role: "user", content: message.content };
-    });
-    const response = await this.fetcher(`${this.apiBase.replace(/\/$/, "")}/messages`, {
-      method: "POST",
-      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, system: system || undefined, messages, max_tokens: maxTokens ?? 8_192,
-        tools: tools.length ? tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.input_schema })) : undefined }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (!response.ok) throw new Error(`provider HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const body = await response.json() as { content?: Array<Record<string, unknown>> };
-    if (!Array.isArray(body.content)) throw new Error("provider returned no assistant content");
-    const text = body.content.filter((item) => item.type === "text" && typeof item.text === "string").map((item) => item.text as string).join("");
-    const calls: LLMToolCall[] = body.content.filter((item) => item.type === "tool_use").map((item) => {
-      if (typeof item.id !== "string" || typeof item.name !== "string" || typeof item.input !== "object" || item.input === null || Array.isArray(item.input)) {
-        throw new Error("provider returned invalid tool call");
-      }
-      return { tool_call_id: item.id, name: item.name, arguments: item.input as Record<string, unknown> };
-    });
-    const thinking = body.content.filter((item) => item.type === "thinking").map((item) => {
-      if (typeof item.thinking !== "string" || typeof item.signature !== "string") throw new Error("provider returned invalid thinking block");
-      return { type: "thinking", thinking: item.thinking, signature: item.signature };
-    });
-    return { role: "assistant", content: text, tool_calls: calls.length ? calls : undefined, thinking_blocks: thinking.length ? thinking : undefined };
+    const calls: LLMToolCall[] = response.content.filter((part) => part.type === "toolCall").map((part) => ({
+      tool_call_id: part.id, name: part.name, arguments: part.arguments as Record<string, unknown>,
+    }));
+    return {
+      role: "assistant",
+      content: response.content.filter((part) => part.type === "text").map((part) => part.text).join(""),
+      tool_calls: calls.length ? calls : undefined,
+      provider_state: response as unknown as Record<string, unknown>,
+    };
   }
 }

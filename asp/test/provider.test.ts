@@ -19,6 +19,7 @@ test("provider update is transient", async (t) => {
       provider: "claude",
       model: "claude-opus-5",
       api_key: "sk-test",
+      base_url: null,
       synced: [],
       failed: [],
     });
