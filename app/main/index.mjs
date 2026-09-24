@@ -27,7 +27,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
@@ -1297,7 +1297,9 @@ export function createLocalApi(context) {
     });
     const output = path.join(shellDir, "release");
     const extension = installerExtension();
-    const candidates = readdirSync(output).filter((name) => name.endsWith(extension) && !name.includes(".blockmap"));
+    const candidates = readdirSync(output)
+      .filter((name) => name.endsWith(extension) && !name.includes(".blockmap"))
+      .sort((left, right) => statSync(path.join(output, right)).mtimeMs - statSync(path.join(output, left)).mtimeMs);
     const name = candidates.find((candidate) => candidate.includes(`-${process.arch}${extension}`)) ?? candidates[0];
     if (name === undefined) throw new Error(`The build did not create a ${extension} installer in ${output}`);
     return { output, installer: path.join(output, name) };
