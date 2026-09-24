@@ -30,9 +30,9 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { openChatStore } from "./chat-store.mjs";
-import { agentBranch, createMagiRuntime } from "./magi-runtime.mjs";
-import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.mjs";
+import { openChatStore } from "./chat-store.ts";
+import { agentBranch, createMagiRuntime } from "./magi-runtime.ts";
+import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.ts";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
@@ -202,7 +202,7 @@ export function createLocalApi(context) {
   let providerRelayReady = false;
   const providerAttempted = new Set();
   // ASP keeps the roll of agents; this backend owns their source trees and
-  // processes (see magi-runtime.mjs). A developer's own checkout is never
+  // processes (see magi-runtime.ts). A developer's own checkout is never
   // rewired, so MAGI then share it exactly as before.
   const magiRuntime = createMagiRuntime({
     checkout: paths.checkout,

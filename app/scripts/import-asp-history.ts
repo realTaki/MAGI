@@ -2,7 +2,7 @@
 import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { openChatStore } from "../main/chat-store.mjs";
+import { openChatStore } from "../main/chat-store.ts";
 
 export async function importAspHistory({
   asp = "http://127.0.0.1:42069",
@@ -44,7 +44,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   for (let index = 0; index < args.length; index += 2) {
     const key = args[index];
     const value = args[index + 1];
-    if (!value || (key !== "--asp" && key !== "--database")) throw new Error("usage: node import-asp-history.mjs [--asp URL] [--database PATH]");
+    if (!value || (key !== "--asp" && key !== "--database")) throw new Error("usage: node import-asp-history.ts [--asp URL] [--database PATH]");
     options[key.slice(2)] = value;
   }
   importAspHistory(options).then(

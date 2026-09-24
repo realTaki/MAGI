@@ -6,7 +6,7 @@ import {
   githubRepo,
   releaseAsset,
   shellRelease,
-} from "../main/shell-update.mjs";
+} from "../main/shell-update.ts";
 import { updateScript } from "../../shell/update-script.mjs";
 
 test("a newer release asset is chosen for this machine", () => {

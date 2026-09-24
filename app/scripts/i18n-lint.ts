@@ -23,10 +23,17 @@
  * Optional flag ``--allow-missing=<locale>`` skips the named locale
  * (useful when a translation is intentionally pending review).
  */
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const LOCALES_DIR = path.resolve(__dirname, "..", "src", "i18n", "locales");
+const LOCALES_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "src",
+  "i18n",
+  "locales",
+);
 const REQUIRED_LOCALES = ["zh.ts", "en.ts", "ja.ts"];
 
 function listLocaleFiles() {

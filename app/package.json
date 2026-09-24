@@ -6,11 +6,11 @@
   "description": "MAGI desktop app: operator interface and local backend.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node scripts/postbuild.cjs",
+    "build": "tsc --noEmit && vite build && node scripts/postbuild.ts",
     "preview": "vite preview",
-    "lint": "node scripts/i18n-lint.cjs",
-    "lint:i18n": "node scripts/i18n-lint.cjs",
-    "test": "node --test"
+    "lint": "node scripts/i18n-lint.ts",
+    "lint:i18n": "node scripts/i18n-lint.ts",
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.2",

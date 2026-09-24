@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { createLocalApi } from "../main/index.mjs";
+import { createLocalApi } from "../main/index.ts";
 
 function app(root) {
   return createLocalApi({

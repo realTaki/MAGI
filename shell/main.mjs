@@ -228,9 +228,9 @@ function devTools() {
 
 function appBackendEntry(appCheckout) {
   if (app.isPackaged || localCheckoutManaged) {
-    return path.join(appCheckout, "app", "main", "index.mjs");
+    return path.join(appCheckout, "app", "main", "index.ts");
   }
-  return path.join(SHELL_DIR, "..", "app", "main", "index.mjs");
+  return path.join(SHELL_DIR, "..", "app", "main", "index.ts");
 }
 
 async function loadLocalApp(runtimeRoot, appCheckout) {

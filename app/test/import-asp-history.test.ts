@@ -3,8 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { openChatStore } from "../main/chat-store.mjs";
-import { importAspHistory } from "../scripts/import-asp-history.mjs";
+import { openChatStore } from "../main/chat-store.ts";
+import { importAspHistory } from "../scripts/import-asp-history.ts";
 
 test("legacy ASP import preserves events without acknowledging them", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-history-import-"));

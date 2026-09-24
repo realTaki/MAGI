@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { agentBranch, agentSource, createMagiRuntime } from "../main/magi-runtime.mjs";
+import { agentBranch, agentSource, createMagiRuntime } from "../main/magi-runtime.ts";
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");

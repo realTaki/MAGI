@@ -36,7 +36,7 @@ recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and conversation state in its workspace; outbound messages go
 through DeliveryNotify jobs.
 An old running ASP kept events only in memory. Before stopping it for this
-upgrade, run the bundled Node.js with `app/scripts/import-asp-history.mjs` from the MAGI
+upgrade, run the bundled Node.js with `app/scripts/import-asp-history.ts` from the MAGI
 checkout. This copies its available conversations and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
@@ -80,7 +80,7 @@ Only six things, none of them product-specific:
    then show that entry — a built file or a dev URL.
 6. Stop the backend on quit (`shutdown()`), which tears down what it started.
 
-That leaves one contract: the checkout must contain `app/main/index.mjs`
+That leaves one contract: the checkout must contain `app/main/index.ts`
 exporting `createLocalApi(context)`, with a `prepare`, `start` and `shutdown`,
 and whatever else the interface calls.
 
@@ -91,7 +91,7 @@ machine, not part of the startup sequence and not an ASP concern. The app starts
 without it; the connection is offered once on first run, and the signed-in
 account is shown in Settings. It calls `github.state`,
 `github.signIn` and `github.connect` on the app backend
-(`app/main/index.mjs`), which the shell reaches through its generic bridge.
+(`app/main/index.ts`), which the shell reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,

@@ -19,10 +19,11 @@
  *
  * Run via ``package.json`` ``build`` script after ``vite build``.
  */
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const DIST = path.resolve(__dirname, "..", "dist");
+const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const ASSETS = path.join(DIST, "assets");
 
 function listEntries() {
