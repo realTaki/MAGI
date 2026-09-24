@@ -8,11 +8,15 @@ export class ProvidersWorker extends BaseWorker {
 
   constructor(bus: Bus, client?: LLMClient) {
     super(bus);
+    // A freshly started MAGI has no provider at all: these settings belong to
+    // this workspace and the operator's app writes them through ASP
+    // (ChangeProviderNotify). Nothing else configures them — no environment,
+    // no default provider, no default model.
     this.client = client ?? new PiAiClient({
-      api_key: bus.getSetting("provider.api_key") ?? process.env.MAGI_API_KEY ?? "",
-      model: bus.getSetting("provider.model") ?? process.env.MAGI_MODEL ?? "gpt-4.1-mini",
-      base_url: bus.getSetting("provider.base_url") ?? bus.getSetting("provider.api_base") ?? process.env.MAGI_API_BASE ?? "",
-      provider: bus.getSetting("provider.name") ?? process.env.MAGI_PROVIDER ?? (process.env.MAGI_API_BASE ? "custom" : "openai"),
+      provider: bus.getSetting("provider.name") ?? undefined,
+      api_key: bus.getSetting("provider.api_key") ?? undefined,
+      model: bus.getSetting("provider.model") ?? undefined,
+      base_url: bus.getSetting("provider.base_url") ?? bus.getSetting("provider.api_base") ?? undefined,
     });
   }
 

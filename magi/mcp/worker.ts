@@ -88,6 +88,8 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
   }
 }
 
+// An MCP server runs as its own process: it gets this environment plus the
+// server's configured one. MAGI's own configuration never comes from here.
 function cleanEnvironment(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 }

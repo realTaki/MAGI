@@ -58,7 +58,7 @@ export class Bus {
     if (settingsColumns.some((column) => column.name === "id")) {
       this.logs.close();
       this.memories.close();
-      throw new Error("this workspace uses py-magi's SQLite schema; choose a separate MAGI_WORKSPACE");
+      throw new Error("this workspace uses py-magi's SQLite schema; choose a separate workspace");
     }
     for (const db of [this.memories, this.logs]) {
       db.exec("PRAGMA journal_mode = WAL");

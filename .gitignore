@@ -247,9 +247,9 @@ app/*.tsbuildinfo
 /workspace/
 data/
 # Stray ``magi.db`` files that escape the configured
-# state directory — usually an alembic CLI run from a
-# checkout without ``MAGI_WORKSPACE_DIR`` set, or a test
-# fixture that forgot to override the path. The codebase
+# state directory — usually a CLI run pointed at the wrong
+# directory, or a test fixture that forgot to override the
+# path. The codebase
 # always points at ``<workspace>/memories/magi.db``; anything
 # sitting in cwd, /tmp, /workspace, or the repo root is
 # a leak. Catch every spelling.
