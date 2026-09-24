@@ -51,8 +51,8 @@ describe("local MAGI agent", () => {
     db.close();
     const magi = new Magi("@migrate.magi", { workspace: target, migrationSource: source, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
     try {
-      expect(magi.bus.getSetting("provider.name")).toBe("openai");
-      expect(magi.bus.getSetting("migration.py_magi")).toBeTruthy();
+      expect(magi.bus.settings.get("provider.name")).toBe("openai");
+      expect(magi.bus.settings.get("migration.py_magi")).toBeTruthy();
       expect(magi.bus.contacts.get(1)?.nickname).toBe("Migrated");
       expect(magi.bus.contactNotes.get(1)?.note).toBe("kept note");
       expect(magi.bus.conversations.get(1)).toMatchObject({ topic: "topic", info: "info", summary: "summary" });
@@ -226,16 +226,16 @@ describe("local MAGI agent", () => {
     let failed = null;
     for (let i = 0; i < 100 && !failed; i++) { failed = board.result(badId); await Bun.sleep(10); }
     expect(failed).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
-    expect(magi.bus.getSetting("provider.api_key")).toBeNull();
+    expect(magi.bus.settings.get("provider.api_key")).toBeNull();
 
     const goodId = board.publish({ provider: "custom", model: "gpt-test", api_key: "good-secret", base_url: "https://example.com/v1" }, "test");
     let completed = null;
     for (let i = 0; i < 100 && !completed; i++) { completed = board.result(goodId); await Bun.sleep(10); }
     expect(completed).toMatchObject({ status: "completed" });
-    expect(magi.bus.getSetting("provider.name")).toBe("custom");
-    expect(magi.bus.getSetting("provider.model")).toBe("gpt-test");
-    expect(magi.bus.getSetting("provider.base_url")).toBe("https://example.com/v1");
-    expect(magi.bus.getSetting("provider.api_key")).toBe("good-secret");
+    expect(magi.bus.settings.get("provider.name")).toBe("custom");
+    expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");
+    expect(magi.bus.settings.get("provider.base_url")).toBe("https://example.com/v1");
+    expect(magi.bus.settings.get("provider.api_key")).toBe("good-secret");
     expect(configured).toHaveLength(1);
     await magi.stop();
   });
@@ -254,7 +254,7 @@ describe("local MAGI agent", () => {
       },
     });
     magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish magi", kind: "long_term" });
-    magi.bus.setSetting("provider.context_window", "100");
+    magi.bus.settings.set("provider.context_window", "100");
     const conversation = magi.bus.conversations.forChannel("cli", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
     magi.start();

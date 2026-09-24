@@ -13,10 +13,10 @@ export class ProvidersWorker extends BaseWorker {
     // (ChangeProviderNotify). Nothing else configures them — no environment,
     // no default provider, no default model.
     this.client = client ?? new PiAiClient({
-      provider: bus.getSetting("provider.name") ?? undefined,
-      api_key: bus.getSetting("provider.api_key") ?? undefined,
-      model: bus.getSetting("provider.model") ?? undefined,
-      base_url: bus.getSetting("provider.base_url") ?? bus.getSetting("provider.api_base") ?? undefined,
+      provider: bus.settings.get("provider.name") ?? undefined,
+      api_key: bus.settings.get("provider.api_key") ?? undefined,
+      model: bus.settings.get("provider.model") ?? undefined,
+      base_url: bus.settings.get("provider.base_url") ?? bus.settings.get("provider.api_base") ?? undefined,
     });
   }
 
@@ -51,10 +51,10 @@ export class ProvidersWorker extends BaseWorker {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
       await this.client.verify(candidate);
       this.client.configure(candidate);
-      if (settings.provider !== undefined) this.bus.setSetting("provider.name", settings.provider);
-      if (settings.api_key !== undefined) this.bus.setSetting("provider.api_key", settings.api_key);
-      if (settings.model !== undefined) this.bus.setSetting("provider.model", settings.model);
-      if (candidate.base_url !== undefined) this.bus.setSetting("provider.base_url", candidate.base_url);
+      if (settings.provider !== undefined) this.bus.settings.set("provider.name", settings.provider);
+      if (settings.api_key !== undefined) this.bus.settings.set("provider.api_key", settings.api_key);
+      if (settings.model !== undefined) this.bus.settings.set("provider.model", settings.model);
+      if (candidate.base_url !== undefined) this.bus.settings.set("provider.base_url", candidate.base_url);
       board.submit(this.worker_name, id, { output: {} });
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);

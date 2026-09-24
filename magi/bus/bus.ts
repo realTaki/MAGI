@@ -10,6 +10,7 @@ import { TaskBook } from "./firmware/books/taskBook.js";
 import { ContactBook } from "./firmware/books/contactBook.js";
 import { ContactNoteBook } from "./firmware/books/contactNoteBook.js";
 import { McpServerBook } from "./firmware/books/mcpServerBook.js";
+import { SettingsBook } from "./firmware/books/settingsBook.js";
 import { PromptBook } from "./firmware/books/promptBook.js";
 import { ToolBook } from "./firmware/books/toolBook.js";
 import { JobBoard } from "./firmware/jobs/jobBoard.js";
@@ -29,6 +30,7 @@ export class Bus {
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
   readonly prompts: PromptBook;
+  readonly settings: SettingsBook;
   readonly tools = new ToolBook();
   private readonly memories: Database;
   private readonly logs: Database;
@@ -118,6 +120,8 @@ export class Bus {
     `);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
     this.logs.exec("UPDATE jobs SET status = 'pending', worker = NULL WHERE status = 'claimed'");
+    // The migration below reads and marks settings, so this one is built first.
+    this.settings = new SettingsBook(this.memories);
     if (pythonWorkspace) this.migratePythonWorkspace(pythonWorkspace);
     this.conversations = new ConversationBook(this.memories);
     this.messages = new MessageBook(this.memories);
@@ -161,22 +165,13 @@ export class Bus {
     return jobId;
   }
 
-  getSetting(key: string): string | null {
-    const row = this.memories.prepare("SELECT value FROM books_settings WHERE key = ?").get(key) as { value: string } | undefined;
-    return row?.value ?? null;
-  }
-
-  setSetting(key: string, value: string): void {
-    this.memories.prepare("INSERT INTO books_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
-  }
-
   close(): void {
     this.logs.close();
     this.memories.close();
   }
 
   private migratePythonWorkspace(sourceWorkspace: string): void {
-    const marker = this.getSetting("migration.py_magi");
+    const marker = this.settings.get("migration.py_magi");
     const sourcePath = join(sourceWorkspace, "memories", "magi.db");
     if (marker || !existsSync(sourcePath)) return;
     const source = new Database(sourcePath, { readonly: true });
@@ -195,12 +190,12 @@ export class Bus {
         copyRows(source, this.memories, "books_contacts", ["id", "name", "nickname", "role", "last_seen_at"]);
         copyRows(source, this.memories, "books_contact_notes", ["id", "contact_id", "note", "kind", "created_at"]);
         copyRows(source, this.memories, "books_memories", ["id", "topic", "detail", "kind", "archived", "created_at"]);
-        for (const row of source.query("SELECT key, value FROM books_settings").all() as Array<{ key: string; value: string }>) this.setSetting(row.key, row.value);
+        for (const { key, value } of new SettingsBook(source).all()) this.settings.set(key, value);
         for (const row of source.query("SELECT id, name, prompt, source, enabled, cron, conversation_id FROM books_tasks").all() as Array<Record<string, unknown>>) {
           this.memories.prepare("INSERT OR IGNORE INTO books_tasks (id, name, prompt, source, enabled, cron, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .run(...[row.id, row.name, row.prompt, row.source, row.enabled ? 1 : 0, row.cron, row.conversation_id].map(sqlValue));
         }
-        this.setSetting("migration.py_magi", new Date().toISOString());
+        this.settings.set("migration.py_magi", new Date().toISOString());
       }).immediate();
       for (const relative of ["prompts", "skills"]) {
         const from = join(sourceWorkspace, relative);

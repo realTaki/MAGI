@@ -35,7 +35,7 @@ export class Magi {
     this.providers = new ProvidersWorker(this.bus, options.client);
     this.cli = new CliWorker(this.bus, options.deliver);
     this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
-    const telegramToken = options.telegram?.token ?? this.bus.getSetting("telegram.bot_token") ?? undefined;
+    const telegramToken = options.telegram?.token ?? this.bus.settings.get("telegram.bot_token") ?? undefined;
     this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
     this.tasks = new TaskWorker(this.bus);
     this.mcp = new McpWorker(this.bus, options.mcpConnector);
