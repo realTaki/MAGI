@@ -1,12 +1,21 @@
-import { eq } from "drizzle-orm";
-import type { BooksDb } from "../database.js";
-import { memories } from "../schema.js";
+import { eq, sql } from "drizzle-orm";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+
+export const memories = sqliteTable("books_memories", {
+  id: integer("id").primaryKey(),
+  topic: text("topic").notNull(),
+  detail: text("detail").notNull(),
+  kind: text("kind").$type<"temporary" | "short_term" | "long_term">().notNull().default("temporary"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+});
 
 export type Memory = typeof memories.$inferSelect;
 export type MemoryKind = Memory["kind"];
 
 export class MemoryBook {
-  constructor(private readonly db: BooksDb) {}
+  constructor(private readonly db: BusDb) {}
 
   list(includeArchived = false): Memory[] {
     return this.db.select().from(memories)

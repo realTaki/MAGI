@@ -1,11 +1,22 @@
 import { eq } from "drizzle-orm";
-import type { BooksDb } from "../database.js";
-import { tasks } from "../schema.js";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+
+export const tasks = sqliteTable("books_tasks", {
+  id: integer("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  prompt: text("prompt").notNull(),
+  source: text("source").$type<"user" | "proactive">().notNull().default("user"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  cron: text("cron").notNull(),
+  conversation_id: integer("conversation_id").notNull(),
+  last_fired_minute: text("last_fired_minute"),
+});
 
 export type Task = typeof tasks.$inferSelect;
 
 export class TaskBook {
-  constructor(private readonly db: BooksDb) {}
+  constructor(private readonly db: BusDb) {}
 
   list(enabledOnly = false): Task[] {
     return this.db.select().from(tasks)

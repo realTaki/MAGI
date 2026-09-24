@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "db:generate": "drizzle-kit generate && drizzle-kit generate --config=drizzle.logs.config.ts",
+    "db:generate": "drizzle-kit generate --config=bus/drizzle.config.ts && drizzle-kit generate --config=bus/drizzle.logs.config.ts",
     "start": "bun magi.ts",
     "test": "bun run build && bun test test/*.test.ts"
   },

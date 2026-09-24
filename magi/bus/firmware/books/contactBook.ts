@@ -1,12 +1,20 @@
 import { eq, sql } from "drizzle-orm";
-import type { BooksDb } from "../database.js";
-import { contacts } from "../schema.js";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+
+export const contacts = sqliteTable("books_contacts", {
+  id: integer("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  nickname: text("nickname"),
+  role: text("role").$type<"system" | "authorized" | "stranger" | "magi" | "third_party_agent">().notNull().default("stranger"),
+  last_seen_at: text("last_seen_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+});
 
 export type Contact = typeof contacts.$inferSelect;
 export type ContactRole = Contact["role"];
 
 export class ContactBook {
-  constructor(private readonly db: BooksDb) {}
+  constructor(private readonly db: BusDb) {}
 
   get(id: number): Contact | null {
     return this.db.select().from(contacts).where(eq(contacts.id, id)).get() ?? null;

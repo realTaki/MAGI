@@ -1,10 +1,23 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { JobsDb } from "../database.js";
-import { jobs } from "./schema.js";
-import type { Job, JobInput, JobOutput, JobResult, JobType } from "./types.js";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+import type { Job, JobInput, JobOutput, JobResult, JobStatus, JobType } from "./types.js";
+
+export const jobs = sqliteTable("jobs", {
+  id: integer("id").primaryKey(),
+  type: text("type").$type<JobType>().notNull(),
+  publisher: text("publisher").notNull(),
+  status: text("status").$type<JobStatus>().notNull().default("pending"),
+  worker: text("worker"),
+  input: text("input").notNull(),
+  output: text("output"),
+  error: text("error"),
+  created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [index("jobs_claim").on(table.type, table.status, table.id)]);
 
 export class JobBoard<K extends JobType> {
-  constructor(private readonly db: JobsDb, readonly type: K) {}
+  constructor(private readonly db: BusDb, readonly type: K) {}
 
   publish(input: JobInput[K], publisher: string): number {
     return this.db.insert(jobs)

@@ -3,35 +3,31 @@ import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import * as books from "./schema.js";
-import * as jobs from "./jobs/schema.js";
 
-export type BooksDb = BunSQLiteDatabase<typeof books> & { $client: Database };
-export type JobsDb = BunSQLiteDatabase<typeof jobs> & { $client: Database };
+/** Either workspace database. Each Book declares the table it owns. */
+export type BusDb = BunSQLiteDatabase & { $client: Database };
 
 /** Wrap an already open connection: the caller owns PRAGMAs and the py-magi guard. */
-export function booksDatabase(client: Database): BooksDb {
-  return drizzle(client, { schema: books });
-}
-
-export function jobsDatabase(client: Database): JobsDb {
-  return drizzle(client, { schema: jobs });
+export function workspaceDatabase(client: Database): BusDb {
+  return drizzle(client);
 }
 
 /** Bring a workspace database up to the schema the code expects. */
-export function migrateBooks(db: BooksDb): void {
+export function migrateBooks(db: BusDb): void {
   migrate(db, { migrationsFolder: migrationsFolder("memories") });
 }
 
-export function migrateJobs(db: JobsDb): void {
+export function migrateJobs(db: BusDb): void {
   migrate(db, { migrationsFolder: migrationsFolder("logs") });
 }
 
-// ``drizzle/`` sits at the package root; the walk also covers a compiled copy under dist/.
+// ``bus/drizzle/`` is a sibling of this file's folder; the second shape covers a
+// compiled copy under ``dist/``, which tsc emits without copying the .sql files.
 function migrationsFolder(name: string): string {
   for (let dir = import.meta.dir; ; dir = dirname(dir)) {
-    const candidate = join(dir, "drizzle", name);
-    if (existsSync(candidate)) return candidate;
+    for (const candidate of [join(dir, "drizzle", name), join(dir, "bus", "drizzle", name)]) {
+      if (existsSync(candidate)) return candidate;
+    }
     if (dirname(dir) === dir) throw new Error(`drizzle/${name} migrations are missing`);
   }
 }

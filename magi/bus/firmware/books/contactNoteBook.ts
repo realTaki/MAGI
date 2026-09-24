@@ -1,12 +1,21 @@
-import { and, desc, eq } from "drizzle-orm";
-import type { BooksDb } from "../database.js";
-import { contactNotes } from "../schema.js";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+import { contacts } from "./contactBook.js";
+
+export const contactNotes = sqliteTable("books_contact_notes", {
+  id: integer("id").primaryKey(),
+  contact_id: integer("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  kind: text("kind").$type<"permanent" | "daily">().notNull().default("permanent"),
+  created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+});
 
 export type ContactNote = typeof contactNotes.$inferSelect;
 export type NoteKind = ContactNote["kind"];
 
 export class ContactNoteBook {
-  constructor(private readonly db: BooksDb) {}
+  constructor(private readonly db: BusDb) {}
 
   get(id: number): ContactNote | null {
     return this.db.select().from(contactNotes).where(eq(contactNotes.id, id)).get() ?? null;

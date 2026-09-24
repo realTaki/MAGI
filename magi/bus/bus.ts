@@ -3,9 +3,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
-import { booksDatabase, jobsDatabase, migrateBooks, migrateJobs, type BooksDb, type JobsDb } from "./firmware/database.js";
-import { contacts } from "./firmware/schema.js";
-import { jobs } from "./firmware/jobs/schema.js";
+import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./firmware/database.js";
+import { contacts } from "./firmware/books/contactBook.js";
 import { ConversationBook } from "./firmware/books/conversationBook.js";
 import { MessageBook } from "./firmware/books/messageBook.js";
 import { MemoryBook } from "./firmware/books/memoryBook.js";
@@ -17,7 +16,7 @@ import { McpServerBook } from "./firmware/books/mcpServerBook.js";
 import { SettingsBook } from "./firmware/books/settingsBook.js";
 import { PromptBook } from "./firmware/books/promptBook.js";
 import { ToolBook } from "./firmware/books/toolBook.js";
-import { JobBoard } from "./firmware/jobs/jobBoard.js";
+import { JobBoard, jobs } from "./firmware/jobs/jobBoard.js";
 import type { ChatNotify, DeliveryNotify, JobInput, JobType } from "./firmware/jobs/types.js";
 
 export const MAGI_CONTACT_ID = 1;
@@ -36,8 +35,8 @@ export class Bus {
   readonly prompts: PromptBook;
   readonly settings: SettingsBook;
   readonly tools = new ToolBook();
-  private readonly db: BooksDb;
-  private readonly logs: JobsDb;
+  private readonly db: BusDb;
+  private readonly logs: BusDb;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
 
   constructor(readonly handle: string, workspace?: string, migrationSource?: string | null) {
@@ -70,10 +69,10 @@ export class Bus {
       client.exec("PRAGMA journal_mode = WAL");
       client.exec("PRAGMA busy_timeout = 5000");
     }
-    // Schema history lives in ``drizzle/`` next to this package, one folder per database.
-    this.db = booksDatabase(memories);
+    // Schema history lives in ``bus/drizzle/``, one folder per database.
+    this.db = workspaceDatabase(memories);
     migrateBooks(this.db);
-    this.logs = jobsDatabase(logs);
+    this.logs = workspaceDatabase(logs);
     migrateJobs(this.logs);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
     this.logs.update(jobs).set({ status: "pending", worker: null }).where(eq(jobs.status, "claimed")).run();
@@ -149,7 +148,7 @@ export class Bus {
         copyRows(source, this.db.$client, "books_contacts", ["id", "name", "nickname", "role", "last_seen_at"]);
         copyRows(source, this.db.$client, "books_contact_notes", ["id", "contact_id", "note", "kind", "created_at"]);
         copyRows(source, this.db.$client, "books_memories", ["id", "topic", "detail", "kind", "archived", "created_at"]);
-        for (const { key, value } of new SettingsBook(booksDatabase(source)).all()) this.settings.set(key, value);
+        for (const { key, value } of new SettingsBook(workspaceDatabase(source)).all()) this.settings.set(key, value);
         for (const row of source.query("SELECT id, name, prompt, source, enabled, cron, conversation_id FROM books_tasks").all() as Array<Record<string, unknown>>) {
           this.db.$client.prepare("INSERT OR IGNORE INTO books_tasks (id, name, prompt, source, enabled, cron, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
             .run(...[row.id, row.name, row.prompt, row.source, row.enabled ? 1 : 0, row.cron, row.conversation_id].map(sqlValue));

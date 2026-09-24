@@ -1,6 +1,15 @@
 import { and, count, desc, eq, lte, sql } from "drizzle-orm";
-import type { BooksDb } from "../database.js";
-import { messages } from "../schema.js";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import type { BusDb } from "../database.js";
+
+export const messages = sqliteTable("books_messages", {
+  id: integer("id").primaryKey(),
+  conversation_id: integer("conversation_id").notNull(),
+  contact_id: integer("contact_id").notNull(),
+  content: text("content").notNull(),
+  created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+}, (table) => [index("books_messages_conversation").on(table.conversation_id, table.id)]);
 
 export type Message = typeof messages.$inferSelect;
 
@@ -8,7 +17,7 @@ export type Message = typeof messages.$inferSelect;
 const matches = (query: string) => sql`instr(lower(${messages.content}), lower(${query})) > 0`;
 
 export class MessageBook {
-  constructor(private readonly db: BooksDb) {}
+  constructor(private readonly db: BusDb) {}
 
   add(conversationId: number, contactId: number, content: string): void {
     this.db.insert(messages).values({ conversation_id: conversationId, contact_id: contactId, content }).run();
