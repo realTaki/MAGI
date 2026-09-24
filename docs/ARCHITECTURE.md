@@ -6,9 +6,12 @@ permalink: /architecture/
 
 # MAGI Architecture
 
-The running system is three programs. The desktop is the operator's machine.
-ASP relays sessions and starts MAGI. Each MAGI is its own Bun process with its
-own BUS.
+The running system has three parts. The desktop is the operator's machine.
+ASP starts MAGI and serves as the central channel for their shared sessions:
+it tracks participants and relays events between them. Each MAGI is its own
+Bun process with its own BUS. Within that process, Books and Jobs provide a
+single boundary for persistent state and coordination, so components depend
+on the BUS rather than directly on one another.
 
 ```text
 shell/                 Electron. Clones the repo, opens the window.

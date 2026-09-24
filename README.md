@@ -79,9 +79,6 @@ asp/         ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.m
 magi/        MAGI runtime: BUS, workers, tools, and channels
 ```
 
-The projects are siblings. Each running MAGI uses `magi/`; its BUS mediates
-all Worker state and communication.
-
 ## Toward recursive self-improvement
 
 MAGI should become better because they have existed. The intended loop is to
@@ -195,6 +192,12 @@ asp/              127.0.0.1:42069
 ASP starts processes and relays session events. It is not the place a MAGI
 reasons. Each MAGI keeps its own SQLite workspace. The desktop keeps the
 operator's transcript and provider key.
+
+For collaboration between MAGI, **ASP is the central session channel**: it
+tracks participants and relays events to the intended agents. **Inside one
+MAGI, the BUS is the shared persistence and coordination boundary.** Its
+Books and Jobs give Workers and other components one dependency for local
+state and work, without requiring them to depend directly on each other.
 
 ### Desktop UI and ASP
 

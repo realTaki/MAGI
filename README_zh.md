@@ -137,6 +137,10 @@ asp/              127.0.0.1:42069
 
 ASP 负责启动进程和转发会话事件，不是 MAGI 思考的地方。每个 MAGI 有自己的 SQLite 工作区。操作者的聊天记录和 provider key 留在桌面端。
 
+**MAGI 之间通过 ASP 的会话通信**：ASP 管理参与者，并将事件转发给目标智能体。
+**单个 MAGI 内部则以 BUS 为中心**：Books 和 Jobs 集中持久化状态、协调各组件的工作，
+让 Worker 等组件统一依赖 BUS，而不必彼此直接依赖。
+
 ### 桌面 UI 与 ASP
 
 Electron App 启动本地 ASP；ASP 负责 HTTP、WebSocket `/connect` 与 MAGI 进程
