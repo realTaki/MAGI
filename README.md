@@ -1,4 +1,4 @@
-# MAGI — Modular Agentic Governed Intelligences
+# MAGI — Modular Agentic Genesis Intelligences
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
@@ -6,17 +6,23 @@
 
 [中文 README](README_zh.md)
 
-> **MAGI is a runtime for persistent, modular, governable agents.**
+> **MAGI is a multi-agent runtime built toward recursive self-improvement.**
 >
 > Each MAGI has its own runtime, workspace, memory, tools, and provider
 > credentials. ASP starts that process and relays its sessions. The operator
-> can inspect the workspace and the boundary around it.
+> can inspect the workspace and the boundary around it. Together, MAGI can
+> work on the software that runs them: propose changes, evaluate the results,
+> and build on improvements over successive cycles.
 
-MAGI is built for the question beyond “how do I delegate this task?”:
+MAGI is built around a question:
 
-**How do we give a group of AI agents identity, continuity, organization, and
-the freedom to improve together over time — while keeping that autonomy
-observable, bounded, and governable?**
+**Can a persistent group of agents improve its own software and organization,
+measure the result, and use what it learns to make the next improvement?**
+
+**Genesis** evokes the creation of new agents, capabilities, and ways of
+working. **Intelligences** refers to the independent agents involved. Recursive
+self-improvement (RSI) is the research direction, not a claim that a complete
+autonomous improvement loop exists today.
 
 ## Why MAGI?
 
@@ -33,14 +39,16 @@ workspace, memory, and skills remain after the task.
 | Scale means adding concurrent calls | Scale means adding MAGI |
 
 A workflow engine can still sit beside MAGI. MAGI is the runtime a long-lived
-agent runs on.
+agent runs on. A local, editable source tree gives those agents a place to
+change their own software; evaluating and safely adopting such changes is the
+next challenge.
 
 ## Design philosophy
 
 MAGI is designed for a future in which **intelligence becomes cheaper and more
 abundant**, while **coordination, trust, security, and governance remain hard**.
 
-That leads to four principles:
+That leads to five principles:
 
 - **Do not hard-code around temporary model limitations.** Token cost, context
   size, and reasoning quality will change quickly; the architecture should not
@@ -55,9 +63,12 @@ That leads to four principles:
   WebUI from a local Git checkout. This gives each installation a source tree
   that can evolve independently as MAGI moves toward recursive self-improvement
   (RSI).
+- **Test before adopting change.** A proposed change to an agent, a tool, or
+  the runtime needs a clear goal, an observable result, and a way to reject or
+  revert it. Editing source code alone does not establish improvement.
 
-The long-term goal is to build the infrastructure in which autonomous
-intelligences can collaborate freely **within explicit, inspectable constraints**.
+The long-term goal is for independent agents to collaborate on their own
+improvement **within explicit, inspectable constraints**.
 
 ## Repository layout
 
@@ -71,14 +82,16 @@ magi/        MAGI runtime: BUS, workers, tools, and channels
 The projects are siblings. Each running MAGI uses `magi/`; its BUS mediates
 all Worker state and communication.
 
-## Toward governed collective intelligence
+## Toward recursive self-improvement
 
-A MAGI should become better because it has existed, and the operator should
-still be able to inspect it:
+MAGI should become better because they have existed. The intended loop is to
+observe work, propose a change, evaluate it, and retain what proves useful:
 
 - A MAGI learns from the outcomes, failures, and observations of its work.
 - Useful procedures become reusable Skills rather than disappearing into one
   conversation.
+- MAGI can work toward changing their own code and runtime, then evaluate
+  whether those changes improve future behavior.
 - The operator can inspect its memory, its tools, its resource boundaries, and
   the authority used to change it.
 - Several MAGI can join one operator conversation. Each keeps its own workspace.
@@ -86,7 +99,9 @@ still be able to inspect it:
 > **Implementation status:** a local desktop, one ASP process, and one Bun
 > process per MAGI are what runs today. Each MAGI keeps its own workspace
 > (memory, skills, tasks, contacts, prompts) and talks to the operator through
-> ASP.
+> ASP. The local source checkout is editable, but autonomous validation,
+> activation, and rollback of agent-proposed code changes are **not yet
+> implemented**.
 
 ## The MAGI model
 
@@ -224,11 +239,9 @@ For the implementation-level view, see:
 MAGI is experimental and under active construction. What ships is a local
 desktop, ASP, and one Bun runtime per MAGI.
 
-The broader vision — autonomous learning, protocol-mediated coordination,
-richer policy enforcement, and increasingly self-organizing governed
-intelligences — is intentionally public. The README distinguishes that direction
-from shipped behavior so MAGI can remain ambitious without confusing roadmap
-with implementation.
+The broader vision is for MAGI to improve their own software and organization,
+evaluate those changes, and repeat the process. That RSI loop remains a research
+goal, distinct from the runtime capabilities described above.
 
 ## Contributing
 

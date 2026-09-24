@@ -8,7 +8,7 @@ permalink: /terms/
 
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | One governable agent. Also the Bun runtime in `magi/`. |
+| **MAGI** | Modular Agentic Genesis Intelligences, the project name. A MAGI is one governable agent and its Bun runtime in `magi/`; the plural in the full name refers to the independent agents working together. |
 | **ASP** | The local session server in `asp/`. It starts MAGI processes and relays events. It does not reason. |
 | **Desktop** | The Electron shell and the operator UI. It owns the checkout, the transcript, and the provider key. |
 | **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `magi/bus/`. |

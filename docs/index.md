@@ -1,13 +1,13 @@
 ---
-title: Persistent MAGI
-description: MAGI is a runtime for persistent, modular, governable agents.
+title: MAGI — toward recursive self-improvement
+description: A multi-agent runtime built toward recursive self-improvement.
 home: true
 ---
 
 <section class="hero">
-  <div class="eyebrow">MAGI runtime</div>
-  <h1>MAGI that persist.</h1>
-  <p>MAGI is an experimental runtime for modular, governable AI agents. Each one keeps its own identity, memory, and tools.</p>
+  <div class="eyebrow">Modular Agentic Genesis Intelligences</div>
+  <h1>Agents that can improve together.</h1>
+  <p>MAGI is an experimental multi-agent runtime. Each agent has its own identity, memory, tools, and workspace. The installation has an editable source checkout. The research goal is recursive self-improvement: propose changes to the system, evaluate the results, and build on what works.</p>
   <div class="hero-actions">
     <a class="button primary" href="{{ '/architecture/' | relative_url }}">Explore the architecture</a>
     <a class="button secondary" href="{{ '/terms/' | relative_url }}">Learn the language</a>
@@ -15,8 +15,8 @@ home: true
 </section>
 
 <section class="section">
-  <h2>An organization, not a one-off workflow</h2>
-  <p class="section-intro">Each MAGI has its own runtime and workspace. ASP starts the process and relays sessions.</p>
+  <h2>From persistent agents to self-improvement</h2>
+  <p class="section-intro">Each MAGI has its own runtime and workspace. ASP starts the process and relays sessions. The source is locally editable; autonomous validation and adoption of changes remain a research goal.</p>
   <div class="card-grid">
     <a class="card" href="{{ '/architecture/' | relative_url }}">
       <h3>Architecture</h3>
@@ -44,6 +44,7 @@ home: true
     <li><strong>Governance is mandatory.</strong> Autonomy remains observable, bounded, and accountable to operators.</li>
     <li><strong>Coordination is protocol-mediated.</strong> Infrastructure defines safe ways to discover, communicate, and delegate without prescribing every reasoning step.</li>
     <li><strong>Build for abundant intelligence.</strong> Design around durable coordination problems, not temporary model limitations.</li>
+    <li><strong>Evaluate improvement.</strong> State what a change should accomplish, inspect the result, and retain it only when it helps.</li>
   </ul>
 </section>
 
