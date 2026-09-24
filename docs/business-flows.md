@@ -7,7 +7,7 @@ permalink: /business-flows/
 
 # MAGI 关键业务流程
 
-这里写的是当前代码在做什么。Society 树、ADAM 控制面、MAGI 之间的任务板不在这条路径上。
+这里写的是当前代码在做什么。
 
 ## 桌面端启动
 

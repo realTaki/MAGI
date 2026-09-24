@@ -1,4 +1,4 @@
-# MAGI — Modular Agentic Governed Intelligences
+# MAGI — Modular Agentic Genesis Intelligences
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
@@ -6,45 +6,49 @@
 
 [中文 README](README_zh.md)
 
-> **MAGI is a runtime for persistent, modular, governable agent societies.**
+> **MAGI is a multi-agent runtime built toward recursive self-improvement.**
 >
-> A MAGIS is a **MAGI Society** — a persistent organization of independent MAGI.
-> Each MAGI has its own runtime, workspace, memory, tools, provider credentials,
-> and role in the Society.
-> They coordinate through the Society, execute through independently managed
-> MAGI runtimes, retain what they learn, and grow into a durable collective
-> intelligence without giving up boundaries, accountability, or operator control.
+> Each MAGI has its own runtime, workspace, memory, tools, and provider
+> credentials. ASP starts that process and relays its sessions. The operator
+> can inspect the workspace and the boundary around it. Together, MAGI can
+> work on the software that runs them: propose changes, evaluate the results,
+> and build on improvements over successive cycles.
 
-MAGI is built for the question beyond “how do I delegate this task?”:
+MAGI is built around a question:
 
-**How do we give a group of AI agents identity, continuity, organization, and
-the freedom to improve together over time — while keeping that autonomy
-observable, bounded, and governable?**
+**Can a persistent group of agents improve its own software and organization,
+measure the result, and use what it learns to make the next improvement?**
+
+**Genesis** evokes the creation of new agents, capabilities, and ways of
+working. **Intelligences** refers to the independent agents involved. Recursive
+self-improvement (RSI) is the research direction, not a claim that a complete
+autonomous improvement loop exists today.
 
 ## Why MAGI?
 
 Most multi-agent systems assemble a temporary team around a workflow: assign a
-research task, collect a result, then tear the team down. MAGI treats the
-**organization itself** as the primary unit.
+research task, collect a result, then tear the team down. A MAGI stays. Its
+workspace, memory, and skills remain after the task.
 
-| Task-oriented multi-agent orchestration | MAGI Society runtime |
+| Task-oriented multi-agent orchestration | A MAGI |
 | --- | --- |
-| Agents are steps in a workflow | MAGI are persistent members of an organization |
-| Collaboration ends with a task | Context, memory, skills, and relationships persist |
-| One process commonly hosts many agents | Every MAGI has an independent runtime and workspace |
-| A controller defines the execution path | The Society coordinates agents while infrastructure enforces lifecycle and boundaries |
-| Scale means adding concurrent calls | Scale means adding capable MAGI and connected Societies |
+| Agents are steps in a workflow | A MAGI persists across tasks |
+| Collaboration ends with a task | Context, memory, skills, and contacts persist |
+| One process commonly hosts many agents | Every MAGI has its own runtime and workspace |
+| A controller defines the execution path | The MAGI decides inside its own process. ASP starts it and relays sessions |
+| Scale means adding concurrent calls | Scale means adding MAGI |
 
-MAGI does not replace workflow engines. It provides a substrate for long-lived
-agent organizations that can operate, learn, reorganize, and eventually
-coordinate more of their own work.
+A workflow engine can still sit beside MAGI. MAGI is the runtime a long-lived
+agent runs on. A local, editable source tree gives those agents a place to
+change their own software; evaluating and safely adopting such changes is the
+next challenge.
 
 ## Design philosophy
 
 MAGI is designed for a future in which **intelligence becomes cheaper and more
 abundant**, while **coordination, trust, security, and governance remain hard**.
 
-That leads to four principles:
+That leads to five principles:
 
 - **Do not hard-code around temporary model limitations.** Token cost, context
   size, and reasoning quality will change quickly; the architecture should not
@@ -59,9 +63,12 @@ That leads to four principles:
   WebUI from a local Git checkout. This gives each installation a source tree
   that can evolve independently as MAGI moves toward recursive self-improvement
   (RSI).
+- **Test before adopting change.** A proposed change to an agent, a tool, or
+  the runtime needs a clear goal, an observable result, and a way to reject or
+  revert it. Editing source code alone does not establish improvement.
 
-The long-term goal is to build the infrastructure in which autonomous
-intelligences can collaborate freely **within explicit, inspectable constraints**.
+The long-term goal is for independent agents to collaborate on their own
+improvement **within explicit, inspectable constraints**.
 
 ## Repository layout
 
@@ -72,46 +79,36 @@ asp/         ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.m
 magi/        MAGI runtime: BUS, workers, tools, and channels
 ```
 
-The projects are siblings. Each running MAGI uses `magi/`; its BUS mediates
-all Worker state and communication.
+## Toward recursive self-improvement
 
-## Toward governed collective intelligence
+MAGI should become better because they have existed. The intended loop is to
+observe work, propose a change, evaluate it, and retain what proves useful:
 
-A MAGIS should become better because it has existed — while remaining
-inspectable and governable:
-
-- MAGI learn from the outcomes, failures, and observations of their work.
-- Useful procedures become reusable Skills rather than disappearing into an
-  individual conversation.
-- ADAM can recognize capability gaps, organize specialized EVAs, and reshape
-  the Society as its work changes.
-- Societies can share knowledge and collaborate without reducing every member
-  to a stateless API call.
-- Operators remain able to inspect the organization, its memory, its tools,
-  its resource boundaries, and the authority used to change it.
+- A MAGI learns from the outcomes, failures, and observations of its work.
+- Useful procedures become reusable Skills rather than disappearing into one
+  conversation.
+- MAGI can work toward changing their own code and runtime, then evaluate
+  whether those changes improve future behavior.
+- The operator can inspect its memory, its tools, its resource boundaries, and
+  the authority used to change it.
+- Several MAGI can join one operator conversation. Each keeps its own workspace.
 
 > **Implementation status:** a local desktop, one ASP process, and one Bun
 > process per MAGI are what runs today. Each MAGI keeps its own workspace
 > (memory, skills, tasks, contacts, prompts) and talks to the operator through
-> ASP. A Society tree, an ADAM control plane, and agent-to-agent job boards
-> are design goals. They are **not** in this tree.
+> ASP. The local source checkout is editable, but autonomous validation,
+> activation, and rollback of agent-proposed code changes are **not yet
+> implemented**.
 
 ## The MAGI model
 
-The names are deliberate:
-
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | The general kind of autonomous, governable agent in this system. |
-| **MAGIS** | A **MAGI Society**: an organization of MAGI. Societies form a tree. |
-| **MAGIC** | An old internal name for one MAGI. The current runtime does not have a MAGIC table. |
-| **ADAM** | The leading MAGI of a Society. ADAM provides its control plane and coordinates its MAGI. |
-| **EVA** | A working MAGI role. A Society can create, configure, start, stop, and retire multiple EVAs. |
+| **MAGI** | One autonomous, governable agent. Also the Bun runtime in `magi/`. |
+| **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
-ADAM and EVA name roles a Society would have. The running app does not yet
-model a Society tree or an ADAM control plane. ASP is the local lifecycle
-boundary: it starts MAGI processes and relays their sessions. It does not
-decide what a MAGI should say.
+ASP is the local lifecycle boundary. It starts MAGI processes and relays their
+sessions. It does not decide what a MAGI should say.
 
 ## What exists today
 
@@ -147,9 +144,9 @@ no root `deploy/` tree.
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
-the preparation stages before opening the WebUI, and while the society is still
-empty the backend seeds the first three MAGIs — **MELCHIOR**, **BALTHASAR**,
-**CASPER**. The app is also the
+the preparation stages before opening the WebUI. When no MAGI exists yet, the
+backend seeds the first three, **MELCHIOR**, **BALTHASAR**, and **CASPER**.
+The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
 Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
@@ -196,6 +193,12 @@ ASP starts processes and relays session events. It is not the place a MAGI
 reasons. Each MAGI keeps its own SQLite workspace. The desktop keeps the
 operator's transcript and provider key.
 
+For collaboration between MAGI, **ASP is the central session channel**: it
+tracks participants and relays events to the intended agents. **Inside one
+MAGI, the BUS is the shared persistence and coordination boundary.** Its
+Books and Jobs give Workers and other components one dependency for local
+state and work, without requiring them to depend directly on each other.
+
 ### Desktop UI and ASP
 
 The Electron app starts a local ASP service. ASP owns HTTP, WebSocket
@@ -237,14 +240,11 @@ For the implementation-level view, see:
 ## Project status
 
 MAGI is experimental and under active construction. What ships is a local
-desktop, ASP, and one Bun runtime per MAGI. The Society tree and cross-MAGI
-collaboration described above are not implemented in this repository.
+desktop, ASP, and one Bun runtime per MAGI.
 
-The broader vision — autonomous learning, protocol-mediated coordination,
-richer policy enforcement, and increasingly self-organizing governed
-intelligences — is intentionally public. The README distinguishes that direction
-from shipped behavior so MAGI can remain ambitious without confusing roadmap
-with implementation.
+The broader vision is for MAGI to improve their own software and organization,
+evaluate those changes, and repeat the process. That RSI loop remains a research
+goal, distinct from the runtime capabilities described above.
 
 ## Contributing
 

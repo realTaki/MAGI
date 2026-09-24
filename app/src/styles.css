@@ -880,7 +880,6 @@ body {
   line-height: 1;
 }
 
-.conversation-page__panel-back,
 .conversation-page__panel-collapse {
   position: relative;
   z-index: 21;
@@ -897,8 +896,6 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.conversation-page__panel-back:hover,
-.conversation-page__panel-back:focus-visible,
 .conversation-page__panel-collapse:hover,
 .conversation-page__panel-collapse:focus-visible {
   background: var(--surface-hover);

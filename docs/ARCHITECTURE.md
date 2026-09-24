@@ -6,9 +6,12 @@ permalink: /architecture/
 
 # MAGI Architecture
 
-The running system is three programs. The desktop is the operator's machine.
-ASP relays sessions and starts MAGI. Each MAGI is its own Bun process with its
-own BUS.
+The running system has three parts. The desktop is the operator's machine.
+ASP starts MAGI and serves as the central channel for their shared sessions:
+it tracks participants and relays events between them. Each MAGI is its own
+Bun process with its own BUS. Within that process, Books and Jobs provide a
+single boundary for persistent state and coordination, so components depend
+on the BUS rather than directly on one another.
 
 ```text
 shell/                 Electron. Clones the repo, opens the window.
@@ -86,11 +89,7 @@ Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over
 the operator's files.
 
-## What this tree does not contain
-
-There is no Society database, no ADAM control-plane service, and no
-agent-to-agent job board. Those names remain in the product vocabulary. They
-are not modules in `magi/` or `asp/`.
+## Older notes
 
 Older notes that map the retired Python package live in git history. The
 design book [`MAGI-BUS 架构设计书.md`](MAGI-BUS%20架构设计书.md) records an

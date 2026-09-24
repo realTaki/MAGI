@@ -13,14 +13,6 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
-function BackIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="m15 4-8 8 8 8" />
-    </svg>
-  );
-}
-
 function CollapseIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1289,15 +1281,7 @@ export function ConversationPage() {
           <aside id="conversation-page-profile" className="conversation-page__panel">
             {panelMode !== "routine" ? (
               <div className="conversation-page__panel-head">
-                <button
-                  type="button"
-                  className="conversation-page__panel-back"
-                  aria-label={t("common.back")}
-                  title={t("common.back")}
-                  onClick={collapseProfile}
-                >
-                  <BackIcon />
-                </button>
+                <span aria-hidden="true" />
                 <span>{t("conversationSettings.title")}</span>
                 <button
                   type="button"
