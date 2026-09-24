@@ -35,7 +35,7 @@ export class Magi {
     this.providers = new ProvidersWorker(this.bus, options.client);
     this.cli = new CliWorker(this.bus, options.deliver);
     this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
-    const telegramToken = options.telegram?.token ?? this.bus.getSetting("telegram.bot_token") ?? process.env.MAGI_TELEGRAM_BOT_TOKEN;
+    const telegramToken = options.telegram?.token ?? this.bus.settings.get("telegram.bot_token") ?? undefined;
     this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
     this.tasks = new TaskWorker(this.bus);
     this.mcp = new McpWorker(this.bus, options.mcpConnector);
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   if (!handle) throw new Error("usage: bun run start -- @handle.magi [asp-base asp-token]");
   const [base, token] = process.argv.slice(3);
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
-  const magi = new Magi(handle, { workspace: process.env.MAGI_WORKSPACE, asp: base && token ? { base, token } : undefined });
+  const magi = new Magi(handle, { asp: base && token ? { base, token } : undefined });
   magi.start();
   if (magi.asp) {
     try {

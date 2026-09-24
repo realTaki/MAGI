@@ -14,6 +14,25 @@ const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const agent = { handle: "@eva-000.magi", token: "tok" };
 
+/**
+ * MAGI's own Bun: the prepared runtime first, then the dependency the shell
+ * installs (what `shell/scripts/prepare-runtime.mjs` copies from, same two
+ * layouts). A system Bun is not MAGI's to run — see AGENTS.md.
+ */
+function projectBun() {
+  const shell = path.join(repository, "shell");
+  const platform = process.platform === "win32" ? "windows" : process.platform;
+  const architecture = process.arch === "arm64" ? "aarch64" : process.arch;
+  const executable = process.platform === "win32" ? "bun.exe" : "bun";
+  return (
+    [
+      path.join(shell, "runtime", "bin", executable),
+      path.join(shell, "node_modules", "bun", "bin", "bun.exe"),
+      path.join(shell, "node_modules", "@oven", `bun-${platform}-${architecture}`, "bin", executable),
+    ].find(existsSync) ?? ""
+  );
+}
+
 async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
 }
@@ -205,11 +224,9 @@ test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
 });
 
 test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
-  const bun = process.env.MAGI_BUN ?? "bun";
-  try {
-    await exec(bun, ["--version"]);
-  } catch {
-    t.skip("bun is not available");
+  const bun = projectBun();
+  if (bun === "") {
+    t.skip("MAGI's Bun is not installed: run npm ci in shell/, then node shell/scripts/prepare-runtime.mjs");
     return;
   }
   const root = mkdtempSync(path.join(tmpdir(), "magi-live-"));

@@ -70,7 +70,7 @@ export class Conversation {
   private async compact(previousSummary: string): Promise<string> {
     const active = this.bus.messages.list(this.conversation_id, 10_000);
     const estimatedTokens = active.reduce((sum, message) => sum + Math.max(1, Math.ceil(message.content.length / 4)), Math.max(0, Math.ceil(previousSummary.length / 4)));
-    const configuredWindow = Number(this.bus.getSetting("provider.context_window"));
+    const configuredWindow = Number(this.bus.settings.get("provider.context_window"));
     const contextWindow = Number.isFinite(configuredWindow) && configuredWindow > 0 ? configuredWindow : COMPACT_CONTEXT_WINDOW;
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;
     const old = active.slice(0, -COMPACT_KEEP_RECENT);

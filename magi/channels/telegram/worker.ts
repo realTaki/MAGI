@@ -10,7 +10,7 @@ export class TelegramWorker extends BaseWorker {
 
   constructor(bus: Bus, private readonly token: string, private readonly apiBase = `https://api.telegram.org/bot${token}`) {
     super(bus);
-    this.offset = Number(bus.getSetting("telegram.offset") ?? 0) || 0;
+    this.offset = Number(bus.settings.get("telegram.offset") ?? 0) || 0;
   }
 
   start(): void {
@@ -47,7 +47,7 @@ export class TelegramWorker extends BaseWorker {
         const updates = Array.isArray(body.result) ? body.result as Update[] : [];
         for (const update of updates) {
           this.offset = Math.max(this.offset, update.update_id + 1);
-          this.bus.setSetting("telegram.offset", String(this.offset));
+          this.bus.settings.set("telegram.offset", String(this.offset));
           const chatId = update.message?.chat?.id;
           const text = update.message?.text?.trim();
           if (chatId !== undefined && text) this.bus.publishChat({ text, channel: "tg", delivery_address: String(chatId) }, this.worker_name);

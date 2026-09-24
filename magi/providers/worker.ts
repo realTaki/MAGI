@@ -8,11 +8,15 @@ export class ProvidersWorker extends BaseWorker {
 
   constructor(bus: Bus, client?: LLMClient) {
     super(bus);
+    // A freshly started MAGI has no provider at all: these settings belong to
+    // this workspace and the operator's app writes them through ASP
+    // (ChangeProviderNotify). Nothing else configures them — no environment,
+    // no default provider, no default model.
     this.client = client ?? new PiAiClient({
-      api_key: bus.getSetting("provider.api_key") ?? process.env.MAGI_API_KEY ?? "",
-      model: bus.getSetting("provider.model") ?? process.env.MAGI_MODEL ?? "gpt-4.1-mini",
-      base_url: bus.getSetting("provider.base_url") ?? bus.getSetting("provider.api_base") ?? process.env.MAGI_API_BASE ?? "",
-      provider: bus.getSetting("provider.name") ?? process.env.MAGI_PROVIDER ?? (process.env.MAGI_API_BASE ? "custom" : "openai"),
+      provider: bus.settings.get("provider.name") ?? undefined,
+      api_key: bus.settings.get("provider.api_key") ?? undefined,
+      model: bus.settings.get("provider.model") ?? undefined,
+      base_url: bus.settings.get("provider.base_url") ?? bus.settings.get("provider.api_base") ?? undefined,
     });
   }
 
@@ -47,10 +51,10 @@ export class ProvidersWorker extends BaseWorker {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
       await this.client.verify(candidate);
       this.client.configure(candidate);
-      if (settings.provider !== undefined) this.bus.setSetting("provider.name", settings.provider);
-      if (settings.api_key !== undefined) this.bus.setSetting("provider.api_key", settings.api_key);
-      if (settings.model !== undefined) this.bus.setSetting("provider.model", settings.model);
-      if (candidate.base_url !== undefined) this.bus.setSetting("provider.base_url", candidate.base_url);
+      if (settings.provider !== undefined) this.bus.settings.set("provider.name", settings.provider);
+      if (settings.api_key !== undefined) this.bus.settings.set("provider.api_key", settings.api_key);
+      if (settings.model !== undefined) this.bus.settings.set("provider.model", settings.model);
+      if (candidate.base_url !== undefined) this.bus.settings.set("provider.base_url", candidate.base_url);
       board.submit(this.worker_name, id, { output: {} });
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
