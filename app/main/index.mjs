@@ -27,7 +27,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
@@ -186,11 +186,10 @@ function parseGitHubSlug(url) {
 
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, managed = false } = context;
-  // The root checkout is deliberately source-only. Builds run from role-specific
-  // worktrees under ~/.magi/app/MAGI and ~/.magi/asp/MAGI, while callers that
-  // predate this layout continue to use the one checkout they supplied.
+  // Shell loads this backend from the App worktree, while the source checkout
+  // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
-  const aspCheckout = paths.aspCheckout ?? paths.checkout;
+  let aspCheckout = paths.checkout;
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
@@ -225,39 +224,55 @@ export function createLocalApi(context) {
     }
   }
 
+  /**
+   * ASP is a local runtime owned by the App, not by the Electron shell. The
+   * shell has already made the App worktree so it can load this module; from
+   * here on the App owns this separate `magi/asp` worktree.
+   */
+  async function ensureAspWorktree() {
+    if (!managed) return aspCheckout;
+    const destination = path.join(paths.home, ".magi", "asp", "MAGI");
+    if (existsSync(path.join(destination, ".git"))) {
+      aspCheckout = destination;
+      return aspCheckout;
+    }
+    if (existsSync(destination)) {
+      throw new Error(`MAGI ASP worktree path is not a Git checkout: ${destination}`);
+    }
+    mkdirSync(path.dirname(destination), { recursive: true });
+    await command(git.binary, ["worktree", "prune"], {
+      ...options,
+      description: "Could not prune stale MAGI worktrees",
+    });
+    let branchExists = true;
+    try {
+      await command(git.binary, ["show-ref", "--verify", "--quiet", "refs/heads/magi/asp"], {
+        ...options,
+        description: "Could not look up the ASP worktree branch",
+      });
+    } catch {
+      branchExists = false;
+    }
+    await command(
+      git.binary,
+      branchExists
+        ? ["worktree", "add", destination, "magi/asp"]
+        : ["worktree", "add", "-b", "magi/asp", destination, "HEAD"],
+      { ...options, description: "Could not create the ASP worktree" },
+    );
+    aspCheckout = destination;
+    return aspCheckout;
+  }
+
   const appData = path.join(paths.home, ".magi", "app");
   mkdirSync(appData, { recursive: true });
   function chatStore() {
     chatStorePromise ??= openChatStore(path.join(appData, "chat.sqlite"));
     return chatStorePromise;
   }
-  // Move app-owned files out of old Electron profiles and legacy locations.
-  // A source is removed only after a readable destination exists.
-  function migrateAppFile(name, legacy = []) {
-    const destination = path.join(appData, name);
-    const sources = [
-      ...(paths.legacyUserData ? [path.join(paths.legacyUserData, name)] : []),
-      path.join(paths.userData, name),
-      ...legacy,
-    ].filter((source) => source !== destination);
-    if (!existsSync(destination)) {
-      for (const source of sources) {
-        if (existsSync(source)) {
-          copyFileSync(source, destination);
-          break;
-        }
-      }
-    }
-    if (existsSync(destination)) {
-      for (const source of sources) {
-        rmSync(source, { force: true });
-      }
-    }
-    return destination;
-  }
-  const tokenPath = migrateAppFile("github-token", [path.join(paths.home, ".magi", "github-token")]);
-  const metadataPath = migrateAppFile("github.json");
-  const avatarPath = migrateAppFile("github-avatar");
+  const tokenPath = path.join(appData, "github-token");
+  const metadataPath = path.join(appData, "github.json");
+  const avatarPath = path.join(appData, "github-avatar");
   const providerPath = path.join(appData, "provider.json");
   if (existsSync(tokenPath)) chmodSync(tokenPath, 0o600);
   const tokenFile = () => tokenPath;
@@ -776,6 +791,7 @@ export function createLocalApi(context) {
    * is prepared: a developer's own tree is already theirs to prepare.
    */
   async function prepare(progress) {
+    await ensureAspWorktree();
     const aspDir = path.join(aspCheckout, "asp");
     const appDir = path.join(appCheckout, "app");
     // The App owns the provider catalog it reads, so its worktree also carries
@@ -1010,6 +1026,7 @@ export function createLocalApi(context) {
 
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
+    await ensureAspWorktree();
     progress?.("Checking local ASP…", 0.9);
     const health = await aspHealth();
     if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);

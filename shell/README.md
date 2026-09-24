@@ -16,8 +16,9 @@ two-package.json layout), so the packaged entry point stays `shell/main.mjs`.
 
 The app is also the machine-local layer of the system. `~/.magi/MAGI` is the
 source-of-truth checkout connected to the operator's GitHub fork; it owns the
-Git remotes and worktree registry, but does not receive local builds. The App
-and ASP each run from a worktree placed alongside the state used to debug them:
+Git remotes and worktree registry, but does not receive local builds. The shell
+creates the App worktree so it can load the backend; the App then creates and
+owns the ASP worktree:
 
 ```
 ~/.magi/MAGI       source checkout only
@@ -48,8 +49,9 @@ permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/MAGI` with its bundled Git, creates App and ASP worktrees, then hands
-the app bundled Node.js, npm, and Bun. The backend uses them to install
+`~/.magi/MAGI` with its bundled Git, creates the `magi/app` worktree at
+`~/.magi/app/MAGI`, then hands the app bundled Node.js, npm, and Bun. The App
+creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
@@ -68,8 +70,8 @@ packaged launch.
 
 Only six things, none of them product-specific:
 
-1. Clone `~/.magi/MAGI` when it is missing, then create the App and ASP
-   worktrees (packaged builds).
+1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/app`
+   worktree (packaged builds).
 2. Load the source checkout's small startup page when available, falling back to the
    packaged bootstrap page on first install or an incomplete checkout.
 3. Load the app backend from the App worktree and give it native pieces: paths,
@@ -78,10 +80,10 @@ Only six things, none of them product-specific:
    the app, so a new capability never changes the shell.
 5. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
    then show that entry — a built file or a dev URL.
-6. Stop the backend on quit (`dispose()`), which tears down what it started.
+6. Stop the backend on quit (`shutdown()`), which tears down what it started.
 
 That leaves one contract: the checkout must contain `app/main/index.mjs`
-exporting `createLocalApi(context)`, with a `prepare`, `start` and `dispose`,
+exporting `createLocalApi(context)`, with a `prepare`, `start` and `shutdown`,
 and whatever else the interface calls.
 
 ## GitHub connection
@@ -98,8 +100,7 @@ account is shown in Settings. It calls `github.state`,
   so no client secret ships and only the token is per machine.
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
 - The token is stored at `~/.magi/app/github-token` (mode 0600) and the app records
-  the account and fork in `~/.magi/app/github.json`. The app module copies any
-  existing GitHub files from Electron `userData` or the legacy token path once.
+  the account and fork in `~/.magi/app/github.json`.
 - If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
   one. A repository that is already there is used as it is — fork or not — and
   is never overwritten.

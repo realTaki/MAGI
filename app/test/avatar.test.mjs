@@ -20,19 +20,19 @@ const PNG = Buffer.from(
 const AVATAR_URL = "https://avatars.githubusercontent.com/u/42?v=4";
 
 /** A backend on throwaway paths, with GitHub replaced by a local fake. */
-function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, legacyMetadata = null } = {}) {
+function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata = null } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "magi-app-test-"));
   const paths = {
     home: path.join(root, "home"),
     userData: path.join(root, "userData"),
     checkout: path.join(root, "checkout"),
   };
-  mkdirSync(path.join(paths.home, ".magi"), { recursive: true });
+  const appData = path.join(paths.home, ".magi", "app");
+  mkdirSync(appData, { recursive: true });
   mkdirSync(paths.checkout, { recursive: true });
-  writeFileSync(path.join(paths.home, ".magi", "github-token"), "ghp_test\n");
-  if (legacyMetadata !== null) {
-    mkdirSync(paths.userData, { recursive: true });
-    writeFileSync(path.join(paths.userData, "github.json"), JSON.stringify(legacyMetadata));
+  writeFileSync(path.join(appData, "github-token"), "ghp_test\n");
+  if (metadata !== null) {
+    writeFileSync(path.join(appData, "github.json"), JSON.stringify(metadata));
   }
 
   const originalFetch = globalThis.fetch;
@@ -75,8 +75,6 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, legacyMe
     requests,
     avatarFile: () => path.join(paths.home, ".magi", "app", "github-avatar"),
     tokenFile: () => path.join(paths.home, ".magi", "app", "github-token"),
-    legacyTokenFile: () => path.join(paths.home, ".magi", "github-token"),
-    legacyMetadataFile: () => path.join(paths.userData, "github.json"),
     metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "app", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
     dispose: () => {
@@ -112,23 +110,17 @@ test("state reports the GitHub account and caches the picture", async (t) => {
     avatarType: "image/png",
   });
   assert.ok(existsSync(github.avatarFile()), "the picture lands in this machine's state");
-  assert.ok(existsSync(github.tokenFile()), "legacy token is copied into app state");
-  assert.equal(existsSync(github.legacyTokenFile()), false, "legacy token is removed after migration");
+  assert.ok(existsSync(github.tokenFile()), "the token remains in app state");
 });
 
-test("existing Electron account metadata is copied into app state", (t) => {
+test("existing app account metadata is read from app state", (t) => {
   const old = { login: "old-user", fork: "old-user/MAGI" };
-  const github = backend({ legacyMetadata: old });
+  const github = backend({ metadata: old });
   t.after(github.dispose);
   assert.deepEqual(github.metadata(), old);
-  assert.equal(
-    existsSync(github.legacyMetadataFile()),
-    false,
-    "legacy metadata is removed after migration",
-  );
 });
 
-test("an invalid migrated token stays removed", async (t) => {
+test("an invalid app token stays removed", async (t) => {
   const github = backend({ viewerStatus: 401 });
   t.after(github.dispose);
 

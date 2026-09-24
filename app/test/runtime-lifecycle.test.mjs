@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +7,10 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { createLocalApi } from "../main/index.mjs";
+
+function git(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8" });
+}
 
 test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
@@ -99,20 +104,15 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   api.dispose();
 });
 
-test("App and ASP run from their own worktrees, not the source checkout", async (t) => {
+test("the App creates and runs ASP from its own magi/asp worktree", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-worktrees-"));
   const checkout = path.join(root, "source", "MAGI");
-  const appCheckout = path.join(root, "app", "MAGI");
-  const aspCheckout = path.join(root, "asp", "MAGI");
-  mkdirSync(path.join(checkout), { recursive: true });
-  mkdirSync(path.join(appCheckout, "app", "dist"), { recursive: true });
-  writeFileSync(path.join(appCheckout, "app", "package-lock.json"), "{}");
-  writeFileSync(path.join(appCheckout, "app", "dist", "index.html"), "<main />");
-  mkdirSync(path.join(appCheckout, "magi"), { recursive: true });
-  writeFileSync(path.join(appCheckout, "magi", "bun.lock"), "");
-  mkdirSync(path.join(aspCheckout, "asp"), { recursive: true });
-  writeFileSync(path.join(aspCheckout, "asp", "package-lock.json"), "{}");
-  writeFileSync(path.join(aspCheckout, "asp", "main.ts"), "");
+  mkdirSync(path.join(checkout, "asp"), { recursive: true });
+  writeFileSync(path.join(checkout, "asp", "package-lock.json"), "{}");
+  writeFileSync(path.join(checkout, "asp", "main.ts"), "");
+  git(root, ["init", "--quiet", checkout]);
+  git(checkout, ["add", "."]);
+  git(checkout, ["-c", "user.email=test@example.invalid", "-c", "user.name=MAGI test", "commit", "--quiet", "-m", "initial"]);
 
   const originalFetch = globalThis.fetch;
   let healthy = false;
@@ -122,6 +122,7 @@ test("App and ASP run from their own worktrees, not the source checkout", async 
     }
     if (new URL(url).pathname === "/operator") return Response.json({ token: "operator-token" });
     if (new URL(url).pathname === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
+    if (new URL(url).pathname === "/agents") return Response.json({ agents: [] });
     if (new URL(url).pathname === "/settings/provider/legacy") return Response.json(null);
     throw new Error(`unexpected request: ${url}`);
   };
@@ -130,9 +131,10 @@ test("App and ASP run from their own worktrees, not the source checkout", async 
   child.kill = () => true;
   let spawnedCwd = "";
   const api = createLocalApi({
-    paths: { home: root, userData: path.join(root, "userData"), checkout, appCheckout, aspCheckout },
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
+    managed: true,
     spawn(_binary, _args, options) {
       spawnedCwd = options.cwd;
       queueMicrotask(() => { healthy = true; child.emit("spawn"); });
@@ -141,9 +143,10 @@ test("App and ASP run from their own worktrees, not the source checkout", async 
   });
   t.after(() => { globalThis.fetch = originalFetch; api.dispose(); rmSync(root, { recursive: true, force: true }); });
 
-  assert.equal((await api.prepare()).ui, path.join(appCheckout, "app", "dist", "index.html"));
   await api.start();
-  assert.equal(spawnedCwd, path.join(aspCheckout, "asp"));
+  assert.equal(spawnedCwd, path.join(root, ".magi", "asp", "MAGI", "asp"));
+  assert.notEqual(spawnedCwd, path.join(checkout, "asp"));
+  assert.match(git(checkout, ["branch", "--list", "magi/asp"]), /magi\/asp/);
 });
 
 test("a MAGI's runtime is driven from its own profile methods", async (t) => {

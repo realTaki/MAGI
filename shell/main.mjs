@@ -6,7 +6,6 @@
 import { spawn } from "node:child_process";
 import {
   chmodSync,
-  cpSync,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -43,15 +42,10 @@ const MAGI_REPOSITORY =
 
 // Keep every MAGI-owned Electron path beneath ~/.magi so removing that one
 // directory also removes Chromium storage, caches, logs, and crash dumps.
-// Capture the former default first so existing theme/locale and legacy account
-// metadata can be migrated after an upgrade.
-const LEGACY_ELECTRON_USER_DATA = app.getPath("userData");
 const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
 const MAGI_CHECKOUT_ROOT = path.join(MAGI_DATA_ROOT, "MAGI");
 const MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
 const MAGI_APP_CHECKOUT = path.join(MAGI_APP_DATA, "MAGI");
-const MAGI_ASP_DATA = path.join(MAGI_DATA_ROOT, "asp");
-const MAGI_ASP_CHECKOUT = path.join(MAGI_ASP_DATA, "MAGI");
 const ELECTRON_USER_DATA = path.join(MAGI_APP_DATA, "electron");
 const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
 const ELECTRON_LOGS = path.join(MAGI_APP_DATA, "logs");
@@ -68,23 +62,6 @@ for (const directory of [
   ELECTRON_CRASH_DUMPS,
 ]) {
   mkdirSync(directory, { recursive: true });
-}
-
-// Theme and locale are the only localStorage values the interface owns. Move
-// their LevelDB directory before Chromium opens the new profile.
-const legacyLocalStorage = path.join(LEGACY_ELECTRON_USER_DATA, "Local Storage");
-const localStorage = path.join(ELECTRON_USER_DATA, "Local Storage");
-if (
-  LEGACY_ELECTRON_USER_DATA !== ELECTRON_USER_DATA &&
-  existsSync(legacyLocalStorage) &&
-  !existsSync(localStorage)
-) {
-  try {
-    renameSync(legacyLocalStorage, localStorage);
-  } catch {
-    cpSync(legacyLocalStorage, localStorage, { recursive: true });
-    rmSync(legacyLocalStorage, { recursive: true, force: true });
-  }
 }
 
 app.setPath("userData", ELECTRON_USER_DATA);
@@ -200,49 +177,42 @@ async function cloneMagiSource(tools, progress) {
 }
 
 /**
- * Keep builds out of the source-of-truth checkout. App and ASP worktrees live
- * beside the data they operate on, while the root checkout owns remotes and
- * worktree registration.
+ * The shell needs an App worktree before it can load the App backend. All
+ * other runtime worktrees, including ASP, are the App's responsibility.
  */
-async function ensureRuntimeWorktrees(checkout, tools, progress) {
+async function ensureAppWorktree(checkout, tools, progress) {
   if (!app.isPackaged && !localCheckoutManaged) {
-    return { appCheckout: checkout, aspCheckout: checkout };
+    return checkout;
   }
-
-  const ensure = async ({ name, destination, branch }) => {
-    if (existsSync(path.join(destination, ".git"))) return destination;
-    if (existsSync(destination)) {
-      throw new Error(`MAGI ${name} worktree path is not a Git checkout: ${destination}`);
-    }
-    mkdirSync(path.dirname(destination), { recursive: true });
-    await command(tools.git, ["worktree", "prune"], {
+  if (existsSync(path.join(MAGI_APP_CHECKOUT, ".git"))) return MAGI_APP_CHECKOUT;
+  if (existsSync(MAGI_APP_CHECKOUT)) {
+    throw new Error(`MAGI App worktree path is not a Git checkout: ${MAGI_APP_CHECKOUT}`);
+  }
+  mkdirSync(path.dirname(MAGI_APP_CHECKOUT), { recursive: true });
+  await command(tools.git, ["worktree", "prune"], {
+    cwd: checkout,
+    env: tools.env,
+    description: "Could not prune stale MAGI worktrees",
+  });
+  let branchExists = true;
+  try {
+    await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/app"], {
       cwd: checkout,
       env: tools.env,
-      description: "Could not prune stale MAGI runtime worktrees",
+      description: "Could not look up the App worktree branch",
     });
-    let branchExists = true;
-    try {
-      await command(tools.git, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
-        cwd: checkout,
-        env: tools.env,
-        description: `Could not look up the ${name} worktree branch`,
-      });
-    } catch {
-      branchExists = false;
-    }
-    await command(
-      tools.git,
-      branchExists ? ["worktree", "add", destination, branch] : ["worktree", "add", "-b", branch, destination, "HEAD"],
-      { cwd: checkout, env: tools.env, description: `Could not create the ${name} worktree` },
-    );
-    progress(`Prepared ${name} source…`, 0.14);
-    return destination;
-  };
-
-  return {
-    appCheckout: await ensure({ name: "App", destination: MAGI_APP_CHECKOUT, branch: "runtime/app" }),
-    aspCheckout: await ensure({ name: "ASP", destination: MAGI_ASP_CHECKOUT, branch: "runtime/asp" }),
-  };
+  } catch {
+    branchExists = false;
+  }
+  await command(
+    tools.git,
+    branchExists
+      ? ["worktree", "add", MAGI_APP_CHECKOUT, "magi/app"]
+      : ["worktree", "add", "-b", "magi/app", MAGI_APP_CHECKOUT, "HEAD"],
+    { cwd: checkout, env: tools.env, description: "Could not create the App worktree" },
+  );
+  progress("Prepared App source…", 0.14);
+  return MAGI_APP_CHECKOUT;
 }
 
 // The shell loads the app and forwards calls. It does not implement them.
@@ -274,8 +244,8 @@ function appBackendEntry(appCheckout) {
   return path.join(SHELL_DIR, "..", "app", "main", "index.mjs");
 }
 
-async function loadLocalApp(runtimeRoot, runtimeCheckouts) {
-  const entry = appBackendEntry(runtimeCheckouts.appCheckout);
+async function loadLocalApp(runtimeRoot, appCheckout) {
+  const entry = appBackendEntry(appCheckout);
   localApi = null;
   localApiError = null;
   if (!existsSync(entry)) {
@@ -289,11 +259,9 @@ async function loadLocalApp(runtimeRoot, runtimeCheckouts) {
     localApi = backend.createLocalApi({
       paths: {
         checkout: runtimeRoot,
-        appCheckout: runtimeCheckouts.appCheckout,
-        aspCheckout: runtimeCheckouts.aspCheckout,
+        appCheckout,
         home: app.getPath("home"),
         userData: app.getPath("userData"),
-        legacyUserData: LEGACY_ELECTRON_USER_DATA,
       },
       repository: MAGI_REPOSITORY,
       managed: localCheckoutManaged,
@@ -356,12 +324,12 @@ async function launchLocalOperator(win) {
     const progress = (message, percent) => reportStartup(win, message, percent);
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
-    const runtimeCheckouts = await ensureRuntimeWorktrees(runtimeRoot, localTools ?? devTools(), progress);
+    const appCheckout = await ensureAppWorktree(runtimeRoot, localTools ?? devTools(), progress);
     progress("Loading the app…", 0.15);
     // A retry replaces only reloadable backend resources. The services the app
     // started have an independent lifecycle and must survive client reloads.
     localApi?.dispose?.();
-    await loadLocalApp(runtimeRoot, runtimeCheckouts);
+    await loadLocalApp(runtimeRoot, appCheckout);
     if (localApi === null) {
       throw localApiError ?? new Error("The desktop app backend is not loaded.");
     }
