@@ -14,8 +14,18 @@ The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `app/` — its
 two-package.json layout), so the packaged entry point stays `shell/main.mjs`.
 
-The app is also the machine-local layer of the system: it owns the checkout and
-the operator's GitHub credentials, and it keeps those files in `~/.magi/app/`.
+The app is also the machine-local layer of the system. `~/.magi/MAGI` is the
+source-of-truth checkout connected to the operator's GitHub fork; it owns the
+Git remotes and worktree registry, but does not receive local builds. The App
+and ASP each run from a worktree placed alongside the state used to debug them:
+
+```
+~/.magi/MAGI       source checkout only
+~/.magi/app/MAGI   App worktree; `~/.magi/app/` also holds its credentials, UI profile and logs
+~/.magi/asp/MAGI   ASP worktree; `~/.magi/asp/` holds its relay database and logs
+```
+
+The app keeps the operator's GitHub credentials in `~/.magi/app/`.
 ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
 The app stores its conversation history in `~/.magi/app/chat.sqlite`. It writes
@@ -38,9 +48,9 @@ permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/MAGI` with its bundled Git, then hands the app bundled Node.js, npm,
-and Bun. The backend uses them to install asp and magi dependencies,
-build the interface and start ASP. The
+`~/.magi/MAGI` with its bundled Git, creates App and ASP worktrees, then hands
+the app bundled Node.js, npm, and Bun. The backend uses them to install
+dependencies and build only inside those worktrees before starting ASP. The
 startup page shows the current stage and offers Retry if preparation fails.
 Once the checkout exists, that page is loaded from
 `~/.magi/MAGI/shell/boot/`; the packaged copy is only the first-clone
@@ -58,10 +68,11 @@ packaged launch.
 
 Only six things, none of them product-specific:
 
-1. Clone `~/.magi/MAGI` when it is missing (packaged builds).
-2. Load the checkout's startup page when available, falling back to the small
+1. Clone `~/.magi/MAGI` when it is missing, then create the App and ASP
+   worktrees (packaged builds).
+2. Load the source checkout's small startup page when available, falling back to the
    packaged bootstrap page on first install or an incomplete checkout.
-3. Load the app backend from the checkout and give it native pieces: paths,
+3. Load the app backend from the App worktree and give it native pieces: paths,
    bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.

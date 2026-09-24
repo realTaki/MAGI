@@ -49,6 +49,9 @@ const LEGACY_ELECTRON_USER_DATA = app.getPath("userData");
 const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
 const MAGI_CHECKOUT_ROOT = path.join(MAGI_DATA_ROOT, "MAGI");
 const MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
+const MAGI_APP_CHECKOUT = path.join(MAGI_APP_DATA, "MAGI");
+const MAGI_ASP_DATA = path.join(MAGI_DATA_ROOT, "asp");
+const MAGI_ASP_CHECKOUT = path.join(MAGI_ASP_DATA, "MAGI");
 const ELECTRON_USER_DATA = path.join(MAGI_APP_DATA, "electron");
 const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
 const ELECTRON_LOGS = path.join(MAGI_APP_DATA, "logs");
@@ -196,10 +199,56 @@ async function cloneMagiSource(tools, progress) {
   }
 }
 
+/**
+ * Keep builds out of the source-of-truth checkout. App and ASP worktrees live
+ * beside the data they operate on, while the root checkout owns remotes and
+ * worktree registration.
+ */
+async function ensureRuntimeWorktrees(checkout, tools, progress) {
+  if (!app.isPackaged && !localCheckoutManaged) {
+    return { appCheckout: checkout, aspCheckout: checkout };
+  }
+
+  const ensure = async ({ name, destination, branch }) => {
+    if (existsSync(path.join(destination, ".git"))) return destination;
+    if (existsSync(destination)) {
+      throw new Error(`MAGI ${name} worktree path is not a Git checkout: ${destination}`);
+    }
+    mkdirSync(path.dirname(destination), { recursive: true });
+    await command(tools.git, ["worktree", "prune"], {
+      cwd: checkout,
+      env: tools.env,
+      description: "Could not prune stale MAGI runtime worktrees",
+    });
+    let branchExists = true;
+    try {
+      await command(tools.git, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
+        cwd: checkout,
+        env: tools.env,
+        description: `Could not look up the ${name} worktree branch`,
+      });
+    } catch {
+      branchExists = false;
+    }
+    await command(
+      tools.git,
+      branchExists ? ["worktree", "add", destination, branch] : ["worktree", "add", "-b", branch, destination, "HEAD"],
+      { cwd: checkout, env: tools.env, description: `Could not create the ${name} worktree` },
+    );
+    progress(`Prepared ${name} source…`, 0.14);
+    return destination;
+  };
+
+  return {
+    appCheckout: await ensure({ name: "App", destination: MAGI_APP_CHECKOUT, branch: "runtime/app" }),
+    aspCheckout: await ensure({ name: "ASP", destination: MAGI_ASP_CHECKOUT, branch: "runtime/asp" }),
+  };
+}
+
 // The shell loads the app and forwards calls. It does not implement them.
-// Packaged, the backend is the checkout's, so an edit there applies on the
-// next launch. Unpackaged, it is the app next to this shell — a scratch
-// checkout (MAGI_DEV_CHECKOUT) is only the Git tree, not the code under test.
+// The packaged shell loads its backend from the App worktree. An unpackaged
+// developer tree remains untouched, while an explicit scratch checkout uses
+// the same isolated-runtime layout as a packaged app.
 let localApi = null;
 let localApiError = null;
 // Cache-busted app backends are reloadable, but an older instance may still
@@ -218,15 +267,15 @@ function devTools() {
   return toolsForRuntime(path.join(SHELL_DIR, "runtime"));
 }
 
-function appBackendEntry(runtimeRoot) {
-  if (app.isPackaged) {
-    return path.join(runtimeRoot, "app", "main", "index.mjs");
+function appBackendEntry(appCheckout) {
+  if (app.isPackaged || localCheckoutManaged) {
+    return path.join(appCheckout, "app", "main", "index.mjs");
   }
   return path.join(SHELL_DIR, "..", "app", "main", "index.mjs");
 }
 
-async function loadLocalApp(runtimeRoot) {
-  const entry = appBackendEntry(runtimeRoot);
+async function loadLocalApp(runtimeRoot, runtimeCheckouts) {
+  const entry = appBackendEntry(runtimeCheckouts.appCheckout);
   localApi = null;
   localApiError = null;
   if (!existsSync(entry)) {
@@ -240,6 +289,8 @@ async function loadLocalApp(runtimeRoot) {
     localApi = backend.createLocalApi({
       paths: {
         checkout: runtimeRoot,
+        appCheckout: runtimeCheckouts.appCheckout,
+        aspCheckout: runtimeCheckouts.aspCheckout,
         home: app.getPath("home"),
         userData: app.getPath("userData"),
         legacyUserData: LEGACY_ELECTRON_USER_DATA,
@@ -305,11 +356,12 @@ async function launchLocalOperator(win) {
     const progress = (message, percent) => reportStartup(win, message, percent);
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
+    const runtimeCheckouts = await ensureRuntimeWorktrees(runtimeRoot, localTools ?? devTools(), progress);
     progress("Loading the app…", 0.15);
     // A retry replaces only reloadable backend resources. The services the app
     // started have an independent lifecycle and must survive client reloads.
     localApi?.dispose?.();
-    await loadLocalApp(runtimeRoot);
+    await loadLocalApp(runtimeRoot, runtimeCheckouts);
     if (localApi === null) {
       throw localApiError ?? new Error("The desktop app backend is not loaded.");
     }

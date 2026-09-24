@@ -186,6 +186,11 @@ function parseGitHubSlug(url) {
 
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, managed = false } = context;
+  // The root checkout is deliberately source-only. Builds run from role-specific
+  // worktrees under ~/.magi/app/MAGI and ~/.magi/asp/MAGI, while callers that
+  // predate this layout continue to use the one checkout they supplied.
+  const appCheckout = paths.appCheckout ?? paths.checkout;
+  const aspCheckout = paths.aspCheckout ?? paths.checkout;
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
@@ -307,7 +312,7 @@ export function createLocalApi(context) {
   }
 
   async function providerCatalog() {
-    const entry = path.join(paths.checkout, "magi", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js");
+    const entry = path.join(appCheckout, "magi", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js");
     const { getBuiltinModels } = await import(pathToFileURL(entry).href);
     return Object.fromEntries(["openai", "anthropic", "minimax", "deepseek"].map((provider) => [
       provider, getBuiltinModels(provider).map((model) => ({ id: model.id, name: model.name })),
@@ -711,7 +716,7 @@ export function createLocalApi(context) {
   }
 
   function spawnAsp() {
-    const aspDir = path.join(paths.checkout, "asp");
+    const aspDir = path.join(aspCheckout, "asp");
     const child = spawnProcess(aspNode(), ["main.ts"], {
       cwd: aspDir,
       env: {
@@ -736,13 +741,13 @@ export function createLocalApi(context) {
     if (devUrl !== "") {
       return devUrl;
     }
-    const built = path.join(paths.checkout, "app", "dist", "index.html");
+    const built = path.join(appCheckout, "app", "dist", "index.html");
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
   /** Rebuild the interface only when explicitly requested. */
   async function rebuildInterface() {
-    const appDir = path.join(paths.checkout, "app");
+    const appDir = path.join(appCheckout, "app");
     const build = (description) =>
       command(tools.node, [tools.npm, "run", "build"], {
         cwd: appDir,
@@ -771,9 +776,12 @@ export function createLocalApi(context) {
    * is prepared: a developer's own tree is already theirs to prepare.
    */
   async function prepare(progress) {
-    const aspDir = path.join(paths.checkout, "asp");
-    const appDir = path.join(paths.checkout, "app");
-    const magiDir = path.join(paths.checkout, "magi");
+    const aspDir = path.join(aspCheckout, "asp");
+    const appDir = path.join(appCheckout, "app");
+    // The App owns the provider catalog it reads, so its worktree also carries
+    // the small MAGI dependency tree. Agent-specific builds stay in their own
+    // worktrees; the root checkout remains source-only.
+    const magiDir = path.join(appCheckout, "magi");
     const required = [
       path.join(aspDir, "package-lock.json"),
       path.join(appDir, "package-lock.json"),
@@ -1013,7 +1021,7 @@ export function createLocalApi(context) {
       await activateProviderSync();
       return { origin: ASP_ORIGIN.href };
     }
-    const aspDir = path.join(paths.checkout, "asp");
+    const aspDir = path.join(aspCheckout, "asp");
     if (!existsSync(path.join(aspDir, "main.ts"))) {
       throw new Error(`ASP was not found at ${aspDir}`);
     }
@@ -1189,7 +1197,7 @@ export function createLocalApi(context) {
     return runtimeAction(async () => {
       await stopOwnedAsp();
       await command(tools.node, [tools.npm, "ci"], {
-        cwd: path.join(paths.checkout, "asp"), env: tools.env,
+        cwd: path.join(aspCheckout, "asp"), env: tools.env,
         description: "Could not install ASP dependencies",
       });
       await start();
