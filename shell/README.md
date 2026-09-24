@@ -130,8 +130,6 @@ user tokens are short-lived and installed per repository.
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
 running, so a change under `app/main/` still waits for the next launch.
-The installed shell must be updated once to remove its old file watcher; later
-interface updates use the app's commit notification without a shell release.
 
 This gives each user an editable Git working tree for the running MAGI system.
 A coding agent can modify it and merge upstream changes. Automatic revision
