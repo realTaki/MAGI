@@ -9,19 +9,6 @@
 
 import type { LocalEvent } from "./github-connect";
 
-export type ShellRelease = {
-  packaged: boolean;
-  currentVersion: string;
-  latestVersion: string;
-  latestTag: string;
-  updateAvailable: boolean;
-  assetName: string;
-  assetUrl: string;
-  releaseUrl: string;
-  error: string;
-  reason: "" | "no-release" | "no-asset" | "unavailable";
-};
-
 export {};
 
 declare global {
@@ -29,8 +16,6 @@ declare global {
     magiDesktop?: {
       retryStartup?: () => Promise<void>;
       copyText?: (text: string) => Promise<void>;
-      shellRelease?: () => Promise<ShellRelease>;
-      installShellRelease?: () => Promise<{ quitting: boolean }>;
       onStartupProgress?: (
         listener: (progress: { step: string; message: string }) => void,
       ) => void;

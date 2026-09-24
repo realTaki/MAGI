@@ -53,11 +53,10 @@ On first launch the packaged shell clones the complete repository into
 `~/.magi/app/MAGI`, then hands the app bundled Node.js, npm, and Bun. The App
 creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
-startup page shows the current stage and offers Retry if preparation fails.
-Once the checkout exists, that page is loaded from
-`~/.magi/MAGI/shell/boot/`; the packaged copy is only the first-clone
-and damaged-checkout fallback. The packaged shell does not carry `app/dist` —
-the checkout builds and supplies the product interface.
+startup page shows the current stage and offers Retry if preparation fails. It
+is always the small page packaged with the shell, so first-install and recovery
+behavior do not depend on an editable checkout. The packaged shell does not
+carry `app/dist` — the checkout builds and supplies the product interface.
 Once ASP answers, the backend makes sure the society is not empty: while no MAGI
 exists it creates the first three (ASP names them `eva-000`, `eva-001`, …) and
 nicknames them **MELCHIOR**, **BALTHASAR** and **CASPER**. Naming is best effort
@@ -72,8 +71,7 @@ Only six things, none of them product-specific:
 
 1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/app`
    worktree (packaged builds).
-2. Load the source checkout's small startup page when available, falling back to the
-   packaged bootstrap page on first install or an incomplete checkout.
+2. Load its packaged startup/recovery page.
 3. Load the app backend from the App worktree and give it native pieces: paths,
    bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
@@ -128,8 +126,7 @@ user tokens are short-lived and installed per repository.
 | `asp/` | Restart local ASP. |
 | `app/` | Settings → Runtime & build rebuilds the interface on demand; the app then asks whether to reload it. Source changes do not trigger automatic rebuilds. |
 | `app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
-| `shell/boot/` | Loaded from the checkout on the next launch. The packaged copy remains a fallback. |
-| `shell/*.mjs`, `shell/preload.cjs`, packaged tools and build configuration | Settings → About installs a newer GitHub Release of the shell. The checkout is left as it is. |
+| `shell/boot/`, `shell/*.mjs`, `shell/preload.cjs`, packaged tools and build configuration | Rebuild and install a new shell. The App's About screen chooses and downloads the release from the checkout's active `origin`; the shell only performs its local replacement. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
 running, so a change under `app/main/` still waits for the next launch.

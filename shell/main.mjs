@@ -6,7 +6,6 @@
 import { spawn } from "node:child_process";
 import {
   chmodSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,22 +16,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
-import {
-  compareVersions,
-  githubRepo,
-  releaseAsset,
-  releaseDownloadUrl,
-  releaseVersion,
-  updateScript,
-} from "./release.mjs";
-import { resolveStartupEntry } from "./startup-entry.mjs";
+import { updateScript } from "./update-script.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -265,6 +254,11 @@ async function loadLocalApp(runtimeRoot, appCheckout) {
       },
       repository: MAGI_REPOSITORY,
       managed: localCheckoutManaged,
+      shellUpdate: {
+        packaged: app.isPackaged,
+        currentVersion: app.getVersion(),
+        install: installShellUpdate,
+      },
       tools: localTools ?? devTools(),
       emit: (event, payload) => sendToWindow(mainWindow, "local:event", { event, payload }),
       openExternal: (url) => shell.openExternal(url),
@@ -350,18 +344,8 @@ async function launchLocalOperator(win) {
   }
 }
 
-function startupEntry() {
-  const checkout = app.isPackaged
-    ? MAGI_CHECKOUT_ROOT
-    : path.resolve(process.env.MAGI_DEV_CHECKOUT || REPO_ROOT);
-  return resolveStartupEntry({
-    checkout,
-    fallback: path.join(SHELL_DIR, "boot", "index.html"),
-  });
-}
-
 async function loadStartup(win) {
-  await win.loadFile(startupEntry());
+  await win.loadFile(path.join(SHELL_DIR, "boot", "index.html"));
 }
 
 // The app reports its own entry point: a built file or a dev server URL.
@@ -528,22 +512,17 @@ ipcMain.handle("shell:copy-text", (_event, text) => {
   clipboard.writeText(text);
 });
 
-ipcMain.handle("shell:release", () => shellRelease());
-
-ipcMain.handle("shell:install-release", async () => {
-  const release = await shellRelease();
-  if (!release.packaged) {
-    throw new Error("A development shell cannot replace itself from a GitHub Release.");
+async function installShellUpdate(installer) {
+  if (!app.isPackaged) {
+    throw new Error("A development shell cannot replace itself from a Release.");
   }
-  if (!release.updateAvailable || release.assetUrl === "") {
-    throw new Error(release.error || "This shell is already current.");
+  if (typeof installer !== "string" || installer === "" || !existsSync(installer) || !statSync(installer).isFile()) {
+    throw new Error("The app did not provide a downloaded installer file.");
   }
-  const destination = path.join(app.getPath("temp"), release.assetName);
-  await downloadRelease(release.assetUrl, destination);
-  armShellSwap(destination);
+  armShellSwap(installer);
   setImmediate(() => app.quit());
   return { quitting: true };
-});
+}
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
@@ -565,83 +544,6 @@ app.on("before-quit", () => {
   }
   localApiInstances.clear();
 });
-
-async function shellRelease() {
-  const currentVersion = app.getVersion();
-  const blank = {
-    packaged: app.isPackaged,
-    currentVersion,
-    latestVersion: "",
-    latestTag: "",
-    updateAvailable: false,
-    assetName: "",
-    assetUrl: "",
-    releaseUrl: "",
-    error: "",
-    reason: "",
-  };
-  const repo = githubRepo(MAGI_REPOSITORY);
-  if (repo === null) {
-    return { ...blank, reason: "unavailable", error: "The shell repository is not on GitHub." };
-  }
-  let payload;
-  try {
-    const response = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/releases/latest`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "MAGI",
-      },
-    });
-    if (response.status === 404) {
-      return { ...blank, reason: "no-release" };
-    }
-    if (!response.ok) {
-      return { ...blank, reason: "unavailable", error: `GitHub releases answered ${response.status}.` };
-    }
-    payload = await response.json();
-  } catch (error) {
-    return { ...blank, reason: "unavailable", error: error instanceof Error ? error.message : String(error) };
-  }
-  const tag = typeof payload.tag_name === "string" ? payload.tag_name : "";
-  const latestVersion = releaseVersion(tag);
-  const assets = Array.isArray(payload.assets)
-    ? payload.assets.flatMap((asset) => {
-        if (asset === null || typeof asset !== "object") {
-          return [];
-        }
-        const name = asset.name;
-        const url = asset.browser_download_url;
-        if (typeof name !== "string" || typeof url !== "string" || !releaseDownloadUrl(MAGI_REPOSITORY, url)) {
-          return [];
-        }
-        return [{ name, browser_download_url: url }];
-      })
-    : [];
-  const asset = releaseAsset(assets, process.platform, process.arch);
-  const newer = latestVersion !== "" && compareVersions(currentVersion, latestVersion) < 0;
-  return {
-    ...blank,
-    latestVersion,
-    latestTag: tag,
-    updateAvailable: newer && asset !== null,
-    assetName: asset?.name ?? "",
-    assetUrl: asset?.browser_download_url ?? "",
-    releaseUrl: typeof payload.html_url === "string" ? payload.html_url : "",
-    reason: newer && asset === null ? "no-asset" : "",
-    error: "",
-  };
-}
-
-async function downloadRelease(url, destination) {
-  const response = await fetch(url, {
-    headers: { Accept: "application/octet-stream", "User-Agent": "MAGI" },
-    redirect: "follow",
-  });
-  if (!response.ok || response.body === null) {
-    throw new Error(`Could not download the shell installer (${response.status}).`);
-  }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
-}
 
 function armShellSwap(installer) {
   const mount = path.join(app.getPath("temp"), "magi-shell-mount");

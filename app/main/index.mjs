@@ -32,6 +32,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.mjs";
 import { agentBranch, createMagiRuntime } from "./magi-runtime.mjs";
+import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.mjs";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
@@ -185,7 +186,7 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, tools, emit, openExternal, copy, managed = false } = context;
+  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false } = context;
   // Shell loads this backend from the App worktree, while the source checkout
   // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
@@ -278,6 +279,45 @@ export function createLocalApi(context) {
   const tokenFile = () => tokenPath;
   const metadataFile = () => metadataPath;
   const avatarFile = () => avatarPath;
+
+  async function updateRepository() {
+    try {
+      return (await gitText(["remote", "get-url", "origin"], "Could not read the update repository")) || repository;
+    } catch {
+      return repository;
+    }
+  }
+
+  async function shellUpdateStatus() {
+    if (shellUpdate === undefined) {
+      return {
+        packaged: false, currentVersion: "", latestVersion: "", latestTag: "", updateAvailable: false,
+        assetName: "", assetUrl: "", releaseUrl: "", reason: "unavailable", error: "The desktop shell is not available.",
+      };
+    }
+    return await shellRelease({
+      repository: await updateRepository(),
+      currentVersion: shellUpdate.currentVersion,
+      packaged: shellUpdate.packaged,
+      platform: process.platform,
+      arch: process.arch,
+    });
+  }
+
+  async function installShellUpdate() {
+    if (shellUpdate === undefined || !shellUpdate.packaged) {
+      throw new Error("A development shell cannot replace itself from a Release.");
+    }
+    const release = await shellUpdateStatus();
+    if (!release.updateAvailable || release.assetUrl === "" || release.assetName === "") {
+      throw new Error(release.error || "This client is already current.");
+    }
+    const updates = path.join(appData, "updates");
+    mkdirSync(updates, { recursive: true });
+    const installer = installerPath(updates, release.assetName);
+    await downloadShellInstaller(release.assetUrl, installer);
+    return await shellUpdate.install(installer);
+  }
   // Metadata written before the picture was cached gets one download attempt per
   // account and run, so a blocked network cannot slow every state read.
   const avatarAttempted = new Set();
@@ -1420,6 +1460,8 @@ export function createLocalApi(context) {
     "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
     "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
     "runtime.rebuildApp": rebuildApp,
+    "shell.updateStatus": shellUpdateStatus,
+    "shell.installUpdate": installShellUpdate,
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,

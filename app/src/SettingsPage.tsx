@@ -5,7 +5,6 @@ import { OPERATOR } from "./conversation-model";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openConversationsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
-import type { ShellRelease } from "./magi-desktop";
 import type { LocalePreference } from "./i18n";
 import { clearOperator, getProviderCatalog, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
 import type { ProviderUsage, SourceStatus } from "./asp";
@@ -13,6 +12,18 @@ import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
 type SettingsSection = "general" | "provider" | "usage" | "runtime" | "about";
+type ClientRelease = {
+  packaged: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  latestTag: string;
+  updateAvailable: boolean;
+  assetName: string;
+  assetUrl: string;
+  releaseUrl: string;
+  error: string;
+  reason: "" | "no-release" | "no-asset" | "unavailable";
+};
 
 const PROVIDERS = ["openai", "anthropic", "minimax", "deepseek", "custom"] as const;
 
@@ -35,7 +46,7 @@ export function SettingsPage() {
   const [providerUsageLoading, setProviderUsageLoading] = useState(false);
   const [source, setSource] = useState<SourceStatus | null>(null);
   const [sourceLoaded, setSourceLoaded] = useState(false);
-  const [shellRelease, setShellRelease] = useState<ShellRelease | null>(null);
+  const [shellRelease, setShellRelease] = useState<ClientRelease | null>(null);
   const [shellReleaseLoaded, setShellReleaseLoaded] = useState(false);
   const [shellUpdating, setShellUpdating] = useState(false);
   const [shellUpdateError, setShellUpdateError] = useState("");
@@ -125,16 +136,16 @@ export function SettingsPage() {
       setSource(status);
       setSourceLoaded(true);
     });
-    const readRelease = window.magiDesktop?.shellRelease;
-    if (readRelease === undefined) {
+    const invoke = window.magiDesktop?.invokeLocal;
+    if (invoke === undefined) {
       setShellRelease(null);
       setShellReleaseLoaded(true);
     } else {
       setShellReleaseLoaded(false);
-      void readRelease()
+      void invoke("shell.updateStatus")
         .then((release) => {
           if (!cancelled) {
-            setShellRelease(release);
+            setShellRelease(release as ClientRelease);
             setShellReleaseLoaded(true);
           }
         })
@@ -151,13 +162,13 @@ export function SettingsPage() {
   }, [section]);
 
   function installShell() {
-    const install = window.magiDesktop?.installShellRelease;
+    const install = window.magiDesktop?.invokeLocal;
     if (install === undefined || shellUpdating) {
       return;
     }
     setShellUpdating(true);
     setShellUpdateError("");
-    void install()
+    void install("shell.installUpdate")
       .catch((error: unknown) => {
         setShellUpdateError(error instanceof Error ? error.message : t("appSettings.aboutShellFailed"));
         setShellUpdating(false);
@@ -532,7 +543,7 @@ export function SettingsPage() {
             {section === "about" ? (
               <>
                 <p className="settings-overlay__lede">{t("appSettings.aboutSummary")}</p>
-                {window.magiDesktop?.shellRelease ? (
+                {window.magiDesktop?.invokeLocal ? (
                   <div className="settings-card">
                     <label className="settings-card__row">
                       <span>{t("appSettings.aboutShellInstalled")}</span>
