@@ -164,7 +164,8 @@ type RoutineDraft = {
   name: string;
   instruction: string;
   active: boolean;
-  triggers: Trigger[];
+  // One routine is one rule, the way a scheduled task is one cron in the workspace.
+  trigger: Trigger;
   runs: RoutineRun[];
 };
 
@@ -308,12 +309,91 @@ function describeTrigger(trigger: Trigger) {
   return { lead: "Every day", detail: `at ${trigger.time}` };
 }
 
-function whenLabel(triggers: Trigger[]) {
-  if (triggers.length === 0) {
-    return "Unscheduled";
-  }
-  const { lead, detail } = describeTrigger(triggers[0] ?? defaultTrigger());
+function whenLabel(trigger: Trigger) {
+  const { lead, detail } = describeTrigger(trigger);
   return [lead, detail].filter(Boolean).join(" ");
+}
+
+/** One routine runs on one rule, so there is exactly one trigger to edit. */
+function TriggerEditor({
+  trigger,
+  onChange,
+}: {
+  trigger: Trigger;
+  onChange: (patch: Partial<Trigger>) => void;
+}) {
+  const { lead, detail } = describeTrigger(trigger);
+  const timed = ["Every day", "Weekdays", "Every week", "Every month"].includes(trigger.freq);
+  return (
+    <div className="conversation-page__triggers">
+      <div className="conversation-page__trigger">
+        <div className="conversation-page__trigger-head">
+          <span>
+            {lead} {detail}
+          </span>
+        </div>
+        <div className="conversation-page__trigger-row">
+          <select
+            value={trigger.freq}
+            onChange={(event) => onChange({ freq: event.target.value })}
+          >
+            {FREQS.map((freq) => (
+              <option key={freq} value={freq}>
+                {freq}
+              </option>
+            ))}
+          </select>
+          {trigger.freq === "Interval" ? (
+            <>
+              <span>every</span>
+              <select
+                value={String(trigger.n)}
+                onChange={(event) => onChange({ n: Number(event.target.value) })}
+              >
+                {NUMBERS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={trigger.unit}
+                onChange={(event) => onChange({ unit: event.target.value })}
+              >
+                {UNITS.map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+          {timed ? (
+            <>
+              <span>at</span>
+              <select
+                value={trigger.time}
+                onChange={(event) => onChange({ time: event.target.value })}
+              >
+                {TIMES.map((time) => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : null}
+          {trigger.freq === "Advanced" ? (
+            <input
+              value={trigger.cron}
+              placeholder="*/3 * * * *"
+              onChange={(event) => onChange({ cron: event.target.value })}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function previewForConversation(conversation: ConversationView, extra: ExtraMessages) {
@@ -756,7 +836,7 @@ export function ConversationPage() {
       name: routine?.name ?? "",
       instruction: routine?.instruction ?? "",
       active: routine?.active ?? true,
-      triggers: routine ? [parseWhen(routine.when)] : [],
+      trigger: routine ? parseWhen(routine.when) : defaultTrigger(),
       runs: routine?.runs?.map((run) => ({ ...run })) ?? [],
     });
   }
@@ -910,7 +990,7 @@ export function ConversationPage() {
     const index = draftState.index ?? active.routines.length;
     const next: Routine = {
       name: draftState.name.trim() || "Untitled routine",
-      when: whenLabel(draftState.triggers),
+      when: whenLabel(draftState.trigger),
       instruction: draftState.instruction,
       active: draftState.active,
       runs: draftState.runs,
@@ -1094,12 +1174,11 @@ export function ConversationPage() {
     selectBot(nextUnreadBelowId);
   }
 
-  function patchTrigger(index: number, patch: Partial<Trigger>) {
-    changeRoutine({
-      triggers: (routineDraft?.triggers ?? []).map((trigger, triggerIndex) =>
-        triggerIndex === index ? { ...trigger, ...patch } : trigger,
-      ),
-    });
+  function patchTrigger(patch: Partial<Trigger>) {
+    if (!routineDraft) {
+      return;
+    }
+    changeRoutine({ trigger: { ...routineDraft.trigger, ...patch } });
   }
 
   function testRun() {
@@ -1746,127 +1825,7 @@ export function ConversationPage() {
                 </label>
                 <div className="conversation-page__field">
                   When to run
-                  {routineDraft.triggers.length === 0 ? (
-                    <button
-                      type="button"
-                      className="conversation-page__add-schedule"
-                      onClick={() => changeRoutine({ triggers: [defaultTrigger()] })}
-                    >
-                      + Add schedule
-                    </button>
-                  ) : (
-                    <div className="conversation-page__triggers">
-                      {routineDraft.triggers.map((trigger, index) => {
-                        const { lead, detail } = describeTrigger(trigger);
-                        const timed = [
-                          "Every day",
-                          "Weekdays",
-                          "Every week",
-                          "Every month",
-                        ].includes(trigger.freq);
-                        return (
-                          <div key={`${trigger.freq}-${index}`} className="conversation-page__trigger">
-                            <div className="conversation-page__trigger-head">
-                              <span>
-                                {lead} {detail}
-                              </span>
-                              <button
-                                type="button"
-                                aria-label="Remove schedule"
-                                onClick={() =>
-                                  changeRoutine({
-                                    triggers: routineDraft.triggers.filter(
-                                      (_, triggerIndex) => triggerIndex !== index,
-                                    ),
-                                  })
-                                }
-                              >
-                                ✕
-                              </button>
-                            </div>
-                            <div className="conversation-page__trigger-row">
-                              <select
-                                value={trigger.freq}
-                                onChange={(event) =>
-                                  patchTrigger(index, { freq: event.target.value })
-                                }
-                              >
-                                {FREQS.map((freq) => (
-                                  <option key={freq} value={freq}>
-                                    {freq}
-                                  </option>
-                                ))}
-                              </select>
-                              {trigger.freq === "Interval" ? (
-                                <>
-                                  <span>every</span>
-                                  <select
-                                    value={String(trigger.n)}
-                                    onChange={(event) =>
-                                      patchTrigger(index, { n: Number(event.target.value) })
-                                    }
-                                  >
-                                    {NUMBERS.map((n) => (
-                                      <option key={n} value={n}>
-                                        {n}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <select
-                                    value={trigger.unit}
-                                    onChange={(event) =>
-                                      patchTrigger(index, { unit: event.target.value })
-                                    }
-                                  >
-                                    {UNITS.map((unit) => (
-                                      <option key={unit} value={unit}>
-                                        {unit}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </>
-                              ) : null}
-                              {timed ? (
-                                <>
-                                  <span>at</span>
-                                  <select
-                                    value={trigger.time}
-                                    onChange={(event) =>
-                                      patchTrigger(index, { time: event.target.value })
-                                    }
-                                  >
-                                    {TIMES.map((time) => (
-                                      <option key={time} value={time}>
-                                        {time}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </>
-                              ) : null}
-                              {trigger.freq === "Advanced" ? (
-                                <input
-                                  value={trigger.cron}
-                                  placeholder="*/3 * * * *"
-                                  onChange={(event) =>
-                                    patchTrigger(index, { cron: event.target.value })
-                                  }
-                                />
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        className="conversation-page__quiet"
-                        onClick={() =>
-                          changeRoutine({ triggers: [...routineDraft.triggers, defaultTrigger()] })
-                        }
-                      >
-                        + Add another
-                      </button>
-                    </div>
-                  )}
+                  <TriggerEditor trigger={routineDraft.trigger} onChange={patchTrigger} />
                 </div>
                 <div className="conversation-page__field">
                   Run history

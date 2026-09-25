@@ -1200,8 +1200,7 @@ body {
 
 .conversation-page__field input,
 .conversation-page__field textarea,
-.conversation-page__field select,
-.conversation-page__add-schedule {
+.conversation-page__field select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--panel-line-2);
@@ -1299,18 +1298,6 @@ body {
 .conversation-page__switch.is-on span {
   left: 22px;
   background: var(--panel-cream);
-}
-
-.conversation-page__add-schedule {
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.conversation-page__add-schedule:hover,
-.conversation-page__add-schedule:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text-primary);
 }
 
 .conversation-page__triggers {
