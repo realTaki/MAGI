@@ -3,7 +3,6 @@
 import { randomBytes } from "node:crypto";
 
 import type { LocalDatabase } from "../db/database.ts";
-import { transaction } from "../db/versions.ts";
 
 export const OPERATOR_HANDLE = "@user";
 const LEGACY_OPERATOR_HANDLE = "user";
@@ -14,38 +13,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function loadOrCreateOperator(database: LocalDatabase): [string, string] {
-  const connection = database.connection;
-  if (connection === null) {
-    throw new Error("ASP database is not open");
-  }
-  const row = connection
-    .prepare("SELECT value_json FROM asp_settings WHERE key = ?")
-    .get(OPERATOR_SETTING_KEY);
-  if (row !== undefined) {
-    const raw = row.value_json;
-    if (typeof raw !== "string") {
-      throw new Error("operator setting is not text");
-    }
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || typeof parsed.token !== "string") {
+  const stored: unknown = database.getSetting(OPERATOR_SETTING_KEY);
+  if (stored !== null) {
+    if (!isRecord(stored) || typeof stored.token !== "string") {
       throw new Error("operator setting is missing a token");
     }
-    const handle = parsed.handle === LEGACY_OPERATOR_HANDLE || typeof parsed.handle !== "string" || parsed.handle === ""
+    // A database from before the rename says `user`; the caller gets the current
+    // handle, and the stored copy is brought along.
+    const handle = stored.handle === LEGACY_OPERATOR_HANDLE || typeof stored.handle !== "string" || stored.handle === ""
       ? OPERATOR_HANDLE
-      : parsed.handle;
-    if (handle !== parsed.handle) {
-      database.setSetting(OPERATOR_SETTING_KEY, { ...parsed, handle });
+      : stored.handle;
+    if (handle !== stored.handle) {
+      database.setSetting(OPERATOR_SETTING_KEY, { ...stored, handle });
     }
-    return [handle, parsed.token];
+    return [handle, stored.token];
   }
   const token = randomBytes(24).toString("base64url");
-  transaction(connection, () => {
-    connection
-      .prepare(
-        `INSERT INTO asp_settings (key, value_json, updated_at)
-         VALUES (?, ?, unixepoch() * 1000)`,
-      )
-      .run(OPERATOR_SETTING_KEY, JSON.stringify({ handle: OPERATOR_HANDLE, token }));
-  });
+  database.setSetting(OPERATOR_SETTING_KEY, { handle: OPERATOR_HANDLE, token });
   return [OPERATOR_HANDLE, token];
 }

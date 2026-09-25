@@ -3,9 +3,17 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 
-import { applyMigrations, transaction } from "./versions.ts";
+import { Database } from "better-sqlite3";
+import { eq } from "drizzle-orm";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+
+import { repairLegacyOperatorHandle } from "./legacyOperator.ts";
+import { aspSettings } from "./schema.ts";
+
+/** The relay's drizzle client over a better-sqlite3 connection. */
+export type AspDb = BetterSQLite3Database & { $client: Database };
 
 export function defaultDataDir(): string {
   return path.join(homedir(), ".magi", "asp");
@@ -17,7 +25,8 @@ export function defaultDatabasePath(): string {
 
 export class LocalDatabase {
   path: string;
-  connection: DatabaseSync | null = null;
+  connection: Database | null = null;
+  db: AspDb | null = null;
 
   constructor(databasePath: string) {
     this.path = databasePath;
@@ -29,11 +38,16 @@ export class LocalDatabase {
     }
     mkdirSync(path.dirname(this.path), { recursive: true });
     this.#copyLegacyFile();
-    const connection = new DatabaseSync(this.path);
+    const connection = new Database(this.path);
     connection.exec("PRAGMA foreign_keys = ON");
     connection.exec("PRAGMA journal_mode = WAL");
-    applyMigrations(connection);
+    const db = drizzle(connection);
+    // The baseline is idempotent, so a database from the hand-written migration
+    // era is adopted here: nothing is created twice, and the run is recorded.
+    migrate(db, { migrationsFolder: migrationsFolder() });
+    repairLegacyOperatorHandle(db);
     this.connection = connection;
+    this.db = db;
   }
 
   close(): void {
@@ -42,49 +56,32 @@ export class LocalDatabase {
     }
     this.connection.close();
     this.connection = null;
+    this.db = null;
   }
 
+  /** Settings are the relay's own key/value rows; values are JSON. */
   getSetting(key: string): unknown {
-    const row = this.#connection()
-      .prepare("SELECT value_json FROM asp_settings WHERE key = ?")
-      .get(key);
-    if (row === undefined) {
-      return null;
-    }
-    const value = row.value_json;
-    if (typeof value !== "string") {
-      throw new Error("asp_settings.value_json is not text");
-    }
-    return JSON.parse(value);
+    return this.#client().select({ value: aspSettings.value_json }).from(aspSettings)
+      .where(eq(aspSettings.key, key)).get()?.value ?? null;
   }
 
   setSetting(key: string, value: unknown): void {
-    const connection = this.#connection();
-    transaction(connection, () => {
-      connection
-        .prepare(
-          `INSERT INTO asp_settings (key, value_json, updated_at)
-           VALUES (?, ?, unixepoch() * 1000)
-           ON CONFLICT(key) DO UPDATE SET
-             value_json = excluded.value_json,
-             updated_at = excluded.updated_at`,
-        )
-        .run(key, JSON.stringify(value));
-    });
+    const updated_at = Date.now();
+    this.#client().insert(aspSettings)
+      .values({ key, value_json: value, updated_at })
+      .onConflictDoUpdate({ target: aspSettings.key, set: { value_json: value, updated_at } })
+      .run();
   }
 
   deleteSetting(key: string): void {
-    const connection = this.#connection();
-    transaction(connection, () => {
-      connection.prepare("DELETE FROM asp_settings WHERE key = ?").run(key);
-    });
+    this.#client().delete(aspSettings).where(eq(aspSettings.key, key)).run();
   }
 
-  #connection(): DatabaseSync {
-    if (this.connection === null) {
+  #client(): AspDb {
+    if (this.db === null) {
       throw new Error("LocalDatabase is not open");
     }
-    return this.connection;
+    return this.db;
   }
 
   #copyLegacyFile(): void {
@@ -96,26 +93,25 @@ export class LocalDatabase {
     ) {
       return;
     }
-    const source = new DatabaseSync(legacy, { readOnly: true });
+    const source = new Database(legacy, { readonly: true });
     try {
-      writeFileSync(this.path, snapshot(source));
+      writeFileSync(this.path, source.serialize());
     } finally {
       source.close();
     }
   }
 }
 
-function snapshot(source: DatabaseSync): Uint8Array {
-  if (!canSerialize(source)) {
-    throw new Error("node:sqlite cannot snapshot the legacy database");
+// ``db/drizzle/`` holds the migrations; the walk also covers a copy run from
+// somewhere else in the tree, and stops at the filesystem root.
+function migrationsFolder(): string {
+  for (let dir = import.meta.dirname; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, "drizzle");
+    if (existsSync(path.join(candidate, "meta", "_journal.json"))) {
+      return candidate;
+    }
+    if (path.dirname(dir) === dir) {
+      throw new Error("ASP migrations are missing (db/drizzle)");
+    }
   }
-  const bytes: unknown = source.serialize();
-  if (!(bytes instanceof Uint8Array)) {
-    throw new Error("legacy database snapshot is not bytes");
-  }
-  return bytes;
-}
-
-function canSerialize(source: DatabaseSync): source is DatabaseSync & { serialize: () => unknown } {
-  return "serialize" in source && typeof source.serialize === "function";
 }

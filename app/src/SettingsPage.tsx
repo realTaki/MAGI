@@ -270,18 +270,23 @@ export function SettingsPage() {
     };
   }, [section]);
 
-  function installShell() {
+  /** Applying the client update: its failure belongs to the notice stack, not the page. */
+  async function installShell(): Promise<ActionOutcome> {
     const install = window.magiDesktop?.invokeLocal;
     if (install === undefined || shellUpdating) {
-      return;
+      return { ok: false, message: "" };
     }
     setShellUpdating(true);
-    setShellUpdateError("");
-    void install("shell.installUpdate")
-      .catch((error: unknown) => {
-        setShellUpdateError(error instanceof Error ? error.message : t("appSettings.aboutShellFailed"));
-        setShellUpdating(false);
-      });
+    try {
+      await install("shell.installUpdate");
+      return { ok: true, message: "" };
+    } catch (error) {
+      const text = error instanceof Error ? error.message : t("appSettings.aboutShellFailed");
+      notifyError(text);
+      return { ok: false, message: text };
+    } finally {
+      setShellUpdating(false);
+    }
   }
 
   function chooseProvider(next: string) {
@@ -292,7 +297,8 @@ export function SettingsPage() {
   const modelChoices = catalog[provider] ?? [];
   const selectionKnown = !!provider && !!model.trim() && (provider !== "custom" || !!baseUrl.trim());
 
-  async function saveProvider() {
+  /** Saving the key reports what synced where; a failure also reaches the notice stack. */
+  async function saveProvider(): Promise<ActionOutcome> {
     setSavingProvider(true);
     setProviderStatus("");
     setProviderStatusIsError(false);
@@ -308,22 +314,34 @@ export function SettingsPage() {
       setApiKey(saved.api_key ?? "");
       setBaseUrl(saved.base_url ?? "");
       const parts = [`${t("appSettings.providerSynced")} ${saved.synced.length}`];
-      if (saved.failed.length > 0) {
-        parts.push(`${t("appSettings.providerFailed")} ${saved.failed.length}`);
-      }
-      setProviderStatus(parts.join(" · "));
+      // A key that reached the app but not every MAGI is a partial failure, and the
+      // operator should see it as one rather than as a quiet count.
+      if (saved.failed.length > 0) parts.push(`${t("appSettings.providerFailed")} ${saved.failed.length}`);
+      const message = parts.join(" · ");
+      setProviderStatus(message);
+      if (saved.failed.length > 0) notifyError(message);
+      return { ok: saved.failed.length === 0, message };
     } catch (error) {
-      setProviderStatus(error instanceof Error ? error.message : String(error));
+      const text = error instanceof Error ? error.message : String(error);
+      setProviderStatus(text);
       setProviderStatusIsError(true);
+      notifyError(text);
+      return { ok: false, message: text };
     } finally {
       setSavingProvider(false);
     }
   }
 
-  async function refreshProviderUsage() {
+  /** Asking the provider for the balance again; a failure has to be visible somewhere. */
+  async function refreshProviderUsage(): Promise<ActionOutcome> {
     setProviderUsageLoading(true);
     try {
       setProviderUsage(await getProviderUsage());
+      return { ok: true, message: "" };
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      notifyError(text);
+      return { ok: false, message: text };
     } finally {
       setProviderUsageLoading(false);
     }
@@ -563,14 +581,11 @@ export function SettingsPage() {
                   </label>
                 </div>
                 <div className="settings-card__actions">
-                  <button
-                    type="button"
-                    className="settings-card__pill"
+                  <ActionButton
+                    label={t("appSettings.providerSave")}
                     disabled={savingProvider || !selectionKnown}
-                    onClick={() => void saveProvider()}
-                  >
-                    {savingProvider ? t("common.loading") : t("appSettings.providerSave")}
-                  </button>
+                    onRun={saveProvider}
+                  />
                   <span
                     className={`settings-card__status${providerStatusIsError ? " is-error" : ""}`}
                   >
@@ -612,14 +627,11 @@ export function SettingsPage() {
                           : t("appSettings.usageUnconfigured")}
                 </p>
                 <div className="settings-card__actions">
-                  <button
-                    type="button"
-                    className="settings-card__pill"
+                  <ActionButton
+                    label={t("appSettings.usageRefresh")}
                     disabled={providerUsageLoading}
-                    onClick={() => void refreshProviderUsage()}
-                  >
-                    {t("appSettings.usageRefresh")}
-                  </button>
+                    onRun={refreshProviderUsage}
+                  />
                 </div>
               </>
             ) : null}
@@ -752,14 +764,11 @@ export function SettingsPage() {
                       )}
                     </label>
                     <div className="settings-card__actions">
-                      <button
-                        type="button"
-                        className="settings-card__pill"
+                      <ActionButton
+                        label={t("appSettings.aboutShellUpdate")}
                         disabled={!shellRelease?.updateAvailable || !shellRelease.packaged || shellUpdating}
-                        onClick={installShell}
-                      >
-                        {shellUpdating ? t("appSettings.aboutShellUpdating") : t("appSettings.aboutShellUpdate")}
-                      </button>
+                        onRun={installShell}
+                      />
                     </div>
                   </div>
                 ) : null}

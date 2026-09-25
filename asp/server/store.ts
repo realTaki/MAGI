@@ -1,10 +1,20 @@
 /** ASP relay state, written through to its SQLite database. */
 
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 
-import { LocalDatabase } from "../db/database.ts";
-import { transaction } from "../db/versions.ts";
+import { and, eq, gt, notExists, sql } from "drizzle-orm";
+
+import { LocalDatabase, type AspDb } from "../db/database.ts";
+import {
+  aspAgents,
+  aspChatKeys,
+  aspChats,
+  aspEventAcks,
+  aspEvents,
+  aspMessageKeys,
+  aspMessageRecipients,
+  aspParticipants,
+} from "../db/schema.ts";
 
 export type ParticipantStatus = "invited" | "joined" | "left";
 export type ChatState = "active" | "ended";
@@ -54,9 +64,6 @@ export type AgentSeed = {
   allowlist?: string[];
 };
 
-type SqlValue = string | number | bigint | Uint8Array | null;
-type SqlRow = Record<string, SqlValue>;
-
 export function makeId(prefix: string): string {
   return `${prefix}_${randomUUID().replaceAll("-", "").toUpperCase()}`;
 }
@@ -91,41 +98,6 @@ function triple(first: string, second: string, third: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseJson(text: string): unknown {
-  return JSON.parse(text);
-}
-
-function isSqlRow(value: unknown): value is SqlRow {
-  return isRecord(value);
-}
-
-function textColumn(row: SqlRow, key: string): string {
-  const value = row[key];
-  if (typeof value !== "string") {
-    throw new Error(`expected text column ${key}`);
-  }
-  return value;
-}
-
-function numberColumn(row: SqlRow, key: string): number {
-  const value = row[key];
-  if (typeof value === "number") {
-    return value;
-  }
-  if (typeof value === "bigint") {
-    return Number(value);
-  }
-  throw new Error(`expected integer column ${key}`);
-}
-
-function nullableNumber(row: SqlRow, key: string): number | null {
-  const value = row[key];
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return numberColumn(row, key);
 }
 
 function optionalText(value: unknown): string | null {
@@ -234,8 +206,8 @@ export class Store {
     this.storage = storage;
   }
 
-  #db(): DatabaseSync | null {
-    return this.storage?.connection ?? null;
+  #db(): AspDb | null {
+    return this.storage?.db ?? null;
   }
 
   activate(seed: Record<string, string | AgentSeed> = {}): void {
@@ -251,31 +223,25 @@ export class Store {
     this.chatSeq.clear();
     this.idempotency.clear();
     this.chatIdempotency.clear();
-    for (const row of this.#rows(db, "SELECT record_json FROM asp_agents")) {
-      const agent = agentFromJson(parseJson(textColumn(row, "record_json")));
+    for (const row of db.select({ record: aspAgents.record_json }).from(aspAgents).all()) {
+      const agent = agentFromJson(row.record);
       this.agents.set(agent.handle, agent);
       this.agentByToken.set(agent.token, agent.handle);
     }
-    for (const row of this.#rows(db, "SELECT record_json, next_sequence FROM asp_chats")) {
-      const chat = chatFromJson(parseJson(textColumn(row, "record_json")));
+    for (const row of db.select({ record: aspChats.record_json, next_sequence: aspChats.next_sequence }).from(aspChats).all()) {
+      const chat = chatFromJson(row.record);
       this.chats.set(chat.id, chat);
-      this.chatSeq.set(chat.id, numberColumn(row, "next_sequence"));
+      this.chatSeq.set(chat.id, row.next_sequence);
     }
-    for (const row of this.#rows(db, "SELECT chat_id, record_json FROM asp_participants")) {
-      const participant = participantFromJson(parseJson(textColumn(row, "record_json")));
-      this.participants.set(pair(textColumn(row, "chat_id"), participant.handle), participant);
+    for (const row of db.select({ chat_id: aspParticipants.chat_id, record: aspParticipants.record_json }).from(aspParticipants).all()) {
+      const participant = participantFromJson(row.record);
+      this.participants.set(pair(row.chat_id, participant.handle), participant);
     }
-    for (const row of this.#rows(db, "SELECT * FROM asp_message_keys")) {
-      this.idempotency.set(
-        triple(textColumn(row, "chat_id"), textColumn(row, "sender"), textColumn(row, "key")),
-        [textColumn(row, "message_id"), numberColumn(row, "sequence")],
-      );
+    for (const row of db.select().from(aspMessageKeys).all()) {
+      this.idempotency.set(triple(row.chat_id, row.sender, row.key), [row.message_id, row.sequence]);
     }
-    for (const row of this.#rows(db, "SELECT * FROM asp_chat_keys")) {
-      this.chatIdempotency.set(pair(textColumn(row, "creator"), textColumn(row, "key")), [
-        textColumn(row, "chat_id"),
-        nullableNumber(row, "sequence"),
-      ]);
+    for (const row of db.select().from(aspChatKeys).all()) {
+      this.chatIdempotency.set(pair(row.creator, row.key), [row.chat_id, row.sequence ?? null]);
     }
     this.seedAgents(seed);
   }
@@ -293,12 +259,10 @@ export class Store {
     if (db === null) {
       return;
     }
-    transaction(db, () => {
-      db.prepare("UPDATE asp_events SET payload_json = ? WHERE event_id = ?").run(
-        JSON.stringify(event.payload),
-        event.event_id,
-      );
-    });
+    db.update(aspEvents)
+      .set({ payload_json: event.payload })
+      .where(eq(aspEvents.event_id, event.event_id))
+      .run();
   }
 
   acknowledge(handle: string, chatId: string, eventIds: string[]): void {
@@ -309,65 +273,55 @@ export class Store {
     if (db === null) {
       return;
     }
-    transaction(db, () => {
-      const lookup = db.prepare(
-        "SELECT type FROM asp_events WHERE event_id = ? AND chat_id = ?",
-      );
-      const ack = db.prepare("INSERT OR IGNORE INTO asp_event_acks VALUES (?, ?)");
-      const mark = db.prepare(
-        "UPDATE asp_message_recipients SET acked = 1 WHERE event_id = ? AND handle = ?",
-      );
+    db.transaction((tx) => {
       for (const eventId of eventIds) {
-        const row = lookup.get(eventId, chatId);
-        if (!isSqlRow(row)) {
+        const event = tx.select({ type: aspEvents.type }).from(aspEvents)
+          .where(and(eq(aspEvents.event_id, eventId), eq(aspEvents.chat_id, chatId)))
+          .get();
+        if (event === undefined) {
           continue;
         }
-        ack.run(eventId, handle);
-        if (textColumn(row, "type") === "chat.message") {
-          mark.run(eventId, handle);
+        tx.insert(aspEventAcks).values({ event_id: eventId, handle }).onConflictDoNothing().run();
+        if (event.type === "chat.message") {
+          tx.update(aspMessageRecipients).set({ acked: true })
+            .where(and(eq(aspMessageRecipients.event_id, eventId), eq(aspMessageRecipients.handle, handle)))
+            .run();
         }
       }
       // A message event goes away only once no intended recipient is left unacked.
       // ASP is a relay, not the transcript — the desktop keeps the long-term copy,
       // and it is that write which makes its acknowledgment legal.
-      const removable = this.#rows(
-        db,
-        `SELECT e.event_id FROM asp_events e
-         WHERE e.chat_id = ? AND e.type = 'chat.message'
-           AND NOT EXISTS (
-             SELECT 1 FROM asp_message_recipients r
-             WHERE r.event_id = e.event_id AND r.acked = 0
-           )`,
-        chatId,
-      ).map((row) => textColumn(row, "event_id"));
+      const removable = tx.select({ event_id: aspEvents.event_id }).from(aspEvents)
+        .where(and(
+          eq(aspEvents.chat_id, chatId),
+          eq(aspEvents.type, "chat.message"),
+          notExists(tx.select({ one: sql`1` }).from(aspMessageRecipients).where(and(
+            eq(aspMessageRecipients.event_id, aspEvents.event_id),
+            eq(aspMessageRecipients.acked, false),
+          ))),
+        ))
+        .all()
+        .map((row) => row.event_id);
       if (removable.length === 0) {
         return;
       }
-      const remove = db.prepare("DELETE FROM asp_events WHERE event_id = ?");
       for (const eventId of removable) {
-        remove.run(eventId);
+        tx.delete(aspEvents).where(eq(aspEvents.event_id, eventId)).run();
       }
+      // An invitation carries the message it was opened with; that message is gone.
       const removed = new Set(removable);
-      const invited = db.prepare(
-        "SELECT event_id, payload_json FROM asp_events WHERE chat_id = ? AND type = 'chat.invited'",
-      );
-      const rewrite = db.prepare("UPDATE asp_events SET payload_json = ? WHERE event_id = ?");
-      for (const row of invited.all(chatId)) {
-        if (!isSqlRow(row)) {
+      for (const row of tx.select({ id: aspEvents.event_id, payload: aspEvents.payload_json }).from(aspEvents)
+        .where(and(eq(aspEvents.chat_id, chatId), eq(aspEvents.type, "chat.invited")))
+        .all()) {
+        const initial = row.payload.initial_message;
+        if (!isRecord(initial) || typeof initial.id !== "string" || !removed.has(initial.id)) {
           continue;
         }
-        const payload = payloadFromJson(parseJson(textColumn(row, "payload_json")));
-        const initial = payload.initial_message;
-        if (
-          isRecord(initial) &&
-          typeof initial.id === "string" &&
-          removed.has(initial.id)
-        ) {
-          delete payload.initial_message;
-          rewrite.run(JSON.stringify(payload), textColumn(row, "event_id"));
-        }
+        const payload = { ...row.payload };
+        delete payload.initial_message;
+        tx.update(aspEvents).set({ payload_json: payload }).where(eq(aspEvents.event_id, row.id)).run();
       }
-    });
+    }, { behavior: "immediate" });
   }
 
   isAcknowledged(handle: string, eventId: string): boolean {
@@ -375,10 +329,9 @@ export class Store {
     if (db === null) {
       return false;
     }
-    return (
-      db.prepare("SELECT 1 FROM asp_event_acks WHERE event_id = ? AND handle = ?").get(eventId, handle) !==
-      undefined
-    );
+    return db.select({ one: sql`1` }).from(aspEventAcks)
+      .where(and(eq(aspEventAcks.event_id, eventId), eq(aspEventAcks.handle, handle)))
+      .get() !== undefined;
   }
 
   seedAgents(seed: Record<string, string | AgentSeed>): void {
