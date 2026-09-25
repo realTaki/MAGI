@@ -126,6 +126,7 @@ export class Bus {
       if (!input.channel?.trim() || !input.delivery_address?.trim()) throw new Error("ChatNotify needs chat_id or channel and delivery_address");
       chatId = this.chats.forChannel(input.channel.trim(), input.delivery_address.trim()).id;
     }
+    if (chatId === undefined) throw new Error("chat_id is missing");
     if (!this.chats.get(chatId)) throw new Error(`chat ${chatId} does not exist`);
     const jobId = this.board("ChatNotify").publish({ ...input, chat_id: chatId }, publisher);
     this.messages.add(chatId, input.contact_id ?? SYSTEM_CONTACT_ID, input.text);

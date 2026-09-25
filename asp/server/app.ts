@@ -160,10 +160,14 @@ function registerRoutes(router: Router, app: AspApp): void {
     return { body: { chats: app.operator.listChats(caller) } };
   });
   router.add("GET", "/chats/:chat_id", (context) => {
-    const caller = operatorOnly(context.headers);
+    const caller = auth(context.headers);
     const chatId = requiredParam(context.params, "chat_id");
     try {
-      return { body: app.operator.chatView(caller, chatId) };
+      return {
+        body: caller === app.operatorHandle
+          ? app.operator.chatView(caller, chatId)
+          : app.chats.getChatView(caller, chatId),
+      };
     } catch (error) {
       hideChatError(error);
     }
@@ -298,7 +302,7 @@ function registerRoutes(router: Router, app: AspApp): void {
     return { body: { ...settings, synced, failed } };
   });
 
-  router.add("POST", "/chats", async (context) => {
+  router.add("POST", "/chats/open", async (context) => {
     const creator = auth(context.headers);
     const body = requireObject(context.body ?? {});
     const initial = initialMessage(body.initial_message);
@@ -389,15 +393,6 @@ function registerRoutes(router: Router, app: AspApp): void {
       hideChatError(error);
     }
     return { body: { ok: true } };
-  });
-  router.add("GET", "/chats/:chat_id", (context) => {
-    try {
-      return {
-        body: app.chats.getChatView(auth(context.headers), requiredParam(context.params, "chat_id")),
-      };
-    } catch (error) {
-      hideChatError(error);
-    }
   });
   router.add("GET", "/chats/:chat_id/events", (context) => {
     try {

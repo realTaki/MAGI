@@ -1,5 +1,5 @@
 -- Desktop (Electron) local SQLite. File lives in Electron userData as desktop.sqlite.
--- Operator-side settings and chat list. Not the ASP session log, not a MAGI workspace.
+-- Operator-side settings and chat list. Not the ASP chat log, not a MAGI workspace.
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,

@@ -100,7 +100,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(STORAGE_KEY, p);
     } catch {
       // Private-mode browsers — the in-memory change still
-      // takes effect for this session.
+      // takes effect for this visit.
     }
   }, []);
 

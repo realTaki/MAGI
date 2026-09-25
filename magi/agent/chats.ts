@@ -17,7 +17,7 @@ export class Chat {
   ) {}
 
   async run(jobId: number): Promise<void> {
-    const chat = this.bus.board("ChatNotify");
+    const chatBoard = this.bus.board("ChatNotify");
     try {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
@@ -42,12 +42,12 @@ export class Chat {
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",
         content: `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`,
       }));
-      const chat = `## Chat\nchat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
-      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${chat}` }, ...history];
+      const chatContext = `## Chat\nchat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
+      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${chatContext}` }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
-        messages[0] = { role: "system", content: `${system}\n\n${chat}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
+        messages[0] = { role: "system", content: `${system}\n\n${chatContext}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
         const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
@@ -61,7 +61,7 @@ export class Chat {
             // its own trouble, and there is nothing the agent could do about it here.
             this.bus.publishDelivery({ chat_id: this.chat_id, text: reply || "处理完毕。" });
           }
-          chat.submit("agent", jobId, { output: {} });
+          chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
         if (response.content) this.bus.publishDelivery({ chat_id: this.chat_id, text: response.content });
@@ -88,7 +88,7 @@ export class Chat {
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
       this.bus.publishDelivery({ chat_id: this.chat_id, text: message });
-      chat.submit("agent", jobId, { error: message });
+      chatBoard.submit("agent", jobId, { error: message });
     }
   }
 

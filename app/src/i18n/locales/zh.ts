@@ -512,7 +512,7 @@ export default {
 
   chatSearch: {
     title: "搜索对话",
-    emptyHintSearch: "跨所有 session 的全文搜索。中英文至少 3 个字符起才能匹配。",
+    emptyHintSearch: "跨所有对话的全文搜索。中英文至少 3 个字符起才能匹配。",
     emptyHintBrowse: "按时间倒序展示最近会话。向下滚动加载更多。",
     searchPlaceholder: "输入关键字...",
     searchAria: "搜索关键字",
