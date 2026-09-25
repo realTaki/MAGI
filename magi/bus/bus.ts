@@ -17,7 +17,9 @@ import { SettingsBook } from "./firmware/books/settingsBook.js";
 import { PromptBook } from "./firmware/books/promptBook.js";
 import { ToolBook } from "./firmware/books/toolBook.js";
 import { JobBoard, jobs } from "./firmware/jobs/jobBoard.js";
-import type { ChatNotify, DeliveryNotify, JobInput, JobType } from "./firmware/jobs/types.js";
+import type { ChatNotify } from "./firmware/jobs/chatNotify.js";
+import type { DeliveryNotify } from "./firmware/jobs/deliveryNotify.js";
+import type { JobInput, JobType } from "./firmware/jobs/types.js";
 
 export const MAGI_CONTACT_ID = 1;
 export const SYSTEM_CONTACT_ID = 0;

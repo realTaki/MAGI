@@ -1,4 +1,4 @@
-import type { LLMTool } from "../jobs/types.js";
+import type { LLMTool } from "../jobs/llm.js";
 
 export type ExecutableTool = LLMTool & { run(args: Record<string, unknown>): Promise<string> };
 

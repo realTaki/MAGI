@@ -10,4 +10,13 @@ export type { ContactNote, NoteKind } from "./firmware/books/contactNoteBook.js"
 export type { McpConnectionType, McpServerConfig } from "./firmware/books/mcpServerBook.js";
 export type { Setting } from "./firmware/books/settingsBook.js";
 export type { ExecutableTool } from "./firmware/books/toolBook.js";
-export type { ChatNotify, CallLLMJob, CallLLMResult, ChangeMcpServerNotify, ChangeProviderNotify, DeliveryNotify, Job, JobResult, LLMMessage, LLMTool, LLMToolCall, RunTaskNotify, RunToolJob, RunToolResult } from "./firmware/jobs/types.js";
+// One file per job; `types.js` is only the board contract that binds them.
+export type { LLMToolCall, LLMMessage, LLMTool } from "./firmware/jobs/llm.js";
+export type { ChatNotify } from "./firmware/jobs/chatNotify.js";
+export type { CallLLMJob, CallLLMResult } from "./firmware/jobs/callLlm.js";
+export type { RunToolJob, RunToolResult } from "./firmware/jobs/runTool.js";
+export type { DeliveryNotify } from "./firmware/jobs/deliveryNotify.js";
+export type { ChangeProviderNotify } from "./firmware/jobs/changeProvider.js";
+export type { RunTaskNotify } from "./firmware/jobs/runTask.js";
+export type { ChangeMcpServerNotify } from "./firmware/jobs/changeMcpServer.js";
+export type { Job, JobResult } from "./firmware/jobs/types.js";
