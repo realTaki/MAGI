@@ -1240,6 +1240,37 @@ export function createLocalApi(context) {
     return await magiRuntime.merge(await magiAgent(payload));
   }
 
+  /**
+   * Roster-level actions, for when going through the profiles one by one is the
+   * slow way. One MAGI failing is reported, never fatal: a sweep the operator
+   * cannot read is worse than no sweep at all.
+   */
+  async function magiStartAll() {
+    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before starting the MAGIs.");
+    return await magiRuntime.startAll(await magiRoster());
+  }
+
+  function magiStopAll() {
+    return magiRuntime.stopAll();
+  }
+
+  async function magiRebuildAll() {
+    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding the MAGIs.");
+    const rebuilt = [];
+    const failed = [];
+    for (const agent of await magiRoster()) {
+      try {
+        await magiRuntime.rebuild(agent);
+        rebuilt.push(agent.handle);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        failed.push({ handle: agent.handle, detail });
+        console.error(`[magi] ${agent.handle}: ${detail}`);
+      }
+    }
+    return { rebuilt, failed };
+  }
+
   async function stopOwnedAsp() {
     if ((await aspHealth()) !== "ready") return;
     if (asp && !asp.killed) {
@@ -1527,6 +1558,9 @@ export function createLocalApi(context) {
     "magi.restart": (payload) => magiAction(() => magiRestart(payload)),
     "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
     "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
+    "magi.startAll": () => magiAction(() => magiStartAll()),
+    "magi.stopAll": () => magiAction(() => magiStopAll()),
+    "magi.rebuildAll": () => runtimeAction(() => magiRebuildAll()),
     "runtime.rebuildApp": rebuildApp,
     "runtime.buildInstaller": buildInstaller,
     "runtime.buildAndInstallInstaller": buildAndInstallInstaller,

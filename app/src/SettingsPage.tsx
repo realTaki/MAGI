@@ -92,6 +92,41 @@ export function SettingsPage() {
     }
   }
 
+  /**
+   * The bulk sweep. It answers with what it managed and what it did not, so a
+   * partly failed run still reads as one line instead of looking like success.
+   */
+  async function runMagiAll(method: "magi.startAll" | "magi.stopAll" | "magi.rebuildAll") {
+    const invoke = window.magiDesktop?.invokeLocal;
+    if (!invoke || runtimeBusy) return;
+    setRuntimeBusy(true);
+    setRuntimeMessage(t("appSettings.runtimeWorking"));
+    try {
+      const result = await invoke(method) as {
+        started?: string[];
+        stopped?: number;
+        rebuilt?: string[];
+        failed?: { handle: string; detail: string }[];
+      } | undefined;
+      const done =
+        (result?.started?.length ?? 0) + (result?.rebuilt?.length ?? 0) + (result?.stopped ?? 0);
+      const failed = result?.failed ?? [];
+      setRuntimeMessage(
+        [
+          t("appSettings.magiAllDone").replace("{count}", String(done)),
+          ...failed.map((row) => `${row.handle}: ${row.detail}`),
+        ].join(" · "),
+      );
+      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
+      setRuntimeStatus(state.asp ?? "");
+      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
+    } catch (error) {
+      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRuntimeBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (section !== "usage") {
       return;
@@ -533,6 +568,35 @@ export function SettingsPage() {
                         {t(`appSettings.${method.split(".")[1]}`)}
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div className="settings-card">
+                  <div className="settings-card__label">{t("appSettings.magiGroup")}</div>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runMagiAll("magi.startAll")}
+                    >
+                      {t("appSettings.magiStartAll")}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runMagiAll("magi.stopAll")}
+                    >
+                      {t("appSettings.magiStopAll")}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runMagiAll("magi.rebuildAll")}
+                    >
+                      {t("appSettings.magiRebuildAll")}
+                    </button>
                   </div>
                 </div>
                 <div className="settings-card">

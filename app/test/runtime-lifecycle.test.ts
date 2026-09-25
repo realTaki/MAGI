@@ -200,3 +200,52 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   assert.ok(calls.includes("GET /agents"));
   api.dispose();
 });
+
+test("the bulk MAGI actions sweep the roster and report what failed", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-bulk-"));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/bots") return Response.json({ bots: [] });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true },
+          { handle: "@eva-001.magi", token: "tok-1", name: "eva-001", managed: true },
+          // A developer's own checkout is not part of the society a sweep drives.
+          { handle: "@plain.magi", token: "tok-2", name: "plain", managed: false },
+        ],
+      });
+    }
+    throw new Error(`unexpected request: ${endpoint}`);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout: root },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "unused", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+    spawn(_binary, args) {
+      if (args.includes("@eva-001.magi")) throw new Error("no space left");
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => true;
+      return child;
+    },
+  });
+
+  // One MAGI failing must not hide the others: the answer names both sides.
+  assert.deepEqual(await api["magi.startAll"](), {
+    started: ["@eva-000.magi"],
+    failed: [{ handle: "@eva-001.magi", detail: "no space left" }],
+  });
+  assert.deepEqual(await api["magi.stopAll"](), { stopped: 1 });
+  await assert.rejects(api["magi.rebuildAll"](), /not managed/);
+  api.dispose();
+});
