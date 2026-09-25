@@ -1,7 +1,31 @@
 /** Contacts and the notes attached to them. */
 
 import type { Bus, ContactRole, ExecutableTool, NoteKind } from "@magi/bus";
-import { integerArg, optionalBoundedInteger, stringArg } from "./args.js";
+
+/** Local on purpose: this package must not depend on the tools package. */
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== "string" || !value) throw new Error(`${key} must be a non-empty string`);
+  return value;
+}
+
+/** Local on purpose: this package must not depend on the tools package. */
+function integerArg(args: Record<string, unknown>, key: string): number {
+  const value = args[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) throw new Error(`${key} must be a positive integer`);
+  return value;
+}
+
+/** Local on purpose: this package must not depend on the tools package. */
+function boundedInteger(value: unknown, key: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
+  return value;
+}
+
+/** Local on purpose: this package must not depend on the tools package. */
+function optionalBoundedInteger(value: unknown, fallback: number, key: string, min: number, max: number): number {
+  return value === undefined ? fallback : boundedInteger(value, key, min, max);
+}
 
 function contactRole(value: unknown): ContactRole {
   const role = typeof value === "string" ? value.trim().toLowerCase() : "stranger";

@@ -2,17 +2,18 @@
  * The builtin tool catalog.
  *
  * One module per category — what the tool acts on decides where it lives:
- *   files.ts     read_file / list_files / write_file / edit_file
  *   shell.ts     bash / bash_output / bash_kill
  *   memory.ts    save_memory / complete_memory / delete_memory
+ *   tasks.ts     schedule_task
+ *   messages.ts  search_chat_messages / search_contact_messages /
+ *                send_message / set_home_chat
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself.
- *   tasks.ts     schedule_task
- *   contacts.ts  add_contact / save_contact_note / delete_contact_note /
- *                search_contacts / update_daily_note
- *   messages.ts  search_chat_messages / search_contact_messages /
- *                send_message / set_home_chat
+ *
+ * `read_file` / `list_files` / `write_file` / `edit_file` are not here either:
+ * they live in `@magi/files` with the worker that runs them. The contact tools
+ * live in `@magi/contacts` the same way.
  *
  * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
  * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.
@@ -22,8 +23,6 @@
  */
 
 import type { Bus, ExecutableTool } from "@magi/bus";
-import { contactTools } from "./contacts.js";
-import { fileTools } from "./files.js";
 import { memoryTools } from "./memory.js";
 import { messageTools } from "./messages.js";
 import { shellTools } from "./shell.js";
@@ -34,11 +33,9 @@ export type Tool = ExecutableTool;
 
 export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
   return [
-    ...fileTools(bus.workspace),
     ...shellTools(bus.workspace, shells),
     ...memoryTools(bus),
     ...taskTools(bus),
-    ...contactTools(bus),
     ...messageTools(bus),
   ];
 }

@@ -284,3 +284,5 @@ token.json
 !.env.*.example
 deploy/k8s/secrets/*.yaml
 !deploy/k8s/secrets/*.example.yaml
+.workbuddy/memory/2026-09-25.md
+.workbuddy/memory/MEMORY.md
