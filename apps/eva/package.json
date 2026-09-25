@@ -24,6 +24,8 @@
     "@magi/agent": "*",
     "@magi/providers": "*",
     "@magi/tools": "*",
+    "@magi/contacts": "*",
+    "@magi/files": "*",
     "@magi/mcp": "*",
     "@magi/skills": "*",
     "@magi/channel-asp": "*",

@@ -1,10 +1,30 @@
 /**
- * Recurring work. The model picks a friendly frequency; the tool turns it into
- * the cron expression the TaskWorker scans.
+ * The tool that makes a task: the model picks a friendly frequency, and this
+ * turns it into the cron the worker beside it scans.
+ *
+ * It lives here because the task does: this package is what stores a task,
+ * watches for it, and fires it, so the tool belongs to the same owner as the
+ * loop that honours it. See `worker.ts`.
  */
 
 import type { Bus, ExecutableTool } from "@magi/bus";
-import { boundedInteger, integerArg, stringArg } from "./args.js";
+
+/** Local on purpose: this package must not depend on the tools package. */
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== "string" || !value) throw new Error(`${key} must be a non-empty string`);
+  return value;
+}
+
+function positiveInteger(value: unknown, key: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) throw new Error(`${key} must be a positive integer`);
+  return value;
+}
+
+function boundedInteger(value: unknown, key: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
+  return value;
+}
 
 function presetCron(args: Record<string, unknown>): string {
   const frequency = args.frequency;
@@ -34,10 +54,9 @@ export function taskTools(bus: Bus): ExecutableTool[] {
       async run(args) {
         const name = stringArg(args, "name");
         const prompt = stringArg(args, "prompt");
-        const chatId = integerArg(args, "chat_id");
+        const chatId = positiveInteger(args.chat_id, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        const cron = presetCron(args);
-        const task = bus.tasks.save({ name, prompt, cron, chat_id: chatId });
+        const task = bus.tasks.save({ name, prompt, cron: presetCron(args), chat_id: chatId });
         return JSON.stringify({ task_id: task.id, name: task.name, cron: task.cron, chat_id: task.chat_id });
       },
     },

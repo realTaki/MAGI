@@ -13,7 +13,6 @@ import type { ChangeProviderNotify } from "./changeProvider.js";
 import type { ChatNotify } from "./chatNotify.js";
 import type { DeliveryNotify } from "./deliveryNotify.js";
 import type { ManageWorkerNotify } from "./manageWorker.js";
-import type { RunTaskNotify } from "./runTask.js";
 import type { RunToolJob, RunToolResult } from "./runTool.js";
 
 /** Job type -> what its publisher hands to the board. */
@@ -23,7 +22,6 @@ export type JobInput = {
   RunToolJob: RunToolJob;
   DeliveryNotify: DeliveryNotify;
   ChangeProviderNotify: ChangeProviderNotify;
-  RunTaskNotify: RunTaskNotify;
   ChangeMcpServerNotify: ChangeMcpServerNotify;
   ManageWorkerNotify: ManageWorkerNotify;
 };
@@ -35,7 +33,6 @@ export type JobOutput = {
   RunToolJob: RunToolResult;
   DeliveryNotify: Record<string, never>;
   ChangeProviderNotify: Record<string, never>;
-  RunTaskNotify: Record<string, never>;
   ChangeMcpServerNotify: Record<string, never>;
   ManageWorkerNotify: { running: string[] };
 };

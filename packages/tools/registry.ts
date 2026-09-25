@@ -27,7 +27,6 @@ import { memoryTools } from "./memory.js";
 import { messageTools } from "./messages.js";
 import { shellTools } from "./shell.js";
 import { ShellManager } from "./shellManager.js";
-import { taskTools } from "./tasks.js";
 
 export type Tool = ExecutableTool;
 

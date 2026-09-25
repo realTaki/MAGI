@@ -3,12 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { builtinTools } from "@magi/tools/registry.js";
+import { contactTools } from "@magi/contacts/tools.js";
 
 test("contact tools persist, search, update, and delete notes", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-"));
   const magi = new Magi("@contacts.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
-  const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
+  const tools = new Map(contactTools(magi.bus).map((tool) => [tool.name, tool]));
   try {
     const added = JSON.parse(await tools.get("add_contact")!.run({
       name: "Ada Lovelace", nickname: "Ada", role: "authorized", notes: "Works on the analytical engine",

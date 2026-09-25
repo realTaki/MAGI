@@ -17,6 +17,8 @@ import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { ToolsWorker } from "@magi/tools/worker.js";
 import type { Tool } from "@magi/tools/registry.js";
+import { ContactsWorker } from "@magi/contacts/worker.js";
+import { FilesWorker } from "@magi/files/worker.js";
 import { CliWorker } from "@magi/channel-cli/worker.js";
 import { AspWorker } from "@magi/channel-asp/worker.js";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
@@ -76,6 +78,8 @@ export class Magi {
       new SkillWorker(this.bus),
       new AgentWorker(this.bus),
       new ToolsWorker(this.bus, options.tools),
+      new ContactsWorker(this.bus),
+      new FilesWorker(this.bus),
       new ProvidersWorker(this.bus, options.client),
       new CliWorker(this.bus, options.deliver),
       new TaskWorker(this.bus),

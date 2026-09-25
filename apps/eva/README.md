@@ -10,7 +10,7 @@ common is `@magi/bus`.
 | `@magi/bus` | Books, durable Jobs, and shared tool catalog |
 | `@magi/agent` | Serial chat turns and model/tool continuation |
 | `@magi/providers` | Execute model Jobs |
-| `@magi/tools`, `@magi/mcp` | Execute native and MCP tools through BUS |
+| `@magi/tools`, `@magi/contacts`, `@magi/files`, `@magi/mcp` | Execute native and MCP tools through BUS |
 | `@magi/channel-*` | Transport messages and replies |
 
 ```bash

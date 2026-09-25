@@ -26,6 +26,12 @@
       "path": "../../packages/tools"
     },
     {
+      "path": "../../packages/contacts"
+    },
+    {
+      "path": "../../packages/files"
+    },
+    {
       "path": "../../packages/mcp"
     },
     {
