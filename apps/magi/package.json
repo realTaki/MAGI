@@ -1,0 +1,33 @@
+{
+  "name": "@magi/runtime",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "The MAGI runtime: one long-lived agent, its BUS and its workers.",
+  "exports": {
+    ".": {
+      "types": "./dist/magi.d.ts",
+      "default": "./dist/magi.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/magi.js"
+  },
+  "dependencies": {
+    "@magi/bus": "*",
+    "@magi/agent": "*",
+    "@magi/providers": "*",
+    "@magi/tools": "*",
+    "@magi/mcp": "*",
+    "@magi/channel-asp": "*",
+    "@magi/channel-cli": "*",
+    "@magi/channel-tasks": "*",
+    "@magi/channel-telegram": "*"
+  }
+}

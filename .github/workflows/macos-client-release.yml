@@ -34,9 +34,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
-            shell/package-lock.json
-            app/package-lock.json
-            magi/package-lock.json
+            apps/shell/package-lock.json
+            apps/app/package-lock.json
+            package-lock.json
 
       - name: Install dependencies
         run: |
@@ -99,7 +99,7 @@ jobs:
         with:
           name: macos-${{ matrix.arch }}
           path: |
-            shell/release/*.dmg
+            apps/shell/release/*.dmg
           if-no-files-found: error
 
   release:

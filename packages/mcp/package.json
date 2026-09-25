@@ -1,0 +1,25 @@
+{
+  "name": "@magi/mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "MAGI runtime package: mcp.",
+  "exports": {
+    ".": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@magi/bus": "*",
+    "@modelcontextprotocol/client": "2.1.0"
+  }
+}

@@ -32,9 +32,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
-            shell/package-lock.json
-            app/package-lock.json
-            magi/package-lock.json
+            apps/shell/package-lock.json
+            apps/app/package-lock.json
+            package-lock.json
 
       - name: Install dependencies
         run: |
@@ -89,7 +89,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: windows-x64
-          path: shell/release/*.exe
+          path: apps/shell/release/*.exe
           if-no-files-found: error
 
   release:

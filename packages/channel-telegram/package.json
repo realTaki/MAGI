@@ -1,0 +1,27 @@
+{
+  "name": "@magi/channel-telegram",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "MAGI runtime package: channel-telegram.",
+  "exports": {
+    ".": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@magi/bus": "*",
+    "chat": "^4.41.0",
+    "@chat-adapter/telegram": "^4.41.0",
+    "@chat-adapter/state-memory": "^4.41.0"
+  }
+}

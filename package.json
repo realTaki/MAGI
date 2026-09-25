@@ -1,0 +1,28 @@
+{
+  "name": "magi",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "The MAGI workspace: the runtime packages, the desktop app, the ASP relay and the Electron shell.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "tsc -b && node --test apps/magi/dist/test/*.test.js",
+    "db:generate": "npm run db:generate --workspace @magi/bus"
+  },
+  "allowScripts": {
+    "better-sqlite3": true,
+    "esbuild": true,
+    "protobufjs": true
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "7.0.2"
+  }
+}

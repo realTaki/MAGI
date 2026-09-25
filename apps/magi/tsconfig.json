@@ -1,0 +1,44 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": [
+    "magi.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "dist"
+  ],
+  "references": [
+    {
+      "path": "../../packages/bus"
+    },
+    {
+      "path": "../../packages/agent"
+    },
+    {
+      "path": "../../packages/providers"
+    },
+    {
+      "path": "../../packages/tools"
+    },
+    {
+      "path": "../../packages/mcp"
+    },
+    {
+      "path": "../../packages/channel-asp"
+    },
+    {
+      "path": "../../packages/channel-cli"
+    },
+    {
+      "path": "../../packages/channel-tasks"
+    },
+    {
+      "path": "../../packages/channel-telegram"
+    }
+  ]
+}

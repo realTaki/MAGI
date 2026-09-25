@@ -223,22 +223,22 @@ __marimo__/
 # projects.
 # -----------------------------------------------------------------------------
 node_modules/
-app/dist/
-app/build/
-app/release/
-shell/release/
-shell/runtime/
+apps/app/dist/
+apps/app/build/
+apps/app/release/
+apps/shell/release/
+apps/shell/runtime/
 .vite/
-app/.vite/
-app/coverage/
-app/.env
-app/.env.local
-app/.env.*.local
-app/npm-debug.log*
-app/yarn-debug.log*
-app/yarn-error.log*
-app/pnpm-debug.log*
-app/*.tsbuildinfo
+apps/app/.vite/
+apps/app/coverage/
+apps/app/.env
+apps/app/.env.local
+apps/app/.env.*.local
+apps/app/npm-debug.log*
+apps/app/yarn-debug.log*
+apps/app/yarn-error.log*
+apps/app/pnpm-debug.log*
+apps/app/*.tsbuildinfo
 
 # -----------------------------------------------------------------------------
 # Runtime data — local SQLite / bind-mounted volumes
