@@ -6,14 +6,16 @@ function template(name: string): string {
   return readFileSync(fileURLToPath(new URL(`./template_${name}.md`, import.meta.url)), "utf8");
 }
 
+function source(name: string): string {
+  return readFileSync(fileURLToPath(new URL(`./${name}.md`, import.meta.url)), "utf8");
+}
+
 export const AGENT_PROMPT = template("AGENT");
-/** This is appended at runtime, so a workspace's custom AGENT.md cannot drop it. */
-export const REPLY_FORMAT_PROMPT = template("reply_format");
+/** Code-owned constraints: never seeded into or overridden by a workspace. */
+export const SYSTEM_PROMPT = source("system");
 export const COMPACTION_PROMPT = template("compaction");
-export const SKILLS_BLOCK_PROMPT = template("skills_block");
 
 export const PROMPT_DEFAULTS: ReadonlyArray<readonly [string, string]> = [
   ["agent/AGENT", AGENT_PROMPT],
   ["agent/compaction", COMPACTION_PROMPT],
-  ["agent/skills_block", SKILLS_BLOCK_PROMPT],
 ];

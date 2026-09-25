@@ -3,6 +3,8 @@ import { dirname, normalize, resolve, sep } from "node:path";
 
 export class PromptBook {
   private readonly root: string;
+  /** Defaults belong to the running code, never to the operator workspace. */
+  private readonly defaults = new Map<string, string>();
 
   constructor(workspace: string) {
     this.root = resolve(workspace, "prompts");
@@ -10,13 +12,14 @@ export class PromptBook {
   }
 
   register(key: string, value: string): void {
-    const defaultKey = this.defaultKey(key);
-    this.write(defaultKey, value);
-    if (!existsSync(this.path(key))) this.write(key, value);
+    const clean = this.validateActiveKey(key);
+    this.defaults.set(clean, value);
+    if (!existsSync(this.path(clean))) this.write(clean, value);
   }
 
   get(key: string): string | null {
-    return this.read(key) ?? this.read(this.defaultKey(key));
+    const clean = this.validateActiveKey(key);
+    return this.read(clean) ?? this.defaults.get(clean) ?? null;
   }
 
   set(key: string, value: string): void {
@@ -24,16 +27,17 @@ export class PromptBook {
   }
 
   reset(key: string): boolean {
-    const value = this.read(this.defaultKey(key));
-    if (value === null) return false;
-    this.write(key, value);
+    const clean = this.validateActiveKey(key);
+    const value = this.defaults.get(clean);
+    if (value === undefined) return false;
+    this.write(clean, value);
     return true;
   }
 
-  private defaultKey(key: string): string {
+  private validateActiveKey(key: string): string {
     const [owner, ...rest] = this.validate(key).split("/");
     if (!owner || !rest.length || rest[0] === "defaults") throw new Error(`invalid active prompt key: ${key}`);
-    return [owner, "defaults", ...rest].join("/");
+    return [owner, ...rest].join("/");
   }
 
   private path(key: string): string {
