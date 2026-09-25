@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
-        working-directory: shell
+        working-directory: apps/shell
 
     steps:
       - name: Check out tag
@@ -36,17 +36,14 @@ jobs:
           cache-dependency-path: |
             apps/shell/package-lock.json
             apps/user/package-lock.json
-            package-lock.json
 
       - name: Install dependencies
-        run: |
-          npm ci
-          npm ci --prefix ../app
-          # The app's provider catalog is read from the checkout's MAGI deps.
-          # `--ignore-scripts`: better-sqlite3 ships its compiled binary inside the
-          # package, while npm would still run node-gyp for it (the package carries
-          # a binding.gyp) — the desktop ships no C++ toolchain, on purpose.
-          npm ci --ignore-scripts --prefix ../magi
+        # One install at the root covers every workspace, and it is what supplies
+        # the app's provider catalog. Scripts stay enabled: Electron's postinstall
+        # is what unpacks its binary. (Add the root `package-lock.json` back to
+        # `cache-dependency-path` once that lockfile is committed.)
+        working-directory: .
+        run: npm install
 
       - name: Set version from tag
         run: |
@@ -58,7 +55,7 @@ jobs:
           npm version "$version" --no-git-tag-version --allow-same-version
 
       - name: Test app
-        run: npm test --prefix ../app
+        run: npm test --prefix ../user
 
       - name: Build shell
         env:
@@ -80,7 +77,7 @@ jobs:
               --config.mac.hardenedRuntime=false
             )
           fi
-          npm run build --prefix ../app
+          npm run build --prefix ../user
           node scripts/prepare-runtime.mjs
           npx electron-builder \
             --mac dmg \

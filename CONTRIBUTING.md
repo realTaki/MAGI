@@ -7,14 +7,11 @@ Thanks for your interest in MAGI! This guide helps you get started.
 ```bash
 git clone https://github.com/realTaki/MAGI.git
 cd MAGI
-cd shell
-npm ci
-npm ci --prefix ../app
-cd ../asp
-npm ci
-cd ../magi
-npm ci
+npm install
 ```
+
+One install at the root covers every workspace (`packages/` and `apps/`). The
+root lockfile is not committed yet, so use `npm install` rather than `npm ci`.
 
 MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
 separate install on the machine. A packaged install ships the runtime MAGI's
@@ -22,7 +19,7 @@ child processes use; a source checkout builds that same runtime into
 `apps/shell/runtime/`:
 
 ```bash
-(cd shell && npm install && node scripts/prepare-runtime.mjs)
+(cd apps/shell && npm install && node scripts/prepare-runtime.mjs)
 ```
 
 That runtime (`bin/node` plus its bundled npm CLI) is what builds and runs the app;
@@ -80,6 +77,8 @@ docs: Update README with new architecture
 | `apps/asp/` | ASP chat server (`main.ts` + `server/` + `db/`, Node 24) |
 | `apps/eva/` + `packages/` | The runtime entry and its packages: bus, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
+
+**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (the operator's app) and `eva` (the agent runtime behind each `eva-000`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/user/`, `apps/eva/`, `apps/eva/eva.ts`.
 
 ## Questions?
 
