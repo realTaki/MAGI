@@ -78,7 +78,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 | 名词 | 含义 |
 | --- | --- |
-| **MAGI** | 一个自主、可治理的智能体，也是 `apps/magi/` 与 `packages/` 里的 Node 24 运行时。 |
+| **MAGI** | 一个自主、可治理的智能体，也是 `apps/eva/` 与 `packages/` 里的 Node 24 运行时。 |
 | **EVA** | 句柄的命名规范。ASP 依次分配 `eva-000`、`eva-001`。地址是 `@eva-000.magi`。 |
 
 桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
@@ -87,7 +87,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
 - **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **每个 MAGI 一个进程**：Node 24 运行 `apps/magi/magi.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **每个 MAGI 一个进程**：Node 24 运行 `apps/eva/eva.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -152,11 +152,11 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
 会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `magi/`、`asp/`、
 `apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建界面，并用 Git 合并上游更新。`apps/app/dist/index.html` 变化后，
+重新构建界面，并用 Git 合并上游更新。`apps/user/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
 真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
-（界面 `apps/app/src/` + 本地后端 `apps/app/main/`），然后只是请这个后端
+（界面 `apps/user/src/` + 本地后端 `apps/user/main/`），然后只是请这个后端
 自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
 重新打包**；改 `apps/shell/` 才需要。
 
@@ -183,7 +183,7 @@ MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | MAGI 之间的协作 | **Later** | ASP 只中继操作者的聊天，不提供 MAGI 之间共享的任务板。 |
-| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `apps/magi/`、`packages/` 或 `apps/asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
+| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `apps/eva/`、`packages/` 或 `apps/asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
 | 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
 | 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
 

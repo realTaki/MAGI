@@ -1,6 +1,6 @@
 # eva
 
-TypeScript MAGI uses `magi.ts` as its composition root. Every Worker depends
+TypeScript MAGI uses `eva.ts` as its composition root. Every Worker depends
 on BUS for shared state, Job exchange, and the tool catalog — and on nothing
 else: each worker is a package of its own, so the only dependency they have in
 common is `@magi/bus`.

@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "tsc -b && node --test apps/magi/dist/test/*.test.js",
+    "test": "tsc -b && node --test apps/eva/dist/test/*.test.js",
     "db:generate": "npm run db:generate --workspace @magi/bus"
   },
   "allowScripts": {

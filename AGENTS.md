@@ -25,11 +25,11 @@ Examples:
 
 ```bash
 apps/shell/runtime/bin/node --test apps/asp/test/*.test.ts
-/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/app/test/*.test.ts
+/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/user/test/*.test.ts
 apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
-The repository is a workspace: the runtime lives in `apps/magi` and `packages/`,
+The repository is a workspace: the runtime lives in `apps/eva` and `packages/`,
 so `npm test` at the root builds every package through the project references and
 then runs the runtime tests.
 

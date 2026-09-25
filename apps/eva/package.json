@@ -6,8 +6,8 @@
   "description": "The MAGI runtime: one long-lived agent, its BUS and its workers.",
   "exports": {
     ".": {
-      "types": "./dist/magi.d.ts",
-      "default": "./dist/magi.js"
+      "types": "./dist/eva.d.ts",
+      "default": "./dist/eva.js"
     },
     "./*": {
       "types": "./dist/*",
@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "start": "node dist/magi.js"
+    "start": "node dist/eva.js"
   },
   "dependencies": {
     "@magi/bus": "*",

@@ -10,9 +10,9 @@ on the BUS rather than directly on one another.
 
 ```text
 apps/shell/            Electron. Clones the repo, opens the window.
-apps/app/              Operator UI and the local backend that starts ASP.
+apps/user/              Operator UI and the local backend that starts ASP.
 apps/asp/              Node 24. HTTP and WebSocket on 127.0.0.1:42069.
-apps/magi/             Node 24. One process per MAGI: its entry and supervisor.
+apps/eva/             Node 24. One process per MAGI: its entry and supervisor.
 packages/              The runtime's packages: bus, agent, providers, tools, mcp, channel-*.
 ```
 
@@ -44,7 +44,7 @@ participant operations use `/chats/:chat_id/...`.
 
 | Platform term | Meaning |
 | --- | --- |
-| **MAGI** | Modular Agentic Genesis Intelligences, the project name. One MAGI is one governable agent and its Node 24 runtime in `apps/magi/` and `packages/`; the plural refers to independent agents working together. |
+| **MAGI** | Modular Agentic Genesis Intelligences, the project name. One MAGI is one governable agent and its Node 24 runtime in `apps/eva/` and `packages/`; the plural refers to independent agents working together. |
 | **ASP** | The local chat server in `apps/asp/`. It registers agents and relays events; it never starts a process and does not reason. |
 | **Desktop** | The Electron shell and operator UI. It owns the checkout, transcript, and provider key. |
 | **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `packages/bus/`. |
@@ -71,11 +71,11 @@ An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 
 The shell puts Node.js 24 and npm on disk, then clones this repository to
 `~/.magi/MAGI`. What it asks the backend to do, in order (the bridge contract is
-documented in `apps/app/main/index.ts`):
+documented in `apps/user/main/index.ts`):
 
 1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
    no `node_modules` yet, run `npm install` at the root and `npm ci` in `apps/asp/`,
-   and `npm ci` plus `npm run build` in `apps/app/`. It answers with the
+   and `npm ci` plus `npm run build` in `apps/user/`. It answers with the
    interface entry point.
 2. `start()` — run `apps/asp/main.ts` with Node 24 and wait for `GET /health` to
    report this runtime. `dispose()` releases reloadable resources; `shutdown()`
@@ -124,7 +124,7 @@ acks, and the update being transient.
 
 ## A MAGI process
 
-`apps/magi/magi.ts` composes one BUS and the workers that poll it. Workers do not
+`apps/eva/eva.ts` composes one BUS and the workers that poll it. Workers do not
 call each other. They publish Jobs and claim Jobs — asserted in
 `magi/test/agent.test.ts`, `tools.test.ts`, and `tasks.test.ts`.
 

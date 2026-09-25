@@ -48,11 +48,11 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 
 Then:
 
-- **TypeScript** for the runtime (`apps/magi/`, `packages/`), `apps/asp/`, and the operator app (`apps/app/`)
+- **TypeScript** for the runtime (`apps/eva/`, `packages/`), `apps/asp/`, and the operator app (`apps/user/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
 - `npm test` at the repository root (workspace build + runtime tests), `npm test` in
-  `apps/asp/`, and `npm test` in `apps/app/` should pass before pushing
+  `apps/asp/`, and `npm test` in `apps/user/` should pass before pushing
 
 ## Commit style
 
@@ -76,9 +76,9 @@ docs: Update README with new architecture
 | Directory | Purpose |
 |-----------|---------|
 | `apps/shell/` | Electron shell: window, bundled Node 24 and npm |
-| `apps/app/` | Operator interface and local backend |
+| `apps/user/` | Operator interface and local backend |
 | `apps/asp/` | ASP chat server (`main.ts` + `server/` + `db/`, Node 24) |
-| `apps/magi/` + `packages/` | The runtime entry and its packages: bus, agent, providers, tools, mcp, channels, tests |
+| `apps/eva/` + `packages/` | The runtime entry and its packages: bus, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
 
 ## Questions?

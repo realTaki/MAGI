@@ -75,9 +75,9 @@ improvement **within explicit, inspectable constraints**.
 
 ```text
 apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm
-apps/app/          Operator UI and the local backend that starts ASP
+apps/user/          Operator UI and the local backend that starts ASP
 apps/asp/          ASP server (TypeScript, node main.ts): /chats, WS /connect, ~/.magi/asp.sqlite
-apps/magi/         MAGI runtime: one process per MAGI — its entry and supervisor
+apps/eva/         MAGI runtime: one process per MAGI — its entry and supervisor
 packages/          The runtime's own packages: bus, agent, providers, tools, mcp, channel-*
 ```
 
@@ -106,7 +106,7 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | One autonomous, governable agent. Also the Node 24 runtime in `apps/magi/` and `packages/`. |
+| **MAGI** | One autonomous, governable agent. Also the Node 24 runtime in `apps/eva/` and `packages/`. |
 | **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
 The desktop app is the local lifecycle boundary: it owns each MAGI's branch,
@@ -122,7 +122,7 @@ should say, and it never starts a process.
   chats and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
   that MAGI; creating a group opens a chat the operator can invite
   MAGI into.
-- **One process per MAGI** — Node 24 runs `apps/magi/magi.ts`, which imports the runtime packages. The default workspace is
+- **One process per MAGI** — Node 24 runs `apps/eva/eva.ts`, which imports the runtime packages. The default workspace is
   `~/.magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
   opened when the new path does not exist.
 - **BUS inside each MAGI** — Books for chats, messages, memory, skills,
@@ -183,12 +183,12 @@ Operator
    ▼
 apps/shell/       Electron window
    │  loads
-apps/app/         operator UI and local backend
+apps/user/         operator UI and local backend
    │  starts Node 24
    ▼
 apps/asp/         127.0.0.1:42069   chats and relay, never a process
    ▲
-apps/app/         also runs Node 24: apps/magi + packages, one process per MAGI, each on its own branch
+apps/user/         also runs Node 24: apps/eva + packages, one process per MAGI, each on its own branch
    ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
    ├── magi  eva-001   branch magi/eva-001   ~/.magi/eva-001/MAGI
    └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI
@@ -216,17 +216,17 @@ WebUI is built and loaded from the local checkout.
 The packaged app supplies an Electron bootstrap shell and private Git,
 Node.js and npm tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
-`apps/magi/`, `packages/`, `apps/asp/` and `apps/app/` sources. Local changes are not
+`apps/eva/`, `packages/`, `apps/asp/` and `apps/user/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.
 Once the operator connects GitHub from the interface, `origin` is their fork and
 `upstream` stays the repository the app cloned, so pushes land in their own
 account.
-When `apps/app/dist/index.html` changes, the app asks before reloading.
+When `apps/user/dist/index.html` changes, the app asks before reloading.
 
 Only the bootstrap stays in the installed package: `apps/shell/` clones the
-checkout, loads the app from it — interface (`apps/app/src/`) and local
-backend (`apps/app/main/`) — and then simply asks that backend to prepare the
+checkout, loads the app from it — interface (`apps/user/src/`) and local
+backend (`apps/user/main/`) — and then simply asks that backend to prepare the
 checkout, start ASP and name the interface entry, through one generic bridge.
 Editing the app takes effect without a new package; editing `apps/shell/`
 still does not change the running shell. Code changes in MAGI or ASP also need the affected process
@@ -255,7 +255,7 @@ What the tree does not do yet:
 | Item | Status | Notes |
 | --- | --- | --- |
 | MAGI-to-MAGI collaboration | **Later** | ASP relays operator chats. It does not carry a shared job board between MAGI. |
-| Activate a code revision from the checkout | **Later** | The desktop already runs from a local Git checkout. Changing `apps/magi/`, `packages/` or `apps/asp/` still needs the affected process to restart. The app does not validate or roll back a revision. |
+| Activate a code revision from the checkout | **Later** | The desktop already runs from a local Git checkout. Changing `apps/eva/`, `packages/` or `apps/asp/` still needs the affected process to restart. The app does not validate or roll back a revision. |
 | Take upstream into a locally edited checkout | **Later** | The checkout can diverge. Merging that divergence is manual. |
 | Channels beyond the desktop, terminal, and Telegram | **Later** | Email and calendar are not implemented. |
 

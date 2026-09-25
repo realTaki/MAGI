@@ -809,13 +809,13 @@ export function createLocalApi(context) {
     if (devUrl !== "") {
       return devUrl;
     }
-    const built = path.join(appCheckout, "apps", "app", "dist", "index.html");
+    const built = path.join(appCheckout, "apps", "user", "dist", "index.html");
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
   /** Rebuild the interface only when explicitly requested. */
   async function rebuildInterface() {
-    const appDir = path.join(appCheckout, "apps", "app");
+    const appDir = path.join(appCheckout, "apps", "user");
     const build = (description) =>
       command(tools.node, [tools.npm, "run", "build"], {
         cwd: appDir,
@@ -846,7 +846,7 @@ export function createLocalApi(context) {
   async function prepare(progress) {
     await ensureAspWorktree();
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    const appDir = path.join(appCheckout, "apps", "app");
+    const appDir = path.join(appCheckout, "apps", "user");
     // The MAGI runtime is a workspace now: its packages hang off the checkout root,
     // so the root carries their lockfile and their node_modules — the App worktree
     // installs them for itself, while each MAGI's own worktree installs its own.
@@ -1426,7 +1426,7 @@ export function createLocalApi(context) {
 
   /** The App's worktree, on the branch the shell checks out for it. */
   function syncApp() {
-    return syncModule("app", appCheckout, "magi/app");
+    return syncModule("user", appCheckout, "magi/user");
   }
 
   /** The ASP worktree, created here if this is the first time it is needed. */

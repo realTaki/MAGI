@@ -6,7 +6,7 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
-    "magi.ts",
+    "eva.ts",
     "test/**/*.ts"
   ],
   "exclude": [

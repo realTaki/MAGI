@@ -184,7 +184,7 @@ async function ensureAppWorktree(checkout, tools, progress) {
   });
   let branchExists = true;
   try {
-    await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/app"], {
+    await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/user"], {
       cwd: checkout,
       env: tools.env,
       description: "Could not look up the App worktree branch",
@@ -195,8 +195,8 @@ async function ensureAppWorktree(checkout, tools, progress) {
   await command(
     tools.git,
     branchExists
-      ? ["worktree", "add", MAGI_APP_CHECKOUT, "magi/app"]
-      : ["worktree", "add", "-b", "magi/app", MAGI_APP_CHECKOUT, "HEAD"],
+      ? ["worktree", "add", MAGI_APP_CHECKOUT, "magi/user"]
+      : ["worktree", "add", "-b", "magi/user", MAGI_APP_CHECKOUT, "HEAD"],
     { cwd: checkout, env: tools.env, description: "Could not create the App worktree" },
   );
   progress("Prepared App source…", 0.14);
@@ -227,9 +227,9 @@ function devTools() {
 
 function appBackendEntry(appCheckout) {
   if (app.isPackaged || localCheckoutManaged) {
-    return path.join(appCheckout, "apps", "app", "main", "index.ts");
+    return path.join(appCheckout, "apps", "user", "main", "index.ts");
   }
-  return path.join(SHELL_DIR, "..", "app", "main", "index.ts");
+  return path.join(SHELL_DIR, "..", "user", "main", "index.ts");
 }
 
 async function loadLocalApp(runtimeRoot, appCheckout) {

@@ -2,7 +2,7 @@
  * The desktop app owns the source tree and the process of every MAGI it runs.
  *
  * ASP is a relay: it registers handlers and holds their tokens, but it never
- * starts a process (see asp/README.md). Here each MAGI gets its own branch
+ * starts a process (see apps/asp/README.md). Here each MAGI gets its own branch
  * (`magi/eva-000`) checked out as a Git worktree inside its own workspace
  * (`~/.magi/eva-000/MAGI`), with that checkout's dependencies installed, and the
  * agent is started from it. A `main` someone broke therefore cannot take a
@@ -13,8 +13,8 @@
  * every MAGI's profile carries its own start/stop/rebuild controls).
  *
  * A checkout this app does not own (`managed: false`, i.e. a developer's tree)
- * is never rewired: MAGI then run from the shared `<checkout>/magi` exactly as
- * before.
+ * is never rewired: MAGI then run from the shared `<checkout>/apps/eva` exactly
+ * as before.
  */
 
 import { spawn } from "node:child_process";
@@ -45,7 +45,7 @@ export function agentBranch(handle) {
 export function magiCli(node, handle, base, token, workspace) {
   // MAGI is compiled before launch. Run its explicit output with the desktop's
   // Node rather than looking up an executable on PATH.
-  return [node, "dist/magi.js", handle, base, token, "--workspace", workspace];
+  return [node, "dist/eva.js", handle, base, token, "--workspace", workspace];
 }
 
 function describe(error) {
@@ -118,7 +118,7 @@ export function createMagiRuntime({
         description: `Could not install MAGI dependencies in ${cwd}`,
       });
     }
-    if (existsSync(path.join(cwd, "apps", "magi", "dist", "magi.js"))) return;
+    if (existsSync(path.join(cwd, "apps", "eva", "dist", "eva.js"))) return;
     await npm(["run", "build"], {
       cwd,
       env: tools.env,
@@ -195,7 +195,7 @@ export function createMagiRuntime({
     // directly instead of relying on the child's interpretation of HOME.
     const command = magiCli(nodeBinary(), handle, base, token, agentWorkspace(home, handle));
     const child = spawnProcess(command[0], command.slice(1), {
-      cwd: path.join(root, "apps", "magi"),
+      cwd: path.join(root, "apps", "eva"),
       env: tools.env,
       stdio: ["ignore", "ignore", "pipe"],
       detached: true,

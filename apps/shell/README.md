@@ -1,8 +1,8 @@
 # Desktop app
 
 The Electron shell is a bootstrap for a local MAGI installation: it clones the
-checkout and loads the app from it. The app itself lives in `apps/app/` — operator
-interface (`apps/app/src/`) plus local backend (`apps/app/main/`) — and the backend
+checkout and loads the app from it. The app itself lives in `apps/user/` — operator
+interface (`apps/user/src/`) plus local backend (`apps/user/main/`) — and the backend
 prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
 from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
 reports which interface entry the shell should show. The app
@@ -11,7 +11,7 @@ the same tree (`~/.magi/app/electron`, with the Chromium cache, logs and crash
 dumps beside it), so removing `~/.magi` removes everything MAGI-owned.
 
 The project directory stays the Electron app directory (`build.directories.app`
-in `package.json`, which electron-builder would otherwise move to `apps/app/` — its
+in `package.json`, which electron-builder would otherwise move to `apps/user/` — its
 two-package.json layout), so the packaged entry point stays `apps/shell/main.mjs`.
 
 The app is also the machine-local layer of the system. `~/.magi/MAGI` is the
@@ -36,7 +36,7 @@ recipient acknowledges the exact event. Each MAGI keeps only its own incoming
 ChatNotify jobs and chat state in its workspace; outbound messages go
 through DeliveryNotify jobs.
 An old running ASP kept events only in memory. Before stopping it for this
-upgrade, run the bundled Node.js with `apps/app/scripts/import-asp-history.ts` from the MAGI
+upgrade, run the bundled Node.js with `apps/user/scripts/import-asp-history.ts` from the MAGI
 checkout. This copies its available chats and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
@@ -56,7 +56,7 @@ dependencies and build only inside those worktrees before starting ASP. The
 startup page shows the current stage and offers Retry if preparation fails. It
 is always the small page packaged with the shell, so first-install and recovery
 behavior do not depend on an editable checkout. The packaged shell does not
-carry `apps/app/dist` — the checkout builds and supplies the product interface.
+carry `apps/user/dist` — the checkout builds and supplies the product interface.
 Once ASP answers, the backend makes sure the society is not empty: while no MAGI
 exists it creates the first three (ASP names them `eva-000`, `eva-001`, …) and
 nicknames them **MELCHIOR**, **BALTHASAR** and **CASPER**. Naming is best effort
@@ -80,7 +80,7 @@ Only six things, none of them product-specific:
    then show that entry — a built file or a dev URL.
 6. Stop the backend on quit (`shutdown()`), which tears down what it started.
 
-That leaves one contract: the checkout must contain `apps/app/main/index.ts`
+That leaves one contract: the checkout must contain `apps/user/main/index.ts`
 exporting `createLocalApi(context)`, with a `prepare`, `start` and `shutdown`,
 and whatever else the interface calls.
 
@@ -91,7 +91,7 @@ machine, not part of the startup sequence and not an ASP concern. The app starts
 without it; the connection is offered once on first run, and the signed-in
 account is shown in Settings. It calls `github.state`,
 `github.signIn` and `github.connect` on the app backend
-(`apps/app/main/index.ts`), which the shell reaches through its generic bridge.
+(`apps/user/main/index.ts`), which the shell reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
@@ -125,11 +125,11 @@ user tokens are short-lived and installed per repository.
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
 | `app/` | Settings → Runtime & build rebuilds the interface on demand; the app then asks whether to reload it. Source changes do not trigger automatic rebuilds. |
-| `apps/app/main/` | Loaded on the next launch. No rebuild, no reinstall. |
+| `apps/user/main/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `apps/shell/boot/`, `apps/shell/*.mjs`, `apps/shell/preload.cjs`, packaged tools and build configuration | Rebuild and install a new shell. The App's About screen chooses and downloads the release from the checkout's active `origin`; the shell only performs its local replacement. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
-running, so a change under `apps/app/main/` still waits for the next launch.
+running, so a change under `apps/user/main/` still waits for the next launch.
 
 This gives each user an editable Git working tree for the running MAGI system.
 A coding agent can modify it and merge upstream changes. Automatic revision

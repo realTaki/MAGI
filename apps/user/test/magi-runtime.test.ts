@@ -114,10 +114,10 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   ]);
   assert.equal(recorded.spawns.length, 1);
   assert.deepEqual(recorded.spawns[0].args, [
-    "dist/magi.js", agent.handle, "http://127.0.0.1:42069", "tok",
+    "dist/eva.js", agent.handle, "http://127.0.0.1:42069", "tok",
     "--workspace", path.join(home, ".magi", "eva-000"),
   ]);
-  assert.equal(recorded.spawns[0].options.cwd, path.join(source, "apps", "magi"));
+  assert.equal(recorded.spawns[0].options.cwd, path.join(source, "apps", "eva"));
 
   // Starting a MAGI that already runs changes nothing, and nothing restarts it
   // on its own.
@@ -159,7 +159,7 @@ test("a checkout that cannot be branched falls back to the shared sources", asyn
   });
 
   assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
-  assert.equal(recorded.spawns[0].options.cwd, path.join(checkout, "apps", "magi"));
+  assert.equal(recorded.spawns[0].options.cwd, path.join(checkout, "apps", "eva"));
   assert.equal(existsSync(agentSource(path.join(root, "home"), agent.handle)), false);
   assert.equal(logs.some((line) => line.includes("running it from")), true);
 });
