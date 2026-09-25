@@ -20,6 +20,9 @@
       "path": "packages/files"
     },
     {
+      "path": "packages/memory"
+    },
+    {
       "path": "packages/mcp"
     },
     {

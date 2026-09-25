@@ -26,6 +26,7 @@
     "@magi/tools": "*",
     "@magi/contacts": "*",
     "@magi/files": "*",
+    "@magi/memory": "*",
     "@magi/mcp": "*",
     "@magi/skills": "*",
     "@magi/channel-asp": "*",

@@ -21,10 +21,12 @@ test("a fresh workspace gets every Book table from the migrations", async () => 
   const bus = new Bus("@fresh.magi", path);
   try {
     expect(tables(path, "memories")).toEqual(expect.arrayContaining([
-      "books_channel_cursors", "books_contacts", "books_contact_notes", "books_chat_members",
+      "books_contacts", "books_contact_notes", "books_chat_members",
       "books_chats", "books_mcp_servers", "books_memories", "books_messages", "books_settings",
       "books_tasks",
     ]));
+    // The channel reading position is a field on the chat now, not a table of its own.
+    expect(tables(path, "memories")).not.toContain("books_channel_cursors");
     expect(tables(path, "logs")).toContain("jobs");
   } finally { bus.close(); }
 });
