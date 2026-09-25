@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +24,7 @@ test("message search includes archived history and send_message uses delivery jo
 
     await magi.start();
     expect(await tools.get("send_message")!.run({ chat_id: chat.id, text: "progress update" })).toContain("queued");
-    for (let i = 0; i < 100 && !delivered.length; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && !delivered.length; i++) await sleep(10);
     expect(delivered).toEqual(["progress update"]);
   } finally {
     await magi.stop();
@@ -125,7 +125,7 @@ test("a tool call left over from a restart is failed instead of re-run", async (
   });
   try {
     await magi.start();
-    for (let i = 0; i < 20; i++) await Bun.sleep(10);
+    for (let i = 0; i < 20; i++) await sleep(10);
     expect(magi.bus.board("RunToolJob").result(id)).toMatchObject({ status: "failed" });
     expect(delivered).toEqual([]);
   } finally {

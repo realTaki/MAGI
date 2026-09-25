@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test , sleep} from "./test.js";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { Magi } from "../magi.js";
 import { SYSTEM_CONTACT_ID, type CallLLMJob, type LLMMessage } from "../bus/index.js";
 import { PiAiClient } from "../providers/client.js";
@@ -109,7 +109,7 @@ describe("local MAGI agent", () => {
       const id = board.publish({ call: { tool_call_id: "independent", name: "echo", arguments: { ready: true } } }, "test");
       let result = board.result(id);
       for (let attempt = 0; attempt < 100 && !result; attempt++) {
-        await Bun.sleep(10);
+        await sleep(10);
         result = board.result(id);
       }
       expect(result).toMatchObject({ status: "completed", output: { content: '{"ready":true}' } });
@@ -151,8 +151,8 @@ describe("local MAGI agent", () => {
     expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
     const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
     const logs = new Database(join(path, "logs/magi.db"), { readonly: true });
-    expect((memories.query("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);
-    expect((logs.query("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
+    expect((memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);
+    expect((logs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
       { type: "ChatNotify", status: "completed" },
       { type: "CallLLMJob", status: "completed" },
       { type: "RunToolJob", status: "completed" },
@@ -195,13 +195,13 @@ describe("local MAGI agent", () => {
     const board = magi.bus.board("ChangeProviderNotify");
     const badId = board.publish({ provider: "openai", model: "gpt-test", api_key: "bad-secret" }, "test");
     let failed = null;
-    for (let i = 0; i < 100 && !failed; i++) { failed = board.result(badId); await Bun.sleep(10); }
+    for (let i = 0; i < 100 && !failed; i++) { failed = board.result(badId); await sleep(10); }
     expect(failed).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
     expect(magi.bus.settings.get("provider.api_key")).toBeNull();
 
     const goodId = board.publish({ provider: "custom", model: "gpt-test", api_key: "good-secret", base_url: "https://example.com/v1" }, "test");
     let completed = null;
-    for (let i = 0; i < 100 && !completed; i++) { completed = board.result(goodId); await Bun.sleep(10); }
+    for (let i = 0; i < 100 && !completed; i++) { completed = board.result(goodId); await sleep(10); }
     expect(completed).toMatchObject({ status: "completed" });
     expect(magi.bus.settings.get("provider.name")).toBe("custom");
     expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");

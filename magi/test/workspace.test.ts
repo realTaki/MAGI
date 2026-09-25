@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { Bus, SYSTEM_CONTACT_ID } from "../bus/index.js";
 
 const workspaces: string[] = [];
@@ -11,7 +11,7 @@ async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-wor
 
 function tables(path: string, database: string): string[] {
   const db = new Database(join(path, database, "magi.db"), { readonly: true });
-  const rows = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
   db.close();
   return rows.map((row) => row.name);
 }
@@ -64,7 +64,7 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
   const dropped: string[] = [];
   for (const database of ["memories", "logs"]) {
     const db = new Database(join(path, database, "magi.db"), { create: true });
-    for (const row of db.query("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
+    for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
       dropped.push(`${database}:${row.name}`);
     }
@@ -114,7 +114,7 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
 function dropBookkeeping(path: string): void {
   for (const database of ["memories", "logs"]) {
     const db = new Database(join(path, database, "magi.db"), { create: true });
-    for (const row of db.query("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
+    for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
     }
     db.close();

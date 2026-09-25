@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
-import { Database } from "bun:sqlite";
+import Database from "better-sqlite3";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts } from "./books/contactBook.js";
 import { ChatBook } from "./books/chatBook.js";
@@ -69,8 +69,8 @@ export class Bus {
     );
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
-    const memories = new Database(join(this.workspace, "memories", "magi.db"), { create: true });
-    const logs = new Database(join(this.workspace, "logs", "magi.db"), { create: true });
+    const memories = new Database(join(this.workspace, "memories", "magi.db"));
+    const logs = new Database(join(this.workspace, "logs", "magi.db"));
     for (const client of [memories, logs]) {
       client.exec("PRAGMA journal_mode = WAL");
       client.exec("PRAGMA busy_timeout = 5000");

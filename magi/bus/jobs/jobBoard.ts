@@ -36,7 +36,7 @@ export class JobBoard<K extends JobType> {
       for (const row of rows) {
         const input = JSON.parse(row.input) as JobInput[K];
         if (predicate && !predicate(input)) continue;
-        // bun:sqlite reports no row count, so claim by asking for the row back.
+        // The SQL result is the portable claim signal: ask for the row the update won.
         const claimed = tx.update(jobs)
           .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
           .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))

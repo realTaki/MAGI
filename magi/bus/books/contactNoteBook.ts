@@ -45,7 +45,7 @@ export class ContactNoteBook {
   }
 
   delete(id: number): boolean {
-    // bun:sqlite reports no row count, so ask for the deleted row back instead.
+    // Ask for the deleted row so this works consistently across SQLite drivers.
     return this.db.delete(contactNotes).where(eq(contactNotes.id, id)).returning({ id: contactNotes.id }).get() !== undefined;
   }
 }

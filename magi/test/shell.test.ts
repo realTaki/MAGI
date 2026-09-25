@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +17,7 @@ test("background bash exposes incremental output and can be killed", async () =>
     expect(id).toBeTruthy();
     let output = "";
     for (let i = 0; i < 100 && !output.includes("ready"); i++) {
-      await Bun.sleep(10);
+      await sleep(10);
       output = await tools.get("bash_output")!.run({ bash_id: id! });
     }
     expect(output).toContain("ready");

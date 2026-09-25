@@ -1,7 +1,10 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
+
 type ShellState = {
   id: string;
   command: string;
-  process: ReturnType<typeof Bun.spawn>;
+  process: ChildProcess;
   output: string;
   cursor: number;
   exitCode: number | null;
@@ -13,12 +16,13 @@ export class ShellManager {
 
   start(command: string, cwd: string): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
-    const process = Bun.spawn(shellInvocation(command), { cwd, stdout: "pipe", stderr: "pipe" });
+    const [file, ...args] = shellInvocation(command);
+    const process = spawn(file, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const state: ShellState = { id, command, process, output: "", cursor: 0, exitCode: null, status: "running" };
     this.shells.set(id, state);
     void this.capture(state, process.stdout);
     void this.capture(state, process.stderr, "[stderr]\n");
-    void process.exited.then((code) => {
+    process.once("close", (code) => {
       state.exitCode = code;
       if (state.status === "running") state.status = "completed";
     });
@@ -46,7 +50,7 @@ export class ShellManager {
     if (state.exitCode === null) {
       state.status = "killed";
       state.process.kill("SIGTERM");
-      await Promise.race([state.process.exited, Bun.sleep(5_000)]);
+      await Promise.race([new Promise<void>((resolve) => state.process.once("close", () => resolve())), sleep(5_000)]);
       if (state.exitCode === null) state.process.kill("SIGKILL");
     }
     this.shells.delete(id);
@@ -59,16 +63,12 @@ export class ShellManager {
     await Promise.all(this.list().map((id) => this.kill(id)));
   }
 
-  private async capture(state: ShellState, stream: ReadableStream<Uint8Array> | number | undefined, prefix = ""): Promise<void> {
-    if (!stream || typeof stream === "number") return;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
+  private async capture(state: ShellState, stream: NodeJS.ReadableStream | null | undefined, prefix = ""): Promise<void> {
+    if (!stream) return;
     let first = true;
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        state.output += `${first ? prefix : ""}${decoder.decode(value, { stream: true })}`;
+      for await (const chunk of stream) {
+        state.output += `${first ? prefix : ""}${String(chunk)}`;
         first = false;
         if (state.output.length > 256 * 1024) {
           const removed = state.output.length - 256 * 1024;
@@ -76,8 +76,9 @@ export class ShellManager {
           state.cursor = Math.max(0, state.cursor - removed);
         }
       }
-      state.output += decoder.decode();
-    } finally { reader.releaseLock(); }
+    } catch {
+      // A killed child can close its pipes with an error after its useful output.
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "./test.js";
 import { PiAiClient } from "../providers/client.js";
 
 test("MiniMax CN and Global use separate Anthropic-compatible endpoints", async () => {

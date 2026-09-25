@@ -42,11 +42,10 @@ export function agentBranch(handle) {
   return `${AGENT_BRANCH_PREFIX}${agentName(handle)}`;
 }
 
-export function magiCli(bun, handle, base, token, workspace) {
-  // Execute the checkout's entry directly. `bun run start` shells out through
-  // package.json, which makes a managed launch depend on a separate `bun` in
-  // PATH even though the desktop already selected the project-owned binary.
-  return [bun, "magi.ts", handle, base, token, "--workspace", workspace];
+export function magiCli(node, handle, base, token, workspace) {
+  // MAGI is compiled before launch. Run its explicit output with the desktop's
+  // Node rather than looking up an executable on PATH.
+  return [node, "dist/magi.js", handle, base, token, "--workspace", workspace];
 }
 
 function describe(error) {
@@ -66,16 +65,30 @@ export function createMagiRuntime({
   const children = new Map(); // handle -> { child, root }
   const sources = new Map(); // handle -> prepared checkout root
 
-  function bunBinary() {
+  function nodeBinary() {
     const candidates = [
-      typeof tools.bun === "string" ? tools.bun : "",
-      path.join(checkout, "shell", "runtime", "bin", process.platform === "win32" ? "bun.exe" : "bun"),
+      typeof tools.node === "string" ? tools.node : "",
+      path.join(checkout, "shell", "runtime", "bin", process.platform === "win32" ? "node.exe" : "node"),
     ];
     for (const candidate of candidates) {
-      if (candidate !== "" && candidate !== "bun" && existsSync(candidate)) return candidate;
+      if (candidate !== "" && candidate !== "node" && existsSync(candidate)) return candidate;
     }
-    // Unpackaged development: the runtime the developer already has.
-    return "bun";
+    throw new Error("MAGI's bundled Node 24 runtime is missing");
+  }
+
+  function npmCli() {
+    const candidates = [
+      typeof tools.npm === "string" ? tools.npm : "",
+      path.join(checkout, "shell", "runtime", "npm", "node_modules", "npm", "bin", "npm-cli.js"),
+    ];
+    for (const candidate of candidates) {
+      if (candidate !== "" && existsSync(candidate)) return candidate;
+    }
+    throw new Error("MAGI's bundled npm runtime is missing");
+  }
+
+  async function npm(args, options) {
+    await run(nodeBinary(), [npmCli(), ...args], options);
   }
 
   function git(args, description, cwd = checkout) {
@@ -93,11 +106,18 @@ export function createMagiRuntime({
 
   async function install(root) {
     const cwd = path.join(root, "magi");
-    if (existsSync(path.join(cwd, "node_modules"))) return;
-    await run(bunBinary(), ["install", "--frozen-lockfile"], {
+    if (!existsSync(path.join(cwd, "node_modules", "better-sqlite3"))) {
+      await npm(["ci"], {
+        cwd,
+        env: tools.env,
+        description: `Could not install MAGI dependencies in ${cwd}`,
+      });
+    }
+    if (existsSync(path.join(cwd, "dist", "magi.js"))) return;
+    await npm(["run", "build"], {
       cwd,
       env: tools.env,
-      description: `Could not install MAGI dependencies in ${cwd}`,
+      description: `Could not build MAGI in ${cwd}`,
     });
   }
 
@@ -168,7 +188,7 @@ export function createMagiRuntime({
   function launch(handle, token, root) {
     // The desktop runtime already owns the profile location. Pass it to MAGI
     // directly instead of relying on the child's interpretation of HOME.
-    const command = magiCli(bunBinary(), handle, base, token, agentWorkspace(home, handle));
+    const command = magiCli(nodeBinary(), handle, base, token, agentWorkspace(home, handle));
     const child = spawnProcess(command[0], command.slice(1), {
       cwd: path.join(root, "magi"),
       env: tools.env,
@@ -264,12 +284,12 @@ export function createMagiRuntime({
     stop(handle);
     const root = await rootFor(handle);
     const cwd = path.join(root, "magi");
-    await run(bunBinary(), ["install", "--frozen-lockfile"], {
+    await npm(["ci"], {
       cwd,
       env: tools.env,
       description: `Could not install MAGI dependencies in ${cwd}`,
     });
-    await run(bunBinary(), ["run", "build"], {
+    await npm(["run", "build"], {
       cwd,
       env: tools.env,
       description: `Could not build MAGI in ${cwd}`,

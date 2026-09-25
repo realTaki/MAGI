@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +29,7 @@ test("schedule tool persists a task and manual trigger enters the agent", async 
   await magi.start();
   const board = magi.bus.board("RunTaskNotify");
   const id = board.publish({ task_id: saved.task_id, manual: true }, "test");
-  for (let i = 0; i < 200 && (!board.result(id) || !delivered.length); i++) await Bun.sleep(10);
+  for (let i = 0; i < 200 && (!board.result(id) || !delivered.length); i++) await sleep(10);
   expect(board.result(id)).toMatchObject({ status: "completed" });
   expect(prompts.join("\n")).toContain("Review the project");
   expect(delivered).toEqual(["task complete"]);

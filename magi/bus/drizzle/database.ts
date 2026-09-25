@@ -1,14 +1,15 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Database } from "bun:sqlite";
-import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { fileURLToPath } from "node:url";
+import type { Database as SQLiteDatabase } from "better-sqlite3";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 /** Either workspace database. Each Book declares the table it owns. */
-export type BusDb = BunSQLiteDatabase & { $client: Database };
+export type BusDb = BetterSQLite3Database & { $client: SQLiteDatabase };
 
 /** Wrap an already open connection: the caller owns opening it and its PRAGMAs. */
-export function workspaceDatabase(client: Database): BusDb {
+export function workspaceDatabase(client: SQLiteDatabase): BusDb {
   return drizzle(client);
 }
 
@@ -24,7 +25,7 @@ export function migrateJobs(db: BusDb): void {
 // ``bus/drizzle/`` holds this file next to the migrations; the second shape covers
 // a compiled copy under ``dist/``, which tsc emits without copying the .sql files.
 function migrationsFolder(name: string): string {
-  for (let dir = import.meta.dir; ; dir = dirname(dir)) {
+  for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
     for (const candidate of [join(dir, "drizzle", name), join(dir, "bus", "drizzle", name)]) {
       if (existsSync(candidate)) return candidate;
     }

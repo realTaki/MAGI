@@ -33,17 +33,16 @@ export class AspClient {
         // The connection state is what matters, and ``health()`` reports it; one log
         // line per reconnect attempt would only be noise.
       }
-      if (!this.stopped) await Bun.sleep(1_000);
+      if (!this.stopped) await sleep(1_000);
     }
   }
 
   private async listenOnce(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void, onError: (error: unknown) => void): Promise<void> {
     const url = new URL("/connect", this.base);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const Socket = WebSocket as unknown as { new (url: string, options: Bun.WebSocketOptions): WebSocket };
-    const socket = new Socket(url.href, { headers: { Authorization: `Bearer ${this.token}` } });
+    const socket = new WebSocket(url.href, { headers: { Authorization: `Bearer ${this.token}` } });
     this.socket = socket;
-    socket.addEventListener("message", (message) => {
+    socket.addEventListener("message", (message: MessageEvent) => {
       void (async () => {
         const event = JSON.parse(String(message.data)) as AspEvent;
         const reply = await onEvent(event);
@@ -72,3 +71,5 @@ export class AspClient {
     if (!response.ok) throw new Error(`ASP HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
   }
 }
+import { setTimeout as sleep } from "node:timers/promises";
+import WebSocket from "ws";

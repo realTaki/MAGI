@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
     const runs = magi.bus.board("RunToolJob");
     const runId = runs.publish({ call: { tool_call_id: "call-1", name: "demo__echo", arguments: { value: 42 } } }, "test");
     let result = null;
-    for (let i = 0; i < 100 && !result; i++) { result = runs.result(runId); await Bun.sleep(10); }
+    for (let i = 0; i < 100 && !result; i++) { result = runs.result(runId); await sleep(10); }
     expect(result).toMatchObject({ status: "completed", output: { content: "{\"value\":42}" } });
 
     await manage.run({ action: "update", name: "demo", enabled: false });
@@ -64,7 +64,7 @@ test("an MCP server that cannot connect at boot reaches the operator", async () 
       env: {}, headers: {}, enabled: true, connect_timeout: null, execute_timeout: null,
     });
     await magi.start();
-    for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && delivered.length === 0; i++) await sleep(10);
     expect(delivered[0]).toContain("[mcp] dead");
     expect(delivered[0]).toContain("connect refused");
   } finally {

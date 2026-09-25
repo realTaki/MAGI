@@ -1,5 +1,6 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { setTimeout as sleep } from "node:timers/promises";
 import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "../bus/index.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
@@ -163,5 +164,5 @@ function message(error: unknown): string {
 }
 
 async function deadline<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  return Promise.race([promise, Bun.sleep(timeoutMs).then(() => { throw new Error(message); })]);
+  return Promise.race([promise, sleep(timeoutMs).then(() => { throw new Error(message); })]);
 }

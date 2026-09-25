@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "./test.js";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = resolve(import.meta.dir, "..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const modules = ["agent", "providers", "tools", "mcp", "channels/asp", "channels/cli", "channels/tasks", "channels/telegram"];
 
 async function sources(directory: string): Promise<string[]> {

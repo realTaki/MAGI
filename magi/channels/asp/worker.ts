@@ -1,4 +1,5 @@
 import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type Contact } from "../../bus/index.js";
+import { setTimeout as sleep } from "node:timers/promises";
 import { AspClient, type AspEvent } from "./client.js";
 
 export class AspWorker extends BaseWorker {
@@ -69,7 +70,7 @@ export class AspWorker extends BaseWorker {
       while (Date.now() < deadline) {
         const result = board.result(jobId);
         if (result) return { type: "agent.provider.updated", request_id: event.request_id, ok: result.status === "completed" };
-        await Bun.sleep(10);
+        await sleep(10);
       }
       return { type: "agent.provider.updated", request_id: event.request_id, ok: false };
     }

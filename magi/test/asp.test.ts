@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,17 +38,17 @@ test("a replayed event is not taken in twice", async () => {
   });
   try {
     await magi.start();
-    for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && !socket; i++) await sleep(10);
     const event = {
       type: "chat.message", event_id: "dup-1", chat_id: "replay", sequence: 7,
       payload: { sender: "@user", content: "hello" },
     };
     socket!.send(JSON.stringify(event));
-    for (let i = 0; i < 100 && completions < 1; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && completions < 1; i++) await sleep(10);
 
     // ASP replays what it has not seen acknowledged: the same message, sequence and all.
     socket!.send(JSON.stringify(event));
-    for (let i = 0; i < 100 && acks.length < 2; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && acks.length < 2; i++) await sleep(10);
 
     expect(acks).toEqual(["dup-1", "dup-1"]);
     expect(completions).toBe(1);
@@ -80,7 +80,7 @@ test("each speaker in a chat is a contact of their own", async () => {
   });
   try {
     await magi.start();
-    for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && !socket; i++) await sleep(10);
     const chat = magi.bus.chats.forChannel("asp", "shared");
     const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
       type: "chat.message", event_id: id, chat_id: "shared", payload: { sender, content },
@@ -89,7 +89,7 @@ test("each speaker in a chat is a contact of their own", async () => {
     emit("m2", "@eva-001.magi", "morning yourself");
 
     const senders = () => new Set(magi.bus.messages.list(chat.id).map((message) => message.contact_id));
-    for (let i = 0; i < 100 && senders().size < 2; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && senders().size < 2; i++) await sleep(10);
     expect(senders()).toContain(SYSTEM_CONTACT_ID);
     const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === "@eva-001.magi");
     expect(other).toMatchObject({ name: "@eva-001.magi", role: "magi" });
@@ -131,13 +131,13 @@ test("ASP invite enters ChatNotify and reply is delivered to the chat", async ()
   try {
     await magi.start();
     // The ASP worker connects in the background; wait until its socket is up.
-    for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && !socket; i++) await sleep(10);
     expect(socket).not.toBeNull();
     socket!.send(JSON.stringify({
       type: "chat.invited", event_id: "event-1", chat_id: "s1",
       payload: { invitee: "@alice.magi", initial_message: { content: "hello" } },
     }));
-    for (let i = 0; i < 200 && (requests.length < 2 || replies.length < 1); i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && (requests.length < 2 || replies.length < 1); i++) await sleep(10);
     expect(requests).toEqual([
       { path: "/chats/s1/join", body: null },
       { path: "/chats/s1/messages", body: { content: "hello back" } },
@@ -184,7 +184,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
   try {
     await magi.start();
     // The ASP worker connects in the background; wait until its socket is up.
-    for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && !socket; i++) await sleep(10);
     expect(socket).not.toBeNull();
     const emit = (id: string, sender: string, content: string, mentions?: string[]) => socket!.send(JSON.stringify({
       type: "chat.message", event_id: id, chat_id: "group",
@@ -192,15 +192,15 @@ test("mentions decide who answers, and everything said is kept", async () => {
     }));
     // Nobody named: for whoever can help, so this MAGI answers.
     emit("m1", "@eva-001.magi", "I can hear you");
-    for (let i = 0; i < 100 && completions < 1; i++) await Bun.sleep(10);
+    for (let i = 0; i < 100 && completions < 1; i++) await sleep(10);
     // Named someone else: recorded, but not this MAGI's turn.
     emit("m2", "@eva-002.magi", "Me too", ["@eva-009.magi"]);
     // Named this MAGI: its turn.
     emit("m3", "@user", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
-    for (let i = 0; i < 200 && (completions < 2 || sent.length < 2); i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && (completions < 2 || sent.length < 2); i++) await sleep(10);
     // Another agent naming someone else again: recorded only.
     emit("m4", "@eva-001.magi", "@eva-002.magi, you there?", ["@eva-002.magi"]);
-    for (let i = 0; i < 200 && acks.length < 4; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && acks.length < 4; i++) await sleep(10);
 
     expect(acks.sort()).toEqual(["m1", "m2", "m3", "m4"]);
     expect(completions).toBe(2);

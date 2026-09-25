@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,7 +56,7 @@ function telegramApi(updates: unknown[]) {
       if (method === "getUpdates") {
         // Each update is handed over once; the offset the adapter asks for next is ignored.
         if (handed < updates.length) return Response.json({ ok: true, result: [updates[handed++]] });
-        await Bun.sleep(20);
+        await sleep(20);
         return Response.json({ ok: true, result: [] });
       }
       if (method === "sendMessage") {
@@ -83,7 +83,7 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     await magi.start();
-    for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && api.posts.length === 0; i++) await sleep(10);
     expect(api.posts[0]).toEqual({ chat_id: "42", text: "hello" });
     const chat = magi.bus.chats.forChannel("tg", "42");
     expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hi", "hello"]);
@@ -107,7 +107,7 @@ test("a Telegram DM does not take over an established home", async () => {
     magi.bus.setHomeChat(chat.id);
 
     await magi.start();
-    for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && api.posts.length === 0; i++) await sleep(10);
     expect(api.posts).toHaveLength(1);
     expect(magi.bus.homeChat()).toBe(chat.id);
   } finally {
@@ -124,9 +124,9 @@ test("a group message that does not address the MAGI is ignored", async () => {
   try {
     await magi.start();
     // Wait for the update to have been handed over: the point is that nothing follows.
-    for (let i = 0; i < 200 && api.handedOut() === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && api.handedOut() === 0; i++) await sleep(10);
     expect(api.handedOut()).toBe(1);
-    await Bun.sleep(200);
+    await sleep(200);
     const chat = magi.bus.chats.forChannel("tg", "-100");
     expect(magi.bus.messages.count(chat.id)).toBe(0);
     expect(api.posts).toHaveLength(0);
@@ -143,7 +143,7 @@ test("a reply to the MAGI in a group counts as a mention", async () => {
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     await magi.start();
-    for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && api.posts.length === 0; i++) await sleep(10);
     expect(api.posts[0]).toEqual({ chat_id: "-100", text: "hello" });
     const chat = magi.bus.chats.forChannel("tg", "-100");
     const speaker = magi.bus.contacts.forTg("7");

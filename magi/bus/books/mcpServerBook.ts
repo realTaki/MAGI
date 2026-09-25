@@ -34,7 +34,7 @@ export class McpServerBook {
       .run();
   }
   delete(name: string): boolean {
-    // bun:sqlite reports no row count, so ask for the deleted row back instead.
+    // Ask for the deleted row so this works consistently across SQLite drivers.
     return this.db.delete(mcpServers).where(eq(mcpServers.name, name)).returning({ name: mcpServers.name }).get() !== undefined;
   }
 }

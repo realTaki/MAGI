@@ -12,11 +12,11 @@ on BUS for shared state, Job exchange, and the tool catalog.
 | `channels/` | Transport messages and replies |
 
 ```bash
-bun install
-bun run test
-bun run start -- @alice.magi
+npm ci
+npm test
+npm start -- @alice.magi
 # or attach to asp:
-bun run start -- @alice.magi http://127.0.0.1:42069 TOKEN
+npm start -- @alice.magi http://127.0.0.1:42069 TOKEN
 ```
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
@@ -43,10 +43,10 @@ mention or a reply to one of its messages.
 Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
 
-BUS owns SQLite Books, durable Jobs, and the live tool catalog through Bun
-SQLite and in-memory state. Every Book declares the table it owns right in
+BUS owns SQLite Books, durable Jobs, and the live tool catalog through
+better-sqlite3 and in-memory state. Every Book declares the table it owns right in
 `bus/books/` (the job queue in `bus/jobs/jobBoard.ts`);
-`bun run db:generate` turns a table edit into the SQL under `bus/drizzle/`,
+`npm run db:generate` turns a table edit into the SQL under `bus/drizzle/`,
 which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through
 BUS using `ChatNotify`,
@@ -72,4 +72,4 @@ configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the
 OpenAI-compatible providers in the desktop picker plus Anthropic's native
 Messages API.
 
-The desktop packages Bun; the app starts one `magi` per agent, from that agent's own checkout.
+The desktop packages Node 24 and npm; the app starts one `magi` per agent, from that agent's own checkout.

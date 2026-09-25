@@ -49,7 +49,7 @@ export class MemoryBook {
   }
 
   delete(id: number): boolean {
-    // bun:sqlite reports no row count, so ask for the deleted row back instead.
+    // Ask for the deleted row so this works consistently across SQLite drivers.
     return this.db.delete(memories).where(eq(memories.id, id)).returning({ id: memories.id }).get() !== undefined;
   }
 }

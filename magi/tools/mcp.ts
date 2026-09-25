@@ -8,6 +8,7 @@
  */
 
 import type { Bus, ChangeMcpServerNotify, ExecutableTool, McpConnectionType, McpServerConfig } from "../bus/index.js";
+import { setTimeout as sleep } from "node:timers/promises";
 import { stringArg } from "./args.js";
 
 function mcpServerFromArgs(name: string, args: Record<string, unknown>, current: McpServerConfig | null): McpServerConfig {
@@ -55,7 +56,7 @@ async function publishMcpChange(bus: Bus, input: ChangeMcpServerNotify): Promise
     const result = board.result(id);
     if (result?.status === "completed") return;
     if (result?.status === "failed") throw new Error(result.error ?? "MCP configuration failed");
-    await Bun.sleep(10);
+    await sleep(10);
   }
   throw new Error("MCP worker did not apply the change within 30 seconds");
 }
