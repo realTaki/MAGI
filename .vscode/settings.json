@@ -1,4 +1,0 @@
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}/py-magi/.venv/bin/python",
-  "python.analysis.extraPaths": ["${workspaceFolder}/py-magi"]
-}

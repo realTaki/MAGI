@@ -199,9 +199,8 @@ cython_debug/
 
 # Visual Studio Code — keep the workspace interpreter so Pylance
 # resolves packages from ``py-magi/.venv`` (sqlalchemy, alembic, …).
-# Ignore the rest of .vscode (local UI state).
-.vscode/*
-!.vscode/settings.json
+# VS Code local UI state (never commit).
+.vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
