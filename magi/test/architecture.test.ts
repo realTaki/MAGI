@@ -3,7 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
-const modules = ["agent", "providers", "tools", "mcp", "manager", "channels/asp", "channels/cli", "channels/tasks", "channels/telegram"];
+const modules = ["agent", "providers", "tools", "mcp", "channels/asp", "channels/cli", "channels/tasks", "channels/telegram"];
 
 async function sources(directory: string): Promise<string[]> {
   const files: string[] = [];
