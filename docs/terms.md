@@ -1,4 +1,3 @@
-
 # MAGI Terms
 
 | Term | Meaning |
