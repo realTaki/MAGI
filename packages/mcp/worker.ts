@@ -2,6 +2,7 @@ import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@mode
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { setTimeout as sleep } from "node:timers/promises";
 import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "@magi/bus";
+import { mcpTools } from "./tools.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
 export type McpConnector = (config: McpServerConfig, workspace: string) => Promise<McpConnection>;
@@ -9,6 +10,12 @@ export type McpConnector = (config: McpServerConfig, workspace: string) => Promi
 export class McpWorker extends BaseWorker {
   readonly worker_name = "mcp";
   private readonly connections = new Map<string, McpConnection>();
+  /**
+   * MCP's own control surface — `mcp_server` — travels with the worker instead of
+   * sitting in the builtin catalog: the tool exists exactly as long as this worker
+   * runs, so a stopped MCP cannot leave the model holding a tool nobody answers.
+   */
+  private readonly control: ExecutableTool[];
   private readonly pending = new Set<Promise<void>>();
   private started = false;
   /** The catalog asks this every time, so a connection that comes or goes shows up at once. */
@@ -16,6 +23,7 @@ export class McpWorker extends BaseWorker {
 
   constructor(bus: Bus, private readonly connector: McpConnector = connectMcpServer) {
     super(bus);
+    this.control = mcpTools(bus);
     bus.tools.registerSource("mcp", this.provider);
   }
 
@@ -113,7 +121,10 @@ export class McpWorker extends BaseWorker {
   }
 
   private tools(): ExecutableTool[] {
-    return [...this.connections.values()].flatMap((connection) => connection.tools);
+    return [
+      ...this.control,
+      ...[...this.connections.values()].flatMap((connection) => connection.tools),
+    ];
   }
 
   /** Re-register so a name clash fails here, at the change, instead of in the middle of a turn. */

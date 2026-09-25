@@ -1,15 +1,22 @@
 /**
- * MCP server configuration.
+ * The tool that manages MCP servers, next to the worker that applies them.
  *
- * The tool does not connect anything itself: it publishes a
- * `ChangeMcpServerNotify` job and waits for the mcp worker (which owns the
- * connections) to report back. `env`/`headers` never leave the worker, so the
- * model only ever sees the public shape of a server.
+ * It belongs to this package because the shape it accepts *is* `McpServerConfig`
+ * — which only this package knows — and because `ChangeMcpServerNotify`, the
+ * only message it publishes, has exactly one consumer: `McpWorker` next door.
+ * The tool still connects nothing itself: it publishes and waits for the worker
+ * to report back, so `env`/`headers` never reach the model.
  */
 
 import type { Bus, ChangeMcpServerNotify, ExecutableTool, McpConnectionType, McpServerConfig } from "@magi/bus";
 import { setTimeout as sleep } from "node:timers/promises";
-import { stringArg } from "./args.js";
+
+/** Local on purpose: this package must not depend on the tools package. */
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== "string" || !value) throw new Error(`${key} must be a non-empty string`);
+  return value;
+}
 
 function mcpServerFromArgs(name: string, args: Record<string, unknown>, current: McpServerConfig | null): McpServerConfig {
   const connectionType = (args.connection_type ?? current?.connection_type) as McpConnectionType | undefined;
@@ -50,7 +57,7 @@ function publicMcpServer(server: McpServerConfig): Omit<McpServerConfig, "env" |
 
 async function publishMcpChange(bus: Bus, input: ChangeMcpServerNotify): Promise<void> {
   const board = bus.board("ChangeMcpServerNotify");
-  const id = board.publish(input, "tools");
+  const id = board.publish(input, "mcp");
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const result = board.result(id);

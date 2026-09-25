@@ -11,7 +11,9 @@
  *                search_contacts / update_daily_note
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
- *   mcp.ts       mcp_server
+ *
+ * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
+ * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.
  *
  * This file only assembles them (and owns the `Tool` alias callers import).
  * Adding a tool means opening the file for the thing it acts on.
@@ -20,7 +22,6 @@
 import type { Bus, ExecutableTool } from "@magi/bus";
 import { contactTools } from "./contacts.js";
 import { fileTools } from "./files.js";
-import { mcpTools } from "./mcp.js";
 import { memoryTools } from "./memory.js";
 import { messageTools } from "./messages.js";
 import { shellTools } from "./shell.js";
@@ -38,7 +39,6 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...skillTools(bus),
     ...taskTools(bus),
     ...contactTools(bus),
-    ...mcpTools(bus),
     ...messageTools(bus),
   ];
 }

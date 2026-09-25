@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
 import type { McpConnector } from "@magi/mcp/worker.js";
-import { builtinTools } from "@magi/tools/registry.js";
 
 test("MCP worker owns configuration, connections, and dynamic tools", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-mcp-"));
@@ -18,9 +17,10 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
     workspace, mcpConnector: connector, deliver: () => {},
     client: { async complete(job) { modelCatalogs.push(job.tools.map((tool) => tool.name)); return { role: "assistant", content: "done" }; } },
   });
-  const manage = builtinTools(magi.bus).find((tool) => tool.name === "mcp_server")!;
   try {
     await magi.start();
+    // MCP registers its own control tool: it is in the catalog while the worker runs.
+    const manage = magi.bus.tools.get("mcp_server")!;
     const created = JSON.parse(await manage.run({
       action: "add", name: "demo", connection_type: "stdio", command: "demo-server",
       env: { SECRET: "hidden" },
@@ -79,9 +79,9 @@ test("failed MCP connection does not persist an unusable server", async () => {
     workspace, mcpConnector: async () => { throw new Error("connect refused"); },
     client: { async complete() { return { role: "assistant", content: "unused" }; } },
   });
-  const manage = builtinTools(magi.bus).find((tool) => tool.name === "mcp_server")!;
   try {
     await magi.start();
+    const manage = magi.bus.tools.get("mcp_server")!;
     await expect(manage.run({ action: "add", name: "bad", connection_type: "stdio", command: "missing" })).rejects.toThrow("connect refused");
     expect(magi.bus.mcpServers.get("bad")).toBeNull();
   } finally {
