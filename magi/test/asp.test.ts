@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../magi.js";
-import { SYSTEM_CONTACT_ID } from "../bus/index.js";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "../bus/index.js";
 
 test("each speaker in a session is a contact of their own", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-speakers-"));
@@ -13,7 +13,6 @@ test("each speaker in a session is a contact of their own", async () => {
     fetch(request, host) {
       const url = new URL(request.url);
       if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
-      if (request.method === "GET" && url.pathname === "/sessions/shared") return Response.json({ kind: "bot" });
       return Response.json({});
     },
     websocket: { open(ws) { socket = ws; }, message() {} },
@@ -97,7 +96,7 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
   }
 });
 
-test("ASP group only turns operator messages into agent work", async () => {
+test("mentions decide who answers, and everything said is kept", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-group-"));
   const sent: string[] = [];
   const acks: string[] = [];
@@ -108,7 +107,6 @@ test("ASP group only turns operator messages into agent work", async () => {
     fetch(request, host) {
       const url = new URL(request.url);
       if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
-      if (request.method === "GET" && url.pathname === "/sessions/group") return Response.json({ kind: "group" });
       if (request.method === "POST" && url.pathname === "/sessions/group/messages") {
         return (async () => { sent.push(String((await request.json() as { content: string }).content)); return Response.json({}); })();
       }
@@ -132,23 +130,41 @@ test("ASP group only turns operator messages into agent work", async () => {
     // The ASP worker connects in the background; wait until its socket is up.
     for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
     expect(socket).not.toBeNull();
-    const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
-      type: "session.message", event_id: id, session_id: "group", payload: { sender, content },
+    const emit = (id: string, sender: string, content: string, mentions?: string[]) => socket!.send(JSON.stringify({
+      type: "session.message", event_id: id, session_id: "group",
+      payload: { sender, content, ...(mentions === undefined ? {} : { mentions }) },
     }));
-    emit("agent-1", "@eva-001.magi", "I can hear you");
-    emit("agent-2", "@eva-002.magi", "Me too");
-    emit("user-1", "user", "Can you hear me?");
-    for (let i = 0; i < 200 && (acks.length < 3 || sent.length < 1); i++) await Bun.sleep(10);
-    expect(acks.sort()).toEqual(["agent-1", "agent-2", "user-1"]);
-    expect(sent).toEqual(["heard"]);
-    expect(completions).toBe(1);
-    emit("agent-3", "@eva-001.magi", "heard");
-    for (let i = 0; i < 100 && acks.length < 4; i++) await Bun.sleep(10);
-    expect(acks.length).toBe(4);
-    expect(sent).toEqual(["heard"]);
-    expect(completions).toBe(1);
+    // Nobody named: for whoever can help, so this MAGI answers.
+    emit("m1", "@eva-001.magi", "I can hear you");
+    for (let i = 0; i < 100 && completions < 1; i++) await Bun.sleep(10);
+    // Named someone else: recorded, but not this MAGI's turn.
+    emit("m2", "@eva-002.magi", "Me too", ["@eva-009.magi"]);
+    // Named this MAGI: its turn.
+    emit("m3", "user", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
+    for (let i = 0; i < 200 && completions < 2; i++) await Bun.sleep(10);
+    // Another agent naming someone else again: recorded only.
+    emit("m4", "@eva-001.magi", "@eva-002.magi, you there?", ["@eva-002.magi"]);
+    for (let i = 0; i < 200 && acks.length < 4; i++) await Bun.sleep(10);
+
+    expect(acks.sort()).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(completions).toBe(2);
+    expect(sent).toEqual(["heard", "heard"]);
+
     const conversation = magi.bus.conversations.forChannel("asp", "group");
-    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["Can you hear me?", "heard"]);
+    const stored = magi.bus.messages.list(conversation.id);
+    const contents = stored.map((message) => message.content);
+    // Nothing is dropped: what the others said stays in the history.
+    expect(contents).toContain("I can hear you");
+    expect(contents).toContain("Me too");
+    expect(contents).toContain("@eva-002.magi, you there?");
+    expect(contents.filter((content) => content === "heard")).toHaveLength(2);
+
+    const handle = (asp_handle: string) => magi.bus.contacts.list().find((contact) => contact.asp_handle === asp_handle);
+    expect(new Set(stored.map((message) => message.contact_id))).toEqual(new Set([
+      SYSTEM_CONTACT_ID, MAGI_CONTACT_ID, handle("@eva-001.magi")!.id, handle("@eva-002.magi")!.id,
+    ]));
+    expect(new Set(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.asp_handle)))
+      .toEqual(new Set(["@eva-001.magi", "@eva-002.magi", "user"]));
   } finally {
     await magi.stop();
     server.stop(true);

@@ -4,6 +4,8 @@ const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
 /** Told to the model, not enforced: a long task should stop and ask, not be cut off. */
 const SUGGESTED_STEPS = 20;
+/** How the model ends a turn in a room without posting anything. */
+const NO_REPLY = "NO_REPLY";
 
 export class Conversation {
   private readonly labels = new Map<number, string>();
@@ -50,9 +52,14 @@ export class Conversation {
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
         const response = llm.output.message;
         if (!response.tool_calls?.length) {
-          // A Notify is published and not awaited: a channel that cannot deliver reports
-          // its own trouble, and there is nothing the agent could do about it here.
-          this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
+          const reply = (response.content ?? "").trim();
+          // Saying nothing is a real answer in a room with several people in it, so the
+          // prompt lets the model end the turn with NO_REPLY instead of posting.
+          if (reply.toUpperCase() !== NO_REPLY) {
+            // A Notify is published and not awaited: a channel that cannot deliver reports
+            // its own trouble, and there is nothing the agent could do about it here.
+            this.bus.publishDelivery({ conversation_id: this.conversation_id, text: reply || "处理完毕。" });
+          }
           chat.submit("agent", jobId, { output: {} });
           return;
         }

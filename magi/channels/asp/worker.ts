@@ -4,7 +4,6 @@ import { AspClient, type AspEvent } from "./client.js";
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
   private readonly client: AspClient;
-  private readonly sessionKinds = new Map<string, Promise<string | null>>();
   private nickname: string | null;
 
   constructor(bus: Bus, base: string, token: string) {
@@ -84,14 +83,38 @@ export class AspWorker extends BaseWorker {
       const initial = payload.initial_message;
       if (typeof initial === "object" && initial !== null) {
         const message = initial as Record<string, unknown>;
-        if (await this.shouldIngest(id, message)) this.ingest(id, message);
+        if (this.asked(message)) this.ingest(id, message);
+        else this.record(id, message);
       }
     } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
-      if (await this.shouldIngest(id, payload)) this.ingest(id, payload);
-      // Another agent's message never starts a turn here, but the room still has them in it.
-      else this.remember(id, payload.sender);
+      // Everything said in the session is recorded — that is the conversation's history —
+      // but only what is asked of this MAGI opens a turn.
+      if (this.asked(payload)) this.ingest(id, payload);
+      else this.record(id, payload);
     }
     if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
+  }
+
+  /**
+   * Whether the message is this MAGI's to answer.
+   *
+   * ASP puts the handles a message names in `mentions`. Naming someone is how a message
+   * asks for them, so only the named MAGIs answer — a room full of them answering each
+   * other is the loop this avoids. A message that names nobody is for whoever can help,
+   * and the prompt tells the model that it may decide the answer is not its own.
+   */
+  private asked(payload: Record<string, unknown>): boolean {
+    const mentions = payload.mentions;
+    if (!Array.isArray(mentions) || mentions.length === 0) return true;
+    return mentions.includes(this.bus.handle);
+  }
+
+  /** The text of a message, whatever shape the channel sent the content in. */
+  private content(payload: Record<string, unknown>): string {
+    const content = payload.content;
+    if (typeof content === "string") return content.trim();
+    if (!Array.isArray(content)) return "";
+    return content.map((part) => (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string" ? part.text : "")).join("").trim();
   }
 
   /**
@@ -107,41 +130,30 @@ export class AspWorker extends BaseWorker {
     return contact;
   }
 
-  private async shouldIngest(sessionId: string, payload: Record<string, unknown>): Promise<boolean> {
-    if (payload.sender === this.bus.handle) return false;
-    let kind = this.sessionKinds.get(sessionId);
-    if (!kind) {
-      kind = this.client.sessionKind(sessionId);
-      this.sessionKinds.set(sessionId, kind);
+  /** Answer it: the message enters the conversation and opens a turn. */
+  private ingest(sessionId: string, payload: Record<string, unknown>): void {
+    const text = this.content(payload);
+    if (!text) return;
+    const contact = this.remember(sessionId, payload.sender);
+    const conversation = this.bus.conversations.forChannel("asp", sessionId);
+    // Home is where a notice with no conversation of its own goes. The operator's first
+    // message establishes it, and only a tool moves it afterwards.
+    if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeConversation() === null) {
+      this.bus.setHomeConversation(conversation.id);
     }
-    try {
-      // A group is a human-facing conversation, not a chain of agent-to-agent prompts.
-      // Other MAGIs' replies are visible in ASP but must never start another LLM turn.
-      return (await kind) !== "group" || payload.sender === "user";
-    } catch (error) {
-      this.sessionKinds.delete(sessionId);
-      throw error;
-    }
+    this.bus.publishChat({
+      conversation_id: conversation.id,
+      contact_id: contact?.id ?? SYSTEM_CONTACT_ID,
+      text,
+    }, this.worker_name);
   }
 
-  private ingest(sessionId: string, payload: Record<string, unknown>): void {
-    const content = payload.content;
-    const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => {
-      if (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string") return part.text;
-      return "";
-    }).join("") : "";
-    if (text.trim()) {
-      const contact = this.remember(sessionId, payload.sender);
-      const conversation = this.bus.conversations.forChannel("asp", sessionId);
-      // Where the operator spoke last is the only address this workspace has for
-      // reaching them, so a notice that has no conversation of its own goes there.
-      if (contact === null || contact.id === SYSTEM_CONTACT_ID) this.bus.setHomeConversation(conversation.id);
-      this.bus.publishChat({
-        conversation_id: conversation.id,
-        contact_id: contact?.id ?? SYSTEM_CONTACT_ID,
-        text: text.trim(),
-      }, this.worker_name);
-    }
+  /** Only record it: it was addressed to someone else, but the history keeps it. */
+  private record(sessionId: string, payload: Record<string, unknown>): void {
+    const text = this.content(payload);
+    if (!text) return;
+    const contact = this.remember(sessionId, payload.sender);
+    this.bus.messages.add(this.bus.conversations.forChannel("asp", sessionId).id, contact?.id ?? SYSTEM_CONTACT_ID, text);
   }
 }
 
