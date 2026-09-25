@@ -6,7 +6,7 @@ import { contacts, type Contact } from "./contactBook.js";
 /**
  * Who is in a chat. A chat is a channel address, and an address holds
  * people: the operator, this MAGI, other MAGIs in a group, guests on Telegram. Channels
- * record whoever they hear from, and the agent reads the result into its context.
+ * record whoever they hear from; the contacts worker reads the result into the prompt.
  */
 export const chatMembers = sqliteTable("books_chat_members", {
   id: integer("id").primaryKey(),

@@ -17,10 +17,9 @@ import { McpServerBook } from "./books/mcpServerBook.js";
 import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
-import { JobBoard, jobs } from "./jobs/jobBoard.js";
+import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
 import type { ChatNotify } from "./jobs/chatNotify.js";
 import type { DeliveryNotify } from "./jobs/deliveryNotify.js";
-import type { JobInput, JobType } from "./jobs/types.js";
 
 // Contacts are numbered like everything else in the workspace: from 1. The system
 // contact is the first one, the MAGI itself the second.
