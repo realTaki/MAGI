@@ -11,8 +11,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate --config=bus/drizzle.config.ts && drizzle-kit generate --config=bus/drizzle.logs.config.ts",
-    "start": "npm run build && node dist/magi.js",
-    "test": "npm run build && node --test dist/test/*.test.js"
+    "start": "node dist/magi.js",
+    "test": "node ./node_modules/typescript/bin/tsc -p tsconfig.json && node --test dist/test/*.test.js"
   },
   "engines": {
     "node": ">=24.0.0"

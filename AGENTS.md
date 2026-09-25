@@ -6,17 +6,14 @@ These instructions apply to the entire repository.
 
 MAGI must be developed, tested, built, and run with the runtimes owned by the
 project or bundled with the MAGI desktop application. Do not silently fall back
-to a system-installed Node.js or Bun.
+to a system-installed Node.js.
 
 Preferred runtime order:
 
 1. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
    source build this is `shell/runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
-2. For `magi`, use the project-designated or packaged Bun binary. In a
-   prepared source build this is `shell/runtime/bin/bun`; in the installed
-   macOS app it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/bun`.
-3. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
+2. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
    runtime. Do not replace them with globally installed tools merely because
    the platform-specific path differs.
 
@@ -30,11 +27,11 @@ Examples:
 shell/runtime/bin/node --test asp/test/*.test.ts
 /Applications/MAGI.app/Contents/Resources/runtime/bin/node --test app/test/*.test.mjs
 cd magi
-../shell/runtime/bin/bun run test
+../shell/runtime/bin/node ../shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
-Do not install Bun globally or substitute Node.js for Bun-only APIs such as
-`bun:sqlite`.
+Do not install alternate JavaScript runtimes globally or substitute a
+system-installed Node.js for MAGI's bundled Node 24.
 
 ## Keep dependencies inside the project
 

@@ -14,27 +14,23 @@ const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const agent = { handle: "@eva-000.magi", token: "tok" };
 
-/**
- * MAGI's own Bun: the prepared runtime first, then the dependency the shell
- * installs (what `shell/scripts/prepare-runtime.mjs` copies from, same two
- * layouts). A system Bun is not MAGI's to run — see AGENTS.md.
- */
-function projectBun() {
-  const shell = path.join(repository, "shell");
-  const platform = process.platform === "win32" ? "windows" : process.platform;
-  const architecture = process.arch === "arm64" ? "aarch64" : process.arch;
-  const executable = process.platform === "win32" ? "bun.exe" : "bun";
-  return (
-    [
-      // An installed MAGI.app is an explicit, project-owned runtime source for
-      // developers whose source checkout has not prepared shell/runtime yet.
-      process.env.MAGI_TEST_BUN ?? "",
-      path.join(shell, "runtime", "bin", executable),
-      path.join(shell, "node_modules", "bun", "bin", "bun.exe"),
-      path.join(shell, "node_modules", "@oven", `bun-${platform}-${architecture}`, "bin", executable),
-    ].find((candidate) => candidate !== "" && existsSync(candidate)) ?? ""
-  );
+/** Resolve an explicit MAGI-owned Node/npm pair, never a system executable. */
+function projectRuntime() {
+  const shell = path.join(repository, "shell", "runtime");
+  const installed = "/Applications/MAGI.app/Contents/Resources/runtime";
+  const nodeName = process.platform === "win32" ? "node.exe" : "node";
+  for (const root of [process.env.MAGI_TEST_RUNTIME ?? "", shell, installed]) {
+    const node = path.join(root, "bin", nodeName);
+    const npm = path.join(root, "npm", "node_modules", "npm", "bin", "npm-cli.js");
+    if (root !== "" && existsSync(node) && existsSync(npm)) return { node, npm };
+  }
+  return null;
 }
+
+const installedRuntime = projectRuntime();
+// Unit tests replace command execution; these paths merely satisfy the same
+// explicit-runtime validation used in production.
+const testRuntime = installedRuntime ?? { node: process.execPath, npm: fileURLToPath(import.meta.url) };
 
 async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
@@ -49,13 +45,13 @@ async function makeCheckout(root) {
   return checkout;
 }
 
-/** Records what would run; git is real, bun is never launched. */
+/** Records managed Node/npm calls while letting Git use the real executable. */
 function recorder() {
-  const bun = [];
+  const npm = [];
   const spawns = [];
   const run = async (binary, args, options) => {
-    if (path.basename(binary).startsWith("bun")) {
-      bun.push({ args, cwd: options.cwd });
+    if (args[0] === testRuntime.npm) {
+      npm.push({ args: args.slice(1), cwd: options.cwd });
       return "";
     }
     try {
@@ -78,7 +74,7 @@ function recorder() {
     spawns.push({ binary, args, options, child });
     return child;
   };
-  return { run, spawnProcess, bun, spawns };
+  return { run, spawnProcess, npm, spawns };
 }
 
 function runtimeWith(checkout, home, recorded, log = () => {}) {
@@ -86,7 +82,7 @@ function runtimeWith(checkout, home, recorded, log = () => {}) {
     checkout,
     home,
     base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
+    tools: { git: "git", env: process.env, ...testRuntime },
     run: recorded.run,
     spawnProcess: recorded.spawnProcess,
     useWorktrees: true,
@@ -111,10 +107,13 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   assert.equal((await git(checkout, ["branch", "--list", "magi/eva-000"])).trim().length > 0, true);
 
   // Dependencies belong to that checkout, and the process runs from it.
-  assert.deepEqual(recorded.bun, [{ args: ["install", "--frozen-lockfile"], cwd: path.join(source, "magi") }]);
+  assert.deepEqual(recorded.npm, [
+    { args: ["ci"], cwd: path.join(source, "magi") },
+    { args: ["run", "build"], cwd: path.join(source, "magi") },
+  ]);
   assert.equal(recorded.spawns.length, 1);
   assert.deepEqual(recorded.spawns[0].args, [
-    "magi.ts", agent.handle, "http://127.0.0.1:42069", "tok",
+    "dist/magi.js", agent.handle, "http://127.0.0.1:42069", "tok",
     "--workspace", path.join(home, ".magi", "eva-000"),
   ]);
   assert.equal(recorded.spawns[0].options.cwd, path.join(source, "magi"));
@@ -148,9 +147,9 @@ test("a checkout that cannot be branched falls back to the shared sources", asyn
     checkout,
     home: path.join(root, "home"),
     base: "http://127.0.0.1:42069",
-    tools: { git: "git", env: process.env, bun: "bun" },
+    tools: { git: "git", env: process.env, ...testRuntime },
     run: async (binary) => {
-      if (path.basename(binary).startsWith("bun")) return "";
+      if (binary === testRuntime.node) return "";
       throw new Error("git is unavailable");
     },
     spawnProcess: recorded.spawnProcess,
@@ -222,23 +221,24 @@ test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
   // The first install belongs to the first start; the rebuild installs again
   // and then builds, all inside that MAGI's own checkout.
   assert.deepEqual(
-    recorded.bun.map((call) => (call.args[0] === "install" ? "install" : call.args[1])),
-    ["install", "install", "build"],
+    recorded.npm.map((call) => (call.args[0] === "ci" ? "install" : call.args[1])),
+    ["install", "build", "install", "build"],
   );
-  assert.equal(recorded.bun.every((call) => call.cwd === source), true);
+  assert.equal(recorded.npm.every((call) => call.cwd === source), true);
   assert.equal(recorded.spawns.length, 2);
 });
 
 test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
-  const bun = projectBun();
-  if (bun === "") {
-    t.skip("MAGI's Bun is not installed: run npm ci in shell/, then node shell/scripts/prepare-runtime.mjs");
+  if (installedRuntime === null) {
+    t.skip("MAGI's bundled Node/npm runtime is not installed: run npm ci in shell/, then node shell/scripts/prepare-runtime.mjs");
     return;
   }
   const root = mkdtempSync(path.join(tmpdir(), "magi-live-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const checkout = path.join(root, "checkout");
-  await git(root, ["clone", "--quiet", "--local", repository, checkout]);
+  // `--local` hard-links Git objects, which macOS sandboxed temp directories
+  // reject. `--no-local` still tests a real clone without that filesystem tie.
+  await git(root, ["clone", "--quiet", "--no-local", repository, checkout]);
   const home = path.join(root, "home");
   // `homedir()` follows HOME on POSIX and USERPROFILE on Windows. Keep the
   // MAGI workspace inside the temp root on either GitHub Actions runner.
@@ -250,12 +250,16 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
     else process.env[homeVariable] = previousHome;
   });
   const childLogs: string[] = [];
+  const runtimeEnv = {
+    ...process.env,
+    PATH: [path.dirname(installedRuntime.node), process.env.PATH ?? ""].join(path.delimiter),
+  };
   const runtime = createMagiRuntime({
     checkout,
     home,
     // Nothing listens there: this test only checks that the agent boots.
     base: "http://127.0.0.1:9",
-    tools: { git: "git", env: process.env, bun },
+    tools: { git: "git", env: runtimeEnv, ...installedRuntime },
     run: async (binary, args, options) => {
       try {
         const result = await exec(binary, args, {

@@ -50,7 +50,7 @@ the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
 `~/.magi/MAGI` with its bundled Git, creates the `magi/app` worktree at
-`~/.magi/app/MAGI`, then hands the app bundled Node.js, npm, and Bun. The App
+`~/.magi/app/MAGI`, then hands the app bundled Node.js and npm. The App
 creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
 startup page shows the current stage and offers Retry if preparation fails. It

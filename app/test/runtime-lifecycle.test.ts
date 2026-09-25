@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createLocalApi } from "../main/index.ts";
 
@@ -177,7 +178,7 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout: root },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "unused", env: process.env },
+    tools: { git: "unused", env: process.env, node: process.execPath, npm: fileURLToPath(import.meta.url) },
     emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
   assert.deepEqual(await api["runtime.status"](), {
@@ -229,7 +230,7 @@ test("the bulk MAGI actions sweep the roster and report what failed", async (t) 
   const api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout: root },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "unused", env: process.env },
+    tools: { git: "unused", env: process.env, node: process.execPath, npm: fileURLToPath(import.meta.url) },
     emit: () => {}, openExternal: async () => {}, copy: () => {},
     spawn(_binary, args) {
       if (args.includes("@eva-001.magi")) throw new Error("no space left");

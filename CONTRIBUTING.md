@@ -13,7 +13,7 @@ npm ci --prefix ../app
 cd ../asp
 npm ci
 cd ../magi
-bun install --frozen-lockfile
+npm ci
 ```
 
 MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
@@ -25,7 +25,7 @@ child processes use; a source checkout builds that same runtime into
 (cd shell && npm install && node scripts/prepare-runtime.mjs)
 ```
 
-That runtime (`bin/node`, `bin/bun`) is what builds and runs the app;
+That runtime (`bin/node` plus its bundled npm CLI) is what builds and runs the app;
 the pinned versions live in `shell/package.json` and CI uses Node 24.
 `shell/main.mjs` is what puts it on a child process's `PATH`.
 
@@ -51,7 +51,7 @@ Then:
 - **TypeScript** for `magi/`, `asp/`, and the operator app (`app/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
-- `bun run test` in `magi/`, `npm test` in `asp/`, and
+- `npm test` in `magi/`, `npm test` in `asp/`, and
   `npm test` in `app/` should pass before pushing
 
 ## Commit style
@@ -75,7 +75,7 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `shell/` | Electron shell: window, bundled Node, npm, and Bun |
+| `shell/` | Electron shell: window, bundled Node 24 and npm |
 | `app/` | Operator interface and local backend |
 | `asp/` | ASP chat server (`main.ts` + `server/` + `db/`, Node 24) |
 | `magi/` | BUS, agent, providers, tools, channels, and tests |

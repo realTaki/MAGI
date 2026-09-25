@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../magi.js";
 import { MAGI_CONTACT_ID } from "../bus/index.js";
+import { jsonServer } from "./httpServer.js";
 
 /** The id the fake `getMe` answers with, so a reply to it is a reply to the MAGI. */
 const BOT_USER_ID = 1;
@@ -43,28 +44,25 @@ function update(input: {
  * Stands in for the Telegram API. The Chat SDK owns the protocol, so this answers only
  * the calls its adapter makes: who am I, drop the webhook, hand over updates, send replies.
  */
-function telegramApi(updates: unknown[]) {
+async function telegramApi(updates: unknown[]) {
   const posts: Array<Record<string, unknown>> = [];
   let handed = 0;
-  const server = Bun.serve({
-    port: 0,
-    async fetch(request) {
-      const method = new URL(request.url).pathname.split("/").pop();
-      const body = await request.json() as Record<string, unknown>;
-      if (method === "getMe") return Response.json({ ok: true, result: { id: BOT_USER_ID, is_bot: true, first_name: "MAGI", username: "magi_test_bot" } });
-      if (method === "deleteWebhook") return Response.json({ ok: true, result: true });
+  const server = await jsonServer(async (request) => {
+      const method = request.url.pathname.split("/").pop();
+      const body = request.body;
+      if (method === "getMe") return { ok: true, result: { id: BOT_USER_ID, is_bot: true, first_name: "MAGI", username: "magi_test_bot" } };
+      if (method === "deleteWebhook") return { ok: true, result: true };
       if (method === "getUpdates") {
         // Each update is handed over once; the offset the adapter asks for next is ignored.
-        if (handed < updates.length) return Response.json({ ok: true, result: [updates[handed++]] });
+        if (handed < updates.length) return { ok: true, result: [updates[handed++]] };
         await sleep(20);
-        return Response.json({ ok: true, result: [] });
+        return { ok: true, result: [] };
       }
       if (method === "sendMessage") {
         posts.push(body);
-        return Response.json({ ok: true, result: { message_id: 2 } });
+        return { ok: true, result: { message_id: 2 } };
       }
-      return Response.json({ ok: true, result: {} });
-    },
+      return { ok: true, result: {} };
   });
   return { posts, server, handedOut: () => handed };
 }
@@ -79,7 +77,7 @@ function answeringMagi(workspace: string, base: string) {
 
 test("Telegram text reaches Agent and its reply is delivered", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tg-"));
-  const api = telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
+  const api = await telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     await magi.start();
@@ -92,14 +90,14 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
     expect(magi.bus.chatMembers.list(chat.id).map((member) => member.id)).toContain(speaker.id);
   } finally {
     await magi.stop();
-    api.server.stop(true);
+    await api.server.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("a Telegram DM does not take over an established home", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tg-home-"));
-  const api = telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
+  const api = await telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     // The app's greeting, in the chat it created, is what establishes home.
@@ -112,14 +110,14 @@ test("a Telegram DM does not take over an established home", async () => {
     expect(magi.bus.homeChat()).toBe(chat.id);
   } finally {
     await magi.stop();
-    api.server.stop(true);
+    await api.server.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("a group message that does not address the MAGI is ignored", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tg-quiet-"));
-  const api = telegramApi([update({ chatId: -100, chatType: "supergroup", fromId: 7, firstName: "guest", text: "just chatting" })]);
+  const api = await telegramApi([update({ chatId: -100, chatType: "supergroup", fromId: 7, firstName: "guest", text: "just chatting" })]);
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     await magi.start();
@@ -132,14 +130,14 @@ test("a group message that does not address the MAGI is ignored", async () => {
     expect(api.posts).toHaveLength(0);
   } finally {
     await magi.stop();
-    api.server.stop(true);
+    await api.server.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
 test("a reply to the MAGI in a group counts as a mention", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tg-reply-"));
-  const api = telegramApi([update({ chatId: -100, chatType: "supergroup", fromId: 7, firstName: "guest", text: "and this?", replyingToBot: true })]);
+  const api = await telegramApi([update({ chatId: -100, chatType: "supergroup", fromId: 7, firstName: "guest", text: "and this?", replyingToBot: true })]);
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
     await magi.start();
@@ -154,7 +152,7 @@ test("a reply to the MAGI in a group counts as a mention", async () => {
     expect(members).toContain(MAGI_CONTACT_ID);
   } finally {
     await magi.stop();
-    api.server.stop(true);
+    await api.server.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });

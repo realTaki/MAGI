@@ -105,9 +105,8 @@ function packagedTools() {
 function toolsForRuntime(runtime) {
   const node = path.join(runtime, "bin", process.platform === "win32" ? "node.exe" : "node");
   const npm = path.join(runtime, "npm", "node_modules", "npm", "bin", "npm-cli.js");
-  const bun = path.join(runtime, "bin", process.platform === "win32" ? "bun.exe" : "bun");
-  if (!existsSync(node) || !existsSync(npm) || !existsSync(bun)) {
-    throw new Error("MAGI.app is missing its bundled Node.js, npm, or Bun runtime");
+  if (!existsSync(node) || !existsSync(npm)) {
+    throw new Error("MAGI.app is missing its bundled Node.js or npm runtime");
   }
 
   const git = resolveGitBinary();
@@ -125,7 +124,7 @@ function toolsForRuntime(runtime) {
     npm_node_execpath: node,
     npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),
   };
-  return { env, git, node, npm, bun };
+  return { env, git, node, npm };
 }
 
 async function cloneMagiSource(tools, progress) {
@@ -215,7 +214,7 @@ let localApiError = null;
 // the stable shell, rather than a client reload, owns final process cleanup.
 const localApiInstances = new Set();
 // Where the bundled runtime is, when this build has one. The app starts every
-// child process from this: npm and Bun for the TypeScript components.
+// child process from this: Node.js and npm for the TypeScript components.
 let localTools = null;
 // Only a checkout this app owns (packaged, or an explicit scratch checkout) may
 // be rewired; a developer's own working tree must stay untouched.

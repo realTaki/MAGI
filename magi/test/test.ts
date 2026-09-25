@@ -23,7 +23,7 @@ type Matchers = {
 };
 
 function isArrayContaining(value: unknown): value is ArrayContaining {
-  return typeof value === "object" && value !== null && "values" in value;
+  return typeof value === "object" && value !== null && "values" in value && Array.isArray((value as ArrayContaining).values);
 }
 
 function matches(actual: unknown, expected: unknown): boolean {
@@ -49,10 +49,12 @@ function matcher(actual: unknown, inverse = false): Matchers {
     toContain(expected) {
       const condition = typeof actual === "string"
         ? actual.includes(String(expected))
-        : Array.isArray(actual) && actual.some((item) => matches(item, expected));
+        : Array.isArray(actual) ? actual.some((item) => matches(item, expected))
+          : actual instanceof Set && actual.has(expected);
       check(condition, `expected ${String(actual)} ${inverse ? "not " : ""}to contain ${String(expected)}`);
     },
     toEqual(expected) {
+      if (!isArrayContaining(expected) && !inverse) { assert.deepStrictEqual(actual, expected); return; }
       const condition = isArrayContaining(expected)
         ? Array.isArray(actual) && expected.values.every((item) => actual.some((actualItem) => matches(actualItem, item)))
         : matches(actual, expected);
@@ -65,7 +67,10 @@ function matcher(actual: unknown, inverse = false): Matchers {
       if (typeof actual !== "function") assert.fail("toThrow expects a function");
       const fn = actual as () => unknown;
       const pattern = typeof expected === "string" ? new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) : expected;
-      if (inverse) assert.doesNotThrow(fn, pattern);
+      if (inverse) {
+        if (pattern === undefined) assert.doesNotThrow(fn);
+        else assert.doesNotThrow(fn, pattern);
+      } else if (pattern === undefined) assert.throws(fn);
       else assert.throws(fn, pattern);
     },
   };

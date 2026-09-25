@@ -1,13 +1,22 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Markdown templates live beside this module so code-owned prompts are discoverable. */
 function template(name: string): string {
-  return readFileSync(fileURLToPath(new URL(`./template_${name}.md`, import.meta.url)), "utf8");
+  return readPrompt(`template_${name}.md`);
 }
 
 function source(name: string): string {
-  return readFileSync(fileURLToPath(new URL(`./${name}.md`, import.meta.url)), "utf8");
+  return readPrompt(`${name}.md`);
+}
+
+function readPrompt(name: string): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [join(here, name), join(here, "..", "..", "agent", name)]) {
+    if (existsSync(candidate)) return readFileSync(candidate, "utf8");
+  }
+  throw new Error(`prompt template ${name} is missing`);
 }
 
 export const AGENT_PROMPT = template("AGENT");

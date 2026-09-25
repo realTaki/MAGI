@@ -63,7 +63,7 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
   // What an earlier release left behind: the tables, but no migration bookkeeping.
   const dropped: string[] = [];
   for (const database of ["memories", "logs"]) {
-    const db = new Database(join(path, database, "magi.db"), { create: true });
+    const db = new Database(join(path, database, "magi.db"));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
       dropped.push(`${database}:${row.name}`);
@@ -113,7 +113,7 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
 
 function dropBookkeeping(path: string): void {
   for (const database of ["memories", "logs"]) {
-    const db = new Database(join(path, database, "magi.db"), { create: true });
+    const db = new Database(join(path, database, "magi.db"));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
     }

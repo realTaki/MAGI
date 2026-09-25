@@ -4,7 +4,7 @@ The running system has three parts. The desktop is the operator's machine: it
 starts ASP and runs every MAGI from that MAGI's own branch (`magi/eva-000`,
 checked out at `~/.magi/eva-000/MAGI`). ASP serves as the central channel for
 their shared chats: it tracks participants and relays events between them,
-and never starts a process. Each MAGI is its own Bun process with its own BUS. Within that process, Books and Jobs provide a
+and never starts a process. Each MAGI is its own Node 24 process with its own BUS. Within that process, Books and Jobs provide a
 single boundary for persistent state and coordination, so components depend
 on the BUS rather than directly on one another.
 
@@ -12,10 +12,10 @@ on the BUS rather than directly on one another.
 shell/                 Electron. Clones the repo, opens the window.
 app/                   Operator UI and the local backend that starts ASP.
 asp/                   Node 24. HTTP and WebSocket on 127.0.0.1:42069.
-magi/                  Bun. One process per MAGI. BUS, workers, tools.
+magi/                  Node 24. One process per MAGI. BUS, workers, tools.
 ```
 
-The installed package contains the shell plus Node.js 24, npm, and Bun. It
+The installed package contains the shell plus Node.js 24 and npm. It
 does not contain a Python runtime. On first launch the shell clones this
 repository to `~/.magi/MAGI`. Later launches keep that checkout.
 
@@ -43,7 +43,7 @@ participant operations use `/chats/:chat_id/...`.
 
 | Platform term | Meaning |
 | --- | --- |
-| **MAGI** | Modular Agentic Genesis Intelligences, the project name. One MAGI is one governable agent and its Bun runtime in `magi/`; the plural refers to independent agents working together. |
+| **MAGI** | Modular Agentic Genesis Intelligences, the project name. One MAGI is one governable agent and its Node 24 runtime in `magi/`; the plural refers to independent agents working together. |
 | **ASP** | The local chat server in `asp/`. It registers agents and relays events; it never starts a process and does not reason. |
 | **Desktop** | The Electron shell and operator UI. It owns the checkout, transcript, and provider key. |
 | **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `magi/bus/`. |
@@ -68,13 +68,13 @@ An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 
 ## Desktop startup
 
-The shell puts Node.js 24, npm, and Bun on disk, then clones this repository to
+The shell puts Node.js 24 and npm on disk, then clones this repository to
 `~/.magi/MAGI`. What it asks the backend to do, in order (the bridge contract is
 documented in `app/main/index.ts`):
 
 1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
-   no `node_modules` yet, run `npm ci` in `asp/`, `bun install --frozen-lockfile`
-   in `magi/`, and `npm ci` plus `npm run build` in `app/`. It answers with the
+   no `node_modules` yet, run `npm ci` in `asp/` and `magi/`, and `npm ci` plus
+   `npm run build` in `app/`. It answers with the
    interface entry point.
 2. `start()` — run `asp/main.ts` with Node 24 and wait for `GET /health` to
    report this runtime. `dispose()` releases reloadable resources; `shutdown()`
@@ -103,7 +103,7 @@ Creating a bot does not take a name or a model. ASP assigns `eva-000`, then
 `eva-001`, and starts:
 
 ```text
-bun run start -- @eva-000.magi http://127.0.0.1:42069 <token>
+npm start -- @eva-000.magi http://127.0.0.1:42069 <token>
 ```
 
 The working directory is the checkout's `magi/`. A group chat starts
@@ -151,16 +151,16 @@ as members.
 Books in `magi/bus/books/` hold chats, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
 catalog. SQLite files are `memories/magi.db` and `logs/magi.db` inside the
-workspace. Bun owns that SQLite. Each Book declares the table it owns next to
-its queries (`magi/bus/books/`; job queue:
-`magi/bus/jobs/jobBoard.ts`); `bun run db:generate` writes the SQL
+workspace. Node owns SQLite through `better-sqlite3`. Each Book declares the
+table it owns next to its queries (`magi/bus/books/`; job queue:
+`magi/bus/jobs/jobBoard.ts`); `npm run db:generate` writes the SQL
 migrations under `magi/bus/drizzle/`, which the runtime applies on boot.
 Errors are delivered, not logged: into the chat the failure belongs to, into
 the job result the agent will surface, or — for a component that only sees trouble of
 its own — into the operator's home chat (`home.chat_id`, via
 `bus.publishNotice`).
 
-Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
+Without ASP arguments, `npm start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over
 the operator's files.
 

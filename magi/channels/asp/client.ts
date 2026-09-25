@@ -1,3 +1,6 @@
+import { setTimeout as sleep } from "node:timers/promises";
+import WebSocket, { type MessageEvent as WsMessageEvent } from "ws";
+
 export type AspEvent = {
   type?: string; event_id?: string; chat_id?: string; payload?: Record<string, unknown>;
   /** Chat events are numbered; control events (nickname, provider) are not. */
@@ -42,7 +45,7 @@ export class AspClient {
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(url.href, { headers: { Authorization: `Bearer ${this.token}` } });
     this.socket = socket;
-    socket.addEventListener("message", (message: MessageEvent) => {
+    socket.addEventListener("message", (message: WsMessageEvent) => {
       void (async () => {
         const event = JSON.parse(String(message.data)) as AspEvent;
         const reply = await onEvent(event);
@@ -71,5 +74,3 @@ export class AspClient {
     if (!response.ok) throw new Error(`ASP HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
   }
 }
-import { setTimeout as sleep } from "node:timers/promises";
-import WebSocket from "ws";

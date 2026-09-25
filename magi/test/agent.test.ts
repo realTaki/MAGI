@@ -143,6 +143,10 @@ describe("local MAGI agent", () => {
     });
     await magi.start();
     const id = await magi.chat("save a note");
+    // `chat()` completes when the turn has been persisted. Delivery is a
+    // separate BUS job, so wait for the channel worker before stopping the
+    // supervisor and inspecting its durable result.
+    for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt++) await sleep(10);
     await magi.stop();
     expect(id).toBeGreaterThan(0);
     expect(await readFile(join(path, "notes/a.txt"), "utf8")).toBe("saved");

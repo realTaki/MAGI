@@ -1,7 +1,7 @@
 # MAGI — Modular Agentic Genesis Intelligences
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Node%2024-blue)](https://nodejs.org/)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#project-status)
 
 [中文 README](README_zh.md)
@@ -74,7 +74,7 @@ improvement **within explicit, inspectable constraints**.
 ## Repository layout
 
 ```text
-shell/       Electron shell: window, checkout, and bundled Node, npm, and Bun
+shell/       Electron shell: window, checkout, and bundled Node 24 and npm
 app/         Operator UI and the local backend that starts ASP
 asp/         ASP server (TypeScript, node main.ts): /chats, WS /connect, ~/.magi/asp.sqlite
 magi/        MAGI runtime: BUS, workers, tools, and channels
@@ -94,7 +94,7 @@ observe work, propose a change, evaluate it, and retain what proves useful:
   the authority used to change it.
 - Several MAGI can join one operator chat. Each keeps its own workspace.
 
-> **Implementation status:** a local desktop, one ASP process, and one Bun
+> **Implementation status:** a local desktop, one ASP process, and one Node 24
 > process per MAGI are what runs today. Each MAGI keeps its own workspace
 > (memory, skills, tasks, contacts, prompts) and talks to the operator through
 > ASP. The local source checkout is editable, but autonomous validation,
@@ -105,7 +105,7 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 
 | Term | Meaning |
 | --- | --- |
-| **MAGI** | One autonomous, governable agent. Also the Bun runtime in `magi/`. |
+| **MAGI** | One autonomous, governable agent. Also the Node 24 runtime in `magi/`. |
 | **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
 The desktop app is the local lifecycle boundary: it owns each MAGI's branch,
@@ -116,12 +116,12 @@ should say, and it never starts a process.
 
 - **Desktop** — an Electron shell clones this repository to `~/.magi/MAGI`,
   installs `asp/` and `magi/`, builds the operator UI, and starts ASP. The
-  package carries Node.js 24, npm, and Bun. It does not carry a Python runtime.
+  package carries Node.js 24 and npm. It does not carry a Python runtime.
 - **ASP** — Node 24, `asp/main.ts`, bound to `127.0.0.1:42069`. It stores
   chats and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
   that MAGI; creating a group opens a chat the operator can invite
   MAGI into.
-- **One process per MAGI** — Bun runs `magi/magi.ts`. The default workspace is
+- **One process per MAGI** — Node 24 runs `magi/magi.ts`. The default workspace is
   `~/.magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
   opened when the new path does not exist.
 - **BUS inside each MAGI** — Books for chats, messages, memory, skills,
@@ -155,7 +155,7 @@ Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
 `eva-000`; the app then checks out branch `magi/eva-000` at
 `~/.magi/eva-000/MAGI` and runs that MAGI from there.
 
-**One MAGI:** `bun run start -- <handle> <base> <token>` in that MAGI's own checkout. The app launches this command with the bundled Bun runtime.
+**One MAGI:** `npm start -- <handle> <base> <token>` in that MAGI's own checkout. The app launches it with the bundled Node 24 runtime.
 
 
 ## From the first launch
@@ -187,7 +187,7 @@ app/              operator UI and local backend
    ▼
 asp/              127.0.0.1:42069   chats and relay, never a process
    ▲
-app/              also runs Bun: one process per MAGI, each on its own branch
+app/              also runs Node 24: one process per MAGI, each on its own branch
    ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
    ├── magi  eva-001   branch magi/eva-001   ~/.magi/eva-001/MAGI
    └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI
@@ -213,7 +213,7 @@ WebUI is built and loaded from the local checkout.
 ### Local source and the path to RSI
 
 The packaged app supplies an Electron bootstrap shell and private Git,
-Node.js, and Bun tools. On first launch it clones the complete repository
+Node.js and npm tools. On first launch it clones the complete repository
 to `~/.magi/MAGI`. Later launches keep that Git working tree and use its
 `magi/`, `asp/`, and `app/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
@@ -243,7 +243,7 @@ For the implementation-level view, see:
 ## Project status
 
 MAGI is experimental and under active construction. What ships is a local
-desktop, ASP, and one Bun runtime per MAGI.
+desktop, ASP, and one Node 24 runtime per MAGI.
 
 The broader vision is for MAGI to improve their own software and organization,
 evaluate those changes, and repeat the process. That RSI loop remains a research

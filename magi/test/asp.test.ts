@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../magi.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "../bus/index.js";
+import { nodeHarness } from "./nodeHarness.js";
+import type { WebSocket } from "ws";
 
 /*
  * Business flow: sending a message, MAGI side (`ARCHITECTURE.md`, "A MAGI process").
@@ -15,8 +17,8 @@ test("a replayed event is not taken in twice", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-replay-"));
   const acks: string[] = [];
   let completions = 0;
-  let socket: Bun.ServerWebSocket<unknown> | null = null;
-  const server = Bun.serve({
+  let socket: WebSocket | null = null;
+  const server = nodeHarness.serve({
     port: 0,
     fetch(request, host) {
       const url = new URL(request.url);
@@ -63,8 +65,8 @@ test("a replayed event is not taken in twice", async () => {
 
 test("each speaker in a chat is a contact of their own", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-speakers-"));
-  let socket: Bun.ServerWebSocket<unknown> | null = null;
-  const server = Bun.serve({
+  let socket: WebSocket | null = null;
+  const server = nodeHarness.serve({
     port: 0,
     fetch(request, host) {
       const url = new URL(request.url);
@@ -108,8 +110,8 @@ test("ASP invite enters ChatNotify and reply is delivered to the chat", async ()
   const workspace = await mkdtemp(join(tmpdir(), "asp-"));
   const requests: Array<{ path: string; body: unknown }> = [];
   const replies: unknown[] = [];
-  let socket: Bun.ServerWebSocket<unknown> | null = null;
-  const server = Bun.serve({
+  let socket: WebSocket | null = null;
+  const server = nodeHarness.serve({
     port: 0,
     fetch(request, host) {
       const url = new URL(request.url);
@@ -157,8 +159,8 @@ test("mentions decide who answers, and everything said is kept", async () => {
   const sent: string[] = [];
   const acks: string[] = [];
   let completions = 0;
-  let socket: Bun.ServerWebSocket<unknown> | null = null;
-  const server = Bun.serve({
+  let socket: WebSocket | null = null;
+  const server = nodeHarness.serve({
     port: 0,
     fetch(request, host) {
       const url = new URL(request.url);

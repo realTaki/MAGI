@@ -846,7 +846,7 @@ export function createLocalApi(context) {
     const required = [
       path.join(aspDir, "package-lock.json"),
       path.join(appDir, "package-lock.json"),
-      path.join(magiDir, "bun.lock"),
+      path.join(magiDir, "package-lock.json"),
     ];
     for (const file of required) {
       if (!existsSync(file)) {
@@ -864,7 +864,7 @@ export function createLocalApi(context) {
     }
     if (managed && !existsSync(path.join(magiDir, "node_modules"))) {
       progress?.("Preparing MAGI…", 0.4);
-      await command(tools.bun, ["install", "--frozen-lockfile"], {
+      await command(tools.node, [tools.npm, "ci"], {
         cwd: magiDir,
         env: tools.env,
         description: "Could not prepare MAGI",

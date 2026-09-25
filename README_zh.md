@@ -1,7 +1,7 @@
 # MAGI — 模块化智能体的创生与进化（Modular Agentic Genesis Intelligences）
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Bun-blue)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Node%2024-blue)](https://nodejs.org/)
 [![Status](https://img.shields.io/badge/status-experimental-orange)](#项目状态)
 
 [English README](README.md)
@@ -69,7 +69,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 - 操作者可以检查它的记忆、工具、资源边界，以及改变它时使用的权限；
 - 多个 MAGI 可以加入同一个操作者聊天。每个 MAGI 仍保留自己的工作区。
 
-> **实现状态：**现在跑起来的是本地桌面端、一个 ASP 进程，以及每个 MAGI 一个 Bun
+> **实现状态：**现在跑起来的是本地桌面端、一个 ASP 进程，以及每个 MAGI 一个 Node 24
 > 进程。每个 MAGI 有自己的工作区（记忆、Skills、任务、联系人、提示词），通过 ASP
 > 和操作者对话。本地源码可编辑，但由 Agent 自主提出代码修改、验证、
 > 切换生效并回滚的闭环**尚未实现**。
@@ -78,16 +78,16 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 | 名词 | 含义 |
 | --- | --- |
-| **MAGI** | 一个自主、可治理的智能体，也是 `magi/` 里的 Bun 运行时。 |
+| **MAGI** | 一个自主、可治理的智能体，也是 `magi/` 里的 Node 24 运行时。 |
 | **EVA** | 句柄的命名规范。ASP 依次分配 `eva-000`、`eva-001`。地址是 `@eva-000.magi`。 |
 
 桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
 
 ## 当前已具备的能力
 
-- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24、npm 和 Bun，没有 Python。
+- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
 - **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **每个 MAGI 一个进程**：Bun 运行 `magi/magi.ts`，来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **每个 MAGI 一个进程**：Node 24 运行 `magi/magi.ts`，来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -106,7 +106,7 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
-**一个 MAGI：** 在 `magi/` 中运行 `bun run start -- <handle> <base> <token>`。
+**一个 MAGI：** 在 `magi/` 中运行 `npm start -- <handle> <base> <token>`。
 
 
 ## 第一次打开
@@ -130,7 +130,7 @@ app/              操作界面和本地后端
    ▼
 asp/              127.0.0.1:42069   只做聊天与转发，从不拉起进程
    ▲
-app/              也运行 Bun：每条 MAGI 一个进程，各在自己的分支上
+app/              也运行 Node 24：每条 MAGI 一个进程，各在自己的分支上
    ├── magi  eva-000   分支 magi/eva-000   ~/.magi/eva-000/MAGI
    ├── magi  eva-001   分支 magi/eva-001   ~/.magi/eva-001/MAGI
    └── magi  eva-002   分支 magi/eva-002   ~/.magi/eva-002/MAGI
@@ -149,7 +149,7 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 ### 本地源码与 RSI 方向
 
-安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、Bun 工具。首次启动
+安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
 会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `magi/`、`asp/`、
 `app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
 重新构建界面，并用 Git 合并上游更新。`app/dist/index.html` 变化后，
@@ -173,7 +173,7 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 ## 项目状态
 
-MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端、ASP，以及每个 MAGI 一个 Bun 运行时。
+MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端、ASP，以及每个 MAGI 一个 Node 24 运行时。
 
 更长远的方向是让 MAGI 改进自己的软件与组织方式、验证效果，并重复这一过程。
 这一 RSI 闭环仍是研究目标，与上面列出的现有能力有所区分。
