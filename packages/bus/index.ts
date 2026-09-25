@@ -10,12 +10,11 @@ export type { ContactNote, NoteKind } from "./books/contactNoteBook.js";
 export type { McpConnectionType, McpServerConfig } from "./books/mcpServerBook.js";
 export type { PromptSection, PromptSource } from "./books/promptBook.js";
 export type { Setting } from "./books/settingsBook.js";
-export type { ExecutableTool, ToolSource } from "./books/toolBook.js";
+export type { ExecutableTool, LLMTool, ToolSource } from "./books/toolBook.js";
 // One file per job; `types.js` is only the board contract that binds them.
-export type { LLMToolCall, LLMMessage, LLMTool } from "./jobs/llm.js";
 export type { ChatNotify } from "./jobs/chatNotify.js";
-export type { CallLLMJob, CallLLMResult } from "./jobs/callLlm.js";
-export type { RunToolJob, RunToolResult } from "./jobs/runTool.js";
+export type { CallLLMJob, CallLLMResult, LLMMessage } from "./jobs/callLlm.js";
+export type { RunToolJob, RunToolResult, LLMToolCall } from "./jobs/runTool.js";
 export type { DeliveryNotify } from "./jobs/deliveryNotify.js";
 export type { ChangeProviderNotify } from "./jobs/changeProvider.js";
 export type { ChangeMcpServerNotify } from "./jobs/changeMcpServer.js";
