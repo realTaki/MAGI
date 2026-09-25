@@ -78,7 +78,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 | 名词 | 含义 |
 | --- | --- |
-| **MAGI** | 一个自主、可治理的智能体，也是 `magi/` 里的 Node 24 运行时。 |
+| **MAGI** | 一个自主、可治理的智能体，也是 `apps/magi/` 与 `packages/` 里的 Node 24 运行时。 |
 | **EVA** | 句柄的命名规范。ASP 依次分配 `eva-000`、`eva-001`。地址是 `@eva-000.magi`。 |
 
 桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
@@ -87,7 +87,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
 - **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **每个 MAGI 一个进程**：Node 24 运行 `magi/magi.ts`，来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **每个 MAGI 一个进程**：Node 24 运行 `apps/magi/magi.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/app/chat.sqlite`。Provider 和 API key 在 `~/.magi/app/provider.json`。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -98,7 +98,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 | 场景 | 位置 | 入口 |
 | --- | --- | --- |
-| 壳 | [`shell/`](shell/) | 打开 Electron App；它启动本地 ASP，并运行每条 MAGI。 |
+| 壳 | [`apps/shell/`](apps/shell/) | 打开 Electron App；它启动本地 ASP，并运行每条 MAGI。 |
 
 **桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/MAGI`，准备本地依赖并构建
 WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。如果还没有任何
@@ -106,7 +106,7 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
-**一个 MAGI：** 在 `magi/` 中运行 `npm start -- <handle> <base> <token>`。
+**一个 MAGI：** 在仓库根运行 `npm start --workspace @magi/runtime -- <handle> <base> <token>`。
 
 
 ## 第一次打开
@@ -151,25 +151,25 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
 会将完整仓库克隆到 `~/.magi/MAGI`；之后从其中的 `magi/`、`asp/`、
-`app/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建界面，并用 Git 合并上游更新。`app/dist/index.html` 变化后，
+`apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
+重新构建界面，并用 Git 合并上游更新。`apps/app/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
-真正留在安装包里的只有启动壳：`shell/` 克隆仓库、从里面加载整个应用
-（界面 `app/src/` + 本地后端 `app/main/`），然后只是请这个后端
+真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
+（界面 `apps/app/src/` + 本地后端 `apps/app/main/`），然后只是请这个后端
 自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
-重新打包**；改 `shell/` 才需要。
+重新打包**；改 `apps/shell/` 才需要。
 
-当前安装包中的 Electron 壳（`shell/`）和内置工具版本仍是固定的：虽然本地
+当前安装包中的 Electron 壳（`apps/shell/`）和内置工具版本仍是固定的：虽然本地
 仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启
 对应进程才能生效。本地可编辑源码是 RSI 的基础；MAGI 尚未实现对自身代码修订的
-自动验证、切换、重启和回滚。详见[壳的说明](shell/README.md)。
+自动验证、切换、重启和回滚。详见[壳的说明](apps/shell/README.md)。
 
 深入实现请阅读：
 
 - [架构](ARCHITECTURE.md) —— 进程边界与各条业务流程
 - [术语与 ID 命名规范](ARCHITECTURE.md#canonical-terminology-and-names)
-- [ASP](asp/README.md)
+- [ASP](apps/asp/README.md)
 
 ## 项目状态
 
@@ -183,7 +183,7 @@ MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | MAGI 之间的协作 | **Later** | ASP 只中继操作者的聊天，不提供 MAGI 之间共享的任务板。 |
-| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `magi/` 或 `asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
+| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `apps/magi/`、`packages/` 或 `apps/asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
 | 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
 | 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
 

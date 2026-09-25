@@ -10,8 +10,8 @@
       "default": "./dist/magi.js"
     },
     "./*": {
-      "types": "./dist/*.d.ts",
-      "default": "./dist/*.js"
+      "types": "./dist/*",
+      "default": "./dist/*"
     },
     "./package.json": "./package.json"
   },

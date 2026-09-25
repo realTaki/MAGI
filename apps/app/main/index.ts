@@ -369,7 +369,14 @@ export function createLocalApi(context) {
   }
 
   async function providerCatalog() {
-    const entry = path.join(appCheckout, "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js");
+    // pi-ai belongs to `packages/providers`; which node_modules holds it depends on
+    // whether the install hoisted it, so both places are asked before giving up.
+    const candidates = [
+      path.join(appCheckout, "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js"),
+      path.join(appCheckout, "packages", "providers", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js"),
+    ];
+    const entry = candidates.find((candidate) => existsSync(candidate));
+    if (entry === undefined) throw new Error("The provider catalog needs pi-ai: install the workspace first.");
     const { getBuiltinModels } = await import(pathToFileURL(entry).href);
     return Object.fromEntries([
       "openai", "anthropic", "minimax-cn",

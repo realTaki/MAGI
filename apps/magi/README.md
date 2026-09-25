@@ -1,22 +1,25 @@
-# magi
+# @magi/runtime
 
 TypeScript MAGI uses `magi.ts` as its composition root. Every Worker depends
-on BUS for shared state, Job exchange, and the tool catalog.
+on BUS for shared state, Job exchange, and the tool catalog — and on nothing
+else: each worker is a package of its own, so the only dependency they have in
+common is `@magi/bus`.
 
-| Module | Responsibility |
+| Package | Responsibility |
 | --- | --- |
-| `bus/` | Books, durable Jobs, and shared tool catalog |
-| `agent/` | Serial chat turns and model/tool continuation |
-| `providers/` | Execute model Jobs |
-| `tools/`, `mcp/` | Execute native and MCP tools through BUS |
-| `channels/` | Transport messages and replies |
+| `@magi/bus` | Books, durable Jobs, and shared tool catalog |
+| `@magi/agent` | Serial chat turns and model/tool continuation |
+| `@magi/providers` | Execute model Jobs |
+| `@magi/tools`, `@magi/mcp` | Execute native and MCP tools through BUS |
+| `@magi/channel-*` | Transport messages and replies |
 
 ```bash
-npm ci
+npm install          # at the repository root: the checkout is one workspace
+npm run build
 npm test
-npm start -- @alice.magi
+npm start --workspace @magi/runtime -- @alice.magi
 # or attach to asp:
-npm start -- @alice.magi http://127.0.0.1:42069 TOKEN
+npm start --workspace @magi/runtime -- @alice.magi http://127.0.0.1:42069 TOKEN
 ```
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
@@ -45,8 +48,8 @@ Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 
 BUS owns SQLite Books, durable Jobs, and the live tool catalog through
 better-sqlite3 and in-memory state. Every Book declares the table it owns right in
-`bus/books/` (the job queue in `bus/jobs/jobBoard.ts`);
-`npm run db:generate` turns a table edit into the SQL under `bus/drizzle/`,
+`packages/bus/books/` (the job queue in `packages/bus/jobs/jobBoard.ts`);
+`npm run db:generate` turns a table edit into the SQL under `packages/bus/drizzle/`,
 which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through
 BUS using `ChatNotify`,
@@ -72,4 +75,4 @@ configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the
 OpenAI-compatible providers in the desktop picker plus Anthropic's native
 Messages API.
 
-The desktop packages Node 24 and npm; the app starts one `magi` per agent, from that agent's own checkout.
+The desktop packages Node 24 and npm; the app starts one runtime per agent from that agent's own checkout (`npm start --workspace @magi/runtime`).

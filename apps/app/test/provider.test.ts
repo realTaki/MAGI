@@ -62,7 +62,7 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
 test("the app reads the curated provider catalog from pi-ai", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-catalog-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = path.resolve(import.meta.dirname, "../..");
+  const checkout = path.resolve(import.meta.dirname, "../../..");
   const backend = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",

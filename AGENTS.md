@@ -11,7 +11,7 @@ to a system-installed Node.js.
 Preferred runtime order:
 
 1. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
-   source build this is `shell/runtime/bin/node`; in the installed macOS app
+   source build this is `apps/shell/runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
 2. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
    runtime. Do not replace them with globally installed tools merely because
@@ -24,11 +24,14 @@ paths needed for that command and must not be persisted.
 Examples:
 
 ```bash
-shell/runtime/bin/node --test asp/test/*.test.ts
-/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test app/test/*.test.mjs
-cd magi
-../shell/runtime/bin/node ../shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+apps/shell/runtime/bin/node --test apps/asp/test/*.test.ts
+/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/app/test/*.test.ts
+apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
+
+The repository is a workspace: the runtime lives in `apps/magi` and `packages/`,
+so `npm test` at the root builds every package through the project references and
+then runs the runtime tests.
 
 Do not install alternate JavaScript runtimes globally or substitute a
 system-installed Node.js for MAGI's bundled Node 24.

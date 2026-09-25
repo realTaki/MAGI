@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { agentBranch, agentSource, createMagiRuntime } from "../main/magi-runtime.ts";
 
 const exec = promisify(execFile);
-const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const agent = { handle: "@eva-000.magi", token: "tok" };
 
 /** Resolve an explicit MAGI-owned Node/npm pair, never a system executable. */
@@ -117,7 +117,7 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
     "dist/magi.js", agent.handle, "http://127.0.0.1:42069", "tok",
     "--workspace", path.join(home, ".magi", "eva-000"),
   ]);
-  assert.equal(recorded.spawns[0].options.cwd, source);
+  assert.equal(recorded.spawns[0].options.cwd, path.join(source, "apps", "magi"));
 
   // Starting a MAGI that already runs changes nothing, and nothing restarts it
   // on its own.
@@ -231,7 +231,13 @@ test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
 
 test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
   if (installedRuntime === null) {
-    t.skip("MAGI's bundled Node/npm runtime is not installed: run npm ci in shell/, then node shell/scripts/prepare-runtime.mjs");
+    t.skip("MAGI's bundled Node/npm runtime is not installed: run npm ci in apps/shell/, then node apps/shell/scripts/prepare-runtime.mjs");
+    return;
+  }
+  // A checkout out of Git carries no lockfile until someone installs the
+  // workspace, and nothing can be installed from one that has none.
+  if (!existsSync(path.join(repository, "package-lock.json"))) {
+    t.skip("the MAGI workspace is not installed: run npm install at the repository root");
     return;
   }
   const root = mkdtempSync(path.join(tmpdir(), "magi-live-"));
