@@ -91,7 +91,7 @@ export class Bus {
     this.chats = new ChatBook(this.db);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
-    this.skills = new SkillsBook(this.workspace);
+    this.skills = new SkillsBook();
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);
     this.chatMembers = new ChatMemberBook(this.db);

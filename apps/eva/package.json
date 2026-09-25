@@ -25,6 +25,7 @@
     "@magi/providers": "*",
     "@magi/tools": "*",
     "@magi/mcp": "*",
+    "@magi/skills": "*",
     "@magi/channel-asp": "*",
     "@magi/channel-cli": "*",
     "@magi/channel-tasks": "*",

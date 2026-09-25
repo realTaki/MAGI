@@ -22,6 +22,7 @@ import { AspWorker } from "@magi/channel-asp/worker.js";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { TaskWorker } from "@magi/channel-tasks/worker.js";
 import { McpWorker, type McpConnector } from "@magi/mcp/worker.js";
+import { SkillWorker } from "@magi/skills/worker.js";
 
 const POLL_MS = 20;
 const HEALTH_MS = 1_000;
@@ -71,6 +72,8 @@ export class Magi {
   constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
     this.workers = [
+      // First: the agent builds its system prompt from what this one found.
+      new SkillWorker(this.bus),
       new AgentWorker(this.bus),
       new ToolsWorker(this.bus, options.tools),
       new ProvidersWorker(this.bus, options.client),

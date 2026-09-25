@@ -17,6 +17,9 @@
       "path": "packages/mcp"
     },
     {
+      "path": "packages/skills"
+    },
+    {
       "path": "packages/channel-asp"
     },
     {

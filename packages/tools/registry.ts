@@ -5,7 +5,9 @@
  *   files.ts     read_file / list_files / write_file / edit_file
  *   shell.ts     bash / bash_output / bash_kill
  *   memory.ts    save_memory / complete_memory / delete_memory
- *   skills.ts    load_skill
+ *
+ * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
+ * owns, so that package's worker registers the tool itself.
  *   tasks.ts     schedule_task
  *   contacts.ts  add_contact / save_contact_note / delete_contact_note /
  *                search_contacts / update_daily_note
@@ -26,7 +28,6 @@ import { memoryTools } from "./memory.js";
 import { messageTools } from "./messages.js";
 import { shellTools } from "./shell.js";
 import { ShellManager } from "./shellManager.js";
-import { skillTools } from "./skills.js";
 import { taskTools } from "./tasks.js";
 
 export type Tool = ExecutableTool;
@@ -36,7 +37,6 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...fileTools(bus.workspace),
     ...shellTools(bus.workspace, shells),
     ...memoryTools(bus),
-    ...skillTools(bus),
     ...taskTools(bus),
     ...contactTools(bus),
     ...messageTools(bus),
