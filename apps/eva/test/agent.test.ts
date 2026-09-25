@@ -282,4 +282,46 @@ describe("local MAGI agent", () => {
     expect(system.split("\n").filter((line) => line.startsWith(`- id ${guest.id} |`))).toHaveLength(1);
     await magi.stop();
   });
+
+  test("the system context is read from the prompt book, not from registries", async () => {
+    const path = await workspace();
+    const requests: CallLLMJob[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
+    });
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    // Any module can answer a block, and the conversation reaches it: the agent
+    // knows nothing about this one.
+    magi.bus.prompts.registerSource("probe", "Probe", (chat_id) => `- asked for chat ${chat_id}`);
+    await magi.start();
+    await magi.chat("hello");
+    const system = requests[0].messages[0].content;
+    expect(system).toContain(`## Probe\n- asked for chat ${chat.id}`);
+    expect(system).toContain("## Available skills");
+    expect(system).toContain("- codebase_search:");
+    await magi.stop();
+  });
+
+  test("a stopped worker's block leaves the system context", async () => {
+    const path = await workspace();
+    const requests: CallLLMJob[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
+    });
+    await magi.start();
+    await magi.chat("what can you do?");
+    expect(requests[0].messages[0].content).toContain("## Available skills");
+
+    const board = magi.bus.board("ManageWorkerNotify");
+    const id = board.publish({ worker: "skills", action: "stop" }, "test");
+    for (let attempt = 0; attempt < 500 && !board.result(id); attempt++) await sleep(10);
+    expect(magi.bus.skills.list()).toEqual([]);
+    expect(magi.bus.prompts.sections(magi.bus.chats.forChannel("cli", "terminal").id)).toEqual([]);
+
+    await magi.chat("again");
+    expect(requests[1].messages[0].content).not.toContain("## Available skills");
+    await magi.stop();
+  });
 });

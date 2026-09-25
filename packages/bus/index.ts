@@ -8,6 +8,7 @@ export type { Task } from "./books/taskBook.js";
 export type { Contact, ContactRole } from "./books/contactBook.js";
 export type { ContactNote, NoteKind } from "./books/contactNoteBook.js";
 export type { McpConnectionType, McpServerConfig } from "./books/mcpServerBook.js";
+export type { PromptSection, PromptSource } from "./books/promptBook.js";
 export type { Setting } from "./books/settingsBook.js";
 export type { ExecutableTool, ToolSource } from "./books/toolBook.js";
 // One file per job; `types.js` is only the board contract that binds them.

@@ -5,7 +5,8 @@
  * project (`builtin_skills/` here) and the MAGI's own editable copies
  * (`<workspace>/skills`) — and it owns the tool that loads them. `bus.skills`
  * is only a registry: it holds what this worker found, so nothing else has to
- * know the layout.
+ * know the layout, and the prompt book asks this package for the summaries the
+ * system prompt lists.
  *
  * The built-in ones are copied into the workspace once, never overwritten: a
  * MAGI's copies are its own to edit, and an update must not clobber them.
@@ -32,6 +33,9 @@ export class SkillWorker extends BaseWorker {
     // Offered only while this worker runs: a stopped worker would leave the model
     // holding a tool whose files nobody has read.
     bus.tools.registerSource("skills", () => (this.started ? this.own : []));
+    // The system prompt lists the summaries; this package is asked for them, so the
+    // agent never reads the registry — or needs to know this worker exists.
+    bus.prompts.registerSource("skills", "Available skills", () => catalog(bus.skills.list()));
   }
 
   async start(): Promise<void> {
@@ -72,6 +76,11 @@ function loadSkills(root: string): Skill[] {
     return [];
   }
   return names.map((name) => parseSkill(root, name)).filter((skill): skill is Skill => skill !== null);
+}
+
+/** The block the system prompt shows: names and descriptions; `load_skill` pulls the rest. */
+function catalog(skills: Skill[]): string {
+  return skills.map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
 }
 
 function parseSkill(root: string, name: string): Skill | null {
