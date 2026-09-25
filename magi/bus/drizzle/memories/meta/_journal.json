@@ -22,6 +22,13 @@
       "when": 1790299734163,
       "tag": "0002_rebase_contact_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790315055919,
+      "tag": "0003_contact_channel_ids",
+      "breakpoints": true
     }
   ]
 }

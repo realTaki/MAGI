@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "../../bus/index.js";
+import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus } from "../../bus/index.js";
 import { AspClient, type AspEvent } from "./client.js";
 
 export class AspWorker extends BaseWorker {
@@ -114,12 +114,16 @@ export class AspWorker extends BaseWorker {
       return "";
     }).join("") : "";
     if (text.trim()) {
+      // Who spoke is a contact, not the address: one ASP session can hold several people
+      // (a group), and each of them is known by the handle they spoke with.
+      const sender = typeof payload.sender === "string" ? payload.sender.trim() : "";
+      const operator = sender === "" || sender === "user";
+      const contactId = operator ? SYSTEM_CONTACT_ID : this.bus.contacts.forAspHandle(sender).id;
+      const conversation = this.bus.conversations.forChannel("asp", sessionId);
       // Where the operator spoke last is the only address this workspace has for
       // reaching them, so a notice that has no conversation of its own goes there.
-      if (payload.sender === "user") {
-        this.bus.setHomeConversation(this.bus.conversations.forChannel("asp", sessionId).id);
-      }
-      this.bus.publishChat({ text: text.trim(), channel: "asp", delivery_address: sessionId }, this.worker_name);
+      if (operator) this.bus.setHomeConversation(conversation.id);
+      this.bus.publishChat({ conversation_id: conversation.id, contact_id: contactId, text: text.trim() }, this.worker_name);
     }
   }
 }

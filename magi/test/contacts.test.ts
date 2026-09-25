@@ -40,8 +40,36 @@ test("reserved system and MAGI contacts are seeded", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-seed-"));
   const magi = new Magi("@seed.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system" });
-    expect(magi.bus.contacts.get(2)).toMatchObject({ name: "@seed.magi", role: "magi" });
+    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system", asp_handle: "user" });
+    expect(magi.bus.contacts.get(2)).toMatchObject({ name: "@seed.magi", role: "magi", asp_handle: "@seed.magi" });
+  } finally {
+    await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a channel identity belongs to one contact, learned when it first speaks", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-contact-identity-"));
+  const magi = new Magi("@identity.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
+  try {
+    const other = magi.bus.contacts.forAspHandle("@eva-001.magi");
+    expect(other).toMatchObject({ name: "@eva-001.magi", asp_handle: "@eva-001.magi", role: "magi" });
+    expect(magi.bus.contacts.forAspHandle("@eva-001.magi").id).toBe(other.id);
+
+    const person = magi.bus.contacts.forTg("12345");
+    expect(person).toMatchObject({ name: "tg:12345", tg_id: "12345", role: "stranger" });
+    expect(magi.bus.contacts.forTg("12345").id).toBe(person.id);
+
+    // One person, two channels: linking the second identity must not make a new contact.
+    magi.bus.contacts.update(person.id, { asp_handle: "@adam" });
+    expect(magi.bus.contacts.forAspHandle("@adam").id).toBe(person.id);
+    expect(magi.bus.contacts.forTg("12345").id).toBe(person.id);
+
+    // A workspace from before identities were stored has the contact named after the
+    // handle: it is remembered there instead of being duplicated.
+    const named = magi.bus.contacts.create({ name: "@eva-002.magi", role: "magi" });
+    expect(magi.bus.contacts.forAspHandle("@eva-002.magi").id).toBe(named.id);
+    expect(magi.bus.contacts.get(named.id)?.asp_handle).toBe("@eva-002.magi");
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });

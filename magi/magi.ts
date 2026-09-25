@@ -91,6 +91,17 @@ export class Magi {
   }
 
   async stop(): Promise<void> {
+    // The agent is the one worker that has to *finish* rather than be stopped: a turn it
+    // already accepted may still need a provider to answer and a channel to deliver, so
+    // everything else stays up until it has drained. Stopping the loops first would leave
+    // those jobs unclaimed and the drain waiting for a timeout.
+    const agent = this.running.get("agent");
+    if (agent) {
+      this.running.delete("agent");
+      this.health.delete("agent");
+      await agent.loop;
+      await agent.worker.stop?.();
+    }
     this.up = false;
     await this.loop;
     this.loop = null;

@@ -3,6 +3,48 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../magi.js";
+import { SYSTEM_CONTACT_ID } from "../bus/index.js";
+
+test("each speaker in a session is a contact of their own", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "asp-speakers-"));
+  let socket: Bun.ServerWebSocket<unknown> | null = null;
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, host) {
+      const url = new URL(request.url);
+      if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
+      if (request.method === "GET" && url.pathname === "/sessions/shared") return Response.json({ kind: "bot" });
+      return Response.json({});
+    },
+    websocket: { open(ws) { socket = ws; }, message() {} },
+  });
+  const magi = new Magi("@alice.magi", {
+    workspace,
+    asp: { base: `http://127.0.0.1:${server.port}`, token: "test-token" },
+    client: { async complete() { return { role: "assistant", content: "ok" } as const; } },
+  });
+  try {
+    await magi.start();
+    for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
+    const conversation = magi.bus.conversations.forChannel("asp", "shared");
+    const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
+      type: "session.message", event_id: id, session_id: "shared", payload: { sender, content },
+    }));
+    emit("m1", "user", "morning");
+    emit("m2", "@eva-001.magi", "morning yourself");
+
+    const senders = () => new Set(magi.bus.messages.list(conversation.id).map((message) => message.contact_id));
+    for (let i = 0; i < 100 && senders().size < 2; i++) await Bun.sleep(10);
+    expect(senders()).toContain(SYSTEM_CONTACT_ID);
+    const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === "@eva-001.magi");
+    expect(other).toMatchObject({ name: "@eva-001.magi", role: "magi" });
+    expect(senders()).toContain(other!.id);
+  } finally {
+    await magi.stop();
+    server.stop(true);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("ASP invite enters ChatNotify and reply is delivered to the session", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-"));
