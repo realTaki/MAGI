@@ -4,7 +4,6 @@
  * One module per category — what the tool acts on decides where it lives:
  *   shell.ts     bash / bash_output / bash_kill
  *   memory.ts    save_memory / complete_memory / delete_memory
- *   tasks.ts     schedule_task
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
  *
@@ -17,6 +16,9 @@
  *
  * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
  * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.
+ *
+ * `schedule_task` is not here either: `@magi/channel-tasks` stores the task it
+ * describes, scans for it, and fires it, so that worker carries the tool.
  *
  * This file only assembles them (and owns the `Tool` alias callers import).
  * Adding a tool means opening the file for the thing it acts on.
@@ -34,7 +36,6 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
   return [
     ...shellTools(bus.workspace, shells),
     ...memoryTools(bus),
-    ...taskTools(bus),
     ...messageTools(bus),
   ];
 }

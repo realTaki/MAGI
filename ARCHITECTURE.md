@@ -136,7 +136,7 @@ call each other. They publish Jobs and claim Jobs — asserted in
 | ASP channel | chat events | `ChatNotify`, `DeliveryNotify` replies |
 | CLI | terminal lines | `ChatNotify` |
 | Telegram | bot updates | `ChatNotify` |
-| Tasks | due tasks | `RunTaskNotify` |
+| Tasks | due tasks, `RunToolJob` | `ChatNotify` for a fired task, the tool result |
 | MCP | `ChangeMcpServerNotify` | tools from configured servers |
 
 Channels stop at translating. The Telegram one is the Chat SDK's Telegram

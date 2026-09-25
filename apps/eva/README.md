@@ -11,6 +11,7 @@ common is `@magi/bus`.
 | `@magi/agent` | Serial chat turns and model/tool continuation |
 | `@magi/providers` | Execute model Jobs |
 | `@magi/tools`, `@magi/contacts`, `@magi/files`, `@magi/mcp` | Execute native and MCP tools through BUS |
+| `@magi/channel-tasks` | Fire scheduled tasks, and the `schedule_task` tool that creates them |
 | `@magi/channel-*` | Transport messages and replies |
 
 ```bash
@@ -53,7 +54,7 @@ better-sqlite3 and in-memory state. Every Book declares the table it owns right 
 which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through
 BUS using `ChatNotify`,
-`CallLLMJob`, `RunToolJob`, `RunTaskNotify`, `ChangeProviderNotify`, and
+`CallLLMJob`, `RunToolJob`, `ChangeProviderNotify`, and
 `DeliveryNotify`. Agent turns are serial per chat. Provider and tool
 errors are saved on their Jobs. Provider changes are verified before becoming
 active, ASP reconnects and acknowledges durable chat events, long histories
@@ -69,8 +70,8 @@ throwing — sends it to the chat the operator last spoke in
 at all writes to stderr.
 
 This runtime covers the local agent path, ASP chats, Telegram text messages,
-memory and contact tools, Skills, context compaction, recurring or manually
-triggered tasks, foreground/background shell processes, and dynamically
+memory and contact tools, Skills, context compaction, scheduled tasks,
+foreground/background shell processes, and dynamically
 configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the
 OpenAI-compatible providers in the desktop picker plus Anthropic's native
 Messages API.

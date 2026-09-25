@@ -4,12 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
 import { cronMatches } from "@magi/channel-tasks/worker.js";
-import { builtinTools } from "@magi/tools/registry.js";
 
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
 
-test("schedule tool persists a task and manual trigger enters the agent", async () => {
+test("the task worker carries schedule_task and a due task enters the agent", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-task-"));
   workspaces.push(workspace);
   const prompts: string[] = [];
@@ -18,23 +17,40 @@ test("schedule tool persists a task and manual trigger enters the agent", async 
     workspace, deliver: (text) => delivered.push(text),
     client: { async complete(job) { prompts.push(job.messages.at(-1)?.content ?? ""); return { role: "assistant", content: "task complete" }; } },
   });
-  const chat = magi.bus.chats.forChannel("cli", "terminal");
-  const schedule = builtinTools(magi.bus).find((tool) => tool.name === "schedule_task")!;
-  const saved = JSON.parse(await schedule.run({
-    name: "daily review", prompt: "Review the project", frequency: "daily", hour: 9, minute: 30,
-    chat_id: chat.id,
-  })) as { task_id: number; cron: string };
-  expect(saved.cron).toBe("30 9 * * *");
+  try {
+    // The tool travels with the task worker: offered exactly while that worker runs.
+    expect(magi.bus.tools.get("schedule_task")).toBeNull();
+    await magi.start();
+    expect(magi.bus.tools.get("schedule_task")).not.toBeNull();
 
-  await magi.start();
-  const board = magi.bus.board("RunTaskNotify");
-  const id = board.publish({ task_id: saved.task_id, manual: true }, "test");
-  for (let i = 0; i < 200 && (!board.result(id) || !delivered.length); i++) await sleep(10);
-  expect(board.result(id)).toMatchObject({ status: "completed" });
-  expect(prompts.join("\n")).toContain("Review the project");
-  expect(delivered).toEqual(["task complete"]);
-  await magi.stop();
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const saved = await runTool(magi, "schedule_task", {
+      name: "daily review", prompt: "Review the project", frequency: "daily", hour: 9, minute: 30,
+      chat_id: chat.id,
+    }) as { task_id: number; cron: string };
+    expect(saved.cron).toBe("30 9 * * *");
+
+    // Due now: every minute matches, so the worker's own scan fires it.
+    magi.bus.tasks.save({ name: "daily review", prompt: "Review the project", cron: "* * * * *", chat_id: chat.id });
+    for (let i = 0; i < 400 && !delivered.length; i++) await sleep(10);
+    expect(magi.bus.tasks.get(saved.task_id)?.last_fired_minute).toBeDefined();
+    expect(prompts.join("\n")).toContain("Review the project");
+    expect(prompts.join("\n")).toContain("schedule: * * * * *");
+    expect(delivered).toEqual(["task complete"]);
+  } finally {
+    await magi.stop();
+  }
 });
+
+/** What the agent does with a call: publish it and wait for whichever worker owns the tool. */
+async function runTool(magi: Magi, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const board = magi.bus.board("RunToolJob");
+  const id = board.publish({ call: { tool_call_id: "call-1", name, arguments: args } }, "test");
+  for (let i = 0; i < 200 && !board.result(id); i++) await sleep(10);
+  const result = board.result(id);
+  if (result?.status !== "completed") throw new Error(result?.error ?? `${name} did not complete`);
+  return JSON.parse(result.output?.content ?? "null");
+}
 
 test("cron matching supports ranges, lists, and steps in UTC", () => {
   const date = new Date("2026-09-23T15:30:00Z");
