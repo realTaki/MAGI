@@ -1305,16 +1305,126 @@ export function createLocalApi(context) {
     };
   }
 
-  async function rebuildAsp() {
-    return runtimeAction(async () => {
-      await stopOwnedAsp();
-      await command(tools.node, [tools.npm, "ci"], {
-        cwd: path.join(aspCheckout, "asp"), env: tools.env,
-        description: "Could not install ASP dependencies",
-      });
-      await start();
-      return await runtimeStatus();
+  /** Stop ASP, reinstall from its lockfile, bring it back — and the society with it. */
+  async function rebuildAspBody() {
+    await stopOwnedAsp();
+    await command(tools.node, [tools.npm, "ci"], {
+      cwd: path.join(aspCheckout, "asp"), env: tools.env,
+      description: "Could not install ASP dependencies",
     });
+    await start();
+    return await runtimeStatus();
+  }
+
+  async function rebuildAsp() {
+    return await runtimeAction(rebuildAspBody);
+  }
+
+  /**
+   * The branch every worktree syncs from. The source checkout stays source-only,
+   * so a module's tree only learns about a new commit when it is merged into.
+   */
+  async function sourceBranch() {
+    const branch = await gitText(
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      "Could not read the source checkout branch",
+    );
+    if (branch === "HEAD") {
+      throw new Error("The source checkout is on a detached HEAD; check out a branch first.");
+    }
+    return branch;
+  }
+
+  /** Merge the source branch into one worktree; a conflict is aborted, never left half-merged. */
+  async function syncWorktree(root, branch) {
+    const from = await sourceBranch();
+    try {
+      const output = await command(git.binary, ["merge", "--no-edit", from], {
+        cwd: root, env: tools.env, description: `Could not merge ${from} into ${branch}`,
+      });
+      return { branch, from, merged: !/already up to date/i.test(output) };
+    } catch {
+      try {
+        await command(git.binary, ["merge", "--abort"], {
+          cwd: root, env: tools.env, description: "Could not abort a conflicted merge",
+        });
+      } catch {
+        // Nothing to abort: the merge never started.
+      }
+      throw new Error(`${branch} could not merge ${from}; the merge was aborted.`);
+    }
+  }
+
+  /**
+   * Bring every module's worktree up to the source checkout. Each module has its
+   * own tree, so a rebuild without this only rebuilds the code it already had.
+   * Modules are independent on purpose: one conflict is reported, the rest sync.
+   */
+  async function syncAllModules() {
+    await ensureAspWorktree();
+    const trees = [
+      { module: "app", root: appCheckout, branch: "magi/app" },
+      { module: "asp", root: aspCheckout, branch: "magi/asp" },
+    ];
+    const synced = [];
+    const failed = [];
+    const record = (module, error) => {
+      failed.push({ module, detail: error instanceof Error ? error.message : String(error) });
+    };
+    for (const { module: name, root, branch } of trees) {
+      try {
+        const { merged } = await syncWorktree(root, branch);
+        synced.push({ module: name, merged });
+      } catch (error) {
+        record(name, error);
+      }
+    }
+    for (const agent of await magiRoster()) {
+      try {
+        // `merge` restarts a MAGI whose branch actually moved, so it lands on the
+        // merged source; ours only report.
+        const { merged } = await magiRuntime.merge(agent);
+        synced.push({ module: agent.handle, merged });
+      } catch (error) {
+        record(agent.handle, error);
+      }
+    }
+    return { synced, failed };
+  }
+
+  /** Sync every tree, then rebuild each module from what it now has. */
+  async function syncRebuildAll() {
+    const sync = await syncAllModules();
+    const roster = await magiRoster();
+    const rebuilt = [];
+    const failed = [...sync.failed];
+    const record = (module, error) => {
+      failed.push({ module, detail: error instanceof Error ? error.message : String(error) });
+    };
+    for (const agent of roster) {
+      try {
+        await magiRuntime.rebuild(agent);
+        rebuilt.push(agent.handle);
+      } catch (error) {
+        record(agent.handle, error);
+      }
+    }
+    try {
+      await rebuildAspBody();
+      rebuilt.push("asp");
+    } catch (error) {
+      record("asp", error);
+    }
+    // The interface goes last: rebuilding it offers the operator a reload, and
+    // that should land after the sweep instead of in the middle of it.
+    try {
+      await rebuildInterface();
+      emit("app.interface-updated", {});
+      rebuilt.push("app");
+    } catch (error) {
+      record("app", error);
+    }
+    return { synced: sync.synced, rebuilt, failed };
   }
 
   async function rebuildApp() {
@@ -1552,6 +1662,8 @@ export function createLocalApi(context) {
     "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
     "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.rebuildAsp": rebuildAsp,
+    "runtime.syncAll": () => runtimeAction(syncAllModules),
+    "runtime.syncRebuildAll": () => runtimeAction(syncRebuildAll),
     "magi.info": magiInfo,
     "magi.start": (payload) => magiAction(() => magiStart(payload)),
     "magi.stop": (payload) => magiAction(() => magiStop(payload)),

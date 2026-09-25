@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -247,5 +247,74 @@ test("the bulk MAGI actions sweep the roster and report what failed", async (t) 
   });
   assert.deepEqual(await api["magi.stopAll"](), { stopped: 1 });
   await assert.rejects(api["magi.rebuildAll"](), /not managed/);
+  api.dispose();
+});
+
+test("syncing merges the source branch into every module worktree", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-sync-"));
+  const checkout = path.join(root, "MAGI");
+  mkdirSync(path.join(checkout, "asp"), { recursive: true });
+  mkdirSync(path.join(checkout, "app"), { recursive: true });
+  writeFileSync(path.join(checkout, "asp", "main.ts"), "");
+  writeFileSync(path.join(checkout, "app", "index.html"), "one");
+  const commit = (cwd, message) =>
+    git(cwd, ["-c", "user.email=test@example.invalid", "-c", "user.name=MAGI test", "commit", "--quiet", "-m", message]);
+  git(checkout, ["init", "--quiet", "-b", "main"]);
+  git(checkout, ["add", "."]);
+  commit(checkout, "initial");
+  const appCheckout = path.join(root, ".magi", "app", "MAGI");
+  git(checkout, ["worktree", "add", "-b", "magi/app", appCheckout, "HEAD"]);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/bots") return Response.json({ bots: [] });
+    if (endpoint === "/agents") return Response.json({ agents: [] });
+    throw new Error(`unexpected request: ${endpoint}`);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout, appCheckout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+    managed: true,
+    spawn() { throw new Error("a sync must not start anything"); },
+  });
+
+  // Nothing new in the source: both trees are already up to date, and the ASP
+  // worktree is created on demand.
+  assert.deepEqual(await api["runtime.syncAll"](), {
+    synced: [{ module: "app", merged: false }, { module: "asp", merged: false }],
+    failed: [],
+  });
+
+  // A commit in the source reaches the worktrees by merging, without a rebuild.
+  writeFileSync(path.join(checkout, "app", "index.html"), "two");
+  git(checkout, ["add", "."]);
+  commit(checkout, "second");
+  assert.deepEqual(await api["runtime.syncAll"](), {
+    synced: [{ module: "app", merged: true }, { module: "asp", merged: true }],
+    failed: [],
+  });
+  assert.equal(readFileSync(path.join(appCheckout, "app", "index.html"), "utf8"), "two");
+
+  // A worktree that has diverged is reported, not left half-merged.
+  writeFileSync(path.join(appCheckout, "app", "index.html"), "worktree side");
+  git(appCheckout, ["add", "."]);
+  commit(appCheckout, "worktree side");
+  writeFileSync(path.join(checkout, "app", "index.html"), "source side");
+  git(checkout, ["add", "."]);
+  commit(checkout, "source side");
+  const conflicted = await api["runtime.syncAll"]();
+  assert.deepEqual(conflicted.failed.map((row) => row.module), ["app"]);
+  assert.match(conflicted.failed[0].detail, /merge was aborted/);
+  assert.equal(git(appCheckout, ["status", "--porcelain"]).trim(), "");
   api.dispose();
 });

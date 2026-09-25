@@ -127,6 +127,39 @@ export function SettingsPage() {
     }
   }
 
+  /** Sync and sync-and-rebuild answer per module, so a tree that failed stays visible. */
+  async function runSync(method: "runtime.syncAll" | "runtime.syncRebuildAll") {
+    const invoke = window.magiDesktop?.invokeLocal;
+    if (!invoke || runtimeBusy) return;
+    setRuntimeBusy(true);
+    setRuntimeMessage(t("appSettings.runtimeWorking"));
+    try {
+      const result = await invoke(method) as {
+        synced?: { module: string; merged: boolean }[];
+        rebuilt?: string[];
+        failed?: { module: string; detail: string }[];
+      } | undefined;
+      const synced = result?.synced ?? [];
+      const merged = synced.filter((row) => row.merged).length;
+      const failed = result?.failed ?? [];
+      setRuntimeMessage(
+        [
+          t("appSettings.syncDone")
+            .replace("{count}", String(synced.length + (result?.rebuilt?.length ?? 0)))
+            .replace("{merged}", String(merged)),
+          ...failed.map((row) => `${row.module}: ${row.detail}`),
+        ].join(" · "),
+      );
+      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
+      setRuntimeStatus(state.asp ?? "");
+      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
+    } catch (error) {
+      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRuntimeBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (section !== "usage") {
       return;
@@ -560,6 +593,28 @@ export function SettingsPage() {
             {section === "runtime" ? (
               <>
                 <p className="settings-overlay__lede">{t("appSettings.runtimeHint")}</p>
+                <div className="settings-card">
+                  <div className="settings-card__label">{t("appSettings.syncGroup")}</div>
+                  <p className="settings-overlay__lede">{t("appSettings.syncHint")}</p>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runSync("runtime.syncAll")}
+                    >
+                      {t("appSettings.syncAll")}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runSync("runtime.syncRebuildAll")}
+                    >
+                      {t("appSettings.syncRebuildAll")}
+                    </button>
+                  </div>
+                </div>
                 <div className="settings-card">
                   <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
