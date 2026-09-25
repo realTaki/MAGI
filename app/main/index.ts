@@ -854,9 +854,13 @@ export function createLocalApi(context) {
       }
     }
 
+    // ASP and MAGI both depend on better-sqlite3, which ships its compiled binary
+    // inside the package; npm would still run node-gyp for it (the package carries
+    // a binding.gyp) and the desktop ships no C++ toolchain. Skipping lifecycle
+    // scripts is therefore what makes these two installs work on a plain machine.
     if (managed && !existsSync(path.join(aspDir, "node_modules"))) {
       progress?.("Preparing local ASP…", 0.2);
-      await command(tools.node, [tools.npm, "ci"], {
+      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: aspDir,
         env: tools.env,
         description: "Could not prepare ASP",
@@ -864,7 +868,7 @@ export function createLocalApi(context) {
     }
     if (managed && !existsSync(path.join(magiDir, "node_modules"))) {
       progress?.("Preparing MAGI…", 0.4);
-      await command(tools.node, [tools.npm, "ci"], {
+      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: magiDir,
         env: tools.env,
         description: "Could not prepare MAGI",

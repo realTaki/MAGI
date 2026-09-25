@@ -108,7 +108,8 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
 
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [
-    { args: ["ci"], cwd: path.join(source, "magi") },
+    // `--ignore-scripts` keeps npm from compiling better-sqlite3, which is prebuilt.
+    { args: ["ci", "--ignore-scripts"], cwd: path.join(source, "magi") },
     { args: ["run", "build"], cwd: path.join(source, "magi") },
   ]);
   assert.equal(recorded.spawns.length, 1);

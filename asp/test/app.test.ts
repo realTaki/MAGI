@@ -50,7 +50,8 @@ test("a previous bare user identity migrates to @user without losing its chats",
     connection.prepare("UPDATE asp_events SET payload_json = replace(payload_json, '\"@user\"', '\"user\"')").run();
     connection.prepare("UPDATE asp_settings SET value_json = ? WHERE key = 'operator'")
       .run(JSON.stringify({ handle: "user", token }));
-    connection.prepare("DELETE FROM schema_migrations WHERE version = 4").run();
+    // No migration bookkeeping to unpick: the relay repairs a database that still
+    // names the operator `user` whenever it opens one.
   });
   await withApp({ databasePath }, async (app) => {
     assert.equal(app.operatorHandle, "@user");

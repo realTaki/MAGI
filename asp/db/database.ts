@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { Database } from "better-sqlite3";
+import Database from "better-sqlite3";
+import type { Database as SQLiteDatabase } from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -13,7 +14,7 @@ import { repairLegacyOperatorHandle } from "./legacyOperator.ts";
 import { aspSettings } from "./schema.ts";
 
 /** The relay's drizzle client over a better-sqlite3 connection. */
-export type AspDb = BetterSQLite3Database & { $client: Database };
+export type AspDb = BetterSQLite3Database & { $client: SQLiteDatabase };
 
 export function defaultDataDir(): string {
   return path.join(homedir(), ".magi", "asp");
@@ -25,7 +26,7 @@ export function defaultDatabasePath(): string {
 
 export class LocalDatabase {
   path: string;
-  connection: Database | null = null;
+  connection: SQLiteDatabase | null = null;
   db: AspDb | null = null;
 
   constructor(databasePath: string) {

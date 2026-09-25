@@ -521,31 +521,30 @@ export class Store {
     };
     const db = this.#db();
     if (db !== null) {
-      transaction(db, () => {
-        db.prepare("INSERT INTO asp_events VALUES (?, ?, ?, ?, ?, ?)").run(
-          chatId,
+      db.transaction((tx) => {
+        tx.insert(aspEvents).values({
+          chat_id: chatId,
           sequence,
-          event.event_id,
+          event_id: event.event_id,
           type,
-          event.created_at,
-          JSON.stringify(payload),
-        );
+          created_at: event.created_at,
+          payload_json: payload,
+        }).run();
         if (type === "chat.message") {
-          const insert = db.prepare(
-            "INSERT INTO asp_message_recipients (event_id, handle) VALUES (?, ?)",
-          );
-          for (const participant of this.participantsIn(chatId)) {
-            if (participant.status === "joined" || participant.status === "invited") {
-              insert.run(event.event_id, participant.handle);
-            }
+          // Everyone who was in the room when it was said owes a receipt for it.
+          const recipients = this.participantsIn(chatId)
+            .filter((participant) => participant.status === "joined" || participant.status === "invited")
+            .map((participant) => ({ event_id: event.event_id, handle: participant.handle }));
+          if (recipients.length > 0) {
+            tx.insert(aspMessageRecipients).values(recipients).run();
           }
         }
         const nextSequence = this.chatSeq.get(chatId);
         if (nextSequence === undefined) {
           throw new Error(chatId);
         }
-        db.prepare("UPDATE asp_chats SET next_sequence = ? WHERE id = ?").run(nextSequence, chatId);
-      });
+        tx.update(aspChats).set({ next_sequence: nextSequence }).where(eq(aspChats.id, chatId)).run();
+      }, { behavior: "immediate" });
     }
     return event;
   }
@@ -559,24 +558,26 @@ export class Store {
     if (db === null) {
       return [];
     }
-    let query = "SELECT * FROM asp_events WHERE chat_id = ?";
-    const params: Array<string | number> = [chatId];
-    if (afterSequence !== null) {
-      query += " AND sequence > ?";
-      params.push(afterSequence);
-    }
-    query += " ORDER BY sequence";
-    if (limit !== null) {
-      query += " LIMIT ?";
-      params.push(limit);
-    }
-    return this.#rows(db, query, ...params).map((row) => ({
-      type: textColumn(row, "type"),
-      event_id: textColumn(row, "event_id"),
-      created_at: numberColumn(row, "created_at"),
-      payload: payloadFromJson(parseJson(textColumn(row, "payload_json"))),
-      chat_id: textColumn(row, "chat_id"),
-      sequence: numberColumn(row, "sequence"),
+    const selected = db.select({
+      type: aspEvents.type,
+      event_id: aspEvents.event_id,
+      created_at: aspEvents.created_at,
+      payload: aspEvents.payload_json,
+      chat_id: aspEvents.chat_id,
+      sequence: aspEvents.sequence,
+    }).from(aspEvents)
+      .where(afterSequence === null
+        ? eq(aspEvents.chat_id, chatId)
+        : and(eq(aspEvents.chat_id, chatId), gt(aspEvents.sequence, afterSequence)))
+      .orderBy(aspEvents.sequence);
+    const rows = limit === null ? selected.all() : selected.limit(limit).all();
+    return rows.map((row) => ({
+      type: row.type,
+      event_id: row.event_id,
+      created_at: row.created_at,
+      payload: payloadFromJson(row.payload),
+      chat_id: row.chat_id,
+      sequence: row.sequence,
     }));
   }
 
@@ -598,15 +599,12 @@ export class Store {
     this.idempotency.set(triple(chatId, sender, key), [messageId, sequence]);
     const db = this.#db();
     if (db !== null) {
-      transaction(db, () => {
-        db.prepare("INSERT OR REPLACE INTO asp_message_keys VALUES (?, ?, ?, ?, ?)").run(
-          chatId,
-          sender,
-          key,
-          messageId,
-          sequence,
-        );
-      });
+      db.insert(aspMessageKeys).values({ chat_id: chatId, sender, key, message_id: messageId, sequence })
+        .onConflictDoUpdate({
+          target: [aspMessageKeys.chat_id, aspMessageKeys.sender, aspMessageKeys.key],
+          set: { message_id: messageId, sequence },
+        })
+        .run();
     }
   }
 
@@ -623,14 +621,12 @@ export class Store {
     this.chatIdempotency.set(pair(creator, key), [chatId, sequence]);
     const db = this.#db();
     if (db !== null) {
-      transaction(db, () => {
-        db.prepare("INSERT OR REPLACE INTO asp_chat_keys VALUES (?, ?, ?, ?)").run(
-          creator,
-          key,
-          chatId,
-          sequence,
-        );
-      });
+      db.insert(aspChatKeys).values({ creator, key, chat_id: chatId, sequence })
+        .onConflictDoUpdate({
+          target: [aspChatKeys.creator, aspChatKeys.key],
+          set: { chat_id: chatId, sequence },
+        })
+        .run();
     }
   }
 
@@ -639,12 +635,10 @@ export class Store {
     if (db === null) {
       return;
     }
-    transaction(db, () => {
-      db.prepare("INSERT OR REPLACE INTO asp_agents VALUES (?, ?)").run(
-        agent.handle,
-        JSON.stringify(agentRecord(agent)),
-      );
-    });
+    const record = agentRecord(agent);
+    db.insert(aspAgents).values({ handle: agent.handle, record_json: record })
+      .onConflictDoUpdate({ target: aspAgents.handle, set: { record_json: record } })
+      .run();
   }
 
   #saveChat(chat: Chat): void {
@@ -652,13 +646,10 @@ export class Store {
     if (db === null) {
       return;
     }
-    transaction(db, () => {
-      db.prepare("INSERT OR REPLACE INTO asp_chats VALUES (?, ?, ?)").run(
-        chat.id,
-        JSON.stringify(chat),
-        this.chatSeq.get(chat.id) ?? 0,
-      );
-    });
+    const next_sequence = this.chatSeq.get(chat.id) ?? 0;
+    db.insert(aspChats).values({ id: chat.id, record_json: chat, next_sequence })
+      .onConflictDoUpdate({ target: aspChats.id, set: { record_json: chat, next_sequence } })
+      .run();
   }
 
   #saveParticipant(chatId: string, participant: Participant): void {
@@ -666,29 +657,18 @@ export class Store {
     if (db === null) {
       return;
     }
-    transaction(db, () => {
-      db.prepare("INSERT OR REPLACE INTO asp_participants VALUES (?, ?, ?)").run(
-        chatId,
-        participant.handle,
-        JSON.stringify(participant),
-      );
-    });
+    db.insert(aspParticipants)
+      .values({ chat_id: chatId, handle: participant.handle, record_json: participant })
+      .onConflictDoUpdate({
+        target: [aspParticipants.chat_id, aspParticipants.handle],
+        set: { record_json: participant },
+      })
+      .run();
   }
 
   #ensureUniqueToken(token: string): void {
     if (this.agentByToken.has(token)) {
       throw new Error("duplicate agent token in seed");
     }
-  }
-
-  #rows(db: DatabaseSync, sql: string, ...params: Array<string | number>): SqlRow[] {
-    const rows: SqlRow[] = [];
-    for (const row of db.prepare(sql).all(...params)) {
-      if (!isSqlRow(row)) {
-        throw new Error("sqlite row is not an object");
-      }
-      rows.push(row);
-    }
-    return rows;
   }
 }

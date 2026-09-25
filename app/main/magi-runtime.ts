@@ -107,7 +107,10 @@ export function createMagiRuntime({
   async function install(root) {
     const cwd = path.join(root, "magi");
     if (!existsSync(path.join(cwd, "node_modules", "better-sqlite3"))) {
-      await npm(["ci"], {
+      // `--ignore-scripts`: better-sqlite3 ships its compiled binary inside the
+      // package, but npm still runs node-gyp for it (the package carries a
+      // binding.gyp) and the desktop ships no C++ toolchain to build with.
+      await npm(["ci", "--ignore-scripts"], {
         cwd,
         env: tools.env,
         description: `Could not install MAGI dependencies in ${cwd}`,
@@ -284,7 +287,8 @@ export function createMagiRuntime({
     stop(handle);
     const root = await rootFor(handle);
     const cwd = path.join(root, "magi");
-    await npm(["ci"], {
+    // As in `install()`: the native dependency is prebuilt and must not be compiled.
+    await npm(["ci", "--ignore-scripts"], {
       cwd,
       env: tools.env,
       description: `Could not install MAGI dependencies in ${cwd}`,
