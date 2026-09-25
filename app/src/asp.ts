@@ -2,7 +2,7 @@
 
 const ASP_BASE = "http://127.0.0.1:42069";
 
-/** The first thing said in a new conversation, in the operator's name. */
+/** The first thing said in a new chat, in the operator's name. */
 const GREETING = "Hi";
 
 export type Operator = {
@@ -10,8 +10,8 @@ export type Operator = {
   token: string;
 };
 
-export type CreatedConversation = {
-  conversation_id: string;
+export type CreatedChat = {
+  chat_id: string;
   kind: "bot" | "group";
   agents: string[];
   participants?: Array<{ handle: string; status: "invited" | "joined" | "left" }>;
@@ -33,10 +33,21 @@ export type AspBot = {
   handle: string;
   name: string;
   online: boolean;
-  in_conversation?: boolean;
+  in_chat?: boolean;
+};
+
+/** A user message that is safely held by the desktop until ASP accepts it. */
+export type OutgoingMessage = {
+  id: string;
+  chatId: string;
+  content: string;
+  createdAt: number;
 };
 
 let operator: Operator | null = null;
+// Browser previews do not expose the desktop store. Keep their outbox useful
+// for the lifetime of the preview while Electron persists the real one.
+let volatileOutgoing: OutgoingMessage[] = [];
 
 async function getOperator(): Promise<Operator | null> {
   if (operator) {
@@ -60,20 +71,20 @@ export function clearOperator(): void {
   operator = null;
 }
 
-export async function listAspConversations(): Promise<CreatedConversation[]> {
+export async function listAspChats(): Promise<CreatedChat[]> {
   const creds = await getOperator();
   if (!creds) return [];
-  const response = await fetch(`${ASP_BASE}/conversations`, {
+  const response = await fetch(`${ASP_BASE}/chats`, {
     headers: { Authorization: `Bearer ${creds.token}` },
   });
-  if (!response.ok) throw new Error(`ASP conversations: ${response.status}`);
-  return ((await response.json()) as { conversations: CreatedConversation[] }).conversations;
+  if (!response.ok) throw new Error(`ASP chats: ${response.status}`);
+  return ((await response.json()) as { chats: CreatedChat[] }).chats;
 }
 
-export async function listAspEvents(conversationId: string, afterSequence?: number): Promise<AspEvent[]> {
+export async function listAspEvents(chatId: string, afterSequence?: number): Promise<AspEvent[]> {
   const creds = await getOperator();
   if (!creds) return [];
-  const url = new URL(`${ASP_BASE}/sessions/${conversationId}/events`);
+  const url = new URL(`${ASP_BASE}/chats/${chatId}/events`);
   if (afterSequence !== undefined && afterSequence >= 0) {
     url.searchParams.set("after_sequence", String(afterSequence));
   }
@@ -84,11 +95,11 @@ export async function listAspEvents(conversationId: string, afterSequence?: numb
   return ((await response.json()) as { events: AspEvent[] }).events;
 }
 
-export async function ackAspEvents(conversationId: string, events: AspEvent[]): Promise<void> {
+export async function ackAspEvents(chatId: string, events: AspEvent[]): Promise<void> {
   if (events.length === 0) return;
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/events/ack`, {
+  const response = await fetch(`${ASP_BASE}/chats/${chatId}/events/ack`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.token}`,
@@ -104,12 +115,12 @@ async function localChat<T>(method: string, payload?: unknown): Promise<T | null
   return invoke ? (await invoke(method, payload)) as T : null;
 }
 
-export async function storedConversations(): Promise<CreatedConversation[]> {
-  return await localChat<CreatedConversation[]>("chat.listConversations") ?? [];
+export async function storedChats(): Promise<CreatedChat[]> {
+  return await localChat<CreatedChat[]>("chat.listChats") ?? [];
 }
 
-export async function saveConversations(rows: CreatedConversation[]): Promise<void> {
-  await localChat("chat.saveConversations", rows);
+export async function saveChats(rows: CreatedChat[]): Promise<void> {
+  await localChat("chat.saveChats", rows);
 }
 
 export async function storedEvents(id: string): Promise<AspEvent[]> {
@@ -132,6 +143,31 @@ export async function markAcknowledged(id: string, sequence: number): Promise<vo
   await localChat("chat.markAcknowledged", { id, sequence });
 }
 
+export async function storedOutgoingMessages(): Promise<OutgoingMessage[]> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  return invoke
+    ? (await invoke("chat.listOutgoingMessages")) as OutgoingMessage[]
+    : volatileOutgoing;
+}
+
+export async function queueOutgoingMessage(message: OutgoingMessage): Promise<void> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  if (invoke) {
+    await invoke("chat.queueOutgoingMessage", message);
+  } else {
+    volatileOutgoing = [...volatileOutgoing, message];
+  }
+}
+
+export async function removeOutgoingMessage(id: string): Promise<void> {
+  const invoke = window.magiDesktop?.invokeLocal;
+  if (invoke) {
+    await invoke("chat.removeOutgoingMessage", id);
+  } else {
+    volatileOutgoing = volatileOutgoing.filter((message) => message.id !== id);
+  }
+}
+
 /** Save ASP's available events before acknowledging any of them. */
 export async function syncAspEvents(id: string): Promise<AspEvent[]> {
   const incoming = await listAspEvents(id, await lastStoredSequence(id));
@@ -149,10 +185,10 @@ export async function syncAspEvents(id: string): Promise<AspEvent[]> {
   return await storedEvents(id);
 }
 
-export async function sendAspMessage(conversationId: string, text: string): Promise<void> {
+export async function sendAspMessage(chatId: string, text: string): Promise<void> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/sessions/${conversationId}/messages`, {
+  const response = await fetch(`${ASP_BASE}/chats/${chatId}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.token}`,
@@ -180,15 +216,15 @@ export async function updateAspNickname(handle: string, nickname: string): Promi
   }
 }
 
-export async function createAspConversation(
+export async function createAspChat(
   kind: "bot" | "group",
-): Promise<CreatedConversation | null> {
+): Promise<CreatedChat | null> {
   const creds = await getOperator();
   if (!creds) {
     return null;
   }
   try {
-    const response = await fetch(`${ASP_BASE}/conversations`, {
+    const response = await fetch(`${ASP_BASE}/chats`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${creds.token}`,
@@ -200,19 +236,19 @@ export async function createAspConversation(
     if (!response.ok) {
       return null;
     }
-    const conversation = (await response.json()) as CreatedConversation;
-    await saveConversations([conversation]);
+    const chat = (await response.json()) as CreatedChat;
+    await saveChats([chat]);
     // Say hello in the operator's name: it is how they see the agent answer, and how
-    // the MAGI gets the conversation it keeps to report trouble to.
-    await sendAspMessage(conversation.conversation_id, GREETING).catch(() => {});
-    return conversation;
+    // the MAGI gets the chat it keeps to report trouble to.
+    await sendAspMessage(chat.chat_id, GREETING).catch(() => {});
+    return chat;
   } catch {
     return null;
   }
 }
 
-export async function patchAspConversation(
-  conversationId: string,
+export async function patchAspChat(
+  chatId: string,
   body: { topic?: string; description?: string },
 ): Promise<void> {
   const creds = await getOperator();
@@ -220,7 +256,7 @@ export async function patchAspConversation(
     return;
   }
   try {
-    await fetch(`${ASP_BASE}/conversations/${conversationId}`, {
+    await fetch(`${ASP_BASE}/chats/${chatId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${creds.token}`,
@@ -234,15 +270,15 @@ export async function patchAspConversation(
   }
 }
 
-export async function listAspBots(conversationId?: string): Promise<AspBot[]> {
+export async function listAspBots(chatId?: string): Promise<AspBot[]> {
   const creds = await getOperator();
   if (!creds) {
     return [];
   }
   try {
     const url = new URL("bots", `${ASP_BASE}/`);
-    if (conversationId) {
-      url.searchParams.set("conversation_id", conversationId);
+    if (chatId) {
+      url.searchParams.set("chat_id", chatId);
     }
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${creds.token}` },
@@ -258,16 +294,16 @@ export async function listAspBots(conversationId?: string): Promise<AspBot[]> {
   }
 }
 
-export async function addAspConversationMember(
-  conversationId: string,
+export async function addAspChatMember(
+  chatId: string,
   handle: string,
-): Promise<CreatedConversation | null> {
+): Promise<CreatedChat | null> {
   const creds = await getOperator();
   if (!creds) {
     return null;
   }
   try {
-    const response = await fetch(`${ASP_BASE}/conversations/${conversationId}/members`, {
+    const response = await fetch(`${ASP_BASE}/chats/${chatId}/members`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${creds.token}`,
@@ -279,7 +315,7 @@ export async function addAspConversationMember(
     if (!response.ok) {
       return null;
     }
-    return (await response.json()) as CreatedConversation;
+    return (await response.json()) as CreatedChat;
   } catch {
     return null;
   }

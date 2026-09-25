@@ -8,46 +8,46 @@ const SUGGESTED_STEPS = 20;
 /** How the model ends a turn in a room without posting anything. */
 const NO_REPLY = "NO_REPLY";
 
-export class Conversation {
+export class Chat {
   private readonly labels = new Map<number, string>();
 
   constructor(
     private readonly bus: Bus,
-    readonly conversation_id: number,
+    readonly chat_id: number,
   ) {}
 
   async run(jobId: number): Promise<void> {
     const chat = this.bus.board("ChatNotify");
     try {
-      const record = this.bus.conversations.get(this.conversation_id);
-      if (!record) throw new Error("conversation does not exist");
+      const record = this.bus.chats.get(this.chat_id);
+      if (!record) throw new Error("chat does not exist");
       const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
       const summary = await this.compact(record.summary);
       const memories = this.bus.memoryBook.list().map((memory) => `- [${memory.id} | ${memory.kind}] ${memory.topic}: ${memory.detail}`).join("\n");
       const skills = this.bus.skills.list().map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
       const identity = this.bus.contacts.get(MAGI_CONTACT_ID);
-      // Who is in this conversation: the operator, other MAGIs in a group, guests. The
+      // Who is in this chat: the operator, other MAGIs in a group, guests. The
       // channels record them there as they are heard from.
-      const members = this.bus.conversationMembers.list(this.conversation_id)
+      const members = this.bus.chatMembers.list(this.chat_id)
         .map((member) => `- id ${member.id} | ${this.label(member.id)} | ${member.role}`).join("\n");
       const skillsHeader = this.bus.prompts.get("agent/skills_block")?.trim() || "## Available skills";
       const system = [agentPrompt, REPLY_FORMAT_PROMPT, identity ? `## Identity\nYour name: ${identity.nickname || identity.name}` : "",
         skills ? `${skillsHeader}\n${skills}` : "", memories ? `## Long-term memory\n${memories}` : "",
-        record.instruction ? `## Conversation instruction\n${record.instruction}` : "",
-        record.info ? `## Conversation info\n${record.info}` : "",
+        record.instruction ? `## Chat instruction\n${record.instruction}` : "",
+        record.info ? `## Chat info\n${record.info}` : "",
         members ? `## Members\n${members}` : "",
-        summary ? `[Prior conversation summary]\n${summary}` : ""]
+        summary ? `[Prior chat summary]\n${summary}` : ""]
         .filter(Boolean).join("\n\n");
-      const history = this.bus.messages.list(this.conversation_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => ({
+      const history = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => ({
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",
         content: `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`,
       }));
-      const session = `## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_conversation_id: ${this.bus.homeConversation() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
-      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${session}` }, ...history];
+      const chat = `## Chat\nchat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
+      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${chat}` }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
-        messages[0] = { role: "system", content: `${system}\n\n${session}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
+        messages[0] = { role: "system", content: `${system}\n\n${chat}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
         const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
@@ -59,12 +59,12 @@ export class Conversation {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            this.bus.publishDelivery({ conversation_id: this.conversation_id, text: reply || "处理完毕。" });
+            this.bus.publishDelivery({ chat_id: this.chat_id, text: reply || "处理完毕。" });
           }
           chat.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content });
+        if (response.content) this.bus.publishDelivery({ chat_id: this.chat_id, text: response.content });
         messages.push(response);
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
@@ -84,16 +84,16 @@ export class Conversation {
         }
       }
     } catch (error) {
-      // What went wrong is said in the conversation itself: the Job result is for
+      // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      this.bus.publishDelivery({ conversation_id: this.conversation_id, text: message });
+      this.bus.publishDelivery({ chat_id: this.chat_id, text: message });
       chat.submit("agent", jobId, { error: message });
     }
   }
 
   private async compact(previousSummary: string): Promise<string> {
-    const active = this.bus.messages.list(this.conversation_id, 10_000);
+    const active = this.bus.messages.list(this.chat_id, 10_000);
     const estimatedTokens = active.reduce((sum, message) => sum + Math.max(1, Math.ceil(message.content.length / 4)), Math.max(0, Math.ceil(previousSummary.length / 4)));
     const configuredWindow = Number(this.bus.settings.get("provider.context_window"));
     const contextWindow = Number.isFinite(configuredWindow) && configuredWindow > 0 ? configuredWindow : COMPACT_CONTEXT_WINDOW;
@@ -103,7 +103,7 @@ export class Conversation {
     const content = old.map((message) => `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`).join("\n\n");
     const id = this.bus.board("CallLLMJob").publish({
       messages: [
-        { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the conversation." },
+        { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the chat." },
         { role: "user", content: `${previousSummary ? `Previous summary:\n${previousSummary}\n\n` : ""}Transcript:\n${content}\n\n请仅总结上面的对话历史，并遵循 system 指令。` },
       ],
       tools: [],
@@ -111,8 +111,8 @@ export class Conversation {
     const result = await this.waitFor("CallLLMJob", id, 300_000);
     const summary = result.status === "completed" ? result.output?.message.content.trim() : "";
     if (!summary || result.output?.message.tool_calls?.length) return previousSummary;
-    this.bus.conversations.updateSummary(this.conversation_id, summary);
-    this.bus.messages.archiveBefore(this.conversation_id, old.at(-1)!.id);
+    this.bus.chats.updateSummary(this.chat_id, summary);
+    this.bus.messages.archiveBefore(this.chat_id, old.at(-1)!.id);
     return summary;
   }
 

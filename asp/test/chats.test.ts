@@ -5,10 +5,10 @@ import test from "node:test";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.ts";
 
 /*
- * Business flow: creating a conversation (`ARCHITECTURE.md`, "ASP").
- * `POST /conversations {kind:"bot"}` assigns the next `eva-NNN` and starts it;
+ * Business flow: creating a chat (`ARCHITECTURE.md`, "ASP").
+ * `POST /chats {kind:"bot"}` assigns the next `eva-NNN` and starts it;
  * `{kind:"group"}` opens with the operator alone; an invite arrives as
- * `session.invited`, and the MAGI joins on receipt.
+ * `chat.invited`, and the MAGI joins on receipt.
  */
 
 function databasePath(root: string): string {
@@ -18,11 +18,11 @@ function databasePath(root: string): string {
 test("new bot registers a magi and hands its runner the credential", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const created = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
+    const created = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     assert.equal(created.status, 201);
     const body = record(created.data);
     assert.equal(body.kind, "bot");
-    assert.equal(typeof body.conversation_id, "string");
+    assert.equal(typeof body.chat_id, "string");
     assert.equal(body.name, "eva-000");
     assert.deepEqual(body.agents, ["@eva-000.magi"]);
     const magi = record(body.magi);
@@ -42,11 +42,11 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
         online: false,
       },
     ]);
-    const listed = record(await request(app, "GET", "/conversations", { token }).then((response) => response.data));
-    const conversations = listed.conversations;
-    assert.ok(Array.isArray(conversations));
-    assert.equal(record(conversations[0]).conversation_id, body.conversation_id);
-    assert.deepEqual(record(conversations[0]).agents, body.agents);
+    const listed = record(await request(app, "GET", "/chats", { token }).then((response) => response.data));
+    const chats = listed.chats;
+    assert.ok(Array.isArray(chats));
+    assert.equal(record(chats[0]).chat_id, body.chat_id);
+    assert.deepEqual(record(chats[0]).agents, body.agents);
   });
 });
 
@@ -54,22 +54,22 @@ test("magi credentials cannot use the operator api", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
     const created = record(
-      (await request(app, "POST", "/conversations", { token, body: { kind: "bot" } })).data,
+      (await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data,
     );
     const magiToken = record(created.magi).token;
     if (typeof magiToken !== "string") {
       throw new Error("magi token missing");
     }
-    assert.equal((await request(app, "GET", "/conversations", { token: magiToken })).status, 403);
+    assert.equal((await request(app, "GET", "/chats", { token: magiToken })).status, 403);
     assert.equal((await request(app, "GET", "/bots", { token: magiToken })).status, 403);
     assert.equal((await request(app, "GET", "/agents", { token: magiToken })).status, 403);
     assert.equal((await request(app, "GET", "/agents")).status, 401);
     assert.equal(
-      (await request(app, "POST", "/conversations", { token: magiToken, body: { kind: "group" } })).status,
+      (await request(app, "POST", "/chats", { token: magiToken, body: { kind: "group" } })).status,
       403,
     );
     assert.equal(
-      (await request(app, "GET", `/sessions/${String(created.conversation_id)}`, { token: magiToken })).status,
+      (await request(app, "GET", `/chats/${String(created.chat_id)}`, { token: magiToken })).status,
       200,
     );
   });
@@ -78,7 +78,7 @@ test("magi credentials cannot use the operator api", async (t) => {
 test("new group opens immediately with no MAGI", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const created = await request(app, "POST", "/conversations", { token, body: { kind: "group" } });
+    const created = await request(app, "POST", "/chats", { token, body: { kind: "group" } });
     assert.equal(created.status, 201);
     const body = record(created.data);
     assert.equal(body.kind, "group");
@@ -91,7 +91,7 @@ test("new group opens immediately with no MAGI", async (t) => {
       ),
       [],
     );
-    const patched = await request(app, "PATCH", `/conversations/${String(body.conversation_id)}`, {
+    const patched = await request(app, "PATCH", `/chats/${String(body.chat_id)}`, {
       token,
       body: { topic: "offsite", description: "week of the 14th" },
     });
@@ -102,12 +102,12 @@ test("new group opens immediately with no MAGI", async (t) => {
   });
 });
 
-test("create conversation rejects a missing kind and ignores a requested name", async (t) => {
+test("create chat rejects a missing kind and ignores a requested name", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const missing = await request(app, "POST", "/conversations", { token, body: {} });
+    const missing = await request(app, "POST", "/chats", { token, body: {} });
     assert.equal(missing.status, 422);
-    const extra = await request(app, "POST", "/conversations", {
+    const extra = await request(app, "POST", "/chats", {
       token,
       body: { kind: "bot", name: "please do not ask", model: "gpt" },
     });
@@ -125,8 +125,8 @@ test("bots lists spawned magi not a static roster", async (t) => {
     const empty = await request(app, "GET", "/bots", { token });
     assert.equal(empty.status, 200);
     assert.deepEqual(empty.data, { bots: [] });
-    const first = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
-    const second = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
+    const first = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
+    const second = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     assert.equal(first.status, 201);
     assert.equal(second.status, 201);
     const firstBody = record(first.data);
@@ -151,16 +151,16 @@ test("bots lists spawned magi not a static roster", async (t) => {
 test("group can add a listed bot", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const bot = record((await request(app, "POST", "/conversations", { token, body: { kind: "bot" } })).data);
-    const group = record((await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data);
+    const bot = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
+    const group = record((await request(app, "POST", "/chats", { token, body: { kind: "group" } })).data);
     const handle = strings(bot.agents)[0] ?? "";
-    const groupId = String(group.conversation_id);
-    const picker = await request(app, "GET", `/bots?conversation_id=${groupId}`, { token });
+    const groupId = String(group.chat_id);
+    const picker = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.equal(picker.status, 200);
     assert.deepEqual(record(picker.data).bots, [
-      { handle, name: "eva-000", online: false, in_conversation: false },
+      { handle, name: "eva-000", online: false, in_chat: false },
     ]);
-    const added = await request(app, "POST", `/conversations/${groupId}/members`, {
+    const added = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
       body: { handle },
     });
@@ -168,11 +168,11 @@ test("group can add a listed bot", async (t) => {
     const addedBody = record(added.data);
     assert.deepEqual(addedBody.agents, [handle]);
     assert.equal(addedBody.kind, "group");
-    const after = await request(app, "GET", `/bots?conversation_id=${groupId}`, { token });
+    const after = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.deepEqual(record(after.data).bots, [
-      { handle, name: "eva-000", online: false, in_conversation: true },
+      { handle, name: "eva-000", online: false, in_chat: true },
     ]);
-    const unknown = await request(app, "POST", `/conversations/${groupId}/members`, {
+    const unknown = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
       body: { handle: "@nobody.magi" },
     });
@@ -183,11 +183,11 @@ test("group can add a listed bot", async (t) => {
 test("intranet invite marks the payload", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const bot = record((await request(app, "POST", "/conversations", { token, body: { kind: "bot" } })).data);
+    const bot = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
     const events = recordList(
-      record((await request(app, "GET", `/sessions/${String(bot.conversation_id)}/events`, { token })).data).events,
+      record((await request(app, "GET", `/chats/${String(bot.chat_id)}/events`, { token })).data).events,
     );
-    const invited = events.filter((event) => event.type === "session.invited");
+    const invited = events.filter((event) => event.type === "chat.invited");
     assert.ok(invited.length > 0);
     const payload = record(invited[0]?.payload);
     assert.equal(payload.intranet, true);
@@ -198,23 +198,23 @@ test("intranet invite marks the payload", async (t) => {
 test("magi joins the group when it receives the invite", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const bot = record((await request(app, "POST", "/conversations", { token, body: { kind: "bot" } })).data);
-    const group = record((await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data);
+    const bot = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
+    const group = record((await request(app, "POST", "/chats", { token, body: { kind: "group" } })).data);
     const handle = strings(bot.agents)[0] ?? "";
     const magiToken = String(record(bot.magi).token);
-    const groupId = String(group.conversation_id);
+    const groupId = String(group.chat_id);
     const live = await connect(app, magiToken);
     t.after(() => live.socket.close());
-    const online = record((await request(app, "GET", `/bots?conversation_id=${groupId}`, { token })).data).bots;
-    assert.deepEqual(online, [{ handle, name: bot.name, online: true, in_conversation: false }]);
-    const added = await request(app, "POST", `/conversations/${groupId}/members`, { token, body: { handle } });
+    const online = record((await request(app, "GET", `/bots?chat_id=${groupId}`, { token })).data).bots;
+    assert.deepEqual(online, [{ handle, name: bot.name, online: true, in_chat: false }]);
+    const added = await request(app, "POST", `/chats/${groupId}/members`, { token, body: { handle } });
     assert.equal(added.status, 200);
     const event = await receiveInvite(live.next, groupId, handle);
     assert.equal(record(event.payload).intranet, true);
-    const joined = await request(app, "POST", `/sessions/${groupId}/join`, { token: magiToken });
+    const joined = await request(app, "POST", `/chats/${groupId}/join`, { token: magiToken });
     assert.equal(joined.status, 200);
     live.socket.close();
-    const view = record((await request(app, "GET", `/conversations/${groupId}`, { token })).data);
+    const view = record((await request(app, "GET", `/chats/${groupId}`, { token })).data);
     assert.deepEqual(view.agents, [handle]);
     assert.equal(participantStatus(view, handle), "joined");
   });
@@ -223,22 +223,22 @@ test("magi joins the group when it receives the invite", async (t) => {
 test("offline magi joins when it connects after the invite", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const bot = record((await request(app, "POST", "/conversations", { token, body: { kind: "bot" } })).data);
-    const group = record((await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data);
+    const bot = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
+    const group = record((await request(app, "POST", "/chats", { token, body: { kind: "group" } })).data);
     const handle = strings(bot.agents)[0] ?? "";
     const magiToken = String(record(bot.magi).token);
-    const groupId = String(group.conversation_id);
-    const added = await request(app, "POST", `/conversations/${groupId}/members`, { token, body: { handle } });
+    const groupId = String(group.chat_id);
+    const added = await request(app, "POST", `/chats/${groupId}/members`, { token, body: { handle } });
     assert.equal(added.status, 200);
     assert.equal(participantStatus(record(added.data), handle), "invited");
     const live = await connect(app, magiToken);
     t.after(() => live.socket.close());
     const event = await receiveInvite(live.next, groupId, handle);
     assert.equal(record(event.payload).intranet, true);
-    const joined = await request(app, "POST", `/sessions/${groupId}/join`, { token: magiToken });
+    const joined = await request(app, "POST", `/chats/${groupId}/join`, { token: magiToken });
     assert.equal(joined.status, 200);
     live.socket.close();
-    const view = record((await request(app, "GET", `/conversations/${groupId}`, { token })).data);
+    const view = record((await request(app, "GET", `/chats/${groupId}`, { token })).data);
     assert.equal(participantStatus(view, handle), "joined");
   });
 });

@@ -4,13 +4,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   OPERATOR,
-  type ConversationSummary,
-  type ConversationMessage,
+  type ChatSummary,
+  type ChatMessage,
   type Routine,
   type RoutineRun,
-} from "./conversation-model";
+} from "./chat-model";
 import { Avatar } from "./Avatar";
-import { createAspConversation, patchAspConversation, clearOperator, listAspBots, listAspConversations, sendAspMessage, updateAspNickname, addAspConversationMember, storedConversations, saveConversations, storedEvents, syncAspEvents, type AspBot, type AspEvent, type CreatedConversation } from "./asp";
+import { createAspChat, patchAspChat, clearOperator, listAspBots, listAspChats, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
@@ -64,7 +64,7 @@ const ONBOARD = [
     sub: "I’ll match this unless you say otherwise on a specific piece.",
     opts: [
       "Clear and tight",
-      "Warm and conversational",
+      "Warm and chatal",
       "Polished / formal",
       "Match whatever I draft",
     ],
@@ -78,17 +78,17 @@ const ONBOARD = [
   },
 ];
 
-type ExtraMessages = Record<string, ConversationMessage[]>;
+type ExtraMessages = Record<string, ChatMessage[]>;
 type PanelMode = "settings" | "routine";
-type ConversationKind = "dm" | "group";
-type ConversationMember = { id: string; name: string; color: string };
-type ConversationView = ConversationSummary & {
+type ChatKind = "dm" | "group";
+type ChatMember = { id: string; name: string; color: string };
+type ChatView = ChatSummary & {
   title: string;
   description: string;
   onboarding: boolean;
   answers: string[];
-  kind: ConversationKind;
-  members: ConversationMember[];
+  kind: ChatKind;
+  members: ChatMember[];
   remoteId?: string;
   magiHandle?: string;
   savedName: string;
@@ -171,7 +171,7 @@ type RoutineDraft = {
   runs: RoutineRun[];
 };
 
-const READ_THROUGH_KEY = "magi.conversations.read-through.v1";
+const READ_THROUGH_KEY = "magi.chats.read-through.v1";
 
 function storedReadThrough(): Record<string, number> {
   try {
@@ -190,11 +190,11 @@ function saveReadThrough(value: Record<string, number>): void {
   }
 }
 
-function makeConversation(
-  kind: ConversationKind,
+function makeChat(
+  kind: ChatKind,
   name: string,
   color: string,
-): ConversationView {
+): ChatView {
   return {
     id: `conv-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     name,
@@ -223,7 +223,7 @@ function colorForHandle(handle: string): string {
   return AGENT_COLORS[sum % AGENT_COLORS.length] ?? "#3EC5A8";
 }
 
-function labelForHandle(handle: string, roster: ConversationView[]): { name: string; color: string } {
+function labelForHandle(handle: string, roster: ChatView[]): { name: string; color: string } {
   const local = roster.find((bot) => bot.magiHandle === handle);
   if (local) {
     return { name: local.name, color: local.color };
@@ -234,7 +234,7 @@ function labelForHandle(handle: string, roster: ConversationView[]): { name: str
   };
 }
 
-function membersFromConversation(remote: CreatedConversation, roster: ConversationView[]): ConversationMember[] {
+function membersFromChat(remote: CreatedChat, roster: ChatView[]): ChatMember[] {
   const handles = remote.participants
     ?.filter((participant) => participant.status === "invited" || participant.status === "joined")
     .map((participant) => participant.handle) ?? [OPERATOR.handle, ...remote.agents];
@@ -250,16 +250,16 @@ function mentionAt(value: string, cursor: number): { start: number; query: strin
   return { start: cursor - (match[1]?.length ?? 0) - 1, query: match[1] ?? "" };
 }
 
-function fromAspConversation(remote: CreatedConversation): ConversationView {
+function fromAspChat(remote: CreatedChat): ChatView {
   const kind = remote.kind === "group" ? "group" : "dm";
   const name = remote.name ?? remote.topic ?? (kind === "group" ? "Group" : remote.agents[0] ?? "MAGI");
-  const bot = makeConversation(kind, name, colorForHandle(remote.agents[0] ?? remote.conversation_id));
-  bot.id = remote.conversation_id;
-  bot.remoteId = remote.conversation_id;
+  const bot = makeChat(kind, name, colorForHandle(remote.agents[0] ?? remote.chat_id));
+  bot.id = remote.chat_id;
+  bot.remoteId = remote.chat_id;
   bot.magiHandle = remote.agents[0];
   bot.description = remote.description ?? "";
   bot.savedName = name;
-  bot.members = membersFromConversation(remote, []);
+  bot.members = membersFromChat(remote, []);
   bot.time = remote.created_at ? new Date(remote.created_at).toLocaleDateString() : "";
   return bot;
 }
@@ -336,14 +336,14 @@ function TriggerEditor({
   const { lead, detail } = describeTrigger(trigger);
   const timed = ["Every day", "Weekdays", "Every week", "Every month"].includes(trigger.freq);
   return (
-    <div className="conversation-page__triggers">
-      <div className="conversation-page__trigger">
-        <div className="conversation-page__trigger-head">
+    <div className="chat-page__triggers">
+      <div className="chat-page__trigger">
+        <div className="chat-page__trigger-head">
           <span>
             {lead} {detail}
           </span>
         </div>
-        <div className="conversation-page__trigger-row">
+        <div className="chat-page__trigger-row">
           <select
             value={trigger.freq}
             onChange={(event) => onChange({ freq: event.target.value })}
@@ -407,44 +407,44 @@ function TriggerEditor({
   );
 }
 
-function previewForConversation(conversation: ConversationView, extra: ExtraMessages) {
-  const last = extra[conversation.id]?.at(-1);
+function previewForChat(chat: ChatView, extra: ExtraMessages) {
+  const last = extra[chat.id]?.at(-1);
   if (last && "text" in last) {
     return last.text;
   }
-  if (conversation.onboarding && conversation.answers.length > 0) {
-    return conversation.answers.at(-1) ?? conversation.preview;
+  if (chat.onboarding && chat.answers.length > 0) {
+    return chat.answers.at(-1) ?? chat.preview;
   }
-  return conversation.preview;
+  return chat.preview;
 }
 
-function Thread({ messages }: { messages: ConversationMessage[] }) {
+function Thread({ messages }: { messages: ChatMessage[] }) {
   return (
     <>
       {messages.map((message, index) => {
         if (message.type === "time") {
           return (
-            <div key={`time-${index}`} className="conversation-page__time">
+            <div key={`time-${index}`} className="chat-page__time">
               {message.text}
             </div>
           );
         }
         if (message.type === "meta") {
           return (
-            <div key={`meta-${index}`} className="conversation-page__meta">
+            <div key={`meta-${index}`} className="chat-page__meta">
               {message.text}
             </div>
           );
         }
         if (message.type === "card") {
           return (
-            <div key={`card-${index}`} className="conversation-page__message conversation-page__message--bot">
-              <div className="conversation-page__card">
+            <div key={`card-${index}`} className="chat-page__message chat-page__message--bot">
+              <div className="chat-page__card">
                 {message.lines.map((line) => (
-                  <div key={`${line.k}-${line.v}`} className="conversation-page__card-line">
-                    <span className="conversation-page__card-check">✓</span>
+                  <div key={`${line.k}-${line.v}`} className="chat-page__card-line">
+                    <span className="chat-page__card-check">✓</span>
                     <strong>{line.k}</strong>
-                    <span className="conversation-page__card-arrow">→</span>
+                    <span className="chat-page__card-arrow">→</span>
                     <span>{line.v}</span>
                   </div>
                 ))}
@@ -456,23 +456,23 @@ function Thread({ messages }: { messages: ConversationMessage[] }) {
           return (
             <div
               key={`typing-${index}`}
-              className="conversation-page__message conversation-page__message--bot"
+              className="chat-page__message chat-page__message--bot"
             >
-              <div className="conversation-page__bubble conversation-page__bubble--typing">working…</div>
+              <div className="chat-page__bubble chat-page__bubble--typing">working…</div>
             </div>
           );
         }
         return (
           <div
             key={`${message.type}-${index}`}
-            className={`conversation-page__message conversation-page__message--${message.type}`}
+            className={`chat-page__message chat-page__message--${message.type}`}
           >
-            <div className={`conversation-page__bubble conversation-page__bubble--${message.type}`}>
+            <div className={`chat-page__bubble chat-page__bubble--${message.type}`}>
               {message.type === "bot" ? (
-                <div className="conversation-page__markdown">
+                <div className="chat-page__markdown">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
                 </div>
-              ) : message.text}
+              ) : <>{message.text}{message.type === "pending" ? <span className="chat-page__pending-label">Waiting to send</span> : null}</>}
             </div>
           </div>
         );
@@ -490,9 +490,9 @@ function OnboardThread({
 }) {
   return (
     <>
-      <div className="conversation-page__time">Today</div>
-      <div className="conversation-page__message conversation-page__message--bot">
-        <div className="conversation-page__bubble conversation-page__bubble--bot">
+      <div className="chat-page__time">Today</div>
+      <div className="chat-page__message chat-page__message--bot">
+        <div className="chat-page__bubble chat-page__bubble--bot">
           Hey Avery — good to meet you.
         </div>
       </div>
@@ -502,16 +502,16 @@ function OnboardThread({
           const letter = String.fromCharCode(65 + Math.max(0, step.opts.indexOf(answer)));
           return (
             <div key={step.q}>
-              <div className="conversation-page__choice conversation-page__choice--done">
-                <div className="conversation-page__choice-q">{step.q}</div>
-                <div className="conversation-page__choice-picked">
-                  <span className="conversation-page__choice-letter">{letter}</span>
+              <div className="chat-page__choice chat-page__choice--done">
+                <div className="chat-page__choice-q">{step.q}</div>
+                <div className="chat-page__choice-picked">
+                  <span className="chat-page__choice-letter">{letter}</span>
                   <span>{answer}</span>
-                  <span className="conversation-page__choice-check">✓</span>
+                  <span className="chat-page__choice-check">✓</span>
                 </div>
               </div>
-              <div className="conversation-page__message conversation-page__message--bot">
-                <div className="conversation-page__bubble conversation-page__bubble--bot">
+              <div className="chat-page__message chat-page__message--bot">
+                <div className="chat-page__bubble chat-page__bubble--bot">
                   {step.ack(answer)}
                 </div>
               </div>
@@ -522,26 +522,26 @@ function OnboardThread({
           return null;
         }
         return (
-          <div key={step.q} className="conversation-page__choice">
-            <div className="conversation-page__choice-q">{step.q}</div>
-            <div className="conversation-page__choice-sub">{step.sub}</div>
-            <div className="conversation-page__choice-opts">
+          <div key={step.q} className="chat-page__choice">
+            <div className="chat-page__choice-q">{step.q}</div>
+            <div className="chat-page__choice-sub">{step.sub}</div>
+            <div className="chat-page__choice-opts">
               {step.opts.map((opt, optIndex) => (
                 <button key={opt} type="button" onClick={() => onAnswer(opt)}>
-                  <span className="conversation-page__choice-letter">
+                  <span className="chat-page__choice-letter">
                     {String.fromCharCode(65 + optIndex)}
                   </span>
                   <span>{opt}</span>
                 </button>
               ))}
             </div>
-            <div className="conversation-page__choice-own">Type your own answer</div>
+            <div className="chat-page__choice-own">Type your own answer</div>
           </div>
         );
       })}
       {answers.length === ONBOARD.length ? (
-        <div className="conversation-page__message conversation-page__message--bot">
-          <div className="conversation-page__bubble conversation-page__bubble--bot">
+        <div className="chat-page__message chat-page__message--bot">
+          <div className="chat-page__bubble chat-page__bubble--bot">
             That’s everything I need. Give me a first job whenever you’re ready — I’ll ask before
             anything leaves the building.
           </div>
@@ -551,9 +551,9 @@ function OnboardThread({
   );
 }
 
-export function ConversationPage() {
+export function ChatPage() {
   const t = useT();
-  const [bots, setBots] = useState<ConversationView[]>([]);
+  const [bots, setBots] = useState<ChatView[]>([]);
   const [activeId, setActiveId] = useState("");
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -564,6 +564,7 @@ export function ConversationPage() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [extra, setExtra] = useState<ExtraMessages>({});
+  const [outgoing, setOutgoing] = useState<OutgoingMessage[]>([]);
   const [routineDraft, setRoutineDraft] = useState<RoutineDraft | null>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -591,6 +592,7 @@ export function ConversationPage() {
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
+  const flushingOutgoingRef = useRef(false);
   const widePanelRef = useRef(false);
   const [nextUnreadBelowId, setNextUnreadBelowId] = useState("");
 
@@ -599,8 +601,11 @@ export function ConversationPage() {
     if (!active) {
       return [];
     }
-    return active.thread.concat(extra[active.id] ?? []);
-  }, [active, extra]);
+    return active.thread.concat(extra[active.id] ?? []).concat(
+      outgoing.filter((message) => message.chatId === active.id)
+        .map((message) => ({ type: "pending" as const, text: message.content })),
+    );
+  }, [active, extra, outgoing]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -638,22 +643,24 @@ export function ConversationPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const local = await storedConversations();
+        const local = await storedChats();
+        const queued = await storedOutgoingMessages();
         if (cancelled) return;
-        const restored = local.map(fromAspConversation);
+        setOutgoing(queued);
+        const restored = local.map(fromAspChat);
         setBots(restored);
         setActiveId((current) => current || restored[0]?.id || "");
-        const remote = await listAspConversations();
+        const remote = await listAspChats();
         if (cancelled) return;
-        await saveConversations(remote);
-        const known = new Map(local.map((row) => [row.conversation_id, row]));
-        for (const row of remote) known.set(row.conversation_id, row);
+        await saveChats(remote);
+        const known = new Map(local.map((row) => [row.chat_id, row]));
+        for (const row of remote) known.set(row.chat_id, row);
         setBots((current) => [...known.values()].map((row) => {
-          const next = fromAspConversation(row);
+          const next = fromAspChat(row);
           const previous = current.find((bot) => bot.id === next.id);
           return previous ? { ...next, thread: previous.thread } : next;
         }));
-        setActiveId((current) => current || remote[0]?.conversation_id || "");
+        setActiveId((current) => current || remote[0]?.chat_id || "");
       } catch (error) {
         if (!cancelled) setLoadError(String(error));
       }
@@ -671,14 +678,14 @@ export function ConversationPage() {
   );
 
   useEffect(() => {
-    const conversationIds = remoteIdsKey ? remoteIdsKey.split("\n") : [];
-    if (conversationIds.length === 0) return;
+    const chatIds = remoteIdsKey ? remoteIdsKey.split("\n") : [];
+    if (chatIds.length === 0) return;
     let cancelled = false;
-    async function refreshConversation(conversationId: string) {
-      const local = await storedEvents(conversationId);
-      if (!cancelled) applyConversationEvents(conversationId, local);
-      const events = await syncAspEvents(conversationId);
-      if (!cancelled) applyConversationEvents(conversationId, events);
+    async function refreshChat(chatId: string) {
+      const local = await storedEvents(chatId);
+      if (!cancelled) applyChatEvents(chatId, local);
+      const events = await syncAspEvents(chatId);
+      if (!cancelled) applyChatEvents(chatId, events);
     }
     async function refreshAgentStatus() {
       const listed = await listAspBots();
@@ -687,8 +694,26 @@ export function ConversationPage() {
       setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
     }
     async function refreshAll() {
+      if (!flushingOutgoingRef.current) {
+        flushingOutgoingRef.current = true;
+        try {
+          const queued = await storedOutgoingMessages();
+          for (const message of queued) {
+            try {
+              await sendAspMessage(message.chatId, message.content);
+              await removeOutgoingMessage(message.id);
+            } catch {
+              // ASP is still unavailable. Leave this and later messages in order.
+              break;
+            }
+          }
+          if (!cancelled) setOutgoing(await storedOutgoingMessages());
+        } finally {
+          flushingOutgoingRef.current = false;
+        }
+      }
       const results = await Promise.allSettled([
-        ...conversationIds.map(refreshConversation),
+        ...chatIds.map(refreshChat),
         refreshAgentStatus(),
       ]);
       const failure = results.find((result) => result.status === "rejected");
@@ -700,7 +725,7 @@ export function ConversationPage() {
   }, [remoteIdsKey]);
 
   useEffect(() => {
-    if (active) markConversationRead(active.id, active.lastSequence);
+    if (active) markChatRead(active.id, active.lastSequence);
   }, [active?.id, active?.lastSequence]);
 
   useEffect(() => {
@@ -820,7 +845,7 @@ export function ConversationPage() {
   }, [showPanel, panelMode, active?.id, active?.magiHandle, active?.kind]);
 
   if (!active) {
-    return <div className="conversation-page" style={{ padding: 32 }}>
+    return <div className="chat-page" style={{ padding: 32 }}>
       <p>{loadError || "No MAGI agents yet."}</p>
       <Button onClick={startNewBot} disabled={creating}>{t("plusMenu.newBot")}</Button>
     </div>;
@@ -869,7 +894,7 @@ export function ConversationPage() {
     });
   }
 
-  function patchActive(patch: Partial<ConversationView>) {
+  function patchActive(patch: Partial<ChatView>) {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
   }
 
@@ -880,7 +905,7 @@ export function ConversationPage() {
     setMentionOpen(true);
   }
 
-  function selectMention(member: ConversationMember) {
+  function selectMention(member: ChatMember) {
     if (!mention) return;
     const next = `${draft.slice(0, mention.start)}${member.id} ${draft.slice(mentionCursor)}`;
     const cursor = mention.start + member.id.length + 1;
@@ -894,12 +919,12 @@ export function ConversationPage() {
   }
 
   /** Known and offline: the row greys out, like an IM contact who is away. */
-  function isAgentOffline(conversation: ConversationView): boolean {
-    if (conversation.kind === "group") {
-      const handles = conversation.members.map((member) => member.id);
+  function isAgentOffline(chat: ChatView): boolean {
+    if (chat.kind === "group") {
+      const handles = chat.members.map((member) => member.id);
       return handles.length > 0 && handles.every((handle) => agentStatus[handle] === false);
     }
-    const handle = conversation.magiHandle;
+    const handle = chat.magiHandle;
     if (handle === undefined || handle === "") return false;
     return agentStatus[handle] === false;
   }
@@ -940,7 +965,7 @@ export function ConversationPage() {
     const handle = active?.magiHandle ?? "";
     if (!invoke || handle === "" || runtimeBusy) return;
     setRuntimeBusy(true);
-    setRuntimeNote(t("conversationSettings.runtimeWorking"));
+    setRuntimeNote(t("chatSettings.runtimeWorking"));
     try {
       const result = (await invoke(method, { handle })) as { started?: boolean; rebuilt?: boolean } | null;
       if (result?.started === true || result?.rebuilt === true) {
@@ -949,7 +974,7 @@ export function ConversationPage() {
         setAgentRuntime(await loadAgentRuntime(handle));
       }
       await refreshAgentStatus();
-      setRuntimeNote(t("conversationSettings.runtimeDone"));
+      setRuntimeNote(t("chatSettings.runtimeDone"));
     } catch (error) {
       setRuntimeNote(error instanceof Error ? error.message : String(error));
     } finally {
@@ -957,19 +982,19 @@ export function ConversationPage() {
     }
   }
 
-  function markConversationRead(conversationId: string, through: number) {
-    if (through >= 0 && through > (readThroughRef.current[conversationId] ?? -1)) {
-      readThroughRef.current = { ...readThroughRef.current, [conversationId]: through };
+  function markChatRead(chatId: string, through: number) {
+    if (through >= 0 && through > (readThroughRef.current[chatId] ?? -1)) {
+      readThroughRef.current = { ...readThroughRef.current, [chatId]: through };
       saveReadThrough(readThroughRef.current);
     }
     setBots((current) => current.map((bot) =>
-      bot.id === conversationId && bot.unread ? { ...bot, unread: false } : bot,
+      bot.id === chatId && bot.unread ? { ...bot, unread: false } : bot,
     ));
   }
 
-  function applyConversationEvents(conversationId: string, events: AspEvent[]) {
-    const messageEvents = events.filter((event) => event.type === "session.message");
-    const thread: ConversationMessage[] = messageEvents.map((event) => ({
+  function applyChatEvents(chatId: string, events: AspEvent[]) {
+    const messageEvents = events.filter((event) => event.type === "chat.message");
+    const thread: ChatMessage[] = messageEvents.map((event) => ({
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
       type: event.payload.sender === OPERATOR.handle || event.payload.sender === "user" ? "user" as const : "bot" as const,
@@ -985,24 +1010,24 @@ export function ConversationPage() {
         : Math.max(highest, event.sequence),
       -1,
     );
-    const isActive = activeIdRef.current === conversationId;
+    const isActive = activeIdRef.current === chatId;
     const hasReadMarker = Object.prototype.hasOwnProperty.call(
       readThroughRef.current,
-      conversationId,
+      chatId,
     );
     if (!hasReadMarker && lastSequence >= 0) {
-      readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
+      readThroughRef.current = { ...readThroughRef.current, [chatId]: lastSequence };
       saveReadThrough(readThroughRef.current);
     }
     if (isActive && lastSequence >= 0) {
-      readThroughRef.current = { ...readThroughRef.current, [conversationId]: lastSequence };
+      readThroughRef.current = { ...readThroughRef.current, [chatId]: lastSequence };
       saveReadThrough(readThroughRef.current);
     }
     const unread = hasReadMarker && !isActive
-      && latestAgentSequence > (readThroughRef.current[conversationId] ?? -1);
+      && latestAgentSequence > (readThroughRef.current[chatId] ?? -1);
     const preview = latest && "text" in latest ? latest.text : "";
     setBots((current) => current.map((bot) => {
-      if (bot.id !== conversationId) return bot;
+      if (bot.id !== chatId) return bot;
       if (bot.lastSequence === lastSequence && bot.preview === preview && bot.unread === unread) {
         return bot;
       }
@@ -1078,14 +1103,14 @@ export function ConversationPage() {
   }
 
   function startNewBot() {
-    void createConversation("bot");
+    void createChat("bot");
   }
 
   function startNewGroup() {
-    void createConversation("group");
+    void createChat("group");
   }
 
-  async function createConversation(action: "bot" | "group") {
+  async function createChat(action: "bot" | "group") {
     if (creatingRef.current) {
       return;
     }
@@ -1097,27 +1122,27 @@ export function ConversationPage() {
     setPanelMode("settings");
     try {
       if (action === "bot") {
-        const remote = await createAspConversation("bot");
+        const remote = await createAspChat("bot");
         if (!remote?.name) {
           setLoadError("Could not create a MAGI agent. Check that ASP is running.");
           return;
         }
         setLoadError("");
-        const conversation = fromAspConversation(remote);
-        setBots((current) => [conversation, ...current]);
-        setActiveId(conversation.id);
+        const chat = fromAspChat(remote);
+        setBots((current) => [chat, ...current]);
+        setActiveId(chat.id);
         setDraft("");
         return;
       }
-      const remote = await createAspConversation("group");
+      const remote = await createAspChat("group");
       if (!remote) {
         setLoadError("Could not create a group. Check that ASP is running.");
         return;
       }
       setLoadError("");
-      const conversation = fromAspConversation(remote);
-      setBots((current) => [conversation, ...current]);
-      setActiveId(conversation.id);
+      const chat = fromAspChat(remote);
+      setBots((current) => [chat, ...current]);
+      setActiveId(chat.id);
       setDraft("");
     } finally {
       creatingRef.current = false;
@@ -1142,7 +1167,7 @@ export function ConversationPage() {
     patchActive({ answers: [...active.answers, value] });
   }
 
-  function appendMessage(botId: string, message: ConversationMessage) {
+  function appendMessage(botId: string, message: ChatMessage) {
     setExtra((current) => ({
       ...current,
       [botId]: [...(current[botId] ?? []), message],
@@ -1159,13 +1184,35 @@ export function ConversationPage() {
       answerOnboard(text);
       return;
     }
-    try {
-      await sendAspMessage(active.remoteId, text);
-      setDraft("");
-      setLoadError("");
-    } catch (error) {
-      setLoadError(String(error));
-    }
+    const message: OutgoingMessage = {
+      id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      chatId: active.remoteId,
+      content: text,
+      createdAt: Date.now(),
+    };
+    await queueOutgoingMessage(message);
+    setOutgoing((current) => [...current, message]);
+    setDraft("");
+    // The regular refresh owns delivery. Keeping it asynchronous lets the user
+    // continue composing even while ASP is stopped or starting.
+    void (async () => {
+      if (flushingOutgoingRef.current) return;
+      flushingOutgoingRef.current = true;
+      try {
+        const queued = await storedOutgoingMessages();
+        for (const pending of queued) {
+          try {
+            await sendAspMessage(pending.chatId, pending.content);
+            await removeOutgoingMessage(pending.id);
+          } catch {
+            break;
+          }
+        }
+        setOutgoing(await storedOutgoingMessages());
+      } finally {
+        flushingOutgoingRef.current = false;
+      }
+    })();
   }
 
   async function refreshAvailableBots() {
@@ -1192,22 +1239,22 @@ export function ConversationPage() {
       return;
     }
     setAddingHandle(handle);
-    const updated = await addAspConversationMember(active.remoteId, handle);
+    const updated = await addAspChatMember(active.remoteId, handle);
     setAddingHandle(null);
     if (!updated) {
       return;
     }
-    patchActive({ members: membersFromConversation(updated, bots) });
+    patchActive({ members: membersFromChat(updated, bots) });
     setAvailableBots((current) =>
       current.map((bot) =>
-        bot.handle === handle ? { ...bot, in_conversation: true } : bot,
+        bot.handle === handle ? { ...bot, in_chat: true } : bot,
       ),
     );
   }
 
   function selectBot(id: string) {
     const selected = bots.find((bot) => bot.id === id);
-    markConversationRead(id, selected?.lastSequence ?? -1);
+    markChatRead(id, selected?.lastSequence ?? -1);
     setActiveId(id);
     closeMenu();
     setPanelOpen(false);
@@ -1258,23 +1305,23 @@ export function ConversationPage() {
   }
 
   return (
-    <div className="conversation-page">
-      <div className={`conversation-page__frame${showPanel ? "" : " is-collapsed"}`}>
+    <div className="chat-page">
+      <div className={`chat-page__frame${showPanel ? "" : " is-collapsed"}`}>
         <aside
-          id="conversation-page-bots"
-          className={`conversation-page__sidebar${menuOpen ? " is-open" : ""}`}
+          id="chat-page-bots"
+          className={`chat-page__sidebar${menuOpen ? " is-open" : ""}`}
           aria-hidden={compact && !menuOpen}
           inert={compact && !menuOpen}
         >
-          <div className="conversation-page__chrome">
-            <span className="conversation-page__drawer-title">{t("plusMenu.listTitle")}</span>
-            <div className="conversation-page__chrome-actions">
+          <div className="chat-page__chrome">
+            <span className="chat-page__drawer-title">{t("plusMenu.listTitle")}</span>
+            <div className="chat-page__chrome-actions">
               <button
                 type="button"
-                className="conversation-page__chrome-icon"
+                className="chat-page__chrome-icon"
                 aria-label="Search"
                 aria-expanded={searchOpen}
-                aria-controls="conversation-page-search"
+                aria-controls="chat-page-search"
                 onClick={() => setSearchOpen((open) => !open)}
               >
                 <svg
@@ -1292,10 +1339,10 @@ export function ConversationPage() {
                   <line x1="20" y1="20" x2="16.65" y2="16.65" />
                 </svg>
               </button>
-              <div className="conversation-page__plus-wrap" ref={plusWrapRef}>
+              <div className="chat-page__plus-wrap" ref={plusWrapRef}>
                 <button
                   type="button"
-                  className="conversation-page__chrome-icon"
+                  className="chat-page__chrome-icon"
                   aria-label={t("plusMenu.aria")}
                   aria-haspopup="menu"
                   aria-expanded={plusOpen}
@@ -1321,7 +1368,7 @@ export function ConversationPage() {
                   </svg>
                 </button>
                 {plusOpen ? (
-                  <div className="conversation-page__plus-menu" role="menu">
+                  <div className="chat-page__plus-menu" role="menu">
                     <button
                       type="button"
                       role="menuitem"
@@ -1343,7 +1390,7 @@ export function ConversationPage() {
               </div>
               <button
                 type="button"
-                className="conversation-page__sidebar-close"
+                className="chat-page__sidebar-close"
                 aria-label="Hide bots"
                 onClick={closeMenu}
               >
@@ -1352,7 +1399,7 @@ export function ConversationPage() {
             </div>
           </div>
           {searchOpen ? (
-            <label id="conversation-page-search" className="conversation-page__search">
+            <label id="chat-page-search" className="chat-page__search">
               <svg
                 width="16"
                 height="16"
@@ -1376,29 +1423,29 @@ export function ConversationPage() {
               />
             </label>
           ) : null}
-          <div className="conversation-page__bot-list-wrap">
-            <div className="conversation-page__bot-list" ref={botListRef}>
+          <div className="chat-page__bot-list-wrap">
+            <div className="chat-page__bot-list" ref={botListRef}>
               {filtered.map((bot) => {
               const isActive = bot.id === active.id;
               return (
                 <button
                   key={bot.id}
                   type="button"
-                  className={`conversation-page__bot-row${isActive ? " is-active" : ""}${isAgentOffline(bot) ? " is-offline" : ""}`}
+                  className={`chat-page__bot-row${isActive ? " is-active" : ""}${isAgentOffline(bot) ? " is-offline" : ""}`}
                   data-bot-id={bot.id}
                   data-unread={bot.unread ? "true" : "false"}
                   onClick={() => selectBot(bot.id)}
                 >
                   <Avatar color={bot.color} size={34} />
-                  <span className="conversation-page__bot-copy">
-                    <span className="conversation-page__bot-meta">
-                      <span className="conversation-page__bot-name">{bot.name}</span>
-                      <span className="conversation-page__bot-trailing">
-                        {bot.unread ? <span className="conversation-page__unread-dot" aria-label={t("account.unread")} /> : null}
-                        <span className="conversation-page__bot-time">{bot.time}</span>
+                  <span className="chat-page__bot-copy">
+                    <span className="chat-page__bot-meta">
+                      <span className="chat-page__bot-name">{bot.name}</span>
+                      <span className="chat-page__bot-trailing">
+                        {bot.unread ? <span className="chat-page__unread-dot" aria-label={t("account.unread")} /> : null}
+                        <span className="chat-page__bot-time">{bot.time}</span>
                       </span>
                     </span>
-                    <span className="conversation-page__bot-preview">{previewForConversation(bot, extra)}</span>
+                    <span className="chat-page__bot-preview">{previewForChat(bot, extra)}</span>
                   </span>
                 </button>
               );
@@ -1407,7 +1454,7 @@ export function ConversationPage() {
             {nextUnreadBelowId ? (
               <button
                 type="button"
-                className="conversation-page__more-unread"
+                className="chat-page__more-unread"
                 onClick={openNextUnreadBelow}
               >
                 <span aria-hidden="true">↓</span>
@@ -1415,10 +1462,10 @@ export function ConversationPage() {
               </button>
             ) : null}
           </div>
-          <div className="conversation-page__user" ref={userWrapRef}>
+          <div className="chat-page__user" ref={userWrapRef}>
             <button
               type="button"
-              className="conversation-page__user-btn"
+              className="chat-page__user-btn"
               aria-label={t("account.menuAria")}
               aria-haspopup="menu"
               aria-expanded={userMenuOpen}
@@ -1429,7 +1476,7 @@ export function ConversationPage() {
               onMouseDown={(event) => event.stopPropagation()}
               title={account.name || account.login || OPERATOR.name}
             >
-              <span className="conversation-page__user-badge">
+              <span className="chat-page__user-badge">
                 {account.avatar ? (
                   <img src={account.avatar} alt="" />
                 ) : account.login ? (
@@ -1441,7 +1488,7 @@ export function ConversationPage() {
             </button>
             <button
               type="button"
-              className="conversation-page__settings-btn"
+              className="chat-page__settings-btn"
               onClick={openAppSettings}
             >
               <svg
@@ -1461,7 +1508,7 @@ export function ConversationPage() {
               {t("account.settings")}
             </button>
             {userMenuOpen ? (
-              <div className="conversation-page__user-menu" role="menu">
+              <div className="chat-page__user-menu" role="menu">
                 <button type="button" role="menuitem" onClick={logOut}>
                   {t("account.logOut")}
                 </button>
@@ -1473,22 +1520,22 @@ export function ConversationPage() {
         {menuOpen ? (
           <button
             type="button"
-            className="conversation-page__scrim"
+            className="chat-page__scrim"
             aria-label="Hide bots"
             onClick={closeMenu}
           />
         ) : null}
 
-        <main className="conversation-page__main">
-          <div className="conversation-page__topbar">
-            <div className="conversation-page__topbar-left">
+        <main className="chat-page__main">
+          <div className="chat-page__topbar">
+            <div className="chat-page__topbar-left">
               <button
                 type="button"
                 ref={menuButtonRef}
-                className="conversation-page__menu-btn"
+                className="chat-page__menu-btn"
                 aria-label="Show bots"
                 aria-expanded={menuOpen}
-                aria-controls="conversation-page-bots"
+                aria-controls="chat-page-bots"
                 onClick={() => setMenuOpen(true)}
               >
                 <svg
@@ -1506,21 +1553,21 @@ export function ConversationPage() {
             </div>
             <button
               type="button"
-              className={`conversation-page__name-btn${showPanel && panelMode === "settings" ? " is-expanded" : ""}`}
+              className={`chat-page__name-btn${showPanel && panelMode === "settings" ? " is-expanded" : ""}`}
               aria-label={
                 showPanel && panelMode === "settings"
-                  ? t("conversationSettings.collapse")
+                  ? t("chatSettings.collapse")
                   : active.kind === "group"
-                    ? `Open ${active.name || "conversation"} details`
+                    ? `Open ${active.name || "chat"} details`
                     : `Open ${active.name || "agent"} profile`
               }
-              aria-controls="conversation-page-profile"
+              aria-controls="chat-page-profile"
               aria-expanded={showPanel && panelMode === "settings"}
               onClick={toggleSettings}
             >
               <Avatar color={active.color} size={24} />
-              <span className="conversation-page__active-name">{active.name}</span>
-              <span className="conversation-page__name-chevron" aria-hidden="true">
+              <span className="chat-page__active-name">{active.name}</span>
+              <span className="chat-page__name-chevron" aria-hidden="true">
                 <svg
                   width="16"
                   height="16"
@@ -1537,13 +1584,13 @@ export function ConversationPage() {
             </button>
           </div>
 
-          <div className="conversation-page__thread" ref={scrollRef}>
-            {loadError ? <div role="alert" className="conversation-page__empty-thread">{loadError}</div> : null}
+          <div className="chat-page__thread" ref={scrollRef}>
+            {loadError ? <div role="alert" className="chat-page__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
             ) : null}
             {messages.length === 0 && !active.onboarding ? (
-              <div className="conversation-page__empty-thread">
+              <div className="chat-page__empty-thread">
                 {active.kind === "group" ? t("plusMenu.groupEmpty") : t("plusMenu.botEmpty")}
               </div>
             ) : (
@@ -1551,9 +1598,9 @@ export function ConversationPage() {
             )}
           </div>
 
-          <div className="conversation-page__composer">
-            <div className="conversation-page__input-shell">
-              <span className="conversation-page__composer-plus" aria-hidden="true">
+          <div className="chat-page__composer">
+            <div className="chat-page__input-shell">
+              <span className="chat-page__composer-plus" aria-hidden="true">
                 +
               </span>
               <input
@@ -1598,7 +1645,7 @@ export function ConversationPage() {
                 aria-label={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
               />
               {mentionVisible ? (
-                <div className="conversation-page__mention-menu" role="listbox" aria-label="Mention a conversation member">
+                <div className="chat-page__mention-menu" role="listbox" aria-label="Mention a chat member">
                   {mentionCandidates.map((member, index) => (
                     <button
                       key={member.id}
@@ -1616,7 +1663,7 @@ export function ConversationPage() {
                   ))}
                 </div>
               ) : null}
-              <button type="button" className="conversation-page__send" onClick={send} aria-label="Send">
+              <button type="button" className="chat-page__send" onClick={send} aria-label="Send">
                 ↑
               </button>
             </div>
@@ -1624,16 +1671,16 @@ export function ConversationPage() {
         </main>
 
         {showPanel ? (
-          <aside id="conversation-page-profile" className="conversation-page__panel">
+          <aside id="chat-page-profile" className="chat-page__panel">
             {panelMode !== "routine" ? (
-              <div className="conversation-page__panel-head">
+              <div className="chat-page__panel-head">
                 <span aria-hidden="true" />
-                <span>{t("conversationSettings.title")}</span>
+                <span>{t("chatSettings.title")}</span>
                 <button
                   type="button"
-                  className="conversation-page__panel-collapse"
-                  aria-label={t("conversationSettings.collapse")}
-                  title={t("conversationSettings.collapse")}
+                  className="chat-page__panel-collapse"
+                  aria-label={t("chatSettings.collapse")}
+                  title={t("chatSettings.collapse")}
                   onClick={collapseProfile}
                 >
                   <CollapseIcon />
@@ -1642,29 +1689,29 @@ export function ConversationPage() {
             ) : null}
 
             {panelMode === "settings" ? (
-              <div className="conversation-page__settings">
-                <div className={`conversation-page__settings-avatar${agentRuntime && !agentRuntime.online ? " is-offline" : ""}`}>
+              <div className="chat-page__settings">
+                <div className={`chat-page__settings-avatar${agentRuntime && !agentRuntime.online ? " is-offline" : ""}`}>
                   <Avatar color={active.color} size={64} />
                 </div>
                 {active.kind === "group" ? (
                   <>
-                    <label className="conversation-page__field">
-                      <span className="conversation-page__field-label">Topic</span>
+                    <label className="chat-page__field">
+                      <span className="chat-page__field-label">Topic</span>
                       <input
                         value={active.name}
                         placeholder={t("plusMenu.newGroupName")}
                         onChange={(event) => patchActive({ name: event.target.value })}
                         onBlur={(event) => {
                           if (active.remoteId) {
-                            void patchAspConversation(active.remoteId, {
+                            void patchAspChat(active.remoteId, {
                               topic: event.target.value,
                             });
                           }
                         }}
                       />
                     </label>
-                    <label className="conversation-page__field">
-                      <span className="conversation-page__field-label">Description</span>
+                    <label className="chat-page__field">
+                      <span className="chat-page__field-label">Description</span>
                       <textarea
                         rows={4}
                         value={active.description}
@@ -1672,7 +1719,7 @@ export function ConversationPage() {
                         onChange={(event) => patchActive({ description: event.target.value })}
                         onBlur={(event) => {
                           if (active.remoteId) {
-                            void patchAspConversation(active.remoteId, {
+                            void patchAspChat(active.remoteId, {
                               description: event.target.value,
                             });
                           }
@@ -1682,8 +1729,8 @@ export function ConversationPage() {
                   </>
                 ) : (
                   <>
-                    <label className="conversation-page__field">
-                      <span className="conversation-page__field-label">Nickname</span>
+                    <label className="chat-page__field">
+                      <span className="chat-page__field-label">Nickname</span>
                       <input
                         value={active.name}
                         placeholder="Give this MAGI a nickname"
@@ -1691,16 +1738,16 @@ export function ConversationPage() {
                         onBlur={() => { void saveNickname(); }}
                       />
                     </label>
-                    <label className="conversation-page__field">
-                      <span className="conversation-page__field-label">Title</span>
+                    <label className="chat-page__field">
+                      <span className="chat-page__field-label">Title</span>
                       <input
                         value={active.title}
                         placeholder="Describe what this agent does"
                         onChange={(event) => patchActive({ title: event.target.value })}
                       />
                     </label>
-                    <label className="conversation-page__field">
-                      <span className="conversation-page__field-label">Description</span>
+                    <label className="chat-page__field">
+                      <span className="chat-page__field-label">Description</span>
                       <textarea
                         rows={4}
                         value={active.description}
@@ -1712,28 +1759,28 @@ export function ConversationPage() {
                 )}
 
                 {active.kind !== "group" && active.magiHandle ? (
-                  <div className="conversation-page__slot">
-                    <div className="conversation-page__slot-head">
-                      <span className="conversation-page__panel-label">
-                        {t("conversationSettings.runtime")}
+                  <div className="chat-page__slot">
+                    <div className="chat-page__slot-head">
+                      <span className="chat-page__panel-label">
+                        {t("chatSettings.runtime")}
                       </span>
                       <span
-                        className={`conversation-page__runtime-state${agentRuntime?.online ? " is-online" : ""}`}
+                        className={`chat-page__runtime-state${agentRuntime?.online ? " is-online" : ""}`}
                         role="status"
                       >
                         {agentRuntime?.online
-                          ? t("conversationSettings.online")
-                          : t("conversationSettings.offline")}
+                          ? t("chatSettings.online")
+                          : t("chatSettings.offline")}
                       </span>
                     </div>
-                    <div className="conversation-page__runtime-actions">
+                    <div className="chat-page__runtime-actions">
                       {runtimeActions.map(({ method, label, icon }) => (
                         <button
                           key={method}
                           type="button"
-                          className="conversation-page__runtime-action"
-                          aria-label={t(`conversationSettings.${label}`)}
-                          title={t(`conversationSettings.${label}`)}
+                          className="chat-page__runtime-action"
+                          aria-label={t(`chatSettings.${label}`)}
+                          title={t(`chatSettings.${label}`)}
                           disabled={runtimeBusy}
                           onClick={() => void runAgentRuntime(method)}
                         >
@@ -1742,40 +1789,40 @@ export function ConversationPage() {
                       ))}
                     </div>
                     {agentRuntime?.source ? (
-                      <p className="conversation-page__runtime-note">
+                      <p className="chat-page__runtime-note">
                         {agentRuntime.branch ? `${agentRuntime.branch} · ` : ""}
                         {agentRuntime.source}
                       </p>
                     ) : null}
                     {runtimeNote ? (
-                      <p className="conversation-page__runtime-note" role="status">{runtimeNote}</p>
+                      <p className="chat-page__runtime-note" role="status">{runtimeNote}</p>
                     ) : null}
                   </div>
                 ) : null}
 
                 {active.kind === "group" ? (
-                  <div className="conversation-page__slot">
-                    <div className="conversation-page__slot-head">
-                      <span className="conversation-page__panel-label">
-                        {t("conversationSettings.members")}
+                  <div className="chat-page__slot">
+                    <div className="chat-page__slot-head">
+                      <span className="chat-page__panel-label">
+                        {t("chatSettings.members")}
                       </span>
                       <button
                         type="button"
-                        className="conversation-page__chip"
+                        className="chat-page__chip"
                         aria-expanded={memberPickerOpen}
                         onClick={toggleMemberPicker}
                       >
-                        {t("conversationSettings.membersInvite")}
+                        {t("chatSettings.membersInvite")}
                       </button>
                     </div>
                     {active.members.length === 0 ? (
-                      <p className="conversation-page__members-empty">
-                        {t("conversationSettings.membersEmpty")}
+                      <p className="chat-page__members-empty">
+                        {t("chatSettings.membersEmpty")}
                       </p>
                     ) : (
-                      <ul className="conversation-page__members">
+                      <ul className="chat-page__members">
                         {active.members.map((member) => (
-                          <li key={member.id} className="conversation-page__member">
+                          <li key={member.id} className="chat-page__member">
                             <Avatar color={member.color} size={32} />
                             <span>{member.name}</span>
                           </li>
@@ -1783,16 +1830,16 @@ export function ConversationPage() {
                       </ul>
                     )}
                     {memberPickerOpen ? (
-                      <div className="conversation-page__bot-picker" role="listbox">
+                      <div className="chat-page__bot-picker" role="listbox">
                         {loadingBots ? (
-                          <p className="conversation-page__members-empty">{t("common.loading")}</p>
-                        ) : availableBots.filter((bot) => !bot.in_conversation).length === 0 ? (
-                          <p className="conversation-page__members-empty">
-                            {t("conversationSettings.membersNoneAvailable")}
+                          <p className="chat-page__members-empty">{t("common.loading")}</p>
+                        ) : availableBots.filter((bot) => !bot.in_chat).length === 0 ? (
+                          <p className="chat-page__members-empty">
+                            {t("chatSettings.membersNoneAvailable")}
                           </p>
                         ) : (
                           availableBots
-                            .filter((bot) => !bot.in_conversation)
+                            .filter((bot) => !bot.in_chat)
                             .map((bot) => {
                               const label = labelForHandle(bot.handle, bots);
                               const name = bot.name || label.name;
@@ -1800,17 +1847,17 @@ export function ConversationPage() {
                                 <button
                                   key={bot.handle}
                                   type="button"
-                                  className="conversation-page__bot-pick"
+                                  className="chat-page__bot-pick"
                                   disabled={addingHandle === bot.handle}
                                   onClick={() => void inviteBot(bot.handle)}
                                 >
                                   <Avatar color={label.color} size={28} />
-                                  <span className="conversation-page__bot-pick-copy">
+                                  <span className="chat-page__bot-pick-copy">
                                     <span>{name}</span>
-                                    <span className="conversation-page__bot-pick-status">
+                                    <span className="chat-page__bot-pick-status">
                                       {bot.online
-                                        ? t("conversationSettings.membersOnline")
-                                        : t("conversationSettings.membersOffline")}
+                                        ? t("chatSettings.membersOnline")
+                                        : t("chatSettings.membersOffline")}
                                     </span>
                                   </span>
                                 </button>
@@ -1822,19 +1869,19 @@ export function ConversationPage() {
                   </div>
                 ) : null}
 
-                <div className="conversation-page__slot">
-                  <div className="conversation-page__panel-label">
-                    {t("conversationSettings.routines")}
+                <div className="chat-page__slot">
+                  <div className="chat-page__panel-label">
+                    {t("chatSettings.routines")}
                   </div>
                   {active.routines.length === 0 ? (
-                    <div className="conversation-page__empty-routines">
-                      <p>{t("conversationSettings.routinesEmpty")}</p>
+                    <div className="chat-page__empty-routines">
+                      <p>{t("chatSettings.routinesEmpty")}</p>
                       <button
                         type="button"
-                        className="conversation-page__ghost-btn"
+                        className="chat-page__ghost-btn"
                         onClick={() => openRoutine(null, null)}
                       >
-                        {t("conversationSettings.routineCreate")}
+                        {t("chatSettings.routineCreate")}
                       </button>
                     </div>
                   ) : (
@@ -1843,20 +1890,20 @@ export function ConversationPage() {
                         <button
                           key={`${routine.name}-${index}`}
                           type="button"
-                          className="conversation-page__routine"
+                          className="chat-page__routine"
                           onClick={() => openRoutine(routine, index)}
                         >
-                          <span className="conversation-page__routine-icon">◷</span>
-                          <span className="conversation-page__routine-name">{routine.name}</span>
-                          <span className="conversation-page__routine-when">{routine.when}</span>
+                          <span className="chat-page__routine-icon">◷</span>
+                          <span className="chat-page__routine-name">{routine.name}</span>
+                          <span className="chat-page__routine-when">{routine.when}</span>
                         </button>
                       ))}
                       <button
                         type="button"
-                        className="conversation-page__quiet"
+                        className="chat-page__quiet"
                         onClick={() => openRoutine(null, null)}
                       >
-                        {t("conversationSettings.routineNew")}
+                        {t("chatSettings.routineNew")}
                       </button>
                     </>
                   )}
@@ -1865,45 +1912,45 @@ export function ConversationPage() {
             ) : null}
 
             {panelMode === "routine" && routineDraft ? (
-              <div className="conversation-page__routine-editor">
-                <div className="conversation-page__routine-nav">
+              <div className="chat-page__routine-editor">
+                <div className="chat-page__routine-nav">
                   <button type="button" onClick={saveRoutine} aria-label="Back to profile">
                     ‹
                   </button>
                   <span>Routine</span>
                   <button
                     type="button"
-                    className="conversation-page__panel-collapse"
-                    aria-label={t("conversationSettings.collapse")}
-                    title={t("conversationSettings.collapse")}
+                    className="chat-page__panel-collapse"
+                    aria-label={t("chatSettings.collapse")}
+                    title={t("chatSettings.collapse")}
                     onClick={collapseProfile}
                   >
                     <CollapseIcon />
                   </button>
                 </div>
-                <div className="conversation-page__routine-toolbar">
+                <div className="chat-page__routine-toolbar">
                   <button
                     type="button"
-                    className={`conversation-page__switch${routineDraft.active ? " is-on" : ""}`}
+                    className={`chat-page__switch${routineDraft.active ? " is-on" : ""}`}
                     aria-pressed={routineDraft.active}
                     onClick={() => changeRoutine({ active: !routineDraft.active })}
                   >
                     <span />
                   </button>
                   <span>{routineDraft.active ? "Active" : "Paused"}</span>
-                  <button type="button" className="conversation-page__ghost-btn" onClick={deleteRoutine}>
+                  <button type="button" className="chat-page__ghost-btn" onClick={deleteRoutine}>
                     Delete
                   </button>
                   <button
                     type="button"
-                    className="conversation-page__ghost-btn"
+                    className="chat-page__ghost-btn"
                     disabled={!routineDraft.name.trim()}
                     onClick={testRun}
                   >
                     Test run
                   </button>
                 </div>
-                <label className="conversation-page__field">
+                <label className="chat-page__field">
                   Name
                   <input
                     value={routineDraft.name}
@@ -1911,7 +1958,7 @@ export function ConversationPage() {
                     onChange={(event) => changeRoutine({ name: event.target.value })}
                   />
                 </label>
-                <label className="conversation-page__field">
+                <label className="chat-page__field">
                   Instruction
                   <textarea
                     rows={4}
@@ -1920,16 +1967,16 @@ export function ConversationPage() {
                     onChange={(event) => changeRoutine({ instruction: event.target.value })}
                   />
                 </label>
-                <div className="conversation-page__field">
+                <div className="chat-page__field">
                   When to run
                   <TriggerEditor trigger={routineDraft.trigger} onChange={patchTrigger} />
                 </div>
-                <div className="conversation-page__field">
+                <div className="chat-page__field">
                   Run history
                   {routineDraft.runs.length === 0 ? (
-                    <p className="conversation-page__muted">No runs yet</p>
+                    <p className="chat-page__muted">No runs yet</p>
                   ) : (
-                    <ul className="conversation-page__runs">
+                    <ul className="chat-page__runs">
                       {routineDraft.runs.map((run, index) => (
                         <li key={`${run.text}-${index}`}>
                           <span style={{ color: run.color }}>{run.mark}</span>

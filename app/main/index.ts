@@ -1031,24 +1031,24 @@ export function createLocalApi(context) {
     progress?.("Creating default MAGIs…", 0.98);
     const created = [];
     for (const nickname of DEFAULT_MAGIS) {
-      const conversation = await aspJson("/conversations", {
+      const chat = await aspJson("/chats", {
         token,
         method: "POST",
         body: { kind: "bot" },
       });
-      const handle = conversation?.agents?.[0];
-      const conversationId = conversation?.conversation_id;
-      if (typeof handle === "string" && handle !== "" && typeof conversationId === "string") {
-        created.push({ handle, nickname, conversationId });
+      const handle = chat?.agents?.[0];
+      const chatId = chat?.chat_id;
+      if (typeof handle === "string" && handle !== "" && typeof chatId === "string") {
+        created.push({ handle, nickname, chatId });
       }
     }
     // This backend runs them, not ASP: start the new ones right away.
     await startManagedMagi();
     await Promise.all(
-      created.map(async ({ handle, nickname, conversationId }) => {
+      created.map(async ({ handle, nickname, chatId }) => {
         try {
           await nameWhenOnline(handle, nickname, token);
-          await greet(conversationId, token);
+          await greet(chatId, token);
         } catch (error) {
           console.error(
             `[asp] ${error instanceof Error ? error.message : String(error)}`,
@@ -1059,14 +1059,14 @@ export function createLocalApi(context) {
   }
 
   /**
-   * The first thing said in a conversation, in the operator's name.
+   * The first thing said in a chat, in the operator's name.
    *
    * It answers two questions at once: whether the new MAGI answers at all, and where
    * the operator is, which is what the MAGI keeps as its own thread to report trouble
    * to. A MAGI without a provider still answers — with that complaint.
    */
-  async function greet(conversationId, token) {
-    await aspJson(`/sessions/${encodeURIComponent(conversationId)}/messages`, {
+  async function greet(chatId, token) {
+    await aspJson(`/chats/${encodeURIComponent(chatId)}/messages`, {
       token,
       method: "POST",
       body: { content: "Hi" },
@@ -1540,13 +1540,16 @@ export function createLocalApi(context) {
     "provider.usage": providerUsage,
     "provider.save": saveProvider,
     "source.status": sourceStatus,
-    "chat.listConversations": async () => (await chatStore()).listConversations(),
-    "chat.saveConversations": async (rows) => (await chatStore()).saveConversations(rows),
+    "chat.listChats": async () => (await chatStore()).listChats(),
+    "chat.saveChats": async (rows) => (await chatStore()).saveChats(rows),
     "chat.listEvents": async (id) => (await chatStore()).listEvents(id),
     "chat.saveEvents": async ({ id, events }) => (await chatStore()).saveEvents(id, events),
     "chat.lastSequence": async (id) => (await chatStore()).lastSequence(id),
     "chat.pendingAcks": async (id) => (await chatStore()).pendingAcks(id),
     "chat.markAcknowledged": async ({ id, sequence }) =>
       (await chatStore()).markAcknowledged(id, sequence),
+    "chat.queueOutgoingMessage": async (message) => (await chatStore()).queueOutgoingMessage(message),
+    "chat.listOutgoingMessages": async () => (await chatStore()).listOutgoingMessages(),
+    "chat.removeOutgoingMessage": async (id) => (await chatStore()).removeOutgoingMessage(id),
   };
 }
