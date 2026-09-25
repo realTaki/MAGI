@@ -7,7 +7,7 @@ import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "../bus/index.js";
 
 /*
  * Business flow: sending a message, MAGI side (`ARCHITECTURE.md`, "A MAGI process").
- * A session event is written into the workspace and acknowledged once; a replay
+ * A chat event is written into the workspace and acknowledged once; a replay
  * is not taken in twice.
  */
 
@@ -27,7 +27,7 @@ test("a replayed event is not taken in twice", async () => {
       open(ws) { socket = ws; },
       message(_ws, message) {
         const event = JSON.parse(String(message)) as { type?: string; event_id?: string };
-        if (event.type === "session.ack" && event.event_id) acks.push(event.event_id);
+        if (event.type === "chat.ack" && event.event_id) acks.push(event.event_id);
       },
     },
   });
@@ -40,7 +40,7 @@ test("a replayed event is not taken in twice", async () => {
     await magi.start();
     for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
     const event = {
-      type: "session.message", event_id: "dup-1", session_id: "replay", sequence: 7,
+      type: "chat.message", event_id: "dup-1", chat_id: "replay", sequence: 7,
       payload: { sender: "@user", content: "hello" },
     };
     socket!.send(JSON.stringify(event));
@@ -52,8 +52,8 @@ test("a replayed event is not taken in twice", async () => {
 
     expect(acks).toEqual(["dup-1", "dup-1"]);
     expect(completions).toBe(1);
-    const conversation = magi.bus.conversations.forChannel("asp", "replay");
-    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["hello", "heard"]);
+    const chat = magi.bus.chats.forChannel("asp", "replay");
+    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hello", "heard"]);
   } finally {
     await magi.stop();
     server.stop(true);
@@ -61,7 +61,7 @@ test("a replayed event is not taken in twice", async () => {
   }
 });
 
-test("each speaker in a session is a contact of their own", async () => {
+test("each speaker in a chat is a contact of their own", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-speakers-"));
   let socket: Bun.ServerWebSocket<unknown> | null = null;
   const server = Bun.serve({
@@ -81,21 +81,21 @@ test("each speaker in a session is a contact of their own", async () => {
   try {
     await magi.start();
     for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
-    const conversation = magi.bus.conversations.forChannel("asp", "shared");
+    const chat = magi.bus.chats.forChannel("asp", "shared");
     const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
-      type: "session.message", event_id: id, session_id: "shared", payload: { sender, content },
+      type: "chat.message", event_id: id, chat_id: "shared", payload: { sender, content },
     }));
     emit("m1", "@user", "morning");
     emit("m2", "@eva-001.magi", "morning yourself");
 
-    const senders = () => new Set(magi.bus.messages.list(conversation.id).map((message) => message.contact_id));
+    const senders = () => new Set(magi.bus.messages.list(chat.id).map((message) => message.contact_id));
     for (let i = 0; i < 100 && senders().size < 2; i++) await Bun.sleep(10);
     expect(senders()).toContain(SYSTEM_CONTACT_ID);
     const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === "@eva-001.magi");
     expect(other).toMatchObject({ name: "@eva-001.magi", role: "magi" });
     expect(senders()).toContain(other!.id);
-    // Both of them are members of the conversation, in the order they were heard.
-    expect(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.id))
+    // Both of them are members of the chat, in the order they were heard.
+    expect(magi.bus.chatMembers.list(chat.id).map((contact) => contact.id))
       .toEqual([SYSTEM_CONTACT_ID, other!.id]);
   } finally {
     await magi.stop();
@@ -104,7 +104,7 @@ test("each speaker in a session is a contact of their own", async () => {
   }
 });
 
-test("ASP invite enters ChatNotify and reply is delivered to the session", async () => {
+test("ASP invite enters ChatNotify and reply is delivered to the chat", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-"));
   const requests: Array<{ path: string; body: unknown }> = [];
   const replies: unknown[] = [];
@@ -114,7 +114,7 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
     fetch(request, host) {
       const url = new URL(request.url);
       if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
-      if (request.method === "GET" && url.pathname === "/sessions/s1") return Response.json({ kind: "bot" });
+      if (request.method === "GET" && url.pathname === "/chats/s1") return Response.json({ kind: "bot" });
       return (async () => {
         const raw = await request.text();
         requests.push({ path: url.pathname, body: raw ? JSON.parse(raw) as unknown : null });
@@ -134,17 +134,17 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
     for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
     expect(socket).not.toBeNull();
     socket!.send(JSON.stringify({
-      type: "session.invited", event_id: "event-1", session_id: "s1",
+      type: "chat.invited", event_id: "event-1", chat_id: "s1",
       payload: { invitee: "@alice.magi", initial_message: { content: "hello" } },
     }));
     for (let i = 0; i < 200 && (requests.length < 2 || replies.length < 1); i++) await Bun.sleep(10);
     expect(requests).toEqual([
-      { path: "/sessions/s1/join", body: null },
-      { path: "/sessions/s1/messages", body: { content: "hello back" } },
+      { path: "/chats/s1/join", body: null },
+      { path: "/chats/s1/messages", body: { content: "hello back" } },
     ]);
-    expect(replies).toEqual([{ type: "session.ack", session_id: "s1", event_id: "event-1" }]);
-    const conversation = magi.bus.conversations.forChannel("asp", "s1");
-    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["hello", "hello back"]);
+    expect(replies).toEqual([{ type: "chat.ack", chat_id: "s1", event_id: "event-1" }]);
+    const chat = magi.bus.chats.forChannel("asp", "s1");
+    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hello", "hello back"]);
   } finally {
     await magi.stop();
     server.stop(true);
@@ -163,7 +163,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
     fetch(request, host) {
       const url = new URL(request.url);
       if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
-      if (request.method === "POST" && url.pathname === "/sessions/group/messages") {
+      if (request.method === "POST" && url.pathname === "/chats/group/messages") {
         return (async () => { sent.push(String((await request.json() as { content: string }).content)); return Response.json({}); })();
       }
       return Response.json({});
@@ -172,7 +172,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
       open(ws) { socket = ws; },
       message(_ws, message) {
         const event = JSON.parse(String(message)) as { type?: string; event_id?: string };
-        if (event.type === "session.ack" && event.event_id) acks.push(event.event_id);
+        if (event.type === "chat.ack" && event.event_id) acks.push(event.event_id);
       },
     },
   });
@@ -187,7 +187,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
     for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
     expect(socket).not.toBeNull();
     const emit = (id: string, sender: string, content: string, mentions?: string[]) => socket!.send(JSON.stringify({
-      type: "session.message", event_id: id, session_id: "group",
+      type: "chat.message", event_id: id, chat_id: "group",
       payload: { sender, content, ...(mentions === undefined ? {} : { mentions }) },
     }));
     // Nobody named: for whoever can help, so this MAGI answers.
@@ -206,8 +206,8 @@ test("mentions decide who answers, and everything said is kept", async () => {
     expect(completions).toBe(2);
     expect(sent).toEqual(["heard", "heard"]);
 
-    const conversation = magi.bus.conversations.forChannel("asp", "group");
-    const stored = magi.bus.messages.list(conversation.id);
+    const chat = magi.bus.chats.forChannel("asp", "group");
+    const stored = magi.bus.messages.list(chat.id);
     const contents = stored.map((message) => message.content);
     // Nothing is dropped: what the others said stays in the history.
     expect(contents).toContain("I can hear you");
@@ -219,7 +219,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
     expect(new Set(stored.map((message) => message.contact_id))).toEqual(new Set([
       SYSTEM_CONTACT_ID, MAGI_CONTACT_ID, handle("@eva-001.magi")!.id, handle("@eva-002.magi")!.id,
     ]));
-    expect(new Set(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.asp_handle)))
+    expect(new Set(magi.bus.chatMembers.list(chat.id).map((contact) => contact.asp_handle)))
       .toEqual(new Set(["@eva-001.magi", "@eva-002.magi", "@user"]));
   } finally {
     await magi.stop();

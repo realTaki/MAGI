@@ -1,5 +1,5 @@
 import { BaseWorker, type Bus } from "../bus/index.js";
-import { Conversation } from "./conversations.js";
+import { Chat } from "./chats.js";
 import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
 export class AgentWorker extends BaseWorker {
@@ -14,13 +14,13 @@ export class AgentWorker extends BaseWorker {
   async poll(): Promise<boolean> {
     const job = this.bus.board("ChatNotify").claim(this.worker_name);
     if (!job) return false;
-    const id = job.input.conversation_id;
+    const id = job.input.chat_id;
     if (!id) {
-      this.bus.board("ChatNotify").submit(this.worker_name, job.id, { error: "conversation_id is missing" });
+      this.bus.board("ChatNotify").submit(this.worker_name, job.id, { error: "chat_id is missing" });
       return true;
     }
     const previous = this.queues.get(id) ?? Promise.resolve();
-    const next = previous.then(() => new Conversation(this.bus, id).run(job.id));
+    const next = previous.then(() => new Chat(this.bus, id).run(job.id));
     this.queues.set(id, next);
     void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id); });
     return true;

@@ -14,14 +14,14 @@ test("legacy ASP import preserves events without acknowledging them", async (t) 
     const endpoint = new URL(url).pathname;
     if (endpoint === "/operator") return Response.json({ token: "secret" });
     assert.equal(options.headers.Authorization, "Bearer secret");
-    if (endpoint === "/conversations") return Response.json({ conversations: [{ conversation_id: "sess_1", kind: "group" }] });
-    if (endpoint === "/sessions/sess_1/events") return Response.json({ events: [{ event_id: "evt_1", sequence: 0, type: "session.message", payload: { content: "hello" } }] });
+    if (endpoint === "/chats") return Response.json({ chats: [{ chat_id: "sess_1", kind: "group" }] });
+    if (endpoint === "/chats/sess_1/events") return Response.json({ events: [{ event_id: "evt_1", sequence: 0, type: "chat.message", payload: { content: "hello" } }] });
     throw new Error(`unexpected request: ${endpoint}`);
   };
-  assert.deepEqual(await importAspHistory({ database, fetcher }), { conversations: 1, events: 1, database });
+  assert.deepEqual(await importAspHistory({ database, fetcher }), { chats: 1, events: 1, database });
   const store = await openChatStore(database);
   try {
-    assert.equal(store.listConversations().length, 1);
+    assert.equal(store.listChats().length, 1);
     assert.equal(store.listEvents("sess_1").length, 1);
     assert.equal(store.pendingAcks("sess_1").length, 1);
   } finally { store.close(); }

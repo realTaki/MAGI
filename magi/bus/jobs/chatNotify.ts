@@ -3,7 +3,7 @@
 export type ChatNotify = {
   text: string;
   contact_id?: number;
-  conversation_id?: number;
+  chat_id?: number;
   channel?: string;
   delivery_address?: string;
 };

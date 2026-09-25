@@ -1,23 +1,23 @@
-/** Desktop operator commands and conversation views over the session service. */
+/** Desktop operator commands and chat views over the chat service. */
 
 import { randomBytes } from "node:crypto";
 
-import { NotAllowed, NotFound, SessionService } from "./service.ts";
+import { NotAllowed, NotFound, ChatService } from "./service.ts";
 import { Store } from "./store.ts";
 import type { Transport } from "./transport.ts";
 
 export class OperatorService {
-  readonly sessions: SessionService;
+  readonly chats: ChatService;
   readonly store: Store;
   readonly transport: Transport;
 
-  constructor(sessions: SessionService, store: Store, transport: Transport) {
-    this.sessions = sessions;
+  constructor(chats: ChatService, store: Store, transport: Transport) {
+    this.chats = chats;
     this.store = store;
     this.transport = transport;
   }
 
-  async createConversation(creator: string, kind: string): Promise<Record<string, unknown>> {
+  async createChat(creator: string, kind: string): Promise<Record<string, unknown>> {
     if (kind !== "bot" && kind !== "group") {
       throw new Error("kind must be bot or group");
     }
@@ -31,19 +31,19 @@ export class OperatorService {
       magi = { handle, name: magiName, token: magiToken };
       invite = [handle];
     }
-    const result = await this.sessions.createSession({
+    const result = await this.chats.createChat({
       creator,
       invite,
       topic: null,
       initialMessage: null,
       endAfterSend: false,
     });
-    const session = this.store.getSession(result.sessionId);
-    if (session !== undefined) {
-      session.kind = kind;
-      this.store.updateSession(session);
+    const chat = this.store.getChat(result.chatId);
+    if (chat !== undefined) {
+      chat.kind = kind;
+      this.store.updateChat(chat);
     }
-    const view = this.conversationView(creator, result.sessionId);
+    const view = this.chatView(creator, result.chatId);
     if (magi !== null) {
       view.name = magi.name;
       // ASP registers the agent but never starts it: the caller (the desktop
@@ -73,23 +73,23 @@ export class OperatorService {
     return agents;
   }
 
-  conversationView(caller: string, sessionId: string): Record<string, unknown> {
-    const view = this.sessions.getSessionView(caller, sessionId);
-    const session = this.store.getSession(sessionId);
+  chatView(caller: string, chatId: string): Record<string, unknown> {
+    const view = this.chats.getChatView(caller, chatId);
+    const chat = this.store.getChat(chatId);
     const agents = this.store
-      .participantsIn(sessionId)
+      .participantsIn(chatId)
       .filter(
         (participant) =>
           participant.handle !== caller &&
           (participant.status === "invited" || participant.status === "joined"),
       )
       .map((participant) => participant.handle);
-    view.conversation_id = sessionId;
+    view.chat_id = chatId;
     view.agents = agents;
-    if (session !== undefined) {
-      view.kind = session.kind ?? (agents.length === 1 ? "bot" : "group");
-      if (session.description !== null) {
-        view.description = session.description;
+    if (chat !== undefined) {
+      view.kind = chat.kind ?? (agents.length === 1 ? "bot" : "group");
+      if (chat.description !== null) {
+        view.description = chat.description;
       }
     }
     if (view.kind === "bot" && agents.length === 1) {
@@ -102,30 +102,30 @@ export class OperatorService {
     return view;
   }
 
-  listConversations(caller: string): Record<string, unknown>[] {
+  listChats(caller: string): Record<string, unknown>[] {
     const rows: Record<string, unknown>[] = [];
-    for (const session of this.store.sessions.values()) {
-      if (this.store.getParticipant(session.id, caller) === undefined) {
+    for (const chat of this.store.chats.values()) {
+      if (this.store.getParticipant(chat.id, caller) === undefined) {
         continue;
       }
-      rows.push(this.conversationView(caller, session.id));
+      rows.push(this.chatView(caller, chat.id));
     }
     rows.sort((left, right) => Number(right.created_at ?? 0) - Number(left.created_at ?? 0));
     return rows;
   }
 
-  listBots(caller: string, conversationId: string | null = null): Record<string, unknown>[] {
-    let inConversation: Set<string> | null = null;
-    if (conversationId !== null) {
+  listBots(caller: string, chatId: string | null = null): Record<string, unknown>[] {
+    let inChat: Set<string> | null = null;
+    if (chatId !== null) {
       if (
-        this.store.getSession(conversationId) === undefined ||
-        this.store.getParticipant(conversationId, caller) === undefined
+        this.store.getChat(chatId) === undefined ||
+        this.store.getParticipant(chatId, caller) === undefined
       ) {
         throw new NotFound();
       }
-      inConversation = new Set(
+      inChat = new Set(
         this.store
-          .participantsIn(conversationId)
+          .participantsIn(chatId)
           .filter(
             (participant) => participant.status === "invited" || participant.status === "joined",
           )
@@ -144,8 +144,8 @@ export class OperatorService {
         name: name ?? handle,
         online: this.transport.isOnline(handle),
       };
-      if (inConversation !== null) {
-        row.in_conversation = inConversation.has(handle);
+      if (inChat !== null) {
+        row.in_chat = inChat.has(handle);
       }
       bots.push(row);
     }
@@ -157,9 +157,9 @@ export class OperatorService {
     return bots;
   }
 
-  async addConversationMember(
+  async addChatMember(
     caller: string,
-    sessionId: string,
+    chatId: string,
     handle: string,
   ): Promise<Record<string, unknown>> {
     if (handle === caller) {
@@ -168,17 +168,17 @@ export class OperatorService {
     if (this.store.getAgent(handle) === undefined) {
       throw new NotFound();
     }
-    await this.sessions.invite(caller, sessionId, [handle]);
-    return this.conversationView(caller, sessionId);
+    await this.chats.invite(caller, chatId, [handle]);
+    return this.chatView(caller, chatId);
   }
 
-  async updateConversation(
+  async updateChat(
     caller: string,
-    sessionId: string,
+    chatId: string,
     topic: string | null,
     description: string | null,
   ): Promise<Record<string, unknown>> {
-    await this.sessions.updateSession(caller, sessionId, topic, description);
-    return this.conversationView(caller, sessionId);
+    await this.chats.updateChat(caller, chatId, topic, description);
+    return this.chatView(caller, chatId);
   }
 }

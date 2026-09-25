@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { OPERATOR } from "./conversation-model";
+import { OPERATOR } from "./chat-model";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
-import { openConversationsRoute } from "./hash-route";
+import { openChatsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
 import { clearOperator, getProviderCatalog, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
@@ -230,7 +230,7 @@ export function SettingsPage() {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        openConversationsRoute();
+        openChatsRoute();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -239,7 +239,7 @@ export function SettingsPage() {
 
   function logOut() {
     clearOperator();
-    openConversationsRoute();
+    openChatsRoute();
   }
 
   const heading =
@@ -259,7 +259,7 @@ export function SettingsPage() {
         type="button"
         className="settings-overlay__backdrop"
         aria-label={t("common.close")}
-        onClick={openConversationsRoute}
+        onClick={openChatsRoute}
       />
       <div
         className="settings-overlay__window"
@@ -309,7 +309,7 @@ export function SettingsPage() {
               type="button"
               className="settings-overlay__close"
               aria-label={t("common.close")}
-              onClick={openConversationsRoute}
+              onClick={openChatsRoute}
             >
               ×
             </button>

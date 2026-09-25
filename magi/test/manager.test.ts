@@ -71,7 +71,7 @@ test("a channel whose credentials arrive later comes up without a restart", asyn
   }
 });
 
-test("a channel that fails while it runs reaches the conversation the operator used", async () => {
+test("a channel that fails while it runs reaches the chat the operator used", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-manager-health-"));
   // Starting is fine — the token is accepted — and then polling breaks, which is the
   // failure the worker cannot see for itself: the Chat SDK adapter reports it.
@@ -87,8 +87,8 @@ test("a channel that fails while it runs reaches the conversation the operator u
   try {
     await magi.start();
     // Speaking once is what gives the workspace an address to report trouble to.
-    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
-    magi.bus.setHomeConversation(conversation.id);
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    magi.bus.setHomeChat(chat.id);
     magi.bus.settings.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
     await manage(magi, "tg", "start");
@@ -97,7 +97,7 @@ test("a channel that fails while it runs reaches the conversation the operator u
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toContain('"tg"');
     expect(delivered[0]).toContain("Telegram polling request failed");
-    expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toBe(delivered[0]);
+    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toBe(delivered[0]);
   } finally {
     await magi.stop();
     telegram.server.stop(true);
@@ -117,8 +117,8 @@ test("a channel that cannot log in is reported instead of starting", async () =>
   });
   try {
     await magi.start();
-    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
-    magi.bus.setHomeConversation(conversation.id);
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    magi.bus.setHomeChat(chat.id);
     magi.bus.settings.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
 
@@ -129,7 +129,7 @@ test("a channel that cannot log in is reported instead of starting", async () =>
     for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toContain('worker "tg" could not start');
-    expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toBe(delivered[0]);
+    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toBe(delivered[0]);
   } finally {
     await magi.stop();
     telegram.server.stop(true);

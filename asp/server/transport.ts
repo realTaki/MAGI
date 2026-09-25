@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 
-import type { SessionEvent, Store } from "./store.ts";
+import type { ChatEvent, Store } from "./store.ts";
 import { eventToWire } from "./store.ts";
 
 const GRACE_MS = 30_000;
@@ -137,7 +137,7 @@ export class Transport {
     }
   }
 
-  async deliver(handle: string, event: SessionEvent): Promise<void> {
+  async deliver(handle: string, event: ChatEvent): Promise<void> {
     const peers = this.#connections.get(handle);
     if (peers === undefined || peers.size === 0) {
       return;
@@ -158,13 +158,13 @@ export class Transport {
       this.#clearCursors(handle);
       return;
     }
-    if (event.session_id !== null && event.sequence !== null) {
-      this.#cursors.set(`${handle}\0${event.session_id}`, event.sequence);
+    if (event.chat_id !== null && event.sequence !== null) {
+      this.#cursors.set(`${handle}\0${event.chat_id}`, event.sequence);
     }
   }
 
-  cursor(handle: string, sessionId: string): number {
-    return this.#cursors.get(`${handle}\0${sessionId}`) ?? -1;
+  cursor(handle: string, chatId: string): number {
+    return this.#cursors.get(`${handle}\0${chatId}`) ?? -1;
   }
 
   async close(): Promise<void> {

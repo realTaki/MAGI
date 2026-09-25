@@ -6,7 +6,7 @@ on BUS for shared state, Job exchange, and the tool catalog.
 | Module | Responsibility |
 | --- | --- |
 | `bus/` | Books, durable Jobs, and shared tool catalog |
-| `agent/` | Serial conversation turns and model/tool continuation |
+| `agent/` | Serial chat turns and model/tool continuation |
 | `providers/` | Execute model Jobs |
 | `tools/`, `mcp/` | Execute native and MCP tools through BUS |
 | `channels/` | Transport messages and replies |
@@ -20,7 +20,7 @@ bun run start -- @alice.magi http://127.0.0.1:42069 TOKEN
 ```
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
-it listens for session events and sends replies through ASP. State lives in
+it listens for chat events and sends replies through ASP. State lives in
 `~/.magi/alice`, derived from the handle; an existing `~/.magi/ts-magi/alice`
 workspace is still opened, and a caller can point at another directory with the
 `workspace` option. The handle comes from the command line and everything else
@@ -51,21 +51,21 @@ which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through
 BUS using `ChatNotify`,
 `CallLLMJob`, `RunToolJob`, `RunTaskNotify`, `ChangeProviderNotify`, and
-`DeliveryNotify`. Agent turns are serial per conversation. Provider and tool
+`DeliveryNotify`. Agent turns are serial per chat. Provider and tool
 errors are saved on their Jobs. Provider changes are verified before becoming
-active, ASP reconnects and acknowledges durable session events, long histories
+active, ASP reconnects and acknowledges durable chat events, long histories
 are compacted, and active memories and workspace Skills are injected into the
 agent context.
 
-Errors reach the operator, never a log file. A component that knows the conversation
+Errors reach the operator, never a log file. A component that knows the chat
 delivers the failure into it; a component that claimed a job writes the error into the
 job result, and the agent that published the job passes it on. A component that only
 sees trouble of its own — an MCP server that cannot connect, a worker that keeps
-throwing — sends it to the conversation the operator last spoke in
-(`home.conversation_id`, through `bus.publishNotice`). Only a process that cannot start
+throwing — sends it to the chat the operator last spoke in
+(`home.chat_id`, through `bus.publishNotice`). Only a process that cannot start
 at all writes to stderr.
 
-This runtime covers the local agent path, ASP sessions, Telegram text messages,
+This runtime covers the local agent path, ASP chats, Telegram text messages,
 memory and contact tools, Skills, context compaction, recurring or manually
 triggered tasks, foreground/background shell processes, and dynamically
 configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the

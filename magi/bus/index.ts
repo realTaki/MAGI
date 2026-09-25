@@ -1,6 +1,6 @@
 export { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./bus.js";
 export { BaseWorker } from "./baseWorker.js";
-export type { Conversation } from "./books/conversationBook.js";
+export type { Chat } from "./books/chatBook.js";
 export type { Message } from "./books/messageBook.js";
 export type { Memory, MemoryKind } from "./books/memoryBook.js";
 export type { Skill } from "./books/skillsBook.js";

@@ -17,25 +17,25 @@ function version1(connection: DatabaseSync): void {
 function version2(connection: DatabaseSync): void {
   connection.exec(`
     CREATE TABLE asp_agents (handle TEXT PRIMARY KEY, record_json TEXT NOT NULL);
-    CREATE TABLE asp_sessions (
+    CREATE TABLE asp_chats (
       id TEXT PRIMARY KEY,
       record_json TEXT NOT NULL,
       next_sequence INTEGER NOT NULL
     );
     CREATE TABLE asp_participants (
-      session_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
       handle TEXT NOT NULL,
       record_json TEXT NOT NULL,
-      PRIMARY KEY (session_id, handle)
+      PRIMARY KEY (chat_id, handle)
     );
     CREATE TABLE asp_events (
-      session_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
       sequence INTEGER NOT NULL,
       event_id TEXT NOT NULL UNIQUE,
       type TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       payload_json TEXT NOT NULL,
-      PRIMARY KEY (session_id, sequence)
+      PRIMARY KEY (chat_id, sequence)
     );
     CREATE TABLE asp_message_recipients (
       event_id TEXT NOT NULL,
@@ -45,23 +45,23 @@ function version2(connection: DatabaseSync): void {
       FOREIGN KEY (event_id) REFERENCES asp_events(event_id) ON DELETE CASCADE
     );
     CREATE TABLE asp_delivery_acks (
-      session_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
       handle TEXT NOT NULL,
       sequence INTEGER NOT NULL,
-      PRIMARY KEY (session_id, handle)
+      PRIMARY KEY (chat_id, handle)
     );
     CREATE TABLE asp_message_keys (
-      session_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
       sender TEXT NOT NULL,
       key TEXT NOT NULL,
       message_id TEXT NOT NULL,
       sequence INTEGER NOT NULL,
-      PRIMARY KEY (session_id, sender, key)
+      PRIMARY KEY (chat_id, sender, key)
     );
-    CREATE TABLE asp_session_keys (
+    CREATE TABLE asp_chat_keys (
       creator TEXT NOT NULL,
       key TEXT NOT NULL,
-      session_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
       sequence INTEGER,
       PRIMARY KEY (creator, key)
     );
@@ -80,7 +80,7 @@ function version3(connection: DatabaseSync): void {
   `);
 }
 
-/** Rename the fixed operator identity without invalidating existing sessions. */
+/** Rename the fixed operator identity without invalidating existing chats. */
 function version4(connection: DatabaseSync): void {
   const legacy = "user";
   const operator = "@user";
@@ -109,7 +109,7 @@ function version4(connection: DatabaseSync): void {
     connection.prepare(`UPDATE ${table} SET handle = ? WHERE handle = ?`).run(operator, legacy);
   }
   connection.prepare("UPDATE asp_message_keys SET sender = ? WHERE sender = ?").run(operator, legacy);
-  connection.prepare("UPDATE asp_session_keys SET creator = ? WHERE creator = ?").run(operator, legacy);
+  connection.prepare("UPDATE asp_chat_keys SET creator = ? WHERE creator = ?").run(operator, legacy);
 
   const events = connection.prepare("SELECT event_id, payload_json FROM asp_events").all() as Array<{
     event_id: unknown;

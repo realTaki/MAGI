@@ -4,12 +4,12 @@ import type { BusDb } from "../drizzle/database.js";
 
 export const messages = sqliteTable("books_messages", {
   id: integer("id").primaryKey(),
-  conversation_id: integer("conversation_id").notNull(),
+  chat_id: integer("chat_id").notNull(),
   contact_id: integer("contact_id").notNull(),
   content: text("content").notNull(),
   created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
-}, (table) => [index("books_messages_conversation").on(table.conversation_id, table.id)]);
+}, (table) => [index("books_messages_chat").on(table.chat_id, table.id)]);
 
 export type Message = typeof messages.$inferSelect;
 
@@ -19,34 +19,34 @@ const matches = (query: string) => sql`instr(lower(${messages.content}), lower($
 export class MessageBook {
   constructor(private readonly db: BusDb) {}
 
-  add(conversationId: number, contactId: number, content: string): void {
-    this.db.insert(messages).values({ conversation_id: conversationId, contact_id: contactId, content }).run();
+  add(chatId: number, contactId: number, content: string): void {
+    this.db.insert(messages).values({ chat_id: chatId, contact_id: contactId, content }).run();
   }
 
-  list(conversationId: number, lastN = 20): Message[] {
+  list(chatId: number, lastN = 20): Message[] {
     return this.db.select().from(messages)
-      .where(and(eq(messages.conversation_id, conversationId), eq(messages.archived, false)))
+      .where(and(eq(messages.chat_id, chatId), eq(messages.archived, false)))
       .orderBy(desc(messages.id))
       .limit(lastN)
       .all()
       .reverse();
   }
 
-  count(conversationId: number): number {
+  count(chatId: number): number {
     return this.db.select({ count: count() }).from(messages)
-      .where(and(eq(messages.conversation_id, conversationId), eq(messages.archived, false)))
+      .where(and(eq(messages.chat_id, chatId), eq(messages.archived, false)))
       .get()?.count ?? 0;
   }
 
-  archiveBefore(conversationId: number, id: number): void {
+  archiveBefore(chatId: number, id: number): void {
     this.db.update(messages).set({ archived: true })
-      .where(and(eq(messages.conversation_id, conversationId), lte(messages.id, id)))
+      .where(and(eq(messages.chat_id, chatId), lte(messages.id, id)))
       .run();
   }
 
-  searchConversation(conversationId: number, query: string, limit = 20): Message[] {
+  searchChat(chatId: number, query: string, limit = 20): Message[] {
     return this.db.select().from(messages)
-      .where(and(eq(messages.conversation_id, conversationId), matches(query)))
+      .where(and(eq(messages.chat_id, chatId), matches(query)))
       .orderBy(desc(messages.id))
       .limit(limit)
       .all();

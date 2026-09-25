@@ -7,8 +7,8 @@ export const contacts = sqliteTable("books_contacts", {
   name: text("name").notNull().unique(),
   nickname: text("nickname"),
   role: text("role").$type<"system" | "authorized" | "stranger" | "magi" | "third_party_agent">().notNull().default("stranger"),
-  // A conversation is a channel address, and an address can hold several people — a
-  // group session, a Telegram group. Who spoke is therefore a contact, and the identity
+  // A chat is a channel address, and an address can hold several people — a
+  // group chat, a Telegram group. Who spoke is therefore a contact, and the identity
   // they spoke with belongs to that contact: one per channel, learned from the message.
   tg_id: text("tg_id").unique(),
   asp_handle: text("asp_handle").unique(),

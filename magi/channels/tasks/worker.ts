@@ -29,7 +29,7 @@ export class TaskWorker extends BaseWorker {
 
   private fire(task: Task, manual: boolean): void {
     this.bus.publishChat({
-      conversation_id: task.conversation_id,
+      chat_id: task.chat_id,
       text: `[task context]\nYou are EXECUTING a scheduled task that just fired.\nname: ${task.name}\nschedule: ${manual ? "manual" : task.cron}\n\n[task prompt]\n${task.prompt}`,
     }, this.worker_name);
   }

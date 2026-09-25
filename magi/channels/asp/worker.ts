@@ -27,7 +27,7 @@ export class AspWorker extends BaseWorker {
     const job = board.claim(this.worker_name, (input) => input.channel === "asp");
     if (!job) return false;
     try {
-      if (!job.input.address) throw new Error("delivery has no ASP session");
+      if (!job.input.address) throw new Error("delivery has no ASP chat");
       await this.client.send(job.input.address, job.input.text);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
@@ -41,13 +41,13 @@ export class AspWorker extends BaseWorker {
     try {
       return await this.onEvent(event);
     } catch (error) {
-      this.report(error, event.session_id);
+      this.report(error, event.chat_id);
     }
   }
 
-  private report(error: unknown, session?: string): void {
+  private report(error: unknown, chat?: string): void {
     const text = `[asp] ${error instanceof Error ? error.message : String(error)}`;
-    this.bus.publishNotice(text, session ? this.bus.conversations.forChannel("asp", session).id : undefined);
+    this.bus.publishNotice(text, chat ? this.bus.chats.forChannel("asp", chat).id : undefined);
   }
 
   private async onEvent(event: AspEvent): Promise<Record<string, unknown> | void> {
@@ -73,18 +73,18 @@ export class AspWorker extends BaseWorker {
       }
       return { type: "agent.provider.updated", request_id: event.request_id, ok: false };
     }
-    const id = event.session_id;
+    const id = event.chat_id;
     if (!id) return;
     const payload = event.payload ?? {};
     // ASP replays what it has not seen acknowledged, so a sequence this workspace has
     // passed is a replay of something already handled and is skipped.
     if (this.taken(id, event.sequence)) {
-      return event.event_id ? { type: "session.ack", session_id: id, event_id: event.event_id } : undefined;
+      return event.event_id ? { type: "chat.ack", chat_id: id, event_id: event.event_id } : undefined;
     }
-    if (event.type === "session.invited" && payload.invitee === this.bus.handle) {
+    if (event.type === "chat.invited" && payload.invitee === this.bus.handle) {
       await this.client.join(id);
-      // This MAGI is in the conversation too, so it belongs to its members.
-      this.bus.conversationMembers.add(this.bus.conversations.forChannel("asp", id).id, MAGI_CONTACT_ID);
+      // This MAGI is in the chat too, so it belongs to its members.
+      this.bus.chatMembers.add(this.bus.chats.forChannel("asp", id).id, MAGI_CONTACT_ID);
       const initial = payload.initial_message;
       if (typeof initial === "object" && initial !== null) {
         const message = initial as Record<string, unknown>;
@@ -94,13 +94,13 @@ export class AspWorker extends BaseWorker {
           else this.record(id, message);
         }
       }
-    } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
-      // Everything said in the session is recorded — that is the conversation's history —
+    } else if (event.type === "chat.message" && payload.sender !== this.bus.handle) {
+      // Everything said in the chat is recorded — that is the chat's history —
       // but only what is asked of this MAGI opens a turn.
       if (this.asked(payload)) this.ingest(id, payload);
       else this.record(id, payload);
     }
-    if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
+    if (event.event_id) return { type: "chat.ack", chat_id: id, event_id: event.event_id };
   }
 
   /**
@@ -110,10 +110,10 @@ export class AspWorker extends BaseWorker {
    * reported and the event is acknowledged anyway, so handling it twice is the worse
    * mistake of the two.
    */
-  private taken(sessionId: string, sequence: unknown): boolean {
+  private taken(chatId: string, sequence: unknown): boolean {
     if (typeof sequence !== "number") return false;
-    if (sequence <= this.bus.channelCursors.read("asp", sessionId)) return true;
-    this.bus.channelCursors.markRead("asp", sessionId, sequence);
+    if (sequence <= this.bus.channelCursors.read("asp", chatId)) return true;
+    this.bus.channelCursors.markRead("asp", chatId, sequence);
     return false;
   }
 
@@ -140,42 +140,42 @@ export class AspWorker extends BaseWorker {
   }
 
   /**
-   * Who spoke: a contact of their own, and a member of this conversation from now on.
-   * The address is the conversation, the people on it are its members.
+   * Who spoke: a contact of their own, and a member of this chat from now on.
+   * The address is the chat, the people on it are its members.
    */
-  private remember(sessionId: string, sender: unknown): Contact | null {
+  private remember(chatId: string, sender: unknown): Contact | null {
     const handle = typeof sender === "string" ? sender.trim() : "";
     if (!handle) return null;
     const contact = handle === "@user" ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
     if (!contact) return null;
-    this.bus.conversationMembers.add(this.bus.conversations.forChannel("asp", sessionId).id, contact.id);
+    this.bus.chatMembers.add(this.bus.chats.forChannel("asp", chatId).id, contact.id);
     return contact;
   }
 
-  /** Answer it: the message enters the conversation and opens a turn. */
-  private ingest(sessionId: string, payload: Record<string, unknown>): void {
+  /** Answer it: the message enters the chat and opens a turn. */
+  private ingest(chatId: string, payload: Record<string, unknown>): void {
     const text = this.content(payload);
     if (!text) return;
-    const contact = this.remember(sessionId, payload.sender);
-    const conversation = this.bus.conversations.forChannel("asp", sessionId);
-    // Home is where a notice with no conversation of its own goes. The operator's first
+    const contact = this.remember(chatId, payload.sender);
+    const chat = this.bus.chats.forChannel("asp", chatId);
+    // Home is where a notice with no chat of its own goes. The operator's first
     // message establishes it, and only a tool moves it afterwards.
-    if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeConversation() === null) {
-      this.bus.setHomeConversation(conversation.id);
+    if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeChat() === null) {
+      this.bus.setHomeChat(chat.id);
     }
     this.bus.publishChat({
-      conversation_id: conversation.id,
+      chat_id: chat.id,
       contact_id: contact?.id ?? SYSTEM_CONTACT_ID,
       text,
     }, this.worker_name);
   }
 
   /** Only record it: it was addressed to someone else, but the history keeps it. */
-  private record(sessionId: string, payload: Record<string, unknown>): void {
+  private record(chatId: string, payload: Record<string, unknown>): void {
     const text = this.content(payload);
     if (!text) return;
-    const contact = this.remember(sessionId, payload.sender);
-    this.bus.messages.add(this.bus.conversations.forChannel("asp", sessionId).id, contact?.id ?? SYSTEM_CONTACT_ID, text);
+    const contact = this.remember(chatId, payload.sender);
+    this.bus.messages.add(this.bus.chats.forChannel("asp", chatId).id, contact?.id ?? SYSTEM_CONTACT_ID, text);
   }
 }
 

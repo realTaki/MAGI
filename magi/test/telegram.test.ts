@@ -85,11 +85,11 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
     await magi.start();
     for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
     expect(api.posts[0]).toEqual({ chat_id: "42", text: "hello" });
-    const conversation = magi.bus.conversations.forChannel("tg", "42");
-    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["hi", "hello"]);
-    // The speaker is a contact of their own, and a member of the conversation.
+    const chat = magi.bus.chats.forChannel("tg", "42");
+    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hi", "hello"]);
+    // The speaker is a contact of their own, and a member of the chat.
     const speaker = magi.bus.contacts.forTg("42");
-    expect(magi.bus.conversationMembers.list(conversation.id).map((member) => member.id)).toContain(speaker.id);
+    expect(magi.bus.chatMembers.list(chat.id).map((member) => member.id)).toContain(speaker.id);
   } finally {
     await magi.stop();
     api.server.stop(true);
@@ -102,14 +102,14 @@ test("a Telegram DM does not take over an established home", async () => {
   const api = telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
   const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
   try {
-    // The app's greeting, in the conversation it created, is what establishes home.
-    const conversation = magi.bus.conversations.forChannel("asp", "sess-1");
-    magi.bus.setHomeConversation(conversation.id);
+    // The app's greeting, in the chat it created, is what establishes home.
+    const chat = magi.bus.chats.forChannel("asp", "sess-1");
+    magi.bus.setHomeChat(chat.id);
 
     await magi.start();
     for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
     expect(api.posts).toHaveLength(1);
-    expect(magi.bus.homeConversation()).toBe(conversation.id);
+    expect(magi.bus.homeChat()).toBe(chat.id);
   } finally {
     await magi.stop();
     api.server.stop(true);
@@ -127,8 +127,8 @@ test("a group message that does not address the MAGI is ignored", async () => {
     for (let i = 0; i < 200 && api.handedOut() === 0; i++) await Bun.sleep(10);
     expect(api.handedOut()).toBe(1);
     await Bun.sleep(200);
-    const conversation = magi.bus.conversations.forChannel("tg", "-100");
-    expect(magi.bus.messages.count(conversation.id)).toBe(0);
+    const chat = magi.bus.chats.forChannel("tg", "-100");
+    expect(magi.bus.messages.count(chat.id)).toBe(0);
     expect(api.posts).toHaveLength(0);
   } finally {
     await magi.stop();
@@ -145,11 +145,11 @@ test("a reply to the MAGI in a group counts as a mention", async () => {
     await magi.start();
     for (let i = 0; i < 200 && api.posts.length === 0; i++) await Bun.sleep(10);
     expect(api.posts[0]).toEqual({ chat_id: "-100", text: "hello" });
-    const conversation = magi.bus.conversations.forChannel("tg", "-100");
+    const chat = magi.bus.chats.forChannel("tg", "-100");
     const speaker = magi.bus.contacts.forTg("7");
-    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["and this?", "hello"]);
-    expect(magi.bus.messages.list(conversation.id)[0]?.contact_id).toBe(speaker.id);
-    const members = magi.bus.conversationMembers.list(conversation.id).map((member) => member.id);
+    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["and this?", "hello"]);
+    expect(magi.bus.messages.list(chat.id)[0]?.contact_id).toBe(speaker.id);
+    const members = magi.bus.chatMembers.list(chat.id).map((member) => member.id);
     expect(members).toContain(speaker.id);
     expect(members).toContain(MAGI_CONTACT_ID);
   } finally {

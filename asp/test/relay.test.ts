@@ -17,32 +17,32 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
     databasePath,
     aspSeed: { "@second.magi": "second-token" },
   };
-  let sessionId = "";
+  let chatId = "";
   let firstEventId = "";
   await withApp(options, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const conversation = record(
-      (await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data,
+    const chat = record(
+      (await request(app, "POST", "/chats", { token, body: { kind: "group" } })).data,
     );
-    sessionId = String(conversation.conversation_id);
+    chatId = String(chat.chat_id);
     assert.equal(
       (
-        await request(app, "POST", `/conversations/${sessionId}/members`, {
+        await request(app, "POST", `/chats/${chatId}/members`, {
           token,
           body: { handle: "@second.magi" },
         })
       ).status,
       200,
     );
-    assert.equal((await request(app, "POST", `/sessions/${sessionId}/join`, { token: "second-token" })).status, 200);
+    assert.equal((await request(app, "POST", `/chats/${chatId}/join`, { token: "second-token" })).status, 200);
     for (const content of ["one", "two"]) {
       assert.equal(
-        (await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content } })).status,
+        (await request(app, "POST", `/chats/${chatId}/messages`, { token, body: { content } })).status,
         201,
       );
     }
-    const events = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }));
-    const messages = events.filter((event) => event.type === "session.message");
+    const events = eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token }));
+    const messages = events.filter((event) => event.type === "chat.message");
     assert.deepEqual(
       messages.map((event) => record(event.payload).content),
       ["one", "two"],
@@ -56,7 +56,7 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
     for (const bearer of [token, "second-token"]) {
       assert.equal(
         (
-          await request(app, "POST", `/sessions/${sessionId}/events/ack`, {
+          await request(app, "POST", `/chats/${chatId}/events/ack`, {
             token: bearer,
             body: { event_ids: [later.event_id] },
           })
@@ -64,8 +64,8 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
         200,
       );
     }
-    const remaining = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token })).filter(
-      (event) => event.type === "session.message",
+    const remaining = eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token })).filter(
+      (event) => event.type === "chat.message",
     );
     assert.deepEqual(
       remaining.map((event) => record(event.payload).content),
@@ -75,16 +75,16 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
 
   await withApp(options, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const conversations = record((await request(app, "GET", "/conversations", { token })).data).conversations;
-    assert.ok(Array.isArray(conversations));
-    assert.equal(record(conversations[0]).conversation_id, sessionId);
-    assert.ok(eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token })).length > 0);
-    const ack = `/sessions/${sessionId}/events/ack`;
+    const chats = record((await request(app, "GET", "/chats", { token })).data).chats;
+    assert.ok(Array.isArray(chats));
+    assert.equal(record(chats[0]).chat_id, chatId);
+    assert.ok(eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token })).length > 0);
+    const ack = `/chats/${chatId}/events/ack`;
     assert.equal(
       (await request(app, "POST", ack, { token, body: { event_ids: [firstEventId] } })).status,
       200,
     );
-    let remaining = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }));
+    let remaining = eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token }));
     assert.equal(
       remaining.some((event) => event.event_id === firstEventId),
       true,
@@ -93,9 +93,9 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
       (await request(app, "POST", ack, { token: "second-token", body: { event_ids: [firstEventId] } })).status,
       200,
     );
-    remaining = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }));
+    remaining = eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token }));
     assert.equal(
-      remaining.every((event) => event.type !== "session.message"),
+      remaining.every((event) => event.type !== "chat.message"),
       true,
     );
   });
@@ -106,7 +106,7 @@ test("a registered magi outlives an asp restart", async (t) => {
   let handle = "";
   await withApp({ databasePath }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const response = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
+    const response = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     assert.equal(response.status, 201);
     const agents = record(response.data).agents;
     if (!Array.isArray(agents) || typeof agents[0] !== "string") {
@@ -131,21 +131,21 @@ test("a message records who it names", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   await withApp({ databasePath, aspSeed: { "@second.magi": "second-token" } }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
-    const sessionId = String(
-      record((await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data).conversation_id,
+    const chatId = String(
+      record((await request(app, "POST", "/chats", { token, body: { kind: "group" } })).data).chat_id,
     );
-    await request(app, "POST", `/conversations/${sessionId}/members`, { token, body: { handle: "@second.magi" } });
-    assert.equal((await request(app, "POST", `/sessions/${sessionId}/join`, { token: "second-token" })).status, 200);
+    await request(app, "POST", `/chats/${chatId}/members`, { token, body: { handle: "@second.magi" } });
+    assert.equal((await request(app, "POST", `/chats/${chatId}/join`, { token: "second-token" })).status, 200);
 
     // The long handle, the short name, the operator handle, and a message that names nobody.
     for (const content of ["you there @second.magi?", "@second ping", "@user please review", "anyone around?"]) {
       assert.equal(
-        (await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content } })).status,
+        (await request(app, "POST", `/chats/${chatId}/messages`, { token, body: { content } })).status,
         201,
       );
     }
-    const mentions = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }))
-      .filter((event) => event.type === "session.message")
+    const mentions = eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token }))
+      .filter((event) => event.type === "chat.message")
       .map((event) => record(event.payload).mentions ?? null);
     assert.deepEqual(mentions, [["@second.magi"], ["@second.magi"], ["@user"], null]);
   });

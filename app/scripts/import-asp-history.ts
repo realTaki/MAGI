@@ -19,23 +19,23 @@ export async function importAspHistory({
   }
 
   const token = (await get("/operator")).token;
-  const conversations = (await get("/conversations", token)).conversations;
-  if (!Array.isArray(conversations)) throw new Error("ASP returned invalid conversations");
-  const snapshots = await Promise.all(conversations.map(async (conversation) => {
-    if (typeof conversation?.conversation_id !== "string") throw new Error("ASP returned a conversation without an id");
-    const events = (await get(`/sessions/${encodeURIComponent(conversation.conversation_id)}/events`, token)).events;
+  const chats = (await get("/chats", token)).chats;
+  if (!Array.isArray(chats)) throw new Error("ASP returned invalid chats");
+  const snapshots = await Promise.all(chats.map(async (chat) => {
+    if (typeof chat?.chat_id !== "string") throw new Error("ASP returned a chat without an id");
+    const events = (await get(`/chats/${encodeURIComponent(chat.chat_id)}/events`, token)).events;
     if (!Array.isArray(events)) throw new Error("ASP returned invalid events");
-    return { conversation, events };
+    return { chat, events };
   }));
 
   const store = await openChatStore(database);
   try {
-    store.saveConversations(snapshots.map(({ conversation }) => conversation));
-    for (const { conversation, events } of snapshots) store.saveEvents(conversation.conversation_id, events);
+    store.saveChats(snapshots.map(({ chat }) => chat));
+    for (const { chat, events } of snapshots) store.saveEvents(chat.chat_id, events);
   } finally {
     store.close();
   }
-  return { conversations: snapshots.length, events: snapshots.reduce((total, item) => total + item.events.length, 0), database };
+  return { chats: snapshots.length, events: snapshots.reduce((total, item) => total + item.events.length, 0), database };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -48,7 +48,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     options[key.slice(2)] = value;
   }
   importAspHistory(options).then(
-    (result) => console.log(`Saved ${result.conversations} conversations and ${result.events} events to ${result.database}`),
+    (result) => console.log(`Saved ${result.chats} chats and ${result.events} events to ${result.database}`),
     (error) => { console.error(error); process.exitCode = 1; },
   );
 }

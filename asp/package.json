@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI ASP server — sessions and live event delivery.",
+  "description": "MAGI ASP server — chats and live event delivery.",
   "scripts": {
     "start": "node main.ts",
     "test": "node --test test/*.test.ts"

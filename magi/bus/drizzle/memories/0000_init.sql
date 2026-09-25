@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS `books_contacts` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS `books_contacts_name_unique` ON `books_contacts` (`name`);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `books_conversations` (
+CREATE TABLE IF NOT EXISTS `books_chats` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`channel` text NOT NULL,
 	`delivery_address` text NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS `books_conversations` (
 	`summary` text DEFAULT '' NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS `books_conversations_channel_address` ON `books_conversations` (`channel`,`delivery_address`);
+CREATE UNIQUE INDEX IF NOT EXISTS `books_chats_channel_address` ON `books_chats` (`channel`,`delivery_address`);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `books_mcp_servers` (
 	`name` text PRIMARY KEY NOT NULL,
@@ -58,14 +58,14 @@ CREATE TABLE IF NOT EXISTS `books_memories` (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `books_messages` (
 	`id` integer PRIMARY KEY NOT NULL,
-	`conversation_id` integer NOT NULL,
+	`chat_id` integer NOT NULL,
 	`contact_id` integer NOT NULL,
 	`content` text NOT NULL,
 	`created_at` text DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
 	`archived` integer DEFAULT 0 NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS `books_messages_conversation` ON `books_messages` (`conversation_id`,`id`);
+CREATE INDEX IF NOT EXISTS `books_messages_chat` ON `books_messages` (`chat_id`,`id`);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `books_settings` (
 	`key` text PRIMARY KEY NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS `books_tasks` (
 	`source` text DEFAULT 'user' NOT NULL,
 	`enabled` integer DEFAULT 1 NOT NULL,
 	`cron` text NOT NULL,
-	`conversation_id` integer NOT NULL,
+	`chat_id` integer NOT NULL,
 	`last_fired_minute` text
 );
 --> statement-breakpoint

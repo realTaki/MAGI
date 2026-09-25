@@ -11,19 +11,19 @@ test("message search includes archived history and send_message uses delivery jo
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-"));
   const delivered: string[] = [];
   const magi = new Magi("@tools.magi", { workspace, deliver: (text) => delivered.push(text), client: { async complete() { return { role: "assistant", content: "unused" }; } } });
-  const conversation = magi.bus.conversations.forChannel("cli", "terminal");
-  magi.bus.messages.add(conversation.id, SYSTEM_CONTACT_ID, "remember the blue project");
-  magi.bus.messages.add(conversation.id, MAGI_CONTACT_ID, "assistant answer");
-  magi.bus.messages.archiveBefore(conversation.id, 1);
+  const chat = magi.bus.chats.forChannel("cli", "terminal");
+  magi.bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "remember the blue project");
+  magi.bus.messages.add(chat.id, MAGI_CONTACT_ID, "assistant answer");
+  magi.bus.messages.archiveBefore(chat.id, 1);
   const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
   try {
-    const conversationSearch = JSON.parse(await tools.get("search_conversation_messages")!.run({ conversation_id: conversation.id, query: "BLUE" })) as { messages: Array<{ content: string }> };
-    expect(conversationSearch.messages.map((message) => message.content)).toEqual(["remember the blue project"]);
+    const chatSearch = JSON.parse(await tools.get("search_chat_messages")!.run({ chat_id: chat.id, query: "BLUE" })) as { messages: Array<{ content: string }> };
+    expect(chatSearch.messages.map((message) => message.content)).toEqual(["remember the blue project"]);
     const contactSearch = JSON.parse(await tools.get("search_contact_messages")!.run({ contact_id: SYSTEM_CONTACT_ID, query: "project" })) as { messages: Array<{ content: string }> };
     expect(contactSearch.messages).toHaveLength(1);
 
     await magi.start();
-    expect(await tools.get("send_message")!.run({ conversation_id: conversation.id, text: "progress update" })).toContain("queued");
+    expect(await tools.get("send_message")!.run({ chat_id: chat.id, text: "progress update" })).toContain("queued");
     for (let i = 0; i < 100 && !delivered.length; i++) await Bun.sleep(10);
     expect(delivered).toEqual(["progress update"]);
   } finally {
@@ -32,25 +32,25 @@ test("message search includes archived history and send_message uses delivery jo
   }
 });
 
-test("the home conversation moves by tool, not by talking", async () => {
+test("the home chat moves by tool, not by talking", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-home-"));
   const magi = new Magi("@home.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
   try {
-    expect(magi.bus.homeConversation()).toBeNull();
-    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
-    const moved = JSON.parse(await tools.get("set_home_conversation")!.run({ conversation_id: conversation.id })) as {
+    expect(magi.bus.homeChat()).toBeNull();
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const moved = JSON.parse(await tools.get("set_home_chat")!.run({ chat_id: chat.id })) as {
       home: number; channel: string; address: string;
     };
-    expect(moved).toEqual({ home: conversation.id, channel: "cli", address: "terminal" });
-    expect(magi.bus.homeConversation()).toBe(conversation.id);
+    expect(moved).toEqual({ home: chat.id, channel: "cli", address: "terminal" });
+    expect(magi.bus.homeChat()).toBe(chat.id);
 
-    // A notice with no conversation of its own lands in the new home.
+    // A notice with no chat of its own lands in the new home.
     magi.bus.publishNotice('[manager] worker "tg" could not start');
-    expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toContain("could not start");
+    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toContain("could not start");
 
-    await expect(tools.get("set_home_conversation")!.run({ conversation_id: 999 })).rejects.toThrow("unknown conversation");
-    expect(magi.bus.homeConversation()).toBe(conversation.id);
+    await expect(tools.get("set_home_chat")!.run({ chat_id: 999 })).rejects.toThrow("unknown chat");
+    expect(magi.bus.homeChat()).toBe(chat.id);
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });
@@ -112,9 +112,9 @@ test("the catalog asks live sources, and a name clash fails at registration", as
 test("a tool call left over from a restart is failed instead of re-run", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-restart-"));
   const before = new Bus("@restart.magi", workspace);
-  const conversation = before.conversations.forChannel("cli", "terminal");
+  const chat = before.chats.forChannel("cli", "terminal");
   const id = before.board("RunToolJob").publish({
-    call: { tool_call_id: "call-1", name: "send_message", arguments: { conversation_id: conversation.id, text: "again" } },
+    call: { tool_call_id: "call-1", name: "send_message", arguments: { chat_id: chat.id, text: "again" } },
   }, "test");
   before.close();
 

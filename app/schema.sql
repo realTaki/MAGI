@@ -1,5 +1,5 @@
 -- Desktop (Electron) local SQLite. File lives in Electron userData as desktop.sqlite.
--- Operator-side settings and conversation list. Not the ASP session log, not a MAGI workspace.
+-- Operator-side settings and chat list. Not the ASP session log, not a MAGI workspace.
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
@@ -12,7 +12,7 @@ CREATE TABLE app_settings (
     updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE conversations (
+CREATE TABLE chats (
     id TEXT PRIMARY KEY,
     magi_id TEXT NOT NULL,
     remote_id TEXT,
@@ -23,8 +23,8 @@ CREATE TABLE conversations (
     updated_at INTEGER NOT NULL
 );
 
-CREATE UNIQUE INDEX conversations_remote_id
-    ON conversations(magi_id, remote_id)
+CREATE UNIQUE INDEX chats_remote_id
+    ON chats(magi_id, remote_id)
     WHERE remote_id IS NOT NULL;
-CREATE INDEX conversations_by_magi_updated
-    ON conversations(magi_id, updated_at DESC);
+CREATE INDEX chats_by_magi_updated
+    ON chats(magi_id, updated_at DESC);

@@ -11,7 +11,7 @@ export function openSettingsRoute(): void {
   window.location.hash = "/settings";
 }
 
-export function openConversationsRoute(): void {
+export function openChatsRoute(): void {
   window.location.hash = "";
 }
 

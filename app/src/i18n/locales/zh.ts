@@ -128,7 +128,7 @@ export default {
     aboutShellNoAsset: "这个系统没有对应的安装包。",
     aboutShellFailed: "更新没有完成。",
   },
-  conversationSettings: {
+  chatSettings: {
     title: "资料",
     collapse: "收起资料",
     runtime: "运行",

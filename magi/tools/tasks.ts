@@ -23,22 +23,22 @@ function presetCron(args: Record<string, unknown>): string {
 export function taskTools(bus: Bus): ExecutableTool[] {
   return [
     {
-      name: "schedule_task", description: "Create or update a recurring task for a conversation.",
+      name: "schedule_task", description: "Create or update a recurring task for a chat.",
       input_schema: { type: "object", properties: {
         name: { type: "string" }, prompt: { type: "string" },
         frequency: { type: "string", enum: ["hourly", "daily", "weekly", "monthly"] },
         hour: { type: "integer", minimum: 0, maximum: 23 }, minute: { type: "integer", minimum: 0, maximum: 59 },
         day_of_week: { type: "integer", minimum: 0, maximum: 6 }, day_of_month: { type: "integer", minimum: 1, maximum: 31 },
-        conversation_id: { type: "integer" },
-      }, required: ["name", "prompt", "frequency", "conversation_id"] },
+        chat_id: { type: "integer" },
+      }, required: ["name", "prompt", "frequency", "chat_id"] },
       async run(args) {
         const name = stringArg(args, "name");
         const prompt = stringArg(args, "prompt");
-        const conversationId = integerArg(args, "conversation_id");
-        if (!bus.conversations.get(conversationId)) throw new Error(`unknown conversation ${conversationId}`);
+        const chatId = integerArg(args, "chat_id");
+        if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
         const cron = presetCron(args);
-        const task = bus.tasks.save({ name, prompt, cron, conversation_id: conversationId });
-        return JSON.stringify({ task_id: task.id, name: task.name, cron: task.cron, conversation_id: task.conversation_id });
+        const task = bus.tasks.save({ name, prompt, cron, chat_id: chatId });
+        return JSON.stringify({ task_id: task.id, name: task.name, cron: task.cron, chat_id: task.chat_id });
       },
     },
   ];

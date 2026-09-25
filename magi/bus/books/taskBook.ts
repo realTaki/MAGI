@@ -9,7 +9,7 @@ export const tasks = sqliteTable("books_tasks", {
   source: text("source").$type<"user" | "proactive">().notNull().default("user"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   cron: text("cron").notNull(),
-  conversation_id: integer("conversation_id").notNull(),
+  chat_id: integer("chat_id").notNull(),
   last_fired_minute: text("last_fired_minute"),
 });
 
@@ -29,14 +29,14 @@ export class TaskBook {
     return this.db.select().from(tasks).where(eq(tasks.id, id)).get() ?? null;
   }
 
-  save(input: { name: string; prompt: string; cron: string; conversation_id: number; enabled?: boolean }): Task {
+  save(input: { name: string; prompt: string; cron: string; chat_id: number; enabled?: boolean }): Task {
     if (!input.name.trim() || input.name.length > 120) throw new Error("task name must contain 1..120 characters");
     if (!input.prompt.trim()) throw new Error("task prompt is required");
     const fields = {
       name: input.name.trim(),
       prompt: input.prompt.trim(),
       cron: input.cron,
-      conversation_id: input.conversation_id,
+      chat_id: input.chat_id,
       enabled: input.enabled !== false,
     };
     return this.db.insert(tasks).values(fields)

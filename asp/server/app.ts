@@ -7,7 +7,7 @@ import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
 import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.ts";
 import { OperatorService } from "./operator-service.ts";
-import { Conflict, NotAllowed, NotFound, SessionService } from "./service.ts";
+import { Conflict, NotAllowed, NotFound, ChatService } from "./service.ts";
 import { type AgentSeed, Store } from "./store.ts";
 import { ConnectionError, TimeoutError, Transport } from "./transport.ts";
 
@@ -31,7 +31,7 @@ export class AspApp {
   readonly database: LocalDatabase;
   readonly store: Store;
   readonly transport: Transport;
-  readonly sessions: SessionService;
+  readonly chats: ChatService;
   readonly baseUrl: string;
   readonly operator: OperatorService;
   readonly requestShutdown?: () => void;
@@ -45,10 +45,10 @@ export class AspApp {
     this.database = new LocalDatabase(options.databasePath ?? defaultDatabasePath());
     this.store = new Store(this.database);
     this.transport = new Transport(this.store);
-    this.sessions = new SessionService(this.store, this.transport);
+    this.chats = new ChatService(this.store, this.transport);
     this.baseUrl = options.aspBase ?? intranetBaseUrl();
     this.requestShutdown = options.requestShutdown;
-    this.operator = new OperatorService(this.sessions, this.store, this.transport);
+    this.operator = new OperatorService(this.chats, this.store, this.transport);
     this.#seed = options.aspSeed ?? {};
   }
 
@@ -90,10 +90,10 @@ export class AspApp {
         if (!isMessage(parsed)) {
           return;
         }
-        if (parsed.type === "session.ack") {
-          if (typeof parsed.session_id === "string" && typeof parsed.event_id === "string") {
+        if (parsed.type === "chat.ack") {
+          if (typeof parsed.chat_id === "string" && typeof parsed.event_id === "string") {
             try {
-              this.sessions.acknowledge(agent.handle, parsed.session_id, [parsed.event_id]);
+              this.chats.acknowledge(agent.handle, parsed.chat_id, [parsed.event_id]);
             } catch (error) {
               if (!(error instanceof NotFound)) {
                 throw error;
@@ -147,28 +147,28 @@ function registerRoutes(router: Router, app: AspApp): void {
     return { body: { stopping: true } };
   });
 
-  router.add("POST", "/conversations", async (context) => {
+  router.add("POST", "/chats", async (context) => {
     const creator = operatorOnly(context.headers);
     const body = requireObject(context.body);
     if (body.kind !== "bot" && body.kind !== "group") {
       throw new HttpError(422, "kind must be bot or group");
     }
-    return { status: 201, body: await app.operator.createConversation(creator, body.kind) };
+    return { status: 201, body: await app.operator.createChat(creator, body.kind) };
   });
-  router.add("GET", "/conversations", (context) => {
+  router.add("GET", "/chats", (context) => {
     const caller = operatorOnly(context.headers);
-    return { body: { conversations: app.operator.listConversations(caller) } };
+    return { body: { chats: app.operator.listChats(caller) } };
   });
-  router.add("GET", "/conversations/:conversation_id", (context) => {
+  router.add("GET", "/chats/:chat_id", (context) => {
     const caller = operatorOnly(context.headers);
-    const conversationId = requiredParam(context.params, "conversation_id");
+    const chatId = requiredParam(context.params, "chat_id");
     try {
-      return { body: app.operator.conversationView(caller, conversationId) };
+      return { body: app.operator.chatView(caller, chatId) };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("PATCH", "/conversations/:conversation_id", async (context) => {
+  router.add("PATCH", "/chats/:chat_id", async (context) => {
     const caller = operatorOnly(context.headers);
     const body = requireObject(context.body ?? {});
     const topic = plainText(body, "topic");
@@ -178,18 +178,18 @@ function registerRoutes(router: Router, app: AspApp): void {
     }
     try {
       return {
-        body: await app.operator.updateConversation(
+        body: await app.operator.updateChat(
           caller,
-          requiredParam(context.params, "conversation_id"),
+          requiredParam(context.params, "chat_id"),
           topic,
           description,
         ),
       };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("POST", "/conversations/:conversation_id/members", async (context) => {
+  router.add("POST", "/chats/:chat_id/members", async (context) => {
     const caller = operatorOnly(context.headers);
     const body = requireObject(context.body);
     if (typeof body.handle !== "string" || body.handle === "") {
@@ -197,14 +197,14 @@ function registerRoutes(router: Router, app: AspApp): void {
     }
     try {
       return {
-        body: await app.operator.addConversationMember(
+        body: await app.operator.addChatMember(
           caller,
-          requiredParam(context.params, "conversation_id"),
+          requiredParam(context.params, "chat_id"),
           body.handle,
         ),
       };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
   router.add("GET", "/agents", (context) => {
@@ -214,9 +214,9 @@ function registerRoutes(router: Router, app: AspApp): void {
   router.add("GET", "/bots", (context) => {
     const caller = operatorOnly(context.headers);
     try {
-      return { body: { bots: app.operator.listBots(caller, context.query.get("conversation_id")) } };
+      return { body: { bots: app.operator.listBots(caller, context.query.get("chat_id")) } };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
   router.add("PATCH", "/bots/:handle/nickname", async (context) => {
@@ -298,7 +298,7 @@ function registerRoutes(router: Router, app: AspApp): void {
     return { body: { ...settings, synced, failed } };
   });
 
-  router.add("POST", "/sessions", async (context) => {
+  router.add("POST", "/chats", async (context) => {
     const creator = auth(context.headers);
     const body = requireObject(context.body ?? {});
     const initial = initialMessage(body.initial_message);
@@ -306,7 +306,7 @@ function registerRoutes(router: Router, app: AspApp): void {
     if (endAfterSend && initial === null) {
       throw new HttpError(400, "end_after_send requires initial_message");
     }
-    const result = await app.sessions.createSession({
+    const result = await app.chats.createChat({
       creator,
       invite: stringList(body.invite),
       topic: optionalString(body, "topic"),
@@ -314,108 +314,108 @@ function registerRoutes(router: Router, app: AspApp): void {
       endAfterSend,
       idempotencyKey: optionalPlainString(body, "idempotency_key"),
     });
-    const response: Record<string, unknown> = { session_id: result.sessionId };
+    const response: Record<string, unknown> = { chat_id: result.chatId };
     if (result.sequence !== null) {
       response.sequence = result.sequence;
     }
     return { status: 201, body: response };
   });
-  router.add("POST", "/sessions/:session_id/join", async (context) => {
+  router.add("POST", "/chats/:chat_id/join", async (context) => {
     try {
-      await app.sessions.join(auth(context.headers), requiredParam(context.params, "session_id"));
+      await app.chats.join(auth(context.headers), requiredParam(context.params, "chat_id"));
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
     return { body: { ok: true } };
   });
-  router.add("POST", "/sessions/:session_id/invite", async (context) => {
+  router.add("POST", "/chats/:chat_id/invite", async (context) => {
     const body = requireObject(context.body);
     try {
-      const invited = await app.sessions.invite(
+      const invited = await app.chats.invite(
         auth(context.headers),
-        requiredParam(context.params, "session_id"),
+        requiredParam(context.params, "chat_id"),
         stringList(body.invite, true),
       );
       return { body: { invited } };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("POST", "/sessions/:session_id/messages", async (context) => {
+  router.add("POST", "/chats/:chat_id/messages", async (context) => {
     const body = requireObject(context.body);
     if (!("content" in body)) {
       throw new HttpError(422, "content is required");
     }
     requireContent(body.content);
     try {
-      const result = await app.sessions.sendMessage(
+      const result = await app.chats.sendMessage(
         auth(context.headers),
-        requiredParam(context.params, "session_id"),
+        requiredParam(context.params, "chat_id"),
         body.content,
         optionalPlainString(body, "idempotency_key"),
         "metadata" in body && body.metadata !== null ? body.metadata : null,
       );
       return { status: 201, body: { message_id: result.messageId, sequence: result.sequence } };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("POST", "/sessions/:session_id/leave", async (context) => {
+  router.add("POST", "/chats/:chat_id/leave", async (context) => {
     try {
-      await app.sessions.leave(auth(context.headers), requiredParam(context.params, "session_id"));
+      await app.chats.leave(auth(context.headers), requiredParam(context.params, "chat_id"));
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
     return { body: { ok: true } };
   });
-  router.add("POST", "/sessions/:session_id/end", async (context) => {
+  router.add("POST", "/chats/:chat_id/end", async (context) => {
     try {
-      await app.sessions.end(auth(context.headers), requiredParam(context.params, "session_id"));
+      await app.chats.end(auth(context.headers), requiredParam(context.params, "chat_id"));
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
     return { body: { ok: true } };
   });
-  router.add("POST", "/sessions/:session_id/reopen", async (context) => {
+  router.add("POST", "/chats/:chat_id/reopen", async (context) => {
     const body = requireObject(context.body ?? {});
     try {
-      await app.sessions.reopen(
+      await app.chats.reopen(
         auth(context.headers),
-        requiredParam(context.params, "session_id"),
+        requiredParam(context.params, "chat_id"),
         "invite" in body ? stringList(body.invite, true) : null,
         initialMessage(body.initial_message),
       );
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
     return { body: { ok: true } };
   });
-  router.add("GET", "/sessions/:session_id", (context) => {
+  router.add("GET", "/chats/:chat_id", (context) => {
     try {
       return {
-        body: app.sessions.getSessionView(auth(context.headers), requiredParam(context.params, "session_id")),
+        body: app.chats.getChatView(auth(context.headers), requiredParam(context.params, "chat_id")),
       };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("GET", "/sessions/:session_id/events", (context) => {
+  router.add("GET", "/chats/:chat_id/events", (context) => {
     try {
       return {
         body: {
-          events: app.sessions.getEventsFor(
+          events: app.chats.getEventsFor(
             auth(context.headers),
-            requiredParam(context.params, "session_id"),
+            requiredParam(context.params, "chat_id"),
             optionalInt(context.query, "after_sequence"),
             optionalInt(context.query, "limit"),
           ),
         },
       };
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
   });
-  router.add("POST", "/sessions/:session_id/events/ack", (context) => {
+  router.add("POST", "/chats/:chat_id/events/ack", (context) => {
     const body = requireObject(context.body);
     if (!Array.isArray(body.event_ids) || body.event_ids.length > 500) {
       throw new HttpError(422, "event_ids must be a list of at most 500 ids");
@@ -428,15 +428,15 @@ function registerRoutes(router: Router, app: AspApp): void {
       eventIds.push(eventId);
     }
     try {
-      app.sessions.acknowledge(auth(context.headers), requiredParam(context.params, "session_id"), eventIds);
+      app.chats.acknowledge(auth(context.headers), requiredParam(context.params, "chat_id"), eventIds);
     } catch (error) {
-      hideSessionError(error);
+      hideChatError(error);
     }
     return { body: { ok: true } };
   });
 }
 
-function hideSessionError(error: unknown): never {
+function hideChatError(error: unknown): never {
   if (error instanceof NotFound || error instanceof NotAllowed) {
     throw new HttpError(404, "not found");
   }

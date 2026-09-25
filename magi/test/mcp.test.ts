@@ -58,7 +58,7 @@ test("an MCP server that cannot connect at boot reaches the operator", async () 
     client: { async complete() { return { role: "assistant", content: "unused" }; } },
   });
   try {
-    magi.bus.setHomeConversation(magi.bus.conversations.forChannel("cli", "terminal").id);
+    magi.bus.setHomeChat(magi.bus.chats.forChannel("cli", "terminal").id);
     magi.bus.mcpServers.save({
       name: "dead", connection_type: "stdio", command: "missing", args: [], url: null,
       env: {}, headers: {}, enabled: true, connect_timeout: null, execute_timeout: null,

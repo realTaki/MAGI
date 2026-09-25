@@ -11,7 +11,7 @@ function memoryKind(value: unknown): MemoryKind {
 export function memoryTools(bus: Bus): ExecutableTool[] {
   return [
     {
-      name: "save_memory", description: "Create or update a memory for future conversations.",
+      name: "save_memory", description: "Create or update a memory for future chats.",
       input_schema: { type: "object", properties: {
         memory_id: { type: "integer" }, topic: { type: "string" }, detail: { type: "string" },
         kind: { type: "string", enum: ["temporary", "short_term", "long_term"] }, archived: { type: "boolean" },

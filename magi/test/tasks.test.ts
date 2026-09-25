@@ -18,11 +18,11 @@ test("schedule tool persists a task and manual trigger enters the agent", async 
     workspace, deliver: (text) => delivered.push(text),
     client: { async complete(job) { prompts.push(job.messages.at(-1)?.content ?? ""); return { role: "assistant", content: "task complete" }; } },
   });
-  const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+  const chat = magi.bus.chats.forChannel("cli", "terminal");
   const schedule = builtinTools(magi.bus).find((tool) => tool.name === "schedule_task")!;
   const saved = JSON.parse(await schedule.run({
     name: "daily review", prompt: "Review the project", frequency: "daily", hour: 9, minute: 30,
-    conversation_id: conversation.id,
+    chat_id: chat.id,
   })) as { task_id: number; cron: string };
   expect(saved.cron).toBe("30 9 * * *");
 

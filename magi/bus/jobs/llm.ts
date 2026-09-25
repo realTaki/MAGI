@@ -1,7 +1,7 @@
 /**
  * The model vocabulary the bus speaks.
  *
- * Shared by the CallLLM job, by the tool catalog, and by conversation
+ * Shared by the CallLLM job, by the tool catalog, and by chat
  * building — it is not tied to one job.
  */
 

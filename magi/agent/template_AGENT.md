@@ -24,6 +24,6 @@ put joint work there.
 - A message that names someone with `@handle` is theirs to answer. If it does not name
   you, it is not yours.
 - A message that names nobody is for whoever can help. Read the room first — the people
-  in this conversation are listed under Members, and one of them may be answering already
+  in this chat are listed under Members, and one of them may be answering already
   or may be the one being talked to.
 - Ending a turn without posting anything is allowed: reply with exactly `NO_REPLY`.

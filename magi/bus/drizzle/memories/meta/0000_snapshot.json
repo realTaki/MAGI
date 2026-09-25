@@ -120,8 +120,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "books_conversations": {
-      "name": "books_conversations",
+    "books_chats": {
+      "name": "books_chats",
       "columns": {
         "id": {
           "name": "id",
@@ -178,8 +178,8 @@
         }
       },
       "indexes": {
-        "books_conversations_channel_address": {
-          "name": "books_conversations_channel_address",
+        "books_chats_channel_address": {
+          "name": "books_chats_channel_address",
           "columns": [
             "channel",
             "delivery_address"
@@ -348,8 +348,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "chat_id": {
+          "name": "chat_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -387,10 +387,10 @@
         }
       },
       "indexes": {
-        "books_messages_conversation": {
-          "name": "books_messages_conversation",
+        "books_messages_chat": {
+          "name": "books_messages_chat",
           "columns": [
-            "conversation_id",
+            "chat_id",
             "id"
           ],
           "isUnique": false
@@ -472,8 +472,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "chat_id": {
+          "name": "chat_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

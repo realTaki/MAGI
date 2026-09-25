@@ -7,7 +7,7 @@ import { LocalDatabase } from "../db/database.ts";
 import { transaction } from "../db/versions.ts";
 
 export type ParticipantStatus = "invited" | "joined" | "left";
-export type SessionState = "active" | "ended";
+export type ChatState = "active" | "ended";
 export type InboundPolicy = "allowlist" | "open";
 
 export type Agent = {
@@ -20,10 +20,10 @@ export type Agent = {
   managed: boolean;
 };
 
-export type Session = {
+export type Chat = {
   id: string;
   creator: string;
-  state: SessionState;
+  state: ChatState;
   topic: string | null;
   created_at: number;
   ended_at: number | null;
@@ -38,12 +38,12 @@ export type Participant = {
   left_at: number | null;
 };
 
-export type SessionEvent = {
+export type ChatEvent = {
   type: string;
   event_id: string;
   created_at: number;
   payload: Record<string, unknown>;
-  session_id: string | null;
+  chat_id: string | null;
   sequence: number | null;
 };
 
@@ -65,15 +65,15 @@ export function nowMs(): number {
   return Date.now();
 }
 
-export function eventToWire(event: SessionEvent): Record<string, unknown> {
+export function eventToWire(event: ChatEvent): Record<string, unknown> {
   const wire: Record<string, unknown> = {
     type: event.type,
     event_id: event.event_id,
     created_at: event.created_at,
     payload: event.payload,
   };
-  if (event.session_id !== null) {
-    wire.session_id = event.session_id;
+  if (event.chat_id !== null) {
+    wire.chat_id = event.chat_id;
   }
   if (event.sequence !== null) {
     wire.sequence = event.sequence;
@@ -136,7 +136,7 @@ function isParticipantStatus(value: unknown): value is ParticipantStatus {
   return value === "invited" || value === "joined" || value === "left";
 }
 
-function isSessionState(value: unknown): value is SessionState {
+function isChatState(value: unknown): value is ChatState {
   return value === "active" || value === "ended";
 }
 
@@ -167,15 +167,15 @@ function agentFromJson(value: unknown): Agent {
   };
 }
 
-function sessionFromJson(value: unknown): Session {
+function chatFromJson(value: unknown): Chat {
   if (
     !isRecord(value) ||
     typeof value.id !== "string" ||
     typeof value.creator !== "string" ||
-    !isSessionState(value.state) ||
+    !isChatState(value.state) ||
     typeof value.created_at !== "number"
   ) {
-    throw new Error("asp_sessions record is not a session");
+    throw new Error("asp_chats record is not a chat");
   }
   return {
     id: value.id,
@@ -223,11 +223,11 @@ function agentRecord(agent: Agent): Record<string, unknown> {
 export class Store {
   readonly agents = new Map<string, Agent>();
   readonly agentByToken = new Map<string, string>();
-  readonly sessions = new Map<string, Session>();
+  readonly chats = new Map<string, Chat>();
   readonly participants = new Map<string, Participant>();
-  readonly sessionSeq = new Map<string, number>();
+  readonly chatSeq = new Map<string, number>();
   readonly idempotency = new Map<string, [string, number]>();
-  readonly sessionIdempotency = new Map<string, [string, number | null]>();
+  readonly chatIdempotency = new Map<string, [string, number | null]>();
   readonly storage: LocalDatabase | null;
 
   constructor(storage: LocalDatabase | null = null) {
@@ -246,34 +246,34 @@ export class Store {
     }
     this.agents.clear();
     this.agentByToken.clear();
-    this.sessions.clear();
+    this.chats.clear();
     this.participants.clear();
-    this.sessionSeq.clear();
+    this.chatSeq.clear();
     this.idempotency.clear();
-    this.sessionIdempotency.clear();
+    this.chatIdempotency.clear();
     for (const row of this.#rows(db, "SELECT record_json FROM asp_agents")) {
       const agent = agentFromJson(parseJson(textColumn(row, "record_json")));
       this.agents.set(agent.handle, agent);
       this.agentByToken.set(agent.token, agent.handle);
     }
-    for (const row of this.#rows(db, "SELECT record_json, next_sequence FROM asp_sessions")) {
-      const session = sessionFromJson(parseJson(textColumn(row, "record_json")));
-      this.sessions.set(session.id, session);
-      this.sessionSeq.set(session.id, numberColumn(row, "next_sequence"));
+    for (const row of this.#rows(db, "SELECT record_json, next_sequence FROM asp_chats")) {
+      const chat = chatFromJson(parseJson(textColumn(row, "record_json")));
+      this.chats.set(chat.id, chat);
+      this.chatSeq.set(chat.id, numberColumn(row, "next_sequence"));
     }
-    for (const row of this.#rows(db, "SELECT session_id, record_json FROM asp_participants")) {
+    for (const row of this.#rows(db, "SELECT chat_id, record_json FROM asp_participants")) {
       const participant = participantFromJson(parseJson(textColumn(row, "record_json")));
-      this.participants.set(pair(textColumn(row, "session_id"), participant.handle), participant);
+      this.participants.set(pair(textColumn(row, "chat_id"), participant.handle), participant);
     }
     for (const row of this.#rows(db, "SELECT * FROM asp_message_keys")) {
       this.idempotency.set(
-        triple(textColumn(row, "session_id"), textColumn(row, "sender"), textColumn(row, "key")),
+        triple(textColumn(row, "chat_id"), textColumn(row, "sender"), textColumn(row, "key")),
         [textColumn(row, "message_id"), numberColumn(row, "sequence")],
       );
     }
-    for (const row of this.#rows(db, "SELECT * FROM asp_session_keys")) {
-      this.sessionIdempotency.set(pair(textColumn(row, "creator"), textColumn(row, "key")), [
-        textColumn(row, "session_id"),
+    for (const row of this.#rows(db, "SELECT * FROM asp_chat_keys")) {
+      this.chatIdempotency.set(pair(textColumn(row, "creator"), textColumn(row, "key")), [
+        textColumn(row, "chat_id"),
         nullableNumber(row, "sequence"),
       ]);
     }
@@ -284,11 +284,11 @@ export class Store {
     this.#saveAgent(agent);
   }
 
-  updateSession(session: Session): void {
-    this.#saveSession(session);
+  updateChat(chat: Chat): void {
+    this.#saveChat(chat);
   }
 
-  updateEvent(event: SessionEvent): void {
+  updateEvent(event: ChatEvent): void {
     const db = this.#db();
     if (db === null) {
       return;
@@ -301,9 +301,9 @@ export class Store {
     });
   }
 
-  acknowledge(handle: string, sessionId: string, eventIds: string[]): void {
-    if (this.getParticipant(sessionId, handle) === undefined) {
-      throw new Error(sessionId);
+  acknowledge(handle: string, chatId: string, eventIds: string[]): void {
+    if (this.getParticipant(chatId, handle) === undefined) {
+      throw new Error(chatId);
     }
     const db = this.#db();
     if (db === null) {
@@ -311,19 +311,19 @@ export class Store {
     }
     transaction(db, () => {
       const lookup = db.prepare(
-        "SELECT type FROM asp_events WHERE event_id = ? AND session_id = ?",
+        "SELECT type FROM asp_events WHERE event_id = ? AND chat_id = ?",
       );
       const ack = db.prepare("INSERT OR IGNORE INTO asp_event_acks VALUES (?, ?)");
       const mark = db.prepare(
         "UPDATE asp_message_recipients SET acked = 1 WHERE event_id = ? AND handle = ?",
       );
       for (const eventId of eventIds) {
-        const row = lookup.get(eventId, sessionId);
+        const row = lookup.get(eventId, chatId);
         if (!isSqlRow(row)) {
           continue;
         }
         ack.run(eventId, handle);
-        if (textColumn(row, "type") === "session.message") {
+        if (textColumn(row, "type") === "chat.message") {
           mark.run(eventId, handle);
         }
       }
@@ -333,12 +333,12 @@ export class Store {
       const removable = this.#rows(
         db,
         `SELECT e.event_id FROM asp_events e
-         WHERE e.session_id = ? AND e.type = 'session.message'
+         WHERE e.chat_id = ? AND e.type = 'chat.message'
            AND NOT EXISTS (
              SELECT 1 FROM asp_message_recipients r
              WHERE r.event_id = e.event_id AND r.acked = 0
            )`,
-        sessionId,
+        chatId,
       ).map((row) => textColumn(row, "event_id"));
       if (removable.length === 0) {
         return;
@@ -349,10 +349,10 @@ export class Store {
       }
       const removed = new Set(removable);
       const invited = db.prepare(
-        "SELECT event_id, payload_json FROM asp_events WHERE session_id = ? AND type = 'session.invited'",
+        "SELECT event_id, payload_json FROM asp_events WHERE chat_id = ? AND type = 'chat.invited'",
       );
       const rewrite = db.prepare("UPDATE asp_events SET payload_json = ? WHERE event_id = ?");
-      for (const row of invited.all(sessionId)) {
+      for (const row of invited.all(chatId)) {
         if (!isSqlRow(row)) {
           continue;
         }
@@ -465,13 +465,13 @@ export class Store {
     }
   }
 
-  createSession(input: {
+  createChat(input: {
     creator: string;
     topic: string | null;
     kind?: string | null;
     description?: string | null;
-  }): Session {
-    const session: Session = {
+  }): Chat {
+    const chat: Chat = {
       id: makeId("sess"),
       creator: input.creator,
       state: "active",
@@ -481,66 +481,66 @@ export class Store {
       description: input.description ?? null,
       kind: input.kind ?? null,
     };
-    this.sessions.set(session.id, session);
-    this.sessionSeq.set(session.id, 0);
-    this.#saveSession(session);
-    return session;
+    this.chats.set(chat.id, chat);
+    this.chatSeq.set(chat.id, 0);
+    this.#saveChat(chat);
+    return chat;
   }
 
-  getSession(sessionId: string): Session | undefined {
-    return this.sessions.get(sessionId);
+  getChat(chatId: string): Chat | undefined {
+    return this.chats.get(chatId);
   }
 
-  endSession(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (session === undefined) {
-      throw new Error(sessionId);
+  endChat(chatId: string): void {
+    const chat = this.chats.get(chatId);
+    if (chat === undefined) {
+      throw new Error(chatId);
     }
-    session.state = "ended";
-    session.ended_at = nowMs();
-    this.#saveSession(session);
+    chat.state = "ended";
+    chat.ended_at = nowMs();
+    this.#saveChat(chat);
   }
 
-  reopenSession(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (session === undefined) {
-      throw new Error(sessionId);
+  reopenChat(chatId: string): void {
+    const chat = this.chats.get(chatId);
+    if (chat === undefined) {
+      throw new Error(chatId);
     }
-    session.state = "active";
-    session.ended_at = null;
-    this.#saveSession(session);
+    chat.state = "active";
+    chat.ended_at = null;
+    this.#saveChat(chat);
   }
 
-  addParticipant(sessionId: string, handle: string, status: ParticipantStatus): Participant {
+  addParticipant(chatId: string, handle: string, status: ParticipantStatus): Participant {
     const participant: Participant = {
       handle,
       status,
       joined_at: status === "joined" ? nowMs() : null,
       left_at: null,
     };
-    this.participants.set(pair(sessionId, handle), participant);
-    this.#saveParticipant(sessionId, participant);
+    this.participants.set(pair(chatId, handle), participant);
+    this.#saveParticipant(chatId, participant);
     return participant;
   }
 
-  getParticipant(sessionId: string, handle: string): Participant | undefined {
-    return this.participants.get(pair(sessionId, handle));
+  getParticipant(chatId: string, handle: string): Participant | undefined {
+    return this.participants.get(pair(chatId, handle));
   }
 
-  participantsIn(sessionId: string): Participant[] {
+  participantsIn(chatId: string): Participant[] {
     const found: Participant[] = [];
     for (const [key, participant] of this.participants) {
-      if (key.startsWith(`${sessionId}\0`)) {
+      if (key.startsWith(`${chatId}\0`)) {
         found.push(participant);
       }
     }
     return found;
   }
 
-  setStatus(sessionId: string, handle: string, status: ParticipantStatus): void {
-    const participant = this.participants.get(pair(sessionId, handle));
+  setStatus(chatId: string, handle: string, status: ParticipantStatus): void {
+    const participant = this.participants.get(pair(chatId, handle));
     if (participant === undefined) {
-      throw new Error(`${sessionId} ${handle}`);
+      throw new Error(`${chatId} ${handle}`);
     }
     participant.status = status;
     if (status === "joined" && participant.joined_at === null) {
@@ -549,65 +549,65 @@ export class Store {
     if (status === "left") {
       participant.left_at = nowMs();
     }
-    this.#saveParticipant(sessionId, participant);
+    this.#saveParticipant(chatId, participant);
   }
 
-  appendSessionEvent(sessionId: string, type: string, payload: Record<string, unknown>): SessionEvent {
-    const sequence = this.sessionSeq.get(sessionId);
+  appendChatEvent(chatId: string, type: string, payload: Record<string, unknown>): ChatEvent {
+    const sequence = this.chatSeq.get(chatId);
     if (sequence === undefined) {
-      throw new Error(sessionId);
+      throw new Error(chatId);
     }
-    this.sessionSeq.set(sessionId, sequence + 1);
-    const event: SessionEvent = {
+    this.chatSeq.set(chatId, sequence + 1);
+    const event: ChatEvent = {
       type,
       event_id: makeId("evt"),
       created_at: nowMs(),
       payload,
-      session_id: sessionId,
+      chat_id: chatId,
       sequence,
     };
     const db = this.#db();
     if (db !== null) {
       transaction(db, () => {
         db.prepare("INSERT INTO asp_events VALUES (?, ?, ?, ?, ?, ?)").run(
-          sessionId,
+          chatId,
           sequence,
           event.event_id,
           type,
           event.created_at,
           JSON.stringify(payload),
         );
-        if (type === "session.message") {
+        if (type === "chat.message") {
           const insert = db.prepare(
             "INSERT INTO asp_message_recipients (event_id, handle) VALUES (?, ?)",
           );
-          for (const participant of this.participantsIn(sessionId)) {
+          for (const participant of this.participantsIn(chatId)) {
             if (participant.status === "joined" || participant.status === "invited") {
               insert.run(event.event_id, participant.handle);
             }
           }
         }
-        const nextSequence = this.sessionSeq.get(sessionId);
+        const nextSequence = this.chatSeq.get(chatId);
         if (nextSequence === undefined) {
-          throw new Error(sessionId);
+          throw new Error(chatId);
         }
-        db.prepare("UPDATE asp_sessions SET next_sequence = ? WHERE id = ?").run(nextSequence, sessionId);
+        db.prepare("UPDATE asp_chats SET next_sequence = ? WHERE id = ?").run(nextSequence, chatId);
       });
     }
     return event;
   }
 
-  sessionEventsAfter(
-    sessionId: string,
+  chatEventsAfter(
+    chatId: string,
     afterSequence: number | null,
     limit: number | null,
-  ): SessionEvent[] {
+  ): ChatEvent[] {
     const db = this.#db();
     if (db === null) {
       return [];
     }
-    let query = "SELECT * FROM asp_events WHERE session_id = ?";
-    const params: Array<string | number> = [sessionId];
+    let query = "SELECT * FROM asp_events WHERE chat_id = ?";
+    const params: Array<string | number> = [chatId];
     if (afterSequence !== null) {
       query += " AND sequence > ?";
       params.push(afterSequence);
@@ -622,32 +622,32 @@ export class Store {
       event_id: textColumn(row, "event_id"),
       created_at: numberColumn(row, "created_at"),
       payload: payloadFromJson(parseJson(textColumn(row, "payload_json"))),
-      session_id: textColumn(row, "session_id"),
+      chat_id: textColumn(row, "chat_id"),
       sequence: numberColumn(row, "sequence"),
     }));
   }
 
-  eventsForSession(sessionId: string): SessionEvent[] {
-    return this.sessionEventsAfter(sessionId, null, null);
+  eventsForChat(chatId: string): ChatEvent[] {
+    return this.chatEventsAfter(chatId, null, null);
   }
 
-  getIdempotentMessage(sessionId: string, sender: string, key: string): [string, number] | undefined {
-    return this.idempotency.get(triple(sessionId, sender, key));
+  getIdempotentMessage(chatId: string, sender: string, key: string): [string, number] | undefined {
+    return this.idempotency.get(triple(chatId, sender, key));
   }
 
   recordIdempotentMessage(
-    sessionId: string,
+    chatId: string,
     sender: string,
     key: string,
     messageId: string,
     sequence: number,
   ): void {
-    this.idempotency.set(triple(sessionId, sender, key), [messageId, sequence]);
+    this.idempotency.set(triple(chatId, sender, key), [messageId, sequence]);
     const db = this.#db();
     if (db !== null) {
       transaction(db, () => {
         db.prepare("INSERT OR REPLACE INTO asp_message_keys VALUES (?, ?, ?, ?, ?)").run(
-          sessionId,
+          chatId,
           sender,
           key,
           messageId,
@@ -657,24 +657,24 @@ export class Store {
     }
   }
 
-  getIdempotentSession(creator: string, key: string): [string, number | null] | undefined {
-    return this.sessionIdempotency.get(pair(creator, key));
+  getIdempotentChat(creator: string, key: string): [string, number | null] | undefined {
+    return this.chatIdempotency.get(pair(creator, key));
   }
 
-  recordIdempotentSession(
+  recordIdempotentChat(
     creator: string,
     key: string,
-    sessionId: string,
+    chatId: string,
     sequence: number | null,
   ): void {
-    this.sessionIdempotency.set(pair(creator, key), [sessionId, sequence]);
+    this.chatIdempotency.set(pair(creator, key), [chatId, sequence]);
     const db = this.#db();
     if (db !== null) {
       transaction(db, () => {
-        db.prepare("INSERT OR REPLACE INTO asp_session_keys VALUES (?, ?, ?, ?)").run(
+        db.prepare("INSERT OR REPLACE INTO asp_chat_keys VALUES (?, ?, ?, ?)").run(
           creator,
           key,
-          sessionId,
+          chatId,
           sequence,
         );
       });
@@ -694,28 +694,28 @@ export class Store {
     });
   }
 
-  #saveSession(session: Session): void {
+  #saveChat(chat: Chat): void {
     const db = this.#db();
     if (db === null) {
       return;
     }
     transaction(db, () => {
-      db.prepare("INSERT OR REPLACE INTO asp_sessions VALUES (?, ?, ?)").run(
-        session.id,
-        JSON.stringify(session),
-        this.sessionSeq.get(session.id) ?? 0,
+      db.prepare("INSERT OR REPLACE INTO asp_chats VALUES (?, ?, ?)").run(
+        chat.id,
+        JSON.stringify(chat),
+        this.chatSeq.get(chat.id) ?? 0,
       );
     });
   }
 
-  #saveParticipant(sessionId: string, participant: Participant): void {
+  #saveParticipant(chatId: string, participant: Participant): void {
     const db = this.#db();
     if (db === null) {
       return;
     }
     transaction(db, () => {
       db.prepare("INSERT OR REPLACE INTO asp_participants VALUES (?, ?, ?)").run(
-        sessionId,
+        chatId,
         participant.handle,
         JSON.stringify(participant),
       );

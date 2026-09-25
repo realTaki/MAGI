@@ -209,7 +209,7 @@ describe("local MAGI agent", () => {
     await magi.stop();
   });
 
-  test("injects active memories and compacts old conversation history", async () => {
+  test("injects active memories and compacts old chat history", async () => {
     const path = await workspace();
     const requests: CallLLMJob[] = [];
     const magi = new Magi("@alice.magi", {
@@ -224,8 +224,8 @@ describe("local MAGI agent", () => {
     });
     magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish magi", kind: "long_term" });
     magi.bus.settings.set("provider.context_window", "100");
-    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
-    for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    for (let i = 0; i < 41; i++) magi.bus.messages.add(chat.id, 0, `old message ${i}`);
     await magi.start();
     await magi.chat("continue");
 
@@ -235,7 +235,7 @@ describe("local MAGI agent", () => {
     expect(requests[1].messages[0].content).toContain("The user is migrating MAGI to TypeScript.");
     expect(requests[1].messages[0].content).toContain("codebase_search");
     expect(requests[1].messages[0].content).toContain("Your name: @alice.magi");
-    expect(magi.bus.messages.count(conversation.id)).toBe(21);
+    expect(magi.bus.messages.count(chat.id)).toBe(21);
     await magi.stop();
   });
 
@@ -253,19 +253,19 @@ describe("local MAGI agent", () => {
     await magi.stop();
   });
 
-  test("the conversation's members are part of the context", async () => {
+  test("the chat's members are part of the context", async () => {
     const path = await workspace();
     const requests: CallLLMJob[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
-    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
     const guest = magi.bus.contacts.forAspHandle("@eva-001.magi");
     magi.bus.contacts.update(guest.id, { nickname: "EVA" });
-    magi.bus.conversationMembers.add(conversation.id, SYSTEM_CONTACT_ID);
-    magi.bus.conversationMembers.add(conversation.id, guest.id);
-    magi.bus.conversationMembers.add(conversation.id, guest.id);
+    magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
+    magi.bus.chatMembers.add(chat.id, guest.id);
+    magi.bus.chatMembers.add(chat.id, guest.id);
 
     await magi.start();
     await magi.chat("who is here?");

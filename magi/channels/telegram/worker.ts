@@ -46,13 +46,13 @@ export class TelegramWorker extends BaseWorker {
           // Telegram deletes any webhook before polling, so a MAGI never needs a public URL.
           longPolling: { deleteWebhook: true },
           // In a group the MAGI is quiet unless addressed: an @, or a reply to it — which
-          // is how people carry a Telegram conversation on.
+          // is how people carry a Telegram chat on.
           mentionOnReply: true,
           logger,
         }),
       },
       state: createMemoryState(),
-      // The BUS serialises turns per conversation; the adapter must not drop messages.
+      // The BUS serialises turns per chat; the adapter must not drop messages.
       concurrency: "concurrent",
       logger,
     });
@@ -90,18 +90,18 @@ export class TelegramWorker extends BaseWorker {
     const text = message.text?.trim();
     if (!text) return;
     this.lastError = null;
-    const conversation = this.bus.conversations.forChannel("tg", chatId(thread.channelId));
+    const chat = this.bus.chats.forChannel("tg", chatId(thread.channelId));
     // Who spoke: a Telegram group is one address several people speak at, so the
-    // sender's id belongs to a contact, and they are a member of this conversation.
+    // sender's id belongs to a contact, and they are a member of this chat.
     const contact = this.bus.contacts.forTg(message.author.userId);
-    this.bus.conversationMembers.add(conversation.id, contact.id);
-    // This MAGI is in the conversation too, so it belongs to its members.
-    this.bus.conversationMembers.add(conversation.id, MAGI_CONTACT_ID);
+    this.bus.chatMembers.add(chat.id, contact.id);
+    // This MAGI is in the chat too, so it belongs to its members.
+    this.bus.chatMembers.add(chat.id, MAGI_CONTACT_ID);
     // A DM is the operator's own chat, so it can be where the workspace reports trouble —
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
-    if (direct && this.bus.homeConversation() === null) this.bus.setHomeConversation(conversation.id);
-    this.bus.publishChat({ conversation_id: conversation.id, contact_id: contact.id, text }, this.worker_name);
+    if (direct && this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
+    this.bus.publishChat({ chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
   }
 
   /**
@@ -122,7 +122,7 @@ export class TelegramWorker extends BaseWorker {
   }
 }
 
-/** ``telegram:42`` is the SDK's channel id; a conversation is addressed by the chat itself. */
+/** ``telegram:42`` is the SDK's channel id; a chat is addressed by the chat itself. */
 function chatId(channelId: string): string {
   return channelId.replace(/^telegram:(?:biz:[^:]*:)?/, "");
 }

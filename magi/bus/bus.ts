@@ -5,13 +5,13 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { Database } from "bun:sqlite";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts } from "./books/contactBook.js";
-import { ConversationBook } from "./books/conversationBook.js";
+import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
 import { MemoryBook } from "./books/memoryBook.js";
 import { SkillsBook } from "./books/skillsBook.js";
 import { TaskBook } from "./books/taskBook.js";
 import { ContactBook } from "./books/contactBook.js";
-import { ConversationMemberBook } from "./books/conversationMemberBook.js";
+import { ChatMemberBook } from "./books/chatMemberBook.js";
 import { ChannelCursorBook } from "./books/channelCursorBook.js";
 import { ContactNoteBook } from "./books/contactNoteBook.js";
 import { McpServerBook } from "./books/mcpServerBook.js";
@@ -38,13 +38,13 @@ export const MAGI_CONTACT_ID = 2;
  */
 export class Bus {
   readonly workspace: string;
-  readonly conversations: ConversationBook;
+  readonly chats: ChatBook;
   readonly messages: MessageBook;
   readonly memoryBook: MemoryBook;
   readonly skills: SkillsBook;
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
-  readonly conversationMembers: ConversationMemberBook;
+  readonly chatMembers: ChatMemberBook;
   readonly channelCursors: ChannelCursorBook;
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
@@ -88,13 +88,13 @@ export class Bus {
     this.logs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
       .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.settings = new SettingsBook(this.db);
-    this.conversations = new ConversationBook(this.db);
+    this.chats = new ChatBook(this.db);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
     this.skills = new SkillsBook(this.workspace);
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);
-    this.conversationMembers = new ConversationMemberBook(this.db);
+    this.chatMembers = new ChatMemberBook(this.db);
     this.channelCursors = new ChannelCursorBook(this.db);
     this.contactNotes = new ContactNoteBook(this.db);
     this.mcpServers = new McpServerBook(this.db);
@@ -121,49 +121,49 @@ export class Bus {
   }
 
   publishChat(input: ChatNotify, publisher = "channel"): number {
-    let conversationId = input.conversation_id;
-    if (!conversationId) {
-      if (!input.channel?.trim() || !input.delivery_address?.trim()) throw new Error("ChatNotify needs conversation_id or channel and delivery_address");
-      conversationId = this.conversations.forChannel(input.channel.trim(), input.delivery_address.trim()).id;
+    let chatId = input.chat_id;
+    if (!chatId) {
+      if (!input.channel?.trim() || !input.delivery_address?.trim()) throw new Error("ChatNotify needs chat_id or channel and delivery_address");
+      chatId = this.chats.forChannel(input.channel.trim(), input.delivery_address.trim()).id;
     }
-    if (!this.conversations.get(conversationId)) throw new Error(`conversation ${conversationId} does not exist`);
-    const jobId = this.board("ChatNotify").publish({ ...input, conversation_id: conversationId }, publisher);
-    this.messages.add(conversationId, input.contact_id ?? SYSTEM_CONTACT_ID, input.text);
+    if (!this.chats.get(chatId)) throw new Error(`chat ${chatId} does not exist`);
+    const jobId = this.board("ChatNotify").publish({ ...input, chat_id: chatId }, publisher);
+    this.messages.add(chatId, input.contact_id ?? SYSTEM_CONTACT_ID, input.text);
     return jobId;
   }
 
   publishDelivery(input: DeliveryNotify, publisher = "agent"): number {
-    const conversation = this.conversations.get(input.conversation_id);
-    if (!conversation) throw new Error(`conversation ${input.conversation_id} does not exist`);
-    const jobId = this.board("DeliveryNotify").publish({ ...input, channel: conversation.channel, address: conversation.delivery_address }, publisher);
-    this.messages.add(input.conversation_id, MAGI_CONTACT_ID, input.text);
+    const chat = this.chats.get(input.chat_id);
+    if (!chat) throw new Error(`chat ${input.chat_id} does not exist`);
+    const jobId = this.board("DeliveryNotify").publish({ ...input, channel: chat.channel, address: chat.delivery_address }, publisher);
+    this.messages.add(input.chat_id, MAGI_CONTACT_ID, input.text);
     return jobId;
   }
 
   /**
-   * The conversation the operator last spoke in: the only address a workspace has for
+   * The chat the operator last spoke in: the only address a workspace has for
    * reaching them. Channels write it when they hear the operator, ``publishNotice`` reads it.
    */
-  homeConversation(): number | null {
-    const stored = this.settings.get("home.conversation_id");
+  homeChat(): number | null {
+    const stored = this.settings.get("home.chat_id");
     const id = stored === null ? Number.NaN : Number(stored);
-    return Number.isInteger(id) && this.conversations.get(id) !== null ? id : null;
+    return Number.isInteger(id) && this.chats.get(id) !== null ? id : null;
   }
 
-  setHomeConversation(conversationId: number): void {
-    this.settings.set("home.conversation_id", String(conversationId));
+  setHomeChat(chatId: number): void {
+    this.settings.set("home.chat_id", String(chatId));
   }
 
   /**
-   * How a component tells the operator that something went wrong: into the conversation
+   * How a component tells the operator that something went wrong: into the chat
    * the failure belongs to when the caller knows it, otherwise into the operator's home
    * chat. Returns null before the operator has ever spoken — there is nobody to tell, and
    * that is the only case where a process-level log line is still the answer.
    */
-  publishNotice(text: string, conversationId?: number): number | null {
-    const target = conversationId ?? this.homeConversation();
+  publishNotice(text: string, chatId?: number): number | null {
+    const target = chatId ?? this.homeChat();
     if (target === null) return null;
-    return this.publishDelivery({ conversation_id: target, text });
+    return this.publishDelivery({ chat_id: target, text });
   }
 
   close(): void {

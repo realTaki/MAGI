@@ -148,8 +148,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "books_conversations": {
-      "name": "books_conversations",
+    "books_chats": {
+      "name": "books_chats",
       "columns": {
         "id": {
           "name": "id",
@@ -206,8 +206,8 @@
         }
       },
       "indexes": {
-        "books_conversations_channel_address": {
-          "name": "books_conversations_channel_address",
+        "books_chats_channel_address": {
+          "name": "books_chats_channel_address",
           "columns": [
             "channel",
             "delivery_address"
@@ -220,8 +220,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "books_conversation_members": {
-      "name": "books_conversation_members",
+    "books_chat_members": {
+      "name": "books_chat_members",
       "columns": {
         "id": {
           "name": "id",
@@ -230,8 +230,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "chat_id": {
+          "name": "chat_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -254,26 +254,26 @@
         }
       },
       "indexes": {
-        "books_conversation_members_contact": {
-          "name": "books_conversation_members_contact",
+        "books_chat_members_contact": {
+          "name": "books_chat_members_contact",
           "columns": [
             "contact_id"
           ],
           "isUnique": false
         },
-        "books_conversation_members_pair": {
-          "name": "books_conversation_members_pair",
+        "books_chat_members_pair": {
+          "name": "books_chat_members_pair",
           "columns": [
-            "conversation_id",
+            "chat_id",
             "contact_id"
           ],
           "isUnique": true
         }
       },
       "foreignKeys": {
-        "books_conversation_members_contact_id_books_contacts_id_fk": {
-          "name": "books_conversation_members_contact_id_books_contacts_id_fk",
-          "tableFrom": "books_conversation_members",
+        "books_chat_members_contact_id_books_contacts_id_fk": {
+          "name": "books_chat_members_contact_id_books_contacts_id_fk",
+          "tableFrom": "books_chat_members",
           "tableTo": "books_contacts",
           "columnsFrom": [
             "contact_id"
@@ -438,8 +438,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "chat_id": {
+          "name": "chat_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -477,10 +477,10 @@
         }
       },
       "indexes": {
-        "books_messages_conversation": {
-          "name": "books_messages_conversation",
+        "books_messages_chat": {
+          "name": "books_messages_chat",
           "columns": [
-            "conversation_id",
+            "chat_id",
             "id"
           ],
           "isUnique": false
@@ -562,8 +562,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "conversation_id": {
-          "name": "conversation_id",
+        "chat_id": {
+          "name": "chat_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

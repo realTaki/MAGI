@@ -80,15 +80,15 @@ export function connect(app: AspApp, token: string): Promise<{ socket: WebSocket
   });
 }
 
-export async function receiveInvite(next: () => Promise<unknown>, sessionId: string, invitee: string): Promise<Record<string, unknown>> {
+export async function receiveInvite(next: () => Promise<unknown>, chatId: string, invitee: string): Promise<Record<string, unknown>> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const event = await next();
     if (!isRecord(event) || !isRecord(event.payload)) {
       continue;
     }
-    if (event.type === "session.invited" && event.session_id === sessionId && event.payload.invitee === invitee) {
+    if (event.type === "chat.invited" && event.chat_id === chatId && event.payload.invitee === invitee) {
       return event;
     }
   }
-  throw new Error(`no session.invited for ${invitee} in ${sessionId}`);
+  throw new Error(`no chat.invited for ${invitee} in ${chatId}`);
 }

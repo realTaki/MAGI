@@ -33,15 +33,15 @@ test("operator bootstrap is stable across restarts", async (t) => {
   });
 });
 
-test("a previous bare user identity migrates to @user without losing its sessions", async (t) => {
+test("a previous bare user identity migrates to @user without losing its chats", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   let token = "";
-  let sessionId = "";
+  let chatId = "";
   await withApp({ databasePath }, async (app) => {
     token = app.operatorToken;
-    const created = await request(app, "POST", "/conversations", { token, body: { kind: "group" } });
-    sessionId = String((created.data as { conversation_id?: unknown }).conversation_id);
-    await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content: "hello" } });
+    const created = await request(app, "POST", "/chats", { token, body: { kind: "group" } });
+    chatId = String((created.data as { chat_id?: unknown }).chat_id);
+    await request(app, "POST", `/chats/${chatId}/messages`, { token, body: { content: "hello" } });
     const connection = app.database.connection!;
     const agent = connection.prepare("SELECT record_json FROM asp_agents WHERE handle = '@user'").get() as { record_json: string };
     connection.prepare("UPDATE asp_agents SET handle = 'user', record_json = ? WHERE handle = '@user'")
@@ -55,10 +55,10 @@ test("a previous bare user identity migrates to @user without losing its session
   await withApp({ databasePath }, async (app) => {
     assert.equal(app.operatorHandle, "@user");
     assert.equal(app.operatorToken, token);
-    const view = await request(app, "GET", `/conversations/${sessionId}`, { token });
+    const view = await request(app, "GET", `/chats/${chatId}`, { token });
     const participants = isRecord(view.data) && Array.isArray(view.data.participants) ? view.data.participants : [];
     assert.equal(participants.some((row) => isRecord(row) && row.handle === "@user"), true);
-    const events = await request(app, "GET", `/sessions/${sessionId}/events`, { token });
+    const events = await request(app, "GET", `/chats/${chatId}/events`, { token });
     const messages = isRecord(events.data) && Array.isArray(events.data.events) ? events.data.events : [];
     assert.equal(messages.some((row) => isRecord(row) && isRecord(row.payload) && row.payload.sender === "@user"), true);
   });
@@ -67,7 +67,7 @@ test("a previous bare user identity migrates to @user without losing its session
 test("ASP never starts a MAGI process of its own", async (t) => {
   await withApp({ databasePath: path.join(tempRoot(t), "asp.sqlite") }, async (app) => {
     const token = app.operatorToken;
-    const created = await request(app, "POST", "/conversations", { token, body: { kind: "bot" } });
+    const created = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     assert.equal(created.status, 201);
     // The desktop app runs MAGI; ASP only knows who they are.
     assert.equal((await request(app, "POST", "/runtime/magi/start", { token })).status, 404);
@@ -93,7 +93,7 @@ test("the agent roster is operator only and carries the runner credentials", asy
   });
 });
 
-test("a previous desktop session can request ASP shutdown as operator", async (t) => {
+test("a previous desktop chat can request ASP shutdown as operator", async (t) => {
   let requested = false;
   await withApp({
     databasePath: path.join(tempRoot(t), "asp.sqlite"),

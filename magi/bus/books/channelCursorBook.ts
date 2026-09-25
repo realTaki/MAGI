@@ -5,7 +5,7 @@ import type { BusDb } from "../drizzle/database.js";
 /**
  * How far this workspace has read a channel's stream.
  *
- * Channels that number their events — ASP numbers every session event — can replay what
+ * Channels that number their events — ASP numbers every chat event — can replay what
  * they have not seen acknowledged. The reader records the last number it took in, so a
  * replay of something already handled is recognised instead of being handled twice.
  */
@@ -19,7 +19,7 @@ export const channelCursors = sqliteTable("books_channel_cursors", {
 export class ChannelCursorBook {
   constructor(private readonly db: BusDb) {}
 
-  /** -1 until anything is taken in: ASP numbers a session's events from 0. */
+  /** -1 until anything is taken in: ASP numbers a chat's events from 0. */
   read(channel: string, address: string): number {
     return this.db.select({ last_sequence: channelCursors.last_sequence }).from(channelCursors)
       .where(and(eq(channelCursors.channel, channel), eq(channelCursors.address, address)))

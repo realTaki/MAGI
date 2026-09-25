@@ -128,7 +128,7 @@ export default {
     aboutShellNoAsset: "このシステム用のインストーラーが Release にありません。",
     aboutShellFailed: "更新は完了しませんでした。",
   },
-  conversationSettings: {
+  chatSettings: {
     title: "プロフィール",
     collapse: "プロフィールを隠す",
     runtime: "実行",

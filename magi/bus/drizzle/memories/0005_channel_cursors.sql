@@ -1,6 +1,6 @@
 -- How far this workspace has read each channel's stream.
 --
--- ASP numbers every session event and replays whatever it has not seen acknowledged, so
+-- ASP numbers every chat event and replays whatever it has not seen acknowledged, so
 -- the reader needs to know which numbers it has already taken in. ``IF NOT EXISTS`` keeps
 -- a replay of this file harmless, the same way ``0000_init.sql`` does.
 CREATE TABLE IF NOT EXISTS `books_channel_cursors` (

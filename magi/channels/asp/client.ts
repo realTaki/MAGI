@@ -1,6 +1,6 @@
 export type AspEvent = {
-  type?: string; event_id?: string; session_id?: string; payload?: Record<string, unknown>;
-  /** Session events are numbered; control events (nickname, provider) are not. */
+  type?: string; event_id?: string; chat_id?: string; payload?: Record<string, unknown>;
+  /** Chat events are numbered; control events (nickname, provider) are not. */
   sequence?: number;
   request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string; base_url?: string;
 };
@@ -61,8 +61,8 @@ export class AspClient {
 
   close(): void { this.stopped = true; this.socket?.close(); this.socket = null; this.listener = null; }
 
-  join(sessionId: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/join`); }
-  send(sessionId: string, content: string): Promise<void> { return this.post(`/sessions/${encodeURIComponent(sessionId)}/messages`, { content }); }
+  join(chatId: string): Promise<void> { return this.post(`/chats/${encodeURIComponent(chatId)}/join`); }
+  send(chatId: string, content: string): Promise<void> { return this.post(`/chats/${encodeURIComponent(chatId)}/messages`, { content }); }
 
   private async post(path: string, payload?: Record<string, unknown>): Promise<void> {
     const response = await fetch(new URL(path, this.base), {
