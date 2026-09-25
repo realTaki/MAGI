@@ -75,3 +75,21 @@ test("a channel identity belongs to one contact, learned when it first speaks", 
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test("conversation membership is a set, not a log", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-members-"));
+  const magi = new Magi("@members.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
+  try {
+    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+    const guest = magi.bus.contacts.forAspHandle("@eva-001.magi");
+    magi.bus.conversationMembers.add(conversation.id, guest.id);
+    magi.bus.conversationMembers.add(conversation.id, guest.id);
+    expect(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.id)).toEqual([guest.id]);
+
+    magi.bus.conversationMembers.remove(conversation.id, guest.id);
+    expect(magi.bus.conversationMembers.list(conversation.id)).toEqual([]);
+  } finally {
+    await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

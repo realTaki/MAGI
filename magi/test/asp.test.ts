@@ -39,6 +39,9 @@ test("each speaker in a session is a contact of their own", async () => {
     const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === "@eva-001.magi");
     expect(other).toMatchObject({ name: "@eva-001.magi", role: "magi" });
     expect(senders()).toContain(other!.id);
+    // Both of them are members of the conversation, in the order they were heard.
+    expect(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.id))
+      .toEqual([SYSTEM_CONTACT_ID, other!.id]);
   } finally {
     await magi.stop();
     server.stop(true);
