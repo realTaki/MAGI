@@ -38,7 +38,8 @@ URL, model ID and API key there. The Python LiteLLM dependency is not used.
 workspace has a `telegram.bot_token` setting; the channel is the Chat SDK's
 Telegram adapter (`chat`, `@chat-adapter/telegram`) in long-polling mode, so
 the protocol is not ours — the worker only turns an update into a `ChatNotify`
-and a delivery into a post.
+and a delivery into a post. In a group it hears only what addresses it: an @
+mention or a reply to one of its messages.
 Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
 

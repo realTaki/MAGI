@@ -85,7 +85,11 @@ Channels stop at translating. The Telegram one is the Chat SDK's Telegram
 adapter in polling mode (`magi/channels/telegram/worker.ts`): the SDK owns long
 polling, offsets, retries, and rendering, the worker only publishes a
 `ChatNotify` or posts a `DeliveryNotify`, and adapter trouble is reported
-through `health()` so the supervisor can tell the operator.
+through `health()` so the supervisor can tell the operator. A group is only
+heard when the MAGI is addressed — an @ mention, or a reply to one of its
+messages; a DM is the operator's own chat. What does arrive is recorded like
+ASP's: the conversation, the message, the sender as a contact, and both of them
+as members.
 
 Books in `magi/bus/books/` hold conversations, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool

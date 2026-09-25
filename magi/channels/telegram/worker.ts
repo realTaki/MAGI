@@ -1,7 +1,7 @@
 import { Chat, type Logger, type Message, type Thread } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createMemoryState } from "@chat-adapter/state-memory";
-import { BaseWorker, type Bus } from "../../bus/index.js";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "../../bus/index.js";
 
 /** What a Telegram bot needs; a MAGI may not have one until someone sets it. */
 type Credentials = { token: string; apiBase?: string };
@@ -45,6 +45,9 @@ export class TelegramWorker extends BaseWorker {
           mode: "polling",
           // Telegram deletes any webhook before polling, so a MAGI never needs a public URL.
           longPolling: { deleteWebhook: true },
+          // In a group the MAGI is quiet unless addressed: an @, or a reply to it — which
+          // is how people carry a Telegram conversation on.
+          mentionOnReply: true,
           logger,
         }),
       },
@@ -54,10 +57,10 @@ export class TelegramWorker extends BaseWorker {
       logger,
     });
     this.bot = bot;
-    // Every DM is the operator: where the workspace can reach them with notices.
+    // Only what addresses this MAGI: every DM, and mentions in groups. Nothing is
+    // subscribed to, so an unaddressed group message is never even read.
     bot.onDirectMessage((thread, message) => this.ingest(thread, message, true));
-    bot.onNewMention(async (thread, message) => { await thread.subscribe(); this.ingest(thread, message, false); });
-    bot.onSubscribedMessage((thread, message) => this.ingest(thread, message, false));
+    bot.onNewMention((thread, message) => this.ingest(thread, message, false));
     await bot.initialize();
   }
 
@@ -87,9 +90,16 @@ export class TelegramWorker extends BaseWorker {
     const text = message.text?.trim();
     if (!text) return;
     this.lastError = null;
-    const chat = chatId(thread.channelId);
-    if (direct) this.bus.setHomeConversation(this.bus.conversations.forChannel("tg", chat).id);
-    this.bus.publishChat({ text, channel: "tg", delivery_address: chat }, this.worker_name);
+    const conversation = this.bus.conversations.forChannel("tg", chatId(thread.channelId));
+    // Who spoke: a Telegram group is one address several people speak at, so the
+    // sender's id belongs to a contact, and they are a member of this conversation.
+    const contact = this.bus.contacts.forTg(message.author.userId);
+    this.bus.conversationMembers.add(conversation.id, contact.id);
+    // This MAGI is in the conversation too, so it belongs to its members.
+    this.bus.conversationMembers.add(conversation.id, MAGI_CONTACT_ID);
+    // A DM is the operator's own chat: where the workspace can reach them with notices.
+    if (direct) this.bus.setHomeConversation(conversation.id);
+    this.bus.publishChat({ conversation_id: conversation.id, contact_id: contact.id, text }, this.worker_name);
   }
 
   /**
