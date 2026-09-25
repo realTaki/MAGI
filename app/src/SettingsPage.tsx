@@ -6,6 +6,7 @@ import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openChatsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
+import { notifyError } from "./notify";
 import { clearOperator, getProviderCatalog, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
 import type { ProviderUsage, SourceStatus } from "./asp";
 import { useTheme } from "./theme";
@@ -70,35 +71,62 @@ export function SettingsPage() {
     return () => { cancelled = true; };
   }, [section]);
 
-  async function runRuntime(method: string) {
+  /** What a settings action answers with: its button draws the rest. */
+  type ActionOutcome = { ok: boolean; message: string };
+
+  /** One line for a sync: whether anything actually moved. */
+  function syncHeadline(rows: { merged: boolean }[]): string {
+    return rows.some((row) => row.merged)
+      ? t("appSettings.syncMerged")
+      : t("appSettings.syncNoChange");
+  }
+
+  /** The status line and the notice stack are the two places a failure shows up. */
+  function report(outcome: ActionOutcome): ActionOutcome {
+    setRuntimeMessage(outcome.message);
+    if (!outcome.ok && outcome.message !== "") notifyError(outcome.message);
+    return outcome;
+  }
+
+  async function refreshRuntimeStatus() {
+    const state = await window.magiDesktop?.invokeLocal?.("runtime.status") as
+      | { asp?: string; canInstallShellUpdate?: boolean }
+      | undefined;
+    setRuntimeStatus(state?.asp ?? "");
+    setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
+  }
+
+  /** Stop/start/rebuild ASP and App, and the installer builds. */
+  async function runRuntime(method: string): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
-    if (!invoke || runtimeBusy) return;
+    if (!invoke || runtimeBusy) return { ok: false, message: "" };
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
       const result = await invoke(method) as { output?: unknown } | undefined;
-      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
-      setRuntimeStatus(state.asp ?? "");
-      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
-      setRuntimeMessage(
-        typeof result?.output === "string"
+      await refreshRuntimeStatus();
+      return report({
+        ok: true,
+        message: typeof result?.output === "string"
           ? t("appSettings.installerBuilt").replace("{path}", result.output)
           : t("appSettings.runtimeDone"),
-      );
+      });
     } catch (error) {
-      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+      return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
     } finally {
       setRuntimeBusy(false);
     }
   }
 
   /**
-   * The bulk sweep. It answers with what it managed and what it did not, so a
-   * partly failed run still reads as one line instead of looking like success.
+   * The bulk MAGI actions answer with what they managed and what they did not, so
+   * a partly failed sweep still reads as one line instead of looking like success.
    */
-  async function runMagiAll(method: "magi.startAll" | "magi.stopAll" | "magi.rebuildAll") {
+  async function runMagiAll(
+    method: "magi.startAll" | "magi.stopAll" | "magi.rebuildAll" | "magi.syncAll",
+  ): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
-    if (!invoke || runtimeBusy) return;
+    if (!invoke || runtimeBusy) return { ok: false, message: "" };
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
@@ -106,61 +134,61 @@ export function SettingsPage() {
         started?: string[];
         stopped?: number;
         rebuilt?: string[];
-        failed?: { handle: string; detail: string }[];
+        synced?: { module: string; merged: boolean }[];
+        failed?: { handle?: string; module?: string; detail: string }[];
       } | undefined;
-      const done =
-        (result?.started?.length ?? 0) + (result?.rebuilt?.length ?? 0) + (result?.stopped ?? 0);
       const failed = result?.failed ?? [];
-      setRuntimeMessage(
-        [
-          t("appSettings.magiAllDone").replace("{count}", String(done)),
-          ...failed.map((row) => `${row.handle}: ${row.detail}`),
-        ].join(" · "),
-      );
-      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
-      setRuntimeStatus(state.asp ?? "");
-      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
+      const done =
+        (result?.started?.length ?? 0) +
+        (result?.rebuilt?.length ?? 0) +
+        (result?.stopped ?? 0) +
+        (result?.synced?.length ?? 0);
+      const lines = [
+        method === "magi.syncAll"
+          ? syncHeadline(result?.synced ?? [])
+          : t("appSettings.magiAllDone").replace("{count}", String(done)),
+        ...failed.map((row) => `${row.handle ?? row.module ?? "MAGI"}: ${row.detail}`),
+      ];
+      await refreshRuntimeStatus();
+      return report({ ok: failed.length === 0, message: lines.join(" · ") });
     } catch (error) {
-      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+      return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
     } finally {
       setRuntimeBusy(false);
     }
   }
 
-  /** Sync, update, and sync-and-rebuild all answer per module, so a failed tree stays visible. */
-  async function runSync(method: "runtime.syncAll" | "runtime.syncRebuildAll" | "source.update") {
+  /** Sync one module's tree from the source checkout, or the source from its remote. */
+  async function runSync(
+    method: "runtime.syncApp" | "runtime.syncAsp" | "source.update",
+  ): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
-    if (!invoke || runtimeBusy) return;
+    if (!invoke || runtimeBusy) return { ok: false, message: "" };
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
       const result = await invoke(method) as {
         synced?: { module: string; merged: boolean }[];
-        rebuilt?: string[];
         failed?: { module: string; detail: string }[];
         branch?: string;
         behind?: number;
       } | undefined;
       const synced = result?.synced ?? [];
       const failed = result?.failed ?? [];
-      const headline =
-        result?.branch === undefined
-          ? t("appSettings.syncDone")
-              .replace("{count}", String(synced.length + (result?.rebuilt?.length ?? 0)))
-              .replace("{merged}", String(synced.filter((row) => row.merged).length))
-          : (result.behind ?? 0) > 0
+      const lines = result?.branch === undefined
+        ? [syncHeadline(synced), ...failed.map((row) => `${row.module}: ${row.detail}`)]
+        : [
+          (result.behind ?? 0) > 0
             ? t("appSettings.sourceUpdated")
                 .replace("{branch}", result.branch)
                 .replace("{count}", String(result.behind))
-            : t("appSettings.sourceCurrent").replace("{branch}", result.branch);
-      setRuntimeMessage(
-        [headline, ...failed.map((row) => `${row.module}: ${row.detail}`)].join(" · "),
-      );
-      const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
-      setRuntimeStatus(state.asp ?? "");
-      setCanInstallShellUpdate(state.canInstallShellUpdate === true);
+            : t("appSettings.sourceCurrent").replace("{branch}", result.branch),
+          ...failed.map((row) => `${row.module}: ${row.detail}`),
+        ];
+      await refreshRuntimeStatus();
+      return report({ ok: failed.length === 0, message: lines.join(" · ") });
     } catch (error) {
-      setRuntimeMessage(error instanceof Error ? error.message : String(error));
+      return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
     } finally {
       setRuntimeBusy(false);
     }
@@ -600,92 +628,95 @@ export function SettingsPage() {
               <>
                 <p className="settings-overlay__lede">{t("appSettings.runtimeHint")}</p>
                 <div className="settings-card">
-                  <div className="settings-card__label">{t("appSettings.syncGroup")}</div>
-                  <p className="settings-overlay__lede">{t("appSettings.syncHint")}</p>
+                  <div className="settings-card__label">{t("appSettings.sourceGroup")}</div>
+                  <p className="settings-overlay__lede">{t("appSettings.sourceHint")}</p>
                   <div className="settings-card__actions settings-card__actions--wrap">
-                    <button
-                      type="button"
-                      className="settings-card__pill"
+                    <ActionButton
+                      label={t("appSettings.sourceUpdate")}
                       disabled={runtimeBusy}
-                      onClick={() => void runSync("source.update")}
-                    >
-                      {t("appSettings.sourceUpdate")}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-card__pill"
-                      disabled={runtimeBusy}
-                      onClick={() => void runSync("runtime.syncAll")}
-                    >
-                      {t("appSettings.syncAll")}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-card__pill"
-                      disabled={runtimeBusy}
-                      onClick={() => void runSync("runtime.syncRebuildAll")}
-                    >
-                      {t("appSettings.syncRebuildAll")}
-                    </button>
+                      onRun={() => runSync("source.update")}
+                    />
                   </div>
                 </div>
                 <div className="settings-card">
                   <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
-                    {(["runtime.stopAsp", "runtime.startAsp", "runtime.rebuildAsp"] as const).map((method) => (
-                      <button key={method} type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime(method)}>
-                        {t(`appSettings.${method.split(".")[1]}`)}
-                      </button>
-                    ))}
+                    <ActionButton
+                      label={t("appSettings.stopAsp")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.stopAsp")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.startAsp")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.startAsp")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.syncButton")}
+                      disabled={runtimeBusy}
+                      onRun={() => runSync("runtime.syncAsp")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.rebuildAsp")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.rebuildAsp")}
+                    />
                   </div>
                 </div>
                 <div className="settings-card">
                   <div className="settings-card__label">{t("appSettings.magiGroup")}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
-                    <button
-                      type="button"
-                      className="settings-card__pill"
+                    <ActionButton
+                      label={t("appSettings.magiStartAll")}
                       disabled={runtimeBusy}
-                      onClick={() => void runMagiAll("magi.startAll")}
-                    >
-                      {t("appSettings.magiStartAll")}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-card__pill"
+                      onRun={() => runMagiAll("magi.startAll")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.magiStopAll")}
                       disabled={runtimeBusy}
-                      onClick={() => void runMagiAll("magi.stopAll")}
-                    >
-                      {t("appSettings.magiStopAll")}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-card__pill"
+                      onRun={() => runMagiAll("magi.stopAll")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.syncButton")}
                       disabled={runtimeBusy}
-                      onClick={() => void runMagiAll("magi.rebuildAll")}
-                    >
-                      {t("appSettings.magiRebuildAll")}
-                    </button>
+                      onRun={() => runMagiAll("magi.syncAll")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.magiRebuildAll")}
+                      disabled={runtimeBusy}
+                      onRun={() => runMagiAll("magi.rebuildAll")}
+                    />
                   </div>
                 </div>
                 <div className="settings-card">
                   <div className="settings-card__label">App</div>
-                  <div className="settings-card__actions">
-                    <button type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime("runtime.rebuildApp")}>
-                      {t("appSettings.rebuildApp")}
-                    </button>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <ActionButton
+                      label={t("appSettings.syncButton")}
+                      disabled={runtimeBusy}
+                      onRun={() => runSync("runtime.syncApp")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.rebuildApp")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.rebuildApp")}
+                    />
                   </div>
                 </div>
                 <div className="settings-card">
                   <div className="settings-card__label">{t("appSettings.installer")}</div>
                   <p className="settings-overlay__lede">{t("appSettings.installerHint")}</p>
-                  <div className="settings-card__actions">
-                    <button type="button" className="settings-card__pill" disabled={runtimeBusy} onClick={() => void runRuntime("runtime.buildInstaller")}>
-                      {t("appSettings.buildInstaller")}
-                    </button>
-                    <button type="button" className="settings-card__pill" disabled={runtimeBusy || !canInstallShellUpdate} onClick={() => void runRuntime("runtime.buildAndInstallInstaller")}>
-                      {t("appSettings.buildAndUpgradeInstaller")}
-                    </button>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <ActionButton
+                      label={t("appSettings.buildInstaller")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.buildInstaller")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.buildAndUpgradeInstaller")}
+                      disabled={runtimeBusy || !canInstallShellUpdate}
+                      onRun={() => runRuntime("runtime.buildAndInstallInstaller")}
+                    />
                   </div>
                 </div>
                 <p className="settings-card__status" role="status">{runtimeMessage}</p>
@@ -840,6 +871,54 @@ export function SettingsPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+type ActionState = "idle" | "busy" | "ok" | "error";
+
+/**
+ * A settings action that says what it is doing: a spinner while it runs, then a
+ * tick or a cross. The failure itself is not repeated here — it goes to the one
+ * notice stack, so the same error never shows up as loose text in two places.
+ */
+function ActionButton({
+  label,
+  disabled,
+  onRun,
+}: {
+  label: string;
+  disabled?: boolean;
+  onRun: () => Promise<{ ok: boolean; message: string }>;
+}) {
+  const [state, setState] = useState<ActionState>("idle");
+
+  async function run() {
+    setState("busy");
+    try {
+      const outcome = await onRun();
+      setState(outcome.ok ? "ok" : "error");
+    } catch (error) {
+      // A bridge that failed outright (no handler, a dead backend) still answers.
+      notifyError(error);
+      setState("error");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`settings-card__pill is-${state}`}
+      aria-busy={state === "busy"}
+      disabled={disabled === true || state === "busy"}
+      onClick={() => void run()}
+    >
+      <span className="settings-card__pill-mark" aria-hidden="true">
+        {state === "busy" ? <span className="settings-card__pill-spinner" /> : null}
+        {state === "ok" ? "✓" : null}
+        {state === "error" ? "✕" : null}
+      </span>
+      {label}
+    </button>
   );
 }
 

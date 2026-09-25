@@ -1394,76 +1394,48 @@ export function createLocalApi(context) {
     return { branch, behind, synced: [{ module: "source", merged }], failed: [] };
   }
 
+  function describe(error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   /**
-   * Bring every module's worktree up to the source checkout. Each module has its
-   * own tree, so a rebuild without this only rebuilds the code it already had.
-   * Modules are independent on purpose: one conflict is reported, the rest sync.
+   * Sync one module's worktree from the source checkout. Each module is synced by
+   * its own button: the operator decides what to move, and a conflict is answered
+   * here instead of being buried in a sweep.
    */
-  async function syncAllModules() {
+  async function syncModule(module, root, branch) {
+    try {
+      const { merged } = await syncWorktree(root, branch);
+      return { synced: [{ module, merged }], failed: [] };
+    } catch (error) {
+      return { synced: [], failed: [{ module, detail: describe(error) }] };
+    }
+  }
+
+  /** The App's worktree, on the branch the shell checks out for it. */
+  function syncApp() {
+    return syncModule("app", appCheckout, "magi/app");
+  }
+
+  /** The ASP worktree, created here if this is the first time it is needed. */
+  async function syncAsp() {
     await ensureAspWorktree();
-    const trees = [
-      { module: "app", root: appCheckout, branch: "magi/app" },
-      { module: "asp", root: aspCheckout, branch: "magi/asp" },
-    ];
+    return await syncModule("asp", aspCheckout, "magi/asp");
+  }
+
+  /** Every MAGI's own worktree; `merge` restarts one whose branch actually moved. */
+  async function syncMagis() {
     const synced = [];
     const failed = [];
-    const record = (module, error) => {
-      failed.push({ module, detail: error instanceof Error ? error.message : String(error) });
-    };
-    for (const { module: name, root, branch } of trees) {
-      try {
-        const { merged } = await syncWorktree(root, branch);
-        synced.push({ module: name, merged });
-      } catch (error) {
-        record(name, error);
-      }
-    }
     for (const agent of await magiRoster()) {
       try {
-        // `merge` restarts a MAGI whose branch actually moved, so it lands on the
-        // merged source; ours only report.
         const { merged } = await magiRuntime.merge(agent);
         synced.push({ module: agent.handle, merged });
       } catch (error) {
-        record(agent.handle, error);
+        failed.push({ module: agent.handle, detail: describe(error) });
       }
     }
     return { synced, failed };
-  }
-
-  /** Sync every tree, then rebuild each module from what it now has. */
-  async function syncRebuildAll() {
-    const sync = await syncAllModules();
-    const roster = await magiRoster();
-    const rebuilt = [];
-    const failed = [...sync.failed];
-    const record = (module, error) => {
-      failed.push({ module, detail: error instanceof Error ? error.message : String(error) });
-    };
-    for (const agent of roster) {
-      try {
-        await magiRuntime.rebuild(agent);
-        rebuilt.push(agent.handle);
-      } catch (error) {
-        record(agent.handle, error);
-      }
-    }
-    try {
-      await rebuildAspBody();
-      rebuilt.push("asp");
-    } catch (error) {
-      record("asp", error);
-    }
-    // The interface goes last: rebuilding it offers the operator a reload, and
-    // that should land after the sweep instead of in the middle of it.
-    try {
-      await rebuildInterface();
-      emit("app.interface-updated", {});
-      rebuilt.push("app");
-    } catch (error) {
-      record("app", error);
-    }
-    return { synced: sync.synced, rebuilt, failed };
   }
 
   async function rebuildApp() {
@@ -1701,8 +1673,8 @@ export function createLocalApi(context) {
     "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
     "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.rebuildAsp": rebuildAsp,
-    "runtime.syncAll": () => runtimeAction(syncAllModules),
-    "runtime.syncRebuildAll": () => runtimeAction(syncRebuildAll),
+    "runtime.syncApp": () => runtimeAction(syncApp),
+    "runtime.syncAsp": () => runtimeAction(syncAsp),
     "magi.info": magiInfo,
     "magi.start": (payload) => magiAction(() => magiStart(payload)),
     "magi.stop": (payload) => magiAction(() => magiStop(payload)),
@@ -1712,6 +1684,7 @@ export function createLocalApi(context) {
     "magi.startAll": () => magiAction(() => magiStartAll()),
     "magi.stopAll": () => magiAction(() => magiStopAll()),
     "magi.rebuildAll": () => runtimeAction(() => magiRebuildAll()),
+    "magi.syncAll": () => runtimeAction(syncMagis),
     "runtime.rebuildApp": rebuildApp,
     "runtime.buildInstaller": buildInstaller,
     "runtime.buildAndInstallInstaller": buildAndInstallInstaller,

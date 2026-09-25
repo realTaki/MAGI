@@ -251,7 +251,7 @@ test("the bulk MAGI actions sweep the roster and report what failed", async (t) 
   api.dispose();
 });
 
-test("syncing merges the source branch into every module worktree", async (t) => {
+test("syncing a module merges the source branch into its worktree", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-sync-"));
   const checkout = path.join(root, "MAGI");
   mkdirSync(path.join(checkout, "asp"), { recursive: true });
@@ -289,19 +289,28 @@ test("syncing merges the source branch into every module worktree", async (t) =>
     spawn() { throw new Error("a sync must not start anything"); },
   });
 
-  // Nothing new in the source: both trees are already up to date, and the ASP
-  // worktree is created on demand.
-  assert.deepEqual(await api["runtime.syncAll"](), {
-    synced: [{ module: "app", merged: false }, { module: "asp", merged: false }],
+  // Each module is synced by its own button; nothing is swept in one go.
+  assert.deepEqual(await api["runtime.syncApp"](), {
+    synced: [{ module: "app", merged: false }],
     failed: [],
   });
+  // The ASP worktree is created on demand, the first time it is asked for.
+  assert.deepEqual(await api["runtime.syncAsp"](), {
+    synced: [{ module: "asp", merged: false }],
+    failed: [],
+  });
+  assert.deepEqual(await api["magi.syncAll"](), { synced: [], failed: [] });
 
-  // A commit in the source reaches the worktrees by merging, without a rebuild.
+  // A commit in the source reaches a worktree by merging, without a rebuild.
   writeFileSync(path.join(checkout, "app", "index.html"), "two");
   git(checkout, ["add", "."]);
   commit(checkout, "second");
-  assert.deepEqual(await api["runtime.syncAll"](), {
-    synced: [{ module: "app", merged: true }, { module: "asp", merged: true }],
+  assert.deepEqual(await api["runtime.syncApp"](), {
+    synced: [{ module: "app", merged: true }],
+    failed: [],
+  });
+  assert.deepEqual(await api["runtime.syncAsp"](), {
+    synced: [{ module: "asp", merged: true }],
     failed: [],
   });
   assert.equal(readFileSync(path.join(appCheckout, "app", "index.html"), "utf8"), "two");
@@ -313,7 +322,8 @@ test("syncing merges the source branch into every module worktree", async (t) =>
   writeFileSync(path.join(checkout, "app", "index.html"), "source side");
   git(checkout, ["add", "."]);
   commit(checkout, "source side");
-  const conflicted = await api["runtime.syncAll"]();
+  const conflicted = await api["runtime.syncApp"]();
+  assert.deepEqual(conflicted.synced, []);
   assert.deepEqual(conflicted.failed.map((row) => row.module), ["app"]);
   assert.match(conflicted.failed[0].detail, /merge was aborted/);
   assert.equal(git(appCheckout, ["status", "--porcelain"]).trim(), "");
