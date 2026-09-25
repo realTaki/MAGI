@@ -33,6 +33,20 @@ export function messageTools(bus: Bus): ExecutableTool[] {
       },
     },
     {
+      // The workspace establishes home once, from the operator's first message, and the
+      // only way it moves afterwards is this: the operator asks, the model calls.
+      name: "set_home_conversation",
+      description: "Move the conversation this MAGI reports trouble to — the operator's own thread.",
+      input_schema: { type: "object", properties: { conversation_id: { type: "integer" } }, required: ["conversation_id"] },
+      async run(args) {
+        const conversationId = integerArg(args, "conversation_id");
+        const conversation = bus.conversations.get(conversationId);
+        if (!conversation) throw new Error(`unknown conversation ${conversationId}`);
+        bus.setHomeConversation(conversationId);
+        return JSON.stringify({ home: conversationId, channel: conversation.channel, address: conversation.delivery_address });
+      },
+    },
+    {
       name: "send_message", description: "Queue a visible message to an existing conversation.",
       input_schema: { type: "object", properties: { conversation_id: { type: "integer" }, text: { type: "string" } }, required: ["conversation_id", "text"] },
       async run(args) {

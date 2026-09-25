@@ -41,7 +41,7 @@ export class Conversation {
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",
         content: `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`,
       }));
-      const session = `## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
+      const session = `## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_conversation_id: ${this.bus.homeConversation() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
       const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${session}` }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.

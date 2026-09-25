@@ -32,6 +32,31 @@ test("message search includes archived history and send_message uses delivery jo
   }
 });
 
+test("the home conversation moves by tool, not by talking", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-tools-home-"));
+  const magi = new Magi("@home.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
+  const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
+  try {
+    expect(magi.bus.homeConversation()).toBeNull();
+    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+    const moved = JSON.parse(await tools.get("set_home_conversation")!.run({ conversation_id: conversation.id })) as {
+      home: number; channel: string; address: string;
+    };
+    expect(moved).toEqual({ home: conversation.id, channel: "cli", address: "terminal" });
+    expect(magi.bus.homeConversation()).toBe(conversation.id);
+
+    // A notice with no conversation of its own lands in the new home.
+    magi.bus.publishNotice('[manager] worker "tg" could not start');
+    expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toContain("could not start");
+
+    await expect(tools.get("set_home_conversation")!.run({ conversation_id: 999 })).rejects.toThrow("unknown conversation");
+    expect(magi.bus.homeConversation()).toBe(conversation.id);
+  } finally {
+    await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("a tool the catalog does not have is answered without a job", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-unknown-"));
   const seen: LLMMessage[][] = [];

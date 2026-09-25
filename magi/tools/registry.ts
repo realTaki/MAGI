@@ -10,7 +10,7 @@
  *   contacts.ts  add_contact / save_contact_note / delete_contact_note /
  *                search_contacts / update_daily_note
  *   messages.ts  search_conversation_messages / search_contact_messages /
- *                send_message
+ *                send_message / set_home_conversation
  *   mcp.ts       mcp_server
  *
  * This file only assembles them (and owns the `Tool` alias callers import).

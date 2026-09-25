@@ -221,6 +221,20 @@ describe("local MAGI agent", () => {
     await magi.stop();
   });
 
+  test("a turn that answers nothing posts nothing", async () => {
+    const path = await workspace();
+    const delivered: string[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      deliver: (text) => delivered.push(text),
+      client: { async complete() { return { role: "assistant", content: "NO_REPLY" }; } },
+    });
+    await magi.start();
+    await magi.chat("not for you");
+    expect(delivered).toEqual([]);
+    await magi.stop();
+  });
+
   test("the conversation's members are part of the context", async () => {
     const path = await workspace();
     const requests: CallLLMJob[] = [];

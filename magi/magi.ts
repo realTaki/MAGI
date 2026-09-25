@@ -111,7 +111,11 @@ export class Magi {
 
   async chat(text: string, address = "terminal"): Promise<number> {
     if (!this.up) throw new Error("MAGI is not running");
-    const id = this.bus.publishChat({ text, channel: "cli", delivery_address: address });
+    const conversation = this.bus.conversations.forChannel("cli", address);
+    // The terminal is the operator of a hand-run MAGI, and their first message is what
+    // establishes where this workspace reports trouble.
+    if (this.bus.homeConversation() === null) this.bus.setHomeConversation(conversation.id);
+    const id = this.bus.publishChat({ conversation_id: conversation.id, text });
     while (this.up) {
       if (this.bus.board("ChatNotify").result(id)) return id;
       await sleep(20);

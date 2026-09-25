@@ -21,8 +21,9 @@ test("a fresh workspace gets every Book table from the migrations", async () => 
   const bus = new Bus("@fresh.magi", path);
   try {
     expect(tables(path, "memories")).toEqual(expect.arrayContaining([
-      "books_contacts", "books_contact_notes", "books_conversation_members", "books_conversations",
-      "books_mcp_servers", "books_memories", "books_messages", "books_settings", "books_tasks",
+      "books_channel_cursors", "books_contacts", "books_contact_notes", "books_conversation_members",
+      "books_conversations", "books_mcp_servers", "books_memories", "books_messages", "books_settings",
+      "books_tasks",
     ]));
     expect(tables(path, "logs")).toContain("jobs");
   } finally { bus.close(); }

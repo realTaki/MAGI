@@ -97,8 +97,10 @@ export class TelegramWorker extends BaseWorker {
     this.bus.conversationMembers.add(conversation.id, contact.id);
     // This MAGI is in the conversation too, so it belongs to its members.
     this.bus.conversationMembers.add(conversation.id, MAGI_CONTACT_ID);
-    // A DM is the operator's own chat: where the workspace can reach them with notices.
-    if (direct) this.bus.setHomeConversation(conversation.id);
+    // A DM is the operator's own chat, so it can be where the workspace reports trouble —
+    // but only while nothing has established that yet: home is set once, and it moves by
+    // the tool the operator asks for, not by whoever spoke last.
+    if (direct && this.bus.homeConversation() === null) this.bus.setHomeConversation(conversation.id);
     this.bus.publishChat({ conversation_id: conversation.id, contact_id: contact.id, text }, this.worker_name);
   }
 

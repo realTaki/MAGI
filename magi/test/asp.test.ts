@@ -5,6 +5,56 @@ import { join } from "node:path";
 import { Magi } from "../magi.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "../bus/index.js";
 
+test("a replayed event is not taken in twice", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "asp-replay-"));
+  const acks: string[] = [];
+  let completions = 0;
+  let socket: Bun.ServerWebSocket<unknown> | null = null;
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, host) {
+      const url = new URL(request.url);
+      if (url.pathname === "/connect") return host.upgrade(request) ? undefined : new Response("upgrade failed", { status: 400 });
+      return Response.json({});
+    },
+    websocket: {
+      open(ws) { socket = ws; },
+      message(_ws, message) {
+        const event = JSON.parse(String(message)) as { type?: string; event_id?: string };
+        if (event.type === "session.ack" && event.event_id) acks.push(event.event_id);
+      },
+    },
+  });
+  const magi = new Magi("@eva-000.magi", {
+    workspace,
+    asp: { base: `http://127.0.0.1:${server.port}`, token: "test-token" },
+    client: { async complete() { completions++; return { role: "assistant", content: "heard" } as const; } },
+  });
+  try {
+    await magi.start();
+    for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
+    const event = {
+      type: "session.message", event_id: "dup-1", session_id: "replay", sequence: 7,
+      payload: { sender: "user", content: "hello" },
+    };
+    socket!.send(JSON.stringify(event));
+    for (let i = 0; i < 100 && completions < 1; i++) await Bun.sleep(10);
+
+    // ASP replays what it has not seen acknowledged: the same message, sequence and all.
+    socket!.send(JSON.stringify(event));
+    for (let i = 0; i < 100 && acks.length < 2; i++) await Bun.sleep(10);
+
+    expect(acks).toEqual(["dup-1", "dup-1"]);
+    expect(completions).toBe(1);
+    const conversation = magi.bus.conversations.forChannel("asp", "replay");
+    expect(magi.bus.messages.list(conversation.id).map((message) => message.content)).toEqual(["hello", "heard"]);
+  } finally {
+    await magi.stop();
+    server.stop(true);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("each speaker in a session is a contact of their own", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-speakers-"));
   let socket: Bun.ServerWebSocket<unknown> | null = null;

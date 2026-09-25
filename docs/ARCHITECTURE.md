@@ -109,6 +109,6 @@ the operator's files.
 
 ## Older notes
 
-Older notes that map the retired Python package live in git history. The
-design book [`MAGI-BUS 架构设计书.md`](MAGI-BUS%20架构设计书.md) records an
-earlier baseline. Where it names Python modules, it is not a map of this tree.
+Older notes live in git history: the ones that map the retired Python package,
+and `MAGI-BUS 架构设计书.md`, which recorded an earlier baseline. Where they
+name Python modules, they are not a map of this tree.
