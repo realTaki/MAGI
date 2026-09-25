@@ -12,7 +12,6 @@ import { SkillsBook } from "./books/skillsBook.js";
 import { TaskBook } from "./books/taskBook.js";
 import { ContactBook } from "./books/contactBook.js";
 import { ChatMemberBook } from "./books/chatMemberBook.js";
-import { ChannelCursorBook } from "./books/channelCursorBook.js";
 import { ContactNoteBook } from "./books/contactNoteBook.js";
 import { McpServerBook } from "./books/mcpServerBook.js";
 import { SettingsBook } from "./books/settingsBook.js";
@@ -45,7 +44,6 @@ export class Bus {
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
   readonly chatMembers: ChatMemberBook;
-  readonly channelCursors: ChannelCursorBook;
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
   readonly prompts: PromptBook;
@@ -95,7 +93,6 @@ export class Bus {
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);
     this.chatMembers = new ChatMemberBook(this.db);
-    this.channelCursors = new ChannelCursorBook(this.db);
     this.contactNotes = new ContactNoteBook(this.db);
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);

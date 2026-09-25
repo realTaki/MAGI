@@ -43,6 +43,13 @@
       "when": 1790317213055,
       "tag": "0005_channel_cursors",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790376496957,
+      "tag": "0006_chat_channel_cursor",
+      "breakpoints": true
     }
   ]
 }

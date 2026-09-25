@@ -113,8 +113,8 @@ export class AspWorker extends BaseWorker {
    */
   private taken(chatId: string, sequence: unknown): boolean {
     if (typeof sequence !== "number") return false;
-    if (sequence <= this.bus.channelCursors.read("asp", chatId)) return true;
-    this.bus.channelCursors.markRead("asp", chatId, sequence);
+    if (sequence <= this.bus.chats.read("asp", chatId)) return true;
+    this.bus.chats.markRead("asp", chatId, sequence);
     return false;
   }
 
