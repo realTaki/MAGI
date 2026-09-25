@@ -50,7 +50,7 @@ export function SettingsPage() {
   const [shellRelease, setShellRelease] = useState<ClientRelease | null>(null);
   const [shellReleaseLoaded, setShellReleaseLoaded] = useState(false);
   const [shellUpdating, setShellUpdating] = useState(false);
-  const [shellUpdateError, setShellUpdateError] = useState("");
+
   const [runtimeStatus, setRuntimeStatus] = useState("");
   const [canInstallShellUpdate, setCanInstallShellUpdate] = useState(false);
   const [runtimeMessage, setRuntimeMessage] = useState("");
@@ -774,9 +774,7 @@ export function SettingsPage() {
                 ) : null}
                 {shellRelease ? (
                   <p className="settings-overlay__lede">
-                    {shellUpdateError !== ""
-                      ? shellUpdateError
-                      : shellRelease.reason === "no-asset"
+                    {shellRelease.reason === "no-asset"
                         ? t("appSettings.aboutShellNoAsset")
                         : shellRelease.reason === "no-release"
                           ? t("appSettings.aboutShellMissing")
