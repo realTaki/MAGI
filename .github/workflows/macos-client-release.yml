@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             apps/shell/package-lock.json
-            apps/app/package-lock.json
+            apps/user/package-lock.json
             package-lock.json
 
       - name: Install dependencies

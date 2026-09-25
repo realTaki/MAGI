@@ -2,7 +2,7 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../magi.js";
+import { Magi } from "../eva.js";
 import type { McpConnector } from "@magi/mcp/worker.js";
 import { builtinTools } from "@magi/tools/registry.js";
 

@@ -5,7 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { Magi } from "../magi.js";
+import { Magi } from "../eva.js";
 import { SYSTEM_CONTACT_ID, type CallLLMJob, type LLMMessage } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";

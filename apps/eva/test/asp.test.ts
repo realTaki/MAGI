@@ -2,7 +2,7 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../magi.js";
+import { Magi } from "../eva.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import { nodeHarness } from "./nodeHarness.js";
 import type { WebSocket } from "ws";

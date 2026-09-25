@@ -49,7 +49,7 @@ permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/MAGI` with its bundled Git, creates the `magi/app` worktree at
+`~/.magi/MAGI` with its bundled Git, creates the `magi/user` worktree at
 `~/.magi/app/MAGI`, then hands the app bundled Node.js and npm. The App
 creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
@@ -69,7 +69,7 @@ packaged launch.
 
 Only six things, none of them product-specific:
 
-1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/app`
+1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/user`
    worktree (packaged builds).
 2. Load its packaged startup/recovery page.
 3. Load the app backend from the App worktree and give it native pieces: paths,

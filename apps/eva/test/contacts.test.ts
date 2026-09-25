@@ -2,7 +2,7 @@ import { expect, test } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../magi.js";
+import { Magi } from "../eva.js";
 import { builtinTools } from "@magi/tools/registry.js";
 
 test("contact tools persist, search, update, and delete notes", async () => {

@@ -2,7 +2,7 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../magi.js";
+import { Magi } from "../eva.js";
 import { jsonServer } from "./httpServer.js";
 
 /** Stands in for the Telegram API: it answers slowly, the way long polling does. */
