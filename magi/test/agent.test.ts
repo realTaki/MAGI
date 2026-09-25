@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,7 +8,7 @@ import { Database } from "bun:sqlite";
 import { Magi } from "../magi.js";
 import { SYSTEM_CONTACT_ID, type CallLLMJob, type LLMMessage } from "../bus/index.js";
 import { PiAiClient } from "../providers/client.js";
-import { AGENT_PROMPT, COMPACTION_PROMPT, SKILLS_BLOCK_PROMPT } from "../agent/prompt_defaults.js";
+import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "../agent/prompt_defaults.js";
 
 /*
  * Business flow: one MAGI turn (`ARCHITECTURE.md`, "A MAGI process").
@@ -21,12 +22,13 @@ afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, 
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-test-")); workspaces.push(path); return path; }
 
 describe("local MAGI agent", () => {
-  test("seeds agent prompts from the Markdown templates", async () => {
+  test("seeds editable prompts once and keeps system rules outside the workspace", async () => {
     const path = await workspace();
     const magi = new Magi("@templates.magi", { workspace: path });
-    expect(await readFile(join(path, "prompts/agent/defaults/AGENT.md"), "utf8")).toBe(AGENT_PROMPT);
-    expect(await readFile(join(path, "prompts/agent/defaults/compaction.md"), "utf8")).toBe(COMPACTION_PROMPT);
-    expect(await readFile(join(path, "prompts/agent/defaults/skills_block.md"), "utf8")).toBe(SKILLS_BLOCK_PROMPT);
+    expect(await readFile(join(path, "prompts/agent/AGENT.md"), "utf8")).toBe(AGENT_PROMPT);
+    expect(await readFile(join(path, "prompts/agent/compaction.md"), "utf8")).toBe(COMPACTION_PROMPT);
+    expect(existsSync(join(path, "prompts/agent/defaults"))).toBe(false);
+    expect(SYSTEM_PROMPT).toContain("NO_REPLY");
     await magi.stop();
   });
 

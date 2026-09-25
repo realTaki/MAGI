@@ -69,8 +69,9 @@ test("the app reads the curated provider catalog from pi-ai", async (t) => {
     tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
   const catalog = await backend["provider.catalog"]();
-  assert.deepEqual(Object.keys(catalog), ["openai", "anthropic", "minimax", "deepseek"]);
+  assert.deepEqual(Object.keys(catalog), ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek"]);
   for (const models of Object.values(catalog)) assert.ok(models.length > 0);
+  assert.deepEqual(catalog["minimax-cn"].map((model) => model.id), catalog["minimax-global"].map((model) => model.id));
   backend.dispose();
 });
 

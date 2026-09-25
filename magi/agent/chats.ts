@@ -1,5 +1,5 @@
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage } from "../bus/index.js";
-import { REPLY_FORMAT_PROMPT } from "./prompt_defaults.js";
+import { SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
@@ -30,24 +30,26 @@ export class Chat {
       // channels record them there as they are heard from.
       const members = this.bus.chatMembers.list(this.chat_id)
         .map((member) => `- id ${member.id} | ${this.label(member.id)} | ${member.role}`).join("\n");
-      const skillsHeader = this.bus.prompts.get("agent/skills_block")?.trim() || "## Available skills";
-      const system = [agentPrompt, REPLY_FORMAT_PROMPT, identity ? `## Identity\nYour name: ${identity.nickname || identity.name}` : "",
-        skills ? `${skillsHeader}\n${skills}` : "", memories ? `## Long-term memory\n${memories}` : "",
-        record.instruction ? `## Chat instruction\n${record.instruction}` : "",
-        record.info ? `## Chat info\n${record.info}` : "",
-        members ? `## Members\n${members}` : "",
-        summary ? `[Prior chat summary]\n${summary}` : ""]
-        .filter(Boolean).join("\n\n");
+      const chatContext = this.context([
+        ["Identity", identity ? `Your name: ${identity.nickname || identity.name}` : ""],
+        ["Available skills", skills],
+        ["Long-term memory", memories],
+        ["Chat instruction", record.instruction],
+        ["Chat info", record.info],
+        ["Members", members],
+        ["Prior chat summary", summary],
+        ["Chat", `chat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`],
+      ]);
+      const system = [agentPrompt, SYSTEM_PROMPT, chatContext].filter(Boolean).join("\n\n");
       const history = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => ({
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",
         content: `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`,
       }));
-      const chatContext = `## Chat\nchat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
-      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${chatContext}` }, ...history];
+      const messages: LLMMessage[] = [{ role: "system", content: system }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
-        messages[0] = { role: "system", content: `${system}\n\n${chatContext}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
+        messages[0] = { role: "system", content: `${system}\n\n${this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`)}` };
         const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
@@ -114,6 +116,15 @@ export class Chat {
     this.bus.chats.updateSummary(this.chat_id, summary);
     this.bus.messages.archiveBefore(this.chat_id, old.at(-1)!.id);
     return summary;
+  }
+
+  /** Render durable runtime data in the same ordered, readable system-context block. */
+  private context(sections: ReadonlyArray<readonly [title: string, body: string]>): string {
+    return sections.filter(([, body]) => Boolean(body)).map(([title, body]) => this.section(title, body)).join("\n\n");
+  }
+
+  private section(title: string, body: string): string {
+    return `## ${title}\n${body}`;
   }
 
   /** Who said it, in the transcript the model reads: id, then name and nickname. */
