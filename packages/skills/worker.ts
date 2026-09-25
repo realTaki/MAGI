@@ -1,12 +1,13 @@
 /**
  * Skills: instructions a MAGI pulls in only when it needs them.
  *
- * This package owns where skills live — the ones that ship with the project
- * (`skills/` here) and the MAGI's own editable copies (`<workspace>/skills`) —
- * and it owns the tool that loads them. `bus.skills` is only a registry: it holds
- * what this worker found, so nothing else has to know the layout.
+ * This package owns where skills live — the built-in ones that ship with the
+ * project (`builtin_skills/` here) and the MAGI's own editable copies
+ * (`<workspace>/skills`) — and it owns the tool that loads them. `bus.skills`
+ * is only a registry: it holds what this worker found, so nothing else has to
+ * know the layout.
  *
- * The shipped ones are copied into the workspace once, never overwritten: a
+ * The built-in ones are copied into the workspace once, never overwritten: a
  * MAGI's copies are its own to edit, and an update must not clobber them.
  */
 
@@ -95,12 +96,13 @@ function seedWorkspace(root: string, shipped: string): void {
 }
 
 /**
- * This package's own `skills/`, found by walking up from this module: the same
- * walk covers a compiled copy under `dist/` and survives this file moving.
+ * This package's own `builtin_skills/`, found by walking up from this module:
+ * the same walk covers a compiled copy under `dist/` and survives this file
+ * moving.
  */
 function shippedSkills(): string | null {
   for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
-    const candidate = join(dir, "skills");
+    const candidate = join(dir, "builtin_skills");
     if (existsSync(candidate)) return candidate;
     if (dirname(dir) === dir) return null;
   }
