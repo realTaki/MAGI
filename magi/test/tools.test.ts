@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../magi.js";
+import type { LLMMessage } from "../bus/index.js";
 import { builtinTools } from "../tools/registry.js";
 
 test("message search includes archived history and send_message uses delivery jobs", async () => {
@@ -24,6 +25,33 @@ test("message search includes archived history and send_message uses delivery jo
     expect(await tools.get("send_message")!.run({ conversation_id: conversation.id, text: "progress update" })).toContain("queued");
     for (let i = 0; i < 100 && !delivered.length; i++) await Bun.sleep(10);
     expect(delivered).toEqual(["progress update"]);
+  } finally {
+    await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a tool the catalog does not have is answered without a job", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-tools-unknown-"));
+  const seen: LLMMessage[][] = [];
+  const magi = new Magi("@unknown.magi", {
+    workspace, deliver: () => {},
+    client: {
+      async complete(job) {
+        seen.push(job.messages);
+        return seen.length === 1
+          ? { role: "assistant", content: "", tool_calls: [{ tool_call_id: "call-1", name: "nope", arguments: {} }] }
+          : { role: "assistant", content: "recovered" };
+      },
+    },
+  });
+  try {
+    magi.start();
+    await magi.chat("try a tool that does not exist");
+    expect(seen[1].filter((message) => message.role === "tool")).toEqual([
+      { role: "tool", tool_call_id: "call-1", tool_name: "nope", content: "unknown tool nope", is_error: true },
+    ]);
+    expect(magi.bus.board("RunToolJob").claim("probe")).toBeNull();
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });

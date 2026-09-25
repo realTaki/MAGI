@@ -2,7 +2,11 @@ import type { LLMTool } from "../jobs/llm.js";
 
 export type ExecutableTool = LLMTool & { run(args: Record<string, unknown>): Promise<string> };
 
-/** The BUS-owned catalog shared by Agent, Tools, and MCP workers. */
+/**
+ * The BUS-owned catalog shared by Agent, Tools, and MCP workers: what a model may
+ * be offered, one name per tool. Execution stays with the worker that registered
+ * a tool — each claims the calls for its own names.
+ */
 export class ToolBook {
   private readonly sources = new Map<string, Map<string, ExecutableTool>>();
 

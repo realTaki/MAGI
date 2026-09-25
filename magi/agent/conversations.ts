@@ -48,8 +48,15 @@ export class Conversation {
         }
         if (response.content) this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content });
         messages.push(response);
-        const calls = response.tool_calls.map((call) => ({ call, jobId: this.bus.board("RunToolJob").publish({ call }, "agent") }));
+        // A name the catalog does not have is answered here: no worker would claim its job.
+        const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
+          ? { call, jobId: this.bus.board("RunToolJob").publish({ call }, "agent") as number | null }
+          : { call, jobId: null });
         for (const pending of calls) {
+          if (pending.jobId === null) {
+            messages.push({ role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: `unknown tool ${pending.call.name}`, is_error: true });
+            continue;
+          }
           const result = await this.waitFor("RunToolJob", pending.jobId, 120_000);
           messages.push({
             role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name,
